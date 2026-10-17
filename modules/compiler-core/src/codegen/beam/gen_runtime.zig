@@ -24,7 +24,7 @@
 //!     that already ended answers `done`;
 //!   * `Dict` is the sender's process dictionary, which the receiver takes
 //!     whole: a module `var` (`ProcessDict`), a `defer`'s watched names and an
-//!     `iter` loop's captured `var`s (a cell, `erlang.zig`'s `GenCell`) read the same on both
+//!     `iter` loop's captured `var`s (a cell each, `erlang.zig`'s `GenCell`) read the same on both
 //!     sides. The generator's own reply address, `'__bp_gen_self'`, never
 //!     travels.
 //!
@@ -35,7 +35,8 @@
 //! not leak it: the generator monitors its creator (`GenNew` captures
 //! `erlang:self()`) and, on the creator's `'DOWN'`, ends in either of its two
 //! `receive`s — before the first request it just ends, suspended at a `yield`
-//! it unwinds as a `close` does (144 B-133). The monitor reference lives under
+//! it unwinds as a `close` does (144 B-133) and exits normally, with nobody to
+//! answer (no reply address, so no `badmatch` crash report). The monitor reference lives under
 //! `'__bp_gen_mon'`, which like `'__bp_gen_self'` never travels.
 //!
 //! A list stays a list: every consumer helper answers a list receiver as the
@@ -115,13 +116,17 @@ const gen_new =
     \\                        try GBody() catch
     \\                            throw:'__bp_gen_closed' -> ok;
     \\                            GC:GR:GS ->
-    \\                                {GF0, GM0} = erlang:erase('__bp_gen_self'),
-    \\                                erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()}),
+    \\                                case erlang:erase('__bp_gen_self') of
+    \\                                    {GF0, GM0} -> erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()});
+    \\                                    undefined -> ok
+    \\                                end,
     \\                                erlang:exit(normal)
     \\                        end
     \\                end,
-    \\                {GF, GM1} = erlang:erase('__bp_gen_self'),
-    \\                erlang:send(GF, {GM1, done, Dict()})
+    \\                case erlang:erase('__bp_gen_self') of
+    \\                    {GF, GM1} -> erlang:send(GF, {GM1, done, Dict()});
+    \\                    undefined -> ok
+    \\                end
     \\        end
     \\    end)}
     \\end,
@@ -155,9 +160,6 @@ pub const Helper = enum {
     gen_new,
     /// `(V)` → hands `V` to the consumer and waits (inside a generator's body).
     gen_yield,
-    /// `(V, Cell, Group)` → `erlang:put(Cell, Group)`, then `gen_yield` — an
-    /// `iter` loop's item, its captured variables first (`GenCell`).
-    gen_yield_put,
     /// `(It)` → `[V | Rest]` or `[]`: a list itself, a generator's next item
     /// before itself.
     step,
@@ -193,7 +195,6 @@ pub const Helper = enum {
         return switch (h) {
             .gen_new => "__bp_gen_new",
             .gen_yield => "__bp_gen_yield",
-            .gen_yield_put => "__bp_gen_yield_put",
             .step => "__bp_iter_step",
             .close => "__bp_iter_close",
             .with => "__bp_iter_with",
@@ -215,7 +216,7 @@ pub const Helper = enum {
         return switch (h) {
             .gen_new, .gen_yield, .step, .close, .to_array => 1,
             .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find => 2,
-            .foldl, .reduce, .gen_yield_put => 3,
+            .foldl, .reduce => 3,
         };
     }
 
@@ -231,7 +232,6 @@ pub const Helper = enum {
         return switch (h) {
             .gen_new => dict ++ load ++ gen_new ++ "GenNew(__BpA0)",
             .gen_yield => dict ++ load ++ yield_ ++ "Yield(__BpA0)",
-            .gen_yield_put => dict ++ load ++ yield_ ++ "erlang:put(__BpA1, __BpA2),\nYield(__BpA0)",
             .step => "case __BpA0 of\n{'__bp_gen', P} = G ->\n" ++ consumer ++
                 "case Call(P, next) of [V] -> [V | G]; [] -> [] end;\nL -> L\nend",
             .close => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++ consumer ++
@@ -334,5 +334,7 @@ test "a generator ends with its creator, started or not (144 B-133)" {
     const res = std.process.run(arena, io, .{
         .argv = &.{ "erl", "-noshell", "-eval", eval },
     }) catch return;
+    // Each ends normally: no crash report on either stream.
     try std.testing.expectEqualStrings("dead dead\n", res.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, res.stderr, "ERROR REPORT") == null);
 }

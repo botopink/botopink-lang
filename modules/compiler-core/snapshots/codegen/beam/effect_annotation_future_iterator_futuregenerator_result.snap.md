@@ -21,7 +21,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 {module, test@main}.
 {exports, [{'__bp_priv__counter', 0}, {'__bp_priv__fetch', 1}, {'__bp_priv__parse', 1}, {'__bp_priv__stream', 0}]}.
 {attributes, []}.
-{labels, 150}.
+{labels, 152}.
 
 %% @Task — eager lowering
 {function, fetch, 1, 3}.
@@ -59,7 +59,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 139}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 141}, 0, 0, {x, 0}, {list, []}}.
     {call, 1, {f, 70}}.
     {deallocate, 1}.
     return.
@@ -72,14 +72,14 @@ fn parse(n: i32) -> @Result<i32, string> {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_lt, {f, 141}, [{y, 0}, {integer, 0}]}.
+    {test, is_lt, {f, 143}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"negative">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 1}.
     return.
-  {label, 141}.
+  {label, 143}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -87,32 +87,32 @@ fn parse(n: i32) -> @Result<i32, string> {
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__counter', 0, 143}.
-  {label, 142}.
+{function, '__bp_priv__counter', 0, 145}.
+  {label, 144}.
     {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__counter'}, 0}.
-  {label, 143}.
+  {label, 145}.
     {call_only, 0, {f, 5}}.
 
-{function, '__bp_priv__fetch', 1, 145}.
-  {label, 144}.
+{function, '__bp_priv__fetch', 1, 147}.
+  {label, 146}.
     {line, [{location, "test@main.erl", 6}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__fetch'}, 1}.
-  {label, 145}.
+  {label, 147}.
     {call_only, 1, {f, 3}}.
 
-{function, '__bp_priv__parse', 1, 147}.
-  {label, 146}.
+{function, '__bp_priv__parse', 1, 149}.
+  {label, 148}.
     {line, [{location, "test@main.erl", 7}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__parse'}, 1}.
-  {label, 147}.
+  {label, 149}.
     {call_only, 1, {f, 9}}.
 
-{function, '__bp_priv__stream', 0, 149}.
-  {label, 148}.
+{function, '__bp_priv__stream', 0, 151}.
+  {label, 150}.
     {line, [{location, "test@main.erl", 8}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__stream'}, 0}.
-  {label, 149}.
+  {label, 151}.
     {call_only, 0, {f, 7}}.
 
 {function, '__bp_tpl_0--t/1-fun-0--fun-1-', 1, 22}.
@@ -539,8 +539,8 @@ fn parse(n: i32) -> @Result<i32, string> {
   {label, 112}.
     {func_info, {atom, test@main}, {atom, '__bp_tpl_1--t/1-fun-4--fun-5-'}, 4}.
   {label, 113}.
-    {allocate, 31, 4}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}]}}.
+    {allocate, 33, 4}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}, {y, 31}, {y, 32}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
@@ -574,7 +574,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     {test, is_eq_exact, {f, 122}, [{x, 0}, {atom, process}]}.
     remove_message.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 31}.
+    {deallocate, 33}.
     return.
   {label, 122}.
     {move, {y, 16}, {x, 0}}.
@@ -610,15 +610,15 @@ fn parse(n: i32) -> @Result<i32, string> {
   {label, 125}.
     {move, {y, 6}, {x, 0}}.
     {test, is_eq_exact, {f, 126}, [{x, 0}, {atom, next}]}.
-    {'try', {y, 30}, {f, 127}}.
+    {'try', {y, 32}, {f, 127}}.
     {move, {y, 2}, {x, 0}}.
     {call_fun, 0}.
     {move, {x, 0}, {y, 24}}.
     {move, {y, 24}, {y, 23}}.
-    {try_end, {y, 30}}.
+    {try_end, {y, 32}}.
     {jump, {f, 128}}.
   {label, 127}.
-    {try_case, {y, 30}}.
+    {try_case, {y, 32}}.
     {move, {x, 0}, {y, 24}}.
     {move, {x, 1}, {y, 25}}.
     {move, {x, 2}, {y, 26}}.
@@ -638,27 +638,33 @@ fn parse(n: i32) -> @Result<i32, string> {
     {call_ext, 1, {extfunc, erlang, erase, 1}}.
     {move, {x, 0}, {y, 27}}.
     {move, {y, 27}, {x, 0}}.
-    {test, is_tuple, {f, 132}, [{x, 0}]}.
-    {test, test_arity, {f, 132}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 28}}.
-    {get_tuple_element, {x, 0}, 1, {y, 29}}.
-    {move, {y, 28}, {y, 12}}.
-    {move, {y, 29}, {y, 13}}.
-    {jump, {f, 133}}.
-  {label, 132}.
-    {move, {y, 27}, {x, 0}}.
-    {badmatch, {x, 0}}.
-  {label, 133}.
+    {test, is_tuple, {f, 133}, [{x, 0}]}.
+    {test, test_arity, {f, 133}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 29}}.
+    {get_tuple_element, {x, 0}, 1, {y, 30}}.
+    {move, {y, 29}, {y, 12}}.
+    {move, {y, 30}, {y, 13}}.
     {move, {y, 3}, {x, 0}}.
     {call_fun, 0}.
-    {move, {x, 0}, {y, 27}}.
+    {move, {x, 0}, {y, 31}}.
     {test_heap, 7, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 13}, {atom, raise}, {y, 9}, {y, 10}, {y, 11}, {y, 27}]}}.
-    {move, {x, 0}, {y, 27}}.
+    {put_tuple2, {x, 0}, {list, [{y, 13}, {atom, raise}, {y, 9}, {y, 10}, {y, 11}, {y, 31}]}}.
+    {move, {x, 0}, {y, 31}}.
     {move, {y, 12}, {x, 0}}.
-    {move, {y, 27}, {x, 1}}.
+    {move, {y, 31}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, send, 2}}.
-    {move, {x, 0}, {y, 27}}.
+    {move, {x, 0}, {y, 31}}.
+    {move, {y, 31}, {y, 28}}.
+    {jump, {f, 132}}.
+  {label, 133}.
+    {move, {y, 27}, {x, 0}}.
+    {test, is_eq_exact, {f, 134}, [{x, 0}, {atom, undefined}]}.
+    {move, {atom, ok}, {y, 28}}.
+    {jump, {f, 132}}.
+  {label, 134}.
+    {move, {y, 27}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 132}.
     {move, {atom, normal}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, exit, 1}}.
   {label, 129}.
@@ -673,26 +679,30 @@ fn parse(n: i32) -> @Result<i32, string> {
     {call_ext, 1, {extfunc, erlang, erase, 1}}.
     {move, {x, 0}, {y, 22}}.
     {move, {y, 22}, {x, 0}}.
-    {test, is_tuple, {f, 134}, [{x, 0}]}.
-    {test, test_arity, {f, 134}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 136}, [{x, 0}]}.
+    {test, test_arity, {f, 136}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 23}}.
     {get_tuple_element, {x, 0}, 1, {y, 24}}.
     {move, {y, 23}, {y, 14}}.
     {move, {y, 24}, {y, 15}}.
-    {jump, {f, 135}}.
-  {label, 134}.
-    {move, {y, 22}, {x, 0}}.
-    {badmatch, {x, 0}}.
-  {label, 135}.
     {move, {y, 3}, {x, 0}}.
     {call_fun, 0}.
-    {move, {x, 0}, {y, 22}}.
+    {move, {x, 0}, {y, 25}}.
     {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 15}, {atom, done}, {y, 22}]}}.
-    {move, {x, 0}, {y, 22}}.
+    {put_tuple2, {x, 0}, {list, [{y, 15}, {atom, done}, {y, 25}]}}.
+    {move, {x, 0}, {y, 25}}.
     {move, {y, 14}, {x, 0}}.
-    {move, {y, 22}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, send, 2}, 31}.
+    {move, {y, 25}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, send, 2}, 33}.
+  {label, 136}.
+    {move, {y, 22}, {x, 0}}.
+    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, undefined}]}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 33}.
+    return.
+  {label, 137}.
+    {move, {y, 22}, {x, 0}}.
+    {case_end, {x, 0}}.
   {label, 123}.
     {move, nil, {y, 16}}.
     {move, nil, {y, 5}}.
@@ -712,6 +722,8 @@ fn parse(n: i32) -> @Result<i32, string> {
     {move, nil, {y, 27}}.
     {move, nil, {y, 28}}.
     {move, nil, {y, 29}}.
+    {move, nil, {y, 30}}.
+    {move, nil, {y, 31}}.
     {loop_rec_end, {f, 118}}.
   {label, 119}.
     {wait, {f, 118}}.
@@ -766,19 +778,19 @@ fn parse(n: i32) -> @Result<i32, string> {
     {make_fun3, {f, 107}, 5, 0, {x, 0}, {list, [{y, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 137}}.
-  {label, 137}.
+    {jump, {f, 139}}.
+  {label, 139}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_fun, 1}.
     {deallocate, 4}.
     return.
 
-{function, '-stream/0-gen-1-', 0, 139}.
-  {label, 138}.
+{function, '-stream/0-gen-1-', 0, 141}.
+  {label, 140}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-stream/0-gen-1-'}, 0}.
-  {label, 139}.
+  {label, 141}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {integer, 1}, {x, 0}}.
@@ -786,7 +798,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {call, 1, {f, 14}}.
-  {label, 140}.
+  {label, 142}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.

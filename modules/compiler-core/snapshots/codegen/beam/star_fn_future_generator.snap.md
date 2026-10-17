@@ -11,7 +11,7 @@ fn stream() -> @Stream<@Result<i32, string>> {
 {module, test@main}.
 {exports, [{'__bp_priv__stream', 0}]}.
 {attributes, []}.
-{labels, 134}.
+{labels, 136}.
 
 %% @Stream — lazy lowering
 {function, stream, 0, 3}.
@@ -27,11 +27,11 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__stream', 0, 133}.
-  {label, 132}.
+{function, '__bp_priv__stream', 0, 135}.
+  {label, 134}.
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__stream'}, 0}.
-  {label, 133}.
+  {label, 135}.
     {call_only, 0, {f, 3}}.
 
 {function, '__bp_tpl_0--t/1-fun-0--fun-1-', 1, 16}.
@@ -464,8 +464,8 @@ fn stream() -> @Stream<@Result<i32, string>> {
   {label, 106}.
     {func_info, {atom, test@main}, {atom, '__bp_tpl_1--t/1-fun-4--fun-5-'}, 4}.
   {label, 107}.
-    {allocate, 31, 4}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}]}}.
+    {allocate, 33, 4}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}, {y, 31}, {y, 32}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
@@ -499,7 +499,7 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {test, is_eq_exact, {f, 116}, [{x, 0}, {atom, process}]}.
     remove_message.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 31}.
+    {deallocate, 33}.
     return.
   {label, 116}.
     {move, {y, 16}, {x, 0}}.
@@ -535,15 +535,15 @@ fn stream() -> @Stream<@Result<i32, string>> {
   {label, 119}.
     {move, {y, 6}, {x, 0}}.
     {test, is_eq_exact, {f, 120}, [{x, 0}, {atom, next}]}.
-    {'try', {y, 30}, {f, 121}}.
+    {'try', {y, 32}, {f, 121}}.
     {move, {y, 2}, {x, 0}}.
     {call_fun, 0}.
     {move, {x, 0}, {y, 24}}.
     {move, {y, 24}, {y, 23}}.
-    {try_end, {y, 30}}.
+    {try_end, {y, 32}}.
     {jump, {f, 122}}.
   {label, 121}.
-    {try_case, {y, 30}}.
+    {try_case, {y, 32}}.
     {move, {x, 0}, {y, 24}}.
     {move, {x, 1}, {y, 25}}.
     {move, {x, 2}, {y, 26}}.
@@ -563,27 +563,33 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {call_ext, 1, {extfunc, erlang, erase, 1}}.
     {move, {x, 0}, {y, 27}}.
     {move, {y, 27}, {x, 0}}.
-    {test, is_tuple, {f, 126}, [{x, 0}]}.
-    {test, test_arity, {f, 126}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 28}}.
-    {get_tuple_element, {x, 0}, 1, {y, 29}}.
-    {move, {y, 28}, {y, 12}}.
-    {move, {y, 29}, {y, 13}}.
-    {jump, {f, 127}}.
-  {label, 126}.
-    {move, {y, 27}, {x, 0}}.
-    {badmatch, {x, 0}}.
-  {label, 127}.
+    {test, is_tuple, {f, 127}, [{x, 0}]}.
+    {test, test_arity, {f, 127}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 29}}.
+    {get_tuple_element, {x, 0}, 1, {y, 30}}.
+    {move, {y, 29}, {y, 12}}.
+    {move, {y, 30}, {y, 13}}.
     {move, {y, 3}, {x, 0}}.
     {call_fun, 0}.
-    {move, {x, 0}, {y, 27}}.
+    {move, {x, 0}, {y, 31}}.
     {test_heap, 7, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 13}, {atom, raise}, {y, 9}, {y, 10}, {y, 11}, {y, 27}]}}.
-    {move, {x, 0}, {y, 27}}.
+    {put_tuple2, {x, 0}, {list, [{y, 13}, {atom, raise}, {y, 9}, {y, 10}, {y, 11}, {y, 31}]}}.
+    {move, {x, 0}, {y, 31}}.
     {move, {y, 12}, {x, 0}}.
-    {move, {y, 27}, {x, 1}}.
+    {move, {y, 31}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, send, 2}}.
-    {move, {x, 0}, {y, 27}}.
+    {move, {x, 0}, {y, 31}}.
+    {move, {y, 31}, {y, 28}}.
+    {jump, {f, 126}}.
+  {label, 127}.
+    {move, {y, 27}, {x, 0}}.
+    {test, is_eq_exact, {f, 128}, [{x, 0}, {atom, undefined}]}.
+    {move, {atom, ok}, {y, 28}}.
+    {jump, {f, 126}}.
+  {label, 128}.
+    {move, {y, 27}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 126}.
     {move, {atom, normal}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, exit, 1}}.
   {label, 123}.
@@ -598,26 +604,30 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {call_ext, 1, {extfunc, erlang, erase, 1}}.
     {move, {x, 0}, {y, 22}}.
     {move, {y, 22}, {x, 0}}.
-    {test, is_tuple, {f, 128}, [{x, 0}]}.
-    {test, test_arity, {f, 128}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 130}, [{x, 0}]}.
+    {test, test_arity, {f, 130}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 23}}.
     {get_tuple_element, {x, 0}, 1, {y, 24}}.
     {move, {y, 23}, {y, 14}}.
     {move, {y, 24}, {y, 15}}.
-    {jump, {f, 129}}.
-  {label, 128}.
-    {move, {y, 22}, {x, 0}}.
-    {badmatch, {x, 0}}.
-  {label, 129}.
     {move, {y, 3}, {x, 0}}.
     {call_fun, 0}.
-    {move, {x, 0}, {y, 22}}.
+    {move, {x, 0}, {y, 25}}.
     {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 15}, {atom, done}, {y, 22}]}}.
-    {move, {x, 0}, {y, 22}}.
+    {put_tuple2, {x, 0}, {list, [{y, 15}, {atom, done}, {y, 25}]}}.
+    {move, {x, 0}, {y, 25}}.
     {move, {y, 14}, {x, 0}}.
-    {move, {y, 22}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, send, 2}, 31}.
+    {move, {y, 25}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, send, 2}, 33}.
+  {label, 130}.
+    {move, {y, 22}, {x, 0}}.
+    {test, is_eq_exact, {f, 131}, [{x, 0}, {atom, undefined}]}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 33}.
+    return.
+  {label, 131}.
+    {move, {y, 22}, {x, 0}}.
+    {case_end, {x, 0}}.
   {label, 117}.
     {move, nil, {y, 16}}.
     {move, nil, {y, 5}}.
@@ -637,6 +647,8 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {move, nil, {y, 27}}.
     {move, nil, {y, 28}}.
     {move, nil, {y, 29}}.
+    {move, nil, {y, 30}}.
+    {move, nil, {y, 31}}.
     {loop_rec_end, {f, 112}}.
   {label, 113}.
     {wait, {f, 112}}.
@@ -691,8 +703,8 @@ fn stream() -> @Stream<@Result<i32, string>> {
     {make_fun3, {f, 101}, 5, 0, {x, 0}, {list, [{y, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 131}}.
-  {label, 131}.
+    {jump, {f, 133}}.
+  {label, 133}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_fun, 1}.

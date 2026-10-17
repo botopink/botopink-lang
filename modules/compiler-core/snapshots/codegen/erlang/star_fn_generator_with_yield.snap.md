@@ -51,13 +51,17 @@ GenNew = fun(GBody) ->
                         try GBody() catch
                             throw:'__bp_gen_closed' -> ok;
                             GC:GR:GS ->
-                                {GF0, GM0} = erlang:erase('__bp_gen_self'),
-                                erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()}),
+                                case erlang:erase('__bp_gen_self') of
+                                    {GF0, GM0} -> erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()});
+                                    undefined -> ok
+                                end,
                                 erlang:exit(normal)
                         end
                 end,
-                {GF, GM1} = erlang:erase('__bp_gen_self'),
-                erlang:send(GF, {GM1, done, Dict()})
+                case erlang:erase('__bp_gen_self') of
+                    {GF, GM1} -> erlang:send(GF, {GM1, done, Dict()});
+                    undefined -> ok
+                end
         end
     end)}
 end,

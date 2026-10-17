@@ -3729,78 +3729,112 @@ pub fn collectRunNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.Arr
     return collectNamesIn(gpa, body, out, true);
 }
 
+/// Every name `body` assigns (`n = …`, `n += …`) — lambdas and nested blocks
+/// included, appended to `out` (duplicates kept). What a generator's body reads
+/// and the code around it writes is one variable on both sides (decision 105,
+/// 144 B-135): the erlang and beam backends share it through a cell.
+pub fn collectAssignedNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesInMode(gpa, body, out, true, .assigned);
+}
+
+/// Every name `body` binds — a `val` / `var`, a loop's, a lambda's or a trailing
+/// lambda's parameter — lambdas and nested blocks included, appended to `out`.
+pub fn collectDeclaredNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    return collectNamesInMode(gpa, body, out, true, .declared);
+}
+
+const NamesMode = enum { reads, assigned, declared };
+
 fn collectNamesIn(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool) std.mem.Allocator.Error!void {
-    for (body) |s| try collectExprNames(gpa, s.expr, out, run);
+    return collectNamesInMode(gpa, body, out, run, .reads);
 }
 
 fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool) std.mem.Allocator.Error!void {
+    return collectExprNamesMode(gpa, e, out, run, .reads);
+}
+
+fn collectNamesInMode(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool, comptime mode: NamesMode) std.mem.Allocator.Error!void {
+    for (body) |s| try collectExprNamesMode(gpa, s.expr, out, run, mode);
+}
+
+fn collectExprNamesMode(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanaged([]const u8), comptime run: bool, comptime mode: NamesMode) std.mem.Allocator.Error!void {
     switch (e) {
         .literal => |lit| switch (lit.kind) {
             .stringTemplate => |t| for (t.parts) |p| switch (p) {
-                .expr => |x| try collectExprNames(gpa, x.*, out, run),
+                .expr => |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
                 .text => {},
             },
             else => {},
         },
         .identifier => |id| switch (id.kind) {
-            .ident => |n| try out.append(gpa, n),
-            .identAccess => |ia| try collectExprNames(gpa, ia.receiver.*, out, run),
+            .ident => |n| if (mode == .reads) try out.append(gpa, n),
+            .identAccess => |ia| try collectExprNamesMode(gpa, ia.receiver.*, out, run, mode),
             .dotIdent => {},
         },
         .jump => |j| switch (j.kind) {
-            .@"return", .throw_, .try_ => |v| if (v) |x| try collectExprNames(gpa, x.*, out, run),
-            .await_ => |x| try collectExprNames(gpa, x.*, out, run),
-            .@"break" => |b| if (b.value) |x| try collectExprNames(gpa, x.*, out, run),
-            .yield => |y| if (y.value) |x| try collectExprNames(gpa, x.*, out, run),
+            .@"return", .throw_, .try_ => |v| if (v) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .await_ => |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .@"break" => |b| if (b.value) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
+            .yield => |y| if (y.value) |x| try collectExprNamesMode(gpa, x.*, out, run, mode),
             .@"continue" => {},
         },
         .branch => |b| switch (b.kind) {
             .if_ => |i| {
-                try collectExprNames(gpa, i.cond.*, out, run);
-                try collectNamesIn(gpa, i.then_, out, run);
-                if (i.else_) |els| try collectNamesIn(gpa, els, out, run);
+                try collectExprNamesMode(gpa, i.cond.*, out, run, mode);
+                try collectNamesInMode(gpa, i.then_, out, run, mode);
+                if (i.else_) |els| try collectNamesInMode(gpa, els, out, run, mode);
             },
             .tryCatch => |tc| {
-                try collectExprNames(gpa, tc.expr.*, out, run);
-                try collectExprNames(gpa, tc.handler.*, out, run);
+                try collectExprNamesMode(gpa, tc.expr.*, out, run, mode);
+                try collectExprNamesMode(gpa, tc.handler.*, out, run, mode);
             },
         },
         .loop => |lp| {
-            try collectExprNames(gpa, lp.iter.*, out, run);
-            try collectNamesIn(gpa, lp.body, out, run);
+            if (mode == .declared) try out.appendSlice(gpa, lp.params);
+            try collectExprNamesMode(gpa, lp.iter.*, out, run, mode);
+            try collectNamesInMode(gpa, lp.body, out, run, mode);
         },
         .binding => |b| switch (b.kind) {
-            .localBind => |lb| try collectExprNames(gpa, lb.value.*, out, run),
-            .assign => |a| try collectExprNames(gpa, a.value.*, out, run),
-            .localBindDestruct => |lb| try collectExprNames(gpa, lb.value.*, out, run),
+            .localBind => |lb| {
+                if (mode == .declared) try out.append(gpa, lb.name);
+                try collectExprNamesMode(gpa, lb.value.*, out, run, mode);
+            },
+            .assign => |a| {
+                if (mode == .assigned and a.target == .name) try out.append(gpa, a.target.name);
+                try collectExprNamesMode(gpa, a.value.*, out, run, mode);
+            },
+            .localBindDestruct => |lb| try collectExprNamesMode(gpa, lb.value.*, out, run, mode),
         },
         .binaryOp => |op| {
-            try collectExprNames(gpa, op.lhs.*, out, run);
-            try collectExprNames(gpa, op.rhs.*, out, run);
+            try collectExprNamesMode(gpa, op.lhs.*, out, run, mode);
+            try collectExprNamesMode(gpa, op.rhs.*, out, run, mode);
         },
-        .unaryOp => |op| try collectExprNames(gpa, op.expr.*, out, run),
-        .useHook => |u| try collectExprNames(gpa, u.kind.inner.*, out, run),
+        .unaryOp => |op| try collectExprNamesMode(gpa, op.expr.*, out, run, mode),
+        .useHook => |u| try collectExprNamesMode(gpa, u.kind.inner.*, out, run, mode),
         .collection => |col| switch (col.kind) {
-            .grouped => |inner| try collectExprNames(gpa, inner.*, out, run),
+            .grouped => |inner| try collectExprNamesMode(gpa, inner.*, out, run, mode),
             .case => |c| {
-                for (c.subjects) |x| try collectExprNames(gpa, x, out, run);
+                for (c.subjects) |x| try collectExprNamesMode(gpa, x, out, run, mode);
                 for (c.arms) |arm| {
-                    try collectExprNames(gpa, arm.body, out, run);
-                    if (arm.guard) |g| try collectExprNames(gpa, g, out, run);
+                    try collectExprNamesMode(gpa, arm.body, out, run, mode);
+                    if (arm.guard) |g| try collectExprNamesMode(gpa, g, out, run, mode);
                 }
             },
-            .arrayLit => |al| for (al.elems) |x| try collectExprNames(gpa, x, out, run),
-            .tupleLit => |tl| for (tl.elems) |x| try collectExprNames(gpa, x, out, run),
+            .arrayLit => |al| for (al.elems) |x| try collectExprNamesMode(gpa, x, out, run, mode),
+            .tupleLit => |tl| for (tl.elems) |x| try collectExprNamesMode(gpa, x, out, run, mode),
             else => {},
         },
         .call => |c| switch (c.kind) {
             .call => |cc| {
-                if (cc.receiver) |r| try collectExprNames(gpa, r.*, out, run) else if (!cc.is_builtin) try out.append(gpa, cc.callee);
+                if (cc.receiver) |r| try collectExprNamesMode(gpa, r.*, out, run, mode) else if (!cc.is_builtin and mode == .reads) try out.append(gpa, cc.callee);
                 // Decision 316 — `<handle>.wrapWith({ call -> … })`: the
                 // wrapper runs with the program, as a typed member does.
                 if (!run and cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "wrapWith") and cc.args.len == 1 and cc.args[0].value.* == .function) return;
-                for (cc.args) |a| try collectExprNames(gpa, a.value.*, out, run);
-                for (cc.trailing) |tl| try collectNamesIn(gpa, tl.body, out, run);
+                for (cc.args) |a| try collectExprNamesMode(gpa, a.value.*, out, run, mode);
+                for (cc.trailing) |tl| {
+                    if (mode == .declared) try out.appendSlice(gpa, tl.params);
+                    try collectNamesInMode(gpa, tl.body, out, run, mode);
+                }
             },
             else => {},
         },
@@ -3809,17 +3843,20 @@ fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanage
         // program, never while it compiles, so the names it reads are no
         // support of the decorator (decision 395 — `#[validated]`'s member
         // reaching the run-time checks).
-        .function => |f| if (run or !f.kind.isTyped()) try collectNamesIn(gpa, f.kind.body, out, run),
+        .function => |f| if (run or !f.kind.isTyped()) {
+            if (mode == .declared) try out.appendSlice(gpa, f.kind.params);
+            try collectNamesInMode(gpa, f.kind.body, out, run, mode);
+        },
         // An `assert` reads its operands at run time (`collectRunNames`); a
         // folded `comptime` reads none.
         .comptime_ => |c| if (run) switch (c.kind) {
             .assert => |a| {
-                try collectExprNames(gpa, a.condition.*, out, run);
-                if (a.message) |m| try collectExprNames(gpa, m.*, out, run);
+                try collectExprNamesMode(gpa, a.condition.*, out, run, mode);
+                if (a.message) |m| try collectExprNamesMode(gpa, m.*, out, run, mode);
             },
             .assertPattern => |a| {
-                try collectExprNames(gpa, a.expr.*, out, run);
-                try collectExprNames(gpa, a.handler.*, out, run);
+                try collectExprNamesMode(gpa, a.expr.*, out, run, mode);
+                try collectExprNamesMode(gpa, a.handler.*, out, run, mode);
             },
             .comptimeExpr, .comptimeBlock => {},
         },

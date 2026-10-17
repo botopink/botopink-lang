@@ -432,32 +432,27 @@ const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer, defer_floor:
 /// A generator scope being emitted into a frame (decision 105, 144 B-128) — a
 /// generator fn's body or an annotated `loop`, lifted into a fun of its own
 /// (`liftGenScope`) that `'__bp_gen_new'/1` runs lazily in a process: the
-/// label a `break <v>` jumps to once `v` is yielded, and — for an `iter`
-/// loop that reassigns variables of the enclosing frame — those `names` and
-/// the operand of the cell their latest values are put under before each
-/// item (erlang's `GenCell`).
+/// label a `break <v>` jumps to once `v` is yielded.
 const GenLoop = struct {
     exit: u32,
     out: *std.Io.Writer,
     defer_floor: usize = 0,
-    names: []const []const u8 = &.{},
-    cell: ?Op = null,
 };
 
-/// True when a name of `a` is in `b`.
-fn namesMeet(a: []const []const u8, b: []const []const u8) bool {
-    for (a) |x| for (b) |y| if (std.mem.eql(u8, x, y)) return true;
-    return false;
-}
-
-/// An `iter` / `stream` loop of the frame being emitted whose body reassigns
-/// names of the frame (erlang's `GenCell`): the frame's y-slot holding the
-/// cell's key, and the statement list whose later statements re-read the
-/// names from it before reading them (`refreshGenCells`).
+/// A variable of the frame an `iter` / `stream` loop captures (decision 105,
+/// 144 B-135; erlang's `GenCell`): one the body assigns, or one it reads that
+/// the rest of the statement list assigns. It lives in the process dictionary
+/// under a fresh `make_ref()` — held in the owner frame's y-slot `slot`, and in
+/// every frame that reads the name (the lifted generator fun, a lambda) under
+/// the register name `key`, which `closureEnv` carries beside the name. While a
+/// frame holds `key`, a read of the name is `{bif, get, …}` (no call, so no
+/// x-register dies) and a write `erlang:put/2`. It ends with the statement
+/// list it was made in (`endGenCells`), the name's slot then holding the
+/// cell's last value; a `val` of the name shadows it.
 const GenCell = struct {
+    name: []const u8,
+    key: []const u8,
     slot: u32,
-    names: []const []const u8,
-    body: [*]const ast.Stmt,
     out: *std.Io.Writer,
 };
 
@@ -1289,8 +1284,14 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             };
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
+            // One slot for each variable it may capture (`GenCell`), at least
+            // one: every name its body reads or assigns over-counts them.
             if (lp.generator != null) {
-                count.* += 1;
+                var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer names.deinit(em.alloc);
+                ast.collectRunNames(em.alloc, lp.body, &names) catch {};
+                ast.collectAssignedNames(em.alloc, lp.body, &names) catch {};
+                count.* += @max(1, @as(u32, @intCast(names.items.len)));
                 countGenForSlots(em, lp.body, count);
             }
             if (lp.condition) {
@@ -2447,10 +2448,12 @@ const Emitter = struct {
     label_jumps: std.ArrayListUnmanaged(LabelJump) = .empty,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
-    /// 144 B-128 — the `iter` loops whose captured variables later statements
-    /// re-read (`GenCell`), and the statement list being emitted.
+    /// 144 B-135 — the variables `iter` loops capture (`GenCell`), innermost
+    /// last, and the statement list being emitted with the index of the
+    /// statement being emitted.
     gen_cells: std.ArrayListUnmanaged(GenCell) = .empty,
-    cur_body: [*]const ast.Stmt = undefined,
+    cur_body: []const ast.Stmt = &.{},
+    cur_index: usize = 0,
     /// Decision 539 — the `defer`s not yet run, outermost first. The frame
     /// being emitted owns the entries on top whose `out` is its buffer.
     defer_stack: std.ArrayListUnmanaged(DeferEntry) = .empty,
@@ -4834,11 +4837,71 @@ const Emitter = struct {
     /// A statement list of a block: the defers it pushes end with it.
     fn emitStmtList(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         const mark = self.defer_stack.items.len;
-        for (body) |stmt| {
-            try self.refreshGenCells(body, stmt);
+        const cells_mark = self.gen_cells.items.len;
+        const saved_body = self.cur_body;
+        const saved_index = self.cur_index;
+        defer {
+            self.cur_body = saved_body;
+            self.cur_index = saved_index;
+        }
+        for (body, 0..) |stmt, i| {
+            self.cur_body = body;
+            self.cur_index = i;
             try self.emitStmt(stmt);
         }
+        try self.endGenCells(cells_mark, !endsInJump(body));
         try self.closeDefers(mark, !endsInJump(body), false);
+    }
+
+    /// The end of a statement list whose loops captured variables (`GenCell`,
+    /// the ones above `mark`): when the list's end is reached (`falls`), each
+    /// name's slot takes the cell's last value, so what follows the list in
+    /// this frame reads it; then they stop being cells. `x0`, the list's value,
+    /// survives (`{bif, get, …}` calls nothing).
+    fn endGenCells(self: *Emitter, mark: usize, falls: bool) anyerror!void {
+        if (self.gen_cells.items.len <= mark) return;
+        var i = self.gen_cells.items.len;
+        while (i > mark) {
+            i -= 1;
+            const c = self.gen_cells.items[i];
+            if (c.out != self.out) continue;
+            const live = self.reg_map.contains(c.key);
+            _ = self.reg_map.remove(c.key);
+            if (!falls or !live) continue;
+            const reg = self.reg_map.get(c.name) orelse continue;
+            try beamEmitter.writeBif(self.out, "get", 0, &.{Op.yr(c.slot)}, Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), reg.dest());
+        }
+        self.gen_cells.shrinkRetainingCapacity(mark);
+    }
+
+    /// The register holding the cell of captured `name` in this frame
+    /// (`GenCell`), or null.
+    fn genCellOp(self: *const Emitter, name: []const u8) ?Op {
+        var i = self.gen_cells.items.len;
+        while (i > 0) {
+            i -= 1;
+            const c = self.gen_cells.items[i];
+            if (!std.mem.eql(u8, c.name, name)) continue;
+            if (self.reg_map.get(c.key)) |reg| return reg.operand();
+        }
+        return null;
+    }
+
+    /// `erlang:put(Cell, V)` for captured `name` (`GenCell`), `V` being the
+    /// name's slot `reg`; `x0` holds `V` after it.
+    fn putGenCell(self: *Emitter, cell: Op, reg: Reg) anyerror!void {
+        try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, cell, Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "put" } }, 0);
+        try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(0));
+    }
+
+    /// The captured variable a statement-position `out.push(x)` grew
+    /// (`receiverMutation`), put back under its cell.
+    fn putPushedGenCell(self: *Emitter, e: ast.Expr, reg: Reg) anyerror!void {
+        const name = e.call.kind.call.receiver.?.*.identifier.kind.ident;
+        if (self.genCellOp(name)) |cell| try self.putGenCell(cell, reg);
     }
 
     /// The end of a block: the defers it pushed (above `mark`) run in
@@ -6014,10 +6077,20 @@ const Emitter = struct {
 
     fn emitBody(self: *Emitter, body: []const ast.Stmt) !void {
         const mark = self.defer_stack.items.len;
-        for (body) |stmt| {
-            try self.refreshGenCells(body, stmt);
+        const cells_mark = self.gen_cells.items.len;
+        const saved_body = self.cur_body;
+        const saved_index = self.cur_index;
+        defer {
+            self.cur_body = saved_body;
+            self.cur_index = saved_index;
+        }
+        for (body, 0..) |stmt, i| {
+            self.cur_body = body;
+            self.cur_index = i;
             try self.emitStmt(stmt);
         }
+        // A function's own body: nothing reads the names after it.
+        try self.endGenCells(cells_mark, false);
         try self.closeDefers(mark, !bodyExits(body), false);
         // BEAM functions must end with an exit instruction. When the source
         // didn't write an explicit `return`, fall back to returning the atom
@@ -6231,6 +6304,7 @@ const Emitter = struct {
                 // is the grown list.
                 if (self.receiverMutation(stmt.expr)) |reg| {
                     try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                    try self.putPushedGenCell(stmt.expr, reg);
                 }
             },
             else => {
@@ -6444,6 +6518,10 @@ const Emitter = struct {
     /// function already covers it.
     fn emitLocalBind(self: *Emitter, name: []const u8, value: ast.Expr) !void {
         try self.lowerExprIntoX0(value);
+        // A `val` of a captured variable's name shadows it (`GenCell`).
+        for (self.gen_cells.items) |c| if (std.mem.eql(u8, c.name, name)) {
+            _ = self.reg_map.remove(c.key);
+        };
         if (self.isStringExpr(&self.string_locals, value)) try self.string_locals.put(name, {});
         if (self.numKind(&self.string_locals, value)) |k| try self.num_locals.put(name, k);
         const y_idx = self.next_y;
@@ -6465,6 +6543,40 @@ const Emitter = struct {
                     try beamEmitter.writeComment(self.out, "assign to unknown variable: {s}", .{name});
                     return;
                 };
+                // 144 B-135 — a captured variable (`GenCell`): its slot takes
+                // the cell's value first when the write reads it, the new value
+                // goes back under the cell.
+                if (self.genCellOp(name)) |cell| {
+                    if (a.op == .plusAssign) {
+                        try beamEmitter.writeBif(self.out, "get", 0, &.{cell}, Dst.xr(0));
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                    }
+                    try self.emitAssignSlot(name, reg, a, at);
+                    return self.putGenCell(cell, reg);
+                }
+                return self.emitAssignSlot(name, reg, a, at);
+            },
+            .fieldAccess => |*fa| {
+                // `recv.f = v` → `maps:update(f, V, Recv)` (a call, so the
+                // receiver needs no static map type); `recv.f += v` updates
+                // with `recv.f + v`.
+                var read: ast.Expr = undefined;
+                var sum: ast.Expr = undefined;
+                const value = fieldAssignValue(fa, a.op, a.value, &read, &sum, at);
+                const st = try self.stageOperands(&.{ value, fa.receiver.* }, &[_]ast.TrailingLambda{});
+                try self.emitParallelMove(&.{ Op.atom(fa.field), st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
+                try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "maps", .function = "update" } }, 0);
+                if (self.reg_map.get("self")) |reg| {
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                }
+            },
+        }
+    }
+
+    /// `name = expr` / `name += expr` into the local's slot `reg`.
+    fn emitAssignSlot(self: *Emitter, name: []const u8, reg: Reg, a: anytype, at: ast.Loc) anyerror!void {
+        {
+            {
                 switch (a.op) {
                     .assign => {
                         try self.lowerExprIntoX0(a.value.*);
@@ -6495,21 +6607,7 @@ const Emitter = struct {
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
                     },
                 }
-            },
-            .fieldAccess => |*fa| {
-                // `recv.f = v` → `maps:update(f, V, Recv)` (a call, so the
-                // receiver needs no static map type); `recv.f += v` updates
-                // with `recv.f + v`.
-                var read: ast.Expr = undefined;
-                var sum: ast.Expr = undefined;
-                const value = fieldAssignValue(fa, a.op, a.value, &read, &sum, at);
-                const st = try self.stageOperands(&.{ value, fa.receiver.* }, &[_]ast.TrailingLambda{});
-                try self.emitParallelMove(&.{ Op.atom(fa.field), st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
-                try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "maps", .function = "update" } }, 0);
-                if (self.reg_map.get("self")) |reg| {
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
-                }
-            },
+            }
         }
     }
 
@@ -6610,6 +6708,12 @@ const Emitter = struct {
             .useHook => |uh| return self.lowerExprIntoX0(uh.kind.inner.*),
             .identifier => |id| switch (id.kind) {
                 .ident => |n| {
+                    // 144 B-135 — a captured variable is read from its cell
+                    // (`GenCell`).
+                    if (self.genCellOp(n)) |cell| {
+                        try beamEmitter.writeBif(self.out, "get", 0, &.{cell}, Dst.xr(0));
+                        return;
+                    }
                     if (self.reg_map.get(n)) |reg| {
                         switch (reg) {
                             .x => |xn| {
@@ -10898,6 +11002,7 @@ const Emitter = struct {
                 // value, the arm's push was lost.
                 if (self.receiverMutation(stmt.expr)) |reg| {
                     try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                    try self.putPushedGenCell(stmt.expr, reg);
                 }
                 return false;
             }
@@ -11506,6 +11611,22 @@ const Emitter = struct {
             const reg = self.reg_map.get(n) orelse continue;
             try names.append(self.alloc, n);
             try ops.append(self.alloc, reg.operand());
+            // A captured variable's cell (`GenCell`) travels beside it.
+            if (self.genCellOp(n)) |cell| {
+                var i = self.gen_cells.items.len;
+                const key = while (i > 0) {
+                    i -= 1;
+                    if (std.mem.eql(u8, self.gen_cells.items[i].name, n) and self.reg_map.contains(self.gen_cells.items[i].key)) break self.gen_cells.items[i].key;
+                } else unreachable;
+                var have = false;
+                for (names.items) |h| if (std.mem.eql(u8, h, key)) {
+                    have = true;
+                };
+                if (!have) {
+                    try names.append(self.alloc, key);
+                    try ops.append(self.alloc, cell);
+                }
+            }
         }
         // A `break :label` out of this body throws the labelled loop's group,
         // read from this fun's own registers: the names it threads travel in
@@ -11854,6 +11975,9 @@ const Emitter = struct {
 
     fn addMutation(self: *const Emitter, name: []const u8, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
         if (!self.reg_map.contains(name)) return;
+        // A captured variable is written through its cell (`GenCell`), never
+        // threaded.
+        if (self.genCellOp(name) != null) return;
         for (shadowed) |sh| if (std.mem.eql(u8, sh, name)) return;
         for (out.items) |o| if (std.mem.eql(u8, o, name)) return;
         try out.append(self.alloc, name);
@@ -12259,15 +12383,11 @@ const Emitter = struct {
         try self.genYieldX0(gl);
     }
 
-    /// The item in `x0` handed to the consumer: `'__bp_gen_yield'(V)`, or —
-    /// with a cell — `'__bp_gen_yield_put'(V, Cell, Group)`, which puts the
-    /// scope's captured variables first. The call waits for the next request.
+    /// The item in `x0` handed to the consumer: `'__bp_gen_yield'(V)`. The
+    /// call waits for the next request.
     fn genYieldX0(self: *Emitter, gl: GenLoop) anyerror!void {
-        if (gl.cell) |c| {
-            try beamEmitter.writeMoveOp(self.out, c, Dst.xr(1));
-            try self.emitGroupInto(gl.names, 2, 2);
-            try self.callGenHelper(.gen_yield_put);
-        } else try self.callGenHelper(.gen_yield);
+        _ = gl;
+        try self.callGenHelper(.gen_yield);
     }
 
     /// A call of the generator runtime's helper `h` (`beam/gen_runtime.zig`),
@@ -12285,60 +12405,77 @@ const Emitter = struct {
     /// `v` over, `break <v>` yields and jumps to the end, and a bare `break`
     /// or `return;` outside a loop jumps there too.
     fn emitGeneratorBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
-        try self.liftGenScope(body, null, &.{}, null);
+        try self.liftGenScope(body, null);
         try self.emitReturn();
     }
 
     /// `iter loop { … }` (decision 105, 144 B-128) — lazy on beam, as on
     /// erlang: the loop is lifted into a fun (`liftGenScope`) whose body runs
     /// it as `loop { … }` runs, and the expression is `'__bp_gen_new'(Fun)`
-    /// in `x0`. A variable of this frame the body reassigns is the fun's own
-    /// from the loop on; its latest value is put under a cell — a fresh
-    /// `make_ref()` in this frame's slot, put first with the values before
-    /// the loop — which the statements after the loop re-read
-    /// (`refreshGenCells`), so a counter the loop advances is read at its last
-    /// value once the loop has run. `stream loop` is the same generator —
-    /// beam's `await` is identity.
+    /// in `x0`. A variable of this frame the body captures (`GenCell`, 144
+    /// B-135) is one variable on both sides: a fresh `make_ref()` in a slot of
+    /// this frame, the value before the loop put under it, read and written
+    /// there from here on — by the fun, which receives the cell in its
+    /// environment, and by the rest of the statement list. `stream loop` is
+    /// the same generator — beam's `await` is identity.
     fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer names.deinit(self.alloc);
-        try self.collectMutations(lp.body, &.{}, &names);
-        // The slot `countLocalsInExpr` counts for the loop.
-        const slot = self.next_y;
-        self.next_y += 1;
-        var cell: ?u32 = null;
-        if (names.items.len > 0 and names.items.len <= max_staged) {
-            for (names.items) |n| {
-                if (self.reg_map.get(n) == null) break;
-            } else cell = slot;
-        }
-        if (cell) |c| {
+        var captured: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer captured.deinit(self.alloc);
+        try self.genCaptured(lp.body, &captured);
+        // The slots `countLocalsInExpr` counts for the loop: at least one.
+        const first = self.next_y;
+        self.next_y += @max(1, @as(u32, @intCast(captured.items.len)));
+        for (captured.items, 0..) |n, ci| {
+            const slot = first + @as(u32, @intCast(ci));
+            const reg = self.reg_map.get(n).?;
             try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = "erlang", .function = "make_ref" } }, 0);
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(c));
-            try self.emitGroupInto(names.items, 1, 1);
-            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "put" } }, 0);
-            try self.gen_cells.append(self.alloc, .{
-                .slot = c,
-                .names = try self.prelude_arena.allocator().dupe([]const u8, names.items),
-                .body = self.cur_body,
-                .out = self.out,
-            });
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(slot));
+            try self.putGenCell(Op.yr(slot), reg);
+            const key = try std.fmt.allocPrint(self.prelude_arena.allocator(), "\x00bp_gen_cell:{s}", .{n});
+            try self.reg_map.put(key, .{ .y = slot });
+            try self.gen_cells.append(self.alloc, .{ .name = n, .key = key, .slot = slot, .out = self.out });
         }
         const loop_expr: ast.Expr = .{ .loop = lp };
-        try self.liftGenScope(lp.body, &loop_expr, if (cell != null) names.items else &.{}, cell);
+        try self.liftGenScope(lp.body, &loop_expr);
     }
 
-    /// The name a lifted generator fun binds the cell's key to.
-    const gen_cell_param = "\x00bp_gen_cell";
+    /// The variables of this frame an `iter` / `stream` loop's `body` captures
+    /// (`GenCell`, 144 B-135): those it assigns, and those it reads that the
+    /// rest of the statement list assigns — none a cell holds already, none
+    /// `body` binds itself. At most `max_staged`.
+    fn genCaptured(self: *Emitter, body: []const ast.Stmt, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        try self.collectMutations(body, &.{}, out);
+        var read: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer read.deinit(self.alloc);
+        try ast.collectRunNames(self.alloc, body, &read);
+        var declared: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer declared.deinit(self.alloc);
+        try ast.collectDeclaredNames(self.alloc, body, &declared);
+        var later: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer later.deinit(self.alloc);
+        const rest_from = @min(self.cur_index + 1, self.cur_body.len);
+        try ast.collectAssignedNames(self.alloc, self.cur_body[rest_from..], &later);
+        for (read.items) |n| {
+            if (nameIn(out.items, n) or nameIn(declared.items, n) or !nameIn(later.items, n)) continue;
+            if (!self.reg_map.contains(n) or self.genCellOp(n) != null) continue;
+            try out.append(self.alloc, n);
+        }
+        if (out.items.len > max_staged) out.shrinkRetainingCapacity(max_staged);
+    }
+
+    fn nameIn(names: []const []const u8, name: []const u8) bool {
+        for (names) |x| if (std.mem.eql(u8, x, name)) return true;
+        return false;
+    }
 
     /// 144 B-128 — a generator scope lifted into a fun of its own,
     /// `'-<fn>/<arity>-gen-<n>-'`, whose parameters are the names `body`
-    /// reads from this frame (`closureEnv`, the cell's key last when `cell` is
-    /// set): the fun runs `loop`'s condition loop, or `body` when there is no
-    /// loop, as the generator scope (`GenLoop`), and answers `ok` at its end
-    /// — after putting `names` under the cell. In this frame, the fun is made
-    /// and handed to `'__bp_gen_new'/1`; the generator lands in `x0`.
-    fn liftGenScope(self: *Emitter, body: []const ast.Stmt, loop: ?*const ast.Expr, names: []const []const u8, cell: ?u32) anyerror!void {
+    /// reads from this frame (`closureEnv`, with the cells of the captured
+    /// ones): the fun runs `loop`'s condition loop, or `body` when there is no
+    /// loop, as the generator scope (`GenLoop`), and answers `ok` at its end.
+    /// In this frame, the fun is made and handed to `'__bp_gen_new'/1`; the
+    /// generator lands in `x0`.
+    fn liftGenScope(self: *Emitter, body: []const ast.Stmt, loop: ?*const ast.Expr) anyerror!void {
         const idx = self.lambda_count;
         self.lambda_count += 1;
 
@@ -12347,10 +12484,6 @@ const Emitter = struct {
         var env_ops: std.ArrayListUnmanaged(Op) = .empty;
         defer env_ops.deinit(self.alloc);
         try self.closureEnv(body, &.{}, &env_names, &env_ops);
-        if (cell) |c| {
-            try env_names.append(self.alloc, gen_cell_param);
-            try env_ops.append(self.alloc, Op.yr(c));
-        }
         const arity: u32 = @intCast(env_names.items.len);
 
         var name_buf: [256]u8 = undefined;
@@ -12397,15 +12530,9 @@ const Emitter = struct {
         try self.emitParamSpill(arity);
 
         const exit = self.allocLabel();
-        const cell_op: ?Op = if (cell != null) self.reg_map.get(gen_cell_param).?.operand() else null;
-        self.gen_loop = .{ .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len, .names = names, .cell = cell_op };
+        self.gen_loop = .{ .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
         if (loop) |le| try self.lowerConditionLoop(le.loop) else try self.emitStmtList(body);
         try beamEmitter.writeLabel(self.out, exit);
-        if (cell_op) |c| {
-            try beamEmitter.writeMoveOp(self.out, c, Dst.xr(0));
-            try self.emitGroupInto(names, 1, 1);
-            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "put" } }, 0);
-        }
         try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
         try self.emitReturn();
 
@@ -12424,38 +12551,6 @@ const Emitter = struct {
 
         try self.emitMakeFun(labels.entry, 0, env_ops.items);
         try self.callGenHelper(.gen_new);
-    }
-
-    /// Before the statement `stmt` of `body` (144 B-128): each cell of this
-    /// frame tracked for `body` (`GenCell`) whose names `stmt` reads is read
-    /// back into their slots — `erlang:get(Cell)` — and one whose names
-    /// `stmt` reassigns stops being tracked.
-    fn refreshGenCells(self: *Emitter, body: []const ast.Stmt, stmt: ast.Stmt) anyerror!void {
-        self.cur_body = body.ptr;
-        var i: usize = 0;
-        while (i < self.gen_cells.items.len) {
-            const c = self.gen_cells.items[i];
-            if (c.body != body.ptr or c.out != self.out) {
-                i += 1;
-                continue;
-            }
-            var read: std.ArrayListUnmanaged([]const u8) = .empty;
-            defer read.deinit(self.alloc);
-            try ast.collectRunNames(self.alloc, &.{stmt}, &read);
-            if (namesMeet(c.names, read.items)) {
-                try beamEmitter.writeMoveOp(self.out, Op.yr(c.slot), Dst.xr(0));
-                try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "get" } }, 0);
-                try self.unpackGroupFromX0(c.names);
-            }
-            var assigned: std.ArrayListUnmanaged([]const u8) = .empty;
-            defer assigned.deinit(self.alloc);
-            try self.collectMutations(&.{stmt}, &.{}, &assigned);
-            if (namesMeet(c.names, assigned.items)) {
-                _ = self.gen_cells.orderedRemove(i);
-                continue;
-            }
-            i += 1;
-        }
     }
 
     /// A `for` that yields inside an annotated loop, walked in this frame so
@@ -13431,6 +13526,7 @@ const Emitter = struct {
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| {
+                    if (self.genCellOp(n) != null) return null;
                     if (self.reg_map.get(n)) |reg| return reg.operand();
                     return null;
                 },

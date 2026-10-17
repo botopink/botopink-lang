@@ -1983,7 +1983,7 @@ fn emitErlangModule(
     defer em.std_imports.deinit();
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
-    defer em.active_gen_cells.deinit(alloc);
+    defer em.gen_cells.deinit(alloc);
     defer em.defer_watches.deinit(alloc);
     defer em.label_loops.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
@@ -3206,34 +3206,31 @@ fn isResultPath(name: []const u8) bool {
 /// `'__bp_gen_yield'(V)`, which hands `V` to the consumer and waits for the
 /// next request. `key` is a fresh `make_ref()` the scope's `break <v>` throw
 /// carries, so a nested scope's end is not this one's. `names` are the
-/// variables an annotated `loop` reassigns, which its `break <v>` hands back
-/// (empty for a generator fn, whose locals die with it); `cell` the variable
-/// holding the key under which their latest values are put before each item
-/// (`GenCell`).
+/// variables an annotated `loop` reassigns that no cell holds (`GenCell`),
+/// which its `break <v>` hands back (empty for a generator fn, whose locals
+/// die with it).
 const GenScope = struct {
     key: []const u8,
     names: []const []const u8,
     /// The scope is a generator fn's own body (`generatorFnBody`), which a bare
     /// `return` ends — not an `iter` / `stream` loop's.
     fn_level: bool = false,
-    cell: ?[]const u8 = null,
 };
 
-/// An `iter` / `stream` loop whose body reassigns variables of the enclosing
-/// function (`loop_generator_dobros`'s counter). Its body runs in the
-/// generator's process, so the function's own variables never see the
-/// writes: the body puts the group of their latest values in the process
-/// dictionary under `var`'s key before each item and when it ends, the
-/// generator runtime carries the dictionary back with every item, and the
-/// statements after the loop in the same body re-read the group before the
-/// first of them that reads one of `names` (`genCellRefresh`). A statement
-/// that assigns one of them ends the tracking.
+/// A variable of the enclosing function an `iter` / `stream` loop captures
+/// (decision 105, 144 B-135): one the body assigns, or one it reads that the
+/// function assigns after the loop. The body runs in the generator's process,
+/// so the variable lives in the process dictionary under `key` — a fresh
+/// `make_ref()` — which the generator runtime carries both ways with every
+/// request and every item. From the loop on, every read of the name is
+/// `erlang:get(Key)` and every write `erlang:put(Key, V)`, in the body and in
+/// the rest of the sequence the loop's statement is in, nested blocks and
+/// lambdas included (`bodyNode` drops it when that sequence ends and binds
+/// the name to the cell's last value). A `val` / pattern of the same name
+/// shadows it and ends it.
 const GenCell = struct {
-    @"var": []const u8,
-    names: []const []const u8,
-    /// The statement sequence the loop's statement is in: only a statement of
-    /// that sequence (or its continuation) re-reads the cell.
-    body: [*]const ast.Stmt = undefined,
+    name: []const u8,
+    key: []const u8,
 };
 
 const LabelLoop = struct {
@@ -3542,15 +3539,18 @@ const Emitter = struct {
     /// The generator-runtime helpers this module's bodies reached
     /// (`genCall`), emitted as forms with the other helpers.
     gen_helpers: GenHelpers = .initEmpty(),
-    /// The `iter` / `stream` loops of the function being lowered whose body
-    /// reassigns names of the function: `bodyNode` reads them back from the
-    /// loop's cell before a later statement of the same sequence reads them
-    /// (`genCellRefresh`).
-    active_gen_cells: std.ArrayListUnmanaged(GenCell) = .empty,
-    /// The statement sequence `bodyNode` is lowering a statement of.
-    cur_body: [*]const ast.Stmt = undefined,
+    /// The variables `iter` / `stream` loops of the function being lowered
+    /// capture (`GenCell`), innermost last.
+    gen_cells: std.ArrayListUnmanaged(GenCell) = .empty,
+    /// The statement sequence `bodyNode` is lowering a statement of, and that
+    /// statement's index in it.
+    cur_body: []const ast.Stmt = &.{},
+    cur_index: usize = 0,
     /// Numbers the key variables of generator scopes (`__BpGen<n>`).
     gen_seq: u32 = 0,
+    /// Numbers the variables holding a sequence's value while its captured
+    /// variables are read back (`endGenCells`).
+    gen_tail_seq: u32 = 0,
     /// Numbers the named funs of condition loops so a nested one does not
     /// shadow its parent's name.
     cond_loop_seq: u32 = 0,
@@ -4646,6 +4646,26 @@ const Emitter = struct {
         this.num_locals.clearRetainingCapacity();
         this.local_types.clearRetainingCapacity();
         this.default_kinds.clearRetainingCapacity();
+        this.gen_cells.clearRetainingCapacity();
+    }
+
+    /// The cell variable holding captured `name` (`GenCell`), or null.
+    fn genCellKey(this: *const Emitter, name: []const u8) ?[]const u8 {
+        var i = this.gen_cells.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, this.gen_cells.items[i].name, name)) return this.gen_cells.items[i].key;
+        }
+        return null;
+    }
+
+    /// A `val` / pattern binding `name` shadows the captured variable of that
+    /// name: it is a plain variable again from here on.
+    fn endGenCell(this: *Emitter, name: []const u8) void {
+        var i: usize = 0;
+        while (i < this.gen_cells.items.len) {
+            if (std.mem.eql(u8, this.gen_cells.items[i].name, name)) _ = this.gen_cells.orderedRemove(i) else i += 1;
+        }
     }
 
     /// Remembers a local's declared type name, for a receiver whose methods
@@ -4781,6 +4801,7 @@ const Emitter = struct {
                 return .{ .fun_ref = .{ .module = owner, .name = leaf, .arity = arity } };
             }
         };
+        if (this.genCellKey(name)) |key| return b.remote("erlang", "get", &.{Ast.Expr.v(key)});
         return Ast.Expr.v(try this.varRef(b, name));
     }
 
@@ -5025,10 +5046,16 @@ const Emitter = struct {
             this.addLocal(name);
             return b.match(vname, try this.exprNode(b, value));
         }
+        // 144 B-135 — a captured variable (`GenCell`) is written to its cell;
+        // a `val` of its name shadows it.
+        const cell: ?[]const u8 = if (op == .bind) blk: {
+            this.endGenCell(name);
+            break :blk null;
+        } else this.genCellKey(name);
         const version = (this.var_next.get(name) orelse 0) + 1;
         const target = Ast.Expr.v(try this.versionedVar(b, name, version));
         const rhs: Ast.Expr = if (op == .plus_assign) blk: {
-            const old_var = Ast.Expr.v(try this.varRef(b, name));
+            const old_var = if (cell) |key| try b.remote("erlang", "get", &.{Ast.Expr.v(key)}) else Ast.Expr.v(try this.varRef(b, name));
             // `s += x` on a string concatenates; on a number it adds; on a
             // name of unknown type it dispatches at runtime.
             if (!this.untyped and (this.string_locals.contains(name) or this.isStringExpr(value))) {
@@ -5044,6 +5071,7 @@ const Emitter = struct {
             }
             break :blk try this.intChecked(b, .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } }, at, "+=");
         } else try this.exprNode(b, value);
+        if (cell) |key| return b.remote("erlang", "put", &.{ Ast.Expr.v(key), rhs });
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
         return b.match(target, rhs);
@@ -6432,12 +6460,12 @@ const Emitter = struct {
         if (this.untyped) return b.body(&.{
             try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})),
             try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }),
-            try this.genEndCatch(b, key, inner, false, null),
+            try this.genEndCatch(b, key, inner, false),
             try b.remote("lists", "reverse", &.{try b.remote("erlang", "erase", &.{Ast.Expr.v(key)})}),
         });
         return b.body(&.{
             try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})),
-            try this.genEndCatch(b, key, inner, false, null),
+            try this.genEndCatch(b, key, inner, false),
         });
     }
 
@@ -6458,41 +6486,10 @@ const Emitter = struct {
         return b.call(h.name(), args);
     }
 
-    /// `yield v` in the scope `gs`: `'__bp_gen_yield'(V)`, or — when the
-    /// scope has a cell — `'__bp_gen_yield_put'(V, Cell, Group)`, which puts
-    /// the group first.
+    /// `yield v` in the scope `gs`: `'__bp_gen_yield'(V)`.
     fn genYield(this: *Emitter, b: Ast.Builder, gs: GenScope, value: Ast.Expr) anyerror!Ast.Expr {
         if (this.untyped) return this.genPush(b, gs.key, value);
-        const cell = gs.cell orelse return this.genCall(b, .gen_yield, &.{value});
-        return this.genCall(b, .gen_yield_put, &.{ value, Ast.Expr.v(cell), try this.varGroupExpr(b, gs.names) });
-    }
-
-    /// Before the statement `stmt` of `body`: for each tracked cell
-    /// (`GenCell`) of this sequence whose names `stmt` reads, the match
-    /// `Group' = erlang:get(Cell)`; a cell whose names `stmt` assigns stops
-    /// being tracked.
-    fn genCellRefresh(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, stmt: ast.Stmt, out: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
-        var i: usize = 0;
-        while (i < this.active_gen_cells.items.len) {
-            const c = this.active_gen_cells.items[i];
-            if (c.body != body.ptr) {
-                i += 1;
-                continue;
-            }
-            var read: std.ArrayListUnmanaged([]const u8) = .empty;
-            try ast.collectRunNames(b.arena, &.{stmt}, &read);
-            if (namesMeet(c.names, read.items)) try out.append(b.arena, .{ .expr = try b.match(
-                try this.bindVarGroupExpr(b, c.names),
-                try b.remote("erlang", "get", &.{Ast.Expr.v(c.@"var")}),
-            ) });
-            var assigned: std.ArrayListUnmanaged([]const u8) = .empty;
-            try this.collectMutations(b.arena, &.{stmt}, &.{}, &assigned);
-            if (namesMeet(c.names, assigned.items)) {
-                _ = this.active_gen_cells.orderedRemove(i);
-                continue;
-            }
-            i += 1;
-        }
+        return this.genCall(b, .gen_yield, &.{value});
     }
 
     /// A bare `break` at the level of a generator fn's body (decision 103):
@@ -6513,9 +6510,8 @@ const Emitter = struct {
 
     /// `try Body catch throw:{'__bp_gen_end', Key, G, V} -> '__bp_gen_yield'(V), G end` —
     /// where a `break <v>` of the scope lands. With `group` the catch answers
-    /// the variables the throw carried (an annotated loop's), put in `cell`
-    /// first when there is one; without, `ok`.
-    fn genEndCatch(this: *Emitter, b: Ast.Builder, key: []const u8, body: Ast.Body, group: bool, cell: ?[]const u8) anyerror!Ast.Expr {
+    /// the variables the throw carried (an annotated loop's); without, `ok`.
+    fn genEndCatch(this: *Emitter, b: Ast.Builder, key: []const u8, body: Ast.Body, group: bool) anyerror!Ast.Expr {
         const g_var = if (group) try std.fmt.allocPrint(b.arena, "__BpGenG{s}", .{key["__BpGen".len..]}) else "_";
         const v_var = try std.fmt.allocPrint(b.arena, "__BpGenV{s}", .{key["__BpGen".len..]});
         // The key is matched by a guard: a bound variable in the pattern
@@ -6529,10 +6525,7 @@ const Emitter = struct {
                 Ast.Expr.v(v_var),
             }))},
             &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
-            if (cell) |c| &.{
-                try this.genCall(b, .gen_yield_put, &.{ Ast.Expr.v(v_var), Ast.Expr.v(c), Ast.Expr.v(g_var) }),
-                Ast.Expr.v(g_var),
-            } else &.{
+            &.{
                 if (this.untyped) try this.genPush(b, key, Ast.Expr.v(v_var)) else try this.genCall(b, .gen_yield, &.{Ast.Expr.v(v_var)}),
                 if (group) Ast.Expr.v(g_var) else Ast.Expr.a("ok"),
             },
@@ -6604,15 +6597,13 @@ const Emitter = struct {
         this.indent = indent;
         defer this.indent = saved_indent;
         const saved_body = this.cur_body;
-        defer this.cur_body = saved_body;
-        // A sequence lowered from its start again tracks no cell of an
-        // earlier lowering of it.
-        if (start == 0) {
-            var ci: usize = 0;
-            while (ci < this.active_gen_cells.items.len) {
-                if (this.active_gen_cells.items[ci].body == body.ptr) _ = this.active_gen_cells.orderedRemove(ci) else ci += 1;
-            }
+        const saved_index = this.cur_index;
+        defer {
+            this.cur_body = saved_body;
+            this.cur_index = saved_index;
         }
+        // The variables a loop of this sequence captures (`GenCell`) end with it.
+        const cells_mark = this.gen_cells.items.len;
 
         var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         // The body's tail (last value) keys off the last *real* statement, so
@@ -6624,8 +6615,8 @@ const Emitter = struct {
             try this.deferPuts(b, seen, &stmts);
             const stmt = body[i];
             const is_last = if (last_real) |lr| (i == lr) else (i == body.len - 1);
-            this.cur_body = body.ptr;
-            try this.genCellRefresh(b, body, stmt, &stmts);
+            this.cur_body = body;
+            this.cur_index = i;
 
             // Decision 539 — `defer e;` wraps the REST of the body:
             // `try <rest> after <e> end`, the body's last statement, so `e`
@@ -6734,7 +6725,42 @@ const Emitter = struct {
             }
         }
         try this.deferPuts(b, seen, &stmts);
+        try this.endGenCells(b, body, cells_mark, &stmts);
         return .{ .stmts = stmts.items };
+    }
+
+    /// The end of a sequence whose loops captured variables (`GenCell`, the
+    /// ones above `mark`): they stop being cells, and — unless the sequence is
+    /// the function's own body — each is bound to its cell's last value after
+    /// the sequence's last statement, whose value stays the sequence's, so
+    /// what encloses the sequence reads it.
+    fn endGenCells(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, mark: usize, stmts: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
+        if (this.gen_cells.items.len <= mark) return;
+        defer this.gen_cells.shrinkRetainingCapacity(mark);
+        if (body.ptr == this.fn_top_body.ptr) return;
+        var last_i = stmts.items.len;
+        while (last_i > 0 and stmts.items[last_i - 1] == .comment) last_i -= 1;
+        if (last_i == 0) return;
+        const last = stmts.items[last_i - 1].expr;
+        const trailing = try b.arena.dupe(Ast.Stmt, stmts.items[last_i..]);
+        stmts.shrinkRetainingCapacity(last_i - 1);
+        this.gen_tail_seq += 1;
+        const tail = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpGenT{d}", .{this.gen_tail_seq}));
+        try stmts.append(b.arena, .{ .expr = try b.match(tail, last) });
+        try stmts.appendSlice(b.arena, trailing);
+        const cells = try b.arena.dupe(GenCell, this.gen_cells.items[mark..]);
+        this.gen_cells.shrinkRetainingCapacity(mark);
+        for (cells) |c| {
+            if (this.genCellKey(c.name) != null) continue;
+            const version = (this.var_next.get(c.name) orelse 0) + 1;
+            try this.var_next.put(c.name, version);
+            try this.var_current.put(c.name, version);
+            try stmts.append(b.arena, .{ .expr = try b.match(
+                Ast.Expr.v(try this.versionedVar(b, c.name, version)),
+                try b.remote("erlang", "get", &.{Ast.Expr.v(c.key)}),
+            ) });
+        }
+        try stmts.append(b.arena, .{ .expr = tail });
     }
 
     /// Decision 539 (amended) — the locals a value `case` or `if` bound by a statement
@@ -7324,59 +7350,87 @@ const Emitter = struct {
     ///
     ///     '__bp_gen_new'(fun() ->
     ///         __BpGen1 = make_ref(),
-    ///         Group' = try <the loop's call>
-    ///                  catch throw:{'__bp_gen_end', __BpGen1, G, V} -> '__bp_gen_yield'(V), G end,
+    ///         try <the loop's call>
+    ///         catch throw:{'__bp_gen_end', __BpGen1, _, V} -> '__bp_gen_yield'(V), ok end,
     ///         ok
     ///     end)
     ///
-    /// The variables the body reassigns are the generator's state: they are
-    /// the fun's own from the loop on, and their latest values are put under
-    /// a cell (`GenCell`) — `case make_ref() of __BpGenC1 -> erlang:put(…),
-    /// <the generator> end`, the single-clause `case` exporting the cell's
-    /// variable — so a counter the loop advances is read after it, once the
-    /// loop has run, at its last value. `stream loop` is the same generator:
-    /// erlang's `await` is identity.
+    /// The variables of the function the body captures (`GenCell`, 144 B-135)
+    /// are one variable on both sides: each is put under a cell of its own —
+    /// `case make_ref() of __BpGenC1 -> erlang:put(__BpGenC1, K), <the
+    /// generator> end`, the single-clause `case` exporting the cell's variable
+    /// (`{__BpGenC1, __BpGenC2}` for two) — and from here on read and written
+    /// there, by the body and by the rest of the sequence. `stream loop` is the
+    /// same generator: erlang's `await` is identity.
     fn generatorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
         if (this.untyped) return this.eagerGeneratorLoopNode(b, lp);
+        const captured = try this.genCaptured(b, lp.body);
+        const key = try this.genKey(b);
+        const cell_vars = try b.arena.alloc(Ast.Expr, captured.len);
+        const puts = try b.arena.alloc(Ast.Expr, captured.len);
+        for (captured, 0..) |n, ci| {
+            const cv = if (captured.len == 1)
+                try std.fmt.allocPrint(b.arena, "__BpGenC{s}", .{key["__BpGen".len..]})
+            else
+                try std.fmt.allocPrint(b.arena, "__BpGenC{s}_{d}", .{ key["__BpGen".len..], ci + 1 });
+            cell_vars[ci] = Ast.Expr.v(cv);
+            // The value before the loop, read where the cell is made.
+            puts[ci] = try b.remote("erlang", "put", &.{ Ast.Expr.v(cv), try this.nameRefNode(b, n) });
+        }
+        for (captured, 0..) |n, ci| try this.gen_cells.append(this.alloc, .{ .name = n, .key = cell_vars[ci].variable });
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         try this.collectMutations(b.arena, lp.body, &.{}, &names);
-        const key = try this.genKey(b);
-        const cell: ?[]const u8 = if (names.items.len > 0)
-            try std.fmt.allocPrint(b.arena, "__BpGenC{s}", .{key["__BpGen".len..]})
-        else
-            null;
-        // The group as the function holds it before the loop: the cell's
-        // first value, read by a statement that runs before any item.
-        const group_before: ?Ast.Expr = if (cell != null) try this.varGroupExpr(b, names.items) else null;
         // The versions the body binds are the fun's: the function goes on with
         // the ones it had.
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
         const saved_scope = this.gen_scope;
-        this.gen_scope = .{ .key = key, .names = names.items, .cell = cell };
-        const saved_cells = this.active_gen_cells.items.len;
+        this.gen_scope = .{ .key = key, .names = names.items };
         const call = blk: {
             defer this.gen_scope = saved_scope;
             break :blk try this.recursiveLoopCall(b, lp, names.items);
         };
-        // A cell the body's own statements tracked is the body's.
-        if (this.active_gen_cells.items.len > saved_cells) this.active_gen_cells.shrinkRetainingCapacity(saved_cells);
-        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0, cell);
+        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0);
         var fun_body: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         try fun_body.append(b.arena, .{ .expr = try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})) });
-        if (cell) |c| {
-            try fun_body.append(b.arena, .{ .expr = try b.match(try this.bindVarGroupExpr(b, names.items), caught) });
-            try fun_body.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(c), try this.varGroupExpr(b, names.items) }) });
-        } else try fun_body.append(b.arena, .{ .expr = caught });
+        try fun_body.append(b.arena, .{ .expr = caught });
         try fun_body.append(b.arena, .{ .expr = Ast.Expr.a("ok") });
         try this.restoreVersions(&snapshot);
         const gen = try this.genCall(b, .gen_new, &.{.{ .fun = .{ .params = &.{}, .body = .{ .stmts = fun_body.items } } }});
-        const c = cell orelse return gen;
-        try this.active_gen_cells.append(this.alloc, .{ .@"var" = c, .names = try b.arena.dupe([]const u8, names.items), .body = this.cur_body });
-        return b.caseOf(try b.remote("erlang", "make_ref", &.{}), &.{.{
-            .patterns = try b.exprs(&.{Ast.Expr.v(c)}),
-            .body = try b.body(&.{ try b.remote("erlang", "put", &.{ Ast.Expr.v(c), group_before.? }), gen }),
+        if (captured.len == 0) return gen;
+        const refs = try b.arena.alloc(Ast.Expr, captured.len);
+        for (refs) |*r| r.* = try b.remote("erlang", "make_ref", &.{});
+        var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        for (puts) |p| try arm.append(b.arena, .{ .expr = p });
+        try arm.append(b.arena, .{ .expr = gen });
+        return b.caseOf(if (captured.len == 1) refs[0] else try b.tuple(refs), &.{.{
+            .patterns = try b.exprs(&.{if (captured.len == 1) cell_vars[0] else try b.tuple(cell_vars)}),
+            .body = .{ .stmts = arm.items },
         }});
+    }
+
+    /// The variables of the function an `iter` / `stream` loop's `body`
+    /// captures (`GenCell`, 144 B-135): those it assigns, and those it reads
+    /// that the rest of the enclosing sequence assigns — none a cell holds
+    /// already, none `body` binds itself.
+    fn genCaptured(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt) anyerror![]const []const u8 {
+        var out: std.ArrayListUnmanaged([]const u8) = .empty;
+        try this.collectMutations(b.arena, body, &.{}, &out);
+        var read: std.ArrayListUnmanaged([]const u8) = .empty;
+        try ast.collectRunNames(b.arena, body, &read);
+        if (read.items.len == 0) return out.items;
+        var declared: std.ArrayListUnmanaged([]const u8) = .empty;
+        try ast.collectDeclaredNames(b.arena, body, &declared);
+        var later: std.ArrayListUnmanaged([]const u8) = .empty;
+        const rest_from = @min(this.cur_index + 1, this.cur_body.len);
+        try ast.collectAssignedNames(b.arena, this.cur_body[rest_from..], &later);
+        for (read.items) |n| {
+            if (containsName(out.items, n) or containsName(declared.items, n)) continue;
+            if (!containsName(later.items, n)) continue;
+            if (!this.locals.contains(n) or this.genCellKey(n) != null) continue;
+            try out.append(b.arena, n);
+        }
+        return out.items;
     }
 
     /// `iter loop { … }` in a comptime module (`untyped`): the list of its
@@ -7399,7 +7453,7 @@ const Emitter = struct {
             defer this.gen_scope = saved_scope;
             break :blk try this.recursiveLoopCall(b, lp, names.items);
         };
-        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0, null);
+        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0);
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         try arm.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }) });
         try arm.append(b.arena, .{ .expr = if (names.items.len > 0)
@@ -7698,6 +7752,7 @@ const Emitter = struct {
             try this.collectSeqNexts(gpa, s.expr, &sites);
             for (sites.items) |site| {
                 if (containsName(scope.items, site.name) or containsName(out.items, site.name)) continue;
+                if (this.genCellKey(site.name) != null) continue;
                 try out.append(gpa, site.name);
             }
         }
@@ -7708,6 +7763,9 @@ const Emitter = struct {
                     .name => |n| {
                         if (!this.locals.contains(n)) continue;
                         if (containsName(scope.items, n) or containsName(out.items, n)) continue;
+                        // A captured variable is written through its cell
+                        // (`GenCell`), never threaded.
+                        if (this.genCellKey(n) != null) continue;
                         try out.append(gpa, n);
                     },
                     else => {},
@@ -7737,6 +7795,7 @@ const Emitter = struct {
             .call => if (this.closureMutation(s.expr)) |cm| {
                 for (cm.names) |n| {
                     if (!this.locals.contains(n) or containsName(scope.items, n) or containsName(out.items, n)) continue;
+                    if (this.genCellKey(n) != null) continue;
                     try out.append(gpa, n);
                 }
             } else if (this.receiverMutation(s.expr)) |n| {
@@ -7744,6 +7803,7 @@ const Emitter = struct {
                 // and written through its memory at each step.
                 if (!this.locals.contains(n)) continue;
                 if (containsName(scope.items, n) or containsName(out.items, n)) continue;
+                if (this.genCellKey(n) != null) continue;
                 try out.append(gpa, n);
             } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, try withNames(gpa, scope.items, each.params), out),
             else => {},
@@ -7818,6 +7878,7 @@ const Emitter = struct {
             this.addLocal(name);
             return this.arenaVar(b, name);
         }
+        this.endGenCell(name);
         const version = (this.var_next.get(name) orelse 0) + 1;
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
@@ -9266,7 +9327,10 @@ const Emitter = struct {
             // `V@1`, and `v()` there applies `V@1`, never the first `V`.
             if (this.locals.contains(cc.callee)) {
                 return .{ .apply = .{
-                    .fun = try b.ptr(Ast.Expr.v(try this.varRef(b, cc.callee))),
+                    .fun = try b.ptr(if (this.genCellKey(cc.callee)) |key|
+                        try b.paren(try b.remote("erlang", "get", &.{Ast.Expr.v(key)}))
+                    else
+                        Ast.Expr.v(try this.varRef(b, cc.callee))),
                     .args = try this.callArgs(b, null, cc),
                 } };
             }
@@ -10655,6 +10719,8 @@ const Emitter = struct {
             const recv: ast.Expr = .{ .identifier = .{ .loc = site.loc, .kind = .{ .ident = site.name } } };
             const step = if (site.pop) try this.popStep(b, &recv, site.name) else try this.sequenceStep(b, &recv, site.name);
             try stmts.append(b.arena, .{ .expr = step.bind });
+            // A captured sequence (`GenCell`) goes back to its cell stepped.
+            if (this.genCellKey(site.name)) |key| try stmts.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(key), Ast.Expr.v(try this.varRef(b, site.name)) }) });
             try this.hoisted_steps.put(this.alloc, site.loc, step.step);
         }
     }

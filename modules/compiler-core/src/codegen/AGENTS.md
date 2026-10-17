@@ -1697,12 +1697,19 @@ codegen/
     `'__bp_try'` guard inside the fun), whatever its body — a flat list of `yield`s of literals
     too, so its handle is as stateful as any (144 B-134).
     `iter loop { … }` (`generatorLoopNode`) runs as `loop { … }` does inside
-    the fun; the variables it reassigns are the fun's own, so their latest
-    values are put under a cell (`GenCell`: `'__bp_gen_yield_put'/3` before
-    each item, `erlang:put` at the end) and a statement after the loop in the
-    same sequence that reads one re-reads the cell first (`genCellRefresh`, in
-    `bodyNode`) — a captured `var` counter is the generator's state, read at
-    its last value once the loop has run. `stream loop` is the same generator
+    the fun. A variable of the function it captures (decision 105, 144 B-135;
+    `genCaptured`: one the body assigns, or one it reads that the rest of the
+    sequence assigns) is one variable on both sides: a cell (`GenCell`), a
+    fresh `make_ref()` bound by a single-clause `case` around the generator,
+    the value before the loop put under it. From the loop on every read of
+    the name is `erlang:get(Cell)` (`nameRefNode`) and every write
+    `erlang:put(Cell, V)` (`bindExpr`), in the body and in the rest of the
+    sequence, nested blocks and lambdas included; `collectMutations` threads
+    no cell name; the runtime carries the dictionary both ways with every
+    request and item. A `val` / pattern of the name ends the cell; when the
+    sequence ends (`endGenCells`, in `bodyNode`) the name is bound to the
+    cell's last value after the sequence's last statement, unless it is the
+    function's own body. `stream loop` is the same generator
     (`await` is identity here). A consumer steps a sequence through the
     runtime too: a `for` over an `@Iterator` / `@Stream` (inference keys
     `.sequence_next` by the loop's loc, `stepsSequence`) is
@@ -2573,13 +2580,18 @@ codegen/
   `'__bp_iter_step'/1` first each round over a sequence and
   `'__bp_iter_close'/1` at its exit), so its `yield`s are the scope's;
   `countGenForSlots` adds its slots to the frame. A variable of the enclosing
-  frame an `iter` loop reassigns is the fun's own from the loop on: the loop
-  puts the group under a cell — a `make_ref()` in the slot
-  `countLocalsInExpr` counts for the loop, handed to the fun as its last
-  parameter — before each item (`'__bp_gen_yield_put'/3`) and at its end, and
-  a later statement of the same list that reads one re-reads the cell first
-  (`GenCell`, `refreshGenCells` in `emitStmtList` / `emitBody`), so an `iter`
-  loop's counter is read after it at its last value once the loop has run. A
+  frame an `iter` loop captures (decision 105, 144 B-135; `genCaptured`, as on
+  erlang) is one variable on both sides: a cell (`GenCell`) — a `make_ref()`
+  in a slot of the frame (`countLocalsInExpr` counts one per name the body
+  reads or assigns), the value before the loop put under it, registered under
+  a key name that `closureEnv` carries beside the variable into the lifted
+  fun and into any lambda. While a frame holds the key, a read of the name is
+  `{bif, get, …}` (no call: no x-register dies, so `exprMayCall` and the
+  staging counts are unchanged; `simpleTerm` answers null) and a write puts
+  the slot's new value back (`emitAssign` → `putGenCell`, a statement-position
+  `push` too); `addMutation` threads no cell name. A `val` of the name drops
+  the key; at the end of the statement list that made it (`endGenCells` in
+  `emitStmtList`) the name's slot takes the cell's last value. A
   generator METHOD is a scope exactly as a fn is (`emitMethodAsFn`):
   `ast.BehaviorMethod` has no parsed `effect`, so it is read off the return
   type (`ast.EffectKind.ofMethod`, erlang's `methodEffect`). A body that
