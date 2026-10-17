@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""144 B-136's codemod: decisions 575 (4), (5), 576, 577, 578 — `@Expr`, `@Decl`
-and `@ExprCustom` go; a build-time body talks to the compiler through the
-keyword `compiler`; a parameter says how its argument arrives (`comptime` /
+"""144 B-136's codemod: decisions 575 (4), (5), 576, 577, 578, 579 — `@Expr`, `@Decl`
+and `@ExprCustom` go; a build-time body talks to the compiler through
+`compiler`, std's value imported (579); a parameter says how its argument arrives (`comptime` /
 `expr`); `type T` becomes `type<T>`.
 
     comptime x: @Expr<T>          ->  comptime x: T     (the body reads `x.value`, and otherwise only
@@ -50,7 +50,8 @@ change (idempotence: a second run over its own output changes nothing).
 was canonical before, through today's parser (`to_old` / `to_new` below); a file
 the formatter cannot read keeps the codemod's layout and is named. The template
 texts `@`…`` (577), which today's formatter cannot read, are written after it ran.
-`--imports` adds decision 576 (13)'s `import {compiler.<Name>}` for the types of
+`--imports` adds decision 579's `import {compiler}` to a file reading `compiler.`, and
+decision 576 (13)'s `import {compiler.<Name>}` for the types of
 `compiler.bp` a file names (off by default: they stay prelude names until B-136's
 removal piece, which runs it).
 `--measure` prints, for the tree as it is, the reads with no 576 spelling and
@@ -64,9 +65,13 @@ import sys
 # B-136's compiler side writes these by hand (the builtins' declarations).
 SKIP_FILES = ("std/src/builtins.d.bp", "std/src/builtins_fns.d.bp", "std/src/compiler.bp")
 # B-136's refusal cells whose sources spell what the codemod removes, on purpose.
-SKIP_CELLS = ("conformance/modules/removed_type_bare_param/", "conformance/modules/expr_param_method/")
-# A refusal cell of 577 (3): its template call `name("lit")` is the refused shape.
-KEEP_TEMPLATE_CALLS = ("conformance/modules/expr_call_outside_expr/",)
+# 579's cells of a file without the import — `compiler` unbound, or an ordinary
+# local — which `--imports` would otherwise give one.
+SKIP_CELLS = ("conformance/modules/removed_type_bare_param/", "conformance/modules/expr_param_method/",
+              "conformance/modules/compiler_import_missing/", "conformance/modules/compiler_ordinary_name/")
+# Refusal cells of 577 (3): their template call `name("lit")` / `#[name("lit")]` is the refused shape.
+KEEP_TEMPLATE_CALLS = ("conformance/modules/expr_call_outside_expr/",
+                       "conformance/modules/template_annotation_call_form/")
 SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", ".git", "snapshot"}
 
 TEMPLATE_MODEL = ("source", "context", "lookup", "bindings")
@@ -451,9 +456,17 @@ def add_compiler_imports(text, in_std):
                 continue  # a label
             names.append(n)
             break
-    if not names:
+    # Decision 579 — `compiler` is std's value, imported: a file reading
+    # `compiler.` outside its imports gets `import {compiler}`.
+    outside = re.sub(r"\bimport\s*\{[^}]*\}[^;]*;", "", m)
+    has_value = any(re.fullmatch(r"compiler(\s+as\s+\w+)?", item.strip())
+                    for mo in re.finditer(r"\bimport\s*\{([^}]*)\}", m) for item in mo.group(1).split(","))
+    wants_value = not has_value and "compiler" not in own and re.search(r"(?<![\w.@])compiler\s*\.", outside) is not None
+    if not names and not wants_value:
         return text, []
-    items = ["compiler." + n for n in sorted(names)]
+    items = (["compiler"] if wants_value else []) + ["compiler." + n for n in sorted(names)]
+    if wants_value:
+        names = ["compiler"] + names
     pat = r"\bimport\s*\{([^}]*)\}\s*;" if in_std else r"\bimport\s*\{([^}]*)\}\s*from\s*\"std\"\s*;"
     std_imports = [mo for mo in re.finditer(pat, text) if m[mo.start()] == "i"]
     if std_imports:
@@ -986,7 +999,7 @@ def rewrite(text, templates=frozenset(), in_std=False, template_list=None, impor
     new = run.apply()
     new, names = add_compiler_imports(new, in_std) if imports else (new, [])
     for n in names:
-        run.counts["import {compiler.%s}" % n] += 1
+        run.counts["import {compiler}" if n == "compiler" else "import {compiler.%s}" % n] += 1
     if template_list is not None:
         template_list.extend(run.template_list)
     return new, run.counts, run.undecided
