@@ -260,6 +260,7 @@ fn formatFile(
     };
 
     var parser = bp.Parser.init(tokens);
+    parser.keep_surface = true;
     const program = parser.parse(arena) catch |err| {
         diagnostics.printParseError(gpa, &parser, err, source, path);
         return .invalid;
@@ -372,6 +373,7 @@ fn formatHeader(gpa: std.mem.Allocator, arena: std.mem.Allocator, path: []const 
     var mlx = bp.Lexer.init(module);
     const mtoks = mlx.scanAll(arena) catch return try refuseHeader(gpa, arena, path, source);
     var parser = bp.Parser.init(mtoks);
+    parser.keep_surface = true;
     const program = parser.parse(arena) catch return try refuseHeader(gpa, arena, path, source);
     const body = std.mem.trimEnd(u8, try bp.format.format(arena, program), "\n");
     if (!has_fn) return try std.mem.concat(arena, u8, &.{ body, "\n" });

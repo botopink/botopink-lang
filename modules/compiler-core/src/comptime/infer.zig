@@ -9,6 +9,7 @@
 ///      constructor types for them.
 ///   2. Infer the type of every expression/declaration and bind the result.
 const std = @import("std");
+const compilerSurface = @import("../parser/compiler_surface.zig");
 const inlineTypes = @import("./inline_types.zig");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
@@ -1833,17 +1834,7 @@ fn buildFnSignatureType(env: *Env, f: ast.FnDecl) InferError!*T.Type {
 
     var paramTypes = try env.arena.alloc(*T.Type, f.params.len);
     for (f.params, 0..) |p, i| {
-        paramTypes[i] = if (p.fnType) |ft| blk: {
-            const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-            for (ft.params, 0..) |fp, j| {
-                fparams[j] = genericMap.get(fp.typeName) orelse try env.namedType(fp.typeName);
-            }
-            const fret = if (ft.returnType) |rn|
-                genericMap.get(rn) orelse try env.namedType(rn)
-            else
-                try env.namedType("void");
-            break :blk try env.funcType(fparams, fret);
-        } else try resolveParamType(env, p, genericMap);
+        paramTypes[i] = try resolveParamType(env, p, genericMap);
     }
 
     const retType = if (f.returnType) |rt|
@@ -2370,17 +2361,7 @@ fn registerInherentMethodTypes(
 
         const params = try env.arena.alloc(*T.Type, im.params.len);
         for (im.params, 0..) |p, i| {
-            params[i] = if (p.fnType) |ft| blk: {
-                const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-                for (ft.params, 0..) |fp, j| {
-                    fparams[j] = gm.get(fp.typeName) orelse try env.namedType(fp.typeName);
-                }
-                const fret = if (ft.returnType) |rn|
-                    gm.get(rn) orelse try env.namedType(rn)
-                else
-                    try env.namedType("void");
-                break :blk try env.funcType(fparams, fret);
-            } else try resolveParamType(env, p, gm);
+            params[i] = try resolveParamType(env, p, gm);
         }
         const ret = try resolveReturnType(env, retRef, im.returnTypeLoc, gm);
         try env.setInherentMethodType(typeName, im.name, try env.funcType(params, ret));
@@ -2452,17 +2433,7 @@ fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!voi
 
         const params = try env.arena.alloc(*T.Type, im.params.len);
         for (im.params, 0..) |p, i| {
-            params[i] = if (p.fnType) |ft| blk: {
-                const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-                for (ft.params, 0..) |fp, j| {
-                    fparams[j] = gm.get(fp.typeName) orelse try env.namedType(fp.typeName);
-                }
-                const fret = if (ft.returnType) |rn|
-                    gm.get(rn) orelse try env.namedType(rn)
-                else
-                    try env.namedType("void");
-                break :blk try env.funcType(fparams, fret);
-            } else try resolveParamType(env, p, gm);
+            params[i] = try resolveParamType(env, p, gm);
         }
         const ret = if (im.returnType) |rt|
             try resolveReturnType(env, rt, im.returnTypeLoc, gm)
@@ -3585,11 +3556,10 @@ fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
         for (m.params, 0..) |p, i| {
             if (i > 0) try buf.appendSlice(env.arena, ", ");
             try buf.appendSlice(env.arena, p.name);
-            if (p.modifier == .@"comptime" or p.modifier == .syntax) {
+            if (p.modifier == .@"comptime") {
                 try buf.appendSlice(env.arena, " comptime");
             }
             try buf.appendSlice(env.arena, ": ");
-            if (p.modifier == .syntax) try buf.appendSlice(env.arena, "syntax ");
             try appendTypeRefStr(&buf, env.arena, p.typeRef);
         }
         try buf.append(env.arena, ')');
@@ -3632,7 +3602,7 @@ fn buildEnumDeclName(env: *Env, e: ast.TypeDecl) ![]const u8 {
 }
 
 /// Build a signature name for a fn declaration binding.
-/// Format: `fn(name [comptime]: [syntax ]Type, ...) -> ReturnType`
+/// Format: `fn(name [comptime]: Type, ...) -> ReturnType`
 /// The function name and generic params are omitted; modifiers are included.
 fn buildFnSigName(env: *Env, f: ast.FnDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
@@ -3640,13 +3610,10 @@ fn buildFnSigName(env: *Env, f: ast.FnDecl) ![]const u8 {
     for (f.params, 0..) |p, i| {
         if (i > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, p.name);
-        if (p.modifier == .@"comptime" or p.modifier == .syntax) {
+        if (p.modifier == .@"comptime") {
             try buf.appendSlice(env.arena, " comptime");
         }
         try buf.appendSlice(env.arena, ": ");
-        if (p.modifier == .syntax) {
-            try buf.appendSlice(env.arena, "syntax ");
-        }
         try appendTypeRefStr(&buf, env.arena, p.typeRef);
     }
     try buf.append(env.arena, ')');
@@ -4554,7 +4521,6 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
 /// elsewhere, and an unknown bare marker stays lenient (a lib may not be loaded).
 fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     try refuseNonComptimeDecoratorParams(env, program);
-    try refuseBareComptimeParams(env, program);
     try checkTypedMetaCalls(env, program);
     try checkTemplateAnnotations(env, program);
     if (env.decorators.count() == 0) return;
@@ -4643,7 +4609,7 @@ fn expandTemplateFieldDefaults(env: *Env, program: ast.Program) InferError!void 
                 finder.walk(ast.Expr, dv);
                 if (finder.found == null) continue;
                 const typed = try inferExprTyped(env, dv);
-                if (p.fnType == null and p.destruct == null) try unifyAt(env, try resolveParamType(env, p, genericMap), typed.getType(), dv.getLoc());
+                if (p.destruct == null) try unifyAt(env, try resolveParamType(env, p, genericMap), typed.getType(), dv.getLoc());
             }
             continue;
         }
@@ -4816,7 +4782,7 @@ fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void
         }
         for (site.generics) |gp| try genericMap.put(gp.name, try env.freshVar());
         for (site.params) |p| {
-            if (p.destruct != null or p.fnType != null) continue;
+            if (p.destruct != null) continue;
             const ty = try resolveParamType(env, p, genericMap);
             try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
         }
@@ -4979,40 +4945,6 @@ fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!
             env.lastError = TypeError.custom(msg, hint).withLoc(if (p.loc.line != 0) p.loc else p.typeLoc);
             return error.TypeError;
         }
-    }
-}
-
-/// Decision 364 (4) — every `comptime` parameter other than `@Decl` is the
-/// user's expression, `comptime x: @Expr<T>`: a decorator's, a template
-/// function's, any function's, a method's, a `declare fn`'s. `comptime x: T`
-/// is refused at the parameter, naming `@Expr<T>`. (The parser reads a
-/// non-template function's wrapper off — `Param.exprWrapped`.)
-fn refuseBareComptimeParams(env: *Env, program: ast.Program) InferError!void {
-    for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try refuseBareComptime(env, f.name, f.params),
-        .delegate => |d| try refuseBareComptime(env, d.name, d.params),
-        .type_ => |t| try refuseBareComptimeInType(env, t),
-        .behavior => |b| for (b.methods) |m| try refuseBareComptime(env, m.name, m.params),
-        .implement => |i| for (i.methods) |m| try refuseBareComptime(env, m.name, m.params),
-        .extend => |e| for (e.methods) |m| try refuseBareComptime(env, m.name, m.params),
-        else => {},
-    };
-}
-
-fn refuseBareComptimeInType(env: *Env, t: ast.TypeDecl) InferError!void {
-    for (t.methods) |m| try refuseBareComptime(env, m.name, m.params);
-    for (t.assocTypes) |inner| try refuseBareComptimeInType(env, inner);
-}
-
-fn refuseBareComptime(env: *Env, owner: []const u8, params: []const ast.Param) InferError!void {
-    for (params) |p| {
-        if (p.modifier != .@"comptime" or p.exprWrapped) continue;
-        if (p.typeRef.isExprType() or p.typeRef.isDeclType()) continue;
-        const written = try std.fmt.allocPrint(env.arena, "{f}", .{p.typeRef});
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}`'s parameter `{s}` is `comptime {s}: {s}` — a `comptime` parameter is `comptime {s}: @Expr<{s}>`", .{ diagnostics.comptime_param_not_expr, owner, p.name, p.name, written, p.name, written });
-        const hint = try std.fmt.allocPrint(env.arena, "A `comptime` parameter is the user's expression, checked against `{s}` at the argument; the body reads its value at build with `{s}.value` (decision 364).", .{ written, p.name });
-        env.lastError = TypeError.custom(msg, hint).withLoc(if (p.loc.line != 0) p.loc else p.typeLoc);
-        return error.TypeError;
     }
 }
 
@@ -5218,6 +5150,20 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
         }
         if (map.slots[j]) |i| {
             const e = try checkDecoratorArg(env, program, a, i, p, wants[j], use);
+            // Decision 575 (5) — `comptime t: type<T>`: the type argument binds
+            // `T`, met with what the rest of the signature bound.
+            if (isType and p.typeRef.typeparam.len == 1 and p.typeRef.typeparam[0] == .named) if (generics.get(p.typeRef.typeparam[0].named)) |bound| {
+                const written: ast.TypeRef = .{ .named = std.mem.trim(u8, a.args[i], " ") };
+                if (try resolveDecoratorParamType(env, written, std.StringHashMap(*T.Type).init(env.arena))) |argTy| {
+                    const saved = env.lastError;
+                    unifyUnlocated(env, bound, argTy) catch {
+                        env.lastError = saved;
+                        const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `#[{s}]`'s `{s}` binds `{s}`, which is `{s}` here, to `{s}`", .{ a.name, p.name, p.typeRef.typeparam[0].named, try decoratorSpelling(env, bound, 0), a.args[i] });
+                        env.lastError = TypeError.custom(msg, "A `type<T>` argument binds `T` (decision 575 (5)); the other parameters that name `T` must agree with it.").withLoc(a.argLoc(i) orelse a.loc orelse .{ .line = 0, .col = 0 });
+                        return error.TypeError;
+                    };
+                }
+            };
             values[j] = if (e.known)
                 try decoratorArgValue(env, program, e.expr.*, e.lexeme orelse a.args[i], wants[j], isType, 0)
             else
@@ -8236,28 +8182,23 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         }
         if (p.typeRef == .typeparam) {
             const constraints = p.typeRef.typeparam;
-            const names = try env.arena.alloc([]const u8, constraints.len);
-            for (constraints, 0..) |c, ci| {
+            // Decision 575 (5) — `type<T>`, `T` one of the function's type
+            // parameters, binds `T`: no constraint to check.
+            const binds = constraints.len == 1 and constraints[0] == .named and for (f.genericParams) |gp| {
+                if (std.mem.eql(u8, gp.name, constraints[0].named)) break true;
+            } else false;
+            const names = try env.arena.alloc([]const u8, if (binds) 0 else constraints.len);
+            if (!binds) for (constraints, 0..) |c, ci| {
                 names[ci] = switch (c) {
                     .named => |n| n,
                     else => "",
                 };
-            }
+            };
             try typeparams.append(env.arena, .{ .paramIndex = i, .paramName = p.name, .names = names });
         }
         // `fn(value: T) -> U` param: build a real func type (the typeRef is
         // just `.named "fn"`); names resolve via the generic map first.
-        const ty = if (p.fnType) |ft| blk: {
-            const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-            for (ft.params, 0..) |fp, j| {
-                fparams[j] = genericMap.get(fp.typeName) orelse try env.namedType(fp.typeName);
-            }
-            const fret = if (ft.returnType) |rn|
-                genericMap.get(rn) orelse try env.namedType(rn)
-            else
-                try env.namedType("void");
-            break :blk try env.funcType(fparams, fret);
-        } else try resolveParamType(env, p, genericMap);
+        const ty = try resolveParamType(env, p, genericMap);
         paramTypes[i] = ty;
         if (p.destruct) |d| {
             // Destructuring param: bind each field name to its type.
@@ -8607,17 +8548,7 @@ fn inferTypeMethods(
 
         // Bind parameters — a `self` receiver resolves through `Self`.
         for (m.params) |p| {
-            const ty = if (p.fnType) |ft| blk: {
-                const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-                for (ft.params, 0..) |fp, j| {
-                    fparams[j] = genericMap.get(fp.typeName) orelse try env.namedType(fp.typeName);
-                }
-                const fret = if (ft.returnType) |rn|
-                    genericMap.get(rn) orelse try env.namedType(rn)
-                else
-                    try env.namedType("void");
-                break :blk try env.funcType(fparams, fret);
-            } else try resolveParamType(env, p, genericMap);
+            const ty = try resolveParamType(env, p, genericMap);
             // Decision 364 — a `comptime x: @Expr<T>` is read `x.value`.
             try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
         }
@@ -10855,6 +10786,18 @@ fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         else => false,
     };
 }
+/// The refusal a `compiler_surface` builtin carries, reported at its place.
+fn refuseSurface(env: *Env, args: []ast.CallArgOf(.typed), loc: ast.Loc) InferError {
+    var parts: [3][]const u8 = .{ "", "", "" };
+    for (args, 0..) |a, i| {
+        if (i >= 3) break;
+        if (a.value.* == .literal and a.value.literal.kind == .stringLit) parts[i] = a.value.literal.kind.stringLit;
+    }
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: {s}", .{ parts[0], parts[1] });
+    env.lastError = TypeError.custom(msg, parts[2]).withLoc(loc);
+    return error.TypeError;
+}
+
 fn inferBuiltinCallReturnType(
     env: *Env,
     callee: []const u8,
@@ -10862,6 +10805,9 @@ fn inferBuiltinCallReturnType(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!*T.Type {
+    // Decisions 575, 576 — a refusal `parser/compiler_surface.zig` wrote at
+    // the place: `(code, message, hint)`.
+    if (std.mem.eql(u8, callee, compilerSurface.refusal_builtin)) return refuseSurface(env, typedArgs, loc);
     try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
     // ── `@Expr` construction builtins (expr-templates) ───────────────────────
     // Construction is explicit: `@expr(value)` lifts a comptime value as code
@@ -12602,7 +12548,12 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         // A comptime typeparam accepts a value of any type at the call site;
         // its constraints are validated separately (see `validateTypeparams`).
         // Resolve to a fresh variable so unification against it never fails.
-        .typeparam => return env.freshVar(),
+        // Decision 575 (5) — `type<T>` with `T` a type parameter in scope: the
+        // type argument binds `T`.
+        .typeparam => |cs| {
+            if (cs.len == 1 and cs[0] == .named) if (genericMap.get(cs[0].named)) |t| return t;
+            return env.freshVar();
+        },
         // Anonymous record type `{ f: T, … }` — a structural `Type.record` that
         // unifies field-by-field with a `record { … }` literal (same field set,
         // declaration order; see unify.zig).
@@ -13762,7 +13713,7 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
 /// can answer. A tuple is checkable — arity and each element are — and so are
 /// the other structural spellings the grammar builds out of type refs.
 /// Decision 297 — the type a call argument names, when it is a type written
-/// where a `comptime x: V | type T` parameter is: a primitive or a declared
+/// where a `comptime x: V | type<T>` parameter is: a primitive or a declared
 /// type, not a local value.
 fn typeArgName(env: *Env, e: ast.Expr) ?[]const u8 {
     if (e != .identifier or e.identifier.kind != .ident) return null;
@@ -13773,7 +13724,7 @@ fn typeArgName(env: *Env, e: ast.Expr) ?[]const u8 {
 }
 
 /// Decision 297 — a type argument typed as the parameter's value form with
-/// `T` bound to the type (`pick(User)` against `comptime s: Box<T> | type T`
+/// `T` bound to the type (`pick(User)` against `comptime s: Box<T> | type<T>`
 /// is a `Box<User>`), so unifying it with the parameter binds `T` and the
 /// call's return reads it. Any other name the value form mentions that is no
 /// type is a fresh variable.
@@ -18838,9 +18789,6 @@ fn primMethodParamTypes(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
             if (rt.named.args.len >= 1) try gm.put("T", rt.named.args[0]);
             for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
             const out = try env.arena.alloc(*T.Type, m.params.len - 1);
-            // `paramTypeInContext` — not `resolveTypeRefInContext` — because a
-            // fn-typed param (`pred: fn(item: T) -> bool`) carries its
-            // signature in `Param.fnType`, not in `typeRef`.
             for (m.params[1..], 0..) |p, i| {
                 out[i] = try paramTypeInContext(env, p, gm);
             }
@@ -19176,17 +19124,6 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
 /// Resolve a method/param's type within a generic context, handling both
 /// fn-typed params (`f: fn(a: A) -> B`) and ordinary type-ref params.
 fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) InferError!*T.Type {
-    if (p.fnType) |ft| {
-        const fparams = try env.arena.alloc(*T.Type, ft.params.len);
-        for (ft.params, 0..) |fp, j| {
-            fparams[j] = gm.get(fp.typeName) orelse try env.namedType(fp.typeName);
-        }
-        const fret = if (ft.returnType) |rn|
-            gm.get(rn) orelse try env.namedType(rn)
-        else
-            try env.namedType("void");
-        return try env.funcType(fparams, fret);
-    }
     return try resolveParamType(env, p, gm);
 }
 
@@ -21973,11 +21910,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     }
                     if (call.isType) |tested| if (tested == .typeparam and tested.typeparam.len == 0) {
                         // Decision 297 — `x is type` is folded where `x` is a
-                        // `comptime x: V | type T` parameter (`value_or_type.zig`);
+                        // `comptime x: V | type<T>` parameter (`value_or_type.zig`);
                         // anything else reaching here tests nothing.
                         env.lastError = TypeError.custom(
-                            diagnostics.is_type_outside_value_or_type ++ ": `is type` tests a `comptime` parameter that takes a value or a type (`comptime x: V | type T`)",
-                            "Declare the parameter `comptime x: V | type T`, or test a type with `x is T`.",
+                            diagnostics.is_type_outside_value_or_type ++ ": `is type` tests a `comptime` parameter that takes a value or a type (`comptime x: V | type<T>`)",
+                            "Declare the parameter `comptime x: V | type<T>`, or test a type with `x is T`.",
                         ).withLoc(loc);
                         return error.TypeError;
                     };
@@ -22701,6 +22638,13 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.
                         const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
+                        // Decision 575 (4) — a `-> expr T` function is called by
+                        // the template syntax, an annotation, or inside a tree.
+                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and !call.is_tagged and !env.inTemplateFn) {
+                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` answers `-> expr`, an expression spliced where it is called, and is called here as a function", .{ diagnostics.expr_call_outside_expr, call.callee });
+                            env.lastError = TypeError.custom(msg, "Call it with the template syntax (`f \"…\"`), as an annotation, or inside a tree (decision 575 (4)).").withLoc(loc);
+                            return error.TypeError;
+                        };
                         var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
                         var plainArgs: std.ArrayListUnmanaged(template.PlainArg) = .empty;
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {

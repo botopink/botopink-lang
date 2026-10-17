@@ -33,7 +33,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

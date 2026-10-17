@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
+fn apply(f: fn(x: i32) -> i32) -> i32 {
     return f(10);
 }
 ```

@@ -32,8 +32,6 @@ const FnDecl = parser.FnDecl;
 const ValDecl = parser.ValDecl;
 const DelegateDecl = parser.DelegateDecl;
 const Annotation = parser.Annotation;
-const FnType = parser.FnType;
-const FnTypeParam = parser.FnTypeParam;
 const TypeRef = parser.TypeRef;
 const Pattern = parser.Pattern;
 const Token = parser.Token;
@@ -567,7 +565,7 @@ pub fn parseFnBody(
             returnType = .{ .named = "bool" };
         } else {
             returnTypeLoc = parser.Parser.locFromToken(this.peek());
-            returnType = try this.parseTypeRef(alloc);
+            returnType = try parseReturnTypeRef(this, alloc);
         }
     } else if (!this.check(.leftBrace) and !this.check(.semicolon) and
         !this.check(.colon) and !this.check(.endOfFile) and
@@ -709,7 +707,7 @@ pub fn parseShorthandDelegateDecl(this: *This, alloc: std.mem.Allocator) ParseEr
 /// A member or delegate signature: `<G>(params) -> R`, the arrow optional.
 /// One grammar for a behavior's `fn` members and a `declare fn` delegate, and
 /// the same pieces `parseFnBody` reads a `fn`'s head with —
-/// `parseGenericParams`, `parseParamList` (`_`, `comptime`, `syntax`,
+/// `parseGenericParams`, `parseParamList` (`_`, `comptime`,
 /// defaults), `parseTypeRef` for the return — so neither can fall behind it.
 pub const Signature = struct {
     genericParams: []GenericParam,
@@ -733,7 +731,7 @@ pub fn parseSignature(this: *This, alloc: std.mem.Allocator) ParseError!Signatur
     var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
     if (this.match(.rightArrow)) {
         returnTypeLoc = parser.Parser.locFromToken(this.peek());
-        returnType = try this.parseTypeRef(alloc);
+        returnType = try parseReturnTypeRef(this, alloc);
     }
     return .{
         .genericParams = genericParams,
@@ -1220,14 +1218,11 @@ fn parseEnumItem(
 ///                    | param_name ['comptime'] ':' value_param
 ///
 ///   record_destruct ::= '{' ident (',' ident)* '}' ':' type_name
-///   value_param     ::= ['syntax'] 'fn' '(' fn_param* ')' ('->' type_name)?
-///                     | ['syntax'] type_name
+///   value_param     ::= ['comptime'] type_expr
 ///
 /// The `comptime` keyword marks a compile-time param. It may appear:
 ///   - before the name:  `comptime name : type`  (stdlib / builtin style)
 ///   - after the name:   `name comptime : type`  (inline style)
-///
-/// The post-colon `syntax` keyword overrides the modifier to `.syntax`.
 pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // ── record destructuring: { name, age }: Type or { name, .. }: Type or { c: the_c }: Type ──
     if (this.check(.leftBrace)) {
@@ -1289,14 +1284,33 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         };
     }
 
-    // ── comptime-prefixed form: `comptime name : type` ─────────────────
-    if (this.check(.@"comptime")) {
-        const startTok = this.advance(); // consume 'comptime'
+    // ── comptime-prefixed form: `comptime name : type`, and decision 575
+    // (4)'s `expr name : type` ─────────────────────────────────────────
+    const exprAhead = isExprModifierAt(this, 0);
+    if (this.check(.@"comptime") or exprAhead) {
+        const startTok = this.advance(); // consume 'comptime' / 'expr'
         const variadic = matchVariadic(this);
         const name = (try this.consumeParamName()).lexeme;
         _ = try this.consume(.colon);
         const typeTok = this.peek();
-        const typeRef = try this.parseTypeRef(alloc);
+        // A decorator's first `expr` is the declaration, its type a pattern
+        // that may write `fn(..) -> R` (decision 316); `expr_params.zig`
+        // decides which `expr` is that one.
+        if (exprAhead) this.inDeclPattern = true;
+        var typeRef = try this.parseTypeRef(alloc);
+        this.inDeclPattern = false;
+        // Decision 575 (4) — `comptime x: T` holds the value, `expr x: T` the
+        // tree: both are read as the tree type `T` is wrapped in, the
+        // arrival kept for the printer. `@Expr<T>` / `@Decl` written keep
+        // their own reading until the surface drops them (decision 576).
+        var arrival: ast.Arrival = .written;
+        if (exprAhead) {
+            arrival = .expr;
+            typeRef = try wrapTree(alloc, typeRef);
+        } else if (!typeRef.isExprType() and !typeRef.isDeclType()) {
+            arrival = .value;
+            typeRef = try wrapTree(alloc, typeRef);
+        }
         if (variadic) try checkVariadicParam(this, alloc, typeRef, typeTok);
         // Decision 280 (0) — every decorator parameter is `comptime`, so a
         // `comptime` parameter takes a default like any other
@@ -1311,10 +1325,11 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
             .typeLoc = parser.Parser.locFromToken(typeTok),
             .loc = parser.Parser.locFromToken(startTok),
             .variadic = variadic,
+            .arrival = arrival,
         };
     }
 
-    // ── regular param: ['..'] name ['comptime'] ':' ['syntax'] type_expr ────
+    // ── regular param: ['..'] name ['comptime'] ':' ['comptime'] type_expr ────
     const startTok = this.peek();
     const variadic = matchVariadic(this);
     const nameTok = try this.consumeParamName();
@@ -1326,45 +1341,8 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // Type annotation is required.
     _ = try this.consume(.colon);
 
-    // Detect post-colon modifiers: `syntax` or `comptime`
-    if (this.match(.syntax)) modifier = .syntax else if (this.match(.@"comptime")) modifier = .@"comptime";
-
-    // ── fn-type params: `name comptime: syntax fn(...)` ─────────────────────
-    // The legacy `FnType` representation (named string params + named return)
-    // is kept only for `syntax` params, whose template machinery reads it. A
-    // plain `name: fn(...)` falls through to the general `parseTypeRef` below,
-    // which yields a `TypeRef.function` and supports array/optional/nested
-    // returns (`fn() -> T[]`).
-    if (modifier == .syntax and this.check(.@"fn")) {
-        _ = this.advance(); // consume 'fn'
-        _ = try this.consume(.leftParenthesis);
-        var fnParams: std.ArrayList(FnTypeParam) = .empty;
-        errdefer fnParams.deinit(alloc);
-        while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
-            const pname = (try this.consume(.identifier)).lexeme;
-            _ = try this.consume(.colon);
-            const ptype = (try this.consumeTypeName()).lexeme;
-            try fnParams.append(alloc, .{ .name = pname, .typeName = ptype });
-            if (!this.match(.comma)) break;
-        }
-        _ = try this.consume(.rightParenthesis);
-        const retType: ?[]const u8 = if (this.match(.rightArrow))
-            (try this.consumeTypeName()).lexeme
-        else
-            null;
-        // post-colon `syntax` marks the fn-type as a syntax param.
-        const fnMod: ParamModifier = if (modifier == .syntax) .syntax else .none;
-        return Param{
-            .name = name,
-            .typeRef = .{ .named = "fn" },
-            .typeName = "fn",
-            .modifier = fnMod,
-            .fnType = .{
-                .params = try fnParams.toOwnedSlice(alloc),
-                .returnType = retType,
-            },
-        };
-    }
+    // A post-colon `comptime` (`name: comptime T`).
+    if (this.match(.@"comptime")) modifier = .@"comptime";
 
     // ── plain type (use full TypeRef to support arrays, optionals, etc.) ─
     // 06 N30 — where the annotation starts, so an unknown type name reds there.
@@ -1423,6 +1401,38 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         .variadic = variadic and !recordParam,
         .recordParam = recordParam,
     };
+}
+
+/// Decision 575 (4) — `expr` is a parameter's modifier when a name (or a
+/// variadic's `..`) follows it: `expr x: T`, `expr ..xs: T[]`. Anywhere else
+/// it is an ordinary name.
+pub fn isExprModifierAt(this: *This, offset: usize) bool {
+    const t = this.peekAt(offset);
+    if (t.kind != .identifier or !std.mem.eql(u8, t.lexeme, "expr")) return false;
+    const next = this.peekAt(offset + 1).kind;
+    return next == .identifier or next == .underscore or next == .dotDot;
+}
+
+/// The internal tree type `T` is read as — `@Expr<T>` (`ast.expr_type_name`).
+pub fn wrapTree(alloc: std.mem.Allocator, inner: ast.TypeRef) ParseError!ast.TypeRef {
+    const args = try alloc.alloc(ast.TypeRef, 1);
+    args[0] = inner;
+    return .{ .generic = .{ .name = ast.expr_type_name, .args = args, .is_builtin = true } };
+}
+
+/// Decision 575 (4) — a return type, `-> expr T` included: a template's
+/// return, read as the tree type (`@Expr<T>`) the template machinery knows.
+pub fn parseReturnTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    const t = this.peek();
+    if (t.kind == .identifier and std.mem.eql(u8, t.lexeme, "expr") and startsTypeRefKind(this.peekAt(1).kind)) {
+        _ = this.advance();
+        return wrapTree(alloc, try this.parseTypeRef(alloc));
+    }
+    return this.parseTypeRef(alloc);
+}
+
+fn startsTypeRefKind(kind: TokenKind) bool {
+    return @import("types.zig").startsTypeRef(kind);
 }
 
 /// Decision 267 — consume the `..` of a variadic parameter (`..rest: T[]`),

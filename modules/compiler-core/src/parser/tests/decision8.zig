@@ -84,7 +84,7 @@ test "decision 8 N20: a union member is missing after the bar" {
 
 test "decision 8 N20: the type meta-kind still separates its constraints with a bar" {
     try assertParser(std.testing.allocator, @src(),
-        \\fn f(comptime T: type string | i32) -> i32 {
+        \\fn f(comptime T: type<string | i32>) -> i32 {
         \\    return 1;
         \\}
     );

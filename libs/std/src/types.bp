@@ -46,31 +46,31 @@ pub type Type {
     // `T`'s declaration (`.title`), never a second enum nor a copy — bound by a
     // module-level `val`, the alias `K.of(text)` and `K.all()` are called
     // through.
-    pub declare fn keys<T>(comptime source: @Expr<type T>) -> type;
+    pub declare fn keys<T>(comptime source: @Expr<type<T>>) -> type;
 
     // Every field `F` of `T` made `?F`.
-    pub declare fn partial<T>(comptime source: @Expr<type T>) -> type;
+    pub declare fn partial<T>(comptime source: @Expr<type<T>>) -> type;
 
     // Every field `?F` of `T` made `F` — every `?` goes: `required` does not
     // know what was optional before a `partial`.
-    pub declare fn required<T>(comptime source: @Expr<type T>) -> type;
+    pub declare fn required<T>(comptime source: @Expr<type<T>>) -> type;
 
     // The fields of `first`, then those of `second`; a field on both sides is
     // an error (`omit` it first: nothing overrides silently).
     pub declare fn merge<A, B>(
-        comptime first: @Expr<type A>,
-        comptime second: @Expr<type B>,
+        comptime first: @Expr<type<A>>,
+        comptime second: @Expr<type<B>>,
     ) -> type;
 
     // The fields of `T` named in `fields`, in the order `T` declares them.
     pub declare fn pick<T>(
-        comptime source: @Expr<type T>,
+        comptime source: @Expr<type<T>>,
         comptime ..fields: @Expr<Type.Field<T>[]>,
     ) -> type;
 
     // The fields of `T` but those named in `fields`.
     pub declare fn omit<T>(
-        comptime source: @Expr<type T>,
+        comptime source: @Expr<type<T>>,
         comptime ..fields: @Expr<Type.Field<T>[]>,
     ) -> type;
 }

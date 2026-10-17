@@ -22,7 +22,6 @@
             },
             "typeName": "Person",
             "modifier": "none",
-            "fnType": null,
             "destruct": {
               "names": {
                 "fields": [

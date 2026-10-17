@@ -7934,7 +7934,7 @@ const Emitter = struct {
             return;
         } else |_| {}
 
-        // Otherwise, a name bound to a local (a `syntax fn` parameter or a
+        // Otherwise, a name bound to a local (a function-typed parameter or a
         // `val f = {x -> …}`) holds a fun and is applied via `call_fun`. Params
         // and locals live in y-slots, so the fun is loaded into `{x, arity}`
         // *after* the arguments are laid out — nothing the arg staging writes

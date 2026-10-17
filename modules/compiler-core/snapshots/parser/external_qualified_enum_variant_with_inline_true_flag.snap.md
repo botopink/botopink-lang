@@ -53,7 +53,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -64,7 +63,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

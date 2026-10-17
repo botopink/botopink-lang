@@ -192,14 +192,6 @@ test "format: pub fn ---- comptime params" {
     );
 }
 
-test "format: pub fn ---- syntax fn type param" {
-    try h.assertFormat(std.testing.allocator,
-        \\pub fn select<T, R>(lamb comptime: syntax fn(item: T) -> R) {
-        \\    todo;
-        \\}
-    );
-}
-
 test "format: pub fn ---- type meta-kind no constraint" {
     try h.assertFormat(std.testing.allocator,
         \\pub fn wrap(comptime T: type) -> type {
@@ -210,7 +202,7 @@ test "format: pub fn ---- type meta-kind no constraint" {
 
 test "format: pub fn ---- type meta-kind single constraint" {
     try h.assertFormat(std.testing.allocator,
-        \\fn render(comptime tag: type string, props: i32) -> string {
+        \\fn render(comptime tag: type<string>, props: i32) -> string {
         \\    todo;
         \\}
     );
@@ -218,7 +210,7 @@ test "format: pub fn ---- type meta-kind single constraint" {
 
 test "format: pub fn ---- type meta-kind multiple pipe constraints" {
     try h.assertFormat(std.testing.allocator,
-        \\fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    todo;
         \\}
     );
@@ -1033,7 +1025,7 @@ test "format: `pub default <name>;` stays after its private function" {
 
 test "format: `comptime s: Box<T> | type T` prints without parentheses" {
     try h.assertFormat(std.testing.allocator,
-        \\fn pick<T>(comptime s: Box<T> | type T) -> string {
+        \\fn pick<T>(comptime s: Box<T> | type<T>) -> string {
         \\    return "x";
         \\}
     );
@@ -1054,7 +1046,7 @@ test "format: a variadic parameter keeps its `..`" {
         \\}
         \\
         \\pub declare fn pick<T>(
-        \\    comptime source: type T,
+        \\    comptime source: type<T>,
         \\    comptime ..fields: string[],
         \\) -> type;
     );

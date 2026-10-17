@@ -26,9 +26,10 @@
             },
             "typeName": "",
             "modifier": "comptime",
-            "fnType": null,
             "destruct": null,
-            "default": null
+            "default": null,
+            "exprWrapped": true,
+            "arrival": "value"
           },
           {
             "name": "props",
@@ -37,7 +38,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

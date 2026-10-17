@@ -30,7 +30,6 @@
             },
             "typeName": "",
             "modifier": "comptime",
-            "fnType": null,
             "destruct": null,
             "default": null
           }

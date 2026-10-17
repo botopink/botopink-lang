@@ -466,6 +466,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "remove `new`",
             .hint = "A constructor is called by name: `Person(name: \"ann\")`. There is no builtin `Error`: `throw` carries the error channel's own value, `throw \"message\"`.",
         },
+        .removedTypeBareParam => .{
+            .code = "removed-type-bare-param",
+            .message = "the type of a type is written `type<T>`",
+            .caretCaption = "write `type<T>`",
+            .hint = "`comptime t: type<T>` takes a type and binds `T` (decision 575 (5)); `type` alone is any type.",
+        },
         .removedRecordType => .{
             .code = "removed-record-type",
             .message = "anonymous record types are tuples in 1.0.3",

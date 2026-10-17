@@ -1843,27 +1843,37 @@ pub const ParamModifier = enum {
     none,
     /// `comptime` ---- argument must be known at compile time.
     @"comptime",
-    /// `syntax` ---- argument is passed as an unevaluated expression tree (AST).
-    syntax,
 };
 
-/// A parameter inside a function-type annotation used by `syntax` params.
-/// Example: `item: T` in `fn(item: T) -> R`.
-pub const FnTypeParam = struct {
-    name: []const u8,
-    typeName: []const u8,
-};
+/// Decision 575 (4) — how a parameter of the `comptime` family was written.
+/// `value` is `comptime x: T` (the body holds a `T` known at build), `expr`
+/// is `expr x: T` (the body holds the expression written, a tree). The parser
+/// keeps the internal form the checker and the runtimes read — `modifier`
+/// `.comptime`, `typeRef` the tree type (`expr_type_name`, or
+/// `decl_type_name` for a decorator's first `expr`) — and this says what to
+/// print back.
+pub const Arrival = enum { written, value, expr };
 
-/// A function-type annotation: `fn(item: T) -> R`.
-/// Used as the type of `syntax` parameters.
-pub const FnType = struct {
-    params: []FnTypeParam,
-    returnType: ?[]const u8,
+/// Decision 575 (3) — the keyword `compiler`. The lexer reads it as a name
+/// (no binding may take it: a parameter is refused by the parser, any other
+/// binding by `comptime/compiler_surface.zig`), so the expression `compiler`
+/// is an identifier of this spelling.
+pub const compiler_keyword = "compiler";
 
-    pub fn deinit(this: *FnType, allocator: std.mem.Allocator) void {
-        allocator.free(this.params);
-    }
-};
+/// The internal tree type a `expr x: T` parameter and a `-> expr T` return
+/// are read as — a builtin generic no source spells (decision 576 (1)).
+pub const expr_type_name = "Expr";
+/// Whether `rt` is a return written `-> expr T` (decision 575 (4)) — the
+/// tree type the parser built from the keyword (`parser/decls.zig`
+/// `wrapTree`), told by its name's storage from an `@Expr<T>` written, whose
+/// name is a slice of the source. Read by the printer and by
+/// `parser/compiler_surface.zig` while both spellings parse.
+pub fn isExprKeywordReturn(rt: TypeRef) bool {
+    return rt.isExprType() and rt.generic.name.ptr == expr_type_name.ptr;
+}
+
+/// The internal handle type of a decorator's first `expr` parameter.
+pub const decl_type_name = "Decl";
 
 pub const FieldDestruct = struct {
     field_name: []const u8,
@@ -1908,7 +1918,6 @@ pub const ParamDestruct = union(enum) {
 /// Examples:
 ///   `x: Int`
 ///   `s comptime: string`
-///   `lamb comptime: syntax fn(item: T) -> R`
 ///   `comptime T: typeparam`
 pub const Param = struct {
     name: []const u8,
@@ -1916,9 +1925,6 @@ pub const Param = struct {
     typeRef: TypeRef,
     typeName: []const u8 = "",
     modifier: ParamModifier = .none,
-    /// For `syntax fn(...)` params: the function-type signature.
-    /// Null for all other params.
-    fnType: ?FnType = null,
     /// null for plain params; set for destructuring params.
     destruct: ?ParamDestruct = null,
     /// Default value expression for the param. Unified with `Field.default`
@@ -1968,6 +1974,9 @@ pub const Param = struct {
     /// (`x.value`), and the formatter prints `@Expr<T>` back. A template
     /// function's `@Expr` parameters keep the wrapper. Dumped only when set.
     exprWrapped: bool = false,
+    /// Decision 575 (4) — `comptime x: T` / `expr x: T` as written
+    /// (`Arrival`). Dumped only when not `written`.
+    arrival: Arrival = .written,
     /// Decision 166 — set on the **last** parameter of a list written with a
     /// comma before its `)`; the formatter opens the list on it. Dumped only
     /// when set.
@@ -1984,8 +1993,6 @@ pub const Param = struct {
         try jws.write(this.typeName);
         try jws.objectField("modifier");
         try jws.write(this.modifier);
-        try jws.objectField("fnType");
-        try jws.write(this.fnType);
         try jws.objectField("destruct");
         try jws.write(this.destruct);
         try jws.objectField("default");
@@ -2006,6 +2013,10 @@ pub const Param = struct {
             try jws.objectField("exprWrapped");
             try jws.write(true);
         }
+        if (this.arrival != .written) {
+            try jws.objectField("arrival");
+            try jws.write(this.arrival);
+        }
         if (this.trailingComma) {
             try jws.objectField("trailingComma");
             try jws.write(true);
@@ -2019,7 +2030,6 @@ pub const Param = struct {
             allocator.free(fs);
         }
         this.typeRef.deinit(allocator);
-        if (this.fnType) |*ft| ft.deinit(allocator);
         if (this.destruct) |*d| d.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
     }
@@ -3072,7 +3082,7 @@ pub const TypeRef = union(enum) {
     /// Comptime type parameter: `typeparam` or `typeparam string | int | bool`.
     /// `constraints` is the `|`-separated list of accepted types; an empty slice
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
-    /// Surface syntax (post-F0): `type` / `type string | int | bool`.
+    /// Surface syntax (post-F0): `type` / `type<string | int | bool>`.
     typeparam: []TypeRef,
 
     /// `Self` as written in a signature — bare, or with the type arguments a
@@ -3140,7 +3150,8 @@ pub const TypeRef = union(enum) {
             },
             .typeparam => |constraints| {
                 try w.writeAll("type");
-                for (constraints, 0..) |c, i| try w.print("{s}{f}", .{ if (i == 0) " " else " | ", c });
+                for (constraints, 0..) |c, i| try w.print("{s}{f}", .{ if (i == 0) "<" else " | ", c });
+                if (constraints.len > 0) try w.writeAll(">");
             },
         }
     }
@@ -3188,7 +3199,7 @@ pub const TypeRef = union(enum) {
     /// unevaluated; functions returning it are comptime-expanded templates.
     pub fn isExprType(this: TypeRef) bool {
         return this == .generic and this.generic.is_builtin and
-            std.mem.eql(u8, this.generic.name, "Expr");
+            std.mem.eql(u8, this.generic.name, expr_type_name);
     }
 
     /// True when this annotation is the builtin custom-carrier type
@@ -3215,7 +3226,7 @@ pub const TypeRef = union(enum) {
     /// Bare `@Decl` parses as a builtin generic with no args (like bare `@Expr`).
     pub fn isDeclType(this: TypeRef) bool {
         return this == .generic and this.generic.is_builtin and
-            std.mem.eql(u8, this.generic.name, "Decl");
+            std.mem.eql(u8, this.generic.name, decl_type_name);
     }
 };
 

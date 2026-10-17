@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-param-not-expr: `twice`'s parameter `n` is `comptime n: i32` — a `comptime` parameter is `comptime n: @Expr<i32>`
-at src/main.bp:5:10

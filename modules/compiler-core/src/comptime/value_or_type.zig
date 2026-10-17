@@ -1,5 +1,5 @@
 //! Decision 297 — a `comptime` parameter that takes a value or a type:
-//! `fn pick<T>(comptime source: Box<T> | type T) -> …`. An argument of type
+//! `fn pick<T>(comptime source: Box<T> | type<T>) -> …`. An argument of type
 //! `Box<T>` binds `T` from it; a type argument (`pick(User)`) binds `T` to that
 //! type; the body tells them apart at comptime with `source is type`.
 //!
@@ -24,8 +24,8 @@ const ast = @import("../ast.zig");
 /// The suffix of the type-form twin of a function.
 pub const twin_suffix = "__type";
 
-/// The value member and the type parameter of a `comptime x: V | type T`
-/// parameter (one `type T` member naming one of `generics`), else null.
+/// The value member and the type parameter of a `comptime x: V | type<T>`
+/// parameter (one `type<T>` member naming one of `generics`), else null.
 pub fn shape(p: ast.Param, generics: []const ast.GenericParam) ?struct { value: ast.TypeRef, typeParam: []const u8 } {
     if (p.modifier != .@"comptime") return null;
     const members = p.typeRef.unionMembers() orelse return null;
@@ -249,7 +249,7 @@ test "the value form folds `x is type` to false and keeps the else branch" {
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
         \\type Box<T>(value: T)
-        \\fn pick<T>(comptime s: Box<T> | type T) -> string {
+        \\fn pick<T>(comptime s: Box<T> | type<T>) -> string {
         \\    return if (s is type) "type" else "value";
         \\}
     );

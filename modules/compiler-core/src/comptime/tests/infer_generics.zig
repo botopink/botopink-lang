@@ -20,7 +20,7 @@ const h = @import("helpers.zig");
 
 test "infer: type ---- arg satisfies single constraint" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn render(comptime tag: @Expr<type string>, props: i32) -> i32 {
+        \\fn render(comptime tag: @Expr<type<string>>, props: i32) -> i32 {
         \\    return props;
         \\}
         \\val a = render("div", 1);
@@ -29,7 +29,7 @@ test "infer: type ---- arg satisfies single constraint" {
 
 test "infer: type ---- arg satisfies one of multiple constraints" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn coerce(comptime v: @Expr<type string | int | bool>, x: i32) -> i32 {
+        \\fn coerce(comptime v: @Expr<type<string | int | bool>>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val s = coerce("s", 0);

@@ -22,7 +22,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -33,7 +32,6 @@
             },
             "typeName": "Person",
             "modifier": "none",
-            "fnType": null,
             "destruct": {
               "names": {
                 "fields": [

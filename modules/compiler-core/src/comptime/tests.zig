@@ -4,6 +4,7 @@
 
 test {
     _ = @import("tests/infer_exprs.zig");
+    _ = @import("tests/compiler_members.zig");
     _ = @import("../comptime.zig");
     _ = @import("decorator_same.zig");
     _ = @import("effect_chain.zig");

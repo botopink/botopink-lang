@@ -19,7 +19,7 @@ const GenericParam = parser.GenericParam;
 pub fn startsTypeRef(kind: TokenKind) bool {
     return switch (kind) {
         .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType, .unknown => true,
-        // `type T` — a meta-kind member (decision 297's `Box<T> | type T`),
+        // `type<T>` — a meta-kind member (decision 297's `Box<T> | type<T>`),
         // and `x is type`.
         .type => true,
         // `(T)` — a parenthesised type (decision 8 §3.1). It begins a type
@@ -357,11 +357,19 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             for (constraints.items) |*c| c.deinit(alloc);
             constraints.deinit(alloc);
         }
-        if (startsTypeRef(this.peek().kind)) {
+        // Decision 575 (5) — `type<T>`, the type of the type `T` (a type
+        // argument binds `T`); `type<A | B>` keeps the constraint list. The
+        // spelling `type T` is gone.
+        if (this.check(.lessThan)) {
+            _ = this.advance();
             while (true) {
                 try constraints.append(alloc, try this.parseTypeRefMember(alloc));
                 if (!this.match(.verticalBar)) break;
             }
+            try this.consumeGenericClose();
+        } else if (startsTypeRef(this.peek().kind) and this.peek().kind != .leftParenthesis) {
+            this.parseError = ParseErrorInfo.fromToken(.removedTypeBareParam, this.peek());
+            return ParseError.UnexpectedToken;
         }
         return ast.TypeRef{ .typeparam = try constraints.toOwnedSlice(alloc) };
     }

@@ -20,7 +20,10 @@ const ast = @import("../ast.zig");
 /// parameters unwrapped in place.
 pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
     for (program.decls) |*d| switch (d.*) {
-        .@"fn" => |*f| unwrap(alloc, f.params, f.returnType),
+        .@"fn" => |*f| {
+            declHandle(alloc, f.params, f.returnType);
+            unwrap(alloc, f.params, f.returnType);
+        },
         .delegate => |*f| unwrap(alloc, f.params, f.returnType),
         .type_ => |*t| unwrapType(alloc, t),
         .behavior => |*b| for (b.methods) |*m| unwrap(alloc, m.params, m.returnType),
@@ -44,6 +47,26 @@ fn unwrapType(alloc: std.mem.Allocator, t: *ast.TypeDecl) void {
         alloc.free(g.args);
         f.exprWrapped = true;
     };
+}
+
+/// Decision 575 (4) — a decorator's first `expr` is the annotated
+/// declaration: a top-level function that is no template and whose first
+/// parameter is `expr d: T` reads it as the declaration handle the decorator
+/// machinery knows (`ast.decl_type_name`, `T` the pattern 280 (2) checks;
+/// `unknown` is the handle with no pattern).
+fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {
+    if (returnType) |rt| if (rt.isTemplateReturnType()) return;
+    if (params.len == 0 or params[0].arrival != .expr or params[0].variadic) return;
+    const p = &params[0];
+    if (!p.typeRef.isExprType()) return;
+    const g = p.typeRef.generic;
+    const inner = g.args[0];
+    if (inner == .named and std.mem.eql(u8, inner.named, ast.unknown_type_name)) {
+        alloc.free(g.args);
+        p.typeRef = .{ .generic = .{ .name = ast.decl_type_name, .args = &.{}, .is_builtin = true } };
+    } else {
+        p.typeRef = .{ .generic = .{ .name = ast.decl_type_name, .args = g.args, .is_builtin = true } };
+    }
 }
 
 fn unwrap(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {

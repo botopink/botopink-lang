@@ -311,7 +311,7 @@ pub const comptime_badarith: []const u8 = "comptime-badarith";
 /// invocation is independent. Fires from `comptime/decorator_eval.zig`
 /// `moduleVarWrite`, located at the write.
 pub const decorator_writes_module_var: []const u8 = "decorator-writes-module-var";
-/// Decision 297 — `x is type` where `x` is no `comptime x: V | type T`
+/// Decision 297 — `x is type` where `x` is no `comptime x: V | type<T>`
 /// parameter.
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
 /// Decision 297 — a read of `x` in the branch where `x is type` holds.
@@ -517,9 +517,6 @@ pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
 pub const decorator_param_not_comptime: []const u8 = "decorator-param-not-comptime";
 
 // ── decision 364 — every `comptime` parameter is `comptime x: @Expr<T>` ─────
-
-/// `comptime x: T` without `@Expr` (other than `@Decl`), at the parameter.
-pub const comptime_param_not_expr: []const u8 = "comptime-param-not-expr";
 
 /// `x.value` of an `@Expr` of a function: its body is not called while the
 /// program compiles.
@@ -731,6 +728,26 @@ pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending
 /// Decision 376 (2) — a function that reaches a build-only resource and a
 /// run-time one (directly or through its calls): refused at the second,
 /// naming the first. A `comptime` separates them.
+/// Decision 575 (3) — `compiler` in a body that runs only when the program
+/// runs (`main`, a `test`).
+pub const compiler_at_run_time: []const u8 = "compiler-at-run-time";
+
+/// Decision 575 (3) — an output (`compiler.setMeta`, `addMember`, …) outside a
+/// decorator's body.
+pub const compiler_output_outside_decorator: []const u8 = "compiler-output-outside-decorator";
+
+/// Decision 575 (4), the tree rule — `compiler` inside a tree (a member, a
+/// wrapper a decorator writes).
+pub const expr_captures_build: []const u8 = "expr-captures-build";
+
+/// Decision 575 (3) — a member `Compiler` does not declare, `compiler` read
+/// without a member, or a member read where the point has none.
+pub const compiler_member_unknown: []const u8 = "compiler-member-unknown";
+
+/// Decision 575 (4) — a `-> expr T` function called as a function, outside
+/// the template syntax, an annotation and a tree.
+pub const expr_call_outside_expr: []const u8 = "expr-call-outside-expr";
+
 pub const build_and_run: []const u8 = "build-and-run";
 
 /// Decision 376 (5), with 562 — a run-time value reached where the build
@@ -891,7 +908,6 @@ pub const all_codes = [_][]const u8{
     inline_type_position,
     behavior_member_redeclared,
     decorator_param_not_comptime,
-    comptime_param_not_expr,
     expr_value_of_function,
     expr_value_of_type,
     decorator_value_not_comptime,
@@ -940,6 +956,11 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_several,
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
+    compiler_at_run_time,
+    compiler_output_outside_decorator,
+    expr_captures_build,
+    compiler_member_unknown,
+    expr_call_outside_expr,
     build_and_run,
     run_in_build,
     context_declared_twice,

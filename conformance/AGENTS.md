@@ -1137,8 +1137,7 @@ parameter keeps `x is type`; a `Box<T>`'s field is `s.value.value`), and adds, o
 key and an array in a decorator; an ordinary function's `n.value`, specialised; a template's
 `q.value` of a literal without holes) and `modules/decorator_expr_unread_argument` (an argument not known
 at build whose parameter the body never reads is accepted), and the refusals
-`modules/comptime_param_not_expr` and `modules/comptime_param_not_expr_function` (`comptime x: T`, at
-the parameter, naming `@Expr<T>`), `modules/decorator_value_not_comptime` (`message.value` of
+`modules/decorator_value_not_comptime` (`message.value` of
 `env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `modules/decorator_call_expr_fn`
 (`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),

@@ -436,7 +436,7 @@ pub fn isExpandedFn(arena: std.mem.Allocator, f: ast.FnDecl) !bool {
     return false;
 }
 
-/// Whether `tr` names `type` (`@Expr<type>`, `@Expr<V | type T>`).
+/// Whether `tr` names `type` (`@Expr<type>`, `@Expr<V | type<T>>`).
 fn mentionsType(tr: ast.TypeRef) bool {
     return switch (tr) {
         .named => |n| std.mem.eql(u8, n, "type"),

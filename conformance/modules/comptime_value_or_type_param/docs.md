@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § Generics):
 
 > A `comptime` parameter may take **a value or a type** (decision 297):
-> `comptime source: @Expr<Box<T> | type T>`. A `Box<T>` argument binds `T` from
+> `comptime source: @Expr<Box<T> | type<T>>`. A `Box<T>` argument binds `T` from
 > it; a type argument binds `T` to that type; the body tells them apart with
 > `source is type`, decided while the program compiles — only the branch taken
 > is emitted, and where `source is type` holds, reading `source` is

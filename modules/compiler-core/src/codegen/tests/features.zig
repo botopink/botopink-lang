@@ -826,7 +826,7 @@ test "js: enum ---- a method is called on a variant value" {
 
 test "js: lambda ---- with parameter" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
+        \\fn apply(f: fn(x: i32) -> i32) -> i32 {
         \\    return f(10);
         \\}
     );
@@ -834,7 +834,7 @@ test "js: lambda ---- with parameter" {
 
 test "js: lambda ---- multi-statement body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn process(f: syntax fn(x: i32) -> i32) -> i32 {
+        \\fn process(f: fn(x: i32) -> i32) -> i32 {
         \\    return f(5);
         \\}
     );

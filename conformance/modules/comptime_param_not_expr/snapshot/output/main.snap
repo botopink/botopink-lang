@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-param-not-expr: `route`'s parameter `path` is `comptime path: string` — a `comptime` parameter is `comptime path: @Expr<string>`
-at src/main.bp:6:32

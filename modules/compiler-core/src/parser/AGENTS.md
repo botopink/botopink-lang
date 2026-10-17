@@ -42,7 +42,8 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
-├── expr_params.zig    ← decision 364: after the parse, a non-template function's `comptime x: @Expr<T>` keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`); decision 370 (1): a record field's `@Expr<T>` likewise (`Field.exprWrapped`)
+├── expr_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `expr` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `expr` is the declaration handle (`declHandle`); decision 370 (1): a record field's `@Expr<T>` likewise (`Field.exprWrapped`)
+├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a `-> expr T` template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
 ├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
@@ -362,9 +363,8 @@ with `<…>` wraps, and two additions for record/builder ergonomics:
   raises `removed-record-type` at the `{` (1.0.3: a labeled tuple type
   `#(value: T, …)`).
 
-A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
-`TypeRef.function`, so its return may be an array — `fn() -> T[]`);
-`Param.fnType` (`ast.FnType`) is set **only** for `syntax fn(…)` params.
+A `name: fn(…)` param is parsed through `parseTypeRef` (a `TypeRef.function`,
+so its return may be an array — `fn() -> T[]`).
 
 ## The postfix chain — two copies, and why not one
 
@@ -910,23 +910,41 @@ follows, and `failRemovedDeclKeyword` records a located diagnostic:
 messages (`print.zig`) name the 1.0.3 spelling. The words stay usable as
 ordinary identifiers (`val record = 1`).
 
-## Every `comptime` parameter is an `@Expr<T>` (decision 364)
+## `comptime`, `expr` and `compiler` (decisions 575, 576)
 
-`comptime x: @Expr<T>` parses as any builtin generic. Once the program is
-parsed, `expr_params.zig` `unwrapProgram` (called by `Parser.parse`, after the
-template markers) walks every `fn`, `declare fn`, type / behavior /
-`implement` / `extend` method and associated type: a function whose return is
-not a template (`-> @Expr<…>`, `-> @ExprCustom<…>`) has each `comptime`
-parameter's `@Expr<T>` read off — `typeRef` is `T`, `exprWrapped` is set (the
-wrapper's argument slice freed). A template keeps its wrapper (the checker
-captures that argument). `comptime ..xs: @Expr<T[]>` is a variadic:
-`checkVariadicParam` reads the array through the wrapper. The AST dump shows
-`"exprWrapped": true` only when set; the formatter prints `@Expr<T>` back. A
-record field written `@Expr<T>` (decision 370 (1), a typed meta record's field)
-is read off the same way — `Field.typeRef` is `T`, `Field.exprWrapped` set,
-dumped and printed back alike. That
-`comptime x: T` without `@Expr` is an error is the checker's
-(`comptime-param-not-expr`, `../comptime/AGENTS.md`).
+A parameter of the `comptime` family arrives one of two ways, and the parser keeps the internal form the
+checker, the decorator and template evaluators and the comptime runtime read, with `Param.arrival` saying
+what was written (`ast.Arrival`, dumped only when not `written`; the formatter prints it back):
+
+- `comptime x: T` (`arrival = .value`) — the body holds the value, known at build. `parseParam` wraps `T`
+  in the tree type (`decls.zig` `wrapTree`, `ast.expr_type_name`), so a non-template function's parameter
+  ends with `typeRef = T` and `exprWrapped` set (`expr_params.zig` `unwrapProgram`).
+- `expr x: T` (`arrival = .expr`) — the expression written, a tree. `expr` is a modifier only when a name
+  or `..` follows it (`isExprModifierAt`); anywhere else it is a name. Its type may write `fn(..) -> R`
+  (`inDeclPattern`). A top-level function that is no template and whose first parameter is `expr` is a
+  decorator: `expr_params.zig` `declHandle` reads that parameter as the declaration handle
+  (`ast.decl_type_name`; `expr decl: unknown` is the handle with no pattern).
+- `-> expr T` (`parseReturnTypeRef`) — a template's return, the tree type; `ast.isExprKeywordReturn` tells
+  it from an `@Expr<T>` written while both parse.
+- `type<T>` — the type of the type `T` (`types.zig`, a `typeparam` with one member; `type<A | B>` keeps
+  a constraint list); `type T` is `removed-type-bare-param`, at the name. `type` alone, `type(` and
+  `type {` are unchanged.
+- `compiler` lexes as a name: `consumeParamName` refuses it as a parameter (`reserved-word-as-name`);
+  in an expression it is the identifier `ast.compiler_keyword`.
+
+After `unwrapProgram`, `compiler_surface.zig` `expandProgram` reads the surface onto the machinery
+(`Parser.keep_surface` skips it — the formatter and the language server's formatting set it):
+`compiler.<member>(…)` becomes the handle's, the template site's or a builtin's form (its table,
+`members`, is held to std's `compiler.bp` by `comptime/tests/compiler_members.zig`); a bare read of a
+`comptime x: T` is `x.value` outside a member or a wrapper; a `-> expr T` template's `return e` lifts `e`
+(`@expr(e)`) unless it is a tree parameter or a call answering one. A refusal is written at its place
+as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
+`compiler-output-outside-decorator`, `expr-captures-build` inside a member or a wrapper,
+`compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
+
+A record field written `@Expr<T>` (decision 370 (1), a typed meta record's field) is read off as before
+— `Field.typeRef` is `T`, `Field.exprWrapped` set. The parameter modifier `syntax` is gone (decision
+576 (1)): `syntax` is an ordinary name.
 
 ## `defer` (decision 539)
 

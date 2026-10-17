@@ -456,30 +456,6 @@ test "parser: pub fn ---- comptime params" {
     );
 }
 
-test "parser: pub fn ---- syntax bool param" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn check(cond comptime: syntax bool) {
-        \\    @todo();
-        \\}
-    );
-}
-
-test "parser: pub fn ---- syntax fn type param returning generic" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn select<T, R>(lamb comptime: syntax fn(item: T) -> R) {
-        \\    @todo();
-        \\}
-    );
-}
-
-test "parser: pub fn ---- syntax fn type param returning bool" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn where<T>(pred comptime: syntax fn(item: T) -> bool) {
-        \\    @todo();
-        \\}
-    );
-}
-
 test "parser: pub fn ---- type meta-kind no constraint" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn wrap(comptime T: type) -> type {
@@ -490,7 +466,7 @@ test "parser: pub fn ---- type meta-kind no constraint" {
 
 test "parser: pub fn ---- type meta-kind single constraint" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn render(comptime tag: type string, props: i32) -> string {
+        \\pub fn render(comptime tag: type<string>, props: i32) -> string {
         \\    @todo();
         \\}
     );
@@ -498,7 +474,7 @@ test "parser: pub fn ---- type meta-kind single constraint" {
 
 test "parser: pub fn ---- type meta-kind multiple pipe constraints" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\pub fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    @todo();
         \\}
     );

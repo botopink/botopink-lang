@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn process(f: syntax fn(x: i32) -> i32) -> i32 {
+fn process(f: fn(x: i32) -> i32) -> i32 {
     return f(5);
 }
 ```

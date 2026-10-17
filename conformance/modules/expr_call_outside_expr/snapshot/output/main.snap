@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: expr-call-outside-expr: `shout` answers `-> expr`, an expression spliced where it is called, and is called here as a function
+at src/main.bp:12:12

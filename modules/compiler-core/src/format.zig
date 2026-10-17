@@ -317,26 +317,6 @@ pub const Formatter = struct {
         return this.concatAll(&.{ try this.text("implement "), list, try this.text(" ") });
     }
 
-    fn fmtFnType(this: *Formatter, ft: ast.FnType) !*const Doc {
-        var items = try this.arena.alloc(*const Doc, ft.params.len);
-        for (ft.params, 0..) |p, i| {
-            items[i] = try this.text(try std.fmt.allocPrint(
-                this.arena,
-                "{s}: {s}",
-                .{ p.name, p.typeName },
-            ));
-        }
-        const paramsDoc = try this.commaList("(", items, ")");
-        if (ft.returnType) |ret| {
-            return this.concatAll(&.{
-                try this.text("fn"),
-                paramsDoc,
-                try this.text(try std.fmt.allocPrint(this.arena, " -> {s}", .{ret})),
-            });
-        }
-        return this.concat(try this.text("fn"), paramsDoc);
-    }
-
     fn fmtParam(this: *Formatter, p: ast.Param) !*const Doc {
         // Destructuring param
         if (p.destruct) |d| {
@@ -385,10 +365,11 @@ pub const Formatter = struct {
                 try this.fmtTypeRef(p.typeRef),
             });
         }
-        const typeDoc: *const Doc = if (p.modifier == .syntax) blk: {
-            if (p.fnType) |ft| break :blk try this.fmtFnType(ft);
-            break :blk try this.fmtTypeRef(p.typeRef);
-        } else if (p.inlineFields) |fs|
+        const typeDoc: *const Doc = if (p.arrival != .written)
+            // Decision 575 (4) — `comptime x: T` / `expr x: T`: the tree type
+            // the parser read them as prints as the `T` written.
+            try this.fmtTypeRef(arrivalType(p))
+        else if (p.inlineFields) |fs|
             // Decision 207 — an inline parameter type prints as written.
             try this.concat(try this.text("type"), try this.fmtFieldList(fs, false))
         else if (p.exprWrapped)
@@ -411,16 +392,11 @@ pub const Formatter = struct {
                 defaultDoc,
             }),
             .@"comptime" => this.concatAll(&.{
-                try this.text("comptime "),
+                try this.text(if (p.arrival == .expr) "expr " else "comptime "),
                 nameDoc,
                 try this.text(": "),
                 typeDoc,
                 defaultDoc,
-            }),
-            .syntax => this.concatAll(&.{
-                try this.text(p.name),
-                try this.text(" comptime: syntax "),
-                typeDoc,
             }),
         };
     }
@@ -474,9 +450,21 @@ pub const Formatter = struct {
                     try this.fmtTypeRef(r),
                 });
             }
+            // Decision 575 (4) — a template's return, `-> expr T`.
+            if (ast.isExprKeywordReturn(r) and r.generic.args.len == 1)
+                return this.concat(try this.text(" -> expr "), try this.fmtTypeRef(r.generic.args[0]));
             return this.concat(try this.text(" -> "), try this.fmtTypeRef(r));
         }
         return this.nil();
+    }
+
+    /// The type a `comptime x: T` / `expr x: T` parameter was written with:
+    /// `T`, inside the tree type (or the declaration handle) the parser read.
+    fn arrivalType(p: ast.Param) ast.TypeRef {
+        if (p.exprWrapped) return p.typeRef;
+        if ((p.typeRef.isExprType() or p.typeRef.isDeclType()) and p.typeRef.generic.args.len == 1) return p.typeRef.generic.args[0];
+        if (p.typeRef.isDeclType()) return .{ .named = ast.unknown_type_name };
+        return p.typeRef;
     }
 
     // ── body / statements ──────────────────────────────────────────────────────
@@ -3310,10 +3298,12 @@ pub const Formatter = struct {
                 // The constraint list is `|`-separated like a union's members,
                 // and `parseTypeRefMember` parses it the same way.
                 for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRefIn(c, .unionMember);
-                break :blk this.concat(
-                    try this.text("type "),
+                // Decision 575 (5) — `type<T>`.
+                break :blk this.concatAll(&.{
+                    try this.text("type<"),
                     try this.join(docs, try this.text(" | ")),
-                );
+                    try this.text(">"),
+                });
             },
         };
     }

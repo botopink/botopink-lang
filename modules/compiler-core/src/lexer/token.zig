@@ -128,7 +128,6 @@ pub const TokenKind = enum {
     /// `removed-keyword-while` until 1.0.10-beta; a keyword since.
     @"while",
     @"comptime",
-    syntax,
     @"break",
     loop,
     @"continue",

@@ -182,6 +182,7 @@ pub fn formatting(arena: std.mem.Allocator, source: []const u8) !?proto.TextEdit
     var lexer = Lexer.init(source);
     const tokens = lexer.scanAll(arena) catch return null;
     var parser = Parser.init(tokens);
+    parser.keep_surface = true;
     const program = parser.parse(arena) catch return null;
     const formatted = try format_fn(arena, program);
     if (std.mem.eql(u8, source, formatted)) return null;
@@ -559,9 +560,10 @@ fn appendTypeRef(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), tr: ast.TypeRe
         .typeparam => |constraints| {
             try buf.appendSlice(gpa, "type");
             for (constraints, 0..) |c, i| {
-                try buf.appendSlice(gpa, if (i == 0) " " else " | ");
+                try buf.appendSlice(gpa, if (i == 0) "<" else " | ");
                 try appendTypeRef(gpa, buf, c);
             }
+            if (constraints.len > 0) try buf.append(gpa, '>');
         },
     }
 }
@@ -3545,8 +3547,7 @@ fn emitCallHints(
 
 /// For a lambda `{ a, b -> … }` opening at `brace_idx`, emits a `: T` hint after
 /// each parameter name, taken from the callee's declared `fn(...)` parameter
-/// signature — either the legacy `syntax` `param.fnType` or a plain
-/// `TypeRef.function`. No-op when `param` isn't a function-typed param.
+/// signature, a `TypeRef.function`. No-op when `param` isn't a function-typed param.
 fn emitLambdaTypeHints(
     arena: std.mem.Allocator,
     hints: *std.ArrayList(proto.InlayHint),
@@ -3557,9 +3558,7 @@ fn emitLambdaTypeHints(
 ) !void {
     // Resolve the declared parameter-type strings of the callee's fn-type param.
     var param_types: std.ArrayList([]const u8) = .empty;
-    if (param.fnType) |fn_type| {
-        for (fn_type.params) |p| try param_types.append(arena, p.typeName);
-    } else switch (param.typeRef) {
+    switch (param.typeRef) {
         .function => |f| for (f.params) |p| {
             var buf: std.ArrayList(u8) = .empty;
             try appendTypeRef(arena, &buf, p);
@@ -4403,7 +4402,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"while", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch", .unknown => true,
+        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"while", .@"comptime", .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch", .unknown => true,
         else => false,
     };
 }

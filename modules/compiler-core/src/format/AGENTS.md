@@ -38,7 +38,7 @@ format/
 ## Round-trip contract
 
 A union's last member is printed without parentheses unless it is a function
-type (`TypePosition.lastUnionMember`): decision 297's `Box<T> | type T` prints
+type (`TypePosition.lastUnionMember`): decision 297's `Box<T> | type<T>` prints
 as written, while `type T | X` keeps its parentheses everywhere else.
 
 Decision 289's default function round-trips: an anonymous `pub default fn (…)`

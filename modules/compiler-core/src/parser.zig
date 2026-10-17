@@ -12,6 +12,7 @@ const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
 const template_markers = @import("parser/template_markers.zig");
 const expr_params = @import("parser/expr_params.zig");
+pub const compiler_surface = @import("parser/compiler_surface.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -50,8 +51,6 @@ pub const FnDecl = ast.FnDecl;
 pub const ValDecl = ast.ValDecl;
 pub const DelegateDecl = ast.DelegateDecl;
 pub const Annotation = ast.Annotation;
-pub const FnType = ast.FnType;
-pub const FnTypeParam = ast.FnTypeParam;
 pub const ParamDestruct = ast.ParamDestruct;
 pub const Pattern = ast.Pattern;
 pub const ListPatternElem = ast.ListPatternElem;
@@ -222,6 +221,8 @@ pub const ParseErrorType = enum {
     removedKeywordNew,
     /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
     removedRecordType,
+    /// `type T` — the type of a type is written `type<T>` (decision 575 (5)).
+    removedTypeBareParam,
     /// `unknown<i32>` / `unknown(…)` — decision 8 §2's `unknown` is one type,
     /// not a constructor: it takes no type arguments (06 N19).
     unknownTakesNoArguments,
@@ -453,6 +454,11 @@ pub const Parser = struct {
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
     /// for the inner list and credits the second `>` here for the outer one.
     pending_gt: bool = false,
+    /// Decisions 575, 576 — keep the program as written: no
+    /// `compiler_surface` pass. The formatter sets it, so it prints
+    /// `compiler.*`, a bare read of a `comptime` parameter and a template's
+    /// `return e` back as they were written.
+    keep_surface: bool = false,
     /// Decision 316 — set while the type argument of `@Decl<…>` is parsed:
     /// `fn(..) -> R` (a function of any parameters) is a pattern written there
     /// alone (`anyParamsOutsideDecl` anywhere else).
@@ -575,6 +581,13 @@ pub const Parser = struct {
         // Decision 364: a non-template function's `comptime x: @Expr<T>`
         // carries `T` in its `typeRef` (`parser/expr_params.zig`).
         expr_params.unwrapProgram(alloc, &program);
+        // Decisions 575 (3), (4), 576: `compiler.*`, a `comptime x: T`'s bare
+        // reads and a template's returns, read onto the machinery
+        // (`parser/compiler_surface.zig`).
+        if (!this.keep_surface) compiler_surface.expandProgram(alloc, &program) catch {
+            program.deinit(alloc);
+            return ParseError.OutOfMemory;
+        };
         return program;
     }
 
@@ -2075,6 +2088,11 @@ pub const Parser = struct {
     /// declaration (noted in `discardParam` for `refuseDiscardParam`).
     pub fn consumeParamName(this: *This) ParseError!Token {
         if (this.check(.identifier)) {
+            // Decision 575 (3) — `compiler` is a keyword, never a parameter.
+            if (std.mem.eql(u8, this.peek().lexeme, ast.compiler_keyword)) {
+                this.parseError = ParseErrorInfo.fromTokenDetail(.reservedWordAsName, this.peek(), this.peek().lexeme);
+                return ParseError.UnexpectedToken;
+            }
             const tok = this.advance();
             if (this.selfParam == null and std.mem.eql(u8, tok.lexeme, "self")) this.selfParam = tok;
             return tok;

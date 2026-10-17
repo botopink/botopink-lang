@@ -13,6 +13,7 @@ pub fn assertFormat(allocator: Allocator, src: []const u8) !void {
     defer l.deinit(allocator);
 
     var p = parserMod.Parser.init(tokens);
+    p.keep_surface = true;
     var program = try p.parse(allocator);
     defer program.deinit(allocator);
 
@@ -55,6 +56,7 @@ pub fn assertFormatAs(allocator: Allocator, src: []const u8, expected: []const u
     const tokens = try l.scanAll(allocator);
     defer l.deinit(allocator);
     var p = parserMod.Parser.init(tokens);
+    p.keep_surface = true;
     var program = try p.parse(allocator);
     defer program.deinit(allocator);
     const actual = try formatMod.format(allocator, program);
@@ -75,6 +77,7 @@ pub fn assertIdempotent(allocator: Allocator, src: []const u8) !void {
         const tokens = try l.scanAll(allocator);
         defer l.deinit(allocator);
         var p = parserMod.Parser.init(tokens);
+        p.keep_surface = true;
         var program = try p.parse(allocator);
         defer program.deinit(allocator);
         break :blk try formatMod.format(allocator, program);
@@ -86,6 +89,7 @@ pub fn assertIdempotent(allocator: Allocator, src: []const u8) !void {
         const tokens = try l.scanAll(allocator);
         defer l.deinit(allocator);
         var p = parserMod.Parser.init(tokens);
+        p.keep_surface = true;
         var program = try p.parse(allocator);
         defer program.deinit(allocator);
         break :blk try formatMod.format(allocator, program);
@@ -112,6 +116,7 @@ pub fn assertAnnotationsKept(allocator: Allocator, src: []const u8) !void {
         const tokens = try l.scanAll(allocator);
         defer l.deinit(allocator);
         var p = parserMod.Parser.init(tokens);
+        p.keep_surface = true;
         var program = try p.parse(allocator);
         defer program.deinit(allocator);
         break :blk try formatMod.format(allocator, program);
@@ -127,6 +132,7 @@ fn parseDump(allocator: Allocator, src: []const u8) ![]u8 {
     const tokens = try l.scanAll(allocator);
     defer l.deinit(allocator);
     var p = parserMod.Parser.init(tokens);
+    p.keep_surface = true;
     var program = try p.parse(allocator);
     defer program.deinit(allocator);
     return std.json.Stringify.valueAlloc(allocator, program, .{ .whitespace = .indent_2 });
@@ -271,6 +277,7 @@ pub fn assertLossless(allocator: Allocator, src: []const u8) !void {
 
     const formatted = blk: {
         var p = parserMod.Parser.init(srcTokens);
+        p.keep_surface = true;
         var program = try p.parse(allocator);
         defer program.deinit(allocator);
         break :blk try formatMod.format(allocator, program);

@@ -388,21 +388,22 @@ test "infer: an @emit-ing module still yields source-decl TypedBindings (R2)" {
 
 // ── decision 364 — every `comptime` parameter is `comptime x: @Expr<T>` ──────
 
-test "decision 364: `comptime x: T` is refused at the declaration — decorator, function, method, declare fn" {
-    try expectDecoratorError(
-        \\fn route(comptime decl: @Decl, comptime path: string) { }
-    , "comptime-param-not-expr: `route`'s parameter `path` is `comptime path: string` — a `comptime` parameter is `comptime path: @Expr<string>`");
-    try expectDecoratorError(
-        \\fn twice(comptime n: i32) -> i32 { return n * 2; }
-    , "comptime-param-not-expr: `twice`'s parameter `n`");
-    try expectDecoratorError(
+test "decision 575 (4): `comptime x: T` holds the value — decorator, function, method, declare fn" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Level { Low, High }
+        \\fn mark(expr decl: unknown, comptime n: i32, comptime l: Level, comptime xs: string[]) {
+        \\    val total: i32 = n + xs.length;
+        \\    if (l == Level.High) compiler.setMeta("t", total.toString());
+        \\}
+        \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
         \\type Kit {
         \\    fn pick(comptime t: type) -> i32 { return 1; }
         \\}
-    , "comptime-param-not-expr: `pick`'s parameter `t` is `comptime t: type`");
-    try expectDecoratorError(
         \\declare fn host(comptime key: string) -> string;
-    , "comptime-param-not-expr: `host`'s parameter `key`");
+        \\#[mark(2, .High, ["a"])]
+        \\type A(x: i32)
+        \\val s = scale(3, 4);
+    );
 }
 
 test "decision 364: `x.value` is the argument's value, typed `T`" {
