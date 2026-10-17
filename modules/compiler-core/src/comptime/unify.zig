@@ -189,6 +189,10 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
                 }
             },
             else => {
+                // `?unknown` accepts every value, a function included (`body:
+                // ?unknown` taking one, decision 575 (6)), as `unknown` does.
+                if (std.mem.eql(u8, na.name, "optional") and na.args.len == 1 and isUnknown(na.args[0].deref()))
+                    return unify(env, na.args[0], tb);
                 env.lastError = TypeError.typeMismatch(ta, tb);
                 return error.TypeError;
             },

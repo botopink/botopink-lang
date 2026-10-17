@@ -14,14 +14,9 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"lists\"",
-              "\"reverse(xs)\""
-            ],
-            "labels": [
-              "module",
-              "method"
+              ".Erlang(module: \"lists\", method: \"reverse(xs)\")"
             ],
             "is_builtin": true
           }

@@ -2,12 +2,17 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "getContext",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "getContext",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
         "genericParams": [
           {
             "name": "T",
@@ -41,7 +46,9 @@
             ],
             "is_builtin": false
           }
-        }
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

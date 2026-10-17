@@ -5,7 +5,7 @@
 //// `{badmatch, #Fun<…>}` at run time (language-gaps T14). Not scheduled on
 //// commonJS and wasm: no host binding there.
 
-#[@External.Erlang("begin __Loop = $0 + 1, __Loop end")]
+#[@external(.Erlang("begin __Loop = $0 + 1, __Loop end"))]
 declare fn bump(n: i32) -> i32;
 
 pub fn main() {

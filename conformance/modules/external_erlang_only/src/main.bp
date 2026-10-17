@@ -14,7 +14,7 @@
 //// `external_erlang_only.targets` sidecar keeping wasm out for that reason;
 //// decision 67's refusal landed, so the sidecar is gone and all four run here.
 
-#[@External.Erlang("erlang", "list_to_binary")]
+#[@external(.Erlang("erlang:list_to_binary($0)"))]
 declare fn listToBinary(codes: i32[]) -> string;
 
 pub fn main() {

@@ -1384,9 +1384,26 @@ fn findType(env: *Env, name: []const u8) ?FoundType {
         if (env.usesAsset and std.mem.eql(u8, name, "Asset")) {
             return .{ .decl = embedMod.typeDecl(env.arena) catch return null, .helpers = &.{} };
         }
+        // Decision 575 (6) — `Implementation` and its cells' enums, the
+        // prelude's (`external.bp`): a source annotation builds one.
+        if (externalPreludeType(env.arena, name)) |decl| return .{ .decl = decl, .helpers = &.{} };
         return sectionType(env, name);
     };
     return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
+}
+
+/// The type `name` of std's `external.bp` prelude, parsed from it, or null.
+fn externalPreludeType(arena: std.mem.Allocator, name: []const u8) ?ast.TypeDecl {
+    const names = [_][]const u8{ "Implementation", "WasiAdapter", "WasmHost", "WasmNeed" };
+    for (names) |n| {
+        if (!std.mem.eql(u8, n, name)) continue;
+        var lx = @import("../lexer.zig").Lexer.init(@import("std_prelude").external);
+        const tokens = lx.scanAll(arena) catch return null;
+        var p = @import("../parser.zig").Parser.init(tokens);
+        const program = p.parse(arena) catch return null;
+        for (program.decls) |d| if (d == .type_ and std.mem.eql(u8, d.type_.name, name)) return d.type_;
+    }
+    return null;
 }
 
 /// A section of an enum (`conformance/docs.md` § Sections of an enum) is a type of its

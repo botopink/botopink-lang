@@ -2,12 +2,18 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "slice",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "slice",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
             "name": "s",
@@ -61,7 +67,9 @@
         ],
         "returnType": {
           "named": "string"
-        }
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

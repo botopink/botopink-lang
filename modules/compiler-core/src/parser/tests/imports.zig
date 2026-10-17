@@ -1,4 +1,4 @@
-//! parser: import/activate/delegate/star declarations (split from tests.zig).
+//! parser: import/activate/declare/star declarations (split from tests.zig).
 
 const std = @import("std");
 const snapMod = @import("../../utils/snap.zig");
@@ -173,16 +173,11 @@ test "parser: mod in fn body is a parse error" {
     );
 }
 
-test "parser: delegate ---- val form simple" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val log = declare fn(self: Self);
-    );
-}
-
-test "parser: delegate ---- val form with return type" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Predicate = declare fn(value: i32) -> bool;
-    );
+// Decision 575 (6) — the delegate forms went: `val x = declare fn(…)` is
+// refused at its `declare`.
+test "parser: delegate ---- val form is removed-delegate" {
+    try h.expectErrorAt("val log = declare fn(self: Self);", .removedDelegate, 1, 11);
+    try h.expectErrorAt("val Predicate = declare fn(value: i32) -> bool;", .removedDelegate, 1, 17);
 }
 
 test "parser: delegate ---- shorthand simple" {

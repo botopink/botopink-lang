@@ -296,7 +296,6 @@ pub fn buildWith(arena: std.mem.Allocator, modules: []const Module, known: []con
                 try names.append(arena, b.name);
                 try types.append(arena, b.name);
             },
-            .delegate => |dg| if (dg.isPub) try names.append(arena, dg.name),
             else => {},
         };
         const e = tree.entries.getPtr(m.path).?;

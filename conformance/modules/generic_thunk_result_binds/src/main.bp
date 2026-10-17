@@ -7,9 +7,11 @@
 
 pub mod attempts;
 
-#[@External.Node("""((__ms, __v) => new Promise((__r) => { const __end = performance.now() + __ms; const __tick = () => { const __left = __end - performance.now(); if (__left > 0) { setTimeout(__tick, Math.ceil(__left)); } else { __r(__v); } }; setTimeout(__tick, __ms); }))($0, $1)""")]
-#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
-#[@External.Wasm(wasi: .Delay)]
+#[@external(
+    .Node("""((__ms, __v) => new Promise((__r) => { const __end = performance.now() + __ms; const __tick = () => { const __left = __end - performance.now(); if (__left > 0) { setTimeout(__tick, Math.ceil(__left)); } else { __r(__v); } }; setTimeout(__tick, __ms); }))($0, $1)"""),
+    .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
+    .Wasm(wasi: .Delay),
+)]
 declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
 
 fn slow(millis: i32, value: string) -> @Task<@Result<string, string>> {

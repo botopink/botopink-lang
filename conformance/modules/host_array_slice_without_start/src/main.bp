@@ -6,13 +6,13 @@
 //// as 0, and so does the patch now. jhonstart's sidecar `arr.slice()` copy is
 //// the finding. `.targets` is `commonJS`: the patch is that backend's alone.
 
-#[@External.Node("$0.slice()")]
+#[@external(.Node("$0.slice()"))]
 declare fn copyAll(xs: i32[]) -> i32[];
 
-#[@External.Node("$0.slice()")]
+#[@external(.Node("$0.slice()"))]
 declare fn copyText(s: string) -> string;
 
-#[@External.Node("$0.slice(undefined, 2)")]
+#[@external(.Node("$0.slice(undefined, 2)"))]
 declare fn headTwo(xs: i32[]) -> i32[];
 
 pub fn main() {

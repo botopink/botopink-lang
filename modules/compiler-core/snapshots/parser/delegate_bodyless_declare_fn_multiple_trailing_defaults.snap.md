@@ -2,12 +2,18 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "open",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "open",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
             "name": "path",
@@ -62,7 +68,9 @@
         ],
         "returnType": {
           "named": "i32"
-        }
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

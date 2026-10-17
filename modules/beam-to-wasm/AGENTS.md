@@ -14,7 +14,7 @@ call nothing serves, an operand or a literal of another kind — refuses the fun
 named; the refusal reaches a caller only when a call reaches that function, located
 (`` `re:run/3` in `mymod:f/1` ``). **It has no role in botopink for now (decision 452):** the
 compiler's comptime never calls it — a host function reached at build answers by its `std:` cell
-(std-wasm) or its `@External.Wasm(fn: …)` cell, and an `@External.Erlang` cell never runs at
+(std-wasm) or its `.Wasm(body: …)` cell, and an `.Erlang` cell never runs at
 build — and compiler-core imports nothing of this module (`build.zig` wires it to its own tests
 only). It stays a utility with its tests and fixtures, knowing only std-wasm; decision 439 (an
 Erlang cell it refuses is final) no longer applies.
@@ -158,7 +158,7 @@ comptime modules):**
 - **Host functions carried: none.** No library comptime module — decorator, template or
   `comptime` body of erika, jhonstart, rakun, styled, css, emilia, onze, routing, validation, snap,
   json, yaml, markdown, dbcontext, actions, http, log — reaches a host function: no `bp_cell_`
-  call, no `bp_std_wasm` call, no `@External.Erlang` cell to translate.
+  call, no `bp_std_wasm` call, no `.Erlang` cell to translate.
 - **`.erl` sidecars and library modules reached: none.** Every remote call a library comptime
   module makes is OTP's, each already a BIF of the comptime runtime: `binary:match/2`, `part/3`,
   `replace/4`; `erlang:atom_to_binary/1`, `element/2`, `erase/1`, `error/1`, `float/1`,

@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `External.Node`'s `result` is a bool, got `1`
-at src/main.bp:7:3
+refused error: type mismatch: expected bool, got i32
+at src/main.bp:7:45

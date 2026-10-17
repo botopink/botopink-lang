@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `External.Wasm` on `floorOf` takes no `js:` — a wasm binding is one cell, `fn:`, `op:`, `wasi:` or `std:`, beside `host:` (decision 481)
-at src/main.bp:6:22
+refused error: `Implementation.Wasm` has no parameter named `js`
+at src/main.bp:4:70

@@ -320,24 +320,12 @@ test "js: interface ---- a redeclared primitive interface keeps its host members
     );
 }
 
-test "js: delegate ---- emits comment" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\declare fn Callback(msg: string) -> void;
-    );
-}
-
 test "js: interface ---- emits comment" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Drawable = behavior {
         \\    val color: string;
         \\    fn draw(self: Self);
         \\}
-    );
-}
-
-test "js: delegate ---- declaration" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\declare fn Callback(msg: string) -> void;
     );
 }
 

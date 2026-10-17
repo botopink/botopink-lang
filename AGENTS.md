@@ -135,7 +135,7 @@ before any cell runs.
 `"targets"` in its `botopink.json`; an excluded target is not a cell and is
 never run. The exclusion is **audited on every run** instead: `botopink build
 --target <excluded>` must be refused, its first error the missing host binding
-(`has no #[@External.<Target>(…)]`) — the member structurally cannot run there.
+(`has no #[@external(.<Target>(…))]`) — the member structurally cannot run there.
 A member that builds on the target it excludes, or fails there for any other
 reason, fails the run by name ([`scripts/AGENTS.md`](scripts/AGENTS.md)
 § test-libs.sh). `zig build test-libs -- --list` prints the plan — cells and
@@ -376,9 +376,9 @@ Do not use `--no-verify`.
 - **A body's `io:format`** goes to a buffer in the module's own memory, never to
   the compiler's stdout.
 - **Host functions** reached at build answer by std-wasm (`modules/std-wasm`) —
-  the function their `@External.Wasm(std: "…")` cell names (decision 440) —, else
-  their `@External.Wasm(fn: …)` cell (`comptime/host_cells.zig`); none is
-  refused (`comptime-host-cell-unavailable`). An `@External.Erlang` cell never
+  the function their `.Wasm(std: "…")` cell names (decision 440) —, else
+  their `.Wasm(body: …)` cell (`comptime/host_cells.zig`); none is
+  refused (`comptime-host-cell-unavailable`). An `.Erlang` cell never
   runs at build, and compiler-core imports nothing of `modules/beam-to-wasm`
   (decision 452).
 

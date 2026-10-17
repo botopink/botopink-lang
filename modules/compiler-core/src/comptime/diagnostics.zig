@@ -361,6 +361,18 @@ pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
 /// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
 pub const unknown_annotation: []const u8 = "unknown-annotation";
 
+/// Decision 575 (6) — a bodyless `declare fn` (top-level, a type's, static
+/// included) no annotation gave an implementation (`compiler.implement`).
+pub const declare_without_implementation: []const u8 = "declare-without-implementation";
+/// Decision 575 (6) — `declare fn` written inside a `behavior`: a behavior's
+/// member is a signature, or a `default fn` with a body.
+pub const declare_in_behavior: []const u8 = "declare-in-behavior";
+/// Decision 575 (6) — a second implementation for a target the declaration
+/// has one for.
+pub const implementation_twice: []const u8 = "implementation-twice";
+/// Decision 575 (6) — an implementation on a declaration with a body.
+pub const implement_with_body: []const u8 = "implement-with-body";
+
 /// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<R>` (a
 /// component, or no `@Component` at all).
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
@@ -987,6 +999,10 @@ pub const all_codes = [_][]const u8{
     marker_without_arrow,
     marker_lambda_without_expected_type,
     marker_on_declaration,
+    declare_without_implementation,
+    declare_in_behavior,
+    implementation_twice,
+    implement_with_body,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

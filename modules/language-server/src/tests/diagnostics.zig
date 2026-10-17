@@ -146,16 +146,16 @@ test "diagnostics: type mismatch surfaces a located typeError" {
 // decorator cells.) The error is located at the annotation, as every
 // `TypeError` is (`snapshots/comptime/errors/external_wrong_arity.snap.md`,
 // `main.bp:1:3`); here we pin the diagnostic fires.
-test "diagnostics: a misused #[@External.<Target>] annotation surfaces a typeError diagnostic" {
+test "diagnostics: a misused #[@external(…)] source surfaces a typeError diagnostic" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
-        \\#[@External.Erlang(..)]
+        \\#[@external(.Erlang())]
         \\pub declare fn length(s: string) -> i32;
     );
     defer c.deinit(gpa);
 
-    // The refused annotation means there is no successful (.ok) output: `..`
-    // stands where the module and symbol string literals go.
+    // The refused source means there is no successful (.ok) output: `.Erlang()`
+    // names no code.
     try std.testing.expect(!c.isOk());
 
     var found = false;
@@ -163,7 +163,7 @@ test "diagnostics: a misused #[@External.<Target>] annotation surfaces a typeErr
         if (o.outcome != .typeError) continue;
         const msg = try o.outcome.typeError.message(gpa);
         defer gpa.free(msg);
-        if (std.mem.indexOf(u8, msg, "external") != null) found = true;
+        if (std.mem.indexOf(u8, msg, ".Erlang") != null) found = true;
     }
     try std.testing.expect(found);
 }

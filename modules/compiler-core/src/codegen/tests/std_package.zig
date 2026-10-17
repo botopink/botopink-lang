@@ -88,8 +88,7 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {math} from "std";
         \\
-        \\#[@External.Erlang("math", "sqrt"),
-        \\  @External.Node("Math", "sqrt")]
+        \\#[@external(.Erlang("math:sqrt($0)"), .Node("Math.sqrt($0)"))]
         \\declare fn otpSqrt(x: f64) -> f64;
         \\
         \\fn main() {
@@ -284,7 +283,7 @@ test "js: std package ---- a std module imports failure.HostError by path for re
         .{ .path = "io/probe", .source =
         \\import {failure, failure.HostError};
         \\
-        \\#[@External.Node("JSON.parse($0)", result: true)]
+        \\#[@external(.Node("JSON.parse($0)", result: true))]
         \\declare fn probeHost(s: string) -> @Task<@Result<i32, HostError>>;
         },
     });

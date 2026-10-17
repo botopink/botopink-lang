@@ -5,10 +5,12 @@
 //// binding names; the `.Browser` binding (a private botopink body) is the
 //// browser host's. Every target prints the same.
 
-#[@External.Node("Math", "floor")]
-#[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: "f64.floor", host: .Wasi)]
-#[@External.Wasm(fn: floorBody, host: .Browser)]
+#[@external(
+    .Node("Math.floor($0)"),
+    .Erlang("math:floor($0)"),
+    .Wasm(op: "f64.floor", host: .Wasi),
+    .Wasm(body: floorBody, host: .Browser),
+)]
 declare fn floorOf(x: f64) -> f64;
 
 fn floorBody(x: f64) -> f64 {

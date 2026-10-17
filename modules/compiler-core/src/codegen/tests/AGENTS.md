@@ -6,9 +6,9 @@
 Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the
 WAT backend, `test_units.zig` for decision 513 — on every target a module's
 production bytes are equal under `build` and `test`, and only a module of the
-package under test has a test unit, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
+package under test has a test unit, `externals.zig` for `#[@external(.<Target>(…))]` FFI declarations,
 `comptime_module.zig` for `erlang.emitComptimeModule`, `beam_templates.zig` for
-decision 141's audit — every `#[@External.Erlang(…)]` template std, its
+decision 141's audit — every `#[@external(.Erlang(…))]` template std, its
 `primitives.bp` and the bundled libraries ship lowers for beam, through
 `beam_asm.templateBody` / `templateModuleText` / `lowerTemplateText`, the
 functions the backend compiles a call site's template with (a top-level
@@ -68,7 +68,7 @@ a `commonJS`-only cell reaches the erlang backend and is refused there each time
 `externals.zig` closes with the one test here that has no fixture of its own:
 **`no prelude template calls the method it patches`** lexes and parses the
 prelude the compiler EMBEDS (`@import("std_prelude").primitives`, not the file
-on disk) and fails on any behavior method whose `#[@External.Node]` template
+on disk) and fails on any behavior method whose `.Node(…)` template
 calls the method it is about to become a `<Owner>.prototype.<m>` patch for.
 `String.charCodeAt` was exactly that, and it made every `.charCodeAt(…)` in any
 program that installed the `String` prelude — one `s.slice(…)` is enough — blow
@@ -113,7 +113,7 @@ own rows (front `03-beam`), one fixture each, every RUN LOG the value the
 assembled module prints: list patterns (every element bound or tested, the
 length exact without a spread), a lambda literal ending a `case` arm (the arm's
 value, not `ok`), a behavior's `default fn` adopted by an implementing type, `?.` through a
-tuple label on an absent element, `-x` as the unary minus (`-0.0`), a bare `break` ending a `for`, the keyword form of an `@External.Erlang`
+tuple label on an absent element, `-x` as the unary minus (`-0.0`), a bare `break` ending a `for`, the keyword form of an `.Erlang`
 template; and step 2's twins of `02-erlang`'s C-07 fixtures — `unknown` by value,
 `A...B` in a tuple, `true`/`false` in a tuple, a record's constructor pattern, a
 tuple under `..`, and §4.1 × §4.2's truth table (a tuple type tests each element).

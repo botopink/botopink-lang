@@ -4,7 +4,7 @@
 
 import {failure, failure.HostError} from "std";
 
-#[@External.Node("JSON.parse($0)", result: 1), @External.Erlang("json:decode($0)", result: 1)]
+#[@external(.Node("JSON.parse($0)", result: 1), .Erlang("json:decode($0)", result: 1))]
 declare fn jsParse(s: string) -> @Result<i32, HostError>;
 
 pub fn main() {

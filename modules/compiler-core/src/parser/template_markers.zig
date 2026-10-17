@@ -1,4 +1,5 @@
-//! Template markers of `#[@External.<Target>("…")]` annotations — decision 5
+//! Template markers of an `Implementation`'s template (`#[external(.Erlang("…"))]`,
+//! `parser/implementations.zig`) — decision 5
 //! (specs/1.0.4-beta/08-review-backlog/semantics-decisions.md): a template
 //! names the declaration's parameters **by position**, `$0`, `$1`, … over the
 //! declared parameters, `self` included; `$self` is not a marker of the
@@ -7,9 +8,9 @@
 //! The backends' renderers keep one internal receiver convention (`comptime/
 //! primOpTemplate.zig`): the receiver is a separate internal marker
 //! (`receiver_marker`, not writable in source) and `$N` counts the
-//! call's arguments after it. This pass, run once over a parsed program,
-//! translates the source form into that convention so every renderer — and
-//! the code it emits — stays as it was:
+//! call's arguments after it. `rewrite`, run on each template as the parser
+//! reads it (`implementations.read`), translates the source form into that
+//! convention so every renderer — and the code it emits — stays as it was:
 //!
 //! | Declaration                                   | Target          | `$0`        | `$N` (N ≥ 1) |
 //! |-----------------------------------------------|-----------------|-------------|--------------|
@@ -38,85 +39,7 @@ pub const Failure = struct {
     tok: Token,
 };
 
-/// Rewrites the template markers of every annotated declaration in `program`
-/// in place. On a refused marker returns the failure (the program is left as
-/// is; the caller owns it).
-pub fn normalizeProgram(alloc: std.mem.Allocator, tokens: []const Token, program: *ast.Program) !?Failure {
-    for (program.decls) |*d| {
-        switch (d.*) {
-            .type_ => |*t| for (t.methods) |*m| {
-                if (try normalizeDecl(alloc, tokens, m.annotations, m.params, .method)) |f| return f;
-            },
-            .behavior => |*b| for (b.methods) |*m| {
-                if (try normalizeDecl(alloc, tokens, m.annotations, m.params, .method)) |f| return f;
-            },
-            .@"fn" => |*f| {
-                if (try normalizeDecl(alloc, tokens, f.annotations, f.params, .top_level)) |fail| return fail;
-            },
-            else => {},
-        }
-    }
-    return null;
-}
-
-const Site = enum { method, top_level };
-
-const Target = enum { node, erlang, other };
-
-fn targetOf(name: []const u8) ?Target {
-    const n = if (std.mem.startsWith(u8, name, "@")) name[1..] else name;
-    if (!std.mem.startsWith(u8, n, "External.")) return null;
-    const t = n["External.".len..];
-    if (std.mem.eql(u8, t, "Node")) return .node;
-    if (std.mem.eql(u8, t, "Erlang")) return .erlang;
-    return .other;
-}
-
-fn normalizeDecl(
-    alloc: std.mem.Allocator,
-    tokens: []const Token,
-    annotations: []ast.Annotation,
-    params: []ast.Param,
-    site: Site,
-) !?Failure {
-    const has_self = params.len > 0 and std.mem.eql(u8, params[0].name, "self");
-    for (annotations) |*a| {
-        if (targetOf(a.name) == null) continue;
-        const shift = has_self and site == .method;
-        var new_args: ?[][]const u8 = null;
-        errdefer if (new_args) |na| {
-            for (na) |x| alloc.free(x);
-            alloc.free(na);
-        };
-        for (a.args, 0..) |arg, i| {
-            if (std.mem.indexOfScalar(u8, arg, '$') == null) continue;
-            switch (try rewrite(alloc, arg, params.len, shift, has_self and site == .method)) {
-                .unchanged => {},
-                .rewritten => |text| {
-                    if (new_args == null) {
-                        const copy = try alloc.alloc([]const u8, a.args.len);
-                        for (a.args, 0..) |orig, k| copy[k] = try alloc.dupe(u8, orig);
-                        new_args = copy;
-                    }
-                    alloc.free(new_args.?[i]);
-                    new_args.?[i] = text;
-                },
-                .self_marker => return .{ .kind = .selfMarker, .tok = tokenOf(tokens, arg) },
-                .stringify_marker => return .{ .kind = .stringifyMarker, .tok = tokenOf(tokens, arg) },
-                .out_of_range => return .{ .kind = .indexOutOfRange, .tok = tokenOf(tokens, arg) },
-            }
-        }
-        if (new_args) |args| {
-            // The source spelling stays for the formatter and the AST dump.
-            a.source_args = a.args;
-            a.args = args;
-            new_args = null;
-        }
-    }
-    return null;
-}
-
-const Rewrite = union(enum) {
+pub const Rewrite = union(enum) {
     unchanged,
     rewritten: []u8,
     self_marker,
@@ -126,7 +49,7 @@ const Rewrite = union(enum) {
 
 /// `shift`: `$0` becomes the receiver marker and `$N` becomes `$(N-1)`.
 /// `args_with_receiver`: `$args` on a method lists the receiver first.
-fn rewrite(alloc: std.mem.Allocator, arg: []const u8, param_count: usize, shift: bool, args_with_receiver: bool) !Rewrite {
+pub fn rewrite(alloc: std.mem.Allocator, arg: []const u8, param_count: usize, shift: bool, args_with_receiver: bool) !Rewrite {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     var changed = false;
@@ -191,7 +114,7 @@ fn rewrite(alloc: std.mem.Allocator, arg: []const u8, param_count: usize, shift:
 
 /// The token whose lexeme starts the annotation argument `arg` (arguments are
 /// slices of token lexemes); the first token when none matches.
-fn tokenOf(tokens: []const Token, arg: []const u8) Token {
+pub fn tokenOf(tokens: []const Token, arg: []const u8) Token {
     for (tokens) |t| {
         if (t.lexeme.len > 0 and t.lexeme.ptr == arg.ptr) return t;
     }

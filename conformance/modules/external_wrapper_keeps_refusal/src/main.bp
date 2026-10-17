@@ -7,7 +7,7 @@
 //// wrapper around one is not. A member that needs the wrapper restricts its
 //// own `targets`, or the declaration gains the other target's binding.
 
-#[@External.Erlang("erlang:system_info(otp_release)")]
+#[@external(.Erlang("erlang:system_info(otp_release)"))]
 declare fn otpRelease() -> string;
 
 fn linkStatus() -> string {

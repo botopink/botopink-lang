@@ -147,13 +147,13 @@ test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC mo
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
-        \\#[@External.Wasm(std: "text.byteLength")]
+        \\#[@external(.Wasm(std: "text.byteLength"))]
         \\declare fn byteLength(s: string) -> i32;
-        \\#[@External.Wasm(std: "text.byteAt")]
+        \\#[@external(.Wasm(std: "text.byteAt"))]
         \\declare fn byteAt(s: string, i: i32) -> i32;
-        \\#[@External.Wasm(std: "text.byteSlice")]
+        \\#[@external(.Wasm(std: "text.byteSlice"))]
         \\declare fn byteSlice(s: string, a: i32, b: i32) -> string;
-        \\#[@External.Wasm(std: "text.fromCodepoint")]
+        \\#[@external(.Wasm(std: "text.fromCodepoint"))]
         \\declare fn fromCodepoint(cp: i32) -> string;
         \\fn main() {
         \\    val s = "aé日😀";
@@ -218,21 +218,13 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
         \\behavior String {
-        \\    #[@External.Erlang("string:uppercase($0)")]
-        \\    #[@External.Node("toUpperCase")]
-        \\    #[@External.Wasm(fn: shoutBody)]
+        \\    #[@external(.Erlang("string:uppercase($0)"), .Node("toUpperCase"), .Wasm(body: shoutBody))]
         \\    fn shout(self: Self) -> string;
-        \\    #[@External.Erlang("($0 =:= $1)")]
-        \\    #[@External.Node("startsWith")]
-        \\    #[@External.Wasm(fn: sameBody)]
+        \\    #[@external(.Erlang("($0 =:= $1)"), .Node("startsWith"), .Wasm(body: sameBody))]
         \\    fn same(self: Self, other: string) -> bool;
-        \\    #[@External.Erlang("$0")]
-        \\    #[@External.Node("at")]
-        \\    #[@External.Wasm(fn: pickBody)]
+        \\    #[@external(.Erlang("$0"), .Node("at"), .Wasm(body: pickBody))]
         \\    fn pick(self: Self, i: i32) -> ?string;
-        \\    #[@External.Erlang("[$0, $0]")]
-        \\    #[@External.Node("split")]
-        \\    #[@External.Wasm(fn: twiceBody)]
+        \\    #[@external(.Erlang("[$0, $0]"), .Node("split"), .Wasm(body: twiceBody))]
         \\    fn twice(self: Self) -> string[];
         \\}
         \\fn shoutBody(s: string) -> string {
@@ -2149,18 +2141,18 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
 // function of the declared name and signature, so a call is an ordinary call.
 test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\#[@External.Wasm(op: "f64.floor")]
+        \\#[@external(.Wasm(op: "f64.floor"))]
         \\declare fn down(x: f64) -> f64;
-        \\#[@External.Wasm(op: "i32.add")]
+        \\#[@external(.Wasm(op: "i32.add"))]
         \\declare fn plus(a: i32, b: i32) -> i32;
-        \\#[@External.Wasm(op: "f64.lt")]
+        \\#[@external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> bool;
-        \\#[@External.Wasm(fn: greetBody)]
+        \\#[@external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string {
         \\    return "hi " + name;
         \\}
-        \\#[@External.Wasm(wasi: .RandomF64)]
+        \\#[@external(.Wasm(wasi: .RandomF64))]
         \\declare fn draw() -> f64;
         \\fn main() {
         \\    @print(down(2.75) == 2.0);
@@ -2231,45 +2223,45 @@ test "wat: an integer if-expression inside a float function" {
 // as text, never lowered to a guess.
 test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(op: "f64.flor")]
+        \\#[@external(.Wasm(op: "f64.flor"))]
         \\declare fn down(x: f64) -> f64;
         \\fn main() { @print(down(1.5)); }
     , "`f64.flor` is not a wasm numeric instruction", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(op: "f64.min")]
+        \\#[@external(.Wasm(op: "f64.min"))]
         \\declare fn least(x: f64) -> f64;
         \\fn main() { @print(least(1.5)); }
     , "`f64.min` is `(f64, f64) -> f64`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(op: "f64.lt")]
+        \\#[@external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> f64;
         \\fn main() { @print(below(1.0, 2.0)); }
     , "`f64.lt` is `(f64, f64) -> bool`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(fn: greetBdy)]
+        \\#[@external(.Wasm(body: greetBdy))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
-    , "unbound variable 'greetBdy'", 1, 22);
+    , "unbound variable 'greetBdy'", 1, 25);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(fn: greetBody)]
+        \\#[@external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\pub fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
     , "`greetBody` is `pub`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(fn: greetBody)]
+        \\#[@external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string, n: i32) -> string { return name; }
         \\fn main() { @print(greet("x")); }
     , "must take the same parameter types in the same order", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm(wasi: .ClockTimeGet)]
+        \\#[@external(.Wasm(wasi: .ClockTimeGet))]
         \\declare fn now() -> f64;
         \\fn main() { @print(now()); }
-    , "`.ClockTimeGet` is not a WASI adapter", 1, 3);
+    , "unbound variable 'ClockTimeGet'", 1, 25);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@External.Wasm("""(f64.floor $0)""")]
+        \\#[@external(.Wasm("""(f64.floor $0)"""))]
         \\declare fn down(x: f64) -> f64;
         \\fn main() { @print(down(1.5)); }
     , "is none of the four cells", 1, 3);
@@ -2323,27 +2315,6 @@ test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
         }
     }
     try std.testing.expectEqual(hb.adapters.len, rows);
-}
-
-// The refusal of an unknown `wasi:` adapter lists every adapter, and the
-// conformance cell `external_wasm_wasi_unknown` claims that list in its
-// answer: an adapter added to `adapters` changes the cell's answer, which only
-// `test-conformance` reads — skipped by the commit hook (decision 470). This
-// test reads the cell's snapshot so the hook's `zig build test` names the
-// stale cell at the commit that adds the adapter (decision 478; `.Attempt`,
-// decision 518, left the cell red on feat's pipeline until it was updated).
-test "wat: host binding ---- external_wasm_wasi_unknown's answer lists every adapter" {
-    const hb = @import("../wat/host_binding.zig");
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-    const cell_snap = try std.Io.Dir.cwd().readFileAlloc(io, "../../conformance/modules/external_wasm_wasi_unknown/snapshot/output/main.snap", alloc, .limited(1 << 16));
-    defer alloc.free(cell_snap);
-    const listed = try std.fmt.allocPrint(alloc, "§ Host bindings ({s})", .{hb.adapterNames()});
-    defer alloc.free(listed);
-    if (std.mem.indexOf(u8, cell_snap, listed) == null) {
-        std.debug.print("conformance/modules/external_wasm_wasi_unknown/snapshot/output/main.snap does not list the adapters host_binding.zig binds: {s}\n", .{hb.adapterNames()});
-        return error.WasiUnknownCellStale;
-    }
 }
 
 // Decision 440 (2) — std-wasm's program face, decoded: every function it
@@ -2496,7 +2467,7 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         const decl = try std.fmt.bufPrint(&fn_buf, "fn {s}(", .{row.method});
         const f = std.mem.indexOfPos(u8, src, at, decl) orelse return error.MethodMissing;
         var cell_buf: [96]u8 = undefined;
-        const cell = try std.fmt.bufPrint(&cell_buf, "#[@External.Wasm(std: \"{s}\")]", .{row.export_name});
+        const cell = try std.fmt.bufPrint(&cell_buf, ".Wasm(std: \"{s}\")", .{row.export_name});
         // The cell sits in the annotation block right above the declaration.
         const block_start = std.mem.lastIndexOf(u8, src[0..f], ";") orelse at;
         if (std.mem.indexOf(u8, src[block_start..f], cell) == null) {
@@ -2505,7 +2476,7 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         }
     }
     var n: usize = 0;
-    var it = std.mem.splitSequence(u8, src, "#[@External.Wasm(std: \"");
+    var it = std.mem.splitSequence(u8, src, ".Wasm(std: \"");
     _ = it.next();
     while (it.next()) |rest| {
         const end = std.mem.indexOfScalar(u8, rest, '"') orelse return error.CellUnreadable;
@@ -2513,7 +2484,9 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         // `declare fn` at the top level, adopted by the call that reaches it
         // (`adoptPreludeHostFn`), not a method row — std-wasm exports it.
         const after = rest[end..];
-        const line_end = std.mem.indexOfScalar(u8, after, '\n') orelse return error.CellUnreadable;
+        // The declaration follows the annotation's closing `)]`.
+        const close = std.mem.indexOf(u8, after, ")]") orelse return error.CellUnreadable;
+        const line_end = std.mem.indexOfScalarPos(u8, after, close, '\n') orelse return error.CellUnreadable;
         if (std.mem.startsWith(u8, after[line_end + 1 ..], "declare fn ")) {
             if (stdWasm.find(rest[0..end]) == null) {
                 std.debug.print("primitives.bp binds `std:{s}` and std-wasm exports no such function\n", .{rest[0..end]});
@@ -2597,7 +2570,7 @@ test "wat: std ---- testing.mocks is refused on wasm for its own host cell, neve
         if (!std.mem.eql(u8, o.name, "std/testing/mocks")) continue;
         const d = o.result.diagnostic orelse return error.ExpectedRefusal;
         const message = d.type.message;
-        try std.testing.expect(std.mem.indexOf(u8, message, "has no `#[@External.<Target>(…)]` for the wasm backend") != null);
+        try std.testing.expect(std.mem.indexOf(u8, message, "has no implementation for the wasm backend") != null);
         try std.testing.expect(std.mem.indexOf(u8, message, "which this import links") == null);
         try std.testing.expect(std.mem.indexOf(u8, message, "`canonical`") == null);
         return;
@@ -2629,29 +2602,26 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
 test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {
     const a = std.testing.allocator;
     try h.assertJsRefusedAt(a,
-        \\#[@External.Node("String")]
-        \\#[@External.Wasm(std: "hash.contentHash")]
+        \\#[@external(.Node("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digest(x: string) -> string;
         \\fn main() {
         \\    @print(digest("Point"));
         \\}
-    , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 2, 3);
+    , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@External.Node("Math", "floor")]
-        \\#[@External.Wasm(std: "math.floorOf")]
+        \\#[@external(.Node("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
         \\declare fn floorOf(x: f64) -> f64;
         \\fn main() {
         \\    @print(floorOf(2.5));
         \\}
-    , "std-wasm implements no `math.floorOf`", 2, 3);
+    , "std-wasm implements no `math.floorOf`", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@External.Node("String")]
-        \\#[@External.Wasm(std: "hash.contentHash")]
+        \\#[@external(.Node("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digestOf(x: i32) -> string;
         \\fn main() {
         \\    @print(digestOf(7));
         \\}
-    , "std-wasm's `hash.contentHash` is `(string) -> string`, and `digestOf` is declared `(i32) -> string`", 2, 3);
+    , "std-wasm's `hash.contentHash` is `(string) -> string`, and `digestOf` is declared `(i32) -> string`", 1, 3);
 }
 
 // Decision 445 — each std-wasm export names the std function that binds it,

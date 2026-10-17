@@ -2,12 +2,18 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "transform",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "transform",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
             "name": "input",
@@ -22,7 +28,9 @@
         ],
         "returnType": {
           "named": "string"
-        }
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

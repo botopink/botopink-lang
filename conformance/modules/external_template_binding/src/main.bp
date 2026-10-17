@@ -1,5 +1,4 @@
-#[@External.Node("$0.toUpperCase()")]
-#[@External.Erlang("string:uppercase($0)")]
+#[@external(.Node("$0.toUpperCase()"), .Erlang("string:uppercase($0)"))]
 pub declare fn shout(text: string) -> string;
 
 pub fn main() {

@@ -502,7 +502,7 @@ test "surface R10: a decided-against form renders its code, the replacement and 
         \\1 | fn f() -> i32 { return 1 << 2; }
         \\  |                          ^^ not an operator `<<`
         \\  |
-        \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.
+        \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@external(.<Target>(…))]` is the way to a bit operation.
         \\
         \\
     ,

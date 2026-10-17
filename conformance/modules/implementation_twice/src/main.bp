@@ -1,0 +1,10 @@
+//// Decision 575 (6) — one implementation per target: a second `.Node(…)` for
+//// a declaration that has one is refused where it is written.
+
+#[@external(.Node("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
+#[@external(.Node("Math.floor($0)"))]
+declare fn magnitude(x: f64) -> f64;
+
+pub fn main() {
+    @print(magnitude(-2.5));
+}

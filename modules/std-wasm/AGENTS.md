@@ -10,7 +10,7 @@ One implementation for two consumers: the comptime
 runtime, on every target (434 (5): a comptime result is std-wasm's answer whatever `--target`
 says), and a `--target wasm` program, into which the codegen transpiles the functions it calls
 (440 (2)). A std function is served by std-wasm only where its
-`#[@External.Wasm(std: "<module>.<function>")]` cell names one of `root.exports` (440 (3)) —
+`#[@external(.Wasm(std: "<module>.<function>"))]` cell names one of `root.exports` (440 (3)) —
 there is no match by name. Everything a `--target wasm` program computes over values — text,
 a number's text, arrays, `bigint` — is here, not in the codegen's `wat_prelude` (442 (2));
 `root.program` lists the functions only the wasm codegen calls.
@@ -143,7 +143,7 @@ What the wasm codegen calls by itself — its arguments are the codegen's, not a
 a string's code point bounds, an array's slot words whatever its element type, an integer
 by its carrier, a `bigint` block's address. A `std:` cell names none of them (`find` reads
 `exports` alone) and the comptime runtime serves none (a comptime module reaches std's
-methods through their `@External.Erlang` cells).
+methods through their `.Erlang` cells).
 
 | Function | What the codegen calls it for |
 |---|---|
@@ -333,13 +333,13 @@ every host function `host_cells.forRuntime` carried were recorded (686 modules).
 
 | Function | BEAM runtime cell (before 434) | wat runtime cell (before 434) | std-wasm |
 |---|---|---|---|
-| `hash.contentHash` | `@External.Erlang` template (djb2 over `unicode:characters_to_list`, `integer_to_list(H, 16)`, `string:lowercase`) | `@External.Wasm(fn: contentHashBody)` (the botopink body, deleted by 440: the cell is `std:hash.contentHash`) | `hash.contentHash`, export `rt_std_hash__contentHash` |
+| `hash.contentHash` | `.Erlang` template (djb2 over `unicode:characters_to_list`, `integer_to_list(H, 16)`, `string:lowercase`) | `.Wasm(body: contentHashBody)` (the botopink body, deleted by 440: the cell is `std:hash.contentHash`) | `hash.contentHash`, export `rt_std_hash__contentHash` |
 
 No library build carries a host function at comptime; `unicode`, `json` and std's other modules
 reach comptime only as botopink bodies lowered with the module.
 
 **Primitive methods reached** (std `primitives.bp` cells, carried as `'__bp_prim_<m>'` shims whose
-clauses are the methods' `@External.Erlang` templates, the same text on both runtimes before 434):
+clauses are the methods' `.Erlang` templates, the same text on both runtimes before 434):
 `toString`, `join`, `at`, `push`, `filter`, `append`, `split`, `indexOf`, `map`, `startsWith`,
 `trim`, `toUpper`, `slice`, `replaceAll`, `length`, `endsWith`, `contains`, `chars`, `charCodeAt`,
 `floor`, `toLower`, `all`, `any`, `trimEnd`, `trimStart`, `zip`, `reverse`. Their text BIFs answer

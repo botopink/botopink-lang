@@ -259,15 +259,15 @@ test "beam: a bare break in a for's body ends the loop" {
 // ── the keyword form of an `@External.Erlang` template ──────────────────────
 
 test "beam: the keyword form's method is a template compiled at build time" {
-    // `#[@External.Erlang(module: "erlang", method: "max($args)")]` carries
+    // `#[@External.Erlang("erlang:max($args)")]` carries
     // a template, which erlang renders as written (`max(1, 2)`); beam refused
     // every call — "has no `#[@External.<Target>(…)]` for the beam backend"
     // (`conformance/test/external_markers.bp`). It is compiled like any
     // template now (`evalTemplate`), and so is the `pub` wrapper.
     try h.assertBeamRunLog(std.testing.allocator,
-        \\#[@External.Erlang(module: "erlang", method: "max($args)")]
+        \\#[@external(.Erlang("erlang:max($args)"))]
         \\declare fn biggest(a: i32, b: i32) -> i32;
-        \\#[@External.Erlang(module: "erlang", method: "min($0, $1)")]
+        \\#[@external(.Erlang("erlang:min($0, $1)"))]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
         \\fn main() {
         \\    @print(biggest(1, 2));
@@ -284,12 +284,12 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
     // (`conformance/modules/external_template_refused_on_beam`). Under
     // `std.testing.allocator` freed memory is poisoned, so this reads it.
     try h.assertBeamRefusedAt(std.testing.allocator,
-        \\#[@External.Erlang("""length(atom_to_list(?MODULE)) > 0""")]
+        \\#[@external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
         \\declare fn moduleNamed() -> bool;
         \\fn main() {
         \\    @print(moduleNamed());
         \\}
-    , "`moduleNamed`'s `#[@External.Erlang(…)]` template does not compile for the beam backend: macros (`?NAME`)", 4, 12);
+    , "`moduleNamed`'s `.Erlang(…)` template does not compile for the beam backend: macros (`?NAME`)", 4, 12);
 }
 
 // ── step 2 — C-07's beam tails: decision 8 §2, §4, §5, §6 on beam ───────────

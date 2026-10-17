@@ -3,8 +3,7 @@
 //// value names no host, and is refused at the annotation rather than read as
 //// "every host".
 
-#[@External.Node("Math", "floor")]
-#[@External.Wasm(op: "f64.floor", host: .Deno)]
+#[@external(.Node("Math.floor($0)"), .Wasm(op: "f64.floor", host: .Deno))]
 declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

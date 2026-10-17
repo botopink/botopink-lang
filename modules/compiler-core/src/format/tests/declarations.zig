@@ -491,7 +491,7 @@ test "format: type (enum) ---- nested sections with numeric leaves are preserved
 
 test "format: declare fn ---- external declaration keeps `declare` and stays bodyless" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@External.Erlang("string", "length")]
+        \\#[@external(.Erlang("string:length($0)"))]
         \\pub declare fn length(s: string) -> i32;
     );
 }
@@ -925,15 +925,14 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@External.Erlang("string:slice($0, 0, 1)", inline: true)]
+        \\#[@external(.Erlang("string:slice($0, 0, 1)", inline: true))]
         \\pub declare fn f(s: string) -> string;
     );
     try h.assertIdempotent(std.testing.allocator,
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@External.Node(fn: fBody)]
-        \\#[@External.Erlang(fn: fBody)]
+        \\#[@external(.Node(body: fBody), .Erlang(body: fBody))]
         \\pub declare fn f(s: string) -> string;
     );
     // Decorators (`check`) print theirs the same way, mixed in one list.
@@ -948,16 +947,16 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
 
 test "format: a wasm cell prints as its labelled argument (decision 481)" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@External.Wasm(fn: tanBody)]
+        \\#[@external(.Wasm(body: tanBody))]
         \\pub declare fn tan(x: f64) -> f64;
         \\
-        \\#[@External.Wasm(op: "f64.floor", host: .Wasi)]
+        \\#[@external(.Wasm(op: "f64.floor", host: .Wasi))]
         \\pub declare fn floorOf(x: f64) -> f64;
         \\
-        \\#[@External.Wasm(wasi: .Delay)]
+        \\#[@external(.Wasm(wasi: .Delay))]
         \\declare fn later<T>(millis: i32, value: T) -> @Task<T>;
         \\
-        \\#[@External.Wasm(std: "hash.contentHash")]
+        \\#[@external(.Wasm(std: "hash.contentHash"))]
         \\pub declare fn contentHash(value: string) -> string;
     );
 }
@@ -1163,17 +1162,18 @@ test "format: annotations ---- two blocks and one list on a function" {
 
 test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     try h.assertFormat(std.testing.allocator,
-        \\#[
-        \\    @External.Node("mixBody", inline: true),
-        \\    @External.Erlang("mixBody", inline: true),
-        \\    @External.Beam("mixBody", inline: true),
-        \\]
+        \\#[@external(
+        \\    .Node("mixBody", inline: true),
+        \\    .Erlang("mixBody", inline: true),
+        \\    .Beam("mixBody", inline: true),
+        \\)]
         \\fn mix(a: i32) -> i32 {
         \\    return a;
         \\}
     );
     try h.assertFormat(std.testing.allocator,
-        \\#[@External.Node("a"), check("m", rule, at: .confirm)]
+        \\#[check("m", rule, at: .confirm)]
+        \\#[@external(.Node("a"))]
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
     );
@@ -1205,10 +1205,7 @@ test "format: annotations ---- round trips, idempotent, lossless, order kept" {
         \\#[a, b]
         \\fn f() {}
         ,
-        \\#[
-        \\    @External.Node("mixBody", inline: true),
-        \\    @External.Erlang("mixBody", inline: true),
-        \\]
+        \\#[@external(.Node("mixBody", inline: true), .Erlang("mixBody", inline: true))]
         \\fn mix() {}
         ,
         \\#[mark, sql "a ${b}"]

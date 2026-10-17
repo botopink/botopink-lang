@@ -2,9 +2,11 @@
 //// `comptime` values and constants alone: a field of a run-time variable
 //// passed to it is `comptime-arg-not-known` at the variable (417).
 
-#[@External.Node("""console.log($0)""")]
-#[@External.Erlang("""io:format("~ts~n", [$0])""")]
-#[@External.Wasm(fn: sayBody)]
+#[@external(
+    .Node("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
 declare fn say(line: string);
 
 fn sayBody(line: string) {

@@ -6,8 +6,7 @@
 ////
 //// wasm never imitates a host raise (527 (0)): the binding has no wasm form.
 
-#[@External.Node("""(() => { throw new Error("boom"); })()""")]
-#[@External.Erlang("""erlang:error(boom)""")]
+#[@external(.Node("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn explode() -> i32;
 
 pub fn main() {

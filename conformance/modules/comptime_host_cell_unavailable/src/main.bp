@@ -5,7 +5,7 @@
 //// at comptime — so the call is refused when the package is compiled, naming
 //// the function and both cells, whatever the build's target.
 
-#[@External.Node("""($0 + "!")""")]
+#[@external(.Node("""($0 + "!")"""))]
 declare fn bang(value: string) -> string;
 
 fn sized(comptime decl: @Decl) {

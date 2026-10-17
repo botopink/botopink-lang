@@ -1976,7 +1976,6 @@ fn emitErlangModule(
     try em.collectExtensionNames(program);
     defer em.ext_names.deinit();
     try em.collectExternals(program);
-    defer em.externals.deinit();
     defer em.externals_missing.deinit();
     defer em.external_record_returns.deinit();
     try em.collectStdImports(program);
@@ -2384,9 +2383,7 @@ fn emitErlangModule(
                     continue;
                 }
                 // FFI declaration — calls lower to the remote target directly.
-                const text = if (em.externals.get(f.name)) |ref|
-                    try std.fmt.allocPrint(b.arena, "external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
-                else if (em.user_erlang_templates.contains(f.name))
+                const text = if (em.user_erlang_templates.contains(f.name))
                     try std.fmt.allocPrint(b.arena, "external fn {s} -> erlang template", .{f.name})
                 else
                     try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
@@ -2407,7 +2404,6 @@ fn emitErlangModule(
             .use => |u| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try useComment(b, u)) }),
             // `mod` is module-tree metadata; the submodule emits as its own atom.
             .mod => {},
-            .delegate => |d| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "delegate {s}", .{d.name})) }),
             // Test blocks live in the test unit (`emitTestUnit`, decision 513).
             .@"test" => {},
             .comment => |c| try forms.append(b.arena, .{ .comment = .{
@@ -3175,15 +3171,9 @@ fn isPrintBuiltin(callee: []const u8) bool {
     return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or std.mem.eql(u8, callee, "debug");
 }
 
-/// True when any `External.<target>(…)` annotation writes `inline: true` —
-/// read by its label, wherever it is written (decision 487).
-fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bool {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        if (ast.externalFlagSet(a, "inline")) return true;
-    }
-    return false;
+/// True when the `.Erlang(…)` implementation writes `inline: true`.
+fn hasExternalInline(implementations: []const ast.Implementation, target: []const u8) bool {
+    return ast.implementationInline(implementations, target);
 }
 
 // ── Emitter ───────────────────────────────────────────────────────────────────
@@ -3310,10 +3300,7 @@ const Emitter = struct {
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Set of `implement`/`extend` block names (for qualified-call dispatch).
     ext_names: std.StringHashMap(void),
-    /// `@[external(erlang, "module", "symbol")]` fns: name → remote target.
-    /// Calls lower to `module:symbol(Args)`; the decl itself emits nothing.
-    externals: std.StringHashMap(ast.ExternalRef),
-    /// `@[external(…)]` fns with no `erlang` target — calling one is an error.
+    /// Implemented fns with no `.Erlang` implementation — calling one is an error.
     externals_missing: std.StringHashMap(void),
     /// A host-backed `declare fn` whose declared return type NAMES a record:
     /// fn name → record type name. The host builds the value, so the boundary
@@ -3748,7 +3735,6 @@ const Emitter = struct {
             .alloc = alloc,
             .rewrites = rewrites,
             .ext_names = std.StringHashMap(void).init(alloc),
-            .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .external_record_returns = std.StringHashMap([]const u8).init(alloc),
             .std_imports = std.StringHashMap([]const u8).init(alloc),
@@ -3797,44 +3783,18 @@ const Emitter = struct {
     /// instead of being skipped (decision 67).
     fn collectBuiltinErlangDispatch(this: *Emitter) !void {
         try this.registerInlineBuiltinErlangDispatch();
-        // Scan `builtins_fns.d.bp` for top-level `declare fn` with
-        // `#[@External.Erlang]` / `#[@External.Node]` annotations.
-        try this.scanDeclareFnExternal("erlang", prelude.builtins);
-        // Also scan `primitives.bp` so helpers like `stringSlice0`/`stringSlice1`
-        // are discovered — the `default fn slice(...)` wrapper calls them.
-        try this.scanDeclareFnExternal("erlang", prelude.primitives);
+        // `builtins.d.bp`'s implementations, and `primitives.bp`'s so helpers
+        // like `stringSlice0`/`stringSlice1` are discovered — the `default fn
+        // slice(...)` wrapper calls them. Both parsed once per process
+        // (`prelude_cache`).
+        try this.scanPreludeImplementations("erlang", prelude_cache.builtins());
+        try this.scanPreludeImplementations("erlang", prelude_cache.primitives());
     }
 
-    /// Scan `src` (embedded .bp source) for top-level `declare fn` carrying
-    /// `#[@External.<Target>]` annotations. Registers single-template entries
-    /// (no arity branches) in `builtin_erlang_dispatch`. Arity-branched entries
-    /// are NOT handled here — those go through `registerInlineBuiltinErlangDispatch`.
-    fn scanDeclareFnExternal(this: *Emitter, target: []const u8, src: []const u8) !void {
-        var arena = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena.deinit();
-        const alloc_arena = arena.allocator();
-        // The embedded prelude (`builtins.d.bp`, `primitives.bp`) parses — a
-        // test in `codegen/tests/builtins.zig` pins it — so a failure here
-        // is a broken compiler, not a best-effort miss: it stops loudly instead
-        // of silently dropping every `#[External.*]` the file declares
-        // (decision 67).
-        var lx = lexerMod.Lexer.init(src);
-        const tokens = lx.scanAll(alloc_arena) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => std.debug.panic("embedded std prelude does not lex: {s}", .{@errorName(err)}),
-        };
-        var p = parserMod.Parser.initWithSource(tokens, src);
-        var program = p.parse(alloc_arena) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.UnexpectedToken => {
-                const pe = p.parseError;
-                std.debug.panic("embedded std prelude does not parse at {d}:{d}", .{
-                    if (pe) |e| e.line else 0,
-                    if (pe) |e| e.col else 0,
-                });
-            },
-        };
-        defer program.deinit(alloc_arena);
+    /// Registers `program`'s (a std prelude file's) template implementations
+    /// for `target` in `builtin_erlang_dispatch`.
+    fn scanPreludeImplementations(this: *Emitter, target: []const u8, parsed: ?ast.Program) !void {
+        const program = parsed orelse std.debug.panic("embedded std prelude does not parse", .{});
         for (program.decls) |decl| {
             if (decl == .behavior) {
                 try this.scanAssocHostTemplates(target, decl.behavior);
@@ -3844,10 +3804,10 @@ const Emitter = struct {
             const f = decl.@"fn";
             if (this.builtin_erlang_dispatch.contains(f.name)) continue;
             const ref = f.externalFor(target) orelse continue;
-            if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+            if (primOpTemplate.looksLikeTemplate(ref.text)) {
                 try this.builtin_erlang_dispatch.put(try this.alloc.dupe(u8, f.name), .{
                     .module = "",
-                    .symbol = try this.alloc.dupe(u8, ref.symbol),
+                    .symbol = try this.alloc.dupe(u8, ref.text),
                     .args = null,
                     .arity_branches = &.{},
                 });
@@ -3865,7 +3825,7 @@ const Emitter = struct {
             if (m.body != null) continue;
             if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
             const ref = m.externalFor(target) orelse continue;
-            if (!primOpTemplate.looksLikeTemplate(ref.symbol)) continue;
+            if (!primOpTemplate.looksLikeTemplate(ref.text)) continue;
             const key = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ iface.name, m.name });
             if (this.builtin_erlang_dispatch.contains(key)) {
                 this.alloc.free(key);
@@ -3873,7 +3833,7 @@ const Emitter = struct {
             }
             try this.builtin_erlang_dispatch.put(key, .{
                 .module = "",
-                .symbol = try this.alloc.dupe(u8, ref.symbol),
+                .symbol = try this.alloc.dupe(u8, ref.text),
                 .args = null,
                 .arity_branches = &.{},
             });
@@ -4051,39 +4011,8 @@ const Emitter = struct {
     fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
-            // `prim-op-annotation` arity-branch form takes precedence: when the
-            // method's `#[@External.Erlang(…)]` carries one or more
-            // `when($argc == N): "..."` clauses, store every branch and skip
-            // the ref read (arity-branch annotations may carry 3+ args).
-            if (ast.externalHasArityBranches(m.annotations, "erlang")) {
-                if (hasExternalInline(m.annotations, "erlang")) continue;
-                const key = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ iface.name, m.name });
-                if (this.prim_erlang_dispatch.contains(key)) {
-                    this.alloc.free(key);
-                    continue;
-                }
-                var branches: std.ArrayList(ast.ArityBranch) = .empty;
-                errdefer branches.deinit(this.alloc);
-                for (m.annotations) |a| {
-                    if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
-                    for (a.args) |raw| {
-                        const b = ast.parseArityBranchArg(raw) orelse continue;
-                        try branches.append(this.alloc, .{
-                            .argc = b.argc,
-                            .template = try this.alloc.dupe(u8, b.template),
-                        });
-                    }
-                }
-                try this.prim_erlang_dispatch.put(key, .{
-                    .module = "",
-                    .symbol = "",
-                    .args = null,
-                    .arity_branches = try branches.toOwnedSlice(this.alloc),
-                });
-                continue;
-            }
             const ref = m.externalFor("erlang") orelse continue;
-            if (hasExternalInline(m.annotations, "erlang")) continue;
+            if (hasExternalInline(m.implementations, "erlang")) continue;
             const key = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ iface.name, m.name });
             if (this.prim_erlang_dispatch.contains(key)) {
                 this.alloc.free(key);
@@ -4095,22 +4024,22 @@ const Emitter = struct {
             // empty head and one bogus arg). `primAnnotationNode` runs the same
             // `looksLikeTemplate` discriminator and renders via
             // `comptime/primOpTemplate.zig`.
-            if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+            if (primOpTemplate.looksLikeTemplate(ref.text)) {
                 try this.prim_erlang_dispatch.put(key, .{
                     .module = "",
-                    .symbol = try this.alloc.dupe(u8, ref.symbol),
+                    .symbol = try this.alloc.dupe(u8, ref.text),
                     .args = null,
                 });
                 continue;
             }
-            const tmpl = ast.parseExternalCallTemplate(ref.symbol, &slots);
+            const tmpl = ast.parseExternalCallTemplate(ref.text, &slots);
             const owned_args: ?[][]const u8 = if (tmpl.args) |args| blk: {
                 const out = try this.alloc.alloc([]const u8, args.len);
                 for (args, 0..) |a, i| out[i] = try this.alloc.dupe(u8, a);
                 break :blk out;
             } else null;
             try this.prim_erlang_dispatch.put(key, .{
-                .module = try this.alloc.dupe(u8, ref.module),
+                .module = "",
                 .symbol = try this.alloc.dupe(u8, tmpl.symbol),
                 .args = owned_args,
             });
@@ -5839,35 +5768,9 @@ const Emitter = struct {
     /// template: the wrap has no `module:symbol` form.
     fn collectResultExternal(this: *Emitter, f: ast.FnDecl) !void {
         const atoms = try this.hostErrorAtoms();
-        if (ast.externalHasArityBranches(f.annotations, "erlang")) {
-            var branches: std.ArrayList(ast.ArityBranch) = .empty;
-            errdefer branches.deinit(this.alloc);
-            for (f.annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
-                for (a.args) |raw| {
-                    const br = ast.parseArityBranchArg(raw) orelse continue;
-                    const inner = try unescapeTemplate(this.alloc, br.template);
-                    defer this.alloc.free(inner);
-                    try branches.append(this.alloc, .{
-                        .argc = br.argc,
-                        .template = try erlTemplate.resultWrapBound(this.alloc, inner, br.argc, atoms),
-                    });
-                }
-            }
-            try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
-                .module = "",
-                .symbol = "",
-                .args = null,
-                .arity_branches = try branches.toOwnedSlice(this.alloc),
-            });
-            return;
-        }
         const ref = f.externalFor("erlang") orelse return this.externals_missing.put(f.name, {});
         const argc = f.params.len;
-        const inner = if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
-            try unescapeTemplate(this.alloc, ref.symbol)
-        else
-            try erlTemplate.remoteCallTemplate(this.alloc, ref.module, ref.symbol, argc);
+        const inner = try unescapeTemplate(this.alloc, ref.text);
         defer this.alloc.free(inner);
         try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
             .module = "",
@@ -5896,66 +5799,21 @@ const Emitter = struct {
                 if (f.returnType) |rt| if (recordNameOfReturn(rt)) |rec| {
                     try this.external_record_returns.put(f.name, rec);
                 };
-                if (ast.externalResultFor(f.annotations, "erlang")) {
+                if (ast.implementationResult(f.implementations, "erlang")) {
                     try this.collectResultExternal(f);
                     continue;
                 }
-                // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
-                // on a top-level declare fn — the existing
-                // interface-method `primAnnotationNode` path already
-                // handles primitives.bp; this map covers
-                // top-level user `declare fn`s so chained-host-call
-                // shapes (`file:get_cwd()`, `os:getpid()`, etc.) can
-                // lower without aliasing.
-                if (ast.externalHasArityBranches(f.annotations, "erlang")) {
-                    var branches: std.ArrayList(ast.ArityBranch) = .empty;
-                    errdefer branches.deinit(this.alloc);
-                    for (f.annotations) |a| {
-                        if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
-                        for (a.args) |raw| {
-                            const b = ast.parseArityBranchArg(raw) orelse continue;
-                            try branches.append(this.alloc, .{
-                                .argc = b.argc,
-                                .template = try this.hostMarked(try this.dupeTemplate(b.template), b.argc),
-                            });
-                        }
-                    }
+                if (f.externalFor("erlang")) |ref| {
+                    // A template (`"$0.method(...)"`, `"erlang:something($0,
+                    // $1)"`) or a bare host expression
+                    // (`"list_to_integer(os:getpid())"`): rendered at the call
+                    // site, its raise marked when the binding is outside std
+                    // (decision 546).
                     try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
                         .module = "",
-                        .symbol = "",
+                        .symbol = try this.hostMarked(try this.dupeTemplate(ref.text), f.params.len),
                         .args = null,
-                        .arity_branches = try branches.toOwnedSlice(this.alloc),
                     });
-                    continue;
-                }
-                if (f.externalFor("erlang")) |ref| {
-                    // §A2 single-template form (`"$0.method(...)"`,
-                    // `"erlang:something($0, $1)"` with `$` markers) — the
-                    // symbol carries `$` → render at the call site, never
-                    // emit `module:symbol`. A 1-arg form without markers
-                    // (`"list_to_integer(os:getpid())"`) names no module: it is
-                    // a bare host expression and renders verbatim too — as a
-                    // `module:symbol` call it came out `:expr()()`.
-                    if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
-                        try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
-                            .module = "",
-                            .symbol = try this.hostMarked(try this.dupeTemplate(ref.symbol), f.params.len),
-                            .args = null,
-                        });
-                        continue;
-                    }
-                    // Decision 546 — a marked binding is a template: the
-                    // `module:symbol` call inside the `try` that marks its raise.
-                    if (this.marksHost()) {
-                        const call = try erlTemplate.hostCallTemplate(this.alloc, ref.module, ref.symbol, f.params.len, false);
-                        try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
-                            .module = "",
-                            .symbol = try this.hostMarked(call, f.params.len),
-                            .args = null,
-                        });
-                        continue;
-                    }
-                    try this.externals.put(f.name, ref);
                 } else {
                     try this.externals_missing.put(f.name, {});
                 }
@@ -9273,10 +9131,6 @@ const Emitter = struct {
             if (this.in_iface_default) {
                 if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
             }
-            // `#[@External.Erlang("module", "symbol")]` fn → `module:symbol(…)`.
-            if (this.externals.get(cc.callee)) |ref| {
-                return this.adoptHostResult(b, cc.callee, try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc)));
-            }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) {
                 this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };
@@ -11343,7 +11197,6 @@ const Emitter = struct {
     /// template renders when its text is non-empty, an arity-branched one when a
     /// branch matches the declared parameter count.
     fn externalWrapperEmits(this: *const Emitter, f: ast.FnDecl) bool {
-        if (this.externals.contains(f.name)) return true;
         const call = this.user_erlang_templates.get(f.name) orelse return false;
         if (call.arity_branches.len == 0) return call.symbol.len > 0;
         for (call.arity_branches) |branch| if (branch.argc == f.params.len) return true;
@@ -11387,8 +11240,6 @@ const Emitter = struct {
         defer this.indent = saved;
         const raw: Ast.Expr = if (this.user_erlang_templates.contains(f.name))
             (try this.userTemplateNode(b, f.name, cc)) orelse return null
-        else if (this.externals.get(f.name)) |ref|
-            try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc))
         else
             return null;
         const body = try this.adoptHostResult(b, f.name, raw);
@@ -11431,22 +11282,13 @@ const Emitter = struct {
         this.indent = 1;
         defer this.indent = saved;
         const raw: Ast.Expr = blk: {
-            if (ast.externalHasArityBranches(m.annotations, "erlang")) {
-                const branch = ast.externalArityBranchFor(m.annotations, "erlang", rest.len) orelse return;
-                break :blk try this.templateNode(b, try unescapeTemplate(b.arena, branch), recv, cc, error.PrimOpRecvInUserTemplate);
-            }
             const ref = m.externalFor("erlang") orelse return;
-            if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
-                break :blk try this.templateNode(b, try unescapeTemplate(b.arena, ref.symbol), recv, cc, error.PrimOpRecvInUserTemplate);
-            }
-            const all = try b.arena.alloc(Ast.Expr, m.params.len);
-            for (patterns, 0..) |pat, i| all[i] = pat;
-            break :blk try b.remote(ref.module, ref.symbol, all);
+            break :blk try this.templateNode(b, try unescapeTemplate(b.arena, ref.text), recv, cc, error.PrimOpRecvInUserTemplate);
         };
         // Decisions 431, 489, 490 — a `result: true` method runs its binding
         // inside `erlTemplate.resultWrap`'s `try`; the parameters are already
         // bound, so the binding is wrapped as it is.
-        const wrapped: Ast.Expr = if (ast.externalResultFor(m.annotations, "erlang")) .{ .seq = try b.arena.dupe(Ast.Expr, &.{
+        const wrapped: Ast.Expr = if (ast.implementationResult(m.implementations, "erlang")) .{ .seq = try b.arena.dupe(Ast.Expr, &.{
             Ast.Expr.r(erlTemplate.result_wrap_head),
             raw,
             Ast.Expr.r(try erlTemplate.resultWrapTail(b.arena, try this.hostErrorAtoms())),

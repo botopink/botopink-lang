@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang( "math", "floor"),
-  @External.Node("Math", "floor")]
+#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
 pub declare fn floor(n: f64) -> f64;
 
 fn main() {

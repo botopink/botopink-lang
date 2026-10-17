@@ -10,9 +10,11 @@
 //// the BEAM, which called the Erlang cell: `Point:erlang` there, `Point:fn`
 //// on commonJS and wasm.
 
-#[@External.Node("""($0 + ":node")""")]
-#[@External.Erlang("""<<($0)/binary, ":erlang">>""")]
-#[@External.Wasm(fn: tagBody)]
+#[@external(
+    .Node("""($0 + ":node")"""),
+    .Erlang("""<<($0)/binary, ":erlang">>"""),
+    .Wasm(body: tagBody),
+)]
 declare fn tag(value: string) -> string;
 
 fn tagBody(value: string) -> string {

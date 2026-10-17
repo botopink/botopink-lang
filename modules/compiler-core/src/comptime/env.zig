@@ -691,6 +691,13 @@ pub const CallSite = struct { file: []const u8, loc: ast.Loc };
 
 /// Decision 316 — one wrapper a decorator body gave the function or method it
 /// annotates (`decl.wrapWith(f)`).
+pub const ImplementContribution = struct {
+    /// The declaration's name — a method's, with `owner` its type.
+    target: []const u8,
+    owner: ?[]const u8,
+    impl: ast.Implementation,
+};
+
 pub const WrapContribution = struct {
     /// The wrapped function's name — a method's, with `owner` its type.
     target: []const u8,
@@ -926,6 +933,12 @@ pub const Env = struct {
     /// module, or one the driver marks `Module.std_member`. Only std's modules
     /// may write a `std:` cell (`infer.refuseStdBinding`).
     inStd: bool = false,
+    /// The module is a declaration file (`.d.bp`, `Module.declaration`; the
+    /// prelude's `builtins_fns.d.bp`): its bodyless declarations are the
+    /// compiler's builtins, which no annotation implements until `#[builtin]`
+    /// marks them (decision 575 (2)), so `declare-without-implementation` is
+    /// not its rule.
+    declarationFile: bool = false,
     /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
     /// inferred, relative to its package root, extension included
     /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from
@@ -1560,6 +1573,11 @@ pub const Env = struct {
     /// annotation order for one declaration; `comptime.zig` `mergeWrappers`
     /// rewrites each wrapped declaration before the re-analysis.
     wrapContributions: std.ArrayListUnmanaged(WrapContribution) = .empty,
+    /// Decision 575 (6) — what a library's source annotation implemented
+    /// (`compiler.implement(source)`), by the declaration it annotates;
+    /// `infer.zig` `applyImplementContributions` adds each to the
+    /// declaration's `implementations` before they are checked.
+    implementContributions: std.ArrayListUnmanaged(ImplementContribution) = .empty,
     /// Decision 280 — how each parameter of a decorator application reaches
     /// the body, keyed by the annotation's location: `infer.zig`
     /// `checkDecoratorArgs` writes it once the arguments are typed,

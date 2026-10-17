@@ -251,7 +251,7 @@ fn needs(comptime N: type, v: *const N) bool {
 
 /// A host declaration answers the host's own value: its written types stay.
 fn isHost(d: ast.DeclKind) bool {
-    return d == .@"fn" and (d.@"fn".isHost() or d.@"fn".isDeclare or (d.@"fn".body.len == 0 and d.@"fn".isExternal()));
+    return d == .@"fn" and (d.@"fn".isDeclare or (d.@"fn".body.len == 0 and d.@"fn".isExternal()));
 }
 
 /// `program` with the scope's values typed for this backend (the file's

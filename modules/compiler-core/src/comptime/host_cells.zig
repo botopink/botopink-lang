@@ -16,19 +16,19 @@
 //!   undefined function contentHash/1`, or an unsupported method.
 //! - **A bodyless host function travels with its cells** — this module's own
 //!   (`declare fn`), an imported one, a std one — and with the function its
-//!   `@External.Wasm(fn: …)` binding names (`hostSupport`).
+//!   `.Wasm(body: …)` binding names (`hostSupport`).
 //! - **The comptime runtime resolves each host function in order** (decisions
 //!   434 (4), 452, `forRuntime`): its std-wasm implementation — the export its
-//!   `@External.Wasm(std: "<module>.<function>")` cell names (decision 440 (3),
+//!   `.Wasm(std: "<module>.<function>")` cell names (decision 440 (3),
 //!   `stdCell`, `servedByStdWasm`; there is no match by name) —, else the
-//!   botopink function its `@External.Wasm(fn: …)` binding names (`callOf`);
+//!   botopink function its `.Wasm(body: …)` binding names (`callOf`);
 //!   none → refused naming both (`comptime-host-cell-unavailable`). One
 //!   adapter has a form at build: `wasi: .Attempt` (decisions 518, 543,
 //!   `attemptAtBuild`), so `attempt` answers in a comptime body as in a wasm
 //!   program.
-//!   `@External.Erlang` never runs at build: the cell binds the erlang and
+//!   `.Erlang` never runs at build: the cell binds the erlang and
 //!   beam targets only, and nothing in botopink calls beam-to-wasm (452).
-//!   `@External.Node` never serves: there is no Node at comptime.
+//!   `.Node` never serves: there is no Node at comptime.
 //!
 //! What a decorator may call is decided when its package is compiled
 //! (`checkDecorators`, decisions 341, 434, 452): a host function it reaches
@@ -241,7 +241,7 @@ const Renamer = struct {
 
 /// One std function as a comptime module carries it: renamed (`mangle`), its
 /// calls of its own module's functions and of the std functions it imports
-/// renamed too, and an `@External.Wasm(fn: x)` binding naming `x`'s carried
+/// renamed too, and a `.Wasm(body: x)` binding naming `x`'s carried
 /// name. `reaches` lists the carried names it needs beside it.
 pub const StdFn = struct {
     decl: ast.FnDecl,
@@ -276,7 +276,7 @@ pub fn buildStdCarried(arena: std.mem.Allocator, modules: []const StdModule, isM
             if (wasmBinding(f)) |binding| if (std.mem.startsWith(u8, binding.text, "fn:")) {
                 if (own.get(binding.text["fn:".len..])) |target| {
                     try r.note(target);
-                    decl.annotations = try withWasmTarget(arena, f.annotations, binding.index, target);
+                    decl.implementations = try withWasmTarget(arena, f.implementations, binding.index, target);
                 }
             };
             try out.put(arena, decl.name, .{ .decl = decl, .reaches = r.reached.items });
@@ -285,32 +285,26 @@ pub fn buildStdCarried(arena: std.mem.Allocator, modules: []const StdModule, isM
     return out;
 }
 
-/// `annotations` with the `@External.Wasm` one at `index` binding `fn:<target>`.
-fn withWasmTarget(arena: std.mem.Allocator, annotations: []const ast.Annotation, index: usize, target: []const u8) Error![]ast.Annotation {
-    const out = try arena.dupe(ast.Annotation, annotations);
-    const text = try std.fmt.allocPrint(arena, "\"fn:{s}\"", .{target});
-    // Decision 481 — written as the labelled cell `fn: <target>`.
-    out[index].args = try arena.dupe([]const u8, &.{text});
-    out[index].labels = try arena.dupe([]const u8, &.{"fn"});
-    out[index].source_args = try arena.dupe([]const u8, &.{target});
-    out[index].argLocs = &.{};
+/// `implementations` with the `.Wasm` one at `index` binding `body: <target>`.
+fn withWasmTarget(arena: std.mem.Allocator, implementations: []const ast.Implementation, index: usize, target: []const u8) Error![]ast.Implementation {
+    const out = try arena.dupe(ast.Implementation, implementations);
+    out[index].cell = .{ .kind = .body, .value = target };
+    out[index].text = try std.fmt.allocPrint(arena, "fn:{s}", .{target});
     return out;
 }
 
-/// The `@External.Wasm` binding of `f` — the annotation's index and its text
-/// (`fn:x`, `op:f64.floor`, `wasi:…`) — a binding for any host.
+/// The `.Wasm` implementation of `f` — its index and its text (`fn:x`,
+/// `op:f64.floor`, `wasi:…`) — a binding for any host.
 pub fn wasmBinding(f: ast.FnDecl) ?struct { index: usize, text: []const u8 } {
-    for (f.annotations, 0..) |a, i| {
-        if (!std.ascii.eqlIgnoreCase(a.name, "External.Wasm")) continue;
-        const ref = ast.externalRefOf(a, "wasm") orelse ast.externalRefOf(a, "wasm.browser") orelse continue;
-        if (ref.module.len > 0) continue;
-        return .{ .index = i, .text = ref.symbol };
+    for (f.implementations, 0..) |impl, i| {
+        if (impl.target != .wasm) continue;
+        return .{ .index = i, .text = impl.text };
     }
     return null;
 }
 
 /// Whether `f` is a host function: declared without a body, served by its
-/// `@External.<Target>` cells.
+/// implementations.
 pub fn isHost(f: ast.FnDecl) bool {
     return f.body.len == 0 and f.isExternal();
 }
@@ -430,8 +424,8 @@ pub const Selected = union(enum) {
 /// `decls` (a comptime module's) with each host function as the comptime
 /// runtime — wasm, for every target (decision 434) — runs it, by the first of
 /// its cells present (434 (4), 452): its std-wasm implementation, the botopink
-/// function its `@External.Wasm(fn: …)` binding names; none → refused. An
-/// `@External.Erlang` cell never runs at build.
+/// function its `.Wasm(body: …)` binding names; none → refused. An
+/// `.Erlang` cell never runs at build.
 pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!Selected {
     const out = try arena.dupe(ast.DeclKind, decls);
     for (out) |*d| {
@@ -444,7 +438,7 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
             },
             .unknown => |name| return .{ .refused = try noStdExport(arena, f, name) },
         };
-        // Its `@External.Wasm(fn: …)` cell.
+        // Its `.Wasm(body: …)` cell.
         const b = wasmBinding(f) orelse return .{ .refused = try unavailable(arena, f) };
         if (isAttemptAdapter(b.text)) {
             d.* = .{ .@"fn" = try attemptAtBuild(arena, f) };
@@ -460,10 +454,10 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
 /// (decisions 434 (4), 452), naming both.
 fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl) Error![]const u8 {
     const name = try display(arena, f.name);
-    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no `@External.Wasm(std: \"…\")` cell (std-wasm) and no `@External.Wasm(fn: …)` cell — the two cells the comptime runtime answers by; an `@External.Erlang` cell never runs at build (decisions 434, 452)", .{ diagnostics.comptime_host_cell_unavailable, name });
+    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no `.Wasm(std: \"…\")` cell (std-wasm) and no `.Wasm(body: …)` cell — the two cells the comptime runtime answers by; an `.Erlang` cell never runs at build (decisions 434, 452)", .{ diagnostics.comptime_host_cell_unavailable, name });
 }
 
-/// What `f`'s `@External.Wasm(std: "<module>.<function>")` cell names
+/// What `f`'s `.Wasm(std: "<module>.<function>")` cell names
 /// (decision 440 (3)): the std-wasm export, or the name when std-wasm has
 /// none of it (the checker refuses that at the annotation,
 /// `infer.refuseStdBinding`); null when `f` has no `std:` cell.
@@ -478,22 +472,28 @@ pub fn stdCell(f: ast.FnDecl) ?union(enum) { ok: stdWasm.Export, unknown: []cons
 pub const std_cell_prefix = "std:";
 
 fn noStdExport(arena: std.mem.Allocator, f: ast.FnDecl, name: []const u8) Error![]const u8 {
-    return std.fmt.allocPrint(arena, "{s}: `{s}`'s @External.Wasm(std: \"{s}\") names no function std-wasm implements (decision 440)", .{ diagnostics.comptime_host_cell_unavailable, try display(arena, f.name), name });
+    return std.fmt.allocPrint(arena, "{s}: `{s}`'s .Wasm(std: \"{s}\") names no function std-wasm implements (decision 440)", .{ diagnostics.comptime_host_cell_unavailable, try display(arena, f.name), name });
 }
 
 /// `f` as a call of the std-wasm export its `std:` cell names: its one cell
-/// becomes `@External.Erlang("bp_std_wasm", "<symbol>")`, which the comptime
+/// becomes `.Erlang("bp_std_wasm:<symbol>(…)")`, which the comptime
 /// module writes as `bp_std_wasm:<symbol>(…)` and the wat runtime's lowering
 /// calls as `rt_std_<symbol>`.
 fn servedByStdWasm(arena: std.mem.Allocator, f: ast.FnDecl, e: stdWasm.Export) Error!ast.FnDecl {
     var buf: [128]u8 = undefined;
-    const args = try arena.alloc([]const u8, 2);
-    args[0] = try std.fmt.allocPrint(arena, "\"{s}\"", .{stdWasm.erlang_module});
-    args[1] = try std.fmt.allocPrint(arena, "\"{s}\"", .{e.symbolInto(&buf)});
-    const ann = try arena.alloc(ast.Annotation, 1);
-    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
+    var call: std.ArrayListUnmanaged(u8) = .empty;
+    try call.print(arena, "{s}:{s}(", .{ stdWasm.erlang_module, e.symbolInto(&buf) });
+    for (0..f.params.len) |k| try call.print(arena, "{s}${d}", .{ if (k > 0) ", " else "", k });
+    try call.append(arena, ')');
+    return withErlangTemplate(arena, f, call.items);
+}
+
+/// `f` with its one implementation the `.Erlang` template `template`.
+fn withErlangTemplate(arena: std.mem.Allocator, f: ast.FnDecl, template: []const u8) Error!ast.FnDecl {
+    const impl = try arena.alloc(ast.Implementation, 1);
+    impl[0] = .{ .target = .erlang, .template = template, .text = template };
     var out = f;
-    out.annotations = ann;
+    out.implementations = impl;
     return out;
 }
 
@@ -510,20 +510,14 @@ pub fn isAttemptAdapter(text: []const u8) bool {
 }
 
 const attempt_at_build =
-    "\"(fun(__F) -> try {ok, __F()} catch " ++
+    "(fun(__F) -> try {ok, __F()} catch " ++
     "error:{__T, __M} when __T =:= panic orelse __T =:= todo -> {error, unicode:characters_to_binary(__M)}; " ++
-    "error:{bp_assert, _, _, __M} -> {error, unicode:characters_to_binary(__M)} end end)($0)\"";
+    "error:{bp_assert, _, _, __M} -> {error, unicode:characters_to_binary(__M)} end end)($0)";
 
 /// `f` (a `wasi: .Attempt` binding) with its one cell the comptime's form,
 /// `attempt_at_build`, which the comptime module writes inline.
 fn attemptAtBuild(arena: std.mem.Allocator, f: ast.FnDecl) Error!ast.FnDecl {
-    const args = try arena.alloc([]const u8, 1);
-    args[0] = attempt_at_build;
-    const ann = try arena.alloc(ast.Annotation, 1);
-    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
-    var out = f;
-    out.annotations = ann;
-    return out;
+    return withErlangTemplate(arena, f, attempt_at_build);
 }
 
 /// `fn <f>(<params>) { return <target>(<params>); }` — a host function bound
@@ -548,6 +542,7 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
     body[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = call } } } };
     var out = f;
     out.annotations = &.{};
+    out.implementations = &.{};
     out.isDeclare = false;
     out.body = body;
     return out;
@@ -557,7 +552,7 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
 
 /// Why the host function `f` cannot run at comptime, or null when one of the
 /// two cells serves it (decisions 434 (4), 452): its `std:` cell (std-wasm),
-/// its `@External.Wasm(fn: …)` cell.
+/// its `.Wasm(body: …)` cell.
 /// The answer is one for every target.
 pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8 {
     if (stdCell(f)) |cell| switch (cell) {
@@ -631,7 +626,7 @@ fn paramNamed(f: ast.FnDecl, name: []const u8) bool {
 }
 
 fn located(msg: []const u8, loc: ast.Loc) validation.TypeError {
-    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decisions 434, 452): give it an `@External.Wasm(std: \"…\")` cell (std-wasm) or an `@External.Wasm(fn: …)` cell naming a botopink body. An `@External.Erlang` cell never runs at build. `@External.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
+    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decisions 434, 452): give it an `.Wasm(std: \"…\")` cell (std-wasm) or an `.Wasm(body: …)` cell naming a botopink body. An `.Erlang` cell never runs at build. `.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
 }
 
 /// The std function `name` (carried) and every one it reaches: the reason
@@ -698,13 +693,13 @@ const CallWalk = struct {
 };
 
 test "stdCell: the export a std: cell names, and a name std-wasm lacks" {
-    var ann = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"std:hash.contentHash\""}, .is_builtin = true }};
-    const f: ast.FnDecl = .{ .isPub = true, .name = "contentHash", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &ann };
+    var impl = [_]ast.Implementation{.{ .target = .wasm, .cell = .{ .kind = .std_, .value = "hash.contentHash" }, .text = "std:hash.contentHash" }};
+    const f: ast.FnDecl = .{ .isPub = true, .name = "contentHash", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .implementations = &impl };
     try std.testing.expectEqualStrings("hash.contentHash", stdCell(f).?.ok.name);
-    var bad = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"std:hash.sha256\""}, .is_builtin = true }};
-    const g: ast.FnDecl = .{ .isPub = true, .name = "sha256", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &bad };
+    var bad = [_]ast.Implementation{.{ .target = .wasm, .cell = .{ .kind = .std_, .value = "hash.sha256" }, .text = "std:hash.sha256" }};
+    const g: ast.FnDecl = .{ .isPub = true, .name = "sha256", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .implementations = &bad };
     try std.testing.expectEqualStrings("hash.sha256", stdCell(g).?.unknown);
-    var fnc = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"fn:body\""}, .is_builtin = true }};
-    const h: ast.FnDecl = .{ .isPub = true, .name = "h", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &fnc };
+    var fnc = [_]ast.Implementation{.{ .target = .wasm, .cell = .{ .kind = .body, .value = "body" }, .text = "fn:body" }};
+    const h: ast.FnDecl = .{ .isPub = true, .name = "h", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .implementations = &fnc };
     try std.testing.expect(stdCell(h) == null);
 }

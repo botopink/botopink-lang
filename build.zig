@@ -828,6 +828,7 @@ fn stdPreludeModule(
     // anonymous imports on the std_prelude module.
     const std_core_files = [_][]const u8{
         "primitives.bp",
+        "external.bp",
         "builtins.d.bp",
         "builtins_fns.d.bp",
     };

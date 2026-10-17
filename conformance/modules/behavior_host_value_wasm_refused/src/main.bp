@@ -10,8 +10,10 @@ behavior Greeter {
     fn greet(self: Self, who: string) -> string;
 }
 
-#[@External.Node("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })")]
-#[@External.Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}")]
+#[@external(
+    .Node("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
+    .Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}"),
+)]
 declare fn makeGreeter(tag: string) -> Greeter;
 
 fn shout(g: Greeter) -> string {

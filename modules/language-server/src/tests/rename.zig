@@ -133,12 +133,10 @@ test "rename: edit ranges cover the old identifier, not the new name" {
 
 // ── Rn — a `fn:` binding cell is a name (decision 305) ─────────────────────────
 
-test "rename: renaming a private fn renames its `fn:` binding cells" {
+test "rename: renaming a private fn renames its `body:` binding cells" {
     const gpa = std.testing.allocator;
     const source =
-        \\#[@External.Node(fn: mixBody)]
-        \\#[@External.Erlang(fn: mixBody)]
-        \\#[@External.Wasm(fn: mixBody)]
+        \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
         \\pub declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
     ;
@@ -147,14 +145,15 @@ test "rename: renaming a private fn renames its `fn:` binding cells" {
     defer arena.deinit();
 
     const tokens = try h.tokenize(arena.allocator(), source);
-    const cursor = h.pos(4, 4);
+    const cursor = h.pos(2, 4);
     const edits = try engine.rename(gpa, source, cursor, "mixImpl", tokens);
     defer gpa.free(edits);
 
-    // The declaration and the three cells that name it.
+    // The declaration and the three cells that name it, all on the
+    // annotation's line.
     try std.testing.expectEqual(@as(usize, 4), edits.len);
-    for (edits[0..3], 0..) |edit, line| {
-        try std.testing.expectEqual(@as(u32, @intCast(line)), edit.range.start.line);
+    for (edits[0..3]) |edit| {
+        try std.testing.expectEqual(@as(u32, 0), edit.range.start.line);
         try std.testing.expectEqualStrings("mixImpl", edit.newText);
     }
 }

@@ -5,9 +5,11 @@
 //// real timer) are resumed where they stopped. The answers equal commonJS's,
 //// erlang's and beam's.
 
-#[@External.Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)""")]
-#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
-#[@External.Wasm(wasi: .Delay)]
+#[@external(
+    .Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
+    .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
+    .Wasm(wasi: .Delay),
+)]
 declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
 
 type Counter(base: i32) {

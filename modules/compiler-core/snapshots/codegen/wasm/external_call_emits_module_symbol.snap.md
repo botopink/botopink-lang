@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("filename", "basename"),
-  @External.Node("node:path", "basename")]
+#[@external(.Erlang("filename:basename($0)"), .Node("""require("node:path").basename($0)"""))]
 pub declare fn basename(p: string) -> string;
 
 fn main() {
@@ -11,10 +10,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `basename` has no `#[@External.<Target>(…)]` for the wasm backend
-  ┌─ :6:12
+error: `basename` has no implementation for the wasm backend
+  ┌─ :5:12
   │
-6 │     @print(basename("/tmp/notes.txt"));
+5 │     @print(basename("/tmp/notes.txt"));
   │            ^
 ```
 

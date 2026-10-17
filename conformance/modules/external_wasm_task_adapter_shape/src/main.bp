@@ -4,9 +4,11 @@
 //// (decision 238: the binding is read whatever the build's target), though
 //// the other targets bind their own templates.
 
-#[@External.Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)""")]
-#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
-#[@External.Wasm(wasi: .Delay)]
+#[@external(
+    .Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
+    .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
+    .Wasm(wasi: .Delay),
+)]
 declare fn later(millis: i32, value: string) -> @Task<string>;
 
 fn run() -> @Task<void> {

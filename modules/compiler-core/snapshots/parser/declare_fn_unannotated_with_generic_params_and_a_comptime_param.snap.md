@@ -2,12 +2,17 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "field",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "field",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
         "genericParams": [
           {
             "name": "T",
@@ -44,7 +49,9 @@
         ],
         "returnType": {
           "named": "F"
-        }
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

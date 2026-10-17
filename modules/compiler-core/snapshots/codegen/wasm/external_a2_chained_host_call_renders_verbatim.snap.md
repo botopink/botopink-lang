@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("base64:encode($0)"),
-  @External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
+#[@external(.Erlang("base64:encode($0)"), .Node("""Buffer.from($0, 'utf8').toString('base64')"""))]
 pub declare fn b64encode(s: string) -> string;
 
 fn main() {
@@ -11,10 +10,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `b64encode` has no `#[@External.<Target>(…)]` for the wasm backend
-  ┌─ :6:12
+error: `b64encode` has no implementation for the wasm backend
+  ┌─ :5:12
   │
-6 │     @print(b64encode("hi"));
+5 │     @print(b64encode("hi"));
   │            ^
 ```
 

@@ -75,7 +75,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "the language has no bitwise operators",
             .caretCaption = "not an operator",
             .lexemeInCaption = true,
-            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.",
+            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@external(.<Target>(…))]` is the way to a bit operation.",
         },
         .charLiteralAbsent => .{
             .code = "char-literal-absent",
@@ -170,7 +170,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write",
             .lexemeInCaption = true,
             .lexemeSuffix = ":",
-            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[@BeamMemory.Ets(keyed: true)]`, `#[@External.Erlang(\"…\", inline: true)]`, `#[mark(level: .High)]`.",
+            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[@BeamMemory.Ets(keyed: true)]`, `#[@external(.Erlang(\"…\", inline: true))]`, `#[mark(level: .High)]`.",
         },
         .tupleLiteralLabel => .{
             .code = "tuple-literal-label",
@@ -398,7 +398,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .retiredAnnotationBlock => .{
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",
-            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
+            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.Node(\"f($0)\"))]`.",
         },
         .removedKeywordRecord => .{
             .code = "removed-keyword-record",
@@ -429,6 +429,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "anonymous records are tuples in 1.0.3",
             .caretCaption = "write a tuple `#(…)`",
             .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
+        },
+        .removedDelegate => .{
+            .code = "removed-delegate",
+            .message = "`val x = declare fn(…)` does not exist (decision 575 (6))",
+            .caretCaption = "declare the function by its name",
+            .hint = "A host function is a named `declare fn` its annotation implements: `#[@external(.Node(\"…\"))] declare fn log(message: string);`. A function type is written `fn(message: string)`.",
         },
         .removedLoopParenthesised => .{
             .code = "removed-loop-parenthesised",

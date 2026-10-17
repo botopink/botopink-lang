@@ -2,9 +2,7 @@
 //// resolved in the module like any other name: a misspelt one is the ordinary
 //// unbound-name error, at the argument.
 
-#[@External.Node(fn: tanBdy)]
-#[@External.Erlang(fn: tanBdy)]
-#[@External.Wasm(fn: tanBdy)]
+#[@external(.Node(body: tanBdy), .Erlang(body: tanBdy), .Wasm(body: tanBdy))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: f64) -> f64 {

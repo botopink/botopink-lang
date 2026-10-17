@@ -127,12 +127,6 @@ test "infer ast: case ---- list patterns empty, single, spread" {
     );
 }
 
-test "infer ast: delegate declaration" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\declare fn Callback(msg: string) -> void;
-    );
-}
-
 test "infer ast: case ---- OR patterns with block arm body" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val parity = case 5 {

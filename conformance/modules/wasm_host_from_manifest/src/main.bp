@@ -5,9 +5,11 @@
 //// refuses a host function bound to another target — while commonJS, erlang
 //// and beam, which read no `"wasm"`, run it.
 
-#[@External.Node("Math", "floor")]
-#[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: "f64.floor", host: .Wasi)]
+#[@external(
+    .Node("Math.floor($0)"),
+    .Erlang("math:floor($0)"),
+    .Wasm(op: "f64.floor", host: .Wasi),
+)]
 declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

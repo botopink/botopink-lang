@@ -8,8 +8,10 @@
 import {io.fs} from "std";
 
 // A symbolic link `link` -> `target`: std has no public cell that makes one.
-#[@External.Node("""require('fs').symlinkSync($0, $1)""")]
-#[@External.Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)""")]
+#[@external(
+    .Node("""require('fs').symlinkSync($0, $1)"""),
+    .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
+)]
 declare fn linkTo(target: string, link: string) -> void;
 
 fn describe(e: fs.FsError) -> string {

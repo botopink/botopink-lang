@@ -6,8 +6,7 @@
 //// wasm has no host, so it refuses the program where the host function is
 //// first called — `variadic_parameter_host.wasm.expect`.
 
-#[@External.Node("Math", "max")]
-#[@External.Erlang("lists", "max")]
+#[@external(.Node("Math.max($args)"), .Erlang("lists:max($0)"))]
 pub declare fn largest(..values: i32[]) -> i32;
 
 pub fn main() {

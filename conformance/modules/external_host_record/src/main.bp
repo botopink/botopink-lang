@@ -19,25 +19,27 @@
 pub type Point(x: i32, y: i32)
 
 // A record answered directly.
-#[@External.Node("""({ x: 7, y: 9 })""")]
-#[@External.Erlang("""#{x => 7, y => 9}""")]
+#[@external(.Node("""({ x: 7, y: 9 })"""), .Erlang("""#{x => 7, y => 9}"""))]
 declare fn hostPoint() -> Point;
 
 // A record answered through `?T` — the absent case is not a map and has to
 // survive adoption unchanged.
-#[@External.Node("""({ x: 5, y: 6 })""")]
-#[@External.Erlang("""#{x => 5, y => 6}""")]
+#[@external(.Node("""({ x: 5, y: 6 })"""), .Erlang("""#{x => 5, y => 6}"""))]
 declare fn hostMaybePoint() -> ?Point;
 
 // A list of records: every element is adopted, not the list.
-#[@External.Node("""[{ x: 1, y: 2 }, { x: 3, y: 4 }]""")]
-#[@External.Erlang("""[#{x => 1, y => 2}, #{x => 3, y => 4}]""")]
+#[@external(
+    .Node("""[{ x: 1, y: 2 }, { x: 3, y: 4 }]"""),
+    .Erlang("""[#{x => 1, y => 2}, #{x => 3, y => 4}]"""),
+)]
 declare fn hostPoints() -> Point[];
 
 // A host that already builds decision 21's shape: adopting it again must be
 // adopting it once.
-#[@External.Node("""({ x: 10, y: 20 })""")]
-#[@External.Erlang("""{'external_host_record@main@@Point', 10, 20}""")]
+#[@external(
+    .Node("""({ x: 10, y: 20 })"""),
+    .Erlang("""{'external_host_record@main@@Point', 10, 20}"""),
+)]
 declare fn hostTaggedPoint() -> Point;
 
 // The read goes through a TYPED parameter, so what this cell measures is the

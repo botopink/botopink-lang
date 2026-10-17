@@ -1077,12 +1077,7 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                     .kind = .@"fn",
                     .is_class = false,
                     .is_external = f.isExternal(),
-                    // An arity-branched annotation only backs the declaration
-                    // when a branch matches its parameter count — the owner
-                    // renders that branch into the wrapper.
-                    .erlang_backed = f.isExternal() and
-                        (f.externalFor("erlang") != null or
-                            ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) != null),
+                    .erlang_backed = f.isExternal() and f.externalFor("erlang") != null,
                     .arity = f.params.len,
                     .returns_float = if (f.returnType) |rt| rt == .named and
                         (std.mem.eql(u8, rt.named, "f64") or std.mem.eql(u8, rt.named, "f32")) else false,
@@ -1256,13 +1251,8 @@ pub const Scope = struct {
 /// OTP alone, and are not read.
 pub fn bindsErlangHost(outputs: []const ComptimeOutput) bool {
     const Binds = struct {
-        fn any(annotations: []const ast.Annotation) bool {
-            for (annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-                const target = a.name["External.".len..];
-                if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
-            }
-            return false;
+        fn any(implementations: []const ast.Implementation) bool {
+            return ast.implementationFor(implementations, "erlang") != null;
         }
     };
     for (outputs) |*o| {
@@ -1271,11 +1261,8 @@ pub fn bindsErlangHost(outputs: []const ComptimeOutput) bool {
             else => continue,
         };
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (Binds.any(f.annotations)) return true,
-            .type_ => |t| {
-                if (Binds.any(t.annotations)) return true;
-                for (t.methods) |m| if (Binds.any(m.annotations)) return true;
-            },
+            .@"fn" => |f| if (Binds.any(f.implementations)) return true,
+            .type_ => |t| for (t.methods) |m| if (Binds.any(m.implementations)) return true,
             else => {},
         };
     }

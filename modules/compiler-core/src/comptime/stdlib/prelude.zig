@@ -10,6 +10,12 @@
 /// into the global env. The remaining files are concrete `record`/`enum` modules
 /// importable via `import {…} from "std";`.
 pub const primitives = @embedFile("primitives.bp");
+/// `external.bp` (decision 575 (6)): `Implementation`, the enums its `Wasm`
+/// cells take, and `external`, the annotation a `declare fn` names its host
+/// sources with — registered into every environment before the prelude is
+/// inferred (`comptime.zig` `registerExternalPrelude`), so `primitives.bp` and
+/// every std module write `#[external(…)]` with no import.
+pub const external = @embedFile("external.bp");
 pub const builtins = @embedFile("builtins.d.bp");
 
 /// `builtins_fns.d.bp` carries the parseable fn-decl slice of `builtins.d.bp`

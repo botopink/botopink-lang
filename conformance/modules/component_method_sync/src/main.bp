@@ -12,7 +12,7 @@ import {context.RenderScope} from "std";
 
 type Element(text: string) implement @Renderable
 
-#[@External.Node("""($0 instanceof Promise)""")]
+#[@external(.Node("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
 fn loadComments() -> @Task<string> {

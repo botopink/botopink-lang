@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: declare-in-behavior: `Greeter.greet` is a `declare fn` inside a behavior — a behavior declares a member's signature, or a `default fn` with a body
+at src/main.bp:5:16

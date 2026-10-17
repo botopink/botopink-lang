@@ -131,7 +131,7 @@ pub const MissingExternal = struct {
         if (self.refusal) |why| return .{ .type = .{
             .message = try std.fmt.allocPrint(
                 allocator,
-                "`{s}`'s `#[@External.Erlang(…)]` template does not compile for the {s} backend: {s}",
+                "`{s}`'s `.Erlang(…)` template does not compile for the {s} backend: {s}",
                 .{ self.name, self.target, why },
             ),
             .loc = self.loc,
@@ -139,7 +139,7 @@ pub const MissingExternal = struct {
         return .{ .type = .{
             .message = try std.fmt.allocPrint(
                 allocator,
-                "`{s}` has no `#[@External.<Target>(…)]` for the {s} backend",
+                "`{s}` has no implementation for the {s} backend",
                 .{ self.name, self.target },
             ),
             .loc = self.loc,

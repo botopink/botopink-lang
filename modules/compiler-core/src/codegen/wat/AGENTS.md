@@ -19,7 +19,7 @@ wat/
 ├── wat_emitter.zig   ← the only text writer: s-expressions, indentation, `$` names, data escaping
 ├── wasm_binary_emitter.zig ← the same model in the binary format (what an engine instantiates)
 ├── browser_loader.zig ← decision 334: the `browser` host's loader (`<module>.mjs`) beside the binary; drives the host tasks from the event loop (394)
-├── host_binding.zig  ← decisions 238, 440: what `#[@External.Wasm("…")]` names — `op:` / `fn:` / `wasi:` / `std:`, the opcode table, the adapter list
+├── host_binding.zig  ← decisions 238, 440: what `#[@external(.Wasm("…"))]` names — `op:` / `fn:` / `wasi:` / `std:`, the opcode table, the adapter list
 ├── reach.zig         ← decision 518 (2): the functions a lowered module reaches (call graph from exports, start, the table once a `call_indirect` is reached, task starts)
 ├── needs.zig         ← decision 518: the `botopink.needs` custom section read back (binary, text) and the `wasmtime run` flags it asks for
 ├── std_wasm_link.zig ← decision 440 (2): std-wasm's program face (`std_wasm.wasm`) decoded into the model, linked into the program
@@ -214,7 +214,7 @@ text, and the `browser` host runs the core module's binary.
 
 ## Exceptions and needs (decision 518)
 
-**A binding names the host features it needs** — `#[@External.Wasm(…, needs:
+**A binding names the host features it needs** — `#[.Wasm(…, needs:
 [.Exceptions])]`, from std's `WasmNeed { Exceptions, Http }` (the checker holds
 the values, `comptime/AGENTS.md` § `needs:`). `checkHostBindings` records each
 binding's `needs` (`HostBound.needs`, `ast.wasmNeedsOf`) and gathers them over
@@ -491,7 +491,7 @@ value boxed as `unknown` that nothing types, an all-unit enum value with no
 printed form, a comptime-only builtin (`@emit`, `@compilerError`, `ref`) in a
 program body, an index or slice on a receiver nothing types, a call nothing
 resolves (`unresolved call`), a call of a bodyless `declare fn` with no
-`#[@External.<Target>(…)]` at all, a primitive method with no lowering, a
+`#[@external(.<Target>(…))]` at all, a primitive method with no lowering, a
 higher-order method given a function value, `flatMap` / `flatten` / `unique`
 over elements whose shape is unknown, `.next()` with no `YieldStep`, `pop` /
 `push` on a receiver that cannot be rebound (`pop` on a record's field is
@@ -544,14 +544,14 @@ line under the program's file name. **Not covered**: `@print` of a value whose s
 nothing names reaches `$__display_of` unrecorded.
 
 **A host-backed `declare fn` with no wasm binding is REFUSED, not trapped**
-(one with `#[@External.Wasm("…")]` is bound — § Host bindings)
+(one with `#[@external(.Wasm("…"))]` is bound — § Host bindings)
 (`wat.zig`'s `external_missing` + `lowerPlainCall`). A `declare fn` carrying
-`#[@External.<Target>(…)]` for some other target and none for `wasm` has no
+`#[@external(.<Target>(…))]` for some other target and none for `wasm` has no
 symbol here and never claimed to have one, so the call fails where it is
 written:
 
 ```
-error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
+error: `listToBinary` has no `#[@external(.<Target>(…))]` for the wasm backend
   --> src/main.bp:21:12
 ```
 
@@ -582,7 +582,7 @@ UndefinedCall`) and refused every call of an empty `fn`
 `g.greet("ana")` over `behavior Greeter` that no type of the program implements has no function
 to call — the value comes from a `declare fn` answering `Greeter` (`external_missing` maps each
 such function to the named type it answers). When one of them has no wasm cell, the call is refused
-as that function's missing `#[@External.Wasm(…)]`, not as an unresolved call, so a `"targets"`
+as that function's missing `#[@external(.Wasm(…))]`, not as an unresolved call, so a `"targets"`
 narrowing (`conformance/test/behavior_host_dispatch/`) stands on a host binding as the runner's
 audit requires (`conformance/modules/behavior_host_value_wasm_refused`).
 
@@ -613,13 +613,13 @@ linked module's file — which the driver would print against the consumer's
 (`src/main.bp:101:9` for a call at `std/testing/asserts.bp:101:9`). The refused
 module reports its own diagnostic in its own file; each consumer that links it
 (`Linked.via`: the consumer's import item the link walk came through) reports
-`` `canonical` has no `#[@External.<Target>(…)]` for the wasm backend — in
+`` `canonical` has no `#[@external(.<Target>(…))]` for the wasm backend — in
 `std/testing/asserts`, which this import links `` at that import
 (`run/std_asserts_on_every_target.wasm.expect`,
 `run/std_asserts_host_cell_on_wasm.wasm.expect`,
 `modules/labelled_call_by_label/wasm.expect`).
 
-A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** is
+A **bodyless `declare fn` with no `#[@external(.<Target>(…))]` at all** is
 refused at its call too (`lowerPlainCall`); it kept the old trap until
 `00 · 110-gate-wasm`'s refusals rule.
 
@@ -871,7 +871,7 @@ shape nobody registered is now loud.
 
 ## Host bindings (decision 238, `01-compiler/05-wasm` step 5)
 
-`#[@External.Wasm(…)]` is one labelled cell of a closed vocabulary (decision 481 —
+`#[@external(.Wasm(…))]` is one labelled cell of a closed vocabulary (decision 481 —
 the checker refuses a prefixed string, a value of the wrong kind, an unknown label
 and a second cell on every target, `infer.zig` `checkExternalCells`, and resolves
 `fn:`), read before anything is registered (`wat.zig` `checkHostBindings`, over the program and its
@@ -901,7 +901,7 @@ would read it on every target is `01-checker`'s — `comptime/infer.zig`'s
 wasm build binds to one runtime, named by `botopink.json`'s `"wasm": { "host":
 … }` (`wasi`, the default — wasmtime, WASI preview 2 — or `browser` — JS imports,
 JSPI) and carried in as `Config.wasm_host`. A binding may name the host it
-serves, `#[@External.Wasm(op: "f64.floor", host: .Wasi)]`; one written without
+serves, `#[@external(.Wasm(op: "f64.floor", host: .Wasi))]`; one written without
 `host:` serves every host. The build's `#[@External.<Member>]` lookup carries
 the host (`ast.WasmHost.lookupName`: `wasm` is `wasi`'s, `wasm.browser` the
 browser's; `ast.ExternalLookup.of` splits it), so `externalFor` returns the
@@ -956,7 +956,7 @@ binding `hash` and `io/random`, and each still open:
 | `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, tuple element, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
 | a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
 | `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in the prelude's float text | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
-| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `External.Node` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array_range_and_repeat` | fixed |
+| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `.Node` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array_range_and_repeat` | fixed |
 
 ## Numbers: a float's text, the 8-byte cells, integers that do not wrap
 
@@ -1099,7 +1099,7 @@ overflow trap as RUN LOGs.
 ## std-wasm in the program (decisions 440, 441, front 144 B-00e)
 
 std's functions written in Zig (`modules/std-wasm`) are the program's own: a
-`#[@External.Wasm(std: "<module>.<function>")]` binding, a primitive method whose
+`#[@external(.Wasm(std: "<module>.<function>"))]` binding, a primitive method whose
 `std:` cell `primitives.bp` writes (`String.trim` / `trimStart` / `trimEnd`,
 `Float.toString` — `wat.zig` `std_method_exports`, held to the cells by
 `codegen/tests/wat.zig`) and every float turned into text call a std-wasm
@@ -1171,7 +1171,7 @@ host; everything that only computes over values is Zig, transpiled into the
 program as std-wasm is (§ std-wasm in the program).
 
 **A `String` method bound by `fn:` (decision 565, front 164 s3 P1-b).** A `String` method whose wasm
-cell is `#[@External.Wasm(fn: <name>)]` is a call of `<name>`, a private bodied fn taking the receiver
+cell is `#[@external(.Wasm(body: <name>))]` is a call of `<name>`, a private bodied fn taking the receiver
 first and then the method's parameters, of the same types (`hostFnBinding.resolve` over the method seen
 as a fn, `stringMethodAsFn`): `lowerPrimMethod` asks `stringFnCellOf` before any other lowering and
 `lowerStringFnCell` emits the call. A program's own `behavior String` member is registered with its body
@@ -1331,7 +1331,7 @@ grows is garbage.
 - **onze's pages do not build on wasm**: `examples/blog` (`wasi`) is refused
   in 67 modules — its element library's element module (`the wasm backend walks an array or a
   range; nothing shows this iterable is one`), std's `json` and `io/fs`
-  (`fs.readText` has no `#[@External.Wasm]`). The page render above is their
+  (`fs.readText` has no `.Wasm(…)`). The page render above is their
   shape (an element tree rendered to a string); onze is measured when its pages
   build.
 

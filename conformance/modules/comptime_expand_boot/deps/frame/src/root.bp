@@ -5,9 +5,11 @@
 //// `name` and `meta`; each `say` and `start`, which reach a run-time value
 //// (a host function, an entry's `value`), is emitted at the call, in order.
 
-#[@External.Node("""console.log($0)""")]
-#[@External.Erlang("""io:format("~ts~n", [$0])""")]
-#[@External.Wasm(fn: sayBody)]
+#[@external(
+    .Node("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
 declare fn say(line: string);
 
 fn sayBody(line: string) {

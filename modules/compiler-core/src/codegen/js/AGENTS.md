@@ -263,7 +263,7 @@ lower it as any `case` — its arm's tail is its value (`buildCaseBody`, an
 return box.
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
-`#[@External.Node("…")]` annotation, which is host code by definition — the
+`#[@external(.Node("…"))]` annotation, which is host code by definition — the
 same role `raw` plays in `beam/erl_ast.zig`.
 
 ## What the prelude does not ship

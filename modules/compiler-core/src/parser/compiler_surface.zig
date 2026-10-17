@@ -45,7 +45,7 @@ pub const Kind = enum {
 pub const Member = struct { name: []const u8, kind: Kind };
 
 /// The `Compiler` members built so far — 575 (3) and 576 (2), (3), less
-/// B-138 … B-140's (`implement`, `setBuiltin`, `embed`, `record`, `fields`
+/// B-139 and B-140's (`setBuiltin`, `embed`, `record`, `fields`
 /// over a type, `optional`, `required`). `comptime/tests/compiler_
 /// members.zig` holds it to `libs/std/src/compiler.bp`.
 pub const members = [_]Member{
@@ -60,6 +60,7 @@ pub const members = [_]Member{
     .{ .name = "addType", .kind = .output },
     .{ .name = "wrapWith", .kind = .output },
     .{ .name = "compile", .kind = .output },
+    .{ .name = "implement", .kind = .output },
     .{ .name = "catalogue", .kind = .site },
     .{ .name = "typeInfo", .kind = .site },
     .{ .name = "text", .kind = .read },

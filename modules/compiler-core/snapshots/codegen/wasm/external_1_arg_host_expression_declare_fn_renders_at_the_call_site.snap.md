@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Node("process.pid"),
-  @External.Erlang("list_to_integer(os:getpid())")]
+#[@external(.Node("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
 declare fn pid() -> i32;
 
 fn main() {
@@ -11,10 +10,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `pid` has no `#[@External.<Target>(…)]` for the wasm backend
-  ┌─ :6:12
+error: `pid` has no implementation for the wasm backend
+  ┌─ :5:12
   │
-6 │     @print(pid() > 0);
+5 │     @print(pid() > 0);
   │            ^
 ```
 

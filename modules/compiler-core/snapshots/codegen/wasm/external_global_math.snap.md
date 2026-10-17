@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("math", "floor"),
-  @External.Node("Math", "floor")]
+#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
 pub declare fn floor(n: f64) -> f64;
 
 fn main() {
@@ -11,10 +10,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `floor` has no `#[@External.<Target>(…)]` for the wasm backend
-  ┌─ :6:12
+error: `floor` has no implementation for the wasm backend
+  ┌─ :5:12
   │
-6 │     @print(floor(1.7));
+5 │     @print(floor(1.7));
   │            ^
 ```
 

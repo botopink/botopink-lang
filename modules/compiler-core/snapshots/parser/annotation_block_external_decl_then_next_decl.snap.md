@@ -14,10 +14,9 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"erlang\"",
-              "\"abs\""
+              ".Erlang(\"erlang:abs($0)\")"
             ],
             "is_builtin": true
           }

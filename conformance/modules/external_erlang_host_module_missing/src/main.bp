@@ -13,10 +13,10 @@
 //// `@External.Erlang`-only function (`run/external_erlang_only.bp`); the beam
 //// build ships the same sidecars and refuses this one the same way.
 
-#[@External.Erlang("lists", "sum")]
+#[@external(.Erlang("lists:sum($0)"))]
 declare fn total(xs: i32[]) -> i32;
 
-#[@External.Erlang("nosuchhost", "answer")]
+#[@external(.Erlang("nosuchhost:answer()"))]
 declare fn answer() -> i32;
 
 pub fn main() {

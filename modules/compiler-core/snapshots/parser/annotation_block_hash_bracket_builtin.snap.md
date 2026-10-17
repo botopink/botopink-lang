@@ -14,18 +14,10 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"string\"",
-              "\"length\""
-            ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"./gleam_stdlib.mjs\"",
-              "\"string_length\""
+              ".Erlang(\"string:length($0)\")",
+              ".Node(\"./gleam_stdlib.mjs\", \"string_length\")"
             ],
             "is_builtin": true
           }

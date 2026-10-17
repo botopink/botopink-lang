@@ -20,8 +20,10 @@ type Echo(word: string) {
     }
 }
 
-#[@External.Node("({ greet: function (who) { return 'hi, ' + who; } })")]
-#[@External.Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}")]
+#[@external(
+    .Node("({ greet: function (who) { return 'hi, ' + who; } })"),
+    .Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}"),
+)]
 declare fn makeGreeter() -> Greeter;
 
 fn welcome(g: Greeter) -> string {

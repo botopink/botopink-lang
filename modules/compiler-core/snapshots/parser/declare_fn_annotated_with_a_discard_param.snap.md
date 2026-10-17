@@ -14,9 +14,9 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Node",
+            "name": "external",
             "args": [
-              "\"f\""
+              ".Node(\"f\")"
             ],
             "is_builtin": true
           }

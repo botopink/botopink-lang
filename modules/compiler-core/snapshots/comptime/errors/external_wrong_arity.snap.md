@@ -1,12 +1,12 @@
 ----- SOURCE CODE
-#[@External.Erlang(..)]
+#[@external(.Erlang("string", "length"))]
 pub declare fn str_length(s: string) -> i32;
 
 ----- ERROR
-error: `@external` module and symbol must be string literals
-  ┌─ main.bp:1:3
+error: `.Erlang` on `str_length` writes a second cell, `body:` — a binding is one cell (decision 481)
+  ┌─ main.bp:1:31
   │
-1 │ #[@External.Erlang(..)]
-  │   ^
+1 │ #[@external(.Erlang("string", "length"))]
+  │                               ^
 
-  hint: Example: #[@External.Node("./gleam_stdlib.mjs", "string_length")]
+  hint: A binding is one labelled cell: `body: <private fn of this module>` or a template on every target; on wasm also `op: "<opcode>"`, `wasi: .<Adapter>` or `std: "<module>.<function>"` (std's alone).

@@ -25,142 +25,142 @@
 //// declare fn <camelCase>(…) -> unknown;`. Symbol + param count drive the
 //// shadow entry — name in botopink is doc-only for callers.
 
-#[@External.Erlang("erlang", "abs")]
+#[external(.Erlang("erlang:abs($0)"))]
 pub declare fn abs(n: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "alias")]
+#[external(.Erlang("erlang:alias()"))]
 pub declare fn alias() -> unknown;
 
-#[@External.Erlang("erlang", "apply")]
+#[external(.Erlang("erlang:apply($0, $1)"))]
 pub declare fn apply(fun: unknown, args: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "apply")]
+#[external(.Erlang("erlang:apply($0, $1, $2)"))]
 pub declare fn applyMfa(m: unknown, f: unknown, a: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "element")]
+#[external(.Erlang("erlang:element($0, $1)"))]
 pub declare fn element(n: unknown, tuple: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "error")]
+#[external(.Erlang("erlang:error($0)"))]
 pub declare fn error(reason: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "error")]
+#[external(.Erlang("erlang:error($0, $1)"))]
 pub declare fn errorWithArgs(reason: unknown, args: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "error")]
+#[external(.Erlang("erlang:error($0, $1, $2)"))]
 pub declare fn errorWithArgsAndOptions(
     reason: unknown,
     args: unknown,
     options: unknown,
 ) -> unknown;
 
-#[@External.Erlang("erlang", "exit")]
+#[external(.Erlang("erlang:exit($0)"))]
 pub declare fn exit(reason: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "exit")]
+#[external(.Erlang("erlang:exit($0, $1)"))]
 pub declare fn exitProcess(pid: unknown, reason: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "float")]
+#[external(.Erlang("erlang:float($0)"))]
 pub declare fn float(n: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "get")]
+#[external(.Erlang("erlang:get()"))]
 pub declare fn erlangGet() -> unknown;
 
-#[@External.Erlang("erlang", "get")]
+#[external(.Erlang("erlang:get($0)"))]
 pub declare fn erlangGetByKey(key: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "halt")]
+#[external(.Erlang("erlang:halt()"))]
 pub declare fn halt() -> unknown;
 
-#[@External.Erlang("erlang", "halt")]
+#[external(.Erlang("erlang:halt($0)"))]
 pub declare fn haltWithStatus(status: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "halt")]
+#[external(.Erlang("erlang:halt($0, $1)"))]
 pub declare fn haltWithStatusAndOptions(
     status: unknown,
     options: unknown,
 ) -> unknown;
 
-#[@External.Erlang("erlang", "hd")]
+#[external(.Erlang("erlang:hd($0)"))]
 pub declare fn hd(list: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "length")]
+#[external(.Erlang("erlang:length($0)"))]
 pub declare fn length(list: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "link")]
+#[external(.Erlang("erlang:link($0)"))]
 pub declare fn link(pid: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "max")]
+#[external(.Erlang("erlang:max($0, $1)"))]
 pub declare fn max(a: unknown, b: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "min")]
+#[external(.Erlang("erlang:min($0, $1)"))]
 pub declare fn min(a: unknown, b: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "monitor")]
+#[external(.Erlang("erlang:monitor($0, $1)"))]
 pub declare fn monitor(kind: unknown, item: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "monitor")]
+#[external(.Erlang("erlang:monitor($0, $1, $2)"))]
 pub declare fn monitorWithOptions(
     kind: unknown,
     item: unknown,
     options: unknown,
 ) -> unknown;
 
-#[@External.Erlang("erlang", "node")]
+#[external(.Erlang("erlang:node()"))]
 pub declare fn node() -> unknown;
 
-#[@External.Erlang("erlang", "nodes")]
+#[external(.Erlang("erlang:nodes()"))]
 pub declare fn nodes() -> unknown;
 
-#[@External.Erlang("erlang", "nodes")]
+#[external(.Erlang("erlang:nodes($0)"))]
 pub declare fn nodesOfType(arg: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "now")]
+#[external(.Erlang("erlang:now()"))]
 pub declare fn now() -> unknown;
 
-#[@External.Erlang("erlang", "ports")]
+#[external(.Erlang("erlang:ports()"))]
 pub declare fn ports() -> unknown;
 
-#[@External.Erlang("erlang", "processes")]
+#[external(.Erlang("erlang:processes()"))]
 pub declare fn processes() -> unknown;
 
-#[@External.Erlang("erlang", "put")]
+#[external(.Erlang("erlang:put($0, $1)"))]
 pub declare fn put(key: unknown, value: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "register")]
+#[external(.Erlang("erlang:register($0, $1)"))]
 pub declare fn register(name: unknown, pid: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "registered")]
+#[external(.Erlang("erlang:registered()"))]
 pub declare fn registered() -> unknown;
 
-#[@External.Erlang("erlang", "round")]
+#[external(.Erlang("erlang:round($0)"))]
 pub declare fn round(n: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "self")]
+#[external(.Erlang("erlang:self()"))]
 pub declare fn self() -> unknown;
 
-#[@External.Erlang("erlang", "send")]
+#[external(.Erlang("erlang:send($0, $1)"))]
 pub declare fn send(dest: unknown, msg: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "send")]
+#[external(.Erlang("erlang:send($0, $1, $2)"))]
 pub declare fn sendWithOptions(
     dest: unknown,
     msg: unknown,
     options: unknown,
 ) -> unknown;
 
-#[@External.Erlang("erlang", "size")]
+#[external(.Erlang("erlang:size($0)"))]
 pub declare fn size(term: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "spawn")]
+#[external(.Erlang("erlang:spawn($0)"))]
 pub declare fn spawn(fun: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "spawn")]
+#[external(.Erlang("erlang:spawn($0, $1)"))]
 pub declare fn spawnOnNode(node: unknown, fun: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "spawn")]
+#[external(.Erlang("erlang:spawn($0, $1, $2)"))]
 pub declare fn spawnMfa(m: unknown, f: unknown, a: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "spawn")]
+#[external(.Erlang("erlang:spawn($0, $1, $2, $3)"))]
 pub declare fn spawnMfaOnNode(
     node: unknown,
     m: unknown,
@@ -168,23 +168,23 @@ pub declare fn spawnMfaOnNode(
     a: unknown,
 ) -> unknown;
 
-#[@External.Erlang("erlang", "statistics")]
+#[external(.Erlang("erlang:statistics($0)"))]
 pub declare fn statistics(item: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "time")]
+#[external(.Erlang("erlang:time()"))]
 pub declare fn time() -> unknown;
 
-#[@External.Erlang("erlang", "tl")]
+#[external(.Erlang("erlang:tl($0)"))]
 pub declare fn tl(list: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "trunc")]
+#[external(.Erlang("erlang:trunc($0)"))]
 pub declare fn trunc(n: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "unlink")]
+#[external(.Erlang("erlang:unlink($0)"))]
 pub declare fn unlink(pid: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "unregister")]
+#[external(.Erlang("erlang:unregister($0)"))]
 pub declare fn unregister(name: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "whereis")]
+#[external(.Erlang("erlang:whereis($0)"))]
 pub declare fn whereis(name: unknown) -> unknown;

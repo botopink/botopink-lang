@@ -1,9 +1,11 @@
 //// `length` on a `Bytes` read as a property counts bytes, as the call `b.length()` does: bytes
 //// that are not UTF-8 (a lone 0xFF) answer their count, and UTF-8 text answers bytes, not characters.
 
-#[@External.Node("""Uint8Array.from([104, 255, 200])""")]
-#[@External.Erlang("""<<104, 255, 200>>""")]
-#[@External.Wasm(fn: rawBody)]
+#[@external(
+    .Node("""Uint8Array.from([104, 255, 200])"""),
+    .Erlang("""<<104, 255, 200>>"""),
+    .Wasm(body: rawBody),
+)]
 declare fn raw() -> Bytes;
 
 fn rawBody() -> Bytes {

@@ -17,24 +17,32 @@
 
 import {failure, failure.HostError} from "std";
 
-#[@External.Node("""(($0 >= 0) ? $0 * 2 : (() => { throw new Error("negative"); })())""", result: true)]
-#[@External.Erlang("""(case $0 >= 0 of true -> $0 * 2; false -> erlang:error(negative) end)""", result: true)]
-#[@External.Wasm(fn: doubleBody)]
+#[@external(
+    .Node("""(($0 >= 0) ? $0 * 2 : (() => { throw new Error("negative"); })())""", result: true),
+    .Erlang("""(case $0 >= 0 of true -> $0 * 2; false -> erlang:error(negative) end)""", result: true),
+    .Wasm(body: doubleBody),
+)]
 declare fn double(n: i32) -> @Result<i32, HostError>;
 
-#[@External.Node("""(($0 > 0) ? $0 : (() => { throw "refused"; })())""", result: true)]
-#[@External.Erlang("""(case $0 > 0 of true -> $0; false -> throw(refused) end)""", result: true)]
-#[@External.Wasm(fn: thrownBody)]
+#[@external(
+    .Node("""(($0 > 0) ? $0 : (() => { throw "refused"; })())""", result: true),
+    .Erlang("""(case $0 > 0 of true -> $0; false -> throw(refused) end)""", result: true),
+    .Wasm(body: thrownBody),
+)]
 declare fn thrown(n: i32) -> @Result<i32, HostError>;
 
-#[@External.Node("""(($0 > 0) ? $0 + 1 : (() => { throw new Error("refused"); })())""", result: true)]
-#[@External.Erlang("""(case $0 > 0 of true -> {ok, $0 + 1}; false -> {error, refused} end)""", result: true)]
-#[@External.Wasm(fn: answeredBody)]
+#[@external(
+    .Node("""(($0 > 0) ? $0 + 1 : (() => { throw new Error("refused"); })())""", result: true),
+    .Erlang("""(case $0 > 0 of true -> {ok, $0 + 1}; false -> {error, refused} end)""", result: true),
+    .Wasm(body: answeredBody),
+)]
 declare fn answered(n: i32) -> @Result<i32, HostError>;
 
-#[@External.Node("""(($0 > 0) ? Promise.resolve($0 * 3) : Promise.reject(new Error("late")))""", result: true)]
-#[@External.Erlang("""(case $0 > 0 of true -> $0 * 3; false -> erlang:error(late) end)""", result: true)]
-#[@External.Wasm(fn: laterBody)]
+#[@external(
+    .Node("""(($0 > 0) ? Promise.resolve($0 * 3) : Promise.reject(new Error("late")))""", result: true),
+    .Erlang("""(case $0 > 0 of true -> $0 * 3; false -> erlang:error(late) end)""", result: true),
+    .Wasm(body: laterBody),
+)]
 declare fn later(n: i32) -> @Task<@Result<i32, HostError>>;
 
 fn hostError(message: string, name: failure.HostErrorName) -> HostError {

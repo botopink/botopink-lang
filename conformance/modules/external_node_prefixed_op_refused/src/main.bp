@@ -3,9 +3,7 @@
 //// the compiler passes through: it is refused at the argument on every
 //// target, naming the wasm cell to write.
 
-#[@External.Node("op:f64.floor")]
-#[@External.Erlang("math:floor($0)")]
-#[@External.Wasm(op: "f64.floor")]
+#[@external(.Node("op:f64.floor"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
 pub declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

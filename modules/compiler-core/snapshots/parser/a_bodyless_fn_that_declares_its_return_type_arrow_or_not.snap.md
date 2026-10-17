@@ -117,12 +117,18 @@
       }
     },
     {
-      "delegate": {
-        "name": "print",
+      "fn": {
         "isPub": false,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "print",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
             "name": "message",
@@ -135,7 +141,9 @@
             "default": null
           }
         ],
-        "returnType": null
+        "returnType": null,
+        "typeGuardParam": null,
+        "body": []
       }
     },
     {

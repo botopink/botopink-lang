@@ -221,7 +221,19 @@ fn shimIdent(name: []const u8) ast.Expr {
     return .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
 }
 
-/// A bodyless `declare fn` backed by an `#[@External.<Target>]` annotation.
+/// An `.Erlang` implementation as the BEAM calls it (decision 575 (6)): a
+/// template that is one remote call of the declared parameters
+/// (`ast.remoteCallOf`) is that `call_ext`, `module`/`symbol`; any other is the
+/// template (`module` empty), compiled at build time into a helper (BR5).
+const HostRef = struct { module: []const u8 = "", symbol: []const u8 };
+
+fn hostRefOf(implementations: []const ast.Implementation, param_count: usize) ?HostRef {
+    const impl = ast.implementationFor(implementations, "erlang") orelse return null;
+    if (impl.cell == null) if (ast.remoteCallOf(impl.text, param_count)) |r| if (r.inOrder) return .{ .module = r.module, .symbol = r.function };
+    return .{ .symbol = impl.text };
+}
+
+/// A bodyless `declare fn` with an implementation.
 fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
 }
@@ -275,7 +287,7 @@ const HostAdoption = struct {
 /// arity branch for the declared parameter count) compiled at build time into
 /// the module's `'__bp_tpl_<k>'` helper (BR5), tail-called locally.
 const HostWrapper = union(enum) {
-    ext: ast.ExternalRef,
+    ext: HostRef,
     template: FnLabels,
 };
 
@@ -369,15 +381,10 @@ fn charlist(comptime text: []const u8) Op {
     return .{ .term = Term.listOf(&chars) };
 }
 
-/// Whether `annotations` bind a host the BEAM calls — `#[@External.Erlang(…)]`
-/// (the one BEAM annotation, decision 437).
-fn bindsBeamHost(annotations: []const ast.Annotation) bool {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        const target = a.name["External.".len..];
-        if (std.ascii.eqlIgnoreCase(target, "erlang")) return true;
-    }
-    return false;
+/// Whether `implementations` bind a host the BEAM calls — an `.Erlang(…)`
+/// (the one BEAM implementation, decision 437).
+fn bindsBeamHost(implementations: []const ast.Implementation) bool {
+    return ast.implementationFor(implementations, "erlang") != null;
 }
 
 /// Whether some module of the build binds a BEAM host of its own: a
@@ -396,10 +403,9 @@ fn buildBindsBeamHost(all_outputs: []const ComptimeOutput) bool {
             else => continue,
         };
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (bindsBeamHost(f.annotations)) return true,
+            .@"fn" => |f| if (bindsBeamHost(f.implementations)) return true,
             .type_ => |t| {
-                if (bindsBeamHost(t.annotations)) return true;
-                for (t.methods) |m| if (bindsBeamHost(m.annotations)) return true;
+                for (t.methods) |m| if (bindsBeamHost(m.implementations)) return true;
             },
             else => {},
         };
@@ -1866,22 +1872,12 @@ fn withHostMethodBodies(arena: std.mem.Allocator, program: ast.Program) !ast.Pro
             for (methods) |*m| {
                 if (!hostMethods.isHostMethod(m.*) or !hostMethods.binds(m.*, .beam)) continue;
                 const key = try hostMethods.keyOf(arena, t.name, m.name);
-                var annotations = m.annotations;
-                if (ast.externalHasArityBranches(m.annotations, "erlang")) {
-                    const argc = if (hostMethods.takesSelf(m.*)) m.params.len - 1 else m.params.len;
-                    const branch = ast.externalArityBranchFor(m.annotations, "erlang", argc) orelse continue;
-                    const quoted = try std.fmt.allocPrint(arena, "\"\"\"{s}\"\"\"", .{branch});
-                    annotations = try arena.dupe(ast.Annotation, &.{.{
-                        .name = "External.Erlang",
-                        .args = try arena.dupe([]const u8, &.{quoted}),
-                        .is_builtin = true,
-                    }});
-                }
                 try hidden.append(arena, .{ .@"fn" = .{
                     .isPub = false,
                     .isDeclare = true,
                     .name = key,
-                    .annotations = annotations,
+                    .annotations = m.annotations,
+                    .implementations = m.implementations,
                     .genericParams = &.{},
                     .params = m.params,
                     .returnType = m.returnType,
@@ -2213,7 +2209,7 @@ fn emitBeamAsm(
             // runtime code — silently skip. `mod` declares a submodule in the
             // explicit tree; the submodule is compiled as its own unit.
             // A type alias is erased: the checker substituted its target.
-            .delegate, .use, .mod, .@"test", .typeAlias => {},
+            .use, .mod, .@"test", .typeAlias => {},
         }
     }
 
@@ -2333,15 +2329,9 @@ fn fnKey(alloc: std.mem.Allocator, name: []const u8, arity: usize) ![]u8 {
     return std.fmt.allocPrint(alloc, "{s}/{d}", .{ name, arity });
 }
 
-/// True when any `External.<target>(…)` annotation writes `inline: true` —
-/// read by its label, wherever it is written (decision 487).
-fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bool {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        if (ast.externalFlagSet(a, "inline")) return true;
-    }
-    return false;
+/// True when the `.Erlang(…)` implementation writes `inline: true`.
+fn hasExternalInline(implementations: []const ast.Implementation, target: []const u8) bool {
+    return ast.implementationInline(implementations, target);
 }
 
 /// An imported `pub fn` as this module calls it: the owner's atom and the
@@ -2895,10 +2885,10 @@ const Emitter = struct {
                     if (rt.isSelf()) try self.self_returns.put(key, {});
                 }
                 if (m.body == null and !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"))) {
-                    if (m.externalFor("erlang")) |ref| if (primOpTemplate.looksLikeTemplate(ref.symbol) and
+                    if (m.externalFor("erlang")) |ref| if (primOpTemplate.looksLikeTemplate(ref.text) and
                         !self.assoc_host_templates.contains(key))
                     {
-                        try self.assoc_host_templates.put(key, try arena.dupe(u8, ref.symbol));
+                        try self.assoc_host_templates.put(key, try arena.dupe(u8, ref.text));
                     };
                     continue;
                 }
@@ -2919,40 +2909,21 @@ const Emitter = struct {
     fn collectIfaceErlangDispatch(self: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
-            // `prim-op-annotation` arity-branch entries are stored verbatim
-            // here too — `tryEmitPrimAnnotation` short-circuits on them so
-            // BEAM's inline switch keeps owning the lowering (slice etc).
-            if (ast.externalHasArityBranches(m.annotations, "erlang")) {
-                if (hasExternalInline(m.annotations, "erlang")) continue;
-                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ iface.name, m.name });
-                if (self.prim_erlang_dispatch.contains(key)) {
-                    self.alloc.free(key);
-                    continue;
-                }
-                var branches: std.ArrayList(ast.ArityBranch) = .empty;
-                errdefer branches.deinit(self.alloc);
-                for (m.annotations) |a| {
-                    if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
-                    for (a.args) |raw| {
-                        const b = ast.parseArityBranchArg(raw) orelse continue;
-                        try branches.append(self.alloc, .{
-                            .argc = b.argc,
-                            .template = try self.alloc.dupe(u8, b.template),
-                        });
-                    }
-                }
-                try self.prim_erlang_dispatch.put(key, .{
-                    .module = "",
-                    .symbol = "",
-                    .args = null,
-                    .arity_branches = try branches.toOwnedSlice(self.alloc),
-                });
-                continue;
-            }
-            const ref = m.externalFor("erlang") orelse continue;
-            // BEAM reads the erlang annotation (decision 437), so an
+            var ref = hostRefOf(m.implementations, m.params.len) orelse continue;
+            // BEAM reads the erlang implementation (decision 437), so an
             // `inline: true` on it marks the method irreducible on BEAM.
-            if (hasExternalInline(m.annotations, "erlang")) continue;
+            if (hasExternalInline(m.implementations, "erlang")) continue;
+            // A remote call of the parameters in another order
+            // (`"lists:map($1, $0)"`) is `module:symbol(names…)`, the order
+            // `parseExternalCallTemplate` reads.
+            if (ref.module.len == 0) if (ast.remoteCallOf(ref.symbol, m.params.len)) |r| {
+                const ar = self.prelude_arena.allocator();
+                var sym: std.ArrayListUnmanaged(u8) = .empty;
+                try sym.print(ar, "{s}(", .{r.function});
+                for (r.order[0..m.params.len], 0..) |k, i| try sym.print(ar, "{s}{s}", .{ if (i > 0) ", " else "", m.params[k].name });
+                try sym.append(ar, ')');
+                ref = .{ .module = r.module, .symbol = sym.items };
+            };
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ iface.name, m.name });
             if (self.prim_erlang_dispatch.contains(key)) {
                 self.alloc.free(key);
@@ -5026,13 +4997,11 @@ const Emitter = struct {
         // through the wrapper a qualified call from another module reaches, as it
         // does at an inlined call site (`lowerHostCall`): its template, or its
         // `(module, symbol)` as the call it names, inside `erlTemplate.resultWrap`.
-        const result = ast.externalResultFor(f.annotations, "erlang");
+        const result = ast.implementationResult(f.implementations, "erlang");
         var remote: ?[]u8 = null;
         defer if (remote) |r| self.alloc.free(r);
-        const template_raw = if (ast.externalHasArityBranches(f.annotations, "erlang"))
-            ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) orelse return null
-        else blk: {
-            const ref = f.externalFor("erlang") orelse return null;
+        const template_raw = blk: {
+            const ref = hostRefOf(f.implementations, f.params.len) orelse return null;
             if (ref.module.len > 0) {
                 // The keyword form's template (`lowerHostCall`).
                 if (primOpTemplate.looksLikeTemplate(ref.symbol)) break :blk ref.symbol;
@@ -8719,14 +8688,8 @@ const Emitter = struct {
         // answers `@Result<T, HostError>` (`erlTemplate.resultWrap`). The
         // helper takes its arguments evaluated, so a raise there is the
         // caller's.
-        const result = ast.externalResultFor(f.annotations, "erlang");
-        if (ast.externalHasArityBranches(f.annotations, "erlang")) {
-            const template = ast.externalArityBranchFor(f.annotations, "erlang", argc) orelse return error.MissingExternalTarget;
-            if (result) return self.evalResultTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
-            try self.evalHostTemplate(template, self_first, exprs[0..cc.args.len], cc.trailing, mode);
-            return;
-        }
-        const ref = f.externalFor("erlang") orelse return error.MissingExternalTarget;
+        const result = ast.implementationResult(f.implementations, "erlang");
+        const ref = hostRefOf(f.implementations, f.params.len) orelse return error.MissingExternalTarget;
         if (result) {
             if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) {
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return error.MissingExternalTarget;

@@ -1,12 +1,12 @@
 ----- SOURCE CODE
-#[@External.Python("string", "length")]
+#[@external(.Python("string", "length"))]
 pub declare fn str_length(s: string) -> i32;
 
 ----- ERROR
-error: `@external` target must be a Target member: node, typescript, erlang or wasm
-  ┌─ main.bp:1:3
+error: `.Python(…)` names a variant by its leading dot, and nothing here says which type declares it
+  ┌─ main.bp:1:13
   │
-1 │ #[@External.Python("string", "length")]
-  │   ^
+1 │ #[@external(.Python("string", "length"))]
+  │             ^
 
-  hint: Example: #[@External.Erlang( "string", "length")]
+  hint: give the position a type that declares `Python` (`val v: T = .Python(…);`, a typed parameter or array), or write `T.Python(…)`

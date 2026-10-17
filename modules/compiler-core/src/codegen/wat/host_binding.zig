@@ -284,32 +284,32 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
     defer alloc.free(shown);
     if (std.mem.startsWith(u8, text, "op:")) {
         const name = text["op:".len..];
-        const op = findOp(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a wasm numeric instruction this backend binds (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)", .{ shown, name });
+        const op = findOp(name) orelse return refused(alloc, "`.Wasm({s})`: `{s}` is not a wasm numeric instruction this backend binds (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)", .{ shown, name });
         if (try checkOp(alloc, shown, op, sig)) |r| return r;
         return .{ .ok = .{ .op = op } };
     }
     if (std.mem.startsWith(u8, text, "fn:")) {
         const name = text["fn:".len..];
-        if (!isIdent(name)) return refused(alloc, "`#[@External.Wasm({s})]`: `fn:` names a private fn of this module by its identifier — `fn: name`", .{shown});
+        if (!isIdent(name)) return refused(alloc, "`.Wasm({s})`: `body:` names a private fn of this module by its identifier — `body: name`", .{shown});
         return .{ .ok = .{ .fn_ = name } };
     }
     if (std.mem.startsWith(u8, text, "wasi:")) {
         const name = text["wasi:".len..];
         const value = shown["wasi: ".len..];
-        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ shown, value, adapterNames() });
+        const ad = findAdapter(name) orelse return refused(alloc, "`.Wasm({s})`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ shown, value, adapterNames() });
         if (ad.task) |ts| {
             const ok = if (sig.shapes) |shapes| shapes.len == ts.params.len and std.mem.eql(Shape, shapes, ts.params) and sig.result_shape == ts.result else false;
             if (ok) return .{ .ok = .{ .wasi = ad } };
             const shape = try taskSigText(alloc, ts);
             defer alloc.free(shape);
-            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ shown, value, shape });
+            return refused(alloc, "`.Wasm({s})`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ shown, value, shape });
         }
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result) or sig.result_task != ad.answers_task) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
             const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Task<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
             defer alloc.free(answers);
-            return refused(alloc, "`#[@External.Wasm({s})]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
+            return refused(alloc, "`.Wasm({s})`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
         }
         return .{ .ok = .{ .wasi = ad } };
     }
@@ -322,11 +322,11 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
         if (e == null and leaf == null) {
             const leaves = try stdLeaves.names(alloc);
             defer alloc.free(leaves);
-            return refused(alloc, "`#[@External.Wasm({s})]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s}) or one of its `.wat` leaves ({s})", .{ shown, name, stdWasm.names, leaves });
+            return refused(alloc, "`.Wasm({s})`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s}) or one of its `.wat` leaves ({s})", .{ shown, name, stdWasm.names, leaves });
         }
         return .{ .ok = .{ .std_ = .{ .name = name, .wasm = e, .leaf = leaf } } };
     }
-    return refused(alloc, "`#[@External.Wasm({s})]` is none of the four cells a wasm binding takes: `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>`, `std: \"<module>.<function>\"`", .{shown});
+    return refused(alloc, "`.Wasm({s})` is none of the four cells a wasm binding takes: `op: \"<opcode>\"`, `body: <private fn of this module>`, `wasi: .<Adapter>`, `std: \"<module>.<function>\"`", .{shown});
 }
 
 fn refused(alloc: std.mem.Allocator, comptime f: []const u8, args: anytype) !Result {
@@ -343,7 +343,7 @@ fn checkOp(alloc: std.mem.Allocator, text: []const u8, op: Op, sig: Signature) !
         if (got == .bool or !std.mem.eql(u8, @tagName(got), @tagName(want))) ok = false;
     };
     if (ok) {
-        const r = sig.result orelse return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` answers a value; the declaration answers none", .{ text, op.text });
+        const r = sig.result orelse return try refused(alloc, "`.Wasm({s})`: `{s}` answers a value; the declaration answers none", .{ text, op.text });
         ok = if (op.yields_bool) r == .bool else (r != .bool and std.mem.eql(u8, @tagName(r), @tagName(op.result)));
     }
     if (ok) return null;
@@ -356,7 +356,7 @@ fn checkOp(alloc: std.mem.Allocator, text: []const u8, op: Op, sig: Signature) !
     }
     try buf.appendSlice(alloc, ") -> ");
     try buf.appendSlice(alloc, if (op.yields_bool) "bool" else @tagName(op.result));
-    return try refused(alloc, "`#[@External.Wasm({s})]`: `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ text, op.text, buf.items });
+    return try refused(alloc, "`.Wasm({s})`: `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ text, op.text, buf.items });
 }
 
 fn slotsEql(a: []const ?Slot, b: []const Slot) bool {

@@ -24,17 +24,6 @@ const Tally = struct {
     refused: std.ArrayListUnmanaged([]const u8) = .empty,
 };
 
-fn unquote(arg: []const u8) []const u8 {
-    if (arg.len >= 6 and std.mem.startsWith(u8, arg, "\"\"\"") and std.mem.endsWith(u8, arg, "\"\"\"")) {
-        var inner = arg[3 .. arg.len - 3];
-        if (inner.len > 0 and inner[0] == '\n') inner = inner[1..];
-        if (inner.len > 0 and inner[inner.len - 1] == '\n') inner = inner[0 .. inner.len - 1];
-        return inner;
-    }
-    if (arg.len >= 2 and arg[0] == '"' and arg[arg.len - 1] == '"') return arg[1 .. arg.len - 1];
-    return arg;
-}
-
 fn lowerOne(ar: std.mem.Allocator, tally: *Tally, where: []const u8, template: []const u8, has_recv: bool, argc: usize) !void {
     const body = try beamAsm.templateBody(ar, template, argc);
     const text = try beamAsm.templateModuleText(ar, body, has_recv, argc + @intFromBool(has_recv));
@@ -49,37 +38,26 @@ fn lowerOne(ar: std.mem.Allocator, tally: *Tally, where: []const u8, template: [
 /// `fn:` string is audited as the template text it would be read as.
 const Bindable = struct { program: ast.Program, f: ast.FnDecl };
 
-/// Every Erlang template one declaration's annotations carry: each arity
-/// branch, a one-argument template, a `(module, template)` pair; and each
-/// `fn:` binding of a top-level `declare fn`, checked by `hostFnBinding`.
-fn audit(ar: std.mem.Allocator, tally: *Tally, where: []const u8, annotations: []const ast.Annotation, params: []const ast.Param, bindable: ?Bindable) !void {
+/// Every Erlang template one declaration's implementations carry — a
+/// template that is one remote call is a `call_ext`, no template — and each
+/// `body:` binding of a top-level `declare fn`, checked by `hostFnBinding`.
+fn audit(ar: std.mem.Allocator, tally: *Tally, where: []const u8, implementations: []const ast.Implementation, params: []const ast.Param, bindable: ?Bindable) !void {
     const has_recv = params.len > 0 and std.mem.eql(u8, params[0].name, "self");
     const argc = params.len - @intFromBool(has_recv);
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], "erlang")) continue;
-        var branched = false;
-        for (a.args) |raw| {
-            const branch = ast.parseArityBranchArg(raw) orelse continue;
-            branched = true;
-            try lowerOne(ar, tally, where, branch.template, has_recv, branch.argc);
-        }
-        if (branched) continue;
-        var n = a.args.len;
-        if (n >= 1 and (std.mem.eql(u8, a.args[n - 1], "true") or std.mem.eql(u8, a.args[n - 1], "false"))) n -= 1;
-        const fn_binding = n == 1 and bindable != null and std.mem.startsWith(u8, unquote(a.args[0]), "fn:");
-        if (fn_binding) {
-            const name = unquote(a.args[0])["fn:".len..];
-            switch (try hostFnBinding.resolve(ar, bindable.?.f, name, bindable.?.program, "", "Erlang")) {
+    for (implementations) |impl| {
+        if (impl.target != .erlang) continue;
+        if (impl.cell) |c| {
+            if (c.kind != .body) continue;
+            const b = bindable orelse continue;
+            switch (try hostFnBinding.resolve(ar, b.f, c.value, b.program, "", "Erlang")) {
                 .ok => tally.bound += 1,
                 .refused => |why| try tally.refused.append(ar, try std.fmt.allocPrint(ar, "{s}: {s}", .{ where, why })),
             }
-        } else if (n == 1) {
-            try lowerOne(ar, tally, where, unquote(a.args[0]), has_recv, argc);
-        } else if (n == 2) {
-            const symbol = unquote(a.args[1]);
-            if (primOpTemplate.looksLikeTemplate(symbol)) try lowerOne(ar, tally, where, symbol, has_recv, argc);
+            continue;
         }
+        const template = impl.template orelse continue;
+        if (ast.remoteCallOf(template, params.len) != null) continue;
+        try lowerOne(ar, tally, where, template, has_recv, argc);
     }
 }
 
@@ -89,12 +67,12 @@ fn auditSource(ar: std.mem.Allocator, tally: *Tally, file: []const u8, src: []co
     var p = parserMod.Parser.init(tokens);
     const program = try p.parse(ar);
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}", .{ file, f.name }), f.annotations, f.params, .{ .program = program, .f = f }),
+        .@"fn" => |f| try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}", .{ file, f.name }), f.implementations, f.params, .{ .program = program, .f = f }),
         .behavior => |b| for (b.methods) |m| {
-            try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}.{s}", .{ file, b.name, m.name }), m.annotations, m.params, null);
+            try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}.{s}", .{ file, b.name, m.name }), m.implementations, m.params, null);
         },
         .type_ => |t| for (t.methods) |m| {
-            try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}.{s}", .{ file, t.name, m.name }), m.annotations, m.params, null);
+            try audit(ar, tally, try std.fmt.allocPrint(ar, "{s} {s}.{s}", .{ file, t.name, m.name }), m.implementations, m.params, null);
         },
         else => {},
     };
@@ -117,7 +95,7 @@ test "beam: every Erlang template std and the bundled libraries ship compiles at
     }
     // The audit is worthless if it stopped finding templates.
     try std.testing.expect(tally.lowered >= 150);
-    // std/math binds fifteen functions on Erlang through `fn:`.
+    // std/math binds fifteen functions on Erlang through `body:`.
     try std.testing.expect(tally.bound >= 15);
 }
 

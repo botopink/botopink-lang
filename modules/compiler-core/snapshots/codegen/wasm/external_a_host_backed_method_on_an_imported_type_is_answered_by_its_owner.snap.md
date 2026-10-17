@@ -1,8 +1,7 @@
 ----- SOURCE CODE -- hostlib.bp
 ```botopink
 pub type Meter(base: i32) {
-    #[@External.Node("""($0.base + $1)"""),
-      @External.Erlang("""(element(2, $0) + $1)""")]
+    #[@external(.Node("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 }
 ```
@@ -30,7 +29,7 @@ pub fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend
+error: `Meter.plus` has no implementation for the wasm backend
   ┌─ :4:28
   │
 4 │     @print(Meter(base: 40).plus(2));

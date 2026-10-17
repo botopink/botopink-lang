@@ -2,9 +2,7 @@
 //// botopink name: `std: hash.contentHash` is refused at the argument, on every
 //// target, naming the string form.
 
-#[@External.Node("x", "y")]
-#[@External.Erlang("x", "y")]
-#[@External.Wasm(std: hash.contentHash)]
+#[@external(.Node("x.y($0)"), .Erlang("x:y($0)"), .Wasm(std: hash.contentHash))]
 pub declare fn digest(s: string) -> string;
 
 pub fn main() {

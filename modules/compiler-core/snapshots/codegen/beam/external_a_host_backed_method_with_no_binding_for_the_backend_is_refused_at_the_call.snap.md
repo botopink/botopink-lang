@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub type Probe(n: i32) {
-    #[@External.Erlang("""element(2, $0)""")]
+    #[@external(.Erlang("""element(2, $0)"""))]
     pub declare fn raw(self: Self) -> i32;
 }
 

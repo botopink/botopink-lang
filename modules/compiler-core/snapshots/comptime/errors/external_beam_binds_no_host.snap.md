@@ -1,12 +1,12 @@
 ----- SOURCE CODE
-#[@External.Beam("math", "sqrt")]
+#[@external(.Beam("math", "sqrt"))]
 pub declare fn root(x: f64) -> f64;
 
 ----- ERROR
-error: `@External.Beam` binds no host — the beam target reads `@External.Erlang`
-  ┌─ main.bp:1:3
+error: `.Beam(…)` names a variant by its leading dot, and nothing here says which type declares it
+  ┌─ main.bp:1:13
   │
-1 │ #[@External.Beam("math", "sqrt")]
-  │   ^
+1 │ #[@external(.Beam("math", "sqrt"))]
+  │             ^
 
-  hint: Write `#[@External.Erlang("<module>", "<function>")]`; the beam target reads it too.
+  hint: give the position a type that declares `Beam` (`val v: T = .Beam(…);`, a typed parameter or array), or write `T.Beam(…)`

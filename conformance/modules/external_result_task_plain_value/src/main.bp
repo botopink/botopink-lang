@@ -3,7 +3,7 @@
 //// `@Task<T>` never fails, so a host that answers later and can fail has
 //// nowhere to put the error. `-> @Task<i32>` is refused at the annotation.
 
-#[@External.Node("Promise.resolve($0)", result: true), @External.Erlang("$0", result: true)]
+#[@external(.Node("Promise.resolve($0)", result: true), .Erlang("$0", result: true))]
 declare fn later(n: i32) -> @Task<i32>;
 
 fn run() -> @Task<void> {

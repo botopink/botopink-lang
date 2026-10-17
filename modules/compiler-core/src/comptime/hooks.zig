@@ -421,7 +421,7 @@ pub fn isExpandedFn(arena: std.mem.Allocator, f: ast.FnDecl) !bool {
         if (rt.isTemplateReturnType()) return false;
         if (rt == .generic and rt.generic.is_builtin and std.mem.eql(u8, rt.generic.name, "Component")) return false;
     }
-    for (f.annotations) |a| if (a.is_builtin and std.mem.startsWith(u8, a.name, "External")) return false;
+    if (f.isExternal()) return false;
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     for (f.params) |p| {
         if (p.modifier != .@"comptime" or !p.exprWrapped) return false;

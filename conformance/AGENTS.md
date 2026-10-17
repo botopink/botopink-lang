@@ -185,11 +185,11 @@ parameter as the source, an overridden labelled value dropped unevaluated and un
 Decision 305 (an annotation speaks botopink, 144 B-02) adds `modules/annotation_label_equals` (`keyed = true`
 on `@BeamMemory.Ets`, `annotation-label-equals` at the label, naming `keyed:`), `modules/external_fn_unbound`
 (a misspelt `fn: <name>` is the unbound-name error at the argument) and `modules/external_prefixed_fn_refused`
-(`@External.Node("fn:mixBody")` refused, naming `fn: mixBody`); its Conformance step adds
+(`.Node("fn:mixBody")` refused, naming `fn: mixBody`); its Conformance step adds
 `modules/annotation_label_equals_decorator` (the same refusal on a decorator's `at = .confirm`),
-`modules/external_erlang_prefixed_fn_refused` (`@External.Erlang("fn:mixBody")`, the cell the erlang and beam
-targets read) and `modules/external_node_prefixed_op_refused` (`@External.Node("op:f64.floor")` names the wasm
-cell `#[@External.Wasm(op: "f64.floor")]`) — each red on B-02's parent, which ran the `=` label's program,
+`modules/external_erlang_prefixed_fn_refused` (`.Erlang("fn:mixBody")`, the cell the erlang and beam
+targets read) and `modules/external_node_prefixed_op_refused` (`.Node("op:f64.floor")` names the wasm
+cell `#[@external(.Wasm(op: "f64.floor"))]`) — each red on B-02's parent, which ran the `=` label's program,
 refused `fn: mixBody` beside the prefixed string and passed `"op:f64.floor"` to node as host code.
 Decision 308 (a field key at run time, 144 B-16) adds `modules/field_key_runtime` (`Type.keys(Recipe)` exported
 and imported; a key stored in a `var` and an array, passed, compared, matched by an exhaustive `case` and by
@@ -660,13 +660,13 @@ constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a rec
 variant; the parent's lowering failed `MissingPackage`).
 `01-compiler/14` step 6 (decisions 341, 343) adds `modules/decorator_host_cells` (a decorator body calls
 a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
-import — the wasm comptime runtime runs `bang`'s `@External.Wasm(fn: …)` cell (its Erlang cell never runs at
+import — the wasm comptime runtime runs `bang`'s `.Wasm(body: …)` cell (its Erlang cell never runs at
 build, decision 452) and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
 `modules/decorator_imported_host_function` (the same through an imported function and an imported
 decorator: the export carries its host and std functions),
 `modules/comptime_host_cell_unavailable` (decisions 434 (4), 452: a host function with neither a `std:` nor a
 `fn:` cell, refused at the call naming both — was the cell `decorator_host_cell_missing`),
-`modules/comptime_host_cell_unavailable_erlang_only` (decision 452: a host function with an `@External.Erlang`
+`modules/comptime_host_cell_unavailable_erlang_only` (decision 452: a host function with an `.Erlang`
 cell alone is refused the same way, the cell never run at build — was the cell `comptime_beam_call_not_converted`;
 `modules/decorator_erlang_cell_only` is this refusal),
 `modules/comptime_erlang_cell_ignored_fn_serves` (decision 452: an Erlang cell beside a `fn:` cell is ignored, the
@@ -733,7 +733,7 @@ narrowing the bundled `log`'s host functions needed went with it (refused on the
 suite's own imports of a module of their package were migrated by
 `scripts/codemod-import-without-from.py`; `method_on_unimported_type` is the case that showed the
 need: its `import {logger} from "log";`, meant for its own `log.bp`, loaded the then-bundled `log`.
-Decision 141 adds `modules/external_template_refused_on_beam` — an `@External.Erlang` template with a
+Decision 141 adds `modules/external_template_refused_on_beam` — an `.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`snapshot/targets/beam/`); beam
 no longer evaluates a template it cannot compile from source at run time.
 Decision 216 (front `130-decorator-outputs`, what a decorator produces) adds, for its first place —
@@ -871,7 +871,7 @@ Decision 252 (every builtin declared, a call held to its declaration) adds
 Decision 307 adds `modules/std_types_module` — `import {types.Type} from "std"` resolves on all four
 targets (std's `types.bp`, exported by `root.bp`).
 C-03's beam half adds `modules/std_template_host_fns_across_modules` — std host functions whose
-`@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
+`.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
 module through a folder namespace and a leaf import, on commonJS, erlang and beam (`"targets"`: wasm
 refuses `io/fs`, decision 241's group 3).
@@ -969,7 +969,7 @@ parent binary: `modules/task_await_in_if_block` (an `if` block that `await`s wit
 `modules/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
 `files` lists every importer before what it imports, `import {a.base};` and `import {leaf.Leaf};`),
-`modules/external_erlang_host_module_missing` (`"targets"` `erlang beam`: an `@External.Erlang` module that is
+`modules/external_erlang_host_module_missing` (`"targets"` `erlang beam`: an `.Erlang` module that is
 neither shipped nor in the Erlang code path is a located build error on both, `snapshot/targets/erlang/` and
 `snapshot/targets/beam/`),
 `modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run` on
@@ -1096,7 +1096,7 @@ over unit variants, numbers, strings, payload variants with a wildcard, a litera
 behavior, called through a value of the behavior — commonJS, erlang and beam),
 `modules/behavior_method_result_chained` and `modules/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
-wasm trapped), `modules/external_template_escaped_quote` (a `\"` in an `@External.Node` template is a
+wasm trapped), `modules/external_template_escaped_quote` (a `\"` in an `.Node` template is a
 quote of the JavaScript; `"targets"` without wasm), `modules/std_path_relative` (a std module calling an
 `Array` `default fn` — commonJS had no prototype method), `modules/if_value_float` (an `f64` value `if`
 outside an `f64` function — wasm refused the module, commonJS printed `0`) and
@@ -1272,7 +1272,7 @@ templates deliberately build the pre-decision-21 `#{field => V}` map that an `.e
 consumer library still builds, and the boundary adopts it; `"targets"` is `commonJS erlang beam`
 because wasm has no host vocabulary for these templates — beam compiles the erlang templates at build
 time and adopts the answer with its own `'__bp_adopt'/3`),
-`external_method_*` (host-backed METHODS — a `declare fn` with `#[@External.<Target>(…)]` inside a
+`external_method_*` (host-backed METHODS — a `declare fn` with `#[@external(.<Target>(…))]` inside a
 `type` body, lowered as a real method of the type: `modules/external_method_local` — a record's template
 methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
 form, `inline: true`, an enum's host method — on commonJS, erlang and beam, refused on wasm by
@@ -1319,7 +1319,7 @@ decision 96 (its `use_two_bases` refusal cell left with decision 354), `modules/
 a variant whose emitter never reads it is refused at the annotation; 1.0.12-beta's front 140 step 2,
 decision 334, adds `modules/external_wasm_host_unknown`, `modules/external_host_on_node`,
 `modules/external_wasm_host_twice` and `modules/external_wasm_host_beside_unhosted` — `host:` is
-`External.Wasm`'s, `.Wasi` or `.Browser`, one binding per host — with `modules/external_wasm_host_binding`
+`.Wasm`'s, `.Wasi` or `.Browser`, one binding per host — with `modules/external_wasm_host_binding`
 (a `.Wasi` and a `.Browser` binding side by side, the `wasi` build lowering the first) and
 `modules/wasm_host_from_manifest` (`"wasm": { "host": "browser" }` leaves a `.Wasi`-only binding
 unbound, `snapshot/targets/wasm/`); its step 6 adds `modules/wasm_host_browser_runs` (a `browser` build run by
@@ -1335,7 +1335,7 @@ state machine over the scheduler, one adapter list for both hosts) add `modules/
 `async { }` block suspending on a real timer), and two wasm refusals with `snapshot/targets/wasm/` —
 `modules/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
 `modules/external_wasm_task_adapter_shape` (an adapter declared off its shape — refused on every
-target since 144 B-23 read every `@External.Wasm` binding in the checker, beside
+target since 144 B-23 read every `.Wasm` binding in the checker, beside
 `modules/external_wasm_op_type_on_every_target` and
 `modules/external_wasm_adapter_signature_on_every_target`, both run by the other targets' own
 bindings on the parent binary); 144 B-25 (decision 334, `02/97` step 17) binds std's `async` on both
@@ -1373,7 +1373,7 @@ Each was run with the parent binary and fails there as its row describes.
   is illegal in the print helper's guard once it is the module's own fn) and, before the
   `no_auto_import` directive, read `p.y` through the module's `element/2`.
 - `modules/host_template_binding_inside_while` (language-gaps T14, `"targets"` erlang beam — commonJS
-  and wasm lack `bump`): an `#[@External.Erlang]` template binding `__Loop`, called in a `while`
+  and wasm lack `bump`): an `.Erlang(…)` template binding `__Loop`, called in a `while`
   body and in a `for` body. Erlang's `while` recursed through a named fun `__Loop`, and the
   template's `__Loop = …` re-matched it — `{badmatch, 1}`.
 - `modules/dependency_module_level_print` (C-34): a dependency's two modules print only from a
@@ -1412,7 +1412,7 @@ Each was run with the parent binary and fails there as its row describes.
   parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
   beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
 - `test/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
-  declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
+  declares `#[@external(.Erlang("lt_greeter", "hello"))]` itself and calls it. It imports nothing, so
   its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
 - `modules/list_pattern_spread_alone` (a row `03-beam` measured): `[..all]` as a `case` arm over three
   elements and over `[]`, and `val assert [..every]`, on all four targets. Erlang wrote the pattern
@@ -2046,7 +2046,7 @@ template that builds a record's tag spells it (`'external_host_record@main@@Poin
 `modules/external_host_record`).
 
 **A beam program's host modules.** `botopink build --target beam` ships the `.erl` of every
-`#[@External.Erlang("<host>", …)]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
+`#[@external(.Erlang("<host>", …))]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
 beside the `.S` files — the files the erlang build ships into `out/erl/` — and a host module that is
 neither shipped nor on the Erlang code path is the same located refusal on both
 (`modules/external_erlang_host_module_missing`). Nothing assembles an `.erl`: the
@@ -2106,8 +2106,8 @@ compiler reads no configuration from a comment) — so a `test/` suite that narr
 `botopink build --target <t>` must **refuse** the program on a host binding —
 
 ```
-`f` has no `#[@External.<Target>(…)]` for the <t> backend
-std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t>'
+`f` has no `#[@external(.<Target>(…))]` for the <t> backend
+std-unsupported-on-target: std/<m> has no `#[@external(…)]` for target '<t>'
 ```
 
 — the one reason a program structurally has no row on a target. A target the build accepts, or

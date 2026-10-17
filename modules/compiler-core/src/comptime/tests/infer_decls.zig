@@ -993,8 +993,7 @@ test "infer: anonymous test body typechecks" {
 // typechecks — is unchanged.
 test "infer: external ---- fn no body typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@External.Erlang( "string", "length"),
-        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
+        \\#[@external(.Erlang("string:length($0)"), .Node("$0.length"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
@@ -1009,13 +1008,13 @@ test "infer: external ---- fn no body typechecks" {
 // `result: false`, the default, sits beside it on any variant.
 test "infer: external ---- inline on erlang typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@External.Erlang("max($args)", inline: true)]
+        \\#[@external(.Erlang("max($args)", inline: true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
         \\
-        \\#[@External.Erlang(inline: true, "min($args)", result: false)]
+        \\#[@external(.Erlang("min($args)", inline: true, result: false))]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
         \\
-        \\#[@External.Node(result: false, "Math.abs($0)")]
+        \\#[@external(.Node("Math.abs($0)", result: false))]
         \\pub declare fn magnitude(a: i32) -> i32;
         \\
         \\fn main() {
@@ -1024,57 +1023,11 @@ test "infer: external ---- inline on erlang typechecks" {
     );
 }
 
-// `infer.zig`'s `external_variants` restates `pub type External implement
-// Annotation { … }` from `builtins.d.bp`, which the compiler does not parse
-// (the same reason `effect_chain.zig` restates the `extends` clauses). The
-// test reads the file and fails in both directions: a variant declared there
-// that the table does not carry, or whose `inline` or `result` the table gets
-// wrong, and a table row the file does not declare.
-test "infer: external ---- the variant table agrees with builtins.d.bp" {
-    const source: []const u8 = @import("std_prelude").builtins;
-    const head = "pub type External implement Annotation {";
-    const at = std.mem.indexOf(u8, source, head) orelse return error.ExternalNotDeclared;
-    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.ExternalNotClosed;
-    var declared: usize = 0;
-    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, " \t\r,");
-        if (line.len == 0) continue;
-        const paren = std.mem.indexOfScalar(u8, line, '(') orelse return error.VariantWithoutPayload;
-        const name = line[0..paren];
-        const declares_inline = std.mem.indexOf(u8, line, "inline: bool = false") != null;
-        // Decisions 431, 490 — `result: bool = false` on every variant, last.
-        const declares_result = std.mem.endsWith(u8, line, "result: bool = false)");
-        declared += 1;
-        const row = for (inferMod.external_variants) |v| {
-            if (std.mem.eql(u8, v.name, name)) break v;
-        } else {
-            std.debug.print("builtins.d.bp declares `External.{s}` and `external_variants` does not carry it\n", .{name});
-            return error.VariantNotCarried;
-        };
-        if (row.declares_inline != declares_inline) {
-            std.debug.print(
-                "`External.{s}`: builtins.d.bp {s} `inline`, `external_variants` says {s}\n",
-                .{ name, if (declares_inline) "declares" else "does not declare", if (row.declares_inline) "it does" else "it does not" },
-            );
-            return error.InlineDrifted;
-        }
-        if (row.declares_result != declares_result) {
-            std.debug.print(
-                "`External.{s}`: builtins.d.bp {s} `result` last, `external_variants` says {s}\n",
-                .{ name, if (declares_result) "declares" else "does not declare", if (row.declares_result) "it does" else "it does not" },
-            );
-            return error.ResultDrifted;
-        }
-    }
-    try std.testing.expectEqual(inferMod.external_variants.len, declared);
-}
-
 // Decision 518 — `ast.WasmNeed` restates std's `pub type WasmNeed { … }` from
-// `builtins.d.bp`: the same values in the same order, and `External.Wasm`
+// `external.bp`: the same values in the same order, and `Implementation.Wasm`
 // declares `needs: WasmNeed[]`.
-test "infer: external ---- WasmNeed agrees with builtins.d.bp" {
-    const source: []const u8 = @import("std_prelude").builtins;
+test "infer: external ---- WasmNeed agrees with external.bp" {
+    const source: []const u8 = @import("std_prelude").external;
     const head = "pub type WasmNeed {";
     const at = std.mem.indexOf(u8, source, head) orelse return error.WasmNeedNotDeclared;
     const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.WasmNeedNotClosed;
@@ -1089,7 +1042,29 @@ test "infer: external ---- WasmNeed agrees with builtins.d.bp" {
         i += 1;
     }
     try std.testing.expectEqual(want.len, i);
-    try std.testing.expect(std.mem.indexOf(u8, source, "Wasm(template: string, needs: WasmNeed[] = [], result: bool = false)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "needs: WasmNeed[] = [],") != null);
+}
+
+// Decisions 394, 481 — std's `WasiAdapter` names the wasm backend's adapters
+// (`wat/host_binding.zig` `adapters`), one variant each, in their order.
+test "infer: external ---- WasiAdapter agrees with the adapter table" {
+    const hostBinding = @import("../../codegen/wat/host_binding.zig");
+    const source: []const u8 = @import("std_prelude").external;
+    const head = "pub type WasiAdapter {";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.WasiAdapterNotDeclared;
+    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.WasiAdapterNotClosed;
+    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
+    var i: usize = 0;
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r,");
+        if (line.len == 0) continue;
+        try std.testing.expect(i < hostBinding.adapters.len);
+        const snake = try ast.snakeOf(std.testing.allocator, line);
+        defer std.testing.allocator.free(snake);
+        try std.testing.expectEqualStrings(hostBinding.adapters[i].name, snake);
+        i += 1;
+    }
+    try std.testing.expectEqual(hostBinding.adapters.len, i);
 }
 
 test "infer: std package ---- import binds namespace" {

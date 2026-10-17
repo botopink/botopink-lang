@@ -32,18 +32,22 @@ import {unicode_tables as tables};
 // target runs `fromCodepointBody`, a call of the primitive
 // `String.fromCodepoint`, so a `cp` that is no Unicode scalar value — negative,
 // a surrogate, past U+10FFFF — aborts the program the same way everywhere.
-#[@External.Node(fn: fromCodepointBody)]
-#[@External.Erlang(fn: fromCodepointBody)]
-#[@External.Wasm(fn: fromCodepointBody)]
+#[external(
+    .Node(body: fromCodepointBody),
+    .Erlang(body: fromCodepointBody),
+    .Wasm(body: fromCodepointBody),
+)]
 pub declare fn fromCodepoint(cp: i32) -> string;
 
 fn fromCodepointBody(cp: i32) -> string {
     return String.fromCodepoint(cp);
 }
 
-#[@External.Node("($0.codePointAt(0) ?? 0)")]
-#[@External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
-#[@External.Wasm(fn: firstCodepointOrZeroBody)]
+#[external(
+    .Node("($0.codePointAt(0) ?? 0)"),
+    .Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)"""),
+    .Wasm(body: firstCodepointOrZeroBody),
+)]
 declare fn firstCodepointOrZero(s: string) -> i32;
 
 // wasm's cell: a wasm string is UTF-8 indexed by code point (decision 240),
@@ -69,9 +73,11 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 // operator inside the arrow body keeps the expression a single template
 // substitution. Erlang: `unicode:characters_to_list/2` returns an
 // integer list of codepoints when given a UTF-8 binary.
-#[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))""")]
-#[@External.Erlang("unicode:characters_to_list($0, utf8)")]
-#[@External.Wasm(fn: codepointsBody)]
+#[external(
+    .Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))"""),
+    .Erlang("unicode:characters_to_list($0, utf8)"),
+    .Wasm(body: codepointsBody),
+)]
 pub declare fn codepoints(s: string) -> Array<i32>;
 
 // wasm's cell: one code point per character (decision 240).

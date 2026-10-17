@@ -3,9 +3,11 @@
 
 import {hash.contentHash} from "std";
 
-#[@External.Node("""("<" + $0 + ">")""")]
-#[@External.Erlang("""<<"<", ($0)/binary, ">">>""")]
-#[@External.Wasm(fn: wrapBody)]
+#[@external(
+    .Node("""("<" + $0 + ">")"""),
+    .Erlang("""<<"<", ($0)/binary, ">">>"""),
+    .Wasm(body: wrapBody),
+)]
 declare fn wrap(value: string) -> string;
 
 fn wrapBody(value: string) -> string {

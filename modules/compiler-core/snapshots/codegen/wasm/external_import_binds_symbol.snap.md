@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("filename", "extension"),
-  @External.Node("node:path", "extname")]
+#[@external(.Erlang("filename:extension($0)"), .Node("""require("node:path").extname($0)"""))]
 pub declare fn extname(p: string) -> string;
 
 fn main() {
@@ -11,10 +10,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `extname` has no `#[@External.<Target>(…)]` for the wasm backend
-  ┌─ :6:12
+error: `extname` has no implementation for the wasm backend
+  ┌─ :5:12
   │
-6 │     @print(extname("docs/readme.md"));
+5 │     @print(extname("docs/readme.md"));
   │            ^
 ```
 

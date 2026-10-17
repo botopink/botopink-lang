@@ -21,8 +21,7 @@
 //! arguments after it — so `receiver_marker` is a byte sequence source text
 //! cannot hold, and `$self` is no marker at all.
 //!
-//! Arity branching (`when(argc == N): "..."`) and triple-quoted (`"""…"""`)
-//! bodies are also live (see `ast.parseArityBranchArg` and
+//! Triple-quoted (`"""…"""`) bodies are also live (see
 //! `ast.unquoteAnnotationArg`).
 //!
 //! The renderer is purely structural: it walks the template bytes, emits
@@ -292,54 +291,4 @@ test "BEAM ctx: $args expands to comma-separated x-registers" {
 test "BEAM ctx: $N out of range still reds RP1" {
     const r = renderBeamToOwned(std.testing.allocator, "{move, $5, {x, 0}}.\n", 1);
     try std.testing.expectError(error.PrimOpArgIndexOutOfRange, r);
-}
-
-// ── arity branch parsing ─────────────────────────────────────────────────────
-
-const ast = @import("../ast.zig");
-
-test "parseArityBranchArg: 1-arg branch" {
-    const b = ast.parseArityBranchArg("when(argc == 1): \"lists:nthtail($0, $\x01)\"") orelse {
-        try std.testing.expect(false);
-        return;
-    };
-    try std.testing.expectEqual(@as(usize, 1), b.argc);
-    try std.testing.expectEqualStrings("lists:nthtail($0, $\x01)", b.template);
-}
-
-test "parseArityBranchArg: 2-arg branch with internal whitespace" {
-    const b = ast.parseArityBranchArg("when( argc  ==  2 ): \"f($0, $1)\"") orelse {
-        try std.testing.expect(false);
-        return;
-    };
-    try std.testing.expectEqual(@as(usize, 2), b.argc);
-    try std.testing.expectEqualStrings("f($0, $1)", b.template);
-}
-
-test "parseArityBranchArg: non-when arg returns null" {
-    try std.testing.expect(ast.parseArityBranchArg("\"some template\"") == null);
-    try std.testing.expect(ast.parseArityBranchArg("erlang") == null);
-}
-
-test "parseArityBranchArg: missing predicate returns null" {
-    try std.testing.expect(ast.parseArityBranchArg("when(other == 1): \"foo\"") == null);
-}
-
-test "parseArityBranchArg: missing colon returns null" {
-    try std.testing.expect(ast.parseArityBranchArg("when(argc == 1) \"foo\"") == null);
-}
-
-test "parseArityBranchArg: triple-quoted template strips fences + leading/trailing newline" {
-    // The `"""…"""` form on an arity branch — used when the template body
-    // carries embedded `"` bytes (charlist literals, JS arrow-fn IIFE, …).
-    // `unquoteAnnotationArg` strips the fences AND the conventional single
-    // leading + trailing newline ("indent the block").
-    const b = ast.parseArityBranchArg(
-        "when(argc == 0): \"\"\"erlang:error({todo, \"not implemented\"})\"\"\"",
-    ) orelse {
-        try std.testing.expect(false);
-        return;
-    };
-    try std.testing.expectEqual(@as(usize, 0), b.argc);
-    try std.testing.expectEqualStrings("erlang:error({todo, \"not implemented\"})", b.template);
 }

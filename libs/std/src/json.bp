@@ -34,16 +34,20 @@ import {failure, failure.HostError, failure.HostErrorName};
 // host's `HostError`, not a `JsonError` of std's own: a public function over
 // this cell would be a body calling a cell with no wasm binding, which wasm
 // refuses for the whole module — `json.quote` would stop importing there.
-#[@External.Node("""JSON.stringify(JSON.parse($0))""", result: true)]
-#[@External.Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true)]
+#[external(
+    .Node("""JSON.stringify(JSON.parse($0))""", result: true),
+    .Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true),
+)]
 pub declare fn parse(s: string) -> @Result<string, HostError>;
 
 // Re-encode an already-valid JSON string. Identical to `parse` for V1
 // (both round-trip through the host parser); kept as a distinct fn so
 // the surface matches the spec's eventual `parse -> JsonValue` +
 // `stringify(JsonValue) -> string` split.
-#[@External.Node("""JSON.stringify(JSON.parse($0))""", result: true)]
-#[@External.Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true)]
+#[external(
+    .Node("""JSON.stringify(JSON.parse($0))""", result: true),
+    .Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true),
+)]
 pub declare fn stringify(s: string) -> @Result<string, HostError>;
 
 // ── 1.0.10-beta front 01 (decisions 116, 117): writing JSON ────────────────
@@ -60,17 +64,21 @@ pub declare fn stringify(s: string) -> @Result<string, HostError>;
 // Node: `JSON.stringify` of a string is exactly that.
 // Erlang: a byte walk — `json:encode/1` writes `\u001F` in UPPERCASE hex, so
 // the two targets would disagree; bytes of U+0080 and above pass through.
-#[@External.Node("""JSON.stringify(String($0))""")]
-#[@External.Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)""")]
-#[@External.Wasm(fn: quoteBody)]
+#[external(
+    .Node("""JSON.stringify(String($0))"""),
+    .Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)"""),
+    .Wasm(body: quoteBody),
+)]
 pub declare fn quote(s: string) -> string;
 
 // The inverse of `quote`: read ONE JSON string literal (surrounding
 // whitespace allowed) and answer its text. Anything else — a bare word, a
 // number, a missing quote, trailing text — is an `Error`.
-#[@External.Node("""(() => { const __v = JSON.parse(String($0)); if (typeof __v !== 'string') throw new Error('json.unquote: not a JSON string literal'); return __v })()""", result: true)]
-#[@External.Erlang("""(fun(__S) -> case json:decode(__S) of __V when is_binary(__V) -> __V; _ -> erlang:error(<<"json.unquote: not a JSON string literal">>) end end)($0)""", result: true)]
-#[@External.Wasm(fn: unquoteBody)]
+#[external(
+    .Node("""(() => { const __v = JSON.parse(String($0)); if (typeof __v !== 'string') throw new Error('json.unquote: not a JSON string literal'); return __v })()""", result: true),
+    .Erlang("""(fun(__S) -> case json:decode(__S) of __V when is_binary(__V) -> __V; _ -> erlang:error(<<"json.unquote: not a JSON string literal">>) end end)($0)""", result: true),
+    .Wasm(body: unquoteBody),
+)]
 pub declare fn unquote(literal: string) -> @Result<string, HostError>;
 
 // A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
@@ -89,9 +97,11 @@ pub fn object(fields: Array<#(string, string)>) -> string {
 
 // Internal: the UTF-8 text of one code point. The tests build every
 // non-ASCII string with it (see `cp`), and `decode` writes `\u` escapes.
-#[@External.Node("""String.fromCodePoint($0)""")]
-#[@External.Erlang("""unicode:characters_to_binary([$0])""")]
-#[@External.Wasm(fn: codepointTextBody)]
+#[external(
+    .Node("""String.fromCodePoint($0)"""),
+    .Erlang("""unicode:characters_to_binary([$0])"""),
+    .Wasm(body: codepointTextBody),
+)]
 declare fn codepointText(cp: i32) -> string;
 
 // ── 1.0.10-beta front 01 step 13 (decision 117 rule 7): reading JSON ─────────
@@ -212,14 +222,18 @@ pub fn decode(s: string) -> @Result<Json, string> {
 // `String.prototype` patches the std prelude installs, and a consumer that
 // imports `json` from "std" does not load that prelude — `s.chars is not a
 // function` (measured by `validation`'s tests under `zig build test-libs`).
-#[@External.Node("""Array.from($0, (__c) => __c.codePointAt(0))""")]
-#[@External.Erlang("""unicode:characters_to_list($0, utf8)""")]
-#[@External.Wasm(fn: codePointsOfBody)]
+#[external(
+    .Node("""Array.from($0, (__c) => __c.codePointAt(0))"""),
+    .Erlang("""unicode:characters_to_list($0, utf8)"""),
+    .Wasm(body: codePointsOfBody),
+)]
 declare fn codePointsOf(s: string) -> Array<i32>;
 
-#[@External.Node("""Array.from($0)""")]
-#[@External.Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]""")]
-#[@External.Wasm(fn: textsOfBody)]
+#[external(
+    .Node("""Array.from($0)"""),
+    .Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"""),
+    .Wasm(body: textsOfBody),
+)]
 declare fn textsOf(s: string) -> Array<string>;
 
 // ── the wasm bodies (decision 238) ───────────────────────────────────────────

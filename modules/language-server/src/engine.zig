@@ -481,7 +481,6 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
         .val => |v| v.docComment,
         .type_ => |t| t.docComment,
         .behavior => |i| i.docComment,
-        .delegate => |d| d.docComment,
         .implement => |i| i.docComment,
         else => null,
     };

@@ -40,7 +40,7 @@ pub fn takesSelf(m: ast.BehaviorMethod) bool {
     return m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
 }
 
-/// The backends a host binding can name. `beam` reads `External.Erlang`
+/// The backends a host binding can name. `beam` reads `.Erlang`
 /// (one annotation for the one VM, decision 437, `conformance/docs.md` § Host bindings).
 /// `wasm` binds nothing: wasm has no host.
 pub const Target = enum {
@@ -60,8 +60,7 @@ pub const Target = enum {
 };
 
 fn bindsAnnotation(m: ast.BehaviorMethod, target: []const u8) bool {
-    if (m.externalFor(target) != null) return true;
-    return ast.externalHasArityBranches(m.annotations, target);
+    return m.externalFor(target) != null;
 }
 
 /// True when `m` carries a binding the `target` backend reads.
@@ -108,9 +107,8 @@ pub fn missingAt(
 }
 
 test "binds: beam falls back to the erlang binding, wasm binds nothing" {
-    var args = [_][]const u8{"\"x\""};
-    var anns = [_]ast.Annotation{.{ .name = "External.Erlang", .args = &args }};
-    const m: ast.BehaviorMethod = .{ .name = "m", .annotations = &anns, .params = &.{}, .body = null, .is_declare = true };
+    var impls = [_]ast.Implementation{.{ .target = .erlang, .template = "x", .text = "x" }};
+    const m: ast.BehaviorMethod = .{ .name = "m", .implementations = &impls, .params = &.{}, .body = null, .is_declare = true };
     try std.testing.expect(isHostMethod(m));
     try std.testing.expect(binds(m, .erlang));
     try std.testing.expect(binds(m, .beam));

@@ -7,8 +7,7 @@
 //// BEAM comptime (`x:erlang`) and refused it on the wat runtime with another
 //// message (decision 341's).
 
-#[@External.Node("""($0 + ":node")""")]
-#[@External.Erlang("""<<($0)/binary, ":erlang">>""")]
+#[@external(.Node("""($0 + ":node")"""), .Erlang("""<<($0)/binary, ":erlang">>"""))]
 declare fn tag(value: string) -> string;
 
 pub fn main() {

@@ -67,7 +67,7 @@ const HELP =
     \\A lib's botopink.json "targets" list decides its cells: a target it
     \\excludes is never run. Each excluded target `botopink test` can run is
     \\audited instead — `botopink build --target <t>` must be refused for a
-    \\missing host binding (`has no #[@External.<Target>(…)]`). A lib that
+    \\missing host binding (`has no implementation for the <t> backend`). A lib that
     \\builds there, or fails for another reason, fails the run.
     \\
 ;

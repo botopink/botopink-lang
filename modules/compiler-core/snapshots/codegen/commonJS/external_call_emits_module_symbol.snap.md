@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("filename", "basename"),
-  @External.Node("node:path", "basename")]
+#[@external(.Erlang("filename:basename($0)"), .Node("""require("node:path").basename($0)"""))]
 pub declare fn basename(p: string) -> string;
 
 fn main() {

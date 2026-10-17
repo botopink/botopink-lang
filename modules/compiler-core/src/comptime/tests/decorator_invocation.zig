@@ -488,9 +488,7 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
     // std-wasm's text (`host_cells.zig`).
     const src =
         \\import {hash} from "std";
-        \\#[@External.Node("""($0 + "!")"""),
-        \\  @External.Erlang("""<<($0)/binary, "!">>"""),
-        \\  @External.Wasm(fn: bangBody)]
+        \\#[@external(.Node("""($0 + "!")"""), .Erlang("""<<($0)/binary, "!">>"""), .Wasm(body: bangBody))]
         \\declare fn bang(value: string) -> string;
         \\fn bangBody(value: string) -> string {
         \\    return value + "!";

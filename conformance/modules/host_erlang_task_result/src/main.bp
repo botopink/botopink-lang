@@ -8,7 +8,9 @@
 //// `.targets` is `erlang beam`: the claim is the Erlang host's, which beam
 //// binds too; `run/host_node_task_result.bp` is Node's.
 
-#[@External.Erlang("""(case $0 > 0 of true -> {ok, $0 * 2}; false -> {error, <<"refused">>} end)""")]
+#[@external(
+    .Erlang("""(case $0 > 0 of true -> {ok, $0 * 2}; false -> {error, <<"refused">>} end)"""),
+)]
 declare fn hostDouble(n: i32) -> @Task<@Result<i32, string>>;
 
 fn show(r: @Result<i32, string>) {

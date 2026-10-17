@@ -2,7 +2,7 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Host bindings):
 
-> wasm has no host of its own, so `@External.Wasm` does not name a host symbol
+> wasm has no host of its own, so `.Wasm` does not name a host symbol
 > or carry target text: it is **one cell from a closed vocabulary of four**
 > (decisions 238, 440, 481), each a labelled argument holding a value of the
 > kind it names, read and checked where the annotation is written — on every

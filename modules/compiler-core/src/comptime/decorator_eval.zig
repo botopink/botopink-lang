@@ -152,7 +152,9 @@ pub const Contribution = struct {
     /// `compile` — decision 575 (3), `compiler.compile(f)`: `index` is the
     /// executor's (`member_fn.collectExecutors`'s order), `data` the values
     /// of the body's locals it reads.
-    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap, compile };
+    /// `implement` — decision 575 (6), `compiler.implement(source)`: `data`
+    /// is the `Implementation` the body built.
+    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap, compile, implement };
 };
 
 pub const Outcome = union(enum) {

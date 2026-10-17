@@ -372,7 +372,6 @@ fn declName(decl: ast.DeclKind) ?[]const u8 {
         .type_ => |t| t.name,
         .behavior => |b| b.name,
         .typeAlias => |t| t.name,
-        .delegate => |d| d.name,
         .mod => |m| m.name,
         .@"test" => |t| t.name orelse "test",
         else => null,

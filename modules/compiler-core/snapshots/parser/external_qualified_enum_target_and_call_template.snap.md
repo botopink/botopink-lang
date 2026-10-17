@@ -14,18 +14,10 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"lists\"",
-              "\"zip(other, xs)\""
-            ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"./gleam_stdlib.mjs\"",
-              "\"zip\""
+              ".Erlang(\"lists:zip($1, $0)\")",
+              ".Node(\"./gleam_stdlib.mjs\", \"zip\")"
             ],
             "is_builtin": true
           }

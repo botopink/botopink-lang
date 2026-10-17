@@ -36,8 +36,7 @@ fn graph(comptime decl: @Decl) {
     decl.setMeta(Graph(nodes: nodes));
 }
 
-#[@External.Node("""Promise.resolve("alice")""")]
-#[@External.Erlang("""<<"alice">>""")]
+#[@external(.Node("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]
 declare fn session() -> @Component<string>;
 
 #[graph]

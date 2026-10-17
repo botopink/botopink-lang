@@ -11,7 +11,7 @@
 pub mod text;
 import {text.greet};
 
-#[@External.Erlang("sidecar_named_like_emitted_atom@text", "shout")]
+#[@external(.Erlang("sidecar_named_like_emitted_atom@text:shout($0)"))]
 declare fn shout(s: string) -> string;
 
 pub fn main() {

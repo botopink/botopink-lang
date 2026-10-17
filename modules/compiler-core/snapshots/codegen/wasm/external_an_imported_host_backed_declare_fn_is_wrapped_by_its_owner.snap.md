@@ -1,14 +1,12 @@
 ----- SOURCE CODE -- hostlib.bp
 ```botopink
-#[@External.Node("String($0)"),
-  @External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+#[@external(.Node("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
 pub declare fn hostKey(v: i32) -> string;
 
-#[@External.Node("$0.length"),
-  @External.Erlang("erlang", "length")]
+#[@external(.Node("$0.length"), .Erlang("erlang:length($0)"))]
 pub declare fn hostLen(xs: Array<string>) -> i32;
 
-#[@External.Node("console.log($0)")]
+#[@external(.Node("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;
 ```
 
@@ -39,7 +37,7 @@ pub fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: `hostKey` has no `#[@External.<Target>(…)]` for the wasm backend
+error: `hostKey` has no implementation for the wasm backend
   ┌─ :4:12
   │
 4 │     @print(hostKey(42));

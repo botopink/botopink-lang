@@ -1,5 +1,7 @@
 import {greet.Greeter};
 
-#[@External.Node("(() => ({ greet: () => 'host' }))()")]
-#[@External.Erlang("#{greet => fun(_) -> <<\"host\">> end}")]
+#[@external(
+    .Node("(() => ({ greet: () => 'host' }))()"),
+    .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
+)]
 pub declare fn fromHost() -> Greeter;

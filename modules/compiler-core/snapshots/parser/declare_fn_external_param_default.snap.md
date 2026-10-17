@@ -14,10 +14,9 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"string\"",
-              "\"slice\""
+              ".Erlang(\"string:slice($0, $1, $2)\")"
             ],
             "is_builtin": true
           }

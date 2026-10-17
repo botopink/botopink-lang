@@ -2,9 +2,7 @@
 //// never a string: `fn: "tanBody"` is refused at the argument, on every
 //// target, naming the form to write.
 
-#[@External.Node("Math", "tan")]
-#[@External.Erlang("math", "tan")]
-#[@External.Wasm(fn: "tanBody")]
+#[@external(.Node("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm(body: "tanBody"))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: f64) -> f64 {

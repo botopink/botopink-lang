@@ -64,7 +64,7 @@ const RUN_TIMEOUT_S = 300;
 
 /// The texts a narrowing stands on (`conformance/AGENTS.md` § Narrowing a
 /// cell): the build of an excluded target refuses the cell on a host binding.
-const HOST_BINDING_REFUSALS = [_][]const u8{ "has no `#[@External.<Target>(", "std-unsupported-on-target:" };
+const HOST_BINDING_REFUSALS = [_][]const u8{ "has no implementation for the ", "std-unsupported-on-target:" };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -1373,7 +1373,7 @@ test "refusalsOf files each located refusal under its module and skips the summa
         \\7 |     fn double(self: Self) -> i32 { return 2; }
         \\  |               ^^^^
         \\
-        \\error: `f` has no `#[@External.<Target>(…)]` for the wasm backend
+        \\error: `f` has no implementation for the wasm backend
         \\  --> src/shapes/circle.bp:21:12
         \\
         \\error: dependency 'x' was not found under any library root

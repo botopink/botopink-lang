@@ -12,6 +12,7 @@ const hostMethods = @import("./hostMethods.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
+const prelude_cache = @import("prelude_cache.zig");
 const js = @import("./js/js_ast.zig");
 const envMod = @import("../comptime/env.zig");
 const jsEmitter = @import("./js/js_emitter.zig");
@@ -21,9 +22,6 @@ const strSlots = @import("./js/str_slots.zig");
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
 const BuiltinNodeCall = struct {
     symbol: []const u8,
-    /// Module path for `@External.Node("./mod", "sym")` form — empty for
-    /// template-only entries.
-    module: []const u8 = "",
     arity_branches: []const ast.ArityBranch = &.{},
 };
 
@@ -597,9 +595,6 @@ fn emitProgramOptsX(
             .implement => |im| try items.append(arena_alloc, .{ .stmt = try em.buildImplement(im) }),
             .extend => |ex| try items.append(arena_alloc, .{ .stmt = try em.buildExtend(ex) }),
             .use => |u| try items.append(arena_alloc, .{ .stmt = try em.buildUse(u) }),
-            .delegate => |d| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
-                .text = try std.fmt.allocPrint(arena_alloc, "delegate {s}", .{d.name}),
-            } } }),
             // `mod` declares a submodule in the explicit tree; the submodule is
             // emitted as its own module file, so the declaration emits nothing.
             .mod => {},
@@ -1778,11 +1773,7 @@ const Emitter = struct {
     /// `assert`'s `<file>:<line>` names; `<module>.bp` when the driver gave
     /// none (the snapshot harness).
     src_file: []const u8 = "main.bp",
-    /// `#[@External.Node("module", "symbol")]` fns: name → host import.
-    /// The decl lowers to `const { symbol: name } = require("module");`,
-    /// or `const name = Module.symbol;` for JS global namespaces (`Math`, …).
-    externals: std.StringHashMap(ast.ExternalRef),
-    /// `#[@External.<Target>(…)]` fns with no `Node` target — calling one is an error.
+    /// Implemented fns with no `.Node` implementation — calling one is an error.
     externals_missing: std.StringHashMap(void),
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
@@ -1831,14 +1822,14 @@ const Emitter = struct {
     /// Enums this module imports by name (`import {Shape} from "shapes"`):
     /// their methods take the receiver first too, in the owner module.
     imported_enums: std.StringHashMap(void),
-    /// `Iface.method` → its `#[@External.Node(…)]` in the std prelude
+    /// `Iface.method` → its `.Node(…)` implementation in the std prelude
     /// (`primitives.bp`), for every prelude interface method that carries one.
     /// A module that redeclares a primitive interface (`interface Number { fn
     /// max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
     /// declaration, annotations included; its bodyless members still name the
     /// host methods the prelude binds, so `buildInterface` falls back to these.
     /// Keys and strings live in the node arena.
-    prelude_iface_externals: std.StringHashMap(ast.ExternalRef),
+    prelude_iface_externals: std.StringHashMap([]const u8),
     /// `Iface.method` → the template of an associated host primitive of the
     /// prelude: a bodyless member with no `self` whose `#[@External.Node(…)]`
     /// is a template (`String.fromCodepoint`, decision 262). JS has no
@@ -1938,7 +1929,6 @@ const Emitter = struct {
             .b = .{ .arena = node_arena },
             .cv = cv,
             .rewrites = rewrites,
-            .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
@@ -1948,7 +1938,7 @@ const Emitter = struct {
             .enum_variant_paths = std.StringHashMap(void).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
-            .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
+            .prelude_iface_externals = std.StringHashMap([]const u8).init(alloc),
             .prelude_assoc_templates = std.StringHashMap([]const u8).init(alloc),
             .prim_symbol_of = std.StringHashMap([]const u8).init(alloc),
             .ambiguous_prim_renames = std.StringHashMap(void).init(alloc),
@@ -1975,7 +1965,6 @@ const Emitter = struct {
     }
 
     fn deinit(self: *Emitter) void {
-        self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
         self.record_fields.deinit();
@@ -1998,7 +1987,6 @@ const Emitter = struct {
         while (bit.next()) |entry| {
             self.alloc.free(entry.key_ptr.*);
             if (entry.value_ptr.symbol.len > 0) self.alloc.free(entry.value_ptr.symbol);
-            if (entry.value_ptr.module.len > 0) self.alloc.free(entry.value_ptr.module);
             for (entry.value_ptr.arity_branches) |br| self.alloc.free(br.template);
             if (entry.value_ptr.arity_branches.len > 0) self.alloc.free(entry.value_ptr.arity_branches);
         }
@@ -2066,117 +2054,57 @@ const Emitter = struct {
     // ── collectors ────────────────────────────────────────────────────────────
 
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
-    /// erlang's; scans `prelude.builtins` for top-level fn decls with
-    /// `#[@External.Node(…)]` and indexes by callee name.
+    /// erlang's: the top-level fns of the std prelude (`builtins.d.bp`,
+    /// `primitives.bp`, parsed once per process, `prelude_cache`) with a
+    /// `.Node(…)` implementation, indexed by callee name.
     ///
-    /// The arity-branched entries (`panic`/`todo`, and `print`/`println`/
-    /// `debug`) are registered inline first; the scan of the embedded prelude
-    /// then adds the rest and skips a name already registered. The prelude
-    /// parses (front 20) — a failure there stops the compiler, it is not
-    /// skipped (decision 67).
+    /// The arity-branched entries (`panic`/`todo`) are registered inline
+    /// first; the prelude then adds the rest and skips a name already
+    /// registered.
     fn collectBuiltinNodeDispatch(self: *Emitter) !void {
         try self.registerInlineBuiltinDispatch();
-        // Scan `builtins_fns.d.bp` + `primitives.bp` for top-level `declare fn`
-        // with `#[@External.Node]` annotations — both template and module+symbol
-        // forms. Annotations drive dispatch; no file names are hardcoded.
-        try self.scanDeclareFnExternal("node", prelude.builtins);
-        try self.scanDeclareFnExternal("node", prelude.primitives);
+        try self.scanPreludeImplementations(prelude_cache.builtins());
+        try self.scanPreludeImplementations(prelude_cache.primitives());
     }
 
-    /// Scan `src` (embedded .bp source) for top-level `declare fn` carrying
-    /// `#[@External.<Target>]` annotations. Registers single-template and
-    /// module+symbol entries in `builtin_node_dispatch`. Arity-branched entries
-    /// are registered inline via `registerInlineBuiltinDispatch`.
-    fn scanDeclareFnExternal(self: *Emitter, target: []const u8, src: []const u8) !void {
-        var scan_arena = std.heap.ArenaAllocator.init(self.alloc);
-        defer scan_arena.deinit();
-        const alloc_arena = scan_arena.allocator();
-        // The embedded prelude (`builtins.d.bp`, `primitives.bp`) parses — a
-        // test in `codegen/tests/builtins.zig` pins it — so a failure here
-        // is a broken compiler, not a best-effort miss: it stops loudly instead
-        // of silently dropping every `#[External.*]` the file declares
-        // (decision 67).
-        var lx = lexerMod.Lexer.init(src);
-        const tokens = lx.scanAll(alloc_arena) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => std.debug.panic("embedded std prelude does not lex: {s}", .{@errorName(err)}),
-        };
-        var p = parserMod.Parser.initWithSource(tokens, src);
-        var program = p.parse(alloc_arena) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.UnexpectedToken => {
-                const pe = p.parseError;
-                std.debug.panic("embedded std prelude does not parse at {d}:{d}", .{
-                    if (pe) |e| e.line else 0,
-                    if (pe) |e| e.col else 0,
-                });
-            },
-        };
-        defer program.deinit(alloc_arena);
+    /// Registers `program`'s (a std prelude file's) `.Node` implementations:
+    /// a top-level fn's in `builtin_node_dispatch`, a behavior member's in
+    /// `prelude_iface_externals` (and an associated template's in
+    /// `prelude_assoc_templates`).
+    fn scanPreludeImplementations(self: *Emitter, parsed: ?ast.Program) !void {
+        const program = parsed orelse std.debug.panic("embedded std prelude does not parse", .{});
         for (program.decls) |decl| {
             if (decl == .behavior) {
                 const iface = decl.behavior;
                 for (iface.methods) |m| {
-                    if (std.mem.eql(u8, target, "node")) try self.noteUntypedNodeSymbol(m);
-                    const ref = m.externalFor(target) orelse continue;
+                    try self.noteUntypedNodeSymbol(m);
+                    const ref = m.externalFor("node") orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
                     const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
-                    if (m.body == null and !has_self and primOpTemplate.looksLikeTemplate(ref.symbol) and
+                    if (m.body == null and !has_self and primOpTemplate.looksLikeTemplate(ref.text) and
                         !self.prelude_assoc_templates.contains(key))
                     {
-                        try self.prelude_assoc_templates.put(key, try self.arena().dupe(u8, ref.symbol));
+                        try self.prelude_assoc_templates.put(key, try self.arena().dupe(u8, ref.text));
                     }
                     if (self.prelude_iface_externals.contains(key)) continue;
-                    try self.prelude_iface_externals.put(key, .{
-                        .module = try self.arena().dupe(u8, ref.module),
-                        .symbol = try self.arena().dupe(u8, ref.symbol),
-                    });
+                    try self.prelude_iface_externals.put(key, try self.arena().dupe(u8, ref.text));
                 }
                 continue;
             }
             if (decl != .@"fn") continue;
             const f = decl.@"fn";
             if (self.builtin_node_dispatch.contains(f.name)) continue;
-            if (ast.externalHasArityBranches(f.annotations, target)) {
-                var branches: std.ArrayList(ast.ArityBranch) = .empty;
-                errdefer branches.deinit(self.alloc);
-                for (f.annotations) |a| {
-                    if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-                    for (a.args) |raw| {
-                        const br = ast.parseArityBranchArg(raw) orelse continue;
-                        try branches.append(self.alloc, .{
-                            .argc = br.argc,
-                            .template = try self.alloc.dupe(u8, br.template),
-                        });
-                    }
-                }
-                try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, f.name), .{
-                    .symbol = "",
-                    .arity_branches = try branches.toOwnedSlice(self.alloc),
-                });
-                continue;
-            }
-            const ref = f.externalFor(target) orelse continue;
-            if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
-                try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, f.name), .{
-                    .symbol = try self.alloc.dupe(u8, ref.symbol),
-                    .module = "",
-                });
-            } else {
-                // module+symbol form: `@External.Node("./mod", "fun")`
-                try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, f.name), .{
-                    .symbol = try self.alloc.dupe(u8, ref.symbol),
-                    .module = try self.alloc.dupe(u8, ref.module),
-                });
-            }
+            const ref = f.externalFor("node") orelse continue;
+            try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, f.name), .{
+                .symbol = try self.alloc.dupe(u8, ref.text),
+            });
         }
     }
 
-    /// Hand-rolls the `panic` / `todo` dispatch entries. Mirrors the
-    /// `#[@External.Node(when(argc == N))]` annotation literally — kept here
-    /// because `panic`/`todo` live in `builtins_fns.d.bp`, which the prelude
-    /// scan does not read, and the dispatch needs these two callees registered
-    /// to lower `@panic(…)` / `@todo(…)`.
+    /// Hand-rolls the `panic` / `todo` dispatch entries, one template per
+    /// argument count — `panic`/`todo` live in `builtins_fns.d.bp`, which the
+    /// prelude scan does not read, and the dispatch needs these two callees
+    /// registered to lower `@panic(…)` / `@todo(…)`.
     fn registerInlineBuiltinDispatch(self: *Emitter) !void {
         try self.putInlineBuiltin("todo", &.{
             .{ .argc = 0, .template = "(() => { throw Object.defineProperty(new Error(\"not implemented\"), '__bp_panic', { value: true }) })()" },
@@ -2186,22 +2114,8 @@ const Emitter = struct {
             .{ .argc = 0, .template = "(() => { throw Object.defineProperty(new Error(\"panic\"), '__bp_panic', { value: true }) })()" },
             .{ .argc = 1, .template = "(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()" },
         });
-        // §D1: `print`/`println`/`debug` — host `console.log`/`console.debug`
-        // via the same template machinery. Variadic shape via `$args` (the
-        // marker expands to every positional arg, comma-separated); the d.bp
-        // annotations may not parse because earlier file content stops the
-        // standalone parser, so this inline registration is the dispatch's
-        // source of truth either way.
-        try self.putInlineBuiltinTemplate("print", "console.log($args)");
-        try self.putInlineBuiltinTemplate("println", "console.log($args)");
-        try self.putInlineBuiltinTemplate("debug", "console.debug($args)");
-    }
-
-    fn putInlineBuiltinTemplate(self: *Emitter, name: []const u8, template: []const u8) !void {
-        if (self.builtin_node_dispatch.contains(name)) return;
-        try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, name), .{
-            .symbol = try self.alloc.dupe(u8, template),
-        });
+        // `print` / `println` / `debug` are no backend's by name (decision
+        // 575 (6)): their `.Node` implementations, read from the prelude.
     }
 
     fn putInlineBuiltin(self: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
@@ -2220,8 +2134,8 @@ const Emitter = struct {
     }
 
     /// §A4: build the type-naive prim-method rename map from interface
-    /// annotations. For each interface method carrying a 2-arg
-    /// `#[@External.Node("X")]` annotation whose symbol `X` differs from the
+    /// implementations. For each interface method whose bare-symbol
+    /// `.Node("X")` implementation names an `X` that differs from the
     /// method name, register `name → X` — UNLESS a record/struct in the program
     /// declares a method with the same name (a collision would silently rename
     /// the record call, e.g. `Set.contains` → `Set.includes`). The per-loc
@@ -2255,22 +2169,20 @@ const Emitter = struct {
             if (decl != .behavior) continue;
             for (decl.behavior.methods) |m| {
                 const ref = m.externalFor("node") orelse continue;
-                if (ref.module.len != 0) continue;
-                if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
-                if (std.mem.eql(u8, ref.symbol, m.name)) continue;
+                if (ref.cell != null) continue;
+                if (std.mem.indexOfScalar(u8, ref.text, '(') != null) continue;
+                if (std.mem.eql(u8, ref.text, m.name)) continue;
                 if (record_methods.contains(m.name)) continue;
                 if (self.ambiguous_prim_renames.contains(m.name)) continue;
-                try self.prim_node_renames.put(m.name, ref.symbol);
+                try self.prim_node_renames.put(m.name, ref.text);
             }
         }
     }
 
-    /// Indexes every `#[@External.<Target>(…)]` fn by name: with a `Node` target it
-    /// goes to `externals` (alias form: `const fn = require(…);`) or
-    /// `user_node_templates` (§A2 template form: `$0`/`$1`/… or
-    /// `when(argc == N)` branches — rendered at each call site instead of
-    /// aliased); without a node target it goes to `externals_missing` (so a
-    /// call can fail with a clear error instead of an undefined identifier).
+    /// Indexes every implemented fn by name: with a `.Node` implementation it
+    /// goes to `user_node_templates` (rendered at each call site); without
+    /// one it goes to `externals_missing` (so a call can fail with a clear
+    /// error instead of an undefined identifier).
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
         if (!self.host_returns_init) {
             self.result_bindings = std.StringHashMap(void).init(self.arena());
@@ -2283,7 +2195,7 @@ const Emitter = struct {
                 if (!f.isExternal()) continue;
                 if (f.returnType) |rt| try self.host_returns.put(f.name, rt);
                 // Decisions 431, 490 — its own function, called plainly.
-                if (ast.externalResultFor(f.annotations, "node")) {
+                if (ast.implementationResult(f.implementations, "node")) {
                     try self.result_bindings.put(f.name, {});
                     continue;
                 }
@@ -2292,41 +2204,13 @@ const Emitter = struct {
                     try self.marked_bindings.put(f.name, {});
                     continue;
                 }
-                // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
-                if (ast.externalHasArityBranches(f.annotations, "node")) {
-                    var branches: std.ArrayList(ast.ArityBranch) = .empty;
-                    errdefer branches.deinit(self.alloc);
-                    for (f.annotations) |a| {
-                        if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
-                        for (a.args) |raw| {
-                            const br = ast.parseArityBranchArg(raw) orelse continue;
-                            try branches.append(self.alloc, .{
-                                .argc = br.argc,
-                                .template = try self.alloc.dupe(u8, br.template),
-                            });
-                        }
-                    }
-                    try self.user_node_templates.put(try self.alloc.dupe(u8, f.name), .{
-                        .symbol = "",
-                        .arity_branches = try branches.toOwnedSlice(self.alloc),
-                    });
-                    continue;
-                }
                 if (f.externalFor("node")) |ref| {
-                    // §A2 single-template form (`"$0.method(...)"`,
-                    // `"new X($0).y()"`, etc.): the symbol carries `$` markers
-                    // → render at the call site, never alias. A 1-arg form
-                    // without markers (`"process.cwd()"`) has no module to
-                    // `require` either: it is a bare host expression, so it
-                    // renders at the call site too instead of lowering to
-                    // `const { process.cwd(): cwd } = require("")`.
-                    if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
-                        try self.user_node_templates.put(try self.alloc.dupe(u8, f.name), .{
-                            .symbol = try self.alloc.dupe(u8, ref.symbol),
-                        });
-                        continue;
-                    }
-                    try self.externals.put(f.name, ref);
+                    // A template (`"$0.method(...)"`, `"new X($0).y()"`) or a
+                    // bare host expression (`"process.cwd()"`): rendered at
+                    // the call site.
+                    try self.user_node_templates.put(try self.alloc.dupe(u8, f.name), .{
+                        .symbol = try self.alloc.dupe(u8, ref.text),
+                    });
                 } else {
                     try self.externals_missing.put(f.name, {});
                 }
@@ -2348,20 +2232,8 @@ const Emitter = struct {
             try names.append(self.arena(), p.name);
         }
         var holes = ParamHoles{ .b = self.b, .names = names.items };
-        if (ast.externalHasArityBranches(f.annotations, "node")) {
-            for (f.annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
-                for (a.args) |raw| {
-                    const br = ast.parseArityBranchArg(raw) orelse continue;
-                    if (!try self.markableTemplate(br.template, &holes, br.argc)) return false;
-                }
-            }
-            return true;
-        }
         const ref = f.externalFor("node") orelse return false;
-        if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
-            return self.markableTemplate(ref.symbol, &holes, names.items.len);
-        return true;
+        return self.markableTemplate(ref.text, &holes, names.items.len);
     }
 
     fn markableTemplate(self: *Emitter, template: []const u8, holes: *ParamHoles, argc: usize) !bool {
@@ -2715,31 +2587,9 @@ const Emitter = struct {
                 .{ .ident = f.name },
             ) } });
         }
-        const ref = self.externals.get(f.name) orelse return .{ .comment = .{
+        return .{ .comment = .{
             .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
         } };
-        const bind_name = jsIdent(f.name);
-        const decl: js.Stmt = if (isJsGlobalNamespace(ref.module))
-            // Global namespace (`Math`, `console`, …) — reference directly,
-            // never `require`.
-            .{ .decl = .{
-                .pattern = .{ .name = bind_name },
-                .value = try self.b.member(.{ .name = ref.module }, ref.symbol),
-            } }
-        else
-            .{ .decl = .{
-                .pattern = .{ .object = .{ .props = try self.arena().dupe(js.ObjectPattern.Prop, &.{.{
-                    .key = ref.symbol,
-                    .bind = if (std.mem.eql(u8, ref.symbol, bind_name)) null else bind_name,
-                }}) } },
-                .value = try self.requireCall(ref.module),
-            } };
-        if (!f.isPub) return decl;
-        return self.b.group(&.{ decl, .{ .expr = try self.b.assign(
-            try self.b.member(.{ .name = "exports" }, f.name),
-            "=",
-            .{ .name = bind_name },
-        ) } });
     }
 
     /// `__bp_adopt(<value>, <Record>, "<path>")` when a host declaration's
@@ -2782,32 +2632,14 @@ const Emitter = struct {
         var holes = HostMethodHoles{ .recv = recv, .names = names };
 
         const value: js.Expr = blk: {
-            if (ast.externalHasArityBranches(m.annotations, "node")) {
-                const template = ast.externalArityBranchFor(m.annotations, "node", rest.len) orelse return null;
-                var tmpl = HostTemplate(HostMethodHoles){ .arena = self.arena(), .holes = &holes, .argc = rest.len };
-                try primOpTemplate.render(template, &tmpl);
-                break :blk try tmpl.finish();
-            }
             const ref = m.externalFor("node") orelse return null;
-            if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
-                var tmpl = HostTemplate(HostMethodHoles){ .arena = self.arena(), .holes = &holes, .argc = rest.len };
-                try primOpTemplate.render(ref.symbol, &tmpl);
-                break :blk try tmpl.finish();
-            }
-            // `(module, symbol)`: the host function takes the receiver first,
-            // as the declaration lists it.
-            const host = if (isJsGlobalNamespace(ref.module))
-                try self.b.member(.{ .name = ref.module }, ref.symbol)
-            else
-                try self.b.member(try self.requireCall(ref.module), ref.symbol);
-            var args: std.ArrayListUnmanaged(js.Expr) = .empty;
-            if (recv) |r| try args.append(self.arena(), r);
-            for (names) |n| try args.append(self.arena(), .{ .ident = n });
-            break :blk try self.b.call(host, try args.toOwnedSlice(self.arena()));
+            var tmpl = HostTemplate(HostMethodHoles){ .arena = self.arena(), .holes = &holes, .argc = rest.len };
+            try primOpTemplate.render(ref.text, &tmpl);
+            break :blk try tmpl.finish();
         };
         // Decisions 431, 490 — a `result: true` host method answers every way
         // the host fails as `Error(HostError(…))`, as the module-level form does.
-        const wrapped = if (ast.externalResultFor(m.annotations, "node"))
+        const wrapped = if (ast.implementationResult(m.implementations, "node"))
             try self.wrapResult(m.returnType, value)
         else if (self.marks_host)
             try self.markHost(m.returnType, value)
@@ -2847,35 +2679,11 @@ const Emitter = struct {
         }
         var holes = ParamHoles{ .b = self.b, .names = names.items };
         var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
-        if (ast.externalHasArityBranches(f.annotations, "node")) {
-            for (f.annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
-                for (a.args) |raw| {
-                    const br = ast.parseArityBranchArg(raw) orelse continue;
-                    const value = try self.renderParamTemplate(br.template, &holes, br.argc) orelse return note;
-                    try body.append(self.arena(), try self.b.ifStmt(
-                        try self.b.binaryBare("===", try self.b.member(.{ .name = "arguments" }, "length"), .{
-                            .number = try std.fmt.allocPrint(self.arena(), "{d}", .{br.argc}),
-                        }),
-                        .{ .return_ = try self.wrapBinding(mark, f.returnType, value) },
-                    ));
-                }
-            }
-        } else {
+        {
             const ref = f.externalFor("node") orelse return .{ .comment = .{
                 .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
             } };
-            const value: js.Expr = if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0)
-                try self.renderParamTemplate(ref.symbol, &holes, names.items.len) orelse return note
-            else blk: {
-                const host = if (isJsGlobalNamespace(ref.module))
-                    try self.b.member(.{ .name = ref.module }, ref.symbol)
-                else
-                    try self.b.member(try self.requireCall(ref.module), ref.symbol);
-                const args = try self.arena().alloc(js.Expr, names.items.len);
-                for (names.items, 0..) |n, i| args[i] = .{ .ident = n };
-                break :blk try self.b.call(host, args);
-            };
+            const value: js.Expr = try self.renderParamTemplate(ref.text, &holes, names.items.len) orelse return note;
             try body.append(self.arena(), .{ .return_ = try self.wrapBinding(mark, f.returnType, value) });
         }
         const func: js.Stmt = .{ .function = .{
@@ -3618,14 +3426,14 @@ const Emitter = struct {
                 // A template-form `#[@External.Node("… $0 …")]` replaces the body:
                 // the prelude's emitted copy is not inferred, so a body's integer
                 // `/` would stay a float division here.
-                if (m.externalFor("node")) |ref| if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                if (m.externalFor("node")) |ref| if (primOpTemplate.looksLikeTemplate(ref.text)) {
                     var holes = MethodHoles{ .params = m.params, .boxed_recv = false };
                     var tmpl = HostTemplate(MethodHoles){
                         .arena = self.arena(),
                         .holes = &holes,
                         .argc = m.params.len,
                     };
-                    try primOpTemplate.render(ref.symbol, &tmpl);
+                    try primOpTemplate.render(ref.text, &tmpl);
                     try stmts.append(self.arena(), .{ .expr = try self.b.assign(
                         try self.b.member(.{ .name = assoc_ns }, m.name),
                         "=",
@@ -3669,7 +3477,7 @@ const Emitter = struct {
         for (i.methods) |m| {
             if (isAssociatedFn(m)) continue; // associated fns handled above
             if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
-            const node_ref = m.externalFor("node") orelse if (m.body == null and isJsGlobalNamespace(owner))
+            const node_ref: ?[]const u8 = if (m.externalFor("node")) |r| r.text else if (m.body == null and isJsGlobalNamespace(owner))
                 try self.preludeIfaceExternal(i.name, m.name)
             else
                 null;
@@ -3680,21 +3488,21 @@ const Emitter = struct {
                 // §F1-commonJS of `prim-op-template-instance-methods` —
                 // the 1-arg form has module="" + symbol=<template>, so this
                 // case takes precedence over the §A4 native-prototype skip.
-                if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                if (primOpTemplate.looksLikeTemplate(ref)) {
                     var holes = MethodHoles{ .params = m.params[1..], .boxed_recv = boxed };
                     var tmpl = HostTemplate(MethodHoles){
                         .arena = self.arena(),
                         .holes = &holes,
                         .argc = m.params.len - 1,
                     };
-                    try primOpTemplate.render(ref.symbol, &tmpl);
+                    try primOpTemplate.render(ref, &tmpl);
                     try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
                         .params = try self.buildParams(m.params[1..]),
                         .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try tmpl.finish() }}), .layout = .spaced },
                     }));
                     continue;
                 }
-                if (ref.module.len == 0) continue; // §A4: native prototype, no patch
+                continue; // §A4: native prototype, no patch
             }
 
             if (m.is_default) {
@@ -3730,27 +3538,6 @@ const Emitter = struct {
                     .params = params,
                     .body = .{ .stmts = try body.toOwnedSlice(self.arena()) },
                 }));
-            } else if (node_ref) |ref| {
-                // Host-backed instance method via a JS global namespace (`Math`):
-                // `Owner.prototype.m = function(args){ return Mod.sym(self, args); }`.
-                // Relative companions and call-template symbols are skipped (matches
-                // the inference, which leaves them to native JS).
-                if (!isJsGlobalNamespace(ref.module)) continue;
-                if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
-                var args: std.ArrayListUnmanaged(js.Expr) = .empty;
-                try args.append(self.arena(), if (boxed)
-                    try self.b.call(try self.b.member(.this, "valueOf"), &.{})
-                else
-                    js.Expr.this);
-                for (m.params[1..]) |p| try args.append(self.arena(), .{ .ident = p.name });
-                const call = try self.b.call(
-                    try self.b.member(.{ .name = ref.module }, ref.symbol),
-                    try args.toOwnedSlice(self.arena()),
-                );
-                try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
-                    .params = try self.buildParams(m.params[1..]),
-                    .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = call }}), .layout = .spaced },
-                }));
             }
         }
         return self.b.group(try stmts.toOwnedSlice(self.arena()));
@@ -3763,9 +3550,9 @@ const Emitter = struct {
     fn noteUntypedNodeSymbol(self: *Emitter, m: ast.BehaviorMethod) !void {
         const sym: []const u8 = blk: {
             const ref = m.externalFor("node") orelse break :blk m.name;
-            if (ref.module.len != 0) break :blk m.name;
-            if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) break :blk m.name;
-            break :blk ref.symbol;
+            if (ref.cell != null) break :blk m.name;
+            if (std.mem.indexOfScalar(u8, ref.text, '(') != null) break :blk m.name;
+            break :blk ref.text;
         };
         if (self.prim_symbol_of.get(m.name)) |prev| {
             if (!std.mem.eql(u8, prev, sym)) try self.ambiguous_prim_renames.put(try self.arena().dupe(u8, m.name), {});
@@ -3774,8 +3561,8 @@ const Emitter = struct {
         }
     }
 
-    /// The std prelude's `#[@External.Node]` for `iface.method`, if any.
-    fn preludeIfaceExternal(self: *Emitter, iface: []const u8, method: []const u8) !?ast.ExternalRef {
+    /// The std prelude's `.Node` implementation of `iface.method`, if any.
+    fn preludeIfaceExternal(self: *Emitter, iface: []const u8, method: []const u8) !?[]const u8 {
         const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface, method });
         return self.prelude_iface_externals.get(key);
     }
@@ -6815,8 +6602,8 @@ const Emitter = struct {
         return self.renderDispatch(call, cc, error.PrimOpRecvInUserTemplate);
     }
 
-    /// Shared body of the two dispatch tables: an arity-branched template, a
-    /// single template, or the `module`+`symbol` require form.
+    /// Shared body of the two dispatch tables: an arity-branched template or a
+    /// single template.
     fn renderDispatch(self: *Emitter, call: BuiltinNodeCall, cc: anytype, recv_err: anyerror) anyerror!?js.Expr {
         const argc = cc.args.len + cc.trailing.len;
         if (call.arity_branches.len > 0) {
@@ -6826,23 +6613,9 @@ const Emitter = struct {
             }
             return null;
         }
-        // A 1-arg form without markers (`"process.cwd()"`, module empty) is a
-        // bare host expression: it renders verbatim, like a template.
-        if (primOpTemplate.looksLikeTemplate(call.symbol) or call.module.len == 0) {
-            return try self.renderTemplate(call.symbol, cc, argc, recv_err);
-        }
-        // module+symbol form: `@External.Node("./mod", "fun")` —
-        // `require("<module>").<symbol>(<args>)`. Trailing lambdas are not
-        // supported in this form — declare fn helpers use fixed arity.
-        if (call.module.len > 0) {
-            const args = try self.arena().alloc(js.Expr, cc.args.len);
-            for (cc.args, 0..) |arg, i| args[i] = try self.buildExpr(arg.value.*);
-            return try self.b.call(
-                try self.b.member(try self.requireCall(call.module), call.symbol),
-                args,
-            );
-        }
-        return null;
+        // A template, or a bare host expression (`"process.cwd()"`): it
+        // renders verbatim, like a template.
+        return try self.renderTemplate(call.symbol, cc, argc, recv_err);
     }
 
     /// Which sequence a `.next()` at `loc` steps, from inference's per-call-site
@@ -6925,22 +6698,21 @@ const Emitter = struct {
     }
 
     /// The host member a call on `self` reaches in a prototype patch: the
-    /// plain `#[@External.Node("<symbol>")]` of the behavior's own method —
-    /// what inference's per-loc rename answers for the same call on a typed
+    /// plain `.Node("<symbol>")` of the behavior's own method — what
+    /// inference's per-loc rename answers for the same call on a typed
     /// receiver (`length` is then the property, `buildCallRaw`). Null for a
-    /// template, a `(module, symbol)` external or a method with no node binding.
+    /// template or a method with no node binding.
     fn selfHostMember(self: *Emitter, cc: anytype) !?[]const u8 {
         const p = self.selfPrimitive(cc) orelse return null;
         // The behavior being patched declares the method, or the std prelude's
         // behavior of the same name does (a program's own `behavior String`
         // adds defaults to std's `String`, whose `length` it calls).
-        const ref: ast.ExternalRef = for (p.behavior.methods) |m| {
-            if (std.mem.eql(u8, m.name, cc.callee)) break m.externalFor("node") orelse return null;
+        const ref: []const u8 = for (p.behavior.methods) |m| {
+            if (std.mem.eql(u8, m.name, cc.callee)) break (m.externalFor("node") orelse return null).text;
         } else (try self.preludeIfaceExternal(p.behavior.name, cc.callee)) orelse return null;
-        if (ref.module.len != 0) return null;
-        if (primOpTemplate.looksLikeTemplate(ref.symbol)) return null;
-        if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
-        return ref.symbol;
+        if (primOpTemplate.looksLikeTemplate(ref)) return null;
+        if (std.mem.indexOfScalar(u8, ref, '(') != null) return null;
+        return ref;
     }
 
     fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
@@ -7015,7 +6787,7 @@ const Emitter = struct {
         const raw = try self.buildCallRaw(loc, cc);
         // A host-backed `declare fn` of this module whose return names a record.
         const out = if (!cc.is_builtin and cc.receiver == null and self.host_returns_init and
-            (self.user_node_templates.contains(cc.callee) or self.externals.contains(cc.callee)))
+            self.user_node_templates.contains(cc.callee))
             (if (self.host_returns.get(cc.callee)) |rt| try self.adoptHost(rt, raw) else raw)
         else
             raw;
@@ -7025,10 +6797,8 @@ const Emitter = struct {
     fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         if (try self.paramShapeToString(cc)) |text| return text;
-        // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
-        // Handles both template (`$0.method()`) and module+symbol
-        // (`"./mod", "fun"`) forms discovered from primitives.bp +
-        // builtins_fns.d.bp. Those are free functions: their templates have
+        // builtin_node_dispatch: a prelude `declare fn` with a `.Node`
+        // implementation (`primitives.bp`, `builtins.d.bp`). Those are free functions: their templates have
         // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.
         if (cc.receiver == null and self.builtin_node_dispatch.contains(cc.callee)) {

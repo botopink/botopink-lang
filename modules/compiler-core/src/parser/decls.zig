@@ -30,7 +30,6 @@ const ParamModifier = parser.ParamModifier;
 const EnumVariant = parser.EnumVariant;
 const FnDecl = parser.FnDecl;
 const ValDecl = parser.ValDecl;
-const DelegateDecl = parser.DelegateDecl;
 const Annotation = parser.Annotation;
 const TypeRef = parser.TypeRef;
 const Pattern = parser.Pattern;
@@ -686,28 +685,8 @@ pub fn parseTestDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.TestD
     };
 }
 
-/// `val log = declare fn(self: Self) -> R`
-pub fn parseDelegateDecl(this: *This, alloc: std.mem.Allocator) ParseError!DelegateDecl {
-    const isPub = this.match(.@"pub");
-    _ = try this.consume(.val);
-    const name = (try this.consume(.identifier)).lexeme;
-    _ = try this.consume(.equal);
-    _ = try this.consume(.declare);
-    _ = try this.consume(.@"fn");
-    return this.parseDelegateParams(alloc, name, isPub);
-}
-
-/// `[pub] declare fn log(self: Self) -> R`
-pub fn parseShorthandDelegateDecl(this: *This, alloc: std.mem.Allocator) ParseError!DelegateDecl {
-    const isPub = this.match(.@"pub");
-    _ = try this.consume(.declare);
-    _ = try this.consume(.@"fn");
-    const name = (try this.consume(.identifier)).lexeme;
-    return this.parseDelegateParams(alloc, name, isPub);
-}
-
-/// A member or delegate signature: `<G>(params) -> R`, the arrow optional.
-/// One grammar for a behavior's `fn` members and a `declare fn` delegate, and
+/// A member signature: `<G>(params) -> R`, the arrow optional.
+/// One grammar for a behavior's `fn` members, and
 /// the same pieces `parseFnBody` reads a `fn`'s head with —
 /// `parseGenericParams`, `parseParamList` (`_`, `comptime`,
 /// defaults), `parseTypeRef` for the return — so neither can fall behind it.
@@ -743,27 +722,6 @@ pub fn parseSignature(this: *This, alloc: std.mem.Allocator) ParseError!Signatur
     };
 }
 
-pub fn parseDelegateParams(this: *This, alloc: std.mem.Allocator, name: []const u8, isPub: bool) ParseError!DelegateDecl {
-    var sig = try parseSignature(this, alloc);
-    errdefer {
-        for (sig.genericParams) |*gp| gp.deinit(alloc);
-        alloc.free(sig.genericParams);
-        for (sig.params) |*p| p.deinit(alloc);
-        alloc.free(sig.params);
-        if (sig.returnType) |*rt| rt.deinit(alloc);
-    }
-    // Semicolon required after delegate declaration
-    _ = try this.consume(.semicolon);
-    return DelegateDecl{
-        .name = name,
-        .isPub = isPub,
-        .genericParams = sig.genericParams,
-        .params = sig.params,
-        .returnType = sig.returnType,
-        .returnTypeLoc = sig.returnTypeLoc,
-    };
-}
-
 /// Parses an optional `extends T1, T2, T3` clause.
 /// Returns an owned slice (may be empty). The caller owns the memory.
 pub fn parseExtendsClause(this: *This, alloc: std.mem.Allocator) ParseError![]const []const u8 {
@@ -784,7 +742,12 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     // Decision 553 (1) — `[pub] [declare] <marker> fn`.
     const marker = parseFnMarker(this);
     _ = try this.consume(.@"fn");
-    const name = (try this.consume(.identifier)).lexeme;
+    // Decision 575 (3), (6) — the reflection handle's `implement` (the
+    // machinery `compiler.implement` maps to): after `fn` the keyword starts
+    // nothing else.
+    const nameTok = if (this.check(.implement)) this.advance() else try this.consume(.identifier);
+    const name = nameTok.lexeme;
+    const nameLoc = parser.Parser.locFromToken(nameTok);
 
     const sig = try parseSignature(this, alloc);
     const genericParams = sig.genericParams;
@@ -805,6 +768,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
         _ = try this.consume(.semicolon);
         return BehaviorMethod{
             .name = name,
+            .nameLoc = nameLoc,
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
@@ -821,6 +785,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     try This.returnTail(alloc, body, returnType);
     return BehaviorMethod{
         .name = name,
+        .nameLoc = nameLoc,
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,
@@ -1953,7 +1918,11 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
     // body, so only it takes a marker.
     const marker = parseFnMarker(this);
     _ = try this.consume(.@"fn");
-    const methodName = (try this.consume(.identifier)).lexeme;
+    // Decision 575 (3), (6) — `Compiler.implement`: a behavior member is named
+    // after `fn`, where the keyword `implement` starts nothing else.
+    const methodTok = if (this.check(.implement)) this.advance() else try this.consume(.identifier);
+    const methodName = methodTok.lexeme;
+    const nameLoc = parser.Parser.locFromToken(methodTok);
     const sig = try parseSignature(this, alloc);
     const genericParams = sig.genericParams;
     errdefer alloc.free(genericParams);
@@ -1971,6 +1940,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
         try expectMemberSemicolon(this);
         return BehaviorMethod{
             .name = methodName,
+            .nameLoc = nameLoc,
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
@@ -1985,6 +1955,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
     if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
     return BehaviorMethod{
         .name = methodName,
+        .nameLoc = nameLoc,
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,

@@ -48,7 +48,7 @@ test "STD-001: a call of std/io/process.pid from wasm target reds at the call" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "wasm") != null);
     // The binding's spelling is the annotation's (`#[@External.Wasm]`), not
     // the retired `@external`.
-    try std.testing.expect(std.mem.indexOf(u8, msg, "std/io/process.pid has no `#[@External.Wasm]` for target 'wasm'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "std/io/process.pid has no `.Wasm(…)` implementation for target 'wasm'") != null);
     try std.testing.expectEqual(@as(usize, 3), outcome.typeError.loc.?.line);
 }
 

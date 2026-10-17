@@ -37,6 +37,8 @@ const stdWasm = @import("std_wasm");
 const wasmHostBinding = @import("../codegen/wat/host_binding.zig");
 const stdLeaves = @import("../codegen/wat/std_leaves.zig");
 const hostFnBinding = @import("../codegen/hostFnBinding.zig");
+const implementationsParse = @import("../parser/implementations.zig");
+const Token = @import("../lexer/token.zig").Token;
 const erlang = @import("../codegen/erlang.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
@@ -551,12 +553,12 @@ fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) In
 /// STD-001 (decision 518 (4)) — the refusal belongs to the CALL, never to the
 /// import: `import {failure} from "std"` and `import {erlang.node}` are
 /// accepted on every target, and a call of a std function that reaches a
-/// host-bound declaration with no `#[@External.<Target>(…)]` for the active
-/// target is refused at the call, naming the function — and, when the
-/// declaration is another function of the module the call goes through, that
-/// one too (`stdUnsupportedReach`). Pure-bp functions whose bodies reach no
-/// such declaration ship on every target. A function value taken without a
-/// call is the backend's refusal (`has no #[@External.<Target>(…)]`).
+/// host-bound declaration with no implementation for the active target is
+/// refused at the call, naming the function — and, when the declaration is
+/// another function of the module the call goes through, that one too
+/// (`stdUnsupportedReach`). Pure-bp functions whose bodies reach no such
+/// declaration ship on every target. A function value taken without a call is
+/// the backend's refusal (`has no implementation for the <t> backend`).
 fn checkStdCall(env: *Env, mod_name: []const u8, name: []const u8, loc: ast.Loc) InferError!void {
     const tgt = env.target orelse return;
     const reached = try stdUnsupportedReach(env, mod_name, name, tgt) orelse return;
@@ -606,17 +608,20 @@ fn stdDeclUnsupported(f: ast.FnDecl, tgt: []const u8) bool {
 }
 
 /// `std-unsupported-on-target` speaks today's spellings: the binding is the
-/// `#[@External.<Member>(…)]` annotation (`Node`, `Erlang`, `Beam`, `Wasm` —
-/// `externalFor`'s member, the target capitalised), and the target is the one
-/// `--target` takes (`commonJS`, never the internal `node`).
+/// `.<Variant>(…)` implementation (`Node`, `Erlang`, `Wasm` — the beam target
+/// reads `Erlang`'s, decision 437), and the target is the one `--target`
+/// takes (`commonJS`, never the internal `node`).
 ///
 /// A wasm build names its host too (decision 334): the lookup `wasm` is the
 /// `wasi` host's, `wasm.browser` the `browser` host's, and the target reads
 /// `'wasm' on host 'wasi'`.
 fn externalSpelling(env: *Env, tgt: []const u8) InferError!struct { member: []const u8, target: []const u8 } {
     const lookup = ast.ExternalLookup.of(tgt);
-    const member = try env.arena.dupe(u8, lookup.member);
-    if (member.len > 0) member[0] = std.ascii.toUpper(member[0]);
+    const member: []const u8 = if (ast.Implementation.Target.ofMember(lookup.member)) |t| t.variant() else blk: {
+        const m = try env.arena.dupe(u8, lookup.member);
+        if (m.len > 0) m[0] = std.ascii.toUpper(m[0]);
+        break :blk m;
+    };
     const target = if (std.mem.eql(u8, lookup.member, "node"))
         "commonJS"
     else if (lookup.host) |h|
@@ -629,10 +634,10 @@ fn externalSpelling(env: *Env, tgt: []const u8) InferError!struct { member: []co
 fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, reached: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
     const sp = try externalSpelling(env, tgt);
     const msg = if (std.mem.eql(u8, name, reached))
-        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `#[@External.{s}]` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, sp.member, sp.target })
+        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `.{s}(…)` implementation for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, sp.member, sp.target })
     else
-        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} reaches `{s}`, which has no `#[@External.{s}]` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, reached, sp.member, sp.target });
-    const hint = try std.fmt.allocPrint(env.arena, "The call is refused, not the import: the function reaches a host declaration with no binding for this target. Call it on a target the module supports (see libs/std/src/examples.md per-target coverage matrix), or give the declaration a `#[@External.{s}(…)]` binding.", .{sp.member});
+        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} reaches `{s}`, which has no `.{s}(…)` implementation for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, reached, sp.member, sp.target });
+    const hint = try std.fmt.allocPrint(env.arena, "The call is refused, not the import: the function reaches a host declaration with no binding for this target. Call it on a target the module supports (see libs/std/src/examples.md per-target coverage matrix), or give the declaration a `.{s}(…)` implementation (`#[external(…)]`).", .{sp.member});
     env.lastError = TypeError.custom(msg, hint).withLoc(loc);
     return error.TypeError;
 }
@@ -721,15 +726,21 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try registerStdImportDecorators(env, program);
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
-    try validateExternalInline(env, program);
     try refuseHooksReaderOutputs(env, program);
     try invokeDecorators(env, program, .plain);
+    // Decision 575 (6) — every declaration's implementations: std's
+    // `external` read where it is written, a library's source annotation
+    // added by the run above.
+    try applyImplementContributions(env, program);
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
+    // Decision 575 (6) — every declaration's implementations, checked once the
+    // decorators' outputs are in (a wrapper, a member: the re-analysis).
+    try checkProgramImplementations(env, program);
     try refusePendingAssocType(env);
 
     // Pass 2: infer value-producing declarations in order.
@@ -885,9 +896,12 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // needed first.)
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
-    try validateExternalInline(env, program);
     try refuseHooksReaderOutputs(env, program);
     try invokeDecorators(env, program, .plain);
+    // Decision 575 (6) — every declaration's implementations: std's
+    // `external` read where it is written, a library's source annotation
+    // added by the run above.
+    try applyImplementContributions(env, program);
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
@@ -927,6 +941,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         };
         return list.toOwnedSlice(env.arena);
     }
+    // Decision 575 (6) — every declaration's implementations, checked once the
+    // decorators' outputs are in (a wrapper, a member: the re-analysis).
+    try checkProgramImplementations(env, program);
     try refusePendingAssocType(env);
 
     try noteHooksReaders(env, program);
@@ -1597,7 +1614,6 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
         },
         // A `declare fn` decorator (`declare fn service(comptime _: @Decl)`) —
         // the bodyless form a lib ships its markers as — parses as a delegate.
-        .delegate => |d| registerDecoratorSig(env, d.name, d.params, d.genericParams, null),
         else => {},
     };
 }
@@ -3802,155 +3818,257 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     _ = try inferBodyStmts(env, t.body);
 }
 
-/// One variant of `pub type External implement Annotation { … }` in
-/// `libs/std/src/builtins.d.bp`, and which of the two bool flags it declares:
-/// `inline: bool = false` and `result: bool = false` (decision 490).
-pub const ExternalVariant = struct { name: []const u8, declares_inline: bool, declares_result: bool };
+// ── decision 575 (6): a declaration's implementations ──────────────────────
+//
+// A `declare fn` names its host sources with `#[external(…)]` (std's
+// `external`, `libs/std/src/external.bp`) or a library's own source
+// annotation; each source is a value of std's enum `Implementation`. Its
+// shape — a label the variant does not declare, a value of another type — is
+// the enum constructor's refusal (`checkDecoratorArgs` over `external`'s
+// `comptime ..sources: Implementation[]`). The checks below are the ones no
+// constructor states: a cell's form (decisions 305, 481), the tables a cell
+// names (`op:`, `std:`, `wasi:`, `body:`, decisions 238, 440, 445), `result:`
+// (431, 488, 490, 491), one implementation per target (`implementation-twice`,
+// and on wasm one per host, 334), none on a declaration with a body
+// (`implement-with-body`), and a bodyless declaration with none
+// (`declare-without-implementation`).
 
-/// The four `External` variants (front 20 F9; `Beam` is gone, decision 437). `inline` opts a `(target,
-/// method)` pair out of the dispatch table, and exactly two emitters read it —
-/// `codegen/erlang.zig` and `codegen/beam_asm.zig`, each through a
-/// `hasExternalInline` over `External.Erlang`'s labelled `inline:` (the beam
-/// target reads that cell too, decision 437) — so exactly one variant declares
-/// it. On the other three a written `inline` is a switch nothing reads, which
-/// decision 67 refuses rather than accepts and ignores (`refuseUnreadInline`).
-/// `result:` (decisions 431, 490) is declared on every variant: a binding
-/// whose host call can fail answers `@Result<…, HostError>`
-/// (`refuseResultReturn`).
-/// `builtins.d.bp` is documentation the compiler does not parse, so the table
-/// is restated here, once, and `comptime/tests/infer_decls.zig` reads the file
-/// and fails in both directions when the two disagree.
-pub const external_variants = [_]ExternalVariant{
-    .{ .name = "Erlang", .declares_inline = true, .declares_result = true },
-    .{ .name = "Node", .declares_inline = false, .declares_result = true },
-    .{ .name = "Wasm", .declares_inline = false, .declares_result = true },
-    .{ .name = "Typescript", .declares_inline = false, .declares_result = true },
+/// Where a declaration with implementations stands.
+const ImplSite = enum { top_level, type_method, behavior_member };
+
+/// The declaration a list of implementations belongs to.
+const ImplDecl = struct {
+    name: []const u8,
+    params: []const ast.Param,
+    ret: ?ast.TypeRef,
+    /// It has a body of its own.
+    hasBody: bool,
+    site: ImplSite,
+    /// A behavior's `default fn`: its body is the fallback of a target the
+    /// behavior gives no implementation for.
+    isDefault: bool = false,
+    /// A module-level `declare fn`: a `body:` cell and a wasm cell's signature
+    /// are checked against it.
+    fnDecl: ?ast.FnDecl = null,
+    /// The type `Self` spells in a primitive behavior (`selfSpelling`).
+    selfTy: ?[]const u8 = null,
+    /// Where the declaration's name is written.
+    loc: ?ast.Loc = null,
 };
 
-/// The `External` variant the annotation names, or null when the path names none
-/// (a lower-case spelling is still matched: `external.erlang` reaches
-/// `refuseLowerCaseExternal` first, and the emitters compare case-insensitively).
-fn externalVariantOf(a: ast.Annotation) ?ExternalVariant {
-    if (!std.mem.startsWith(u8, a.name, "External.")) return null;
-    const variant = a.name["External.".len..];
-    for (external_variants) |v| {
-        if (std.ascii.eqlIgnoreCase(variant, v.name)) return v;
-    }
-    return null;
-}
-
-/// The index of the argument labelled `label`, or null.
-fn labelledArg(a: ast.Annotation, label: []const u8) ?usize {
-    for (a.args, 0..) |_, i| {
-        if (a.labelOf(i)) |l| if (std.mem.eql(u8, l, label)) return i;
-    }
-    return null;
-}
-
-fn externalFlagError(env: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
+fn implError(env: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
     var e = TypeError.custom(msg, hint);
     if (loc) |l| e = e.withLoc(l);
     env.lastError = e;
     return error.TypeError;
 }
 
-/// Decision 487 — `External`'s flags, `inline:` and `result:`, are labelled
-/// and read by their label in any order; a bare positional `true` / `false`
-/// names no flag, so it is refused at the argument rather than guessed.
-fn refuseBareBoolFlag(env: *Env, a: ast.Annotation) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    for (a.args, 0..) |arg, i| {
-        if (a.labelOf(i) != null) continue;
-        if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) continue;
-        return externalFlagError(env, a.argLoc(i), try std.fmt.allocPrint(
+/// Every check of `d`'s implementations, in order: the sources' shapes (the
+/// constructor's, then each cell's form), the declaration's body, one per
+/// target, each implementation's tables.
+fn checkImplementations(env: *Env, program: ast.Program, d: ImplDecl, annotations: []const ast.Annotation, impls: []const ast.Implementation) InferError!void {
+    for (annotations) |a| {
+        if (!implementationsParse.isSourceAnnotation(a)) continue;
+        if (env.decorators.get(a.name)) |sig| try checkDecoratorArgs(env, program, a, sig, .{ .name = d.name, .type_ = null });
+        for (a.args, 0..) |arg, i| {
+            const at = a.argLoc(i) orelse a.loc orelse ast.Loc{ .line = 0, .col = 0 };
+            const src = (try implementationsParse.parseSource(env.arena, arg, at)) orelse continue;
+            try checkSourceCells(env, src, d);
+        }
+    }
+    if (impls.len == 0) return;
+    if (d.hasBody and !d.isDefault) {
+        return implError(env, impls[0].loc, try std.fmt.allocPrint(
             env.arena,
-            "`External.{s}` takes no bare `{s}` — its flags are labelled, `result:`{s} (decision 487)",
-            .{ v.name, arg, if (v.declares_inline) " and `inline:`" else "" },
-        ), "Write the flag by its label: `result: true`, or `inline: true` on `External.Erlang`.");
+            "{s}: `{s}` has a body, and an implementation takes the place of one — `.{s}(…)` implements a bodyless `declare fn`",
+            .{ diagnostics.implement_with_body, d.name, impls[0].target.variant() },
+        ), "Delete the body and write `declare fn`, or delete the annotation: a function with a body is its own implementation on every target.");
+    }
+    try refuseImplementationTwice(env, d, impls);
+    for (impls) |impl| try checkImplementation(env, program, d, impl);
+}
+
+/// Decisions 305 and 481 — each source's cell, as written: one at most
+/// (a template, `body:`, and on `.Wasm` also `op:`, `std:` and `wasi:`), at
+/// least one, `body:` an identifier, and a template that is no prefixed
+/// cell (`"fn:tanBody"`).
+fn checkSourceCells(env: *Env, src: implementationsParse.Source, d: ImplDecl) InferError!void {
+    const target = src.target orelse return;
+    const wasm = target == .wasm;
+    const variant = target.variant();
+    var cells: usize = 0;
+    for (src.args) |arg| {
+        const field = arg.field orelse continue;
+        const isCell = std.mem.eql(u8, field, "template") or std.mem.eql(u8, field, "body") or
+            (wasm and (std.mem.eql(u8, field, "op") or std.mem.eql(u8, field, "std") or std.mem.eql(u8, field, "wasi")));
+        if (!isCell) continue;
+        cells += 1;
+        if (cells > 1) return implError(env, arg.loc, try std.fmt.allocPrint(
+            env.arena,
+            "`.{s}` on `{s}` writes a second cell, `{s}:` — a {s}binding is one cell (decision 481)",
+            .{ variant, d.name, field, if (wasm) "wasm " else "" },
+        ), cell_hint);
+        if (std.mem.eql(u8, field, "body")) {
+            if (implementationsParse.identOf(arg.tokens) == null) return implError(env, arg.loc, try std.fmt.allocPrint(
+                env.arena,
+                "`.{s}(body: {s})` on `{s}`: `body:` names a private fn of this module by its identifier, not {s} (decisions 305, 481) — write `body: <name>`",
+                .{ variant, try tokensText(env, arg.tokens), d.name, if (implementationsParse.stringOf(arg.tokens) != null) "a string" else "a value" },
+            ), cell_hint);
+        }
+        if (std.mem.eql(u8, field, "template")) if (implementationsParse.stringOf(arg.tokens)) |raw| {
+            const inner = unquotedString(raw) orelse continue;
+            for (ast.Implementation.CellKind.prefixes) |pre| {
+                if (!(inner.len > pre.text.len and std.mem.startsWith(u8, inner, pre.text) and inner[pre.text.len] == ':')) continue;
+                // `std:` was only ever a wasm cell; on another target the
+                // string is host code.
+                if (!wasm and pre.kind == .std_) continue;
+                const labelled = try ast.wasmCellDisplay(env.arena, inner);
+                // `op:` / `wasi:` / `std:` are `.Wasm`'s cells alone.
+                const into = if (wasm or pre.kind == .body) variant else "Wasm";
+                if (wasm) return implError(env, arg.loc, try std.fmt.allocPrint(
+                    env.arena,
+                    "`.Wasm({s})` on `{s}`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm({s})`",
+                    .{ raw, d.name, labelled },
+                ), cell_hint);
+                return implError(env, arg.loc, try std.fmt.allocPrint(
+                    env.arena,
+                    "`.{s}({s})` on `{s}`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.{s}({s})`",
+                    .{ variant, raw, d.name, into, labelled },
+                ), cell_hint);
+            }
+        };
+    }
+    if (cells == 0) return implError(env, src.variantLoc, try std.fmt.allocPrint(
+        env.arena,
+        "`.{s}` on `{s}` names no code — {s}",
+        .{ variant, d.name, if (wasm) "a wasm binding is one cell: `op:`, `std:`, `wasi:`, `body:` or a template" else "write its template, or `body:` naming a private fn of this module" },
+    ), cell_hint);
+}
+
+const cell_hint = "A binding is one labelled cell: `body: <private fn of this module>` or a template on every target; on wasm also `op: \"<opcode>\"`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"` (std's alone).";
+
+fn tokensText(env: *Env, toks: []const Token) InferError![]const u8 {
+    if (toks.len == 0) return "";
+    const first = toks[0].lexeme;
+    const last = toks[toks.len - 1].lexeme;
+    const begin = @intFromPtr(first.ptr);
+    const end = @intFromPtr(last.ptr) + last.len;
+    if (end < begin) return env.arena.dupe(u8, first);
+    return first.ptr[0 .. end - begin];
+}
+
+/// Decision 575 (6) — one implementation per target; on wasm one per host
+/// (decision 334): at most one `host: .Wasi`, at most one `host: .Browser`, and
+/// one written without `host:` (which serves every host) stands alone.
+fn refuseImplementationTwice(env: *Env, d: ImplDecl, impls: []const ast.Implementation) InferError!void {
+    var seen_any = false;
+    var seen_all = false;
+    var seen = [_]bool{ false, false };
+    for (impls, 0..) |impl, i| {
+        if (impl.target == .wasm) {
+            const twice = seen_all or (impl.host == null and seen_any) or (if (impl.host) |h| seen[@intFromEnum(h)] else false);
+            if (twice) {
+                const which = if (impl.host) |h| try std.fmt.allocPrint(env.arena, "host '{s}'", .{@tagName(h)}) else "every host";
+                return implError(env, impl.loc, try std.fmt.allocPrint(
+                    env.arena,
+                    "`{s}` binds wasm twice for {s} — one `.Wasm(…)` per host",
+                    .{ d.name, which },
+                ), "Keep one binding per host: `host: .Wasi` and `host: .Browser` side by side, or one binding without `host:`, which serves every host.");
+            }
+            seen_any = true;
+            if (impl.host) |h| seen[@intFromEnum(h)] = true else seen_all = true;
+            continue;
+        }
+        for (impls[0..i]) |prev| if (prev.target == impl.target) {
+            return implError(env, impl.loc, try std.fmt.allocPrint(
+                env.arena,
+                "{s}: `{s}` is implemented twice for `.{s}` — one implementation per target",
+                .{ diagnostics.implementation_twice, d.name, impl.target.variant() },
+            ), "Keep one `.<Target>(…)` per target across the declaration's annotations.");
+        };
     }
 }
 
-/// Front 20 F9, decision 67 — a written `inline` that no emitter would read is
-/// refused at the annotation rather than accepted as a switch that does
-/// nothing. Two shapes are unread: the flag on a variant that does not
-/// declare it (`Node` / `Wasm` / `Typescript`), and a value that is not
-/// `true` / `false` (the readers compare against the literal `true`). The
-/// flag is read by its label, so its position is free (decision 487).
-fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    const at = labelledArg(a, "inline") orelse return;
-    if (!v.declares_inline) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+/// The tables one implementation names, at the annotation that gave it.
+fn checkImplementation(env: *Env, program: ast.Program, d: ImplDecl, impl: ast.Implementation) InferError!void {
+    try refuseResultReturn(env, impl, d.name, d.ret, program);
+    const cell = impl.cell orelse return;
+    const variant = impl.target.variant();
+    switch (cell.kind) {
+        .body => {
+            // Decision 305 — a botopink name: one the module does not bind
+            // is the ordinary unbound-name error.
+            if (!moduleBinds(env, program, cell.value)) {
+                env.lastError = TypeError.unboundVariable(cell.value).withLoc(impl.loc orelse return error.TypeError);
+                return error.TypeError;
+            }
+            if (d.fnDecl) |fd| switch (try hostFnBinding.resolve(env.arena, fd, cell.value, program, "", variant)) {
+                .ok => {},
+                .refused => |msg| return implError(env, impl.loc, msg, cell_hint),
+            };
+        },
+        .op => if (wasmHostBinding.findOp(cell.value) == null) return implError(env, impl.loc, try std.fmt.allocPrint(
             env.arena,
-            "`External.{s}` declares no `inline` — the flag is read by the erlang and beam emitters from `External.Erlang` only",
-            .{v.name},
-        ), try std.fmt.allocPrint(
-            env.arena,
-            "Delete it: on `External.{s}` `inline` is a switch nothing reads. `External.Erlang` alone declares it (`builtins.d.bp`).",
-            .{v.name},
-        ));
+            "`.Wasm(op: \"{s}\")` on `{s}`: `{s}` is not a wasm numeric instruction a binding names (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)",
+            .{ cell.value, d.name, cell.value },
+        ), cell_hint),
+        .wasi => if (wasmHostBinding.findAdapter(cell.value) == null) {
+            const parsed = try wasmHostBinding.parse(env.arena, impl.text, .{ .params = &.{}, .result = null });
+            return implError(env, impl.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ parsed.refused.message, d.name }), cell_hint);
+        },
+        .std_ => try refuseStdBinding(env, impl, d.name, d.params, d.ret, d.selfTy),
     }
-    const arg = a.args[at];
-    if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
-            env.arena,
-            "`External.{s}`'s `inline` is a bool, got `{s}`",
-            .{ v.name, arg },
-        ), "Write `inline: true` or `inline: false`.");
+    if (d.fnDecl) |fd| if (fd.isDeclare) try refuseWasmSignature(env, impl, fd);
+}
+
+/// Decisions 238 and 393 — an `op:` cell's opcode types and a `wasi:`
+/// adapter's signature are checked against the declaration at the annotation
+/// on every target, read by the wasm backend's own reader
+/// (`wat/host_binding.zig` `parse` over `signatureOf`): a binding no wasm
+/// build reaches is refused as a wasm build refuses it, with its message.
+fn refuseWasmSignature(env: *Env, impl: ast.Implementation, f: ast.FnDecl) InferError!void {
+    const cell = impl.cell orelse return;
+    if (cell.kind != .op and cell.kind != .wasi) return;
+    switch (try wasmHostBinding.parse(env.arena, impl.text, try wasmHostBinding.signatureOf(env.arena, f))) {
+        .ok => {},
+        .refused => |r| return implError(env, impl.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ r.message, f.name }), cell_hint),
     }
 }
 
-/// Decisions 431 (2), 488, 490 — `result: true` on an `External.<Target>`
-/// binding says the host call can fail and the backend answers every failure
-/// as `Error(HostError(…))`, so the declared return must be
-/// `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, `HostError`
-/// being std's `failure.HostError` by module identity (488): a type of
-/// another module that happens to be named `HostError` is not it. Any other
-/// return is refused at the annotation, so the flag has one reading. The
-/// flag is a bool; `result: false` is the default and says nothing.
-fn refuseResultReturn(env: *Env, a: ast.Annotation, name: []const u8, ret: ?ast.TypeRef, program: ast.Program) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    const at = labelledArg(a, "result") orelse return;
-    if (!v.declares_result) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
-            env.arena,
-            "`External.{s}` declares no `result`",
-            .{v.name},
-        ), "`builtins.d.bp` declares `result: bool = false` on the variants whose backends answer it.");
-    }
-    const arg = a.args[at];
-    // Decision 491 — an `op:` cell is a wasm instruction and a `fn:` cell a
+/// Decisions 431 (2), 488, 490 — `result: true` says the host call can fail
+/// and the backend answers every failure as `Error(HostError(…))`, so the
+/// declared return must be `@Result<…, HostError>` or
+/// `@Task<@Result<…, HostError>>`, `HostError` being std's
+/// `failure.HostError` by module identity (488): a type of another module
+/// that happens to be named `HostError` is not it. Any other return is
+/// refused at the annotation, so the flag has one reading.
+fn refuseResultReturn(env: *Env, impl: ast.Implementation, name: []const u8, ret: ?ast.TypeRef, program: ast.Program) InferError!void {
+    if (!impl.result) return;
+    const variant = impl.target.variant();
+    // Decision 491 — an `op:` cell is a wasm instruction and a `body:` cell a
     // botopink fn of the module (on every target, decision 305): neither is
     // a host call that raises, so `result:` there is refused.
-    for ([_][]const u8{ "op", "fn" }) |cell| if (labelledArg(a, cell) != null) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+    if (impl.cell) |c| if (c.kind == .op or c.kind == .body) {
+        return implError(env, impl.loc, try std.fmt.allocPrint(
             env.arena,
-            "`{s}`'s `External.{s}({s}: …)` takes no `result:` — an `{s}:` cell is not a host call that can fail (decision 491)",
-            .{ name, v.name, cell, cell },
-        ), "Delete `result:`; a host call that can fail is a template binding, or a `wasi:` or `std:` cell on `External.Wasm`.");
+            "`{s}`'s `.{s}({s}: …)` takes no `result:` — {s} `{s}:` cell is not a host call that can fail (decision 491)",
+            .{ name, variant, c.kind.label(), if (c.kind == .op) "an" else "a", c.kind.label() },
+        ), "Delete `result:`; a host call that can fail is a template binding, or a `wasi:` or `std:` cell on `.Wasm`.");
     };
-    if (std.mem.eql(u8, arg, "false")) return;
-    if (!std.mem.eql(u8, arg, "true")) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
-            env.arena,
-            "`External.{s}`'s `result` is a bool, got `{s}`",
-            .{ v.name, arg },
-        ), "Write `result: true` or `result: false`.");
-    }
     const shape: HostResultShape = if (ret) |r| hostResultShape(env, r, program) else .other;
     if (shape == .host_error) return;
     if (shape == .foreign_error) {
-        return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+        return implError(env, impl.loc, try std.fmt.allocPrint(
             env.arena,
-            "`{s}` writes `result: true` on `External.{s}`, and its `HostError` is not std's `failure.HostError` — only std's counts, by module identity (decision 488)",
-            .{ name, v.name },
+            "`{s}` writes `result: true` on `.{s}`, and its `HostError` is not std's `failure.HostError` — only std's counts, by module identity (decision 488)",
+            .{ name, variant },
         ), "Import std's: `import {failure.HostError} from \"std\";`, and name the module's own type otherwise.");
     }
     const written = if (ret) |r| try std.fmt.allocPrint(env.arena, "{f}", .{r}) else "void";
-    return externalFlagError(env, a.loc, try std.fmt.allocPrint(
+    return implError(env, impl.loc, try std.fmt.allocPrint(
         env.arena,
-        "`{s}` writes `result: true` on `External.{s}`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `{s}`",
-        .{ name, v.name, written },
+        "`{s}` writes `result: true` on `.{s}`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `{s}`",
+        .{ name, variant, written },
     ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.");
 }
 
@@ -4026,288 +4144,6 @@ fn isStdHostError(env: *Env, t: ast.TypeRef, program: ast.Program) bool {
     return false;
 }
 
-/// Decision 437 — `@External.Beam` is gone: `External.Erlang` binds the erlang
-/// and the beam targets (the same VM, the same OTP calls). Writing the old
-/// variant binds no host and is refused at the annotation.
-fn refuseExternalBeam(env: *Env, a: ast.Annotation) InferError!void {
-    if (!std.mem.startsWith(u8, a.name, "External.")) return;
-    if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], "Beam")) return;
-    var e = TypeError.custom(
-        "`@External.Beam` binds no host — the beam target reads `@External.Erlang`",
-        "Write `#[@External.Erlang(\"<module>\", \"<function>\")]`; the beam target reads it too.",
-    );
-    if (a.loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
-}
-
-/// Decision 334 — `host:` names the runtime a wasm binding serves, so it is
-/// `External.Wasm`'s alone, and its value is `.Wasi` or `.Browser`. Written on
-/// another variant it is a switch nothing reads; any other value names no
-/// host. Both are refused at the annotation.
-fn refuseHostArg(env: *Env, a: ast.Annotation) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    const at = ast.hostArgIndex(a) orelse return;
-    var e: TypeError = undefined;
-    if (!std.mem.eql(u8, v.name, "Wasm")) {
-        e = TypeError.custom(try std.fmt.allocPrint(
-            env.arena,
-            "`External.{s}` declares no `host` — a host is the runtime a wasm build binds to (decision 334)",
-            .{v.name},
-        ), "Delete it: `host:` is read on `External.Wasm` alone (`#[@External.Wasm(fn: body, host: .Wasi)]`).");
-    } else if (ast.WasmHost.ofArg(a.args[at]) == null) {
-        e = TypeError.custom(try std.fmt.allocPrint(
-            env.arena,
-            "`External.Wasm`'s `host` is `.Wasi` or `.Browser`, got `{s}`",
-            .{a.args[at]},
-        ), "Write `host: .Wasi` (wasmtime, WASI preview 2) or `host: .Browser` (JS imports, JSPI); a binding without `host:` serves every host.");
-    } else return;
-    if (a.loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
-}
-
-/// Decision 518 — `needs:` lists the host features a wasm binding needs, so
-/// it is `External.Wasm`'s alone, and each item is a value of std's closed
-/// enum `WasmNeed` (`.Exceptions`, `.Http`, `.Gc`; `ast.WasmNeed`). Written on
-/// another variant, as no list, or naming a value outside the enum, it is
-/// refused at the annotation (decision 516's reading: on every target).
-fn refuseNeedsArg(env: *Env, a: ast.Annotation) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    const at = ast.needsArgIndex(a) orelse return;
-    var e: TypeError = undefined;
-    if (!std.mem.eql(u8, v.name, "Wasm")) {
-        e = TypeError.custom(try std.fmt.allocPrint(
-            env.arena,
-            "`External.{s}` declares no `needs` — `needs:` names the host features a wasm binding needs (decision 518)",
-            .{v.name},
-        ), "Delete it: `needs:` is read on `External.Wasm` alone (`#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]`).");
-    } else if (try ast.needsItems(env.arena, a.args[at])) |items| {
-        for (items) |item| {
-            if (ast.WasmNeed.ofItem(item) != null) continue;
-            e = TypeError.custom(try std.fmt.allocPrint(
-                env.arena,
-                "`External.Wasm`'s `needs` names `{s}`, which is no `WasmNeed` — the needs are `.Exceptions`, `.Http` and `.Gc` (decision 518)",
-                .{item},
-            ), "A need is a value of std's closed enum `WasmNeed { Exceptions, Http, Gc }`: `needs: [.Exceptions]`. A host feature outside it is no binding's to ask for.");
-            break;
-        } else return;
-    } else {
-        e = TypeError.custom(try std.fmt.allocPrint(
-            env.arena,
-            "`External.Wasm`'s `needs` is a list of `WasmNeed` values, got `{s}`",
-            .{a.args[at]},
-        ), "Write `needs: [.Exceptions]` or `needs: [.Http]` — a list, each item `.Exceptions`, `.Http` or `.Gc` (decision 518).");
-    }
-    if (a.loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
-}
-
-/// Decision 334 — a `declare fn` has one wasm binding per host: at most one
-/// `#[@External.Wasm(…, host: .Wasi)]`, at most one `host: .Browser`, and a
-/// binding without `host:` (which serves every host) stands alone. A second
-/// binding for a host the function already has one for is refused at it,
-/// rather than one of the two read and the other dropped.
-fn refuseWasmHostTwice(env: *Env, f: ast.FnDecl) InferError!void {
-    var seen_any = false;
-    var seen_all = false;
-    var seen = [_]bool{ false, false };
-    for (f.annotations) |a| {
-        const v = externalVariantOf(a) orelse continue;
-        if (!std.mem.eql(u8, v.name, "Wasm")) continue;
-        const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
-        const twice = seen_all or (host == null and seen_any) or (if (host) |h| seen[@intFromEnum(h)] else false);
-        if (twice) {
-            const which = if (host) |h| try std.fmt.allocPrint(env.arena, "host '{s}'", .{@tagName(h)}) else "every host";
-            var e = TypeError.custom(try std.fmt.allocPrint(
-                env.arena,
-                "`{s}` binds wasm twice for {s} — one `#[@External.Wasm]` per host",
-                .{ f.name, which },
-            ), "Keep one binding per host: `host: .Wasi` and `host: .Browser` side by side, or one binding without `host:`, which serves every host.");
-            if (a.loc) |l| e = e.withLoc(l);
-            env.lastError = e;
-            return error.TypeError;
-        }
-        seen_any = true;
-        if (host) |h| seen[@intFromEnum(h)] = true else seen_all = true;
-    }
-}
-
-/// The inline rule on every `#[@External.<Target>(…)]` a method carries —
-/// `codegen/erlang.zig` and `codegen/beam_asm.zig` read `hasExternalInline` over
-/// a behavior's and a type's methods, so a flag written there is checked the
-/// same way a `declare fn`'s is (`validateExternalAnnotation`).
-fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
-    for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| for (f.annotations) |a| {
-            try refuseBareBoolFlag(env, a);
-            try refuseResultReturn(env, a, f.name, f.returnType, program);
-            try checkExternalCells(env, a, f.name, f, program);
-        },
-        else => {},
-    };
-    for (program.decls) |decl| switch (decl) {
-        .type_ => |tdecl| for (tdecl.methods) |m| {
-            for (m.annotations) |a| {
-                try refuseBareBoolFlag(env, a);
-                try refuseUnreadInline(env, a);
-                try refuseResultReturn(env, a, m.name, m.returnType, program);
-                try refuseHostArg(env, a);
-                try refuseNeedsArg(env, a);
-                try refuseStdBinding(env, a, m.name, m.params, m.returnType, null);
-                try checkExternalCells(env, a, m.name, null, program);
-            }
-        },
-        .behavior => |i| for (i.methods) |m| {
-            for (m.annotations) |a| {
-                try refuseBareBoolFlag(env, a);
-                try refuseUnreadInline(env, a);
-                try refuseResultReturn(env, a, m.name, m.returnType, program);
-                try refuseHostArg(env, a);
-                try refuseNeedsArg(env, a);
-                try refuseStdBinding(env, a, m.name, m.params, m.returnType, selfSpelling(i.name));
-                try checkExternalCells(env, a, m.name, null, program);
-            }
-        },
-        else => {},
-    };
-}
-
-/// Decisions 305 and 481 — a binding cell is a labelled argument of the kind
-/// it names. On `@External.Wasm` it is one of four: `fn: <identifier>`
-/// (resolved in the module and checked against the declaration,
-/// `hostFnBinding.resolve`), `op: "<opcode>"` (a string the opcode table
-/// holds), `wasi: .<Adapter>` (an adapter's enum value), `std:
-/// "<module>.<function>"` (a string, checked against std-wasm's exports by
-/// `refuseStdBinding`); a label `External.Wasm` does not take and a second
-/// cell are refused. Every other target's `@External.<Target>` takes `fn:`
-/// (decision 238). A `fn:` name the module does not bind is the ordinary
-/// unbound-name error at the argument. The prefixed string (`"fn:tanBody"`,
-/// `"op:f64.floor"`, `"wasi:delay"`, `"std:…"`) is no binding on any target:
-/// it is refused at the argument, naming the labelled form (one release,
-/// then an unlabelled string is host code with no exception). An opcode's
-/// and an adapter's signature are checked here too, on every target
-/// (`refuseWasmSignature`). `f` is the declaration when it is a
-/// module-level `declare fn` (`fn:` resolves against `program`'s
-/// functions), null on a method.
-fn checkExternalCells(env: *Env, a: ast.Annotation, name: []const u8, f: ?ast.FnDecl, program: ast.Program) InferError!void {
-    if (!a.is_builtin or !ast.isExternal(a)) return;
-    const wasm = ast.isExternalWasm(a);
-    const variant = a.name["External.".len..];
-    const written = a.writtenArgs();
-    var cells: usize = 0;
-    for (written, 0..) |arg, i| {
-        // A cell of the wrong form is located at the argument that writes
-        // it; a cell naming what does not exist, at the annotation, as the
-        // wasm backend's binding refusals are.
-        const loc = a.argLoc(i);
-        const label = a.labelOf(i) orelse {
-            const inner = unquotedString(arg) orelse continue;
-            for (ast.wasm_cell_labels) |l| {
-                if (inner.len > l.len and std.mem.startsWith(u8, inner, l) and inner[l.len] == ':') {
-                    // `std:` was only ever a wasm cell; on another target the
-                    // string is host code.
-                    if (!wasm and std.mem.eql(u8, l, "std")) continue;
-                    const labelled = try ast.wasmCellDisplay(env.arena, inner);
-                    // `op:` / `wasi:` are `@External.Wasm`'s cells alone.
-                    const into = if (wasm or std.mem.eql(u8, l, "fn")) variant else "Wasm";
-                    if (wasm) return wasmCellError(env, loc, try std.fmt.allocPrint(
-                        env.arena,
-                        "`#[@External.Wasm({s})]` on `{s}`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `#[@External.Wasm({s})]`",
-                        .{ arg, name, labelled },
-                    ));
-                    return wasmCellError(env, loc, try std.fmt.allocPrint(
-                        env.arena,
-                        "`#[@External.{s}({s})]` on `{s}`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `#[@External.{s}({s})]`",
-                        .{ variant, arg, name, into, labelled },
-                    ));
-                }
-            }
-            continue;
-        };
-        if (!wasm and !std.mem.eql(u8, label, "fn")) continue;
-        if (std.mem.eql(u8, label, "host") or std.mem.eql(u8, label, "needs") or std.mem.eql(u8, label, "inline") or std.mem.eql(u8, label, "result")) continue;
-        if (!ast.isWasmCellLabel(label)) {
-            return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`External.Wasm` on `{s}` takes no `{s}:` — a wasm binding is one cell, `fn:`, `op:`, `wasi:` or `std:`, beside `host:` (decision 481)",
-                .{ name, label },
-            ));
-        }
-        cells += 1;
-        if (cells > 1) {
-            return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.{s}]` on `{s}` writes a second cell, `{s}:` — a {s}binding is one cell (decision 481)",
-                .{ variant, name, label, if (wasm) "wasm " else "" },
-            ));
-        }
-        if (std.mem.eql(u8, label, "fn")) {
-            if (!isIdentText(arg)) return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.{s}(fn: {s})]` on `{s}`: `fn:` names a private fn of this module by its identifier, not a string (decisions 305, 481) — write `fn: <name>`",
-                .{ variant, arg, name },
-            ));
-            // Decision 305 — the name is a botopink name: one the module
-            // does not bind is the ordinary unbound-name error, at it.
-            if (!moduleBinds(env, program, arg)) {
-                env.lastError = TypeError.unboundVariable(arg).withLoc(loc orelse a.loc orelse return error.TypeError);
-                return error.TypeError;
-            }
-            if (f) |fd| if (fd.isDeclare) switch (try hostFnBinding.resolve(env.arena, fd, arg, program, "", variant)) {
-                .ok => {},
-                .refused => |msg| return wasmCellError(env, a.loc, msg),
-            };
-        } else if (std.mem.eql(u8, label, "op")) {
-            const op = unquotedString(arg) orelse return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.Wasm(op: {s})]` on `{s}`: `op:` names a wasm opcode by its text, a string (decision 481) — write `op: \"f64.floor\"`",
-                .{ arg, name },
-            ));
-            if (wasmHostBinding.findOp(op) == null) return wasmCellError(env, a.loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.Wasm(op: {s})]` on `{s}`: `{s}` is not a wasm numeric instruction a binding names (an `op:` names one opcode, e.g. `op: \"f64.floor\"`)",
-                .{ arg, name, op },
-            ));
-        } else if (std.mem.eql(u8, label, "wasi")) {
-            if (arg.len < 2 or arg[0] != '.' or !isIdentText(arg[1..]) or !std.ascii.isUpper(arg[1])) return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.Wasm(wasi: {s})]` on `{s}`: `wasi:` names an adapter by its enum value (decision 481) — write `wasi: .Delay`",
-                .{ arg, name },
-            ));
-            const text = unquotedString(a.args[i]) orelse a.args[i];
-            if (wasmHostBinding.findAdapter(text["wasi:".len..]) == null) {
-                const parsed = try wasmHostBinding.parse(env.arena, text, .{ .params = &.{}, .result = null });
-                return wasmCellError(env, a.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ parsed.refused.message, name }));
-            }
-        } else if (std.mem.eql(u8, label, "std")) {
-            if (unquotedString(arg) == null) return wasmCellError(env, loc, try std.fmt.allocPrint(
-                env.arena,
-                "`#[@External.Wasm(std: {s})]` on `{s}`: `std:` names a std-wasm function as a string, never a botopink name (decision 481) — write `std: \"<module>.<function>\"`",
-                .{ arg, name },
-            ));
-        }
-    }
-    if (wasm) if (f) |fd| if (fd.isDeclare) try refuseWasmSignature(env, a, fd);
-}
-
-/// Decisions 238 and 393 — an `op:` cell's opcode types and a `wasi:`
-/// adapter's signature are checked against the declaration at the annotation
-/// on every target, read by the wasm backend's own reader
-/// (`wat/host_binding.zig` `parse` over `signatureOf`): a binding no wasm
-/// build reaches is refused as a wasm build refuses it, with its message.
-fn refuseWasmSignature(env: *Env, a: ast.Annotation, f: ast.FnDecl) InferError!void {
-    const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
-    const ext = ast.externalRefOf(a, (host orelse ast.WasmHost.wasi).lookupName()) orelse return;
-    if (ext.module.len > 0) return;
-    if (!std.mem.startsWith(u8, ext.symbol, "op:") and !std.mem.startsWith(u8, ext.symbol, "wasi:")) return;
-    switch (try wasmHostBinding.parse(env.arena, ext.symbol, try wasmHostBinding.signatureOf(env.arena, f))) {
-        .ok => {},
-        .refused => |r| return wasmCellError(env, a.loc, try std.fmt.allocPrint(env.arena, "{s} (on `{s}`)", .{ r.message, f.name })),
-    }
-}
-
 /// True when `name` is bound at module level: a declaration of `program`
 /// (a `fn`, a `val`) or a name the checker has registered (a fn signature, an
 /// import, a builtin).
@@ -4319,13 +4155,6 @@ fn moduleBinds(env: *Env, program: ast.Program, name: []const u8) bool {
         else => {},
     };
     return false;
-}
-
-fn wasmCellError(env: *Env, loc: ?ast.Loc, msg: []const u8) InferError {
-    var e = TypeError.custom(msg, "A binding is one labelled cell: `fn: <private fn of this module>` on every target; on wasm also `op: \"<opcode>\"`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"` (std's alone).");
-    if (loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
 }
 
 /// The text inside a plain string literal argument (`"f64.floor"`), or null.
@@ -4354,21 +4183,19 @@ fn selfSpelling(behavior: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Decision 440 (3) — `#[@External.Wasm(std: "<module>.<function>")]` names a
-/// function std-wasm implements (`std_wasm.exports`), with the declaration's
-/// parameter and return types exactly — and only in one of std's own modules
-/// (decision 445, `Env.inStd`): anywhere else the cell is refused, naming the
-/// std function to call instead. A name std-wasm lacks, or other
-/// types, is refused at the annotation, on every target: the one cell serves
-/// the wasm codegen and the comptime runtime alike.
-fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []const ast.Param, ret: ?ast.TypeRef, self_ty: ?[]const u8) InferError!void {
-    const v = externalVariantOf(a) orelse return;
-    if (!std.mem.eql(u8, v.name, "Wasm")) return;
-    const ref = ast.externalRefOf(a, "wasm") orelse ast.externalRefOf(a, "wasm.browser") orelse return;
-    if (ref.module.len > 0 or !std.mem.startsWith(u8, ref.symbol, hostCells.std_cell_prefix)) return;
-    const fname = ref.symbol[hostCells.std_cell_prefix.len..];
-    const shown = try ast.wasmCellDisplay(env.arena, ref.symbol);
-    var e: TypeError = undefined;
+/// Decision 440 (3) — `.Wasm(std: "<module>.<function>")` names a function
+/// std-wasm implements (`std_wasm.exports`), with the declaration's parameter
+/// and return types exactly — and only in one of std's own modules (decision
+/// 445, `Env.inStd`): anywhere else the cell is refused, naming the std
+/// function to call instead. A name std-wasm lacks, or other types, is refused
+/// at the annotation, on every target: the one cell serves the wasm codegen
+/// and the comptime runtime alike.
+fn refuseStdBinding(env: *Env, impl: ast.Implementation, name: []const u8, params: []const ast.Param, ret: ?ast.TypeRef, self_ty: ?[]const u8) InferError!void {
+    if (impl.target != .wasm) return;
+    const cell = impl.cell orelse return;
+    if (cell.kind != .std_) return;
+    const fname = cell.value;
+    const shown = try ast.wasmCellDisplay(env.arena, impl.text);
     if (!env.inStd) {
         // Decision 445 — std-wasm's export names are internal to std: the
         // public contract is std's botopink API, named here.
@@ -4376,14 +4203,11 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
             try std.fmt.allocPrint(env.arena, " — call std's `{s}` instead", .{ex.api})
         else
             "";
-        e = TypeError.custom(try std.fmt.allocPrint(
+        return implError(env, impl.loc, try std.fmt.allocPrint(
             env.arena,
-            "`#[@External.Wasm({s})]` on `{s}`: a `std:` binding is std's alone (decision 445){s}",
+            "`.Wasm({s})` on `{s}`: a `std:` binding is std's alone (decision 445){s}",
             .{ shown, name, instead },
-        ), "std-wasm's functions are std's implementation, reached through std's API; a module of another package binds a host function of its own (`fn: <private fn>`, `op:`, `wasi:`).");
-        if (a.loc) |l| e = e.withLoc(l);
-        env.lastError = e;
-        return error.TypeError;
+        ), "std-wasm's functions are std's implementation, reached through std's API; a module of another package binds a host function of its own (`body: <private fn>`, `op:`, `wasi:`).");
     }
     if (stdWasm.find(fname)) |ex| {
         const spelled = try env.arena.alloc([]const u8, params.len);
@@ -4399,26 +4223,156 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
         }
         try have.appendSlice(env.arena, ") -> ");
         try have.appendSlice(env.arena, r orelse "void");
-        e = TypeError.custom(try std.fmt.allocPrint(
+        return implError(env, impl.loc, try std.fmt.allocPrint(
             env.arena,
-            "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
+            "`.Wasm({s})` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
             .{ shown, name, fname, stdWasm.signatureText(ex, &buf), name, have.items },
-        ), "Declare the function with std-wasm's types, or bind it otherwise (`fn: <private fn>`).");
-    } else if (stdLeaves.find(fname) != null) {
-        // Front 164 s3 — a `.wat` leaf alone: its types are GC types, which
-        // the wasm build checks against the declaration (`wat.zig`
-        // `checkLeafSignature`).
-        return;
-    } else {
-        e = TypeError.custom(try std.fmt.allocPrint(
-            env.arena,
-            "`#[@External.Wasm({s})]` on `{s}`: std-wasm implements no `{s}` (decision 440)",
-            .{ shown, name, fname },
-        ), try std.fmt.allocPrint(env.arena, "A `std:` binding names one of std-wasm's functions: {s}.", .{stdWasm.names}));
+        ), "Declare the function with std-wasm's types, or bind it otherwise (`body: <private fn>`).");
     }
-    if (a.loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
+    // Front 164 s3 — a `.wat` leaf alone: its types are GC types, which the
+    // wasm build checks against the declaration (`wat.zig`
+    // `checkLeafSignature`).
+    if (stdLeaves.find(fname) != null) return;
+    return implError(env, impl.loc, try std.fmt.allocPrint(
+        env.arena,
+        "`.Wasm({s})` on `{s}`: std-wasm implements no `{s}` (decision 440)",
+        .{ shown, name, fname },
+    ), try std.fmt.allocPrint(env.arena, "A `std:` binding names one of std-wasm's functions: {s}.", .{stdWasm.names}));
+}
+
+/// Decision 575 (6) — a bodyless `declare fn` (top-level, a type's, static
+/// included) is implemented by an annotation, or refused at the declaration;
+/// a behavior's member is a signature or a `default fn`, never a `declare
+/// fn`. A declaration file's bodyless declarations are the compiler's
+/// builtins (`Env.declarationFile`), which `#[builtin]` marks with decision
+/// 575 (2).
+fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .behavior => |b| for (b.methods) |m| if (m.is_declare) {
+            return implError(env, if (m.nameLoc.line > 0) m.nameLoc else null, try std.fmt.allocPrint(
+                env.arena,
+                "{s}: `{s}.{s}` is a `declare fn` inside a behavior — a behavior declares a member's signature, or a `default fn` with a body",
+                .{ diagnostics.declare_in_behavior, b.name, m.name },
+            ), "Delete `declare`: `fn name(self: Self) -> T;` is the member every implementor answers. A host function is a `declare fn` of a type, or a top-level one.");
+        },
+        else => {},
+    };
+    if (env.declarationFile) return;
+    for (program.decls) |decl| switch (decl) {
+        // A bodyless decorator (its first parameter the declaration) is a
+        // marker a library ships, read and never called.
+        .@"fn" => |f| if (f.isDeclare and f.body.len == 0 and f.implementations.len == 0 and !isDecoratorParams(f.params)) {
+            return refuseUnimplemented(env, f.name, if (f.nameLoc.line > 0) f.nameLoc else null);
+        },
+        .type_ => |t| for (t.methods) |m| if (m.is_declare and m.body == null and m.implementations.len == 0) {
+            return refuseUnimplemented(env, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ t.name, m.name }), if (m.nameLoc.line > 0) m.nameLoc else null);
+        },
+        else => {},
+    };
+}
+
+fn refuseUnimplemented(env: *Env, name: []const u8, loc: ?ast.Loc) InferError {
+    return implError(env, loc, try std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` is a bodyless `declare fn`, and no annotation implements it",
+        .{ diagnostics.declare_without_implementation, name },
+    ), "Name its host code on each target: `#[@external(.Erlang(\"…\"), .Node(\"…\"), .Wasm(…))]`, or give it a body (`fn`).");
+}
+
+/// Decision 575 (6) — each implementation a library's source annotation gave
+/// (`compiler.implement`, `Env.implementContributions`) appended to its
+/// declaration's, in the order the decorators ran.
+fn applyImplementContributions(env: *Env, program: ast.Program) InferError!void {
+    if (env.implementContributions.items.len == 0) return;
+    for (env.implementContributions.items) |c| {
+        for (program.decls) |*d| switch (d.*) {
+            .@"fn" => |*f| if (c.owner == null and std.mem.eql(u8, f.name, c.target)) {
+                f.implementations = try appendImpl(env, f.implementations, c.impl);
+            },
+            .type_ => |*t| if (c.owner) |o| if (std.mem.eql(u8, t.name, o)) for (t.methods) |*m| {
+                if (std.mem.eql(u8, m.name, c.target)) m.implementations = try appendImpl(env, m.implementations, c.impl);
+            },
+            else => {},
+        };
+    }
+    env.implementContributions.clearRetainingCapacity();
+}
+
+fn appendImpl(env: *Env, have: []ast.Implementation, impl: ast.Implementation) InferError![]ast.Implementation {
+    const out = try env.arena.alloc(ast.Implementation, have.len + 1);
+    @memcpy(out[0..have.len], have);
+    out[have.len] = impl;
+    return out;
+}
+
+/// The `Implementation` a decorator body built (its JSON, the prelude's
+/// `'__bp_metaJson'/1`): a variant is a tuple `{Tag, Field…}` — its tag the
+/// variant's name, its fields in declaration order — or null.
+fn implementationOfJson(arena: std.mem.Allocator, v: std.json.Value) InferError!?ast.Implementation {
+    const items = switch (v) {
+        .object => |o| if (o.get("tuple")) |t| (if (t == .array) t.array.items else return null) else return null,
+        else => return null,
+    };
+    if (items.len == 0 or items[0] != .string) return null;
+    const tag = items[0].string;
+    // An atom names the variant last: `…__v__erlang`, `'Erlang'`.
+    const leaf = if (std.mem.lastIndexOf(u8, tag, "__v__")) |i| tag[i + "__v__".len ..] else tag;
+    const target = ast.Implementation.Target.ofMember(if (std.ascii.eqlIgnoreCase(leaf, "beam")) "" else leaf) orelse return null;
+    const fields = implementationsParse.fieldsOf(target);
+    var impl: ast.Implementation = .{ .target = target };
+    for (items[1..], 0..) |x, k| {
+        if (k >= fields.len) break;
+        const field = fields[k];
+        const str: ?[]const u8 = if (x == .string) x.string else null;
+        if (std.mem.eql(u8, field, "template")) {
+            if (str) |t| impl.template = try arena.dupe(u8, t);
+        } else if (std.mem.eql(u8, field, "inline")) {
+            impl.inline_ = x == .bool and x.bool;
+        } else if (std.mem.eql(u8, field, "result")) {
+            impl.result = x == .bool and x.bool;
+        } else if (std.mem.eql(u8, field, "op") or std.mem.eql(u8, field, "std")) {
+            if (str) |t| impl.cell = .{ .kind = if (field[0] == 'o') .op else .std_, .value = try arena.dupe(u8, t) };
+        }
+    }
+    impl.text = if (impl.cell) |c| try std.fmt.allocPrint(arena, "{s}:{s}", .{ c.kind.prefix(), c.value }) else try arena.dupe(u8, impl.template orelse "");
+    if (impl.template == null and impl.cell == null) return null;
+    return impl;
+}
+
+/// Every declaration's implementations (`checkImplementations`), then the
+/// bodyless declarations none implements.
+fn checkProgramImplementations(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| try checkImplementations(env, program, .{
+            .name = f.name,
+            .params = f.params,
+            .ret = f.returnType,
+            .hasBody = !f.isDeclare or f.body.len > 0,
+            .site = .top_level,
+            .fnDecl = f,
+            .loc = f.nameLoc,
+        }, f.annotations, f.implementations),
+        .type_ => |t| for (t.methods) |m| try checkImplementations(env, program, .{
+            .name = m.name,
+            .params = m.params,
+            .ret = m.returnType,
+            .hasBody = m.body != null,
+            .site = .type_method,
+            .loc = m.nameLoc,
+        }, m.annotations, m.implementations),
+        .behavior => |b| for (b.methods) |m| try checkImplementations(env, program, .{
+            .name = m.name,
+            .params = m.params,
+            .ret = m.returnType,
+            .hasBody = m.body != null,
+            .site = .behavior_member,
+            .isDefault = m.is_default,
+            .selfTy = selfSpelling(b.name),
+            .loc = m.nameLoc,
+        }, m.annotations, m.implementations),
+        else => {},
+    };
+    try refuseUnimplementedDeclares(env, program);
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as
@@ -4448,62 +4402,6 @@ fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
         },
         else => "another type",
     };
-}
-
-/// Type-checks one `external(target, module, symbol)` annotation against its
-/// builtin signature (builtins.d.bp): `fn external(target: Target, module: string, symbol: string)`.
-fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) InferError!void {
-    // 01 step 9 — the annotation itself is the location (a `declare fn` has no
-    // body statement to fall back on).
-    const fnLoc: ?ast.Loc = a.loc orelse if (f.body.len > 0) f.body[0].expr.getLoc() else null;
-    const fail = struct {
-        fn fail(e_: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
-            var e = TypeError.custom(msg, hint);
-            if (loc) |l| e = e.withLoc(l);
-            e_.lastError = e;
-            return error.TypeError;
-        }
-    }.fail;
-    // RULE: `external` annotations are only valid on `declare fn` declarations
-    // — the host symbol replaces the body, so an annotated plain `fn` (with or
-    // without a body) is malformed.
-    if (!f.isDeclare) {
-        return fail(env, fnLoc, "`#[@External.<Target>(…)]` requires a `declare fn` declaration", "Write `#[@External.Erlang( \"string\", \"length\")] pub declare fn length(s: string) -> i32;`");
-    }
-    // target validation: the variant must name a known target.
-    if (externalVariantOf(a) == null) {
-        return fail(env, fnLoc, "`@external` target must be a Target member: node, typescript, erlang or wasm", "Example: #[@External.Erlang( \"string\", \"length\")]");
-    }
-    // `inline` (front 20 F9): read on the variants that declare it, refused on
-    // the ones that do not — before the arity count, which would otherwise
-    // report the unread flag as a wrong argument count.
-    try refuseUnreadInline(env, a);
-    // Decision 334: `host:` on `External.Wasm` alone, `.Wasi` or `.Browser`.
-    try refuseHostArg(env, a);
-    try refuseNeedsArg(env, a);
-    // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
-    // or module + symbol). The labelled flags (`inline:`, `result:`) and
-    // wasm's `host:` are not among them, wherever they are written.
-    const host_at = ast.hostArgIndex(a);
-    const needs_at = ast.needsArgIndex(a);
-    var body_args: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (a.args, 0..) |arg, i| {
-        if (host_at != null and i == host_at.?) continue;
-        if (needs_at != null and i == needs_at.?) continue;
-        if (ast.isExternalFlagArg(a, i)) continue;
-        try body_args.append(env.arena, arg);
-    }
-    const effective_len = body_args.items.len;
-    if (effective_len < 1 or effective_len > 2) {
-        return fail(env, fnLoc, "`@external` expects 1 or 2 arguments: module and/or symbol", "Example: #[@External.Erlang( \"string\", \"length\")] or #[@External.Node(\"reverse\")]");
-    }
-    // remaining args: string literals or `when(argc == N): "<template>"` branches.
-    for (body_args.items[0..effective_len]) |arg| {
-        if (ast.parseArityBranchArg(arg) != null) continue;
-        if (arg.len < 2 or arg[0] != '"') {
-            return fail(env, fnLoc, "`@external` module and symbol must be string literals", "Example: #[@External.Node(\"./gleam_stdlib.mjs\", \"string_length\")]");
-        }
-    }
 }
 
 // ── generic decorator argument validation (annotation processors, P1) ─────────
@@ -4799,11 +4697,11 @@ fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void
     };
 }
 
-/// The builtin annotation families: what a `#[@<Family>…]` may name. `External`
-/// (the host targets, `validateExternalAnnotation`), `BeamMemory`
-/// (`validateMemoryAnnotations`) and `Host` (wasm's prelude-backed fns). The
-/// removed effect annotations never reach here — the parser refuses them.
-const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host", "Stage" };
+/// The builtin annotation families: what a `#[@<Family>…]` may name.
+/// `BeamMemory` (`validateMemoryAnnotations`) and `Stage`; `@external` is
+/// std's decorator (`external.bp`, decision 575 (6)). The removed effect
+/// annotations never reach here — the parser refuses them.
+const builtin_annotation_families = [_][]const u8{ "BeamMemory", "Stage" };
 
 /// Decision 15 gives the annotation grammar to the checker, and front 17 step
 /// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever: 42)]` parsed,
@@ -4812,8 +4710,8 @@ const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Ho
 /// nothing said. Every `@`-prefixed annotation now names a family the compiler
 /// reads, or an annotation type (`implement @Annotation`) the module can see;
 /// anything else is `unknown-annotation` at the annotation, naming the family
-/// an edit away when there is one. The lower-case `@external` keeps its own
-/// message (`refuseLowerCaseExternal`).
+/// an edit away when there is one. The removed `@External.<Target>` and
+/// `@Host` name what replaced them (decision 575 (6)).
 fn refuseUnknownAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try refuseUnknownAnnotationList(env, f.annotations),
@@ -4845,10 +4743,19 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
             env.lastError = err;
             return error.TypeError;
         }
-        try refuseLowerCaseExternal(env, a);
-        try refuseExternalBeam(env, a);
         if (ast.isRemovedEffectAnnotation(a.name)) continue;
         const family = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
+        // Decision 575 (6) — `@External.<Target>` and `@Host` are gone.
+        if (std.mem.eql(u8, family, "External") or std.mem.eql(u8, a.name, "Host")) {
+            const msg = if (std.mem.eql(u8, a.name, "Host"))
+                try std.fmt.allocPrint(env.arena, "{s}: `#[@Host]` is gone (decision 575 (6))", .{diagnostics.unknown_annotation})
+            else
+                try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` is gone — a `declare fn` names its sources with `#[@external(.{s}(…))]` (decision 575 (6))", .{ diagnostics.unknown_annotation, a.name, if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[i + 1 ..] else "<Target>" });
+            var e = TypeError.custom(msg, "Each source is a value of std's `Implementation`: `#[@external(.Erlang(\"lists:member($1, $0)\"), .Node(\"$0.includes($1)\"), .Wasm(op: \"f64.floor\"))]`.");
+            if (a.loc) |l| e = e.withLoc(l);
+            env.lastError = e;
+            return error.TypeError;
+        }
         var known = false;
         for (builtin_annotation_families) |k| {
             if (std.mem.eql(u8, family, k)) known = true;
@@ -4871,7 +4778,7 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
             try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family — did you mean `@{s}`?", .{ diagnostics.unknown_annotation, a.name, n })
         else
             try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family", .{ diagnostics.unknown_annotation, a.name });
-        var e = TypeError.custom(msg, "The builtin annotations are `@External.<Target>`, `@BeamMemory.<Mode>`, `@Host` and `@Stage.Any`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
+        var e = TypeError.custom(msg, "The builtin annotations are `@external(…)`, `@BeamMemory.<Mode>` and `@Stage.Any`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
         if (a.loc) |l| e = e.withLoc(l);
         env.lastError = e;
         return error.TypeError;
@@ -4935,7 +4842,6 @@ fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!
     for (program.decls) |decl| {
         const name: []const u8, const params: []const ast.Param = switch (decl) {
             .@"fn" => |f| .{ f.name, f.params },
-            .delegate => |d| .{ d.name, d.params },
             else => continue,
         };
         if (!isDecoratorParams(params)) {
@@ -4974,7 +4880,9 @@ fn refuseComptimeDefaults(env: *Env, params: []const ast.Param, catalogue: bool)
 /// Check one declaration's annotation list.
 fn checkDecoratorAnnotations(env: *Env, program: ast.Program, anns: []const ast.Annotation, target: DecoratedDecl) InferError!void {
     for (anns) |a| {
-        if (a.is_builtin) continue; // `@external`, … validated by their own pass.
+        if (a.is_builtin) continue; // `@BeamMemory`, … validated by their own pass.
+        // Decision 575 (6) — `external`'s sources: `checkImplementations`.
+        if (implementationsParse.isSourceAnnotation(a)) continue;
         const sig = env.decorators.get(a.name) orelse continue;
         try checkDecoratorArgs(env, program, a, sig, target);
     }
@@ -5269,7 +5177,17 @@ fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: u
         .call => |c| {
             if (c.kind != .call) return c.loc;
             const call = c.kind.call;
-            if (call.receiver == null and !call.is_builtin and env.lookupTypeDef(call.callee) != null) {
+            // A constructor builds a value from known ones: a record's
+            // (`Entity(…)`), a variant's — qualified (`Implementation.Erlang(…)`)
+            // or written `.Erlang(…)`, its enum the parameter's (decision
+            // 575 (6)).
+            const variant = if (call.calleeExpr) |ce|
+                ce.* == .identifier and ce.identifier.kind == .dotIdent
+            else if (call.receiver) |r|
+                r.* == .identifier and r.identifier.kind == .ident and env.lookupTypeDef(r.identifier.kind.ident) != null
+            else
+                false;
+            if (variant or (call.receiver == null and !call.is_builtin and env.lookupTypeDef(call.callee) != null)) {
                 for (call.args) |arg| if (decoratorArgNotKnownAt(env, program, arg.value.*, depth + 1)) |l| return l;
                 return null;
             }
@@ -5658,6 +5576,10 @@ fn runDeclDecorators(
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
+        // Decision 575 (6) — std's `external` implements what it is written
+        // with: the parser read its sources (`parser/implementations.zig`),
+        // and its body is that reading.
+        if (implementationsParse.isSourceAnnotation(a)) continue;
         // Decision 311 — `#[f "…"]` runs the template function `f` over the
         // declaration: the literal its `q`, the handle its `decl`
         // (`checkTemplateAnnotations` refused any other shape first).
@@ -5834,6 +5756,15 @@ fn runDeclDecorators(
                     // `decl.setMeta(v)` / `decl.addMeta(v)` (decision 298) — a
                     // typed value keyed by its record type.
                     .typedMeta => try recordTypedMeta(env, a, dfn, handle, values, c, memberOwner),
+                    // `compiler.implement(source)` (decision 575 (6)) — the
+                    // annotated declaration's implementation.
+                    .implement => {
+                        var impl = (try implementationOfJson(env.arena, c.data orelse .null)) orelse {
+                            return decoratorError(env, a, "`compiler.implement` was handed no `Implementation`", "Hand it a value of std's `Implementation`: `compiler.implement(.Erlang(\"lists:member($1, $0)\"))`.");
+                        };
+                        impl.loc = a.loc;
+                        try env.implementContributions.append(env.arena, .{ .target = handle.name, .owner = memberOwner, .impl = impl });
+                    },
                     // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
                     // the session's reflection under the decorator's own name,
                     // before any body of this module is inferred (a `.hooks`
@@ -6915,7 +6846,7 @@ fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc
 /// The `@Decl` methods that write the declaration (decision 216; 316's
 /// `wrapWith`).
 fn isDeclWrite(callee: []const u8) bool {
-    const writes = [_][]const u8{ "setMeta", "addMeta", "addMember", "addType", "wrapWith" };
+    const writes = [_][]const u8{ "setMeta", "addMeta", "addMember", "addType", "wrapWith", "implement" };
     for (writes) |w| if (std.mem.eql(u8, callee, w)) return true;
     return false;
 }
@@ -8194,55 +8125,11 @@ fn refuseRecordFieldAssign(
     return error.TypeError;
 }
 
-fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
-    if (!a.is_builtin) return;
-    const misspelled = std.ascii.eqlIgnoreCase(a.name, "external") or
-        (std.ascii.startsWithIgnoreCase(a.name, "external.") and
-            !std.mem.startsWith(u8, a.name, "External."));
-    if (!misspelled) return;
-    // `#[@external(node, "…")]` names its target in the first argument;
-    // `#[@external.node("…")]` in the path. Either way the fix is the same
-    // annotation with the target capitalised, so spell it out.
-    const target: []const u8 = blk: {
-        if (std.mem.indexOfScalar(u8, a.name, '.')) |i| break :blk a.name[i + 1 ..];
-        const args = a.writtenArgs();
-        if (args.len >= 1 and args[0].len > 0 and std.ascii.isAlphabetic(args[0][0])) break :blk args[0];
-        break :blk "Node";
-    };
-    const capitalised = try env.arena.dupe(u8, target);
-    if (capitalised.len > 0) capitalised[0] = std.ascii.toUpper(capitalised[0]);
-    var e = TypeError.custom(
-        try std.fmt.allocPrint(
-            env.arena,
-            "`#[@{s}]` binds no host — an external target is written `External.<Target>`",
-            .{a.name},
-        ),
-        try std.fmt.allocPrint(
-            env.arena,
-            "Write `#[@External.{s}(\"<template>\")]`; only the capitalised path form is read as host-backed.",
-            .{capitalised},
-        ),
-    );
-    if (a.loc) |l| e = e.withLoc(l);
-    env.lastError = e;
-    return error.TypeError;
-}
-
 fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // 01 step 13 — the parameters and every local end with the body.
     var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
     const outerScope = env.openBodyScope(&bodyLog);
     defer env.closeBodyScope(&bodyLog, outerScope, f.name);
-    // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
-    for (f.annotations) |a| {
-        try refuseLowerCaseExternal(env, a);
-        try refuseExternalBeam(env, a);
-        if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
-            try validateExternalAnnotation(env, f, a);
-        }
-    }
-    try refuseWasmHostTwice(env, f);
-    for (f.annotations) |a| try refuseStdBinding(env, a, f.name, f.params, f.returnType, null);
     try checkRecordParams(env, f);
 
     // Build generic map.
@@ -8854,7 +8741,7 @@ fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
 fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
     if (f.returnType == null or f.typeGuardParam != null or f.isDeclare) return;
     if (env.inTemplateFn) return;
-    for (f.annotations) |a| if (std.mem.startsWith(u8, a.name, "External")) return;
+    if (f.isExternal()) return;
     const rt = retType.deref();
     if (f.effect) |eff| {
         switch (eff) {
@@ -18001,6 +17888,21 @@ fn planLabelledCall(
                     return error.TypeError;
                 }
             }
+            // A label twice, or a parameter with no default left out.
+            for (labels, 0..) |ml, i| {
+                const l = ml orelse continue;
+                for (labels[i + 1 ..]) |other| if (other) |o| if (std.mem.eql(u8, l, o)) {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "a parameter of `{s}` is given twice", .{callee}),
+                        "Each parameter takes one argument: by its label, or by its position among the unlabelled ones.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                };
+            }
+            if (labels.len <= params.len) {
+                env.lastError = TypeError.arityMismatch(callee, params.len, labels.len).withLoc(loc);
+                return error.TypeError;
+            }
             env.lastError = TypeError.custom(
                 try std.fmt.allocPrint(env.arena, "a parameter of `{s}` is given twice", .{callee}),
                 "Each parameter takes one argument: by its label, or by its position among the unlabelled ones.",
@@ -19099,13 +19001,12 @@ fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
     return null;
 }
 
-/// JS prototype-method rename driven by the bare-symbol `#[@External.Node("X")]`
-/// annotation on a primitive-receiver interface method. Returns the host
+/// JS prototype-method rename driven by the bare-symbol `.Node("X")`
+/// implementation of a primitive-receiver interface method. Returns the host
 /// symbol `X` when it differs from `callee` (the call site emits
 /// `recv.X(args)` instead of `recv.callee(args)`); returns null when there is
-/// no node annotation, when the module is non-empty (3-arg Math/relative form),
-/// or when the symbol carries a call template (`"sym(a, self)"`) — those are
-/// not call-site renames. Walks the receiver's interface and its `extends`
+/// no node implementation, or when the symbol carries a call template
+/// (`"sym(a, self)"`) — those are not call-site renames. Walks the receiver's interface and its `extends`
 /// chain so an annotation on `Number.toString` covers every numeric width.
 fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?[]const u8 {
     const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return null;
@@ -19119,10 +19020,10 @@ fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
             if (!std.mem.eql(u8, m.name, callee)) continue;
             if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
             const ref = m.externalFor("node") orelse return null;
-            if (ref.module.len != 0) return null;
-            if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
-            if (std.mem.eql(u8, ref.symbol, callee)) return null;
-            return ref.symbol;
+            if (ref.cell != null) return null;
+            if (std.mem.indexOfScalar(u8, ref.text, '(') != null) return null;
+            if (std.mem.eql(u8, ref.text, callee)) return null;
+            return ref.text;
         }
         current = if (decl.extends.len > 0) decl.extends[0] else null;
     }
@@ -19159,7 +19060,7 @@ fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, lo
         for (decl.methods) |m| {
             if (std.mem.eql(u8, m.name, callee)) return;
             if (host_match == null) if (m.externalFor("node")) |ref| {
-                if (std.mem.eql(u8, ref.symbol, callee)) host_match = m.name;
+                if (std.mem.eql(u8, ref.text, callee)) host_match = m.name;
             };
             if (near_match == null and editDistanceIsOne(callee, m.name)) near_match = m.name;
         }
@@ -19200,24 +19101,15 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
             if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
             if (m.is_default) return .{ .method = m, .owner = cname };
             if (m.externalFor("node")) |ref| {
-                // Template-form annotation (`$0`/`$1`/… markers): the
+                // Template-form implementation (`$0`/`$1`/… markers): the
                 // commonJS prototype patcher (§F1) renders the template into a
                 // `Owner.prototype.<m>` body, so dispatch resolution should run
-                // here too (marks the interface used so codegen walks it). The
-                // 1-arg form has `module == ""` + `symbol = <template>`, so
-                // this case takes precedence over the §A4 native-prototype
-                // skip (which `continue`s on `ref.module.len == 0`).
-                if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                // here too (marks the interface used so codegen walks it). A
+                // bare symbol (`.Node("X")`) names a native prototype method —
+                // the prim-block rename's, NOT here.
+                if (primOpTemplate.looksLikeTemplate(ref.text)) {
                     return .{ .method = m, .owner = cname };
                 }
-                // A JS global namespace (`Math`) lowers as `Math.sym(self, …)`,
-                // dispatched through the stdlib lib path. The §A4 2-arg shorthand
-                // (`#[@External.Node("X")]`, module empty) names a native prototype
-                // method — that case is handled by the prim-block rename, NOT here.
-                if (ref.module.len == 0) continue;
-                const is_global = std.mem.indexOfScalar(u8, ref.module, '/') == null and
-                    std.mem.indexOfScalar(u8, ref.module, '.') == null;
-                if (is_global) return .{ .method = m, .owner = cname };
             }
         }
         current = if (decl.extends.len > 0) decl.extends[0] else null;
@@ -20338,15 +20230,13 @@ fn callFoldableOrErr(env: *Env, c: ast.CallExprOf(.untyped)) InferError!bool {
 }
 
 /// Decisions 434 (4), 452 — a host function the comptime runtime answers:
-/// one whose `@External.Wasm` binding is a `std:` cell or a `fn:` body (an
-/// `op:` instruction is the wasm target's alone).
+/// one whose `.Wasm` implementation is a `std:` cell or a `body:` (an `op:`
+/// instruction is the wasm target's alone).
 fn servedAtBuild(f: ast.FnDecl) bool {
-    for (f.annotations) |a| {
-        if (!ast.isExternalWasm(a)) continue;
-        for (a.args) |arg| {
-            const inner = if (arg.len >= 2 and arg[0] == '"' and arg[arg.len - 1] == '"') arg[1 .. arg.len - 1] else arg;
-            if (std.mem.startsWith(u8, inner, "std:") or std.mem.startsWith(u8, inner, "fn:")) return true;
-        }
+    for (f.implementations) |i| {
+        if (i.target != .wasm) continue;
+        const c = i.cell orelse continue;
+        if (c.kind == .std_ or c.kind == .body) return true;
     }
     return false;
 }
@@ -20600,12 +20490,11 @@ fn markHookAsync(env: *Env) InferError!void {
         try env.syncCalls.put(env.arena, e.key_ptr.*, {});
 }
 
-/// A host function — `declare fn`, an `#[@External…]` binding — or std's
+/// A host function — `declare fn`, an implemented one — or std's
 /// compiler-lowered `provide` / `context`: no node.
 fn isHookHost(f: ast.FnDecl) bool {
     if (f.isDeclare or f.body.len == 0) return true;
-    for (f.annotations) |a| if (a.is_builtin and std.mem.startsWith(u8, a.name, "External")) return true;
-    return false;
+    return f.isExternal();
 }
 
 /// Decision 277 — publish this module's top-level functions with their nodes
@@ -22319,17 +22208,22 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             const resolved = calleeType.deref();
                             const retType: *T.Type = switch (resolved.*) {
                                 .func => |f| blk: {
-                                    if (f.params.len == typedArgs.len) {
-                                        // 01 — `Shape.Rect(height: 2, width: 5)`: a
-                                        // label names the field it fills; the call
-                                        // is checked and lowered in declaration
-                                        // order (erlang zipped it positionally).
-                                        const declared = env.ctorParams.get(qualified);
-                                        const plan = if (declared) |d| (if (d.len == f.params.len) try planLabelledCall(env, qualified, d, typedArgs, loc) else null) else null;
-                                        if (plan) |p| {
-                                            try env.defaultInjections.put(loc, p);
-                                            try unifyFilledArgs(env, p, f.params, typedArgs);
-                                        } else for (typedArgs, f.params) |ta, p|
+                                    // 01 — `Shape.Rect(height: 2, width: 5)`: a
+                                    // label names the field it fills; the call
+                                    // is checked and lowered in declaration
+                                    // order (erlang zipped it positionally). A
+                                    // field left out takes its default
+                                    // (`Implementation.Erlang("…", result:
+                                    // true)`, decision 575 (6)): the call is
+                                    // planned as a record constructor's is, and
+                                    // a label no field declares is refused.
+                                    const declared = env.ctorParams.get(qualified);
+                                    const plan = if (declared) |d| (if (d.len == f.params.len) try planLabelledCall(env, qualified, d, typedArgs, loc) else null) else null;
+                                    if (plan) |p| {
+                                        try env.defaultInjections.put(loc, p);
+                                        try unifyFilledArgs(env, p, f.params, typedArgs);
+                                    } else if (f.params.len == typedArgs.len) {
+                                        for (typedArgs, f.params) |ta, p|
                                             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
                                     }
                                     break :blk f.ret;

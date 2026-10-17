@@ -44,7 +44,8 @@ parser/
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
 ├── expr_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `expr` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `expr` is the declaration handle (`declHandle`); decision 370 (1): a record field's `@Expr<T>` likewise (`Field.exprWrapped`)
 ├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a `-> expr T` template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
-├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
+├── implementations.zig ← decision 575 (6): each declaration's `#[external(…)]` sources read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
+├── template_markers.zig ← decision 5: an implementation's template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
 │                     `self`-first top-level fns on Erlang/Beam too), keeps the source in `Annotation.source_args`
@@ -733,8 +734,8 @@ where it starts (`Param.loc`, the refusal site of `decorator-param-not-comptime`
 
 ## Annotations (`parseAnnotationCall`)
 
-The annotation name may be a qualified path — `@External.Erlang(…)` lands as
-`Annotation.name = "External.Erlang"` with `is_builtin = true` (leading `@`
+The annotation name may be a qualified path — `.Erlang(…)` lands as
+`Annotation.name = ".Erlang"` with `is_builtin = true` (leading `@`
 stripped). Arguments are kept as **raw lexemes** (`Annotation.args: []const []const u8`),
 each located (`Annotation.argLocs`, `argLoc(i)`); each reader (`FnDecl.externalFor`,
 `ast.parseArityBranchArg`, …) interprets them. The argument of a user
@@ -755,7 +756,7 @@ annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
   is `annotation-label-equals`, located at the label, the caret caption
   naming `label:`. A keyword is a label too (`fn: tanBody`, decision 481):
   before `:` it starts no expression. A binding cell's value — `fn:` on every
-  `@External.<Target>`, and `op:`, `wasi:`, `std:` on `@External.Wasm` —
+  `.<Target>(…)`, and `op:`, `wasi:`, `std:` on `.Wasm` —
   lands as its binding text (`ast.translateExternalCells`: `fn: tanBody` →
   `"fn:tanBody"`, `wasi: .RaceOf` → `"wasi:race_of"`), the spelling kept in
   `source_args` for the formatter and the checker.

@@ -168,7 +168,7 @@ pub const Declared = struct {
 };
 
 /// Every builtin declaration of `sources`: each top-level `declare fn`
-/// (annotated — a `FnDecl` — or not — a `DelegateDecl`), and
+/// (annotated or not, a `FnDecl`), and
 /// each static `declare fn` (no `self`) inside a declared `type`, named
 /// `<Type>.<fn>`. A string default is rendered with its quotes.
 pub fn collectDeclared(alloc: std.mem.Allocator, sources: []const []const u8) ![]Declared {
@@ -180,11 +180,6 @@ pub fn collectDeclared(alloc: std.mem.Allocator, sources: []const []const u8) ![
         const program = try p.parse(alloc);
         for (program.decls) |d| switch (d) {
             .@"fn" => |f| if (f.isDeclare) try out.append(alloc, .{
-                .name = f.name,
-                .signature = try quoteStringDefaults(alloc, try renderSignature(alloc, null, f.name, f.genericParams, f.params, f.returnType), f.params),
-            }),
-            // An unannotated `declare fn` parses as a delegate declaration.
-            .delegate => |f| try out.append(alloc, .{
                 .name = f.name,
                 .signature = try quoteStringDefaults(alloc, try renderSignature(alloc, null, f.name, f.genericParams, f.params, f.returnType), f.params),
             }),

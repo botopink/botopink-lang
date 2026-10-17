@@ -107,18 +107,10 @@
             "name": "reverse",
             "annotations": [
               {
-                "name": "External.Erlang",
+                "name": "external",
                 "args": [
-                  "\"lists\"",
-                  "\"reverse\""
-                ],
-                "is_builtin": true
-              },
-              {
-                "name": "External.Node",
-                "args": [
-                  "\"./bp_stdlib.mjs\"",
-                  "\"list_reverse\""
+                  ".Erlang(\"lists:reverse($0)\")",
+                  ".Node(\"./bp_stdlib.mjs\", \"list_reverse\")"
                 ],
                 "is_builtin": true
               }

@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `moduleNamed`'s `#[@External.Erlang(…)]` template does not compile for the beam backend: macros (`?NAME`)
+refused error: `moduleNamed`'s `.Erlang(…)` template does not compile for the beam backend: macros (`?NAME`)
 at src/main.bp:13:12

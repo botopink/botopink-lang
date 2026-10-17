@@ -153,7 +153,7 @@ classifies the outcome (`runner.classifyAudit`):
 
 | Outcome | Verdict |
 |---|---|
-| the build is refused, and its **first** `error` line is the missing host binding — `` `f` has no `#[@External.<Target>(…)]` for the <backend> backend ``, or the same reached through a bodied function (`` `g` calls `f`, which has no … ``) | `ok` — the exclusion is **structural**: the lib cannot run there. `·` |
+| the build is refused, and its **first** `error` line is the missing host binding — `` `f` has no `#[@external(.<Target>(…))]` for the <backend> backend ``, or the same reached through a bodied function (`` `g` calls `f`, which has no … ``) | `ok` — the exclusion is **structural**: the lib cannot run there. `·` |
 | the build succeeds | `not_structural` — the exclusion hides a cell that could run. `!`, the run fails |
 | the build fails and its first error is anything else (a parse error, a type error, a compiler gap, the closing `N module(s) failed` alone) | `not_structural` — the exclusion hides a red. `!`, the run fails |
 | the build fails and prints no `error` line | `not_structural`. `!`, the run fails |
@@ -175,7 +175,7 @@ start accepting something else — and
 builds (structural, builds, another error). The "first error" rule is
 deliberate: a build that reports any other error first is a red in its own
 right, whatever follows it. The beam-only template refusal (`` `f`'s
-`#[@External.Erlang(…)]` template does not compile for the beam backend ``) is a
+`#[@external(.Erlang(…))]` template does not compile for the beam backend ``) is a
 different diagnostic — the binding exists — and is not accepted.
 
 An excluded target `botopink test` cannot run (beam, wasm) is neither a cell nor

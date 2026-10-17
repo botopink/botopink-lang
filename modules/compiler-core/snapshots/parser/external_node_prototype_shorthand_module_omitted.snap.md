@@ -14,17 +14,10 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Node",
+            "name": "external",
             "args": [
-              "\"reverse\""
-            ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Erlang",
-            "args": [
-              "\"lists\"",
-              "\"reverse\""
+              ".Node(\"reverse\")",
+              ".Erlang(\"lists:reverse($0)\")"
             ],
             "is_builtin": true
           }

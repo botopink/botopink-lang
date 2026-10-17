@@ -2,9 +2,11 @@
 //// one `declare fn` would leave the compiler reading one and dropping the
 //// other; the second is refused at its annotation.
 
-#[@External.Node("Math", "floor")]
-#[@External.Wasm(op: "f64.floor", host: .Wasi)]
-#[@External.Wasm(op: "f64.ceil", host: .Wasi)]
+#[@external(
+    .Node("Math.floor($0)"),
+    .Wasm(op: "f64.floor", host: .Wasi),
+    .Wasm(op: "f64.ceil", host: .Wasi),
+)]
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {

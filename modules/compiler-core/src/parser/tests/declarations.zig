@@ -395,15 +395,14 @@ test "parser: annotation ---- interface shorthand" {
 
 test "parser: annotation block ---- hash bracket builtin" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang( "string", "length"),
-        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
+        \\#[@external(.Erlang("string:length($0)"), .Node("./gleam_stdlib.mjs", "string_length"))]
         \\pub declare fn length(s: string) -> i32;
     );
 }
 
 test "parser: annotation block ---- external decl then next decl" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang( "erlang", "abs")]
+        \\#[@external(.Erlang("erlang:abs($0)"))]
         \\pub declare fn absoluteValue(n: i32) -> i32;
         \\
         \\fn main() {
@@ -569,8 +568,7 @@ test "parser: interface with default method and external declare member" {
         \\    default fn isEmpty(self: Self) -> bool {
         \\        return self.length == 0;
         \\    }
-        \\    #[@External.Erlang( "lists", "reverse"),
-        \\      @External.Node("./bp_stdlib.mjs", "list_reverse")]
+        \\    #[@external(.Erlang("lists:reverse($0)"), .Node("./bp_stdlib.mjs", "list_reverse"))]
         \\    declare fn reverse(self: Self) -> Array<T>;
         \\}
     );
@@ -580,23 +578,21 @@ test "parser: interface with default method and external declare member" {
 
 test "parser: external ---- qualified enum target and call template" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang("lists", "zip(other, xs)"),
-        \\  @External.Node("./gleam_stdlib.mjs", "zip")]
+        \\#[@external(.Erlang("lists:zip($1, $0)"), .Node("./gleam_stdlib.mjs", "zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
     );
 }
 
 test "parser: external ---- keyword-argument form" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang( module: "lists", method: "reverse(xs)")]
+        \\#[@external(.Erlang(module: "lists", method: "reverse(xs)"))]
         \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
     );
 }
 
 test "parser: external ---- node prototype shorthand (module omitted)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Node("reverse"),
-        \\  @External.Erlang("lists", "reverse")]
+        \\#[@external(.Node("reverse"), .Erlang("lists:reverse($0)"))]
         \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
     );
 }
@@ -607,26 +603,20 @@ test "parser: external ---- node prototype shorthand (module omitted)" {
 // variant becomes a separate decorator sig keyed `"External.<Variant>"`.
 test "parser: external ---- qualified enum variant with inline: true flag" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang("lists", "search", inline: true),
-        \\  @External.Node("./gleam_stdlib.mjs", "index_of")]
+        \\#[@external(.Erlang("lists:search($0, $1)", inline: true), .Node("./gleam_stdlib.mjs", "index_of"))]
         \\pub declare fn indexOf(xs: Array<i32>, item: i32) -> i32;
     );
 }
 
-// Semantic check: every spelling of the extended vocabulary resolves to the same
-// `(module, symbol)` via `externalFor` — including the keyword-argument form,
-// whose labels the parser drops (they land positionally), so no snapshot can
-// show that it was read as `module:`/`method:`.
-test "ast: externalFor resolves extended @external vocabulary" {
+// Semantic check: each source is the declaration's implementation for its
+// target, read by `externalFor` (decision 575 (6)).
+test "ast: externalFor reads a declaration's implementations" {
     const alloc = std.testing.allocator;
     const src =
-        \\#[@External.Erlang("lists", "zip(other, xs)"),
-        \\  @External.Node("zip")]
+        \\#[@external(.Erlang("lists:zip($1, $0)"), .Node("zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
-        \\#[@External.Erlang( "lists", "reverse")]
+        \\#[@external(.Erlang("lists:reverse($0)"))]
         \\pub declare fn rev(xs: Array<i32>) -> Array<i32>;
-        \\#[@External.Erlang( module: "lists", method: "reverse(xs)")]
-        \\pub declare fn kwrev(xs: Array<i32>) -> Array<i32>;
     ;
     var l = Lexer.init(src);
     const tokens = try l.scanAll(alloc);
@@ -637,41 +627,19 @@ test "ast: externalFor resolves extended @external vocabulary" {
 
     var zip: ?ast.FnDecl = null;
     var rev: ?ast.FnDecl = null;
-    var kwrev: ?ast.FnDecl = null;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| {
             if (std.mem.eql(u8, f.name, "zip")) zip = f;
             if (std.mem.eql(u8, f.name, "rev")) rev = f;
-            if (std.mem.eql(u8, f.name, "kwrev")) kwrev = f;
         },
         else => {},
     };
-    try std.testing.expect(zip != null);
-    try std.testing.expect(rev != null);
-    try std.testing.expect(kwrev != null);
-
-    // Qualified `Target.Erlang` target + call template carried in the symbol slot.
-    const erl = zip.?.externalFor("erlang").?;
-    try std.testing.expectEqualStrings("lists", erl.module);
-    try std.testing.expectEqualStrings("zip(other, xs)", erl.symbol);
-
-    // Keyword form with the module omitted (node prototype) → empty module.
-    const nod = zip.?.externalFor("node").?;
-    try std.testing.expectEqualStrings("", nod.module);
-    try std.testing.expectEqualStrings("zip", nod.symbol);
-
-    // A second `@External.Erlang` spelling resolves the same way; a target the
-    // fn does not declare is null.
-    const rerl = rev.?.externalFor("erlang").?;
-    try std.testing.expectEqualStrings("lists", rerl.module);
-    try std.testing.expectEqualStrings("reverse", rerl.symbol);
+    try std.testing.expectEqualStrings("lists:zip($1, $0)", zip.?.externalFor("erlang").?.text);
+    try std.testing.expectEqualStrings("zip", zip.?.externalFor("node").?.text);
+    // The beam target reads `.Erlang` (decision 437); a target the fn does
+    // not name is null.
+    try std.testing.expectEqualStrings("lists:reverse($0)", rev.?.externalFor("beam").?.text);
     try std.testing.expect(rev.?.externalFor("node") == null);
-
-    // Keyword-argument form (`module:` / `method:`): the labels are cosmetic,
-    // so it must resolve exactly like the positional spelling.
-    const kw = kwrev.?.externalFor("erlang").?;
-    try std.testing.expectEqualStrings("lists", kw.module);
-    try std.testing.expectEqualStrings("reverse(xs)", kw.symbol);
 }
 
 // Splits the symbol slot into `(host symbol, ordered arg names)`. The bare
@@ -747,8 +715,7 @@ test "parser: enum variant field default" {
 
 test "parser: fn-decl param default + External.<Target> annotation" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang("erlang:error({todo, $0})"),
-        \\  @External.Node("(() => { throw new Error($0) })()")]
+        \\#[@external(.Erlang("erlang:error({todo, $0})"), .Node("(() => { throw new Error($0) })()"))]
         \\fn todo(message: string = "not implemented") -> bool {
         \\    return true;
         \\}
@@ -859,11 +826,8 @@ test "parser: declare fn ---- bodyless param with default literal (fn-param-defa
     // §1G / frente-b fn-param-default-expansion: `declare fn` must accept
     // `param: type = expr` defaults so std/erlang BIFs (and other host-
     // backed surfaces) collapse N arity overloads into a single decl.
-    // NOTE: an UNANNOTATED `declare fn` is parsed as a DelegateDecl (a
-    // single-method interface alias — `parser.zig`'s `checkShorthandDelegate`
-    // branch), not as an `fn`; the snapshot below is a `delegate` node with a
-    // raw-string return type. The FFI `fn` path (`isDeclare = true`) is the
-    // ANNOTATED form, covered by "declare fn ---- external + param default".
+    // An unannotated `declare fn` is an `fn` (`isDeclare = true`), as an
+    // annotated one is (decision 575 (6)).
     try h.assertParser(std.testing.allocator, @src(),
         \\pub declare fn slice(s: string, start: i32, end: i32 = -1) -> string;
     );
@@ -878,7 +842,7 @@ test "parser: delegate ---- bodyless declare fn multiple trailing defaults" {
 
 test "parser: declare fn ---- external + param default" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang( "string", "slice")]
+        \\#[@external(.Erlang("string:slice($0, $1, $2)"))]
         \\pub declare fn slice(s: string, start: i32, end: i32 = -1) -> string;
     );
 }
@@ -1027,41 +991,34 @@ test "parser: `label = value` in an annotation is refused at the label (decision
     // A builtin's argument and a decorator's alike: the label is written
     // `label: value`, as a call's is.
     try h.expectErrorAt("#[@BeamMemory.Ets(keyed = true)]\nvar cache: i32 = 0;", .annotationLabelEquals, 1, 19);
-    try h.expectErrorAt("#[@External.Erlang(\"m\", \"f\", inline = true)]\npub declare fn f() -> i32;", .annotationLabelEquals, 1, 30);
     try h.expectErrorAt("#[mark([1, 2], level = .High)]\nfn f() {}", .annotationLabelEquals, 1, 16);
 }
 
-test "parser: a keyword is an annotation argument's label (`fn:`, decision 481)" {
+test "parser: `#[@external(…)]`'s sources are the declaration's implementations (decision 575 (6))" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     var lx = Lexer.init(
-        \\#[@External.Wasm(fn: tanBody, host: .Wasi)]
-        \\#[@External.Wasm(wasi: .RaceOf, host: .Browser)]
+        \\#[@external(.Wasm(body: tanBody, host: .Wasi), .Wasm(wasi: .RaceOf, host: .Browser))]
         \\pub declare fn tan(x: f64) -> f64;
     );
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
-    const anns = program.decls[0].@"fn".annotations;
-    try std.testing.expectEqual(@as(usize, 2), anns.len);
-    // The label is the keyword; the cell lands as the binding text every
-    // reader takes, its spelling kept for the formatter and the checker.
-    try std.testing.expectEqualStrings("fn", anns[0].labelOf(0).?);
-    try std.testing.expectEqualStrings("\"fn:tanBody\"", anns[0].args[0]);
-    try std.testing.expectEqualStrings("tanBody", anns[0].writtenArgs()[0]);
-    try std.testing.expectEqualStrings("host", anns[0].labelOf(1).?);
-    try std.testing.expectEqualStrings(".Wasi", anns[0].args[1]);
-    try std.testing.expectEqualStrings("\"wasi:race_of\"", anns[1].args[0]);
-    try std.testing.expectEqualStrings(".RaceOf", anns[1].writtenArgs()[0]);
-    try std.testing.expectEqualStrings("race_of", ast.externalRefOf(anns[1], "wasm.browser").?.symbol["wasi:".len..]);
+    const impls = program.decls[0].@"fn".implementations;
+    try std.testing.expectEqual(@as(usize, 2), impls.len);
+    // Each cell lands as the binding text every reader takes.
+    try std.testing.expectEqualStrings("fn:tanBody", impls[0].text);
+    try std.testing.expectEqual(ast.WasmHost.wasi, impls[0].host.?);
+    try std.testing.expectEqualStrings("wasi:race_of", impls[1].text);
+    try std.testing.expectEqualStrings("race_of", ast.implementationFor(impls, "wasm.browser").?.cell.?.value);
 }
 
 test "parser: an unlabelled annotation argument has no label" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("#[@External.Node(\"charAt\")]\npub declare fn f(s: string) -> string;");
+    var lx = Lexer.init("#[@external(.Node(\"charAt\"))]\npub declare fn f(s: string) -> string;");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
@@ -1087,7 +1044,7 @@ test "parser: declare fn ---- unannotated with a discard param and a generic ret
 
 test "parser: declare fn ---- annotated with a discard param" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Node("f")]
+        \\#[@external(.Node("f"))]
         \\pub declare fn f(_: i32, _: string) -> i32;
     );
 }

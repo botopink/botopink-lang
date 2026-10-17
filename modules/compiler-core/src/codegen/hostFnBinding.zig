@@ -1,10 +1,10 @@
-//! Decision 238's `fn:` form on every backend (decisions 259, 263): a
-//! `declare fn` whose binding for the build's target is `fn:<name>` runs
-//! `<name>`, a private bodied `fn` of the same module with the same signature
-//! — `#[@External.Erlang(fn: tanBody)]`, `#[@External.Node(fn: powBody)]`,
-//! `#[@External.Wasm(fn: tanBody)]` (decision 305: a labelled argument the
-//! parser reads as the binding text `fn:<name>`, `ast.translateExternalCells`).
-//! The arguments are the declared parameters in order.
+//! Decision 238's `body:` cell on every backend (decisions 259, 263, 575 (6)):
+//! a `declare fn` whose implementation for the build's target is `body:
+//! <name>` runs `<name>`, a private bodied `fn` of the same module with the
+//! same signature — `#[@external(.Erlang(body: tanBody), .Node(body: powBody),
+//! .Wasm(body: tanBody))]`, read as the binding text `fn:<name>`
+//! (`ast.Implementation.text`). The arguments are the declared parameters in
+//! order.
 //!
 //! `resolve` is the one check of a `fn:` binding — the named fn exists in the
 //! declaring module, has a body, is not `pub` and takes and answers the same
@@ -13,12 +13,12 @@
 //! beside its `op:` and `wasi:` forms. commonJS, erlang and beam read
 //! `Lowering`: before a backend emits anything, each bound `declare fn` of the
 //! program becomes an ordinary function whose body is `return <name>(<the
-//! parameters>);`, its `#[@External.…]` annotations dropped — so a call, a
+//! parameters>);`, its implementations dropped — so a call, a
 //! `pub` export and a consumer's cross-module call reach it like any other
 //! function, and no backend learns a fourth binding shape. On those three
-//! targets a single-string binding is otherwise a host expression or a `.S`
-//! template; the `fn:` cell is the binding there, and nothing else is (a
-//! written `"fn:…"` string is refused by the checker, `checkExternalCells`).
+//! targets a template is otherwise a host expression; the `body:` cell is the
+//! binding there, and nothing else is (a template written `"fn:…"` is refused
+//! by the checker, `comptime/implementations.zig`).
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -27,11 +27,11 @@ const moduleOutput = @import("./moduleOutput.zig");
 
 const ComptimeOutput = comptimeMod.ComptimeOutput;
 
-/// The backend whose `#[@External.<Target>(…)]` `Lowering` reads.
+/// The backend whose implementation `Lowering` reads.
 pub const Target = enum {
     node,
     erlang,
-    /// `External.Erlang` — the beam target reads the same cell (decision 437).
+    /// `.Erlang` — the beam target reads the same cell (decision 437).
     beam,
 };
 
@@ -41,44 +41,47 @@ pub const Resolution = union(enum) {
     refused: []const u8,
 };
 
-/// The name a single-string binding `fn:<name>` names, or null for any other
-/// binding.
-pub fn fnName(ref: ast.ExternalRef) ?[]const u8 {
-    if (ref.module.len > 0) return null;
-    if (!std.mem.startsWith(u8, ref.symbol, "fn:")) return null;
-    return ref.symbol["fn:".len..];
+/// The fn a `body:` cell names, or null for any other implementation.
+pub fn fnName(impl: ast.Implementation) ?[]const u8 {
+    return fnNameOf(impl.text);
 }
 
-/// The location of `f`'s `#[@External.<label>(…)]`.
+/// The fn a binding text `fn:<name>` names, or null for any other text.
+pub fn fnNameOf(text: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, text, "fn:")) return null;
+    return text["fn:".len..];
+}
+
+/// Where `f`'s `.<label>(…)` implementation was given.
 pub fn annotationLoc(f: ast.FnDecl, label: []const u8) ?ast.Loc {
-    for (f.annotations) |a| {
-        if (std.mem.startsWith(u8, a.name, "External.") and std.ascii.eqlIgnoreCase(a.name["External.".len..], label)) return a.loc;
+    for (f.implementations) |i| {
+        if (std.mem.eql(u8, i.target.variant(), label)) return i.loc;
     }
     return null;
 }
 
-/// Decision 238's check of `#[@External.<label>(fn: <name>)]` on `f`: `prog`
+/// Decision 238's check of `.<label>(body: <name>)` on `f`: `prog`
 /// (the declaring module's program) declares a bodied, non-`pub` fn `<name>`
 /// taking the parameter types `f` declares, in order, and answering the same
 /// type. `module` is the declaring module's path when its declarations reach
 /// the check through a link that qualified their types (wasm's static
 /// linking, `typeText`), else empty.
 pub fn resolve(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8, prog: ast.Program, module: []const u8, label: []const u8) !Resolution {
-    // Decisions 305 and 481 — the cell is the labelled `fn: <name>` on
-    // every target.
-    const cell = try std.fmt.allocPrint(ar, "fn: {s}", .{name});
+    // Decisions 305, 481 and 575 (6) — the cell is the labelled `body:
+    // <name>` on every target.
+    const cell = try std.fmt.allocPrint(ar, "body: {s}", .{name});
     const target: ?ast.FnDecl = for (prog.decls) |pd| switch (pd) {
         .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) break g,
         else => {},
     } else null;
     const g = target orelse
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: this module declares no fn `{s}`", .{ label, cell, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`.{s}({s})` on `{s}`: this module declares no fn `{s}`", .{ label, cell, f.name, name }) };
     if (g.isDeclare or g.body.len == 0)
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` has no body of its own to run", .{ label, cell, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`.{s}({s})` on `{s}`: `{s}` has no body of its own to run", .{ label, cell, f.name, name }) };
     if (g.isPub)
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ label, cell, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`.{s}({s})` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ label, cell, f.name, name }) };
     if (!try sameSignature(ar, f, g, module))
-        return .{ .refused = try std.fmt.allocPrint(ar, "`#[@External.{s}({s})]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ label, cell, f.name, name }) };
+        return .{ .refused = try std.fmt.allocPrint(ar, "`.{s}({s})` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ label, cell, f.name, name }) };
     return .{ .ok = g };
 }
 
@@ -196,8 +199,8 @@ pub const Lowering = struct {
     }
 };
 
-/// The binding `f` carries for `target`, with the annotation's target label.
-fn bindingFor(f: ast.FnDecl, target: Target) ?struct { []const u8, ast.ExternalRef } {
+/// The implementation `f` carries for `target`, with its variant's name.
+fn bindingFor(f: ast.FnDecl, target: Target) ?struct { []const u8, ast.Implementation } {
     return switch (target) {
         .node => if (f.externalFor("node")) |r| .{ "Node", r } else null,
         .erlang => if (f.externalFor("erlang")) |r| .{ "Erlang", r } else null,
@@ -206,12 +209,13 @@ fn bindingFor(f: ast.FnDecl, target: Target) ?struct { []const u8, ast.ExternalR
 }
 
 /// `f` as an ordinary function: its signature, the annotations that are not
-/// `#[@External.…]`, and the body `return <name>(<parameters>);`.
+/// `#[external(…)]`, no implementation, and the body `return
+/// <name>(<parameters>);`.
 fn forwarding(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8) !ast.FnDecl {
     const loc: ast.Loc = f.nameLoc;
     var annotations: std.ArrayListUnmanaged(ast.Annotation) = .empty;
     for (f.annotations) |a| {
-        if (std.mem.startsWith(u8, a.name, "External.")) continue;
+        if (std.mem.eql(u8, a.name, "external")) continue;
         try annotations.append(ar, a);
     }
     const args = try ar.alloc(ast.CallArg, f.params.len);
@@ -233,6 +237,7 @@ fn forwarding(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8) !ast.FnDec
     var out = f;
     out.isDeclare = false;
     out.annotations = try annotations.toOwnedSlice(ar);
+    out.implementations = &.{};
     out.body = body;
     return out;
 }

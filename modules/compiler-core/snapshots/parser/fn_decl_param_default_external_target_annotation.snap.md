@@ -14,16 +14,10 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"erlang:error({todo, $0})\""
-            ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"(() => { throw new Error($0) })()\""
+              ".Erlang(\"erlang:error({todo, $0})\")",
+              ".Node(\"(() => { throw new Error($0) })()\")"
             ],
             "is_builtin": true
           }
@@ -41,7 +35,7 @@
             "default": {
               "literal": {
                 "loc": {
-                  "line": 3,
+                  "line": 2,
                   "col": 27
                 },
                 "kind": {
@@ -60,14 +54,14 @@
             "expr": {
               "jump": {
                 "loc": {
-                  "line": 4,
+                  "line": 3,
                   "col": 5
                 },
                 "kind": {
                   "return": {
                     "identifier": {
                       "loc": {
-                        "line": 4,
+                        "line": 3,
                         "col": 12
                       },
                       "kind": {

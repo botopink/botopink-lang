@@ -14,24 +14,10 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"lists\"",
-              "\"search\"",
-              "true"
-            ],
-            "labels": [
-              "",
-              "",
-              "inline"
-            ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"./gleam_stdlib.mjs\"",
-              "\"index_of\""
+              ".Erlang(\"lists:search($0, $1)\", inline: true)",
+              ".Node(\"./gleam_stdlib.mjs\", \"index_of\")"
             ],
             "is_builtin": true
           }

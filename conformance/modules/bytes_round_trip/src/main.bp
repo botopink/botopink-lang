@@ -4,9 +4,11 @@
 //// `length`, `slice` (and `b[a..e]`), `concat` and `==` count and compare bytes. A host cell
 //// takes and answers `Bytes` as its target holds it. The parent binary knew no `Bytes`.
 
-#[@External.Node("""Uint8Array.from($0).reverse()""")]
-#[@External.Erlang("""list_to_binary(lists:reverse(binary_to_list($0)))""")]
-#[@External.Wasm(fn: reversedBody)]
+#[@external(
+    .Node("""Uint8Array.from($0).reverse()"""),
+    .Erlang("""list_to_binary(lists:reverse(binary_to_list($0)))"""),
+    .Wasm(body: reversedBody),
+)]
 declare fn reversed(b: Bytes) -> Bytes;
 
 fn reversedBody(b: Bytes) -> Bytes {

@@ -402,7 +402,6 @@ fn declNamed(d: ast.DeclKind) ?Named {
         .@"fn" => |f| .{ .name = f.name, .loc = f.nameLoc },
         .val => |v| .{ .name = v.name, .loc = v.nameLoc },
         .behavior => |b| .{ .name = b.name, .loc = .{ .line = 0, .col = 0 } },
-        .delegate => |dg| .{ .name = dg.name, .loc = .{ .line = 0, .col = 0 } },
         else => null,
     };
 }

@@ -1,22 +1,18 @@
 //// Gleam-inspired `io` module (`import {io} from "std";`).
 //// Host-backed I/O primitives — declaration-only, no pure implementation.
-//// Each target backend supplies the concrete symbol via `#[External.<Target>(...)]`.
+//// Each target's code is the declaration's `#[external(…)]` source (`external.bp`).
 
-// On erlang and beam, `@print`, `@println` and `@debug` lower to the
-// `'__bp_print'/1` helper the backend emits once per module (it prints a
-// binary with `~ts` and any other value with `~p`); the codegen intercepts the
-// call before any `@External.Erlang` template, so the templates below only
-// name that helper.
-#[External.Node("console.log($args)")]
-#[External.Erlang("'__bp_print'([$args])")]
+// `@print`, `@println` and `@debug` are bound by their sources on every target
+// (decision 575 (6)); no backend lowers them by name. On erlang and beam the
+// template names the `'__bp_print'/1` helper the backend emits once per module
+// (it prints a binary with `~ts` and any other value with `~p`).
+#[external(.Node("console.log($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn print(..values: unknown[]);
 
-#[External.Node("console.log($args)")]
-#[External.Erlang("'__bp_print'([$args])")]
+#[external(.Node("console.log($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn println(..values: unknown[]);
 
-#[External.Node("console.debug($args)")]
-#[External.Erlang("'__bp_print'([$args])")]
+#[external(.Node("console.debug($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn debug(..values: unknown[]);
 
 // ── result type ──────────────────────────────────────────────────────────────
@@ -262,7 +258,7 @@ pub behavior Component<R> extends Task {
 // declaration is checked as a constructor call to the type — the same arity,
 // named-arg, default-value rules that govern any fn parameter list. For an
 // enum, each variant is a separate annotation key
-// (`#[External.Erlang("template")]` uses the `Erlang` variant's params).
+// (`#[Shape.Circle(radius: 2)]` uses the `Circle` variant's params).
 //
 // `checkAnnotation(self, decl: Decl)` runs at comptime over the annotated
 // declaration: implementers use it to enforce placement rules (e.g. "this
@@ -275,92 +271,11 @@ pub behavior Annotation {
     default fn checkAnnotation(self: Self, comptime decl: @Decl) {}
 }
 
-// ── External — host-backed lowering ──────────────────────────────────────────
-//
-// One variant per target. The single `template` string is interpreted by the
-// codegen renderer (`comptime/primOpTemplate.zig`): if it contains `$`, it's a
-// template with positional markers over the declared parameters (`$0` is `self`
-// on a method, then `$1`, … — decision 5; `$stringify(…)` is no marker and is
-// refused, `template-stringify-marker`, decision 239);
-// otherwise it's a bare host symbol (`"mod:sym"`/`"propertyName"`) the backend
-// wraps as `mod:sym(args, self)` or `recv.propertyName(args)`.
-//
-// Usage:
-//
-//   #[External.Erlang("lists:member($1, $0)"),
-//     External.Node("$0.includes($1)")]
-//   fn contains(self: Array<T>, x: T) -> bool
-//
-// The `inline` flag opts a `(target, method)` pair out of the dispatch table
-// so the backend's hand-coded shape keeps emitting (used only for arms whose
-// lowering escapes the template grammar — list-cons / BIF aliases / etc.).
-//
-// F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
-// are the two emitters that read it: each has a `hasExternalInline` that skips
-// the dispatch entry when the flag is set, reading the labelled `inline:`.
-// `Node` declared it too and no JS path ever consulted it, so
-// `#[@External.Node("charAt", inline: true)]` was a switch that silently did
-// nothing — a configuration that looks like it bypasses the dispatch table and
-// does not, which decision 67 refuses in exactly those words. `Wasm` and
-// `Typescript` do not gain it for the same reason. The checker holds this
-// block to its word (`comptime/infer.zig` `external_variants`, kept in step
-// with the declaration below by a drift test): `inline` written on `Node`,
-// `Wasm` or `Typescript`, or given a value that is not a bool, is refused at
-// the annotation
-// (`conformance/modules/external_inline_unread`). A backend that grows a
-// hand-coded shape worth opting out of adds the parameter here, the table row
-// and the `hasExternalInline` that honours it, in one change.
-//
-// `result` (decisions 431, 490), on every variant: `result: true` says the
-// host call can fail, and the backend answers every way it fails —
-// a raise, a rejected Promise, an erlang `{error, R}` — as
-// `Error(HostError(…))`. The declared return must then be
-// `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, with std's
-// `failure.HostError` (decision 488); any other return is refused at the
-// annotation (`comptime/infer.zig` `refuseResultReturn`,
-// `conformance/modules/external_result_return`). Both flags are labelled and
-// read by their label in any order; a bare positional `true` / `false` is
-// refused (decision 487).
-//
-// F9, the other half — `External` is not `Target`, because `Target` is a value
-// a program holds and compares (`Target.Node`) while `External.<T>` is an
-// annotation whose every variant carries a payload the compiler reads (the
-// template, and on two of them the flag), and one enum cannot be both a value
-// and an annotation with per-variant parameters. The names coincide because
-// there are five backends; that is the only thing they share.
-
-// `needs` (decision 518), on `Wasm` alone: the host features the binding
-// needs, from the closed enum `WasmNeed` — `#[@External.Wasm(wasi:
-// .Attempt, needs: [.Exceptions])]`. The compiler gathers the needs of every
-// binding a program reaches into the `.wasm`'s `botopink.needs` custom
-// section, and the runner hands the host only the matching flags (wasmtime's
-// `-W exceptions=y` for `Exceptions`, `-S http` for `Http`, `-W gc=y` for
-// `Gc`; node runs exceptions and GC by default): a program reaching none runs
-// with no flag. `Gc` is also every program's that emits WasmGC types — the
-// compiler adds it to such a module itself (front 164, decision 544). `needs`
-// is no configuration — no annotation of a program turns a feature on or off
-// (decision 67). Written on another variant, or naming a value outside
-// `WasmNeed`, it is refused at the annotation (`comptime/infer.zig`
-// `refuseNeedsArg`, `conformance/modules/external_wasm_needs_unknown`); the
-// compiler's copy of the enum is `ast.WasmNeed`, kept in step by a test.
-pub type WasmNeed {
-    Exceptions,
-    Http,
-    Gc,
-}
-
-pub type External implement Annotation {
-    Erlang(template: string, inline: bool = false, result: bool = false),
-    Node(template: string, result: bool = false),
-    Wasm(template: string, needs: WasmNeed[] = [], result: bool = false),
-    Typescript(template: string, result: bool = false),
-}
-
 // ── builtin functions (decision 252) ────────────────────────────────────────
 //
 // Every `@name(…)` a program can call is declared here (or, for the two with a
 // literal default, in the sibling `builtins_fns.d.bp`): bodyless, because the
-// compiler IS the body, and without `#[@External.<Target>]` unless a host
+// compiler IS the body, and without `#[external(…)]` unless a host
 // supplies it. The compiler's own table of what it implements is
 // `modules/compiler-core/src/comptime/builtins.zig`; a unit test there parses
 // both files and fails, naming the builtin, when a builtin is implemented and
@@ -466,22 +381,6 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // their declared defaults; missing required args (RG3) and skipped
 // middle args (RG4) are rejected.
 //
-// ── Host — raw-infra backed functions ────────────────────────────────────
-//
-// Marks a function whose real body lives in the wat backend's raw-infra
-// prelude (unreachable, fd_write, bump allocator — operations bp can't
-// express). The wat backend skips `#[@Host]` fns during codegen; the prelude
-// in `codegen/wat/wat_prelude.zig` is what supplies such bodies. Nothing in
-// the tree carries `#[@Host]` today: a `#[@Host]` fn with no matching prelude
-// entry emits nothing and is not diagnosed.
-//
-// Usage:
-//   #[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}
-pub type Host implement Annotation {
-    /// The function body is provided by the host's raw-infra WAT block.
-    host,
-}
-
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
 // the companion types are top-level declarations (siblings of `Expr<E>`), not
@@ -884,6 +783,11 @@ pub behavior Decl<T> {
     // in order. Like a member function, the executor is the program's code
     // (the tree rule, 575 (4)).
     fn compile(self: Self, executor: fn());
+
+    // Decision 575 (6) — `compiler.implement(source)`: a host source of the
+    // annotated `declare fn`, an `Implementation` (`external.bp`), one per
+    // target.
+    fn implement(self: Self, source: Implementation);
 }
 
 // Decision 316 — the call value a `decl.wrapWith` wrapper receives. No program

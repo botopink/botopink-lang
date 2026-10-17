@@ -476,6 +476,11 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("addType", &.{ V("_Decl"), V("Name"), V("Source") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("assoc")), Ast.field("name", V("Name")), Ast.field("source", V("Source")) })}),
         }),
+        // Decision 575 (6) — `compiler.implement(source)`: the
+        // `Implementation` the body built, as JSON (`implementations.ofJson`).
+        try b.function("implement", &.{ V("_Decl"), V("Value") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("implement")), Ast.field("data", try b.call(meta_json_fn, &.{V("Value")})) })}),
+        }),
         // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)`: the body hands
         // the call's index (`expr_param.eraseFn`, `typed_meta.collect`'s
         // order) and the record it built, which the compiler writes back as

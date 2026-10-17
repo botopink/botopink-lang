@@ -3,8 +3,7 @@
 //// the std function to call instead: std-wasm's export names stay internal to
 //// std, whose botopink API is the public contract.
 
-#[@External.Node("String")]
-#[@External.Wasm(std: "hash.contentHash")]
+#[@external(.Node("String"), .Wasm(std: "hash.contentHash"))]
 declare fn digest(x: string) -> string;
 
 pub fn main() {

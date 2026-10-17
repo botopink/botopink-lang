@@ -14,7 +14,7 @@
 pub mod text;
 import {text.greet};
 
-#[@External.Erlang("text", "shout")]
+#[@external(.Erlang("text:shout($0)"))]
 declare fn shout(s: string) -> string;
 
 pub fn main() {

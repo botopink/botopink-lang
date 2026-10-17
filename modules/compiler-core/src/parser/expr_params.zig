@@ -24,7 +24,6 @@ pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
             declHandle(alloc, f.params, f.returnType);
             unwrap(alloc, f.params, f.returnType);
         },
-        .delegate => |*f| unwrap(alloc, f.params, f.returnType),
         .type_ => |*t| unwrapType(alloc, t),
         .behavior => |*b| for (b.methods) |*m| unwrap(alloc, m.params, m.returnType),
         .implement => |*i| for (i.methods) |*m| unwrap(alloc, m.params, null),

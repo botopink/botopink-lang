@@ -9,8 +9,7 @@
 
 type Shape { Dot, Circle(r: i32) }
 
-#[@External.Node("""({ tag: "Square" })""")]
-#[@External.Erlang("erlang", "binary_to_atom")]
+#[@external(.Node("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
 declare fn shapeNamed(name: string) -> Shape;
 
 fn area(s: Shape) -> i32 {

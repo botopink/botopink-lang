@@ -2299,7 +2299,6 @@ pub const Formatter = struct {
             const docComment: ?[]const u8 = switch (d) {
                 .use => |v| v.docComment,
                 .behavior => |v| v.docComment,
-                .delegate => |v| v.docComment,
                 .type_ => |v| v.docComment,
                 .typeAlias => |v| v.docComment,
                 .implement => |v| v.docComment,
@@ -2321,7 +2320,7 @@ pub const Formatter = struct {
                 // An alias ends with its target type, which has no closing token.
                 .typeAlias => true,
                 .behavior => false,
-                .use, .delegate, .implement, .extend => true,
+                .use, .implement, .extend => true,
                 .mod => true,
                 .comment => false,
             };
@@ -2392,7 +2391,6 @@ pub const Formatter = struct {
         return switch (decl) {
             .use => |u| this.fmtUse(u),
             .behavior => |iface| this.fmtBehavior(iface),
-            .delegate => |d| this.fmtDelegate(d),
             .type_ => |t| this.fmtType(t),
             .typeAlias => |a| this.fmtTypeAlias(a),
             .implement => |impl| this.fmtImplement(impl),
@@ -2462,19 +2460,6 @@ pub const Formatter = struct {
         };
     }
 
-    fn fmtDelegate(this: *Formatter, d: ast.DelegateDecl) !*const Doc {
-        const prefix: *const Doc = if (d.isPub)
-            try this.text("pub declare fn ")
-        else
-            try this.text("declare fn ");
-        return this.concatAll(&.{
-            prefix,
-            try this.text(d.name),
-            try this.fmtGenericParams(d.genericParams),
-            try this.fmtSignature(d.params, try this.fmtReturnTypeRef(d.returnType, null)),
-        });
-    }
-
     /// One annotation as written inside its `#[…]`: `@name(label: v, w)`,
     /// `name`, or the template annotation `name "…"` (decision 311).
     fn annotationBody(this: *Formatter, ann: ast.Annotation) ![]const u8 {
@@ -2535,7 +2520,19 @@ pub const Formatter = struct {
             const end = annotationBlockEnd(annotations, start);
             const block = annotations[start..end];
             try this.commentDocs(block[0].written.leadComments, &docs);
-            if (!annotationBlockOpen(block, true)) {
+            if (block.len == 1 and block[0].written.argsTrailingComma and block[0].template == null and !annotationBlockOpen(block, true)) {
+                // An argument list written with a trailing comma opens one
+                // argument per line (decision 166).
+                const a = block[0];
+                const prefix: []const u8 = if (a.is_builtin) "@" else "";
+                const items = try this.arena.alloc(*const Doc, a.writtenArgs().len);
+                for (a.writtenArgs(), 0..) |arg, i| items[i] = try this.text(if (a.labelOf(i)) |label|
+                    try std.fmt.allocPrint(this.arena, "{s}: {s}", .{ label, arg })
+                else
+                    arg);
+                try docs.append(this.arena, try this.openList(try std.fmt.allocPrint(this.arena, "#[{s}{s}(", .{ prefix, a.name }), items, ")]"));
+                try docs.append(this.arena, this.hardline());
+            } else if (!annotationBlockOpen(block, true)) {
                 const bodies = try this.arena.alloc([]const u8, block.len);
                 for (block, 0..) |a, i| bodies[i] = try this.annotationBody(a);
                 try docs.append(this.arena, try this.text(

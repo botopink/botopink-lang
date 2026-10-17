@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `#[@External.Wasm(wasi: "RandomF64")]` on `draw`: `wasi:` names an adapter by its enum value (decision 481) — write `wasi: .Delay`
-at src/main.bp:6:24
+refused error: type mismatch: expected WasiAdapter, got string
+at src/main.bp:4:76

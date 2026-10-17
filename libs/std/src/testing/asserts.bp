@@ -94,8 +94,10 @@ pub fn approxEquals(
 // Node, `io_lib:format("~0tp")` on Erlang. Lifted from the old onze's
 // `onzeKey`, where it keyed the call log for the same reason: two values that
 // render the same are structurally equal on that host.
-#[@External.Node("""JSON.stringify($0)""")]
-#[@External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+#[external(
+    .Node("""JSON.stringify($0)"""),
+    .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""),
+)]
 declare fn canonical<T>(v: T) -> string;
 
 // Fails when the two values differ structurally — arrays and records by
@@ -170,8 +172,7 @@ pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
 // Private `regex.matches` twin, actual-first: inlined here rather than via a
 // cross-module call so this file stays self-contained (std-internal modules
 // do not import each other). PCRE-ish on both hosts.
-#[@External.Node("""(new RegExp($1).test($0))""")]
-#[@External.Erlang("""(re:run($0, $1) =/= nomatch)""")]
+#[external(.Node("""(new RegExp($1).test($0))"""), .Erlang("""(re:run($0, $1) =/= nomatch)"""))]
 declare fn regexMatches(actual: string, pattern: string) -> bool;
 
 // Fails when the regular expression `pattern` (the host's native flavour)

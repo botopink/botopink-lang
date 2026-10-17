@@ -400,40 +400,40 @@ test "surface: a behavior member separated by a comma is member-comma-separator"
 test "surface: $self in an External template is template-self-marker" {
     try expectError(
         \\behavior S {
-        \\    #[@External.Erlang("string:trim($self)")]
+        \\    #[@external(.Erlang("string:trim($self)"))]
         \\    fn trim(self: Self) -> Self;
         \\}
-    , .templateSelfMarker, 2, 24);
+    , .templateSelfMarker, 2, 25);
 }
 
 test "surface: a marker past the declared parameters is template-marker-out-of-range" {
     try expectError(
-        \\#[@External.Node("f($0, $1)")]
+        \\#[@external(.Node("f($0, $1)"))]
         \\declare fn one(x: i32) -> i32;
-    , .templateMarkerOutOfRange, 1, 18);
+    , .templateMarkerOutOfRange, 1, 19);
 }
 
 test "surface: $stringify in an External template is template-stringify-marker (decision 239)" {
     try expectError(
         \\behavior S {
-        \\    #[@External.Erlang("iolist_to_binary($stringify($0))")]
+        \\    #[@external(.Erlang("iolist_to_binary($stringify($0))"))]
         \\    fn show(self: Self) -> string;
         \\}
-    , .templateStringifyMarker, 2, 24);
+    , .templateStringifyMarker, 2, 25);
 }
 
 test "surface: a method's $0 is self and $1 its first argument" {
     var parsed = try parse(
         \\behavior S {
-        \\    #[@External.Erlang("lists:member($1, $0)")]
+        \\    #[@external(.Erlang("lists:member($1, $0)"))]
         \\    fn has(self: Self, x: i32) -> bool;
         \\}
     );
     defer parsed.deinit();
     const b = try onlyBehavior(parsed);
     const ann = b.methods[0].annotations[0];
-    try std.testing.expectEqualStrings("\"lists:member($1, $0)\"", ann.writtenArgs()[0]);
-    try std.testing.expectEqualStrings("\"lists:member($0, " ++ receiver_marker ++ ")\"", ann.args[0]);
+    try std.testing.expectEqualStrings(".Erlang(\"lists:member($1, $0)\")", ann.writtenArgs()[0]);
+    try std.testing.expectEqualStrings("lists:member($0, " ++ receiver_marker ++ ")", b.methods[0].implementations[0].template.?);
 }
 
 // ── decision 105 (the three loop keywords) and 06 N27 ────────────────────────

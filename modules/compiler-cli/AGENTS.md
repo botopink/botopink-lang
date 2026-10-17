@@ -214,7 +214,7 @@ escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
 `require` to reach it. `std`'s `.mjs` sidecars (`libs/std/src/sidecars/*.mjs`) are embedded in the binary beside its modules (`build.zig` `stdSidecarFiles` → `std_sidecars`, `comptime_pipeline.stdSidecar`) and `shipMjsSidecars` ships them from that copy — never from a `std` directory, which a project outside any checkout (a library's cell, a published binary) does not have (144 B-49). `std` — the one bundled package (decision 326) — is the exception to "declared, then found on disk": it is embedded in the binary, and `libs.loadDependencies` refuses it listed in `dependencies`. Every other library (`routing`, `actions`, … included) is declared and found on disk like any dependency.
 
-`shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
+`shipErlSidecars` is the erlang counterpart: a `#[.Erlang("host",
 "fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in
 erlang and keeps beside its `.bp` sources (`<lib>/src/sidecars/<host>.erl`, else
 `<lib>/src/<host>.erl`; a project-own module probes `src/sidecars/` then `src/`).
@@ -530,7 +530,7 @@ Cross-command rules:
   with no enclosing checkout, and with a dependency the checkout does not hold
   (named, located, nothing linked), exits 1.
 - **A host sidecar ships through the resolved dependency, or the build fails.**
-  The `.mjs` a `#[@External.Node("./x.mjs", …)]` requires is copied from the
+  The `.mjs` a `#[@external(.Node("./x.mjs", …))]` requires is copied from the
   directory the dependency resolved to — a `{ "workspace": true }` member, a
   `{ "path": … }` package outside every library root, a name a second checkout
   also declares — and never from whichever entry of that name the roots happen
@@ -708,7 +708,7 @@ a refusal may name the host it was built for). The manifest's `"targets"`
 narrows the cell to the targets it names (an array of target names, in any
 order; an unknown target, one named twice, none, all four or a value that is
 not an array is malformed), and each target it leaves out is **audited**:
-`botopink build --target <t>` must refuse the cell on a host binding (`has no #[@External.<Target>(…)]`,
+`botopink build --target <t>` must refuse the cell on a host binding (`has no #[@external(.<Target>(…))]`,
 `std-unsupported-on-target:`, `` `#[@BeamMemory]` has no meaning on the <t>
 backend``) — a build that accepts it, or refuses it otherwise, fails the cell
 (`conformance/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything

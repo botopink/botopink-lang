@@ -648,17 +648,17 @@ fn isBodyless(f: ast.FnDecl) bool {
     return !(rt == .named and std.mem.eql(u8, rt.named, "void"));
 }
 
-/// Whether `anns` carries an `External.Wasm` cell.
-fn hasWasmCell(anns: []const ast.Annotation) bool {
-    for (anns) |a| if (ast.isExternalWasm(a)) return true;
+/// Whether `impls` holds a `.Wasm` implementation.
+fn hasWasmCell(impls: []const ast.Implementation) bool {
+    for (impls) |i| if (i.target == .wasm) return true;
     return false;
 }
 
-/// Decision 565 — the body a `String` method's `#[@External.Wasm(fn: <name>)]`
-/// cell names, or null when its wasm cell is another (or it has none).
+/// Decision 565 — the body a `String` method's `.Wasm(body: <name>)` cell
+/// names, or null when its wasm cell is another (or it has none).
 fn methodFnCell(m: ast.BehaviorMethod) ?[]const u8 {
-    for (m.annotations) |a| if (ast.isExternalWasm(a)) if (ast.externalRefOf(a, "wasm")) |r| return hostFnBinding.fnName(r);
-    return null;
+    const i = m.externalFor("wasm") orelse return null;
+    return hostFnBinding.fnName(i);
 }
 
 /// `primitives.bp`'s `String.<method>`, or null.
@@ -683,7 +683,7 @@ fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
         .{ .name = "__recv", .typeRef = .{ .named = "string" } }
     else
         p;
-    return .{ .isPub = false, .name = m.name, .genericParams = m.genericParams, .params = params, .returnType = m.returnType, .body = &.{}, .annotations = m.annotations };
+    return .{ .isPub = false, .name = m.name, .genericParams = m.genericParams, .params = params, .returnType = m.returnType, .body = &.{}, .annotations = m.annotations, .implementations = m.implementations };
 }
 
 /// Whether `b` is a primitive behavior of the std prelude (`String`, `Array`,
@@ -1620,7 +1620,7 @@ fn emitWatPass(
                     break :blk .{ .extend = c };
                 },
                 // `declName` answers null for these, and they were skipped above.
-                .use, .mod, .comment, .@"test", .typeAlias, .delegate => unreachable,
+                .use, .mod, .comment, .@"test", .typeAlias => unreachable,
             };
             try decls.append(ar0, renamed);
             try owner.append(ar0, li);
@@ -1741,7 +1741,7 @@ fn emitWatPass(
         // (front 164 s2 P3).
         .type_ => |t| for (try em.methodsWithDefaults(t)) |m| {
             if (t.genericParams.len == 0 and !(plan.mode == .gc and m.genericParams.len > 0)) continue;
-            if (m.body == null or m.is_declare or m.isExternal() or m.isHost()) continue;
+            if (m.body == null or m.is_declare or m.isExternal()) continue;
             const sym = try std.fmt.allocPrint(ar0, "{s}_{s}", .{ t.name, m.name });
             try em.generic_methods.put(em.alloc, sym, .{
                 .owner = t.name,
@@ -1759,7 +1759,7 @@ fn emitWatPass(
             const body = m.body orelse continue;
             // One whose cells name other targets only is its body here
             // (`Array.repeat`'s `External.Node` template; `registerSymbols`).
-            if (!m.is_default or m.is_declare or (m.isExternal() and hasWasmCell(m.annotations)) or m.isHost()) continue;
+            if (!m.is_default or m.is_declare or (m.isExternal() and hasWasmCell(m.implementations))) continue;
             if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
             if (b.genericParams.len + m.genericParams.len == 0) continue;
             const gps = try ar0.alloc(ast.GenericParam, b.genericParams.len + m.genericParams.len);
@@ -3158,7 +3158,7 @@ const Emitter = struct {
             // that call (`lowerPlainCall`), in the root package and in a
             // linked dependency alike. Decision 146: the rule commonJS,
             // erlang and beam hold by emitting every function.
-            .@"fn" => |f| if (!f.isHost()) try self.emitFn(f),
+            .@"fn" => |f| try self.emitFn(f),
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
@@ -3188,7 +3188,7 @@ const Emitter = struct {
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
-            .use, .behavior, .delegate, .mod, .@"test", .typeAlias => {},
+            .use, .behavior, .mod, .@"test", .typeAlias => {},
         }
     }
 
@@ -3203,7 +3203,7 @@ const Emitter = struct {
     /// (`specializedCallee`).
     fn registerFn(self: *Emitter, f: ast.FnDecl) !void {
         const ra = self.reg_arena.allocator();
-        if ((f.isHost() or isBodyless(f)) and !self.host_bindings.contains(f.name)) {
+        if (isBodyless(f) and !self.host_bindings.contains(f.name)) {
             try self.host_fns.put(f.name, {});
             // Decision 67 — a host-backed `declare fn` that names some
             // other target and no `wasm` one has no symbol here and
@@ -3325,8 +3325,8 @@ const Emitter = struct {
                 // (`Array.range`'s `External.Node` template) is its body here,
                 // as it is on erlang and beam: skipped, `Array.range(0, 3)`
                 // was an unresolved call.
-                const body_here = m.isExternal() and !hasWasmCell(m.annotations) and !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"));
-                if (!m.is_default or m.is_declare or (m.isExternal() and !body_here) or m.isHost()) continue;
+                const body_here = m.isExternal() and !hasWasmCell(m.implementations) and !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"));
+                if (!m.is_default or m.is_declare or (m.isExternal() and !body_here)) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) {
                     // A primitive behavior's default with a `self`: a call on
                     // a primitive receiver reaches it (`lowerPrimDefault`).
@@ -3481,7 +3481,7 @@ const Emitter = struct {
         if (self.mode == .gc) self.owner_tparams = owner_tparams;
         for (methods) |m| {
             const body = m.body orelse continue;
-            if (m.is_declare or m.isExternal() or m.isHost()) continue;
+            if (m.is_declare or m.isExternal()) continue;
             if (self.mode == .gc) self.fn_tparams = m.genericParams;
             const sym = try std.fmt.allocPrint(ra, "{s}_{s}", .{ owner, m.name });
             var has_self_param = false;
@@ -9049,12 +9049,11 @@ const Emitter = struct {
             // `wasi` build too —, and the one serving this build's host is
             // the one recorded.
             const build_host = ast.ExternalLookup.of(self.external_lookup).host orelse .wasi;
-            for (f.annotations) |a| {
-                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "Wasm")) continue;
-                const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
-                const ext = ast.externalRefOf(a, (host orelse build_host).lookupName()) orelse continue;
-                var bound = try self.checkHostBinding(f, from, ext, a.loc, linked, own_program, module_name);
-                bound.needs = ast.wasmNeedsOf(a);
+            for (f.implementations) |ext| {
+                if (ext.target != .wasm) continue;
+                const host = ext.host;
+                var bound = try self.checkHostBinding(f, from, ext, ext.loc, linked, own_program, module_name);
+                bound.needs = ext.needs();
                 if (host == null or host.? == build_host) {
                     try self.host_bindings.put(self.alloc, f.name, bound);
                     if (f.genericParams.len > 0) try self.host_generic_decls.put(self.alloc, f.name, f);
@@ -9070,7 +9069,7 @@ const Emitter = struct {
         self: *Emitter,
         f: ast.FnDecl,
         from: usize,
-        ext: ast.ExternalRef,
+        ext: ast.Implementation,
         ann_loc: ?ast.Loc,
         linked: []const Linked,
         own_program: ast.Program,
@@ -9078,9 +9077,7 @@ const Emitter = struct {
     ) !HostBound {
         const ar = self.arena();
         self.foreign_origin = if (from < linked.len) linked[from].via else null;
-        if (ext.module.len > 0)
-            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one cell — `op: \"<opcode>\"`, `fn: <private fn of this module>`, `wasi: .<Adapter>` or `std: \"<module>.<function>\"`", .{f.name});
-        const parsed = try hostBinding.parse(ar, ext.symbol, try hostBinding.signatureOf(ar, f));
+        const parsed = try hostBinding.parse(ar, ext.text, try hostBinding.signatureOf(ar, f));
         const binding = switch (parsed) {
             .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
             .ok => |b| b,
@@ -9097,7 +9094,7 @@ const Emitter = struct {
             const r: ?[]const u8 = if (f.returnType) |rt| stdSpelling(rt) else null;
             if (binding.std_.wasm) |ex| if (!stdWasm.matches(ex, spelled.items, r)) {
                 var buf: [128]u8 = undefined;
-                return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ try ast.wasmCellDisplay(ar, ext.symbol), f.name, binding.std_.name, stdWasm.signatureText(ex, &buf) });
+                return self.refuse(ann_loc, "`.Wasm({s})` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ try ast.wasmCellDisplay(ar, ext.text), f.name, binding.std_.name, stdWasm.signatureText(ex, &buf) });
             };
             // Front 164 s3 — a leaf with no std-wasm export beside it: a GC
             // module's alone, its GC signature the declaration's.
@@ -9308,11 +9305,11 @@ const Emitter = struct {
     /// Front 164 s3 — a `std:` cell naming a leaf with no std-wasm export
     /// beside it: a WasmGC module's alone, and the declaration's types, as the
     /// module holds them, are the leaf's parameters and result.
-    fn checkLeafSignature(self: *Emitter, f: ast.FnDecl, b: hostBinding.Std, ext: ast.ExternalRef, ann_loc: ?ast.Loc) !void {
+    fn checkLeafSignature(self: *Emitter, f: ast.FnDecl, b: hostBinding.Std, ext: ast.Implementation, ann_loc: ?ast.Loc) !void {
         const ar = self.arena();
-        const shown = try ast.wasmCellDisplay(ar, ext.symbol);
+        const shown = try ast.wasmCellDisplay(ar, ext.text);
         if (self.mode == .linear)
-            return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: `{s}` is a `.wat` leaf of std-wasm, which a module in linear memory cannot call", .{ shown, f.name, b.name });
+            return self.refuse(ann_loc, "`.Wasm({s})` on `{s}`: `{s}` is a `.wat` leaf of std-wasm, which a module in linear memory cannot call", .{ shown, f.name, b.name });
         var calls: std.ArrayListUnmanaged([]const u8) = .empty;
         const leaf = try self.readLeaf(b.leaf.?, &calls);
         var ok = true;
@@ -9325,7 +9322,7 @@ const Emitter = struct {
         if (k != leaf.params.len) ok = false;
         const declared: ?ValType = if (f.returnType) |rt| (if (std.mem.eql(u8, stdSpelling(rt), "void")) null else self.vtOf(self.reprOf(rt))) else null;
         if (declared != leaf.result) ok = false;
-        if (!ok) return self.refuse(ann_loc, "`#[@External.Wasm({s})]` on `{s}`: the leaf `{s}` takes and answers other types than the declaration's", .{ shown, f.name, b.name });
+        if (!ok) return self.refuse(ann_loc, "`.Wasm({s})` on `{s}`: the leaf `{s}` takes and answers other types than the declaration's", .{ shown, f.name, b.name });
     }
 
     /// What crosses the std-wasm boundary in a GC module (the `stdWasm.Type`s
@@ -9491,7 +9488,7 @@ const Emitter = struct {
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = self.zeroOf(sig.result.?) });
-        try self.itemCommentF("{s} — #[@External.Wasm({s})]", .{ f.name, try ast.wasmCellDisplay(ar, f.externalFor(self.external_lookup).?.symbol) });
+        try self.itemCommentF("{s} — .Wasm({s})", .{ f.name, try ast.wasmCellDisplay(ar, f.externalFor(self.external_lookup).?.text) });
         try self.item(.{ .func = try self.builder().func(.{
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
@@ -9655,7 +9652,7 @@ const Emitter = struct {
     /// declarations (`declare fn`) and `#[@External.<targert>(...)]` host-backed methods.
     fn emitInterfaceMethods(self: *Emitter, owner: []const u8, methods: []const ast.BehaviorMethod) !void {
         for (methods) |m| {
-            if (m.is_declare or m.body == null or m.isExternal() or m.isHost()) continue;
+            if (m.is_declare or m.body == null or m.isExternal()) continue;
             try self.emitMemberFn(owner, m);
         }
     }
@@ -9663,7 +9660,7 @@ const Emitter = struct {
     fn emitStructMethods(self: *Emitter, s: ast.StructDecl) !void {
         for (s.members) |mem| switch (mem) {
             .method => |m| {
-                if (m.is_declare or m.body == null or m.isExternal() or m.isHost()) continue;
+                if (m.is_declare or m.body == null or m.isExternal()) continue;
                 try self.emitMemberFn(s.name, m);
             },
             else => {},
@@ -15204,7 +15201,7 @@ const Emitter = struct {
             return error.MissingExternalTarget;
         }
         if (cc.receiver == null and self.host_fns.contains(cc.callee)) {
-            return self.refuse(loc, "`{s}` is a bodyless `declare fn` with no `#[@External.<Target>(…)]`: the wasm backend has nothing to call", .{cc.callee});
+            return self.refuse(loc, "`{s}` is a bodyless `declare fn` with no implementation: the wasm backend has nothing to call", .{cc.callee});
         }
         // `Ok(v)` / `Err(e)` / `new Error(msg)` outside the `#[@result]`
         // transform build the same `[tag, payload]` pair as `__bp_ok` /
@@ -15260,10 +15257,8 @@ const Emitter = struct {
             return true;
         }
         if (!f.isDeclare or f.body.len > 0) return false;
-        const ext = for (f.annotations) |a| {
-            if (ast.isExternalWasm(a)) if (ast.externalRefOf(a, "wasm")) |r| break r;
-        } else return false;
-        const parsed = try hostBinding.parse(self.arena(), ext.symbol, .{ .params = &.{}, .result = null });
+        const ext = f.externalFor("wasm") orelse return false;
+        const parsed = try hostBinding.parse(self.arena(), ext.text, .{ .params = &.{}, .result = null });
         if (parsed != .ok or parsed.ok != .std_) return false;
         try self.host_bindings.put(self.alloc, f.name, .{ .binding = parsed.ok });
         try self.registerFn(f);

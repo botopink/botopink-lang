@@ -6,13 +6,13 @@
 
 import {failure, failure.HostError} from "std";
 
-#[@External.Node("JSON.parse($0)", result: true), @External.Erlang(result: true, "json:decode($0)")]
+#[@external(.Node("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
 declare fn jsParse(s: string) -> @Result<i32, HostError>;
 
-#[@External.Node("Promise.resolve($0)", result: true), @External.Erlang("$0", inline: true, result: true)]
+#[@external(.Node("Promise.resolve($0)", result: true), .Erlang("$0", inline: true, result: true))]
 declare fn later(n: i32) -> @Task<@Result<i32, failure.HostError>>;
 
-#[@External.Node("Math.abs($0)", result: false), @External.Erlang("abs($0)", result: false)]
+#[@external(.Node("Math.abs($0)", result: false), .Erlang("abs($0)", result: false))]
 declare fn magnitude(n: i32) -> i32;
 
 pub fn main() {

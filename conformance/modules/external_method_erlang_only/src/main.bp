@@ -6,7 +6,7 @@
 //// of `run/external_erlang_only`.
 
 pub type Codes(list: i32[]) {
-    #[@External.Erlang("""list_to_binary(element(2, $0))""")]
+    #[@external(.Erlang("""list_to_binary(element(2, $0))"""))]
     pub declare fn text(self: Self) -> string;
 }
 

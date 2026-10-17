@@ -11,8 +11,10 @@ pub mod host;
 import {host.fromHost};
 import {greet.Greeter, greet.Bob, greet.useIt};
 
-#[@External.Node("(() => ({ greet: () => 'host' }))()")]
-#[@External.Erlang("#{greet => fun(_) -> <<\"host\">> end}")]
+#[@external(
+    .Node("(() => ({ greet: () => 'host' }))()"),
+    .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
+)]
 declare fn hostGreeter() -> Greeter;
 
 fn make() -> Greeter {

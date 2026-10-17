@@ -1,6 +1,5 @@
 pub type Meter(base: i32) {
-    #[@External.Node("""($0.base + $1)""")]
-    #[@External.Erlang("""(element(2, $0) + $1)""")]
+    #[@external(.Node("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 
     pub fn twice(self: Self) -> i32 {

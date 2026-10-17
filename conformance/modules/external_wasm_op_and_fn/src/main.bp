@@ -1,11 +1,11 @@
-#[@External.Node("Math", "floor")]
-#[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: "f64.floor")]
+#[@external(.Node("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
 pub declare fn floorOf(x: f64) -> f64;
 
-#[@External.Node("Math", "round")]
-#[@External.Erlang("""float(floor($0 + 0.5))""")]
-#[@External.Wasm(fn: roundHalfUp)]
+#[@external(
+    .Node("Math.round($0)"),
+    .Erlang("""float(floor($0 + 0.5))"""),
+    .Wasm(body: roundHalfUp),
+)]
 pub declare fn roundOf(x: f64) -> f64;
 
 fn roundHalfUp(x: f64) -> f64 {

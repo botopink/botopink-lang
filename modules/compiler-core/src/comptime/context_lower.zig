@@ -672,7 +672,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
     // (`alias_erase.zig`) are handed today.
     const decls = try arena.dupe(ast.DeclKind, program.decls);
     for (decls) |*d| switch (d.*) {
-        .@"fn", .@"test", .val, .implement, .behavior, .delegate => d.* = try deepCopy(ast.DeclKind, arena, d.*),
+        .@"fn", .@"test", .val, .implement, .behavior => d.* = try deepCopy(ast.DeclKind, arena, d.*),
         // A type's methods are copied; its shape is not — the passes after
         // this one rewrite a type's shape where the parsed program holds it,
         // and the module's importers read that.

@@ -605,8 +605,10 @@ test "string parseFloat rounds to the nearest f64 and refuses an overflow" {
 // backend — and stays inside the BMP, where commonJS's UTF-16 units and
 // erlang's characters are the same count.
 
-#[@External.Node("""String.fromCodePoint($0)""")]
-#[@External.Erlang("""unicode:characters_to_binary([$0])""")]
+#[@external(
+    .Node("""String.fromCodePoint($0)"""),
+    .Erlang("""unicode:characters_to_binary([$0])"""),
+)]
 declare fn codepointText(cp: i32) -> string;
 
 // `a`, U+00E9, `b`, U+20AC, `c`, U+00E9, `b` — seven characters, eleven bytes.

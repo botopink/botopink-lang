@@ -299,7 +299,6 @@ const Builder = struct {
             .type_ => |t| if (t.isPub and !std.mem.startsWith(u8, t.name, decl_reflection_prefix)) null else t.name,
             .behavior => |b| if (b.isPub) null else b.name,
             .typeAlias => |a| if (a.isPub) null else a.name,
-            .delegate => |dg| if (dg.isPub) null else dg.name,
             else => null,
         };
     }
@@ -321,11 +320,6 @@ const Builder = struct {
                 var pa = a;
                 pa.isPub = true;
                 break :blk try self.typeAlias(pa);
-            },
-            .delegate => |dg| blk: {
-                var pd = dg;
-                pd.isPub = true;
-                break :blk try self.delegate(pd);
             },
             else => .none,
         };
@@ -443,7 +437,6 @@ const Builder = struct {
             // (extension-dispatch).
             .extend => .none,
             .use => |u| try self.use(u),
-            .delegate => |d| try self.delegate(d),
             // Test blocks never surface in the public typedef; `mod` declares a
             // submodule that carries its own typedef, so it emits nothing here.
             .@"test", .mod, .comment => .none,
@@ -857,17 +850,6 @@ const Builder = struct {
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         for (0..depth) |_| try buf.appendSlice(self.b.arena, "../");
         return buf.items;
-    }
-
-    fn delegate(self: *Builder, d: ast.DelegateDecl) Error!js.TsDecl {
-        if (!d.isPub) return .none;
-        const ps = try self.b.arena.alloc(js.TsParam, d.params.len);
-        for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef), .rest = p.variadic };
-        const ret = try self.b.typePtr(if (d.returnType) |r| try self.typeRef(r) else js.TsType{ .name = "void" });
-        return .{ .type_alias = .{
-            .name = try self.genericName(d.name, d.genericParams),
-            .type = .{ .func = .{ .params = ps, .ret = ret } },
-        } };
     }
 
     // ── params ───────────────────────────────────────────────────────────────

@@ -53,8 +53,10 @@ pub type Response(
 // `httpc:request/4`.
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
 // `{error, Reason}`, whose message is the reason formatted (decision 490).
-#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true)]
-#[@External.Erlang("""(fun(__U) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+#[external(
+    .Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true),
+    .Erlang("""(fun(__U) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
 declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
 
 // Issue a GET request and resolve with the response, or fail with the

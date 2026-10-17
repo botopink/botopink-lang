@@ -11,6 +11,7 @@ const patterns = @import("parser/patterns.zig");
 const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
 const template_markers = @import("parser/template_markers.zig");
+const implementations = @import("parser/implementations.zig");
 const expr_params = @import("parser/expr_params.zig");
 pub const compiler_surface = @import("parser/compiler_surface.zig");
 
@@ -49,7 +50,6 @@ pub const EnumVariant = ast.EnumVariant;
 pub const EnumSection = ast.EnumSection;
 pub const FnDecl = ast.FnDecl;
 pub const ValDecl = ast.ValDecl;
-pub const DelegateDecl = ast.DelegateDecl;
 pub const Annotation = ast.Annotation;
 pub const ParamDestruct = ast.ParamDestruct;
 pub const Pattern = ast.Pattern;
@@ -199,6 +199,7 @@ pub const ParseErrorType = enum {
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
     removedRecordLiteral,
+    removedDelegate,
     /// Decision 525 — `@block { … }` / `@block(…)`: the builtin is removed; a
     /// block is written `{ … }`.
     removedBlockBuiltin,
@@ -563,10 +564,11 @@ pub const Parser = struct {
             }
             return err;
         };
-        // Decision 5: positional `@External` template markers, translated for
-        // the renderers; `$self`, `$stringify` (decision 239) and an
-        // out-of-range `$N` are refused here.
-        if (template_markers.normalizeProgram(alloc, this.tokens, &program) catch |err| {
+        // Decision 575 (6): each declaration's `#[external(…)]` sources read
+        // into its `implementations`; decision 5: their templates' positional
+        // markers translated for the renderers — `$self`, `$stringify`
+        // (decision 239) and an out-of-range `$N` are refused here.
+        if (implementations.fillProgram(alloc, this.tokens, &program) catch |err| {
             program.deinit(alloc);
             return err;
         }) |failure| {
@@ -649,9 +651,13 @@ pub const Parser = struct {
             {
                 return this.failRemovedDeclKeyword(if (this.check(.@"pub")) 1 else 0);
             } else if (this.checkShorthandDelegate()) blk: {
-                const d = try this.parseShorthandDelegateDecl(alloc);
+                // Decision 575 (6) — an unannotated `declare fn` is a
+                // function like an annotated one: refused at the declaration
+                // when no annotation implements it
+                // (`declare-without-implementation`).
+                const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .delegate = d };
+                break :blk .{ .@"fn" = d };
             } else if (this.checkNamedDecl(.implement)) blk: {
                 const d = try this.parseShorthandImplementDecl(alloc);
                 _ = this.match(.semicolon);
@@ -734,8 +740,8 @@ pub const Parser = struct {
                         }
                         break :blk2 decl;
                     },
-                    // An ANNOTATED `declare fn` is the FFI declaration form
-                    // (`@[external(…)] pub declare fn …;`), not a delegate.
+                    // An annotated `declare fn` (`#[external(…)] pub declare
+                    // fn …;`), as an unannotated one.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
                     else => return ParseError.UnexpectedToken,
                 };
@@ -874,7 +880,9 @@ pub const Parser = struct {
         return switch (body) {
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
-            .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
+            // Decision 575 (6) — `val x = declare fn(…)` went with the
+            // delegate forms.
+            .declare => this.failRemovedAt(.removedDelegate, adjustedOffset),
             .type => switch (bodyNext) {
                 .lessThan, .leftParenthesis, .leftBrace, .implement => .{ .type_ = try this.parseTypeDecl(alloc) },
                 else => .{ .val = try this.parseValDecl(alloc) },
@@ -1592,6 +1600,7 @@ pub const Parser = struct {
         var argLocs: std.ArrayList(Loc) = .empty;
         errdefer argLocs.deinit(alloc);
         var any_label = false;
+        var args_trailing = false;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
@@ -1659,7 +1668,10 @@ pub const Parser = struct {
                 }
                 try labels.append(alloc, label);
                 try argLocs.append(alloc, locFromToken(this.peek()));
-                if (!is_builtin) {
+                if (!is_builtin or std.mem.eql(u8, name, "external")) {
+                    // Decision 575 (6) — `#[@external(.Erlang("…"), …)]`'s
+                    // sources are values of std's `Implementation`, parsed as
+                    // a decorator's arguments are.
                     // Decision 280 (1) — a decorator's argument is a value of
                     // any type (`[1, 2]`, `Cache<Item>("items")`, `env("X")`,
                     // `.name`): one expression, kept as its source span and
@@ -1670,6 +1682,7 @@ pub const Parser = struct {
                     e.deinit(alloc);
                     try args.append(alloc, spanLexemes(first, this.tokens[this.current - 1]));
                     if (!this.match(.comma)) break;
+                    if (this.check(.rightParenthesis)) args_trailing = true;
                     continue;
                 }
                 if ((this.check(.dot) or this.check(.identifier)) and
@@ -1713,16 +1726,15 @@ pub const Parser = struct {
             }
             _ = try this.consume(.rightParenthesis);
         }
-        var ann = Annotation{
+        const ann = Annotation{
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
             .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
+            .written = .{ .argsTrailingComma = args_trailing },
         };
-        errdefer ann.deinit(alloc);
-        if (is_builtin) try ast.translateExternalCells(alloc, &ann);
         return ann;
     }
 
@@ -2001,12 +2013,6 @@ pub const Parser = struct {
     pub const parseTestDecl = decl_grammar.parseTestDecl;
 
     // ── delegate decl ────────────────────────────────────────────────────────────
-
-    pub const parseDelegateDecl = decl_grammar.parseDelegateDecl;
-
-    pub const parseShorthandDelegateDecl = decl_grammar.parseShorthandDelegateDecl;
-
-    pub const parseDelegateParams = decl_grammar.parseDelegateParams;
 
     // ── interface decl ───────────────────────────────────────────────────────────
 
@@ -2354,4 +2360,5 @@ pub fn printListSpreadError(err: ListSpreadError, path: []const u8, line: usize,
 
 test {
     _ = template_markers;
+    _ = implementations;
 }

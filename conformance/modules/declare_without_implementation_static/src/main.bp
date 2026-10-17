@@ -1,0 +1,10 @@
+//// Decision 575 (6) — a type's static `declare fn` no annotation implements
+//// is refused at the declaration.
+
+pub type Clock() {
+    pub declare fn ticks() -> i32;
+}
+
+pub fn main() {
+    @print(Clock.ticks());
+}

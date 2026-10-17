@@ -351,14 +351,14 @@ pub fn emitCompile(
 /// The fixed part of the compiler's refusal for a host cell that has no
 /// binding on the build's target (`MissingExternal.diagnostic`,
 /// `compiler-core/src/codegen/moduleOutput.zig`). Both of its spellings carry
-/// it — "`f` has no `#[@External.<Target>(…)]` for the node backend" and
-/// "`f` calls `g`, which has no `#[@External.<Target>(…)]` for the wasm
+/// it — "`f` has no implementation for the node backend" and
+/// "`f` calls `g`, which has no implementation for the wasm
 /// backend". The refusal carries no error id, so its fixed text is what
 /// identifies it; if the compiler rewords it every audit answers
 /// `not_structural` and the run fails — the audit can stop accepting, it
 /// cannot start accepting something else. `compiler-cli/tests/test_tooling.sh`
 /// holds the two together with a real build.
-const HOST_BINDING_MARK = "has no `#[@External.<Target>(…)]` for the ";
+const HOST_BINDING_MARK = "has no implementation for the ";
 const HOST_BINDING_TAIL = " backend";
 
 /// What one restriction audit found. A lib's `"targets"` list may exclude a
@@ -887,7 +887,7 @@ test "classifyWith: exit 0 is the ok status, the unsupported mark a skip unless 
 /// line cannot carry them.
 const AUDIT_REFUSED_STDOUT = "  \x1b[36mCompiling\x1b[0m 33 module(s)...\n";
 const AUDIT_REFUSED_STDERR =
-    \\error: `callGlobal` has no `#[@External.<Target>(…)]` for the erlang backend
+    \\error: `callGlobal` has no implementation for the erlang backend
     \\  --> src/root.bp:37:12
     \\   |
     \\37 |     return callGlobal(name, id);
@@ -902,7 +902,7 @@ test "classifyAudit: a build refused for a missing host binding is a structural 
     const audit = classifyAudit(arena_inst.allocator(), 1, AUDIT_REFUSED_STDOUT, AUDIT_REFUSED_STDERR);
     try testing.expectEqual(Audit.Why.structural, audit.why);
     try testing.expectEqual(Status.excluded, audit.status());
-    try testing.expectEqualStrings("error: `callGlobal` has no `#[@External.<Target>(…)]` for the erlang backend", audit.line);
+    try testing.expectEqualStrings("error: `callGlobal` has no implementation for the erlang backend", audit.line);
     try testing.expectEqualStrings("src/root.bp:37:12", audit.at);
 }
 
@@ -910,7 +910,7 @@ test "classifyAudit: the refusal reached through a bodied function is structural
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const stderr =
-        \\error: `render` calls `now`, which has no `#[@External.<Target>(…)]` for the wasm backend
+        \\error: `render` calls `now`, which has no implementation for the wasm backend
         \\   --> src/clock.bp:9:5
         \\
     ;
@@ -938,7 +938,7 @@ test "classifyAudit: a build whose FIRST error is anything else refuses the excl
         \\error[if-operand]: `if` cannot be an operand
         \\  --> src/a.bp:3:9
         \\
-        \\error: `host` has no `#[@External.<Target>(…)]` for the node backend
+        \\error: `host` has no implementation for the node backend
         \\  --> src/b.bp:1:1
         \\
     ;
@@ -962,12 +962,12 @@ test "classifyAudit: only the trailing summary, or no error line at all, refuses
 }
 
 test "isHostBindingRefusal: the fixed text, one backend word, nothing after it" {
-    try testing.expect(isHostBindingRefusal("error: `f` has no `#[@External.<Target>(…)]` for the node backend"));
-    try testing.expect(isHostBindingRefusal("error: `f` calls `g`, which has no `#[@External.<Target>(…)]` for the erlang backend"));
+    try testing.expect(isHostBindingRefusal("error: `f` has no implementation for the node backend"));
+    try testing.expect(isHostBindingRefusal("error: `f` calls `g`, which has no implementation for the erlang backend"));
     // The beam template refusal is a different diagnostic: the binding exists.
-    try testing.expect(!isHostBindingRefusal("error: `f`'s `#[@External.Erlang(…)]` template does not compile for the beam backend: a fun"));
-    try testing.expect(!isHostBindingRefusal("error: `f` has no `#[@External.<Target>(…)]` for the  backend"));
-    try testing.expect(!isHostBindingRefusal("error: `f` has no `#[@External.<Target>(…)]` for the node backend, and more"));
+    try testing.expect(!isHostBindingRefusal("error: `f`'s `.Erlang(…)` template does not compile for the beam backend: a fun"));
+    try testing.expect(!isHostBindingRefusal("error: `f` has no implementation for the  backend"));
+    try testing.expect(!isHostBindingRefusal("error: `f` has no implementation for the node backend, and more"));
     try testing.expect(!isHostBindingRefusal("error: unbound variable `f`"));
 }
 
@@ -986,9 +986,9 @@ test "appendAuditRecord: one JSON line, the refusal escaped" {
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     var buf: std.ArrayListUnmanaged(u8) = .empty;
-    try appendAuditRecord(arena, &buf, "acme", "commonJS", .excluded, "error: `f` has no `#[@External.<Target>(…)]` for the node backend", "src/a.bp:1:2");
+    try appendAuditRecord(arena, &buf, "acme", "commonJS", .excluded, "error: `f` has no implementation for the node backend", "src/a.bp:1:2");
     try testing.expectEqualStrings(
-        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"commonJS\",\"status\":\"ok\",\"line\":\"error: `f` has no `#[@External.<Target>(…)]` for the node backend\",\"at\":\"src/a.bp:1:2\"}\n",
+        "{\"event\":\"restriction_audit\",\"lib\":\"acme\",\"target\":\"commonJS\",\"status\":\"ok\",\"line\":\"error: `f` has no implementation for the node backend\",\"at\":\"src/a.bp:1:2\"}\n",
         buf.items,
     );
     buf.clearRetainingCapacity();

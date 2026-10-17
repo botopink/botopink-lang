@@ -12,8 +12,7 @@ const parserMod = @import("../../parser.zig");
 // builtin `node:path`, OTP's `filename`), so the RUN LOG is the call's value.
 test "js: external ---- call emits module symbol" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("filename", "basename"),
-        \\  @External.Node("node:path", "basename")]
+        \\#[@external(.Erlang("filename:basename($0)"), .Node("""require("node:path").basename($0)"""))]
         \\pub declare fn basename(p: string) -> string;
         \\
         \\fn main() {
@@ -26,8 +25,7 @@ test "js: external ---- global math" {
     // `Math` is a JS global, not a module — the node target must reference
     // it directly (`const floor = Math.floor;`), never `require("Math")`.
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("math", "floor"),
-        \\  @External.Node("Math", "floor")]
+        \\#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
         \\fn main() {
@@ -38,8 +36,7 @@ test "js: external ---- global math" {
 
 test "js: external ---- import binds symbol" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("filename", "extension"),
-        \\  @External.Node("node:path", "extname")]
+        \\#[@external(.Erlang("filename:extension($0)"), .Node("""require("node:path").extname($0)"""))]
         \\pub declare fn extname(p: string) -> string;
         \\
         \\fn main() {
@@ -54,8 +51,7 @@ test "js: external ---- import binds symbol" {
 
 test "js: External.<Target> ---- one decl binds a module function per target" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("filename", "dirname"),
-        \\  @External.Node("node:path", "dirname")]
+        \\#[@external(.Erlang("filename:dirname($0)"), .Node("""require("node:path").dirname($0)"""))]
         \\pub declare fn dirname(p: string) -> string;
         \\
         \\fn main() {
@@ -67,8 +63,7 @@ test "js: External.<Target> ---- one decl binds a module function per target" {
 test "js: External.<Target> ---- one decl binds a global function per target" {
     // One decl carries one annotation per target; the active backend reads its own.
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang( "math", "floor"),
-        \\  @External.Node("Math", "floor")]
+        \\#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
         \\fn main() {
@@ -86,7 +81,7 @@ test "js: External.<Target> ---- one decl binds a global function per target" {
 test "js: external ---- net-new: no target for the active backend errors" {
     const io = std.testing.io;
     const src =
-        \\#[@External.Erlang( "string", "length")]
+        \\#[@external(.Erlang("string:length($0)"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
@@ -130,7 +125,7 @@ test "erlang: external ---- a refused module frees the type units it rendered" {
         \\    }
         \\}
         \\
-        \\#[@External.Node("""globalThis.nodeOnly($0)""")]
+        \\#[@external(.Node("""globalThis.nodeOnly($0)"""))]
         \\declare fn nodeOnly(n: i32) -> i32;
         \\
         \\fn main() {
@@ -162,8 +157,7 @@ test "erlang: external ---- a refused module frees the type units it rendered" {
 // inline (mirrors the erlang backend's existing template path).
 test "js: external ---- A2 chained host call renders verbatim" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("base64:encode($0)"),
-        \\  @External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
+        \\#[@external(.Erlang("base64:encode($0)"), .Node("""Buffer.from($0, 'utf8').toString('base64')"""))]
         \\pub declare fn b64encode(s: string) -> string;
         \\
         \\fn main() {
@@ -180,8 +174,7 @@ test "js: external ---- A2 chained host call renders verbatim" {
 // run-log captures a deterministic value.
 test "js: external ---- A2 method-on-global template keeps receiver bound" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"),
-        \\  @External.Node("JSON.stringify($0)")]
+        \\#[@external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .Node("JSON.stringify($0)"))]
         \\declare fn stringify(value: i32) -> string;
         \\
         \\fn main() {
@@ -197,8 +190,10 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
 // on Erlang. Without §A3 this declare reds at R1 (effect on declare).
 test "js: external ---- A3 result-template-owned declare fn" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Erlang( """(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
-        \\  @External.Node("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()""")]
+        \\#[@external(
+        \\    .Erlang("""(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
+        \\    .Node("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()"""),
+        \\)]
         \\pub declare fn parseInt(s: string) -> @Result<i32, string>;
         \\
         \\fn main() {
@@ -212,7 +207,7 @@ test "js: external ---- A3 result-template-owned declare fn" {
 // at each call site — no import binding, no `require(…)`.
 test "js: external ---- template declare fn emits no require" {
     const src =
-        \\#[@External.Node("""Math.max($0, $1)""")]
+        \\#[@external(.Node("""Math.max($0, $1)"""))]
         \\declare fn biggest(a: i32, b: i32) -> i32;
         \\
         \\fn main() {
@@ -231,7 +226,7 @@ test "js: external ---- template declare fn emits no require" {
 // import `const { process.pid: pid } = require("");`, a SyntaxError.
 test "js: external ---- 1-arg host expression declare fn emits no require" {
     const src =
-        \\#[@External.Node("process.pid")]
+        \\#[@external(.Node("process.pid"))]
         \\declare fn pid() -> i32;
         \\
         \\fn main() {
@@ -248,8 +243,7 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
 // `:expr()()`, which stopped std's env, os and process from compiling.
 test "js: external ---- 1-arg host expression declare fn renders at the call site" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@External.Node("process.pid"),
-        \\  @External.Erlang("list_to_integer(os:getpid())")]
+        \\#[@external(.Node("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
         \\declare fn pid() -> i32;
         \\
         \\fn main() {
@@ -276,15 +270,13 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
         .{
             .path = "hostlib",
             .source =
-            \\#[@External.Node("String($0)"),
-            \\  @External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+            \\#[@external(.Node("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
             \\pub declare fn hostKey(v: i32) -> string;
             \\
-            \\#[@External.Node("$0.length"),
-            \\  @External.Erlang("erlang", "length")]
+            \\#[@external(.Node("$0.length"), .Erlang("erlang:length($0)"))]
             \\pub declare fn hostLen(xs: Array<string>) -> i32;
             \\
-            \\#[@External.Node("console.log($0)")]
+            \\#[@external(.Node("console.log($0)"))]
             \\pub declare fn nodeOnly(s: string) -> void;
             ,
         },
@@ -314,12 +306,13 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
 test "js: external ---- a host-backed method on a local type is a method of the type" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\pub type Meter(base: i32) {
-        \\    #[@External.Node("""($0.base + $1)"""),
-        \\      @External.Erlang("""(element(2, $0) + $1)""")]
+        \\    #[@external(.Node("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
         \\    pub declare fn plus(self: Self, n: i32) -> i32;
         \\
-        \\    #[@External.Node("""[$0.base, $1, $2].join("-")"""),
-        \\      @External.Erlang("""iolist_to_binary(lists:join(<<"-">>, [integer_to_binary(element(2, $0)), integer_to_binary($1), $2]))""")]
+        \\    #[@external(
+        \\        .Node("""[$0.base, $1, $2].join("-")"""),
+        \\        .Erlang("""iolist_to_binary(lists:join(<<"-">>, [integer_to_binary(element(2, $0)), integer_to_binary($1), $2]))"""),
+        \\    )]
         \\    pub declare fn label(self: Self, n: i32, tail: string) -> string;
         \\
         \\    pub fn twice(self: Self) -> i32 {
@@ -331,8 +324,10 @@ test "js: external ---- a host-backed method on a local type is a method of the 
         \\    Low,
         \\    High,
         \\
-        \\    #[@External.Node("""($0.tag === "High" ? $1 * 10 : $1)"""),
-        \\      @External.Erlang("""case $0 of 'test@main@@Level__v__high' -> $1 * 10; _ -> $1 end""")]
+        \\    #[@external(
+        \\        .Node("""($0.tag === "High" ? $1 * 10 : $1)"""),
+        \\        .Erlang("""case $0 of 'test@main@@Level__v__high' -> $1 * 10; _ -> $1 end"""),
+        \\    )]
         \\    pub declare fn scale(self: Self, n: i32) -> i32;
         \\}
         \\
@@ -356,8 +351,7 @@ test "js: external ---- a host-backed method on an imported type is answered by 
             .path = "hostlib",
             .source =
             \\pub type Meter(base: i32) {
-            \\    #[@External.Node("""($0.base + $1)"""),
-            \\      @External.Erlang("""(element(2, $0) + $1)""")]
+            \\    #[@external(.Node("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
             \\    pub declare fn plus(self: Self, n: i32) -> i32;
             \\}
             ,
@@ -381,7 +375,7 @@ test "js: external ---- a host-backed method on an imported type is answered by 
 test "js: external ---- a host-backed method with no binding for the backend is refused at the call" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
         \\pub type Probe(n: i32) {
-        \\    #[@External.Erlang("""element(2, $0)""")]
+        \\    #[@external(.Erlang("""element(2, $0)"""))]
         \\    pub declare fn raw(self: Self) -> i32;
         \\}
         \\
@@ -396,10 +390,10 @@ test "js: external ---- a host-backed method with no binding for the backend is 
 test "js: external ---- a host-backed method is declared in the .d.ts when node binds it" {
     try h.assertDtsContains(std.testing.allocator,
         \\pub type Meter(base: i32) {
-        \\    #[@External.Node("""($0.base + $1)""")]
+        \\    #[@external(.Node("""($0.base + $1)"""))]
         \\    pub declare fn plus(self: Self, n: i32) -> i32;
         \\
-        \\    #[@External.Erlang("""element(2, $0)""")]
+        \\    #[@external(.Erlang("""element(2, $0)"""))]
         \\    pub declare fn raw(self: Self) -> i32;
         \\}
     , &.{"plus(n: number): number;"}, &.{"raw("});
@@ -432,14 +426,21 @@ test "js: external ---- no prelude template calls the method it patches" {
         if (decl != .behavior) continue;
         for (decl.behavior.methods) |m| {
             const ref = m.externalFor("node") orelse continue;
-            if (std.mem.indexOfScalar(u8, ref.symbol, '$') == null) continue; // not a template
+            if (std.mem.indexOfScalar(u8, ref.text, '$') == null) continue; // not a template
             seen += 1;
             const call = try std.fmt.allocPrint(alloc, ".{s}(", .{m.name});
-            if (std.mem.indexOf(u8, ref.symbol, call) != null) {
+            // A host namespace's function (`Math.floor($0)`) is no call of
+            // the receiver's method: only a `.name(` after a value is.
+            var calls_itself = false;
+            var from: usize = 0;
+            while (std.mem.indexOfPos(u8, ref.text, from, call)) |at| : (from = at + 1) {
+                if (at == 0 or !std.ascii.isAlphabetic(ref.text[at - 1])) calls_itself = true;
+            }
+            if (calls_itself) {
                 std.debug.print(
                     "\n{s}.{s}: the node template calls `{s}`, which is the prototype method it" ++
                         " patches — the patch would call itself:\n  {s}\n",
-                    .{ decl.behavior.name, m.name, call, ref.symbol },
+                    .{ decl.behavior.name, m.name, call, ref.text },
                 );
                 return error.SelfRecursivePrototypePatch;
             }
@@ -457,16 +458,12 @@ test "js: external ---- no prelude template calls the method it patches" {
 // (`hostFnBinding.zig`). It is an ordinary function on each backend, so a
 // call, its value and a `pub` export behave like any other function's.
 const fn_binding_program =
-    \\#[@External.Node(fn: mixBody)]
-    \\#[@External.Erlang(fn: mixBody)]
-    \\#[@External.Wasm(fn: mixBody)]
+    \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
     \\pub declare fn mix(x: f64, y: f64) -> f64;
     \\fn mixBody(a: f64, b: f64) -> f64 {
     \\    return a * 2.0 + b;
     \\}
-    \\#[@External.Node(fn: greetBody)]
-    \\#[@External.Erlang(fn: greetBody)]
-    \\#[@External.Wasm(fn: greetBody)]
+    \\#[@external(.Node(body: greetBody), .Erlang(body: greetBody), .Wasm(body: greetBody))]
     \\declare fn greet(name: string) -> string;
     \\fn greetBody(name: string) -> string {
     \\    return "hi " + name;
@@ -503,33 +500,33 @@ test "beam: external ---- fn: binds a declare fn to a private body" {
 test "host backends: external ---- a fn: binding that names no private fn of the same signature is refused at the annotation" {
     const cases = [_]struct { src: []const u8, needle: []const u8 }{
         .{ .src =
-        \\#[@External.Node(fn: mixBodx), @External.Erlang(fn: mixBodx)]
+        \\#[@external(.Node(body: mixBodx), .Erlang(body: mixBodx))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "unbound variable 'mixBodx'" },
         .{ .src =
-        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
+        \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
-        \\#[@External.Node("Math", "abs"), @External.Erlang("erlang", "abs")]
+        \\#[@external(.Node("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
         \\declare fn mixBody(x: f64) -> f64;
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` has no body of its own to run" },
         .{ .src =
-        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
+        \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\pub fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` is `pub`" },
         .{ .src =
-        \\#[@External.Node(fn: mixBody), @External.Erlang(fn: mixBody)]
+        \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64, y: f64) -> f64 { return x + y; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "must take the same parameter types in the same order" },
     };
     for (cases, 0..) |c, i| {
-        const col: usize = if (i == 0) 22 else 3;
+        const col: usize = if (i == 0) 25 else 3;
         try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);

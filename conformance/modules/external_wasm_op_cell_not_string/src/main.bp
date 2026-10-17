@@ -1,9 +1,7 @@
 //// Decision 481 — `op:` names a wasm opcode by its text, a string: a bare name
 //// is refused at the argument, on every target, naming the string form.
 
-#[@External.Node("Math", "floor")]
-#[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: floor)]
+#[@external(.Node("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: floor))]
 pub declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

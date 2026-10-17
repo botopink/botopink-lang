@@ -1275,6 +1275,10 @@ fn parsePostfixChainFrom(this: *This, alloc: std.mem.Allocator, base_in: Expr, r
         _ = this.advance();
         const fieldTok: Token = if (this.check(.numberLiteral))
             this.advance()
+        else if (this.check(.implement) and isCompilerKeyword(base))
+            // Decision 575 (3), (6) — `compiler.implement(source)`: the
+            // member's name is the keyword, after `compiler.` alone.
+            this.advance()
         else
             try this.consumeMemberName();
         // Decision 8 §1.3 — a method name is a name: `ctx.resolve<T>()`.
@@ -2859,4 +2863,9 @@ fn makeStringExpr(this: *This, alloc: std.mem.Allocator, tok: Token, content: []
         .multiline = multiline,
         .parts = try parts.toOwnedSlice(alloc),
     } } } };
+}
+
+/// `e` is the keyword `compiler` (decision 575 (3)).
+fn isCompilerKeyword(e: Expr) bool {
+    return e == .identifier and e.identifier.kind == .ident and std.mem.eql(u8, e.identifier.kind.ident, ast.compiler_keyword);
 }

@@ -136,7 +136,7 @@ test "parser error: retired @[ annotation block" {
         \\2 | @[external(node, "m.mjs", "f")]
         \\  | ^^ write `#[…]` instead
         \\  |
-        \\  = hint: An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node("./m.mjs", "f")]`.
+        \\  = hint: An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.Node("f($0)"))]`.
         \\
         \\
     ,
@@ -291,16 +291,16 @@ test "lexer: lexicalErrorMessage for InvalidUnicodeEscape InvalidCodepoint" {
 test "parser: $self in an External template names the positional marker" {
     try h.expectParseError(std.testing.allocator,
         \\error[template-self-marker]: `$self` is not a template marker
-        \\ --> <test>:1:18
+        \\ --> <test>:1:19
         \\  |
-        \\1 | #[@External.Node("$self.trim()")]
-        \\  |                  ^^^^^^^^^^^^^^ use `$0`
+        \\1 | #[@external(.Node("$self.trim()"))]
+        \\  |                   ^^^^^^^^^^^^^^ use `$0`
         \\  |
         \\  = hint: Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.
         \\
         \\
     ,
-        \\#[@External.Node("$self.trim()")]
+        \\#[@external(.Node("$self.trim()"))]
         \\declare fn trim(s: string) -> string;
     );
 }

@@ -1,6 +1,8 @@
-//! The embedded `primitives.bp` prelude, parsed once for the life of the
-//! process — what the erlang and wasm emitters read a `default fn`'s helpers
-//! from (`stringSlice0`'s declared return, its `#[@External.Wasm(…)]` cell).
+//! The embedded `primitives.bp` and `builtins.d.bp` preludes, parsed once for
+//! the life of the process — what the emitters read a `default fn`'s helpers
+//! from (`stringSlice0`'s declared return, its `.Wasm(…)` cell) and the
+//! prelude's declarations' implementations (`ast.Implementation`, decision
+//! 575 (6)): no emitter parses the prelude itself.
 //!
 //! `emitErlangModule` re-lexed and re-parsed it (`collectPrimErlangDispatch`)
 //! on EVERY emission, and the source is a comptime-embedded string — the same
@@ -27,6 +29,8 @@ var mutex: std.atomic.Mutex = .unlocked;
 var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var primitives_tried: bool = false;
 var primitives_program: ?ast.Program = null;
+var builtins_tried: bool = false;
+var builtins_program: ?ast.Program = null;
 
 fn lock() void {
     while (!mutex.tryLock()) std.atomic.spinLoopHint();
@@ -46,6 +50,21 @@ pub fn primitives() ?ast.Program {
     var p = parserMod.Parser.init(tokens);
     primitives_program = p.parse(a) catch null;
     return primitives_program;
+}
+
+/// The parsed `builtins.d.bp` (`@print`'s implementations), or null when it
+/// does not parse.
+pub fn builtins() ?ast.Program {
+    lock();
+    defer mutex.unlock();
+    if (builtins_tried) return builtins_program;
+    builtins_tried = true;
+    const a = arena.allocator();
+    var lx = lexerMod.Lexer.init(prelude.builtins);
+    const tokens = lx.scanAll(a) catch return null;
+    var p = parserMod.Parser.init(tokens);
+    builtins_program = p.parse(a) catch null;
+    return builtins_program;
 }
 
 /// The prelude's free `fn` named `name` (`stringSlice0`), or null.

@@ -2119,9 +2119,15 @@ pub const GenericParam = struct {
 /// If `body` is null the method is abstract (no default implementation).
 pub const BehaviorMethod = struct {
     name: []const u8,
-    /// `@[external(target, "module", "symbol")]` annotations on a `declare fn`
-    /// member — host-backed interface methods (per-target lowering).
+    /// Where the name is written — where a refusal of the declaration
+    /// points (`declare-without-implementation`). `{0,0}` when synthesised;
+    /// left out of the AST dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
+    /// The annotations on the member — `#[external(…)]` included.
     annotations: []Annotation = &.{},
+    /// Decision 575 (6) — the member's host implementations, one per target
+    /// (`Implementation`). Owned; left out of the AST dump.
+    implementations: []Implementation = &.{},
     /// Generic type parameters, e.g. `<T, R>`. Empty slice when not generic.
     genericParams: []GenericParam = &.{},
     params: []Param,
@@ -2159,34 +2165,21 @@ pub const BehaviorMethod = struct {
     /// name. Left out of the AST dump.
     from_prelude: bool = false,
 
-    /// True when the method is a host-backed `#[@External.<Target>(…)]`
-    /// declaration.
+    /// True when the method has a host implementation (decision 575 (6)).
     pub fn isExternal(this: BehaviorMethod) bool {
-        for (this.annotations) |a| {
-            if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
-        }
-        return false;
+        return this.implementations.len > 0;
     }
 
-    /// True when the method carries `#[builtin]` — the host/raw-infra provides
-    /// the real body; the bp body is a stub and codegen skips it.
-    pub fn isHost(this: BehaviorMethod) bool {
-        for (this.annotations) |a| {
-            if (std.mem.eql(u8, a.name, "Host")) return true;
-        }
-        return false;
-    }
-
-    /// The `(module, symbol)` of the `external` annotation targeting `target`
-    /// (e.g. "node", "erlang"), or null when none matches.
-    pub fn externalFor(this: BehaviorMethod, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
-        return null;
+    /// The implementation serving `target` (`node`, `erlang`, `wasm`, …), or
+    /// null when none does.
+    pub fn externalFor(this: BehaviorMethod, target: []const u8) ?Implementation {
+        return implementationFor(this.implementations, target);
     }
 
     pub fn deinit(this: *BehaviorMethod, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
+        freeImplementations(allocator, this.implementations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.params) |*p| p.deinit(allocator);
@@ -2200,41 +2193,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "markerLoc" }, &.{ "comments", "trailingComment", "marker" });
-    }
-};
-
-/// A single-method interface type alias declared as:
-///   `val log = declare fn(self: Self)` or
-///   `[pub] declare fn log(this: Self)`
-pub const DelegateDecl = struct {
-    name: []const u8,
-    isPub: bool = false,
-    docComment: ?[]const u8 = null,
-    /// `//` regular comment (last one before the declaration)
-    comment: ?[]const u8 = null,
-    /// `////` module-level documentation
-    moduleComment: ?[]const u8 = null,
-    /// `<T, F>` — the same generic list a `fn` declaration takes.
-    genericParams: []GenericParam = &.{},
-    params: []Param,
-    /// `-> R` — any type reference (`Component<T, any>`), not one name.
-    returnType: ?TypeRef = null,
-    /// Where the return type starts (06 N30), `0:0` when there is none.
-    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
-
-    pub fn deinit(this: *DelegateDecl, allocator: std.mem.Allocator) void {
-        for (this.genericParams) |*gp| gp.deinit(allocator);
-        allocator.free(this.genericParams);
-        for (this.params) |*p| p.deinit(allocator);
-        allocator.free(this.params);
-        if (this.returnType) |*rt| rt.deinit(allocator);
-    }
-
-    /// Dumped without `returnTypeLoc` (a diagnostic aid, not surface), and
-    /// without `genericParams` when there are none.
-    pub fn jsonStringify(this: DelegateDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"genericParams"});
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "markerLoc", "implementations", "nameLoc" }, &.{ "comments", "trailingComment", "marker" });
     }
 };
 
@@ -2295,6 +2254,10 @@ pub const Annotation = struct {
         /// True on the last annotation of a block written with a comma
         /// before the `]` — the list prints one annotation per line.
         trailingComma: bool = false,
+        /// True when the argument list is written with a comma before its
+        /// `)` — it prints one argument per line (decision 166's rule:
+        /// `#[@external(\n    .Erlang(…),\n    .Node(…),\n)]`).
+        argsTrailingComma: bool = false,
         /// Comments between the previous block and this block's `#[`
         /// (only on the annotation that opens a block).
         leadComments: []const []const u8 = &.{},
@@ -2365,32 +2328,278 @@ pub const Annotation = struct {
     }
 };
 
-/// The host `(module, symbol)` pair of one `external(target, module, symbol)`
-/// annotation, with the string-literal quotes stripped.
-pub const ExternalRef = struct {
+/// Decision 575 (6) — one target's code for a `declare fn`: a value of std's
+/// `Implementation` (`libs/std/src/external.bp`), as `#[external(…)]` (or a
+/// library's source annotation, through `compiler.implement`) gave it. The
+/// parser reads std's `external` where it is written
+/// (`parser/implementations.zig`); the checker checks each source as the
+/// enum's constructor and adds what a library's annotation implemented
+/// (`comptime/implementations.zig`). Every backend reads a declaration's
+/// `implementations` alone. The strings are owned.
+pub const Implementation = struct {
+    target: Target,
+    /// The `template`, as written between its quotes (`"…"` or `"""…"""`,
+    /// `unquoteAnnotationArg`), its markers translated to the renderers'
+    /// receiver convention on a method (`parser/template_markers.zig`).
+    template: ?[]const u8 = null,
+    /// The one binding cell (decision 481): `body:` on every target, `op:`,
+    /// `std:` and `wasi:` on `Wasm`.
+    cell: ?Cell = null,
+    /// `inline: true` (`Erlang` alone) and `result: true` (every variant).
+    inline_: bool = false,
+    result: bool = false,
+    /// `Wasm`'s `host:` — the runtime the binding serves, every host when null
+    /// (decision 334).
+    host: ?WasmHost = null,
+    /// `Wasm`'s `needs:` (decision 518), one bit per `WasmNeed` (`needs()`).
+    /// A plain integer: the generic AST walkers take a pointer to every
+    /// field, and an `EnumSet`'s packed mask is no addressable one.
+    needs_mask: u8 = 0,
+    /// The binding text every reader takes: the template, or the cell as
+    /// `fn:<name>` / `op:<opcode>` / `std:<module>.<function>` /
+    /// `wasi:<adapter>` (the adapter's enum value in snake case, `.RaceOf`
+    /// names `race_of`) — `hostFnBinding.fnName`, `wat/host_binding.parse`,
+    /// `comptime/host_cells`.
+    text: []const u8 = "",
+    /// Where the annotation that gave it is written — where a table check
+    /// refuses it — and where the source itself (`.Erlang(…)`) starts.
+    loc: ?Loc = null,
+    sourceLoc: ?Loc = null,
+
+    pub const Target = enum {
+        erlang,
+        node,
+        typescript,
+        wasm,
+
+        /// The variant's name in std's enum (`Erlang`).
+        pub fn variant(self: Target) []const u8 {
+            return switch (self) {
+                .erlang => "Erlang",
+                .node => "Node",
+                .typescript => "Typescript",
+                .wasm => "Wasm",
+            };
+        }
+
+        /// The target a variant name (`Erlang`) names, or null.
+        pub fn ofVariant(name: []const u8) ?Target {
+            if (std.mem.eql(u8, name, "Erlang")) return .erlang;
+            if (std.mem.eql(u8, name, "Node")) return .node;
+            if (std.mem.eql(u8, name, "Typescript")) return .typescript;
+            if (std.mem.eql(u8, name, "Wasm")) return .wasm;
+            return null;
+        }
+
+        /// The target a lookup member (`erlang`, `beam`, `node`,
+        /// `typescript`, `wasm`) reads, compared without case, or null.
+        pub fn ofMember(member: []const u8) ?Target {
+            if (std.ascii.eqlIgnoreCase(member, "erlang") or std.ascii.eqlIgnoreCase(member, "beam")) return .erlang;
+            if (std.ascii.eqlIgnoreCase(member, "node")) return .node;
+            if (std.ascii.eqlIgnoreCase(member, "typescript")) return .typescript;
+            if (std.ascii.eqlIgnoreCase(member, "wasm")) return .wasm;
+            return null;
+        }
+    };
+
+    pub const CellKind = enum {
+        body,
+        op,
+        std_,
+        wasi,
+
+        /// The label it is written with (`body:`, `op:`, `std:`, `wasi:`).
+        pub fn label(self: CellKind) []const u8 {
+            return switch (self) {
+                .body => "body",
+                .op => "op",
+                .std_ => "std",
+                .wasi => "wasi",
+            };
+        }
+
+        /// Each kind with the prefix of its binding text.
+        pub const prefixes = [_]struct { text: []const u8, kind: CellKind }{
+            .{ .text = "fn", .kind = .body },
+            .{ .text = "op", .kind = .op },
+            .{ .text = "wasi", .kind = .wasi },
+            .{ .text = "std", .kind = .std_ },
+        };
+
+        /// The prefix of its binding text (`fn:`, `op:`, `std:`, `wasi:`).
+        pub fn prefix(self: CellKind) []const u8 {
+            return switch (self) {
+                .body => "fn",
+                .op => "op",
+                .std_ => "std",
+                .wasi => "wasi",
+            };
+        }
+    };
+
+    pub const Cell = struct {
+        kind: CellKind,
+        /// The function's name, the opcode, std-wasm's `<module>.<function>`,
+        /// the adapter in snake case.
+        value: []const u8,
+    };
+
+    /// True when it serves the lookup `target` names (`node`, `erlang`,
+    /// `typescript`, `wasm`, `wasm.browser`; `beam` reads `Erlang`, decision
+    /// 437): the target's variant, and on wasm a binding of the build's host
+    /// or of every host.
+    pub fn serves(self: Implementation, target: []const u8) bool {
+        const lookup = ExternalLookup.of(target);
+        const want = Target.ofMember(lookup.member) orelse return false;
+        if (self.target != want) return false;
+        if (lookup.host) |h| if (self.host) |own| if (own != h) return false;
+        return true;
+    }
+
+    /// The needs `needs_mask` holds.
+    pub fn needs(self: Implementation) WasmNeeds {
+        var set = WasmNeeds.initEmpty();
+        inline for (std.meta.fields(WasmNeed)) |f| {
+            if (self.needs_mask & (1 << f.value) != 0) set.insert(@enumFromInt(f.value));
+        }
+        return set;
+    }
+
+    /// Adds `n` to the needs.
+    pub fn addNeed(self: *Implementation, n: WasmNeed) void {
+        self.needs_mask |= @as(u8, 1) << @intFromEnum(n);
+    }
+
+    pub fn deinit(self: *Implementation, allocator: std.mem.Allocator) void {
+        if (self.template) |t| allocator.free(t);
+        if (self.cell) |c| allocator.free(c.value);
+        allocator.free(self.text);
+    }
+};
+
+/// The implementation of `implementations` serving `target`
+/// (`Implementation.serves`), or null.
+pub fn implementationFor(implementations: []const Implementation, target: []const u8) ?Implementation {
+    for (implementations) |i| if (i.serves(target)) return i;
+    return null;
+}
+
+/// True when the implementation serving `target` writes `result: true`
+/// (decisions 431, 490): the backend answers every way the host call fails as
+/// `Error(HostError(…))`.
+pub fn implementationResult(implementations: []const Implementation, target: []const u8) bool {
+    const i = implementationFor(implementations, target) orelse return false;
+    return i.result;
+}
+
+/// True when the implementation serving `target` writes `inline: true`.
+pub fn implementationInline(implementations: []const Implementation, target: []const u8) bool {
+    const i = implementationFor(implementations, target) orelse return false;
+    return i.inline_;
+}
+
+/// Frees an owned implementation slice.
+pub fn freeImplementations(allocator: std.mem.Allocator, implementations: []Implementation) void {
+    for (implementations) |*i| i.deinit(allocator);
+    if (implementations.len > 0) allocator.free(implementations);
+}
+
+/// A template that is one remote call of the declared parameters, in order —
+/// `"<module>:<function>($0, $1)"`, the receiver first on a method — as its
+/// module and function: the `call_ext` a backend emits for it, as it did for
+/// the two-string form the template replaced (decision 575 (6)).
+pub const RemoteCall = struct {
     module: []const u8,
-    symbol: []const u8,
+    function: []const u8,
+    /// Which parameter each argument is, in the call's order (the receiver
+    /// is parameter 0 on a method); `inOrder` when it is the declared order.
+    order: [16]u8 = undefined,
+    inOrder: bool = true,
+};
+
+/// A template that is one remote call taking every declared parameter once —
+/// `"<module>:<function>($0, $1)"`, or another order (`"lists:map($1, $0)"`)
+/// — as its module, function and argument order; null for any other
+/// template.
+pub fn remoteCallOf(template: []const u8, param_count: usize) ?RemoteCall {
+    const receiver = @import("comptime/primOpTemplate.zig").receiver_marker;
+    const t = std.mem.trim(u8, template, " ");
+    const colon = std.mem.indexOfScalar(u8, t, ':') orelse return null;
+    const lp = std.mem.indexOfScalar(u8, t, '(') orelse return null;
+    if (lp < colon or t[t.len - 1] != ')' or param_count > 16) return null;
+    const module = t[0..colon];
+    const function = t[colon + 1 .. lp];
+    if (!isErlangAtomText(module) or !isErlangAtomText(function)) return null;
+    var out: RemoteCall = .{ .module = module, .function = function };
+    // A method's markers are translated: the receiver marker is parameter 0,
+    // `$N` parameter N + 1 (`template_markers.rewrite`).
+    const shifted = std.mem.indexOf(u8, t, receiver) != null;
+    const inside = std.mem.trim(u8, t[lp + 1 .. t.len - 1], " ");
+    var n: usize = 0;
+    var seen = [_]bool{false} ** 16;
+    if (inside.len > 0) {
+        var it = std.mem.splitScalar(u8, inside, ',');
+        while (it.next()) |raw| : (n += 1) {
+            if (n >= 16) return null;
+            const arg = std.mem.trim(u8, raw, " ");
+            const k: usize = if (std.mem.eql(u8, arg, receiver)) 0 else blk: {
+                if (arg.len < 2 or arg[0] != '$') return null;
+                const i = std.fmt.parseInt(usize, arg[1..], 10) catch return null;
+                break :blk if (shifted) i + 1 else i;
+            };
+            if (k >= param_count or seen[k]) return null;
+            seen[k] = true;
+            out.order[n] = @intCast(k);
+            if (k != n) out.inOrder = false;
+        }
+    }
+    if (n != param_count) return null;
+    return out;
+}
+
+fn isErlangAtomText(s: []const u8) bool {
+    if (s.len == 0 or !std.ascii.isLower(s[0])) return false;
+    for (s) |c| if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '@') return false;
+    return true;
+}
+
+test "remoteCallOf: one remote call of the parameters in order" {
+    const r = remoteCallOf("erlang:min($0, $1)", 2).?;
+    try std.testing.expectEqualStrings("erlang", r.module);
+    try std.testing.expectEqualStrings("min", r.function);
+    try std.testing.expect(!remoteCallOf("erlang:min($1, $0)", 2).?.inOrder);
+    try std.testing.expect(remoteCallOf("erlang:get($0)", 2) == null);
+    try std.testing.expectEqualStrings("is_list", remoteCallOf("erlang:is_list($\x01)", 1).?.function);
+    try std.testing.expectEqualStrings("now", remoteCallOf("os:now()", 0).?.function);
+    try std.testing.expect(remoteCallOf("<<($0)/binary>>", 1) == null);
+}
+
+/// One branch of a builtin a backend lowers per argument count (`@panic` /
+/// `@todo` with or without their message): the template for `argc`
+/// arguments.
+pub const ArityBranch = struct {
+    argc: usize,
+    template: []const u8,
 };
 
 /// Decision 334 — the runtime a wasm build binds to. A
-/// `#[@External.Wasm(…, host: .Wasi)]` binding serves that host only; one
-/// written without `host:` serves every host.
+/// `.Wasm(…, host: .Wasi)` binding serves that host only; one written without
+/// `host:` serves every host.
 pub const WasmHost = enum {
     wasi,
     browser,
 
     /// The written value of a `host:` argument — `.Wasi` / `.Browser`, the one
-    /// spelling — or null for anything else (the checker refuses it,
-    /// `validateExternalAnnotation`).
+    /// spelling — or null for anything else.
     pub fn ofArg(arg: []const u8) ?WasmHost {
         if (std.mem.eql(u8, arg, ".Wasi")) return .wasi;
         if (std.mem.eql(u8, arg, ".Browser")) return .browser;
         return null;
     }
 
-    /// The `#[@External.<Member>]` lookup name of a wasm build for this host
-    /// (`codegen.generateWith`, `botopink check`): `wasm` is the `wasi` host's
-    /// — the default of decision 334 —, `wasm.browser` the `browser` host's.
+    /// The lookup name of a wasm build for this host (`codegen.generateWith`,
+    /// `botopink check`): `wasm` is the `wasi` host's — the default of decision
+    /// 334 —, `wasm.browser` the `browser` host's.
     pub fn lookupName(self: WasmHost) []const u8 {
         return switch (self) {
             .wasi => "wasm",
@@ -2400,7 +2609,7 @@ pub const WasmHost = enum {
 };
 
 /// A lookup name (`node`, `erlang`, `wasm`, `wasm.browser`) split into the
-/// `External` member it reads and, on wasm, the host the build binds to.
+/// target it reads and, on wasm, the host the build binds to.
 pub const ExternalLookup = struct {
     member: []const u8,
     host: ?WasmHost = null,
@@ -2413,13 +2622,13 @@ pub const ExternalLookup = struct {
 };
 
 /// Decision 518 — a host feature a wasm binding needs, from std's closed
-/// enum `WasmNeed` (`libs/std/src/builtins.d.bp`, kept in step by a test):
-/// `#[@External.Wasm(…, needs: [.Exceptions])]`. The compiler gathers the
-/// needs of every binding a program reaches into the `.wasm`'s
-/// `botopink.needs` custom section, and the runner hands the host only the
-/// matching flags (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`).
-/// `gc` (front 164 s2, decision 544) is also every program's that emits GC
-/// types: the wasm codegen adds it whenever the module declares one.
+/// enum `WasmNeed` (`libs/std/src/external.bp`, kept in step by a test):
+/// `.Wasm(…, needs: [.Exceptions])`. The compiler gathers the needs of every
+/// binding a program reaches into the `.wasm`'s `botopink.needs` custom
+/// section, and the runner hands the host only the matching flags
+/// (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`). `gc` (front 164
+/// s2, decision 544) is also every program's that emits GC types: the wasm
+/// codegen adds it whenever the module declares one.
 pub const WasmNeed = enum {
     exceptions,
     http,
@@ -2447,187 +2656,48 @@ pub const WasmNeed = enum {
 /// A set of `WasmNeed`s.
 pub const WasmNeeds = std.EnumSet(WasmNeed);
 
-/// The index of the argument an annotation labels `needs:`, or null.
-pub fn needsArgIndex(a: Annotation) ?usize {
-    for (a.args, 0..) |_, i| {
-        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "needs")) return i;
-    }
-    return null;
-}
-
-/// The items of a written `needs:` list (`[.Exceptions, .Http]`), trimmed;
-/// null when the text is no `[…]` list.
-pub fn needsItems(alloc: std.mem.Allocator, arg: []const u8) !?[]const []const u8 {
-    const t = std.mem.trim(u8, arg, " \t\r\n");
-    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return null;
-    var out: std.ArrayListUnmanaged([]const u8) = .empty;
-    const inner = std.mem.trim(u8, t[1 .. t.len - 1], " \t\r\n");
-    if (inner.len == 0) return out.items;
-    var it = std.mem.splitScalar(u8, inner, ',');
-    while (it.next()) |raw| {
-        const item = std.mem.trim(u8, raw, " \t\r\n");
-        if (item.len == 0) continue; // a trailing comma
-        try out.append(alloc, item);
-    }
-    return out.items;
-}
-
-/// The needs `a`'s `needs:` argument declares; empty when it writes none or
-/// an item outside `WasmNeed` (the checker refuses those at the annotation).
-pub fn wasmNeedsOf(a: Annotation) WasmNeeds {
-    var set = WasmNeeds.initEmpty();
-    const at = needsArgIndex(a) orelse return set;
-    const t = std.mem.trim(u8, a.args[at], " \t\r\n");
-    if (t.len < 2 or t[0] != '[' or t[t.len - 1] != ']') return set;
-    var it = std.mem.splitScalar(u8, t[1 .. t.len - 1], ',');
-    while (it.next()) |raw| {
-        if (WasmNeed.ofItem(std.mem.trim(u8, raw, " \t\r\n"))) |n| set.insert(n);
-    }
-    return set;
-}
-
-/// The index of the argument an annotation labels `host:`, or null.
-pub fn hostArgIndex(a: Annotation) ?usize {
-    for (a.args, 0..) |_, i| {
-        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "host")) return i;
-    }
-    return null;
-}
-
-/// Decision 481 — the four cells an `@External.Wasm` binding writes, each a
-/// labelled argument of the kind it names: `fn: tanBody` (an identifier),
-/// `op: "f64.floor"` (a string), `wasi: .Delay` (an adapter, an enum value),
-/// `std: "hash.contentHash"` (a string naming a std-wasm export).
-pub const wasm_cell_labels = [_][]const u8{ "fn", "op", "wasi", "std" };
-
-/// True when `label` is one of `wasm_cell_labels`.
-pub fn isWasmCellLabel(label: []const u8) bool {
-    for (wasm_cell_labels) |l| if (std.mem.eql(u8, l, label)) return true;
-    return false;
-}
-
-/// True when `a` is an `@External.Wasm(…)` annotation.
-pub fn isExternalWasm(a: Annotation) bool {
-    return std.ascii.eqlIgnoreCase(a.name, "External.Wasm");
-}
-
-/// True when `a` is an `@External.<Target>(…)` annotation.
-pub fn isExternal(a: Annotation) bool {
-    return std.mem.startsWith(u8, a.name, "External.");
-}
-
-/// True when `label` names a binding cell of `a`: the four of
-/// `@External.Wasm` (decision 481), and `fn:` on every other target's
-/// `@External.<Target>` (decisions 238, 305 — `#[@External.Erlang(fn: powBody)]`).
-pub fn isCellLabelOf(a: Annotation, label: []const u8) bool {
-    if (isExternalWasm(a)) return isWasmCellLabel(label);
-    return isExternal(a) and std.mem.eql(u8, label, "fn");
-}
-
-/// Decisions 305 and 481 — the parser's reading of a labelled binding cell:
-/// argument `i` written `fn: x` (every target) or, on `@External.Wasm`,
-/// `op: "o"` / `wasi: .A` / `std: "m.f"` lands in `args` as the one binding
-/// text every reader takes (`"fn:x"`, `"op:o"`, `"wasi:a"`, `"std:m.f"` —
-/// `externalRefOf`, `hostFnBinding.fnName`, `wat/host_binding.parse`,
-/// `comptime/host_cells`), its spelling kept in `source_args` for the
-/// formatter and the checker, which refuses a value of the wrong kind
-/// (`infer.zig` `checkExternalCells`). A wasi adapter's enum value is its name
-/// in PascalCase (`.RaceOf` names `race_of`).
-pub fn translateExternalCells(alloc: std.mem.Allocator, a: *Annotation) !void {
-    if (!isExternal(a.*) or a.source_args != null) return;
-    var any = false;
-    for (a.args, 0..) |_, i| if (a.labelOf(i)) |l| if (isCellLabelOf(a.*, l)) {
-        any = true;
-    };
-    if (!any) return;
-    const out = try alloc.alloc([]const u8, a.args.len);
-    var done: usize = 0;
-    errdefer {
-        for (out[0..done]) |x| alloc.free(x);
-        alloc.free(out);
-    }
-    for (a.args, 0..) |arg, i| {
-        const label = a.labelOf(i) orelse "";
-        out[i] = if (isCellLabelOf(a.*, label)) try wasmCellText(alloc, label, arg) else try alloc.dupe(u8, arg);
-        done += 1;
-    }
-    a.source_args = a.args;
-    a.args = out;
-}
-
-/// `"<label>:<value>"` — the binding text of a labelled cell, quoted as a
-/// string argument is.
-fn wasmCellText(alloc: std.mem.Allocator, label: []const u8, arg: []const u8) ![]u8 {
-    var value = arg;
-    if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') value = value[1 .. value.len - 1];
-    if (std.mem.eql(u8, label, "wasi") and value.len > 1 and value[0] == '.') {
-        var buf: std.ArrayList(u8) = .empty;
-        defer buf.deinit(alloc);
-        for (value[1..], 0..) |c, k| {
-            if (std.ascii.isUpper(c) and k > 0) try buf.append(alloc, '_');
-            try buf.append(alloc, std.ascii.toLower(c));
-        }
-        return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, buf.items });
-    }
-    return std.fmt.allocPrint(alloc, "\"{s}:{s}\"", .{ label, value });
-}
-
 /// Decision 481 — a binding text (`fn:tanBody`, `op:f64.floor`,
 /// `wasi:race_of`, `std:hash.contentHash`) as the labelled cell that writes
-/// it (`fn: tanBody`, `op: "f64.floor"`, `wasi: .RaceOf`,
+/// it (`body: tanBody`, `op: "f64.floor"`, `wasi: .RaceOf`,
 /// `std: "hash.contentHash"`), for a message; any other text quoted.
 pub fn wasmCellDisplay(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
     const colon = std.mem.indexOfScalar(u8, text, ':') orelse return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
     const label = text[0..colon];
     const value = text[colon + 1 ..];
-    if (std.mem.eql(u8, label, "fn")) return std.fmt.allocPrint(alloc, "fn: {s}", .{value});
+    if (std.mem.eql(u8, label, "fn")) return std.fmt.allocPrint(alloc, "body: {s}", .{value});
     if (std.mem.eql(u8, label, "op") or std.mem.eql(u8, label, "std")) return std.fmt.allocPrint(alloc, "{s}: \"{s}\"", .{ label, value });
     if (std.mem.eql(u8, label, "wasi")) {
         var buf: std.ArrayList(u8) = .empty;
         defer buf.deinit(alloc);
         try buf.appendSlice(alloc, "wasi: .");
-        var up = true;
-        for (value) |c| {
-            if (c == '_') {
-                up = true;
-                continue;
-            }
-            try buf.append(alloc, if (up) std.ascii.toUpper(c) else c);
-            up = false;
-        }
+        try appendPascal(alloc, &buf, value);
         return buf.toOwnedSlice(alloc);
     }
     return std.fmt.allocPrint(alloc, "\"{s}\"", .{text});
 }
 
-/// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
-/// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
-/// lookup's host passes it by, and is not counted among the template's
-/// arguments; neither is wasm's `needs:` list (decision 518) nor any bool
-/// flag — `inline:`, `result:` (decisions 487, 490), wherever it is written,
-/// or a bare `true` / `false` the checker refuses.
-pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
-    const lookup = ExternalLookup.of(target);
-    if (!std.mem.startsWith(u8, a.name, "External.")) return null;
-    if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], lookup.member)) return null;
-    const host_at = hostArgIndex(a);
-    if (host_at) |h| if (lookup.host) |want| {
-        if (WasmHost.ofArg(a.args[h]) != want) return null;
-    };
-    const needs_at = needsArgIndex(a);
-    var pos: [3][]const u8 = undefined;
-    var n: usize = 0;
-    for (a.args, 0..) |arg, i| {
-        if (host_at != null and i == host_at.?) continue;
-        if (needs_at != null and i == needs_at.?) continue;
-        if (isExternalFlagArg(a, i)) continue;
-        if (n == pos.len) return null;
-        pos[n] = arg;
-        n += 1;
+/// `race_of` → `RaceOf`.
+pub fn appendPascal(alloc: std.mem.Allocator, buf: *std.ArrayList(u8), snake: []const u8) !void {
+    var up = true;
+    for (snake) |c| {
+        if (c == '_') {
+            up = true;
+            continue;
+        }
+        try buf.append(alloc, if (up) std.ascii.toUpper(c) else c);
+        up = false;
     }
-    if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(pos[0]) };
-    if (n == 2) return .{ .module = unquoteAnnotationArg(pos[0]), .symbol = unquoteAnnotationArg(pos[1]) };
-    return null;
+}
+
+/// `RaceOf` → `race_of`.
+pub fn snakeOf(alloc: std.mem.Allocator, pascal: []const u8) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    for (pascal, 0..) |c, k| {
+        if (std.ascii.isUpper(c) and k > 0) try buf.append(alloc, '_');
+        try buf.append(alloc, std.ascii.toLower(c));
+    }
+    return buf.toOwnedSlice(alloc);
 }
 
 /// A parsed `@external` call template: the host `symbol` (with the call
@@ -2676,7 +2746,7 @@ pub fn parseExternalCallTemplate(
 /// "indent the block" convention strips ONE leading newline immediately
 /// after the opening `"""` and ONE trailing newline immediately before the
 /// closing `"""`; inner indentation is preserved (target-language whitespace).
-fn unquoteAnnotationArg(arg: []const u8) []const u8 {
+pub fn unquoteAnnotationArg(arg: []const u8) []const u8 {
     if (arg.len >= 6 and std.mem.startsWith(u8, arg, "\"\"\"") and std.mem.endsWith(u8, arg, "\"\"\"")) {
         var inner = arg[3 .. arg.len - 3];
         if (inner.len > 0 and inner[0] == '\n') inner = inner[1..];
@@ -2686,156 +2756,6 @@ fn unquoteAnnotationArg(arg: []const u8) []const u8 {
     if (arg.len >= 2 and arg[0] == '"' and arg[arg.len - 1] == '"')
         return arg[1 .. arg.len - 1];
     return arg;
-}
-
-/// Canonicalises an `@external` target argument to its bare target name.
-/// Accepts every spelling of the `Target` enum value: bare (`erlang`), the
-/// dot-variant shorthand (`.Erlang`) and the qualified form (`Target.Erlang`).
-/// The remainder is compared case-insensitively by `externalTargetMatches`.
-pub fn normalizeExternalTarget(arg: []const u8) []const u8 {
-    var t = std.mem.trimStart(u8, arg, ".");
-    if (std.mem.indexOfScalar(u8, t, '.')) |dot| {
-        if (std.ascii.eqlIgnoreCase(t[0..dot], "Target")) t = t[dot + 1 ..];
-    }
-    return t;
-}
-
-/// True when an `@external` target argument names `target` (a lowercase
-/// canonical name like "node"/"erlang"), in any of the accepted spellings.
-pub fn externalTargetMatches(arg: []const u8, target: []const u8) bool {
-    return std.ascii.eqlIgnoreCase(normalizeExternalTarget(arg), target);
-}
-
-/// True for the literal `"true"` / `"false"` an `@external` flag drops in
-/// after the parser strips its `inline:` label.
-fn isBoolFlagArg(arg: []const u8) bool {
-    return std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false");
-}
-
-/// The bool flags an `External.<Target>` annotation declares
-/// (`libs/std/src/builtins.d.bp`): `inline:` on `Erlang`, `result:` on every
-/// variant (decisions 487, 490). Each is labelled and read by its label.
-pub const external_flag_labels = [_][]const u8{ "inline", "result" };
-
-/// True when argument `i` of an `External.<Target>` annotation is a flag,
-/// not a template argument: labelled with one of `external_flag_labels`, or
-/// a bare `true` / `false` (refused by the checker, decision 487, and never a
-/// template either way).
-pub fn isExternalFlagArg(a: Annotation, i: usize) bool {
-    if (a.labelOf(i)) |label| {
-        for (external_flag_labels) |l| if (std.mem.eql(u8, l, label)) return true;
-        return false;
-    }
-    return isBoolFlagArg(a.args[i]);
-}
-
-/// The value of the labelled flag `label` on `a` (`inline`, `result`) when
-/// it is written `true`; false when absent, `false`, or any other value
-/// (which the checker refuses).
-pub fn externalFlagSet(a: Annotation, label: []const u8) bool {
-    for (a.args, 0..) |arg, i| {
-        const l = a.labelOf(i) orelse continue;
-        if (std.mem.eql(u8, l, label)) return std.mem.eql(u8, arg, "true");
-    }
-    return false;
-}
-
-/// `prim-op-annotation` arity branch: `when($argc == N): "<template>"`.
-pub const ArityBranch = struct {
-    argc: usize,
-    /// Template body with the surrounding quotes stripped.
-    template: []const u8,
-};
-
-/// Parses one `when(argc == N): "<template>"` annotation arg lexeme. Returns
-/// null if the arg doesn't look like an arity branch. Whitespace inside the
-/// `when(...)` parens is tolerated; the predicate is `argc == <digits>` (the
-/// `$argc` spelling reads as a bare `$` to the botopink lexer outside of a
-/// string literal, so the surface syntax drops the sigil).
-pub fn parseArityBranchArg(raw: []const u8) ?ArityBranch {
-    if (!std.mem.startsWith(u8, raw, "when")) return null;
-    var i: usize = "when".len;
-    while (i < raw.len and (raw[i] == ' ' or raw[i] == '\t')) i += 1;
-    if (i >= raw.len or raw[i] != '(') return null;
-    const lp = i;
-    var depth: usize = 1;
-    i += 1;
-    while (i < raw.len and depth > 0) : (i += 1) {
-        if (raw[i] == '(') depth += 1;
-        if (raw[i] == ')') {
-            depth -= 1;
-            if (depth == 0) break;
-        }
-    }
-    if (i >= raw.len) return null;
-    const rp = i;
-    const inside = std.mem.trim(u8, raw[lp + 1 .. rp], " \t");
-    // Predicate must read `argc == <digits>`.
-    const arg_prefix = "argc";
-    if (!std.mem.startsWith(u8, inside, arg_prefix)) return null;
-    var p: usize = arg_prefix.len;
-    while (p < inside.len and (inside[p] == ' ' or inside[p] == '\t')) p += 1;
-    if (p + 1 >= inside.len or inside[p] != '=' or inside[p + 1] != '=') return null;
-    p += 2;
-    while (p < inside.len and (inside[p] == ' ' or inside[p] == '\t')) p += 1;
-    var argc: usize = 0;
-    var digits: usize = 0;
-    while (p < inside.len and std.ascii.isDigit(inside[p])) : (p += 1) {
-        argc = argc * 10 + (inside[p] - '0');
-        digits += 1;
-    }
-    if (digits == 0) return null;
-    // After `)` expect `:` then the template string.
-    var j = rp + 1;
-    while (j < raw.len and (raw[j] == ' ' or raw[j] == '\t')) j += 1;
-    if (j >= raw.len or raw[j] != ':') return null;
-    j += 1;
-    while (j < raw.len and (raw[j] == ' ' or raw[j] == '\t')) j += 1;
-    const value = std.mem.trim(u8, raw[j..], " \t");
-    return .{ .argc = argc, .template = unquoteAnnotationArg(value) };
-}
-
-/// True when an `External.<target>` annotation in `annotations` writes
-/// `result: true` (decisions 431, 490): the backend answers every way the host
-/// call fails as `Error(HostError(…))`. `target` is the annotation's member
-/// (`node`, `erlang`), compared without case.
-pub fn externalResultFor(annotations: []const Annotation, target: []const u8) bool {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        if (externalFlagSet(a, "result")) return true;
-    }
-    return false;
-}
-
-/// True when `annotations` carry at least one `when($argc == N): "..."` branch
-/// targeting `target`. Used by callers to know whether arity-branch dispatch
-/// is in play and choose the matching branch via `externalArityBranchFor`.
-pub fn externalHasArityBranches(annotations: []const Annotation, target: []const u8) bool {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        for (a.args) |raw| {
-            if (parseArityBranchArg(raw) != null) return true;
-        }
-    }
-    return false;
-}
-
-/// Returns the `when($argc == argc)` template body for `target`, or null if no
-/// arity-branch annotation matches. Caller is responsible for emitting the
-/// `prim-op-no-arity-match` diagnostic (RP2) when this returns null AND the
-/// annotation set IS arity-branched (cf. `externalHasArityBranches`).
-pub fn externalArityBranchFor(annotations: []const Annotation, target: []const u8, argc: usize) ?[]const u8 {
-    for (annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-        if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-        for (a.args) |raw| {
-            const branch = parseArityBranchArg(raw) orelse continue;
-            if (branch.argc == argc) return branch.template;
-        }
-    }
-    return null;
 }
 
 /// `val Name = interface { ... }`  or  `val Name = interface <T> { ... }`
@@ -3561,7 +3481,6 @@ pub const DeclKind = union(enum) {
     use: ImportDecl,
     mod: ModDecl,
     behavior: BehaviorDecl,
-    delegate: DelegateDecl,
     @"fn": FnDecl,
     val: ValDecl,
     @"test": TestDecl,
@@ -3605,7 +3524,6 @@ pub const DeclKind = union(enum) {
                 allocator.free(u.imports);
             },
             .behavior => |*t| t.deinit(allocator),
-            .delegate => |*d| d.deinit(allocator),
             .type_ => |*t| t.deinit(allocator),
             .typeAlias => |*a| a.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
@@ -4104,7 +4022,7 @@ pub const FnDecl = struct {
     /// Where the marker is written. Left out of the AST dump.
     markerLoc: Loc = .{ .line = 0, .col = 0 },
     /// `declare fn` ---- a bodyless declaration typed from the signature alone.
-    /// Required for `@[external(…)]` FFI fns (the only valid annotated form).
+    /// Its body is a host implementation (`implementations`, decision 575 (6)).
     isDeclare: bool = false,
     /// `pub default fn` — a package's DEFAULT handler, invoked by the
     /// `<package> "…"` DSL form (`q "select …"`). Declarable at any module's top
@@ -4140,6 +4058,9 @@ pub const FnDecl = struct {
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
     annotations: []Annotation = &.{},
+    /// Decision 575 (6) — the function's host implementations, one per target
+    /// (`Implementation`). Owned; left out of the AST dump.
+    implementations: []Implementation = &.{},
     /// Generic type parameters, e.g. `<T, R>`. Empty slice when not generic.
     genericParams: []GenericParam,
     params: []Param,
@@ -4168,23 +4089,10 @@ pub const FnDecl = struct {
         return this.effect;
     }
 
-    /// True when the fn is an `@[external(…)]` / `@[External.<Target>(…)]` FFI
-    /// declaration (bodyless; each codegen backend lowers calls to its
-    /// target's symbol).
+    /// True when the fn has a host implementation (decision 575 (6)): each
+    /// codegen backend lowers its calls to its target's code.
     pub fn isExternal(this: FnDecl) bool {
-        for (this.annotations) |a| {
-            if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
-        }
-        return false;
-    }
-
-    /// True when the fn carries `#[builtin]` — the host/raw-infra provides the
-    /// real body; the bp body is a stub and codegen skips it.
-    pub fn isHost(this: FnDecl) bool {
-        for (this.annotations) |a| {
-            if (std.mem.eql(u8, a.name, "Host")) return true;
-        }
-        return false;
+        return this.implementations.len > 0;
     }
 
     /// True when the declared return type is the builtin `@Result<_, _>`.
@@ -4198,22 +4106,22 @@ pub const FnDecl = struct {
         return false;
     }
 
-    /// The `(module, symbol)` of the `external` annotation matching `target`
-    /// (e.g. "erlang", "node"), or null when no annotation targets it.
-    pub fn externalFor(this: FnDecl, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
-        return null;
+    /// The implementation serving `target` (`erlang`, `node`, `wasm`, …), or
+    /// null when none does.
+    pub fn externalFor(this: FnDecl, target: []const u8) ?Implementation {
+        return implementationFor(this.implementations, target);
     }
 
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "markerLoc" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "markerLoc", "implementations" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
+        freeImplementations(allocator, this.implementations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.params) |*p| p.deinit(allocator);

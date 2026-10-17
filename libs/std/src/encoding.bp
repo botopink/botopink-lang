@@ -34,18 +34,22 @@ pub type EncodingError {
 }
 
 // Standard base64 (RFC 4648 §4) of the UTF-8 bytes of `s`, with `=` padding.
-#[@External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
-#[@External.Erlang("base64:encode($0)")]
-#[@External.Wasm(fn: base64EncodeBody)]
+#[external(
+    .Node("""Buffer.from($0, 'utf8').toString('base64')"""),
+    .Erlang("base64:encode($0)"),
+    .Wasm(body: base64EncodeBody),
+)]
 pub declare fn base64Encode(s: string) -> string;
 
 // The inverse of `base64Encode`. Malformed input is an `Error`: Node's
 // `Buffer.from(_, 'base64')` silently drops what it cannot read, so the
 // template re-encodes and compares to detect it; Erlang's `base64:decode/1`
 // raises, and the template catches.
-#[@External.Node("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); if (__b.toString('base64').replace(/=+$/, '') !== __s) throw new Error('not base64'); return __b.toString('utf8') })()""", result: true)]
-#[@External.Erlang("""base64:decode($0)""", result: true)]
-#[@External.Wasm(fn: base64DecodeBody)]
+#[external(
+    .Node("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); if (__b.toString('base64').replace(/=+$/, '') !== __s) throw new Error('not base64'); return __b.toString('utf8') })()""", result: true),
+    .Erlang("""base64:decode($0)""", result: true),
+    .Wasm(body: base64DecodeBody),
+)]
 declare fn base64DecodeHost(b: string) -> @Result<string, HostError>;
 
 pub fn base64Decode(b: string) -> @Result<string, EncodingError> {
@@ -82,18 +86,22 @@ fn padToMultipleOfFour(s: string) -> string {
 }
 
 // Lowercase hex of the UTF-8 bytes of `s`: `"hi"` → `6869`.
-#[@External.Node("""Buffer.from($0, 'utf8').toString('hex')""")]
-#[@External.Erlang("""string:lowercase(binary:encode_hex($0))""")]
-#[@External.Wasm(fn: hexEncodeBody)]
+#[external(
+    .Node("""Buffer.from($0, 'utf8').toString('hex')"""),
+    .Erlang("""string:lowercase(binary:encode_hex($0))"""),
+    .Wasm(body: hexEncodeBody),
+)]
 pub declare fn hexEncode(s: string) -> string;
 
 // The inverse of `hexEncode`, either case. An odd length or a non-hex digit
 // is an `Error` (Node's `Buffer.from(_, 'hex')` truncates silently at the
 // first bad digit, so the template validates first; Erlang's
 // `binary:decode_hex/1` raises `badarg`, caught).
-#[@External.Node("""(() => { const __s = String($0); if (!/^([0-9a-fA-F]{2})*$/.test(__s)) throw new Error('not hex'); return Buffer.from(__s, 'hex').toString('utf8') })()""", result: true)]
-#[@External.Erlang("""binary:decode_hex($0)""", result: true)]
-#[@External.Wasm(fn: hexDecodeBody)]
+#[external(
+    .Node("""(() => { const __s = String($0); if (!/^([0-9a-fA-F]{2})*$/.test(__s)) throw new Error('not hex'); return Buffer.from(__s, 'hex').toString('utf8') })()""", result: true),
+    .Erlang("""binary:decode_hex($0)""", result: true),
+    .Wasm(body: hexDecodeBody),
+)]
 declare fn hexDecodeHost(s: string) -> @Result<string, HostError>;
 
 pub fn hexDecode(s: string) -> @Result<string, EncodingError> {
@@ -113,9 +121,11 @@ pub fn hexDecode(s: string) -> @Result<string, EncodingError> {
 // that is not one, and the public function makes it the `Error`.
 
 // Standard base64 (RFC 4648 §4) of `b`, with `=` padding.
-#[@External.Node("""Buffer.from($0).toString('base64')""")]
-#[@External.Erlang("base64:encode($0)")]
-#[@External.Wasm(std: "encoding.base64EncodeBytes")]
+#[external(
+    .Node("""Buffer.from($0).toString('base64')"""),
+    .Erlang("base64:encode($0)"),
+    .Wasm(std: "encoding.base64EncodeBytes"),
+)]
 pub declare fn base64EncodeBytes(b: Bytes) -> string;
 
 // The bytes the base64 text `s` spells; anything `base64Decode` refuses is
@@ -126,15 +136,19 @@ pub fn base64DecodeBytes(s: string) -> @Result<Bytes, EncodingError> {
     return b;
 }
 
-#[@External.Node("""((__s) => { const __t = __s.replace(/=+$/, ''); if (__t.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(__t)) return null; const __b = Buffer.from(__t, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __t ? new Uint8Array(__b) : null; })($0)""")]
-#[@External.Erlang("""(fun(__S) -> __T = string:trim(__S, trailing, [61]), __N = byte_size(__T), case (__N rem 4 =/= 1) andalso lists:all(fun(__C) -> ((__C >= 65) andalso (__C =< 90)) orelse ((__C >= 97) andalso (__C =< 122)) orelse ((__C >= 48) andalso (__C =< 57)) orelse (__C =:= 43) orelse (__C =:= 47) end, binary_to_list(__T)) of false -> undefined; true -> __P = <<__T/binary, (binary:copy(<<61>>, (4 - __N rem 4) rem 4))/binary>>, __B = base64:decode(__P), case base64:encode(__B) =:= __P of true -> __B; false -> undefined end end end)($0)""")]
-#[@External.Wasm(std: "encoding.base64DecodeBytes")]
+#[external(
+    .Node("""((__s) => { const __t = __s.replace(/=+$/, ''); if (__t.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(__t)) return null; const __b = Buffer.from(__t, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __t ? new Uint8Array(__b) : null; })($0)"""),
+    .Erlang("""(fun(__S) -> __T = string:trim(__S, trailing, [61]), __N = byte_size(__T), case (__N rem 4 =/= 1) andalso lists:all(fun(__C) -> ((__C >= 65) andalso (__C =< 90)) orelse ((__C >= 97) andalso (__C =< 122)) orelse ((__C >= 48) andalso (__C =< 57)) orelse (__C =:= 43) orelse (__C =:= 47) end, binary_to_list(__T)) of false -> undefined; true -> __P = <<__T/binary, (binary:copy(<<61>>, (4 - __N rem 4) rem 4))/binary>>, __B = base64:decode(__P), case base64:encode(__B) =:= __P of true -> __B; false -> undefined end end end)($0)"""),
+    .Wasm(std: "encoding.base64DecodeBytes"),
+)]
 declare fn base64BytesOf(s: string) -> ?Bytes;
 
 // Lowercase hex of `b`: the bytes `0x68 0x69` are `6869`.
-#[@External.Node("""Buffer.from($0).toString('hex')""")]
-#[@External.Erlang("""string:lowercase(binary:encode_hex($0))""")]
-#[@External.Wasm(std: "encoding.hexEncodeBytes")]
+#[external(
+    .Node("""Buffer.from($0).toString('hex')"""),
+    .Erlang("""string:lowercase(binary:encode_hex($0))"""),
+    .Wasm(std: "encoding.hexEncodeBytes"),
+)]
 pub declare fn hexEncodeBytes(b: Bytes) -> string;
 
 // The bytes the hex text `s` spells, either case; an odd length or a non-hex
@@ -145,9 +159,11 @@ pub fn hexDecodeBytes(s: string) -> @Result<Bytes, EncodingError> {
     return b;
 }
 
-#[@External.Node("""(/^([0-9a-fA-F]{2})*$/.test($0) ? new Uint8Array(Buffer.from($0, 'hex')) : null)""")]
-#[@External.Erlang("""(fun(__H) -> case (byte_size(__H) rem 2 =:= 0) andalso lists:all(fun(__C) -> ((__C >= 48) andalso (__C =< 57)) orelse ((__C >= 65) andalso (__C =< 70)) orelse ((__C >= 97) andalso (__C =< 102)) end, binary_to_list(__H)) of true -> binary:decode_hex(__H); false -> undefined end end)($0)""")]
-#[@External.Wasm(std: "encoding.hexDecodeBytes")]
+#[external(
+    .Node("""(/^([0-9a-fA-F]{2})*$/.test($0) ? new Uint8Array(Buffer.from($0, 'hex')) : null)"""),
+    .Erlang("""(fun(__H) -> case (byte_size(__H) rem 2 =:= 0) andalso lists:all(fun(__C) -> ((__C >= 48) andalso (__C =< 57)) orelse ((__C >= 65) andalso (__C =< 70)) orelse ((__C >= 97) andalso (__C =< 102)) end, binary_to_list(__H)) of true -> binary:decode_hex(__H); false -> undefined end end)($0)"""),
+    .Wasm(std: "encoding.hexDecodeBytes"),
+)]
 declare fn hexBytesOf(s: string) -> ?Bytes;
 
 // RFC 3986 percent-encoding of a component: every byte of the UTF-8 form
@@ -155,17 +171,21 @@ declare fn hexBytesOf(s: string) -> ?Bytes;
 // `uri_string:quote/1` is exactly that; `encodeURIComponent` leaves
 // `! ' ( ) *` unencoded (RFC 2396's mark set), so the Node template encodes
 // those five too — the two targets answer the same bytes for the same input.
-#[@External.Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())""")]
-#[@External.Erlang("uri_string:quote($0)")]
-#[@External.Wasm(fn: percentEncodeBody)]
+#[external(
+    .Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())"""),
+    .Erlang("uri_string:quote($0)"),
+    .Wasm(body: percentEncodeBody),
+)]
 pub declare fn percentEncode(s: string) -> string;
 
 // The inverse of `percentEncode`. A `%` not followed by two hex digits, or a
 // sequence that is not UTF-8, is an `Error`. `+` is left as `+` — the form
 // codec below is what reads `+` as a space.
-#[@External.Node("""decodeURIComponent($0)""", result: true)]
-#[@External.Erlang("""(fun(__S) -> case unicode:characters_to_binary(uri_string:unquote(__S)) of __V when is_binary(__V) -> __V; _ -> erlang:error(badarg) end end)($0)""", result: true)]
-#[@External.Wasm(fn: percentDecodeBody)]
+#[external(
+    .Node("""decodeURIComponent($0)""", result: true),
+    .Erlang("""(fun(__S) -> case unicode:characters_to_binary(uri_string:unquote(__S)) of __V when is_binary(__V) -> __V; _ -> erlang:error(badarg) end end)($0)""", result: true),
+    .Wasm(body: percentDecodeBody),
+)]
 declare fn percentDecodeHost(s: string) -> @Result<string, HostError>;
 
 pub fn percentDecode(s: string) -> @Result<string, EncodingError> {

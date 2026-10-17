@@ -7,10 +7,12 @@
 
 import {io} from "std";
 
-#[@External.Node("Math", "floor")]
-#[@External.Erlang("math", "floor")]
-#[@External.Wasm(op: "f64.floor", host: .Wasi)]
-#[@External.Wasm(fn: halfDownBody, host: .Browser)]
+#[@external(
+    .Node("Math.floor($0)"),
+    .Erlang("math:floor($0)"),
+    .Wasm(op: "f64.floor", host: .Wasi),
+    .Wasm(body: halfDownBody, host: .Browser),
+)]
 declare fn halfDown(x: f64) -> f64;
 
 fn halfDownBody(x: f64) -> f64 {

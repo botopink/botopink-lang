@@ -58,7 +58,7 @@ libs/
   owner of the file it sits in.** What two libraries need — a string → number
   parser, a reader over `json.Json`, a retry loop, a duration parser, a key
   derivation — is written once in `libs/std` (decisions 115–116: what is
-  generic goes to std; `.bp` only, both targets, a `#[@External.<Target>]`
+  generic goes to std; `.bp` only, both targets, a `#[@external(…)]`
   template where a host is needed), under its natural name (decision 170). A
   library then calls std's and removes its own in a step of the front that owns
   that file — never the std front editing a library, and never a library

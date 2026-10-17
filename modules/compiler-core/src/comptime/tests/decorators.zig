@@ -399,6 +399,7 @@ test "decision 575 (4): `comptime x: T` holds the value — decorator, function,
         \\type Kit {
         \\    fn pick(comptime t: type) -> i32 { return 1; }
         \\}
+        \\#[@external(.Erlang("os:getenv($0)"), .Node("process.env[$0]"))]
         \\declare fn host(comptime key: string) -> string;
         \\#[mark(2, .High, ["a"])]
         \\type A(x: i32)

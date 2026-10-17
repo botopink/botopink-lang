@@ -4,8 +4,10 @@
 //// (`re:replace/4`, once a call beam-to-wasm did not convert) is not looked
 //// at: the call is refused when the package is compiled, naming both cells.
 
-#[@External.Node("""$0.replace(/a/g, "b")""")]
-#[@External.Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))""")]
+#[@external(
+    .Node("""$0.replace(/a/g, "b")"""),
+    .Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))"""),
+)]
 declare fn tidy(value: string) -> string;
 
 fn sized(comptime decl: @Decl) {

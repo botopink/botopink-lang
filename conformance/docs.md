@@ -2665,8 +2665,8 @@ takes an existing array declares `values: T[]`, not `..values`:
 The checker packs the arguments into one array, so erlang and beam receive one
 list argument and wasm one array; commonJS writes the function with a rest
 parameter (`function total(label, ...values)`) and the call with the arguments
-one by one, so a host function bound by `#[@External.Node(…)]` receives them as
-JavaScript does (`Math.max(3, 9, 4)`), and `#[@External.Erlang(…)]` one list
+one by one, so a host function bound by `#[@external(.Node(…))]` receives them as
+JavaScript does (`Math.max(3, 9, 4)`), and `#[@external(.Erlang(…))]` one list
 (`lists:max([3, 9, 4])`).
 
 ### A record parameter
@@ -3578,7 +3578,7 @@ is an ordinary function body, however many locals a lambda in it holds.
 
 **An annotation's labelled argument is `label: value`** (decision 305), in every
 annotation — a decorator's (`#[check(…, at: .confirm)]`), `@BeamMemory`'s
-(`keyed: true`), `@External`'s (`inline: true`, `fn: powBody`) — as a call's
+(`keyed: true`), `@external`'s sources (`inline: true`, `body: powBody`) — as a call's
 labelled argument is, and `botopink format` prints it so. `label = value` is
 refused where it is written, at the label, naming `label:`:
 
@@ -3949,7 +3949,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 
 A call a template builds from a tag counts as written. `at` is
 `"<module>:<line>:<column>"`, the entry module `main`. A cycle is an edge back
-to a listed node; a host function (`declare fn`, `#[@External…]`) and std's
+to a listed node; a host function (`declare fn`, an implemented one) and std's
 `provide` / `context` get no node. Each node is recorded once, when its
 function's body is checked, and an importer reads the nodes of the functions
 it reaches in another module. A node is `async` when its body writes `await`
@@ -4179,13 +4179,13 @@ browser build), whatever the build's target (decisions 434, 543): a compile
 starts no `erl`. A host function reached there
 answers by the first of two cells it has: its std-wasm implementation
 (std's own host functions, written in Zig and compiled to wasm — the
-function its `@External.Wasm(std: "<module>.<function>")` cell names, below),
-or the botopink function its `@External.Wasm(fn: …)` binding names (an `op:`
+function its `.Wasm(std: "<module>.<function>")` cell names, below),
+or the botopink function its `.Wasm(body: …)` binding names (an `op:`
 or `wasi:` binding does not run there, but `wasi: .Attempt`, which runs as
 `attempt` answers in a wasm program). A std function is served by std-wasm
 only where its `std:` cell says so; there is no match by name.
-`@External.Node` never serves: there is no Node at compile time. An
-`@External.Erlang` cell never runs at build either (decision 452): it binds
+`.Node` never serves: there is no Node at compile time. An
+`.Erlang` cell never runs at build either (decision 452): it binds
 the erlang and beam targets alone, and beam-to-wasm — a standalone utility
 that translates any `.beam` set to wasm — is no part of the compiler.
 std's functions travel too, through a namespace or a leaf import —
@@ -4196,9 +4196,9 @@ What a decorator may call is decided when its package is compiled, never at a
 consumer's build, and whatever the package's `targets` (decisions 434, 452): a
 host function it reaches — in its body, in a function of its module, through a
 std or an imported function — needs one of the two cells the comptime runtime
-answers by: its `std:` cell (std-wasm) or its `@External.Wasm(fn: …)` cell.
+answers by: its `std:` cell (std-wasm) or its `.Wasm(body: …)` cell.
 Neither is refused at the call (`comptime-host-cell-unavailable`), naming the
-function and both cells; an `@External.Erlang` cell beside them is ignored,
+function and both cells; an `.Erlang` cell beside them is ignored,
 never tried.
 
 <!-- example: modules/decorator_host_cells -->
@@ -4215,6 +4215,53 @@ declarations, is read at the entry point with `@TypeInfo.all(with: …)` and
 refused there, at compile time, naming both declarations.
 
 ### Host bindings
+
+A bodyless `declare fn` — top-level or a type's, static included — names the
+code each target runs in its place with `#[@external(…)]` (decision 575 (6)):
+one std function, `external(expr decl: unknown, comptime ..sources:
+Implementation[])`, whose sources are values of std's enum `Implementation` —
+`Erlang(template, body, inline, result)`, `Node(template, body, result)`,
+`Typescript(template, result)` and `Wasm(template | op | std | wasi | body,
+host, needs, result)`:
+
+```
+#[@external(.Erlang("lists:member($1, $0)"), .Node("$0.includes($1)"), .Wasm(op: "f64.floor"))]
+```
+
+Inside std the annotation is written `#[external(…)]`. A source is checked as
+the enum's constructor is: a label its variant does not declare, a value of
+another type, a variant the enum does not declare are the constructor's
+refusals, at the argument. `external` hands each source to
+`compiler.implement`, and the compiler reads a declaration's implementations
+alone, one per target:
+
+<!-- example: modules/implementation_twice -->
+
+An implementation takes the place of a body, so one on a declaration with a body
+is refused at the annotation; a behavior's `default fn` keeps its body as the
+fallback of a target it has no implementation for:
+
+<!-- example: modules/implement_with_body -->
+
+A bodyless `declare fn` no annotation implements has no code on any target: it
+is refused at the declaration, before any call — top-level, a type's method or
+a type's static function alike:
+
+<!-- example: modules/declare_without_implementation -->
+
+<!-- example: modules/declare_without_implementation_method -->
+
+<!-- example: modules/declare_without_implementation_static -->
+
+A behavior declares a member's signature, or a `default fn` with a body;
+`declare fn` inside one is refused at the member:
+
+<!-- example: modules/declare_in_behavior -->
+
+A library writes its own source annotation the way `external` is written: a
+decorator that hands `compiler.implement` an `Implementation`:
+
+<!-- example: modules/external_library_source_annotation -->
 
 <!-- example: modules/external_wasm_host_binding -->
 
@@ -4237,8 +4284,8 @@ parameters — on a method, `self` is `$0`:
 type.** It is declared inside the type's body with `declare fn`, `self` first,
 and called like any other method — `sock.recv(16, 1000)`, never a free
 `recv(sock, 16, 1000)`. The binding's `$0` is the receiver and `$1`, `$2`, … the
-arguments after it; the plain `("module", "symbol")` form hands the host
-function the receiver first. A host function with no such owner (`listen(port,
+arguments after it; a template that calls one host function with the
+parameters in order (`"erlang:is_list($0)"`) is that call, the receiver first. A host function with no such owner (`listen(port,
 backlog)`, `now()`) stays at module level.
 
 <!-- example: modules/external_method_in_type -->
@@ -4249,30 +4296,28 @@ like every enum method), a function exported by the type's module on erlang and
 beam — so a method on an imported type is answered by its owner exactly as a
 bodied one is — and a declaration in the `.d.ts`. A method with no binding for
 the active backend is refused where it is **called**, naming `Type.method`
-(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``); a
-bodyless method with no binding at all binds no backend, and is refused on
-every one.
+(`` `Meter.plus` has no implementation for the wasm backend ``); a bodyless
+method with no implementation at all is refused at its declaration.
 
-Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
-error naming the capitalised form (`` `#[@external]` binds no host — an external
-target is written `External.<Target>` ``), rather than a function left silently
-without a host.
+A source is a value of `Implementation`: a target written another way
+(`@external(node, …)`) is no value of it and is refused at the argument.
 
-**An `@External` variant's flags are labelled** (decision 487): `result:` on
-every variant, `inline:` on `External.Erlang`, each a `bool` read by its label in
-any order among the arguments (`@External.Erlang(result: true, "json:decode($0)")`
-is the same binding as `@External.Erlang("json:decode($0)", result: true)`). A
-bare `true` or `false` names no flag, so it is refused at the argument:
+<!-- example: modules/external_lowercase_target -->
+
+**An implementation's flags are labelled** (decision 487): `result:` on
+every variant, `inline:` on `.Erlang`, each a `bool` read by its label after
+the template, as a constructor's labelled arguments are. A bare `true` or
+`false` fills the next field the variant declares (`body:`), which a
+binding of one cell refuses:
 
 <!-- example: modules/external_flag_bare_bool_refused -->
 
-`inline: true` on `External.Erlang` opts the declaration out of the dispatch
+`inline: true` on `.Erlang` opts the declaration out of the dispatch
 table so the backend's hand-coded shape keeps emitting. That variant alone
 declares it, because the erlang and beam emitters, which both read
-`External.Erlang`, alone read it. Written on `Node`, `Wasm` or `Typescript`, or
+`.Erlang`, alone read it. Written on `Node`, `Wasm` or `Typescript`, or
 with a value that is not a bool, it would be a switch nothing reads, so it is
-refused at the annotation (`` `External.Node` declares no `inline` — the flag is
-read by the erlang and beam emitters from `External.Erlang` only ``).
+refused at the argument (`` `Implementation.Node` has no parameter named `inline` ``).
 
 <!-- example: modules/external_inline_unread -->
 
@@ -4303,7 +4348,7 @@ The flag has one reading, so the checker holds it to it, at the annotation
 
 <!-- example: modules/external_result_not_bool -->
 
-- `result:` belongs to a host call that can fail: beside an `fn:` cell (a
+- `result:` belongs to a host call that can fail: beside a `body:` cell (a
   botopink function, which fails only through its own `@Result`) or an `op:`
   cell (a wasm instruction) it is refused:
 
@@ -4351,8 +4396,8 @@ on every target; `json`, `regex` and `io.process` answer std's `HostError` itsel
 
 <!-- example: modules/std_host_error_variants -->
 
-One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
-targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is
+One annotation binds the BEAM: `.Erlang` serves the erlang and the beam
+targets, the same VM and the same OTP calls (decision 437). `.Beam` is
 gone; writing it is a located error at the annotation naming the form in force,
 never an alias.
 
@@ -4394,16 +4439,16 @@ host that guarantees it does not fail.
 is written, on every backend:**
 
 ```
-error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
+error: `listToBinary` has no `#[@external(.<Target>(…))]` for the wasm backend
   --> src/main.bp:21:12
 ```
 
 | Target | Reads | A call with no binding for it |
 |---|---|---|
-| `commonJS` | `@External.Node` | refused at compile time — "for the node backend" |
-| `erlang` | `@External.Erlang` | refused at compile time — "for the erlang backend" |
-| `beam` | `@External.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
-| `wasm` | `@External.Wasm` — the closed vocabulary below | refused at compile time — "for the wasm backend" |
+| `commonJS` | `.Node` | refused at compile time — "for the node backend" |
+| `erlang` | `.Erlang` | refused at compile time — "for the erlang backend" |
+| `beam` | `.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
+| `wasm` | `.Wasm` — the closed vocabulary below | refused at compile time — "for the wasm backend" |
 
 A declaration nothing calls is free on every target; a **call** is refused
 wherever it is written, whether or not anything reaches it. A function whose
@@ -4422,12 +4467,12 @@ the declaration it reaches, when that is another):
 
 <!-- example: modules/std_unsupported_refused_at_the_call -->
 
-wasm has no host of its own, so `@External.Wasm` does not name a host symbol
+wasm has no host of its own, so `.Wasm` does not name a host symbol
 or carry target text: it is **one cell from a closed vocabulary of four**
 (decisions 238, 440, 481), each a labelled argument holding a value of the
 kind it names, read and checked where the annotation is written — on every
 target, not only on a wasm build: a misspelt opcode, an opcode or an adapter
-whose types differ from the declaration's, or a `fn:` naming no private fn is
+whose types differ from the declaration's, or a `body:` naming no private fn is
 refused on erlang, beam and commonJS too. The arguments are always the
 declared parameters, in order.
 
@@ -4438,16 +4483,17 @@ declared parameters, in order.
 | Cell | Binds the declaration to |
 |---|---|
 | `op: "<opcode>"` | one numeric wasm instruction, its text a string (`op: "f64.floor"`, `op: "i32.add"`, `op: "f64.lt"`, `op: "f64.convert_i32_s"`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
-| `fn: <name>` | a botopink identifier, resolved in the module: a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
+| `body: <name>` | a botopink identifier, resolved in the module: a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
 | `wasi: .<Adapter>` | an enum value naming a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
 | `std: "<module>.<function>"` | a string naming a function std-wasm implements (checked against std-wasm's exports, never resolved as botopink) — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
 
 <!-- example: modules/external_wasm_op_and_fn -->
 
-Each cell holds a value of the kind it names (decision 481), and a value of another kind is refused
-at the argument, naming the form to write: `fn: "tanBody"` (a string where an identifier goes),
-`op: floor` (a name where the opcode's text goes), `wasi: "RandomF64"` (a string where an enum
-value goes), `std: hash.contentHash` (a name where std-wasm's string goes):
+Each cell holds a value of the kind it names (decision 481): `op:` and `std:` a string, `wasi:` a
+`WasiAdapter`, as `Implementation.Wasm` declares them, so a value of another kind is the
+constructor's refusal at the argument — `op: floor`, `std: hash.contentHash` (a name no module
+binds), `wasi: "RandomF64"` (a string where a `WasiAdapter` goes); `body:` names a private fn by its
+identifier, and `body: "tanBody"` is refused naming that form:
 
 <!-- example: modules/external_wasm_fn_cell_string -->
 <!-- example: modules/external_wasm_op_cell_not_string -->
@@ -4456,7 +4502,7 @@ value goes), `std: hash.contentHash` (a name where std-wasm's string goes):
 
 A binding is **one** cell, beside `host:` (and `inline:`): a label outside the four and a second
 cell are refused at the argument that writes them. A cell naming what does not exist — an opcode
-the table does not hold, an adapter that is none of the list —, and a `fn:` whose body takes
+the table does not hold, an adapter that is none of the list —, and a `body:` whose body takes
 other types than the declaration's, are refused at the annotation:
 
 <!-- example: modules/external_wasm_unknown_label -->
@@ -4519,9 +4565,9 @@ is host code, always:
 
 <!-- example: modules/external_wasm_prefixed_std_refused -->
 
-`op:` and `wasi:` are `@External.Wasm`'s cells alone: written as a prefixed
-string on `@External.Node` or `@External.Erlang`, the refusal names the wasm
-cell to write (`#[@External.Wasm(op: "f64.floor")]`):
+`op:` and `wasi:` are `.Wasm`'s cells alone: written as a prefixed
+string on `.Node` or `.Erlang`, the refusal names the wasm
+cell to write (`#[@external(.Wasm(op: "f64.floor"))]`):
 
 <!-- example: modules/external_node_prefixed_op_refused -->
 
@@ -4608,33 +4654,34 @@ tasks (decision 335 (2)):
 <!-- example: modules/std_async_on_every_target -->
 
 Anything else — another label, a second cell, a value of another kind than
-its label names (`fn: "tanBody"`, `op: f64`, `wasi: "delay"`), an opcode the
+its label names (`body: "tanBody"`, `op: f64`, `wasi: "delay"`), an opcode the
 backend does not bind, an opcode
-whose type differs from the signature, a `fn:` naming no private bodied fn of
+whose type differs from the signature, a `body:` naming no private bodied fn of
 the module (or a `pub` one, or one of another signature), an adapter not in
 the list, a `std:` naming a function std-wasm does not implement or declared
 with other types, a template with `$` markers — is an error at the
 annotation; a `std:` one on every target, since the comptime reads it too. No
 runtime-helper name of the backend is part of a binding and nothing a binding
 writes names an address: there is no raw memory in the vocabulary. A
-`declare fn` with no `@External.Wasm` keeps the refusal above at its call.
+`declare fn` with no `.Wasm` keeps the refusal above at its call.
 
 **A wasm build binds to the runtime it runs on** (decision 334). The package
 names it in `botopink.json`, `"wasm": { "host": "wasi" }` or `"browser"`
 (*The manifest schema*); absent, it is `wasi` — wasmtime and the runtimes
 that follow WASI preview 2. A binding may name the host it serves with
-`host:` — `#[@External.Wasm(op: "f64.floor", host: .Wasi)]` beside
-`#[@External.Wasm(fn: floorBody, host: .Browser)]` —, and one written without
+`host:` — `#[@external(.Wasm(op: "f64.floor", host: .Wasi))]` beside
+`#[@external(.Wasm(body: floorBody, host: .Browser))]` —, and one written without
 `host:` serves every host. A build reads the binding serving its host and
 checks every other one too; a function with no binding for the build's host
 is refused at its call as above, and a std function with none is
 `std-unsupported-on-target: … for target 'wasm' on host 'wasi'`. `host:` on
-another `External` variant, a value other than `.Wasi` or `.Browser`, and a
-second binding for one host (a binding without `host:` beside a hosted one
-included) are errors at the annotation.
+another variant and a value other than `.Wasi` or `.Browser` are the
+constructor's refusals at the argument; a second binding for one host (a
+binding without `host:` beside a hosted one included) is an error at the
+annotation.
 
 **A binding declares the host features it needs** (decision 518):
-`#[@External.Wasm(wasi: .Attempt, needs: [.Exceptions])]`, each a value of
+`#[@external(.Wasm(wasi: .Attempt, needs: [.Exceptions]))]`, each a value of
 std's closed enum `WasmNeed { Exceptions, Http }`. The compiler gathers the
 needs of the bindings a program reaches into the custom section
 `botopink.needs` of the module, and the runner hands the host only the
@@ -4642,8 +4689,8 @@ matching flags — wasmtime's `-W exceptions=y` for `Exceptions`, `-S http` for
 `Http`; node runs exceptions by default. A program that needs none runs with
 no flag, and no annotation of a program turns a feature on or off: `needs` is
 no configuration. A binding that forgets its need fails visibly on the host. A
-value outside `WasmNeed`, or `needs:` on another `External` variant, is an
-error at the annotation, on every target:
+value outside `WasmNeed`, or `needs:` on another variant, is the constructor's
+refusal at the argument, on every target:
 
 <!-- example: modules/external_wasm_needs_unknown -->
 
@@ -4669,9 +4716,9 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 answers differ.
 
 **A private fn binds a declaration on every target** (decisions 238, 263, 305). On
-`@External.Node` and `@External.Erlang` (which the beam target reads) the
-labelled cell `fn: <name>` (`#[@External.Erlang(fn: powBody)]`) binds what
-wasm's `fn: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
+`.Node` and `.Erlang` (which the beam target reads) the
+labelled cell `body: <name>` (`#[@external(.Erlang(body: powBody))]`) binds what
+wasm's `body: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
 checked the same way, at the annotation. One algorithm written in botopink then
 answers the same bits on every target, instead of each host's own library
@@ -5129,7 +5176,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
 | `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
 | `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
-| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@External.<Target>(…)]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
+| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
 | `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
 | `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
@@ -5286,12 +5333,12 @@ row says otherwise):
 
 #### Host sidecars
 
-A `#[@External.Node("./x.mjs", "f")]` lowers to a relative `require("./x.mjs")`
+A `#[@external(.Node("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
 in the emitted module. The file is the library's, not the consumer's, so
 `botopink build` and `botopink test` copy it next to the emitted JS —
 `<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's
 own — and rewrite the `require` when the authored path would escape the output
-directory. The `.erl` host module of an `#[@External.Erlang("host", "f")]` is
+directory. The `.erl` host module of an `#[@external(.Erlang("host", "f"))]` is
 copied the same way.
 
 Which directory a sidecar is copied *from* is the dependency this manifest

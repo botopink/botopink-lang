@@ -11,20 +11,19 @@
 
 import {failure, failure.Failure} from "std";
 
-#[@External.Node("""(() => { throw new Error("boom"); })()""")]
-#[@External.Erlang("""erlang:error(boom)""")]
+#[@external(.Node("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn raiseError() -> i32;
 
-#[@External.Node("""(() => { throw "refused"; })()""")]
-#[@External.Erlang("""erlang:throw(refused)""")]
+#[@external(.Node("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
 declare fn raiseThrow() -> i32;
 
-#[@External.Node("""(() => { throw new Error("gone"); })()""")]
-#[@External.Erlang("""erlang:exit(gone)""")]
+#[@external(.Node("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
 declare fn raiseExit() -> i32;
 
-#[@External.Node("""(() => { throw new Error("{bad_input,7}"); })()""")]
-#[@External.Erlang("""erlang:error({bad_input, $0})""")]
+#[@external(
+    .Node("""(() => { throw new Error("{bad_input,7}"); })()"""),
+    .Erlang("""erlang:error({bad_input, $0})"""),
+)]
 declare fn raiseReason(n: i32) -> i32;
 
 fn show(r: @Result<i32, Failure>) {

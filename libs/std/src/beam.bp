@@ -67,44 +67,44 @@
 
 // ── the process dictionary — per-process, no setup, erased with the process
 
-#[@External.Erlang("erlang", "get")]
+#[external(.Erlang("erlang:get($0)"))]
 pub declare fn pdGet(key: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "put")]
+#[external(.Erlang("erlang:put($0, $1)"))]
 pub declare fn pdPut(key: unknown, value: unknown) -> unknown;
 
-#[@External.Erlang("erlang", "erase")]
+#[external(.Erlang("erlang:erase($0)"))]
 pub declare fn pdErase(key: unknown) -> unknown;
 
 // ── ETS — shared across processes, created by the first caller, owned by one
 
-#[@External.Erlang("ets", "whereis")]
+#[external(.Erlang("ets:whereis($0)"))]
 pub declare fn etsWhereis(name: unknown) -> unknown;
 
-#[@External.Erlang("ets", "new")]
+#[external(.Erlang("ets:new($0, $1)"))]
 pub declare fn etsNew(name: unknown, opts: unknown) -> unknown;
 
-#[@External.Erlang("ets", "lookup")]
+#[external(.Erlang("ets:lookup($0, $1)"))]
 pub declare fn etsLookup(tid: unknown, key: unknown) -> unknown;
 
-#[@External.Erlang("ets", "lookup_element")]
+#[external(.Erlang("ets:lookup_element($0, $1, $2)"))]
 pub declare fn etsGet(tid: unknown, key: unknown, pos: unknown) -> unknown;
 
-#[@External.Erlang("ets", "insert")]
+#[external(.Erlang("ets:insert($0, $1)"))]
 pub declare fn etsPut(tid: unknown, tuple: unknown) -> unknown;
 
-#[@External.Erlang("ets", "update_counter")]
+#[external(.Erlang("ets:update_counter($0, $1, $2)"))]
 pub declare fn etsBump(tid: unknown, key: unknown, incr: unknown) -> unknown;
 
 // `ets:update_counter/4`: the row `initial` is inserted when `key` has none, then
 // incremented — `Dict.bump` on a `keyed: true` var (decision 340).
-#[@External.Erlang("ets", "update_counter")]
+#[external(.Erlang("ets:update_counter($0, $1, $2, $3)"))]
 pub declare fn etsBumpFrom(tid: unknown, key: unknown, incr: unknown, initial: unknown) -> unknown;
 
 // ── persistent_term — read-cheap, write-expensive, written at load time
 
-#[@External.Erlang("persistent_term", "get")]
+#[external(.Erlang("persistent_term:get($0)"))]
 pub declare fn ptGet(key: unknown) -> unknown;
 
-#[@External.Erlang("persistent_term", "put")]
+#[external(.Erlang("persistent_term:put($0, $1)"))]
 pub declare fn ptPut(key: unknown, value: unknown) -> unknown;

@@ -3,9 +3,7 @@
 //// `@External.Erlang` either. It is refused at the argument, naming the
 //// labelled form; an unlabelled string is host code.
 
-#[@External.Node("fn:mixBody")]
-#[@External.Erlang(fn: mixBody)]
-#[@External.Wasm(fn: mixBody)]
+#[@external(.Node("fn:mixBody"), .Erlang(body: mixBody), .Wasm(body: mixBody))]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {

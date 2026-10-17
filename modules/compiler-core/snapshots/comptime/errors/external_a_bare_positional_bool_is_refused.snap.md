@@ -1,12 +1,12 @@
 ----- SOURCE CODE
-#[@External.Typescript("Math.max($args)", true)]
+#[@external(.Typescript("Math.max($args)", true))]
 pub declare fn biggest(a: i32, b: i32) -> i32;
 
 ----- ERROR
-error: `External.Typescript` takes no bare `true` — its flags are labelled, `result:` (decision 487)
-  ┌─ main.bp:1:43
+error: `biggest` writes `result: true` on `.Typescript`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `i32`
+  ┌─ main.bp:1:3
   │
-1 │ #[@External.Typescript("Math.max($args)", true)]
-  │                                           ^
+1 │ #[@external(.Typescript("Math.max($args)", true))]
+  │   ^
 
-  hint: Write the flag by its label: `result: true`, or `inline: true` on `External.Erlang`.
+  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.

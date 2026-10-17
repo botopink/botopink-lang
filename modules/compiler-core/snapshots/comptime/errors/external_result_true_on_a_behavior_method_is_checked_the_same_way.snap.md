@@ -1,14 +1,14 @@
 ----- SOURCE CODE
 pub behavior Shape {
-    #[@External.Node("area", result: true)]
+    #[@external(.Node("area", result: true))]
     fn area(self: Self) -> i32;
 }
 
 ----- ERROR
-error: `area` writes `result: true` on `External.Node`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `i32`
+error: `area` writes `result: true` on `.Node`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `i32`
   ┌─ main.bp:2:7
   │
-2 │     #[@External.Node("area", result: true)]
+2 │     #[@external(.Node("area", result: true))]
   │       ^
 
   hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.
