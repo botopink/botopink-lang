@@ -1037,7 +1037,7 @@ pub fn renderTypeErrorBody(
         .redundantActivation => "redundant activation",
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
         .useNotContext => "use-of-non-context-fn: `use` takes a hook",
-        .useWithoutContextEffect => "use-without-context-effect: `use` needs a `-> @Component<R>` return on the enclosing fn",
+        .useWithoutComponent => "use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn",
         .useTupleArity => "use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements",
         .throwWithoutResult => "throw outside @Result",
         .missingMethod => "missing interface method",
@@ -1182,10 +1182,10 @@ pub fn renderTypeErrorBody(
                 .{exprType},
             ));
         },
-        .useWithoutContextEffect => |u| {
+        .useWithoutComponent => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  fn '{s}' returns '{s}',\n  but only a `-> @Component<R>` body activates a hook (decisions 104, 118)\n",
+                "\n  fn '{s}' returns '{s}',\n  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)\n",
                 .{ u.fnName, u.returnType },
             ));
         },

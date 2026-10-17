@@ -171,7 +171,7 @@ pub const FnContext = struct {
     /// True when the enclosing fn's return is `@Component<R>` — and only
     /// then (decisions 104, 118, 128, 354). It is the same flag as
     /// `Env.inContextFn`. A `use` in any other body is
-    /// `useWithoutContextEffect`, which names the return to write.
+    /// `useWithoutComponent`, which names the return to write.
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",

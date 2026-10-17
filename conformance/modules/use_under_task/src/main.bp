@@ -1,7 +1,7 @@
 //// Decisions 118, 120 and 128 of 1.0.10-beta (front 24, § Cells "Chain and
 //// `use`"; guide.md § 4.5 `Page`) — the chain grants downwards only:
 //// `@Component ⊃ @Task`, so a `@Task` return grants `await` and not `use`.
-//// `use-without-context-effect`, at the `use`.
+//// `use-without-component`, at the `use`.
 
 type Element(count: i32) implement @Renderable
 

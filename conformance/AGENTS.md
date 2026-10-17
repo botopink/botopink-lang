@@ -2412,7 +2412,7 @@ their own owner type (`type Element(…) implement @Renderable`, decision 354), 
 pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
 void `use`, an unannotated `fn … -> Element` as an ordinary function, the rules of hooks (decision 357,
 `use-not-top-level`; rows 4b and 4c were parse errors of the static prefix before it),
-`use-without-context-effect` (a `-> Element` body, a plain `-> string` body, a `#[@future]` body —
+`use-without-component` (a `-> Element` body, a plain `-> string` body, a `#[@future]` body —
 `modules/use_future_without_owner`, decisions 89/90 revoked) and `use-of-non-context-fn` (a
 module-level `val`, decision 87). A component's caller awaits it:
 `modules/context_use` drives the components from a `#[@future] fn run`, and the `test/` cells await

@@ -4,7 +4,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Tasks):
 
 > An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 > `async { }` block or a `stream` loop; `await` anywhere else is
-> `effect-await-without-task`. An ordinary function that holds a Task either
+> `await-without-async`. An ordinary function that holds a Task either
 > returns a `@Task` too or hands the Task on.
 >
 > **`async { … }` — a Task in the middle of a function** (decision 124). The block

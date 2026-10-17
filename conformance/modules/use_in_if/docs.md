@@ -4,7 +4,7 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 
 > - **Only a `@Component<R>` return grants `use`** (decisions 104 and 118). A
 >   `use` in any other body — a plain `fn`, a `@Task` one whatever it wraps — is
->   refused at the `use`: `` use-without-context-effect: `use` needs a
+>   refused at the `use`: `` use-without-component: `use` needs a
 >   `-> @Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
 >   Nothing is unwrapped to find one: the server component that awaits and
 >   uses is `fn Page() -> @Component<Element>`, which the chain lets `await`

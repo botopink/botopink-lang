@@ -2220,7 +2220,7 @@ The rules of the prefixed loop:
 `try r` to propagate (with a `@Result` in the return), `case` to carry on.
 `for` over any `@Iterator` is legal in any body; `for await` needs an await
 channel (a `@Task`, `@Component` or `@Stream` return, an `async { }` block or a
-`stream` loop) and is otherwise `effect-await-without-task`. `for` over a
+`stream` loop) and is otherwise `await-without-async`. `for` over a
 `bool` is refused naming `while`.
 
 Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
@@ -2300,7 +2300,7 @@ The rules, each with its diagnostic:
 
 - **Only a `@Component<R>` return grants `use`** (decisions 104 and 118). A
   `use` in any other body — a plain `fn`, a `@Task` one whatever it wraps — is
-  refused at the `use`: `` use-without-context-effect: `use` needs a
+  refused at the `use`: `` use-without-component: `use` needs a
   `-> @Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
   Nothing is unwrapped to find one: the server component that awaits and
   uses is `fn Page() -> @Component<Element>`, which the chain lets `await`
@@ -3035,7 +3035,7 @@ load() catch 0 };` is a `@Task<i32>`.
 
 An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
-`effect-await-without-task`. An ordinary function that holds a Task either
+`await-without-async`. An ordinary function that holds a Task either
 returns a `@Task` too or hands the Task on.
 
 **`async { … }` — a Task in the middle of a function** (decision 124). The block

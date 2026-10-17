@@ -10,11 +10,11 @@ fn Page() -> @Task<Element> {
 }
 
 ----- ERROR
-error: use-without-context-effect: `use` needs a `-> @Component<R>` return on the enclosing fn
+error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn
   ┌─ main.bp:7:13
   │
 7 │     val r = use request();
   │             ^
 
   fn 'Page' returns '@Task<Element>',
-  but only a `-> @Component<R>` body activates a hook (decisions 104, 118)
+  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)

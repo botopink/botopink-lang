@@ -63,7 +63,7 @@ pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-
 
 /// Decision 120 — `await` (or `for await`) without an await channel: a
 /// `@Task`, `@Component` or `@Stream` return, or a `stream` loop.
-pub const effect_await_without_task: []const u8 = "effect-await-without-task";
+pub const await_without_async: []const u8 = "await-without-async";
 
 /// Decision 122 — `await` in an `@Iterator` body or an `iter` loop.
 pub const iter_await: []const u8 = "iter-await";
@@ -115,7 +115,7 @@ pub const yield_label_not_generator: []const u8 = "yield-label-not-generator";
 
 /// R8 — `yield` outside a generator scope (an `@Iterator` / `@Stream` return
 /// that yields, or an `iter` / `stream` loop).
-pub const yield_without_generator: []const u8 = "yield-without-generator";
+pub const yield_without_iter: []const u8 = "yield-without-iter";
 
 /// R11 — `return Result::Ok(<r>)` in a body whose return carries a `@Result` (must be bare R).
 pub const return_must_be_bare_R: []const u8 = "return-must-be-bare-R";
@@ -368,7 +368,7 @@ pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 /// RC7 (decisions 88, 104, 118) — `use` in a body whose fn does not return
 /// `@Component<R>`, or in a nested closure of one: only that body
 /// activates a hook.
-pub const use_without_context_effect: []const u8 = "use-without-context-effect";
+pub const use_without_component: []const u8 = "use-without-component";
 
 /// Decision 357 — a `use` that is not at the top level of its `@Component`
 /// body: inside an `if` / `else`, a `case` arm, a loop, a lambda, a `catch`
@@ -775,11 +775,11 @@ pub const all_codes = [_][]const u8{
     effect_wrapper_behind_alias,
     effect_return_ambiguous_nesting,
     effect_try_without_fallible_channel,
-    effect_await_without_task,
+    await_without_async,
     iter_await,
     iter_mixed_yield_return,
     gen_infer_conflicting_errors,
-    yield_without_generator,
+    yield_without_iter,
     return_must_be_bare_R,
     result_manual_construction_forbidden,
     throw_must_be_bare_E,
@@ -812,7 +812,7 @@ pub const all_codes = [_][]const u8{
     record_param_label,
     variadic_label,
     use_of_non_context_fn,
-    use_without_context_effect,
+    use_without_component,
     use_not_top_level,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,

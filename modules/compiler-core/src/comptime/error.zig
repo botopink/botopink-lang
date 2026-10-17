@@ -147,7 +147,7 @@ pub const TypeErrorKind = union(enum) {
     useNotContext: []const u8,
     /// `use` in a body whose fn does not carry `#[@use]` (decisions 88, 104).
     /// Payload: the fn's name and its rendered return type.
-    useWithoutContextEffect: struct {
+    useWithoutComponent: struct {
         fnName: []const u8,
         returnType: []const u8,
     },
@@ -330,8 +330,8 @@ pub const TypeError = struct {
         return .{ .kind = .{ .useNotContext = exprType } };
     }
 
-    pub fn useWithoutContextEffect(fnName: []const u8, returnType: []const u8) TypeError {
-        return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
+    pub fn useWithoutComponent(fnName: []const u8, returnType: []const u8) TypeError {
+        return .{ .kind = .{ .useWithoutComponent = .{ .fnName = fnName, .returnType = returnType } } };
     }
 
     pub fn useTupleArity(patternLen: usize, tupleLen: ?usize, sourceType: *T.Type) TypeError {
@@ -465,7 +465,7 @@ pub const TypeError = struct {
             .missingField => |m| std.fmt.allocPrint(gpa, "missing required field '{s}' on type '{s}'", .{ m.field, m.typeName }),
             .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `@Component<R>`", .{r}),
             .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<R>`", .{e}),
-            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs a `-> @Component<R>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
+            .useWithoutComponent => |u| std.fmt.allocPrint(gpa, "use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
             .useTupleArity => |u| blk: {
                 const source = try typeLabelAlloc(gpa, u.sourceType);
                 defer gpa.free(source);

@@ -77,7 +77,7 @@ test "@Task — try await in a @Task<i32> reds effect-try-without-fallible-chann
     );
 }
 
-test "@Task — await under a @Result return reds effect-await-without-task" {
+test "@Task — await under a @Result return reds await-without-async" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn fetchCount() -> @Task<i32> {
         \\    return 3;

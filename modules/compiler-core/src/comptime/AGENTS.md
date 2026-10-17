@@ -193,7 +193,7 @@ disagree. Adding a wrapper is a row in `clauses` and nothing else. The refusals
 are built by `effectChain.refusal`, which names the returns that would grant the
 capability (decision 67 — located, no flag). `await` in an `@Iterator` (or an
 `iter` loop) is `iter-await`; elsewhere without an await channel it is
-`effect-await-without-task`.
+`await-without-async`.
 
 **Only `@Result` fails** (decision 121). `throw` / bare `try` read the FALLIBLE
 CHANNEL, computed from the return apart from the level: `fallibleErrorOf(eff,
@@ -266,7 +266,7 @@ scope's label) unifies `v` with the item (`unifyItem`); the backends lower it as
 decision 105's generator-scope `break <v>` (emit and end). A `for` over any
 `@Iterator<X>` is legal in any function and binds `X` — a `@Result` when `X` is
 one: there is no implicit `try`. `for` over a `@Stream` is `for-over-stream`;
-`for await` needs an await channel (`effect-await-without-task`) and a
+`for await` needs an await channel (`await-without-async`) and a
 `@Stream<T>` (`for-await-expects-stream`). RG5 (`generic-arg-count-exceeded`,
 `builtinMaxGenericArgs`) refuses a type argument past a builtin wrapper's
 declared arity; no effect wrapper declares a default any more — and past a
@@ -315,7 +315,7 @@ in place). `inferAsyncBlock` types it `@Task<T>`: `T` from its `return`s (a
 unless the position expects a `@Task<X>` (an annotated `val`), which pins the
 value and so opens or closes the fallible channel. The body awaits (`starFn` is
 a `.task` context), never yields, and never `use`s (`env.asyncBlockDepth`,
-refused with `use-without-context-effect`); the enclosing labels are closed.
+refused with `use-without-component`); the enclosing labels are closed.
 Where the `E` is inferred (`env.inferredErrorScope`: an unannotated block, or an
 `iter` / `stream` loop whose item became a `@Result`), every `throw` / `try`
 joins it through `unifyErrorChannel`, and two errors that do not unify are
@@ -1192,8 +1192,8 @@ base (`componentBaseParamRemoved`), `@Renderable` (`contextMarkerRemoved`) and
 
 - Only a `-> @Component<R>` body activates: `FnContext.annotated` and
   `env.inContextFn` are one flag, set by that return and by nothing else
-  (decisions 104, 118). A `use` elsewhere is `useWithoutContextEffect`
-  (`use-without-context-effect`, RC7), located at the `use` and naming the fn
+  (decisions 104, 118). A `use` elsewhere is `useWithoutComponent`
+  (`use-without-component`, RC7), located at the `use` and naming the fn
   and its return type. Before it: `use-outside-render-tree` (354 (3)) in a
   decorator body (`Env.inDecoratorFn`), a template body (`Env.inTemplateFn`)
   or a `comptime` (`Env.comptimeDepth`), and `use-not-top-level` (357, above).

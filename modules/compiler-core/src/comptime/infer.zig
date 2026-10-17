@@ -16432,8 +16432,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     return error.TypeError;
                 }
                 env.lastError = TypeError.custom(
-                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
-                    "Change the return to `@Task<…>` (or `@Component<…>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
+                    try effectChain.refusal(env.arena, diagnostics.await_without_async, .await_, env.fnEffect),
+                    "Write `async fn` (the return becomes `@Task<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -16497,8 +16497,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (ctx == null or !ctx.?.allowsYield) {
                 if (try refuseBehindAlias(env, "yield", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
-                    try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
-                    "A `yield` feeds the nearest generator scope: return `@Iterator<T>` (or `@Stream<T>`) from the fn, or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
+                    try effectChain.refusal(env.arena, diagnostics.yield_without_iter, .yield_, env.fnEffect),
+                    "A `yield` feeds the nearest generator scope: write `iter fn` (`async iter fn` for a `@Stream<T>`), or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -16784,8 +16784,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             if (try refuseBehindAlias(env, "for await", loc)) return error.TypeError;
             env.lastError = TypeError.custom(
-                try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
-                "`for await` suspends at every item: it needs an await channel — a `@Task<…>`, `@Component<…>` or `@Stream<…>` return, or a `stream` loop.",
+                try effectChain.refusal(env.arena, diagnostics.await_without_async, .await_, env.fnEffect),
+                "`for await` suspends at every item: it needs an await channel — write `async fn` (or `component fn` / `async iter fn`), or a `stream` loop.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -19161,7 +19161,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // return type: a `#[@future] fn … -> @Future<Element>` does not activate
     // (decision 90 revoked), and neither does an unannotated fn.
     if (!fc.annotated) {
-        env.lastError = TypeError.useWithoutContextEffect(fc.fnName, fc.returnDisplay).withLoc(loc);
+        env.lastError = TypeError.useWithoutComponent(fc.fnName, fc.returnDisplay).withLoc(loc);
         return error.TypeError;
     }
     // A nested closure is not the `#[@use]` body: like `await`, which a
@@ -19176,7 +19176,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     }
     if (env.asyncBlockDepth > 0) {
         env.lastError = TypeError.custom(
-            diagnostics.use_without_context_effect ++
+            diagnostics.use_without_component ++
                 ": `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it",
             "Activate the hook in the `@Component` body before the block and let the block read its value.",
         ).withLoc(loc);
@@ -19184,7 +19184,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     }
     if (env.starFn == null) {
         env.lastError = TypeError.custom(
-            diagnostics.use_without_context_effect ++
+            diagnostics.use_without_component ++
                 ": `use` inside a nested closure — the closure is not the `@Component` body, and `use` is not inherited (as `await` is not)",
             "Activate the hook in the `@Component` body itself (`val s = use state(0);`) and let the closure read `s`.",
         ).withLoc(loc);
