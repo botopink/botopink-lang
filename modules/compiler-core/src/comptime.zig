@@ -731,7 +731,7 @@ fn analyzeModule(
 ) !AnalysisResult {
     // The language server's session runs no comptime and marks no root: a
     // call leaving a catalogue default out type-checks as written there.
-    if (types_only) return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection, null);
+    if (types_only) return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection, null, &.{});
     return fillCatalogueDefaults(arena, mod, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection);
 }
 
@@ -830,17 +830,17 @@ fn fillCatalogueDefaults(
         copy.* = try reflection.probeCopy(arena);
         break :blk copy;
     } else reflection;
-    const first = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, scratch, null);
+    const first = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, scratch, null, &.{});
     if (first != .success) {
         if (!probe) return first;
-        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null);
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null, &.{});
     }
     var res = first;
     const calls = try catalogueDefaultCalls(arena, &res.success.env);
     if (calls.len == 0) {
         if (!probe) return first;
         res.success.env.deinit();
-        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null);
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null, &.{});
     }
     const program = res.success.program;
     if (!at_root) {
@@ -887,7 +887,7 @@ fn fillCatalogueDefaults(
         try inserts.put(arena, loc, extra.items);
     }
     res.success.env.deinit();
-    var again = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, &inserts);
+    var again = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, &inserts, &.{});
     if (again != .success) return again;
     const left = try catalogueDefaultCalls(arena, &again.success.env);
     if (left.len > 0) {
@@ -1862,9 +1862,13 @@ fn analyzeSource(
     target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
     inserts: ?*const CatalogueInserts,
+    carried: []const envMod.ImplementContribution,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.reflection = reflection;
+    // Decision 575 (6) — the re-analysis on spliced text skips the decorators,
+    // so a library's `compiler.implement` of the first pass comes with it.
+    try env.implementContributions.appendSlice(arena, carried);
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
@@ -2153,7 +2157,7 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection, inserts);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection, inserts, env.implementContributions.items);
         if (reanalysis == .success) {
             try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();

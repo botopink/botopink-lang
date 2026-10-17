@@ -4411,6 +4411,10 @@ Nor does a decorator of the same module that emits a declaration.
 
 <!-- example: modules/external_library_source_beside_emit -->
 
+Nor does a decorator whose emitted text is one declaration across two `@emit` calls, so that the module is re-analysed on its spliced source.
+
+<!-- example: modules/external_library_source_beside_emit_split -->
+
 A variant constructor called with labels and with its defaulted fields left out answers one value on every target: the fields written keep their labels' values and the others take their defaults.
 
 <!-- example: modules/enum_variant_labelled_defaults -->
