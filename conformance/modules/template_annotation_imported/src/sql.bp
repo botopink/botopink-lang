@@ -30,5 +30,8 @@ pub fn repository(comptime decl: @Decl) {
                 m.name + ": " + found.sql + " <- " + found.params.join(", "),
             );
     }
-    decl.setMeta("statements", lines.join(" | "));
+    decl.setMeta(Repository(statements: lines));
 }
+
+// What `#[repository]` records: one statement per method that carries a query.
+pub type Repository(statements: string[])

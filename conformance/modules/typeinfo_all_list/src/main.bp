@@ -6,17 +6,17 @@
 //// return type: `returnTypeName` is `""` (decision 256).
 
 fn service(comptime decl: @Decl) {
-    decl.setMeta("role", "service");
+    decl.setMeta(Service(role: "service"));
     decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
 }
 
 fn repository(comptime decl: @Decl) {
-    decl.setMeta("store", "sql");
+    decl.setMeta(Store(store: "sql"));
     decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
 }
 
 fn audited(comptime decl: @Decl) {
-    decl.setMeta("audit", "yes");
+    decl.setMeta(Audited(audit: "yes"));
 }
 
 #[service]
@@ -31,18 +31,33 @@ type Billing(rate: i32)
 
 pub fn main() {
     for (@TypeInfo.all(with: [repository, service], member: "make")) { d ->
-        @print(
-            d.name + " " + d.meta.map({ m -> m.key + "=" + m.value }).join(","),
-        );
+        var meta: string[] = [];
+        for (d.metaAll(Service)) { m ->
+            meta.push("role=" + m.role);
+        }
+        for (d.metaAll(Store)) { m ->
+            meta.push("store=" + m.store);
+        }
+        @print(d.name + " " + meta.join(","));
     }
     for (@TypeInfo.all(with: [service, audited], member: "make")) { d ->
         @print(
             d.name
                 + " "
-                + d.meta.length.toString()
+                + (d.metaAll(Service).length
+                    + d.metaAll(Audited).length).toString()
                 + " ["
                 + d.returnTypeName
                 + "]",
         );
     }
 }
+
+// What `#[service]` records.
+type Service(role: string)
+
+// What `#[repository]` records.
+type Store(store: string)
+
+// What `#[audited]` records.
+type Audited(audit: string)

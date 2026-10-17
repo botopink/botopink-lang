@@ -7,7 +7,7 @@
 //// module path (`extra/root`, `main`, `plugin/root`), each `value` the
 //// function itself.
 
-import {m} from "core";
+import {m, Role} from "core";
 
 #[m]
 pub fn local() -> string {
@@ -23,7 +23,7 @@ pub fn main() {
                 + " "
                 + d.name
                 + " "
-                + d.meta.map({ x -> x.key + "=" + x.value }).join(",")
+                + d.metaAll(Role).map({ x -> "role=" + x.role }).join(",")
                 + " "
                 + said,
         );

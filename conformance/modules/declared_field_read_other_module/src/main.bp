@@ -1,6 +1,6 @@
 //// A field read on the compiler's `Declared` in a package that does not declare it answers the
 //// field's value on every target, not the whole record: the program hands `lib` the entries
-//// `@TypeInfo.all(with: mark)` answers, and `lib` reads `name`, `module` and `meta` off them.
+//// `@TypeInfo.all(with: mark)` answers, and `lib` reads `name` and `module` off them.
 
 import {mark, show} from "lib";
 

@@ -2,9 +2,12 @@
 //// `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: d, member: "m")`.
 
 fn tagged(comptime decl: @Decl) {
-    decl.setMeta("tag", decl.name);
+    decl.setMeta(Tagged(tag: decl.name));
 }
 
 pub fn main() {
     @print(@TypeInfo.all(tagged).length);
 }
+
+// What `#[tagged]` records.
+type Tagged(tag: string)

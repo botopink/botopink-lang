@@ -3,9 +3,12 @@
 //// `@TypeInfo.all(with: m)`.
 
 pub fn m(comptime decl: @Decl) {
-    decl.setMeta("role", decl.name);
+    decl.setMeta(Role(role: decl.name));
 }
 
 pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
     @print(modules.value.length.toString());
 }
+
+// What `#[m]` records.
+pub type Role(role: string)

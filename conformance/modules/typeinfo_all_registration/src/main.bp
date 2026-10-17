@@ -11,7 +11,7 @@
 pub mod web;
 pub mod about;
 pub mod pages;
-import {web.route, web.component, web.unused};
+import {web.route, web.component, web.unused, web.Route};
 
 #[component]
 pub type Local(id: i32)
@@ -19,10 +19,7 @@ pub type Local(id: i32)
 pub fn main() {
     val routes = @TypeInfo.all(with: route);
     for (routes) { r ->
-        var path = "";
-        for (r.meta) { m ->
-            if (m.key == "path") path = m.value;
-        }
+        val path = r.meta(Route)?.path ?? "";
         @print(r.module + " " + r.name + " " + path);
     }
     val parts = @TypeInfo.all(with: component, member: "describe");

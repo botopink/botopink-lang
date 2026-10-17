@@ -2,5 +2,8 @@
 //// declaration plays. It annotates nothing of its own.
 
 pub fn m(comptime decl: @Decl) {
-    decl.setMeta("role", decl.name);
+    decl.setMeta(Role(role: decl.name));
 }
+
+// What `#[m]` records: the role its declaration plays.
+pub type Role(role: string)

@@ -5,7 +5,7 @@
 //// decision 256), the key a catalogue of providers is built by.
 
 fn job(comptime decl: @Decl) {
-    decl.setMeta("kind", "job");
+    decl.setMeta(Job(kind: "job"));
 }
 
 #[job]
@@ -24,3 +24,6 @@ pub fn main() {
         @print(d.name + " " + d.module + " " + d.returnTypeName);
     }
 }
+
+// What `#[job]` records.
+type Job(kind: string)

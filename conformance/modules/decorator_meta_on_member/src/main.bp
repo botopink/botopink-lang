@@ -3,7 +3,7 @@
 //// and `decl.setMeta` from it is refused at the annotation.
 
 fn column(comptime decl: @Decl) {
-    decl.setMeta("column", decl.name);
+    decl.setMeta(Column(name: decl.name));
 }
 
 type City(#[column] name: string)
@@ -11,3 +11,6 @@ type City(#[column] name: string)
 pub fn main() {
     @print(City(name: "x").name);
 }
+
+// What `#[column]` would record.
+type Column(name: string)

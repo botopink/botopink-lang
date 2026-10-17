@@ -1,5 +1,5 @@
 fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
-    decl.setMeta("path", path.value);
+    decl.setMeta(Route(path: path.value));
 }
 
 #[route("/about")]
@@ -9,8 +9,11 @@ pub fn about() -> string {
 
 fn main() {
     for (@TypeInfo.all(with: route)) { r ->
-        for (r.meta) { m ->
-            @print(r.name + " " + m.value); // about /about
+        for (r.metaAll(Route)) { m ->
+            @print(r.name + " " + m.path); // about /about
         }
     }
 }
+
+// What `#[route]` records.
+type Route(path: string)

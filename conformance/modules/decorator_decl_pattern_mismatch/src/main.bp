@@ -3,7 +3,7 @@
 //// not match it, refused at the annotation with both shapes spelled.
 
 fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
-    decl.setMeta("event", decl.name);
+    decl.setMeta(EventHandler(event: decl.name));
 }
 
 #[on]
@@ -14,3 +14,6 @@ fn wrong() {
 pub fn main() {
     wrong();
 }
+
+// What `#[on]` records.
+type EventHandler(event: string)

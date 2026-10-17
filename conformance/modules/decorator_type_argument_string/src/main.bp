@@ -7,7 +7,7 @@ pub behavior MailSender {
 }
 
 fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: @Expr<type>) {
-    decl.setMeta("bean", decl.name);
+    decl.setMeta(MissingBean(bean: decl.name));
 }
 
 #[conditionalOnMissingBean("MailSender")]
@@ -18,3 +18,6 @@ fn consoleMail() -> string {
 pub fn main() {
     @print(consoleMail());
 }
+
+// What `#[conditionalOnMissingBean]` records.
+type MissingBean(bean: string)

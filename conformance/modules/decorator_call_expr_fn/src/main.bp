@@ -8,7 +8,7 @@ fn passwordsMatch(a: Signup) -> bool {
 
 fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
     if (rule.value(Signup(password: "a", confirm: "a")))
-        decl.setMeta("rule", "holds");
+        decl.setMeta(Check(rule: "holds"));
 }
 
 #[check(passwordsMatch)]
@@ -17,3 +17,6 @@ type Signup(password: string, confirm: string)
 pub fn main() {
     @print("unreached");
 }
+
+// What `#[check]` records.
+type Check(rule: string)

@@ -9,7 +9,7 @@ pub behavior Module {
 }
 
 pub fn module(comptime decl: @Decl<Module>) {
-    decl.setMeta("role", "module");
+    decl.setMeta(ModuleRole(role: "module"));
 }
 
 #[module]
@@ -28,3 +28,6 @@ pub fn main() {
         @print(d.value.make().start());
     }
 }
+
+// What `#[module]` records.
+pub type ModuleRole(role: string)

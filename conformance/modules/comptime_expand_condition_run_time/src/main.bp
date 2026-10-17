@@ -13,7 +13,7 @@ fn sayBody(line: string) {
 }
 
 pub fn module(comptime decl: @Decl) {
-    decl.setMeta("kind", "module");
+    decl.setMeta(ModuleRole(kind: "module"));
 }
 
 #[module]
@@ -30,3 +30,6 @@ fn boot(comptime modules: @Expr<Declared<unknown>[]>) {
 pub fn main() {
     boot(@TypeInfo.all(with: module));
 }
+
+// What `#[module]` records.
+type ModuleRole(kind: string)

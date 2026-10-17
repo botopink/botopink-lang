@@ -1,5 +1,8 @@
 //// The decorator: it records the table a type maps to.
 
 pub fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta("table", table.value);
+    decl.setMeta(Entity(table: table.value));
 }
+
+// What `#[entity]` records.
+pub type Entity(table: string)

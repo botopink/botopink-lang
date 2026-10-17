@@ -11,5 +11,8 @@ pub behavior Field {
 }
 
 pub fn widget(comptime decl: @Decl<Component>) {
-    decl.setMeta("kind", "widget");
+    decl.setMeta(Widget(kind: "widget"));
 }
+
+// What `#[widget]` records.
+type Widget(kind: string)

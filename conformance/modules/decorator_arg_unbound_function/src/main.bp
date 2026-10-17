@@ -13,7 +13,7 @@ fn check<T>(
     comptime at: @Expr<?Type.Field<T>> = null,
     comptime code: @Expr<Code> = .Custom,
 ) {
-    decl.setMeta("message", message.value);
+    decl.setMeta(Check(message: message.value));
 }
 
 type Account(password: string, confirm: string)
@@ -28,3 +28,6 @@ type Signup(password: string, confirm: string)
 pub fn main() {
     @print("unreached");
 }
+
+// What `#[check]` records.
+type Check(message: string)

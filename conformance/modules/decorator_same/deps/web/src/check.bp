@@ -16,5 +16,8 @@ pub fn check(comptime decl: @Decl) {
             "other";
         out.push(a.name + "=" + which)
     });
-    decl.setMeta("ids", out.join(" "));
+    decl.setMeta(Check(ids: out));
 }
+
+// What `#[check]` records: each annotation as `<name>=<which>`.
+pub type Check(ids: string[])

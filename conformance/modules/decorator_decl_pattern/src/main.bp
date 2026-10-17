@@ -8,7 +8,7 @@ pub type OrderPlaced(id: string, total: i64)
 pub type OrderCancelled(id: string)
 
 fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
-    decl.setMeta("event", decl.name);
+    decl.setMeta(EventHandler(event: decl.name));
 }
 
 #[on]
@@ -26,3 +26,6 @@ pub fn main() {
     @print(sendReceipt(OrderPlaced(id: "o1", total: 10)));
     refund(OrderCancelled(id: "o2"));
 }
+
+// What `#[on]` records.
+type EventHandler(event: string)

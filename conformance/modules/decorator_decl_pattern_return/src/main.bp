@@ -10,7 +10,7 @@ fn page<P>(
     comptime decl: @Decl<fn(route: Route<P>) -> View>,
     comptime seg: @Expr<string>,
 ) {
-    decl.setMeta("seg", seg.value);
+    decl.setMeta(Page(seg: seg.value));
 }
 
 #[page("blog")]
@@ -21,3 +21,6 @@ fn blog(route: Route<string>) -> string {
 pub fn main() {
     @print(blog(Route(params: "x")));
 }
+
+// What `#[page]` records.
+type Page(seg: string)

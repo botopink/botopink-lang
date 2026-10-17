@@ -14,7 +14,7 @@ pub type ConsoleMail(prefix: string) implement MailSender {
 }
 
 fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: @Expr<type>) {
-    decl.setMeta("bean", decl.name);
+    decl.setMeta(MissingBean(bean: decl.name));
 }
 
 #[conditionalOnMissingBean(MailSender)]
@@ -28,7 +28,10 @@ fn greeting() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(consoleMail).meta.conditionalOnMissingBean.bean);
+    @print(@typeInfo(consoleMail).meta(MissingBean)?.bean ?? "none");
     @print(consoleMail().send("ana"));
     @print(greeting());
 }
+
+// What `#[conditionalOnMissingBean]` records.
+type MissingBean(bean: string)

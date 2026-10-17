@@ -15,12 +15,14 @@ fn mark(
     comptime tags: @Expr<string[]> = ["a"],
 ) {
     decl.setMeta(
-        "sizes",
-        sizes.value.length.toString() + "/" + sizes.value.join("+"),
+        Mark(
+            count: sizes.value.length,
+            sizes: sizes.value,
+            big: big.value,
+            level: if (level.value == Level.High) "high" else "low",
+            tags: tags.value,
+        ),
     );
-    decl.setMeta("big", big.value.toString());
-    decl.setMeta("level", if (level.value == Level.High) "high" else "low");
-    decl.setMeta("tags", tags.value.join(","));
 }
 
 #[mark([1, 2], level: .High)]
@@ -30,12 +32,19 @@ type A(x: i32)
 type B(x: i32)
 
 pub fn main() {
-    @print(@typeInfo(A).meta.mark.sizes);
-    @print(@typeInfo(A).meta.mark.big);
-    @print(@typeInfo(A).meta.mark.level);
-    @print(@typeInfo(A).meta.mark.tags);
-    @print(@typeInfo(B).meta.mark.sizes);
-    @print(@typeInfo(B).meta.mark.big);
-    @print(@typeInfo(B).meta.mark.level);
-    @print(@typeInfo(B).meta.mark.tags);
+    show(@typeInfo(A).meta(Mark));
+    show(@typeInfo(B).meta(Mark));
 }
+
+fn show(mark: ?Mark) {
+    if (mark) {
+        m ->
+        @print(m.count.toString() + "/" + m.sizes.join("+"));
+        @print(m.big.toString());
+        @print(m.level);
+        @print(m.tags.join(","));
+    }
+}
+
+// What `#[mark]` records: the values its arguments held in the body.
+type Mark(count: i32, sizes: i32[], big: i64, level: string, tags: string[])

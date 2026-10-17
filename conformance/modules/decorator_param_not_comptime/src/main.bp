@@ -4,9 +4,12 @@
 //// declared.
 
 fn route(comptime decl: @Decl, path: string) {
-    decl.setMeta("path", path);
+    decl.setMeta(Route(path: path));
 }
 
 pub fn main() {
     @print("unreached");
 }
+
+// What `#[route]` records.
+type Route(path: string)

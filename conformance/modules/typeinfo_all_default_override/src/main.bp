@@ -6,7 +6,7 @@
 import {boot, m} from "frame";
 
 pub fn other(comptime decl: @Decl) {
-    decl.setMeta("kind", "other");
+    decl.setMeta(Other(kind: "other"));
 }
 
 #[m]
@@ -29,3 +29,6 @@ pub fn main() {
     boot(@TypeInfo.all(with: other));
     boot([]);
 }
+
+// What `#[other]` records.
+pub type Other(kind: string)

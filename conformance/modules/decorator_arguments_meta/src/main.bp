@@ -6,7 +6,7 @@ fn index<T>(
     comptime decl: @Decl<T>,
     comptime ..fields: @Expr<Type.Field<T>[]>,
 ) {
-    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
+    decl.setMeta(Index(columns: fields.value.map({ f -> f.name })));
 }
 
 fn mark(
@@ -14,8 +14,12 @@ fn mark(
     comptime sizes: @Expr<i32[]>,
     comptime level: @Expr<Level> = .Low,
 ) {
-    decl.setMeta("sizes", sizes.value.length.toString());
-    decl.setMeta("level", if (level.value == Level.High) "high" else "low");
+    decl.setMeta(
+        Mark(
+            sizes: sizes.value.length,
+            level: if (level.value == Level.High) "high" else "low",
+        ),
+    );
 }
 
 #[index(.state, .name)]
@@ -23,7 +27,14 @@ fn mark(
 type City(code: string, name: string, state: string)
 
 fn main() {
-    @print(@typeInfo(City).meta.index.columns); // state,name
-    @print(@typeInfo(City).meta.mark.sizes); // 2
-    @print(@typeInfo(City).meta.mark.level); // high
+    val columns: string[] = @typeInfo(City).meta(Index)?.columns ?? [];
+    @print(columns.join(",")); // state,name
+    @print(@typeInfo(City).meta(Mark)?.sizes ?? 0); // 2
+    @print(@typeInfo(City).meta(Mark)?.level ?? "none"); // high
 }
+
+// What `#[index]` records.
+type Index(columns: string[])
+
+// What `#[mark]` records.
+type Mark(sizes: i32, level: string)

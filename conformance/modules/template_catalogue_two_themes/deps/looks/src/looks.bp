@@ -4,11 +4,11 @@
 //// not for this package, which declares no `#[theme]` of its own.
 
 pub fn theme(comptime decl: @Decl) {
-    decl.setMeta("named", decl.name);
+    decl.setMeta(Theme(named: decl.name));
 }
 
 pub fn palette(comptime decl: @Decl) {
-    decl.setMeta("named", decl.name);
+    decl.setMeta(Palette(named: decl.name));
 }
 
 pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
@@ -24,16 +24,16 @@ pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
     else
         themes
             .map({ t ->
-                t.module
-                    + "."
-                    + t.name
-                    + " -> "
-                    + t.returnTypeName
-                    + " "
-                    + t.meta.map({ m -> m.key + "=" + m.value }).join(",")
+                t.module + "." + t.name + " -> " + t.returnTypeName
             })
             .join("");
     return @expr(
         e.text() + ": " + chosen + ", palettes " + palettes.length.toString(),
     );
 }
+
+// What `#[theme]` records.
+pub type Theme(named: string)
+
+// What `#[palette]` records.
+pub type Palette(named: string)

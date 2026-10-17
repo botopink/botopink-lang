@@ -3,7 +3,7 @@
 //// refused at the literal that reads it (decision 358).
 
 pub fn theme(comptime decl: @Decl) {
-    decl.setMeta("named", decl.name);
+    decl.setMeta(Theme(named: decl.name));
 }
 
 pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
@@ -19,3 +19,6 @@ pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
         );
     return @expr(e.text() + ": " + themes.map({ t -> t.name }).join(""));
 }
+
+// What `#[theme]` records.
+pub type Theme(named: string)

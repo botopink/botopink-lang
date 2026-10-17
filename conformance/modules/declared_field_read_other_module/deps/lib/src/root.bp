@@ -2,7 +2,7 @@
 //// entries the program hands it: directly, through a function, inside `map` and inside `for`.
 
 pub fn mark(comptime decl: @Decl) {
-    decl.setMeta("k", decl.name);
+    decl.setMeta(Mark(k: decl.name));
 }
 
 fn nameOf(d: Declared<unknown>) -> string {
@@ -13,10 +13,9 @@ pub fn show(all: Declared<unknown>[]) {
     @print(all.map({ d -> d.name }).join(","));
     @print(all.map({ d -> nameOf(d) }).join(","));
     for (all) { d ->
-        @print(d.module
-            + " "
-            + d.name
-            + " "
-            + d.meta.map({ x -> x.key + "=" + x.value }).join(","));
+        @print(d.module + " " + d.name);
     }
 }
+
+// What `#[mark]` records.
+pub type Mark(k: string)

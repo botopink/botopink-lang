@@ -7,7 +7,7 @@
 type Element(text: string) implement @Renderable
 
 fn graph(comptime decl: @Decl) {
-    decl.setMeta("count", decl.hooks.length.toString());
+    decl.setMeta(Graph(count: decl.hooks.length));
 }
 
 #[graph]
@@ -19,3 +19,6 @@ pub fn main() {
     val all = @TypeInfo.all(with: graph);
     all.forEach({ d -> @print(d.name) });
 }
+
+// What `#[graph]` records: how many nodes `decl.hooks` lists.
+type Graph(count: i32)

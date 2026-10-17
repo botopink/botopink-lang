@@ -8,7 +8,7 @@ fn label(key: string) -> string {
 }
 
 fn audit(comptime decl: @Decl, comptime message: @Expr<string>) {
-    decl.setMeta("audited", decl.name);
+    decl.setMeta(Audit(audited: decl.name));
 }
 
 #[audit(label("signup.mismatch"))]
@@ -17,6 +17,9 @@ fn signup() -> i32 {
 }
 
 pub fn main() {
-    @print(@typeInfo(signup).meta.audit.audited);
+    @print(@typeInfo(signup).meta(Audit)?.audited ?? "none");
     @print(signup());
 }
+
+// What `#[audit]` records.
+type Audit(audited: string)

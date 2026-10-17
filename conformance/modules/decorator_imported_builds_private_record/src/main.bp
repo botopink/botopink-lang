@@ -1,7 +1,7 @@
 //// A decorator imported from another module whose body builds a record
 //// private to its module runs where it annotates: the evaluator reaches the
 //// record through the decorator's own module, not through what it exports
-//// (144 B-19). The meta it recorded is read here, typed and by key.
+//// (144 B-19). The meta it recorded is read here.
 
 pub mod orm;
 import {orm.entity, orm.Entity};
@@ -11,5 +11,4 @@ type City(name: string)
 
 pub fn main() {
     @print(@typeInfo(City).meta(Entity)?.table ?? "none");
-    @print(@typeInfo(City).meta.entity.table);
 }

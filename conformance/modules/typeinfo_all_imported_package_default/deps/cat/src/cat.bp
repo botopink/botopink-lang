@@ -3,7 +3,7 @@
 //// default function.
 
 pub fn tagged(comptime decl: @Decl) {
-    decl.setMeta("tag", decl.name);
+    decl.setMeta(Tagged(tag: decl.name));
 }
 
 pub fn names() -> string {
@@ -13,3 +13,6 @@ pub fn names() -> string {
 pub default fn cat(comptime e: @Expr<string>) -> @Expr<string> {
     return e;
 }
+
+// What `#[tagged]` records.
+pub type Tagged(tag: string)

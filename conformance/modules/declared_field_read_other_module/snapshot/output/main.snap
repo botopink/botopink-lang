@@ -1,5 +1,5 @@
 botopink-cell 1
 out one,two
 out one,two
-out main one k=one
-out main two k=two
+out main one
+out main two

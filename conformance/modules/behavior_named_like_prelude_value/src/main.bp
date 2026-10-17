@@ -12,7 +12,7 @@ pub behavior Any {
 }
 
 pub fn widget(comptime decl: @Decl<Component>) {
-    decl.setMeta("kind", "widget");
+    decl.setMeta(Widget(kind: "widget"));
 }
 
 #[widget]
@@ -39,3 +39,6 @@ pub fn main() {
     @print(show(card));
     @print(name(card));
 }
+
+// What `#[widget]` records.
+type Widget(kind: string)

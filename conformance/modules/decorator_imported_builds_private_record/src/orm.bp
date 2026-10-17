@@ -1,5 +1,5 @@
 //// The decorator builds `Note`, a record private to this module, and
-//// records its meta from it — typed and by key.
+//// records its meta from it.
 
 pub type Entity(table: string)
 
@@ -8,5 +8,4 @@ type Note(text: string)
 pub fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
     val n = Note(text: table.value);
     decl.setMeta(Entity(table: n.text));
-    decl.setMeta("table", n.text);
 }

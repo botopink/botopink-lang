@@ -1,5 +1,5 @@
 mod sql;
-import {sql.query, sql.repository, sql.Query};
+import {sql.query, sql.repository, sql.Query, sql.Repository};
 
 #[repository]
 behavior Users {
@@ -13,6 +13,7 @@ fn logout(u: string) -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(Users).meta.repository.statements);
+    val statements: string[] = @typeInfo(Users).meta(Repository)?.statements ?? [];
+    @print(statements.join(" | "));
     @print(@typeInfo(logout).meta(Query)!.sql);
 }

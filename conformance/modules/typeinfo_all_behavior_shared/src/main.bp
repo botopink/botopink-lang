@@ -8,11 +8,11 @@ pub behavior Bean {
 }
 
 pub fn service(comptime decl: @Decl<Bean>) {
-    decl.setMeta("role", "service");
+    decl.setMeta(BeanRole(role: "service"));
 }
 
 pub fn repository(comptime decl: @Decl<Bean>) {
-    decl.setMeta("role", "repository");
+    decl.setMeta(BeanRole(role: "repository"));
 }
 
 #[service]
@@ -32,6 +32,11 @@ pub type Orders(table: string) implement Bean {
 pub fn main() {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, repository]);
     for (all) { d ->
-        @print(d.name + " " + d.meta.map({ m -> m.value }).join(","));
+        @print(d.name
+            + " "
+            + d.metaAll(BeanRole).map({ m -> m.role }).join(","));
     }
 }
+
+// What `#[service]` and `#[repository]` record: the bean's role.
+pub type BeanRole(role: string)

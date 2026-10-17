@@ -3,7 +3,7 @@
 //// function without testing it is refused where it is used.
 
 fn route(comptime decl: @Decl) {
-    decl.setMeta("path", "/");
+    decl.setMeta(Route(path: "/"));
 }
 
 #[route]
@@ -15,3 +15,6 @@ pub fn main() {
         @print(page());
     }
 }
+
+// What `#[route]` records.
+type Route(path: string)

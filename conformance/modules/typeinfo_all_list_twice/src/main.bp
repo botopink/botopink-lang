@@ -2,7 +2,7 @@
 //// listed twice is `typeinfo-all-arguments` where the query is written.
 
 fn service(comptime decl: @Decl) {
-    decl.setMeta("role", "service");
+    decl.setMeta(Service(role: "service"));
 }
 
 #[service]
@@ -13,3 +13,6 @@ pub fn mailer() -> string {
 pub fn main() {
     @print(@TypeInfo.all(with: [service, service]).length);
 }
+
+// What `#[service]` records.
+type Service(role: string)

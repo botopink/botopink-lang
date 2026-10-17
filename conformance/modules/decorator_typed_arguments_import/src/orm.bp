@@ -6,7 +6,7 @@ pub fn index<T>(
     comptime decl: @Decl<T>,
     comptime ..fields: @Expr<Type.Field<T>[]>,
 ) {
-    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
+    decl.setMeta(Index(columns: fields.value.map({ f -> f.name })));
 }
 
 pub fn sorted<T>(
@@ -15,5 +15,11 @@ pub fn sorted<T>(
     comptime order: @Expr<Order> = .Asc,
 ) {
     val dir = if (order.value == Order.Desc) " desc" else " asc";
-    decl.setMeta("sort", by.value.name + dir);
+    decl.setMeta(Sorted(sort: by.value.name + dir));
 }
+
+// What `#[index]` records.
+pub type Index(columns: string[])
+
+// What `#[sorted]` records.
+pub type Sorted(sort: string)

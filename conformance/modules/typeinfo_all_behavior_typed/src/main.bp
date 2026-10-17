@@ -10,7 +10,7 @@ pub behavior Module {
 }
 
 pub fn module(comptime decl: @Decl<Module>, comptime order: @Expr<i32>) {
-    decl.setMeta("order", order.value.toString());
+    decl.setMeta(ModuleOrder(order: order.value));
 }
 
 #[module(2)]
@@ -38,8 +38,8 @@ pub type Db(url: string) implement Module {
 fn describe(ds: Declared<Module>[]) -> string {
     var parts: string[] = [];
     for (ds) { d ->
-        for (d.meta) { m ->
-            parts.push(d.name + "#" + m.value);
+        for (d.metaAll(ModuleOrder)) { m ->
+            parts.push(d.name + "#" + m.order.toString());
         }
     }
     return parts.join(" ");
@@ -51,3 +51,6 @@ pub fn main() {
     @print(describe(all));
     @print(Db.make().start());
 }
+
+// What `#[module]` records: where the module starts.
+pub type ModuleOrder(order: i32)

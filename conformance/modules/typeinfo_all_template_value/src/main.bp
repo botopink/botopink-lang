@@ -3,7 +3,7 @@
 //// read (`name`, `module`, `meta` and `returnTypeName` are answered).
 
 pub fn mark(comptime decl: @Decl) {
-    decl.setMeta("m", decl.name);
+    decl.setMeta(Mark(name: decl.name));
 }
 
 pub fn first(comptime e: @Expr<string>) -> @Expr<string> {
@@ -20,3 +20,6 @@ pub fn job() -> i32 {
 pub fn main() {
     @print(first "x");
 }
+
+// What `#[mark]` records.
+pub type Mark(name: string)

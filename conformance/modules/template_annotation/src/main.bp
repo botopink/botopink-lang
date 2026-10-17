@@ -65,7 +65,7 @@ fn repository(comptime decl: @Decl) {
             );
         }
     }
-    decl.setMeta("statements", lines.join(" | "));
+    decl.setMeta(Repository(statements: lines));
 }
 
 pub type Audit(level: i32)
@@ -96,8 +96,12 @@ fn logout(user: string) -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(Users).meta.repository.statements);
+    val statements: string[] = @typeInfo(Users).meta(Repository)?.statements ?? [];
+    @print(statements.join(" | "));
     val m = @typeInfo(logout).meta(Query);
     @print(m!.sql + " <- " + m!.params.join(", "));
     @print(logout("ana"));
 }
+
+// What `#[repository]` records: one statement per method that carries a query.
+type Repository(statements: string[])

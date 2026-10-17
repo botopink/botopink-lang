@@ -8,7 +8,7 @@
 import {types.Type} from "std";
 
 fn entity<T>(comptime decl: @Decl<T>, comptime table: @Expr<string>) {
-    decl.setMeta("table", table.value);
+    decl.setMeta(Entity(table: table.value));
 }
 
 fn index<T>(
@@ -16,17 +16,16 @@ fn index<T>(
     comptime ..fields: @Expr<Type.Field<T>[]>,
 ) {
     decl.setMeta(
-        "columns",
-        fields.value
-            .map(
+        Index(
+            columns: fields.value.map(
                 { f -> f.name + ":" + f.typeName + ":" + f.annotations.length.toString() },
-            )
-            .join(","),
+            ),
+        ),
     );
 }
 
 fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
-    decl.setMeta("column", field.value.name);
+    decl.setMeta(Unique(column: field.value.name));
 }
 
 fn column<T>(comptime decl: @Decl<T>, comptime name: @Expr<string>) {
@@ -43,8 +42,18 @@ pub type City(
 )
 
 pub fn main() {
-    @print(@typeInfo(City).meta.entity.table);
-    @print(@typeInfo(City).meta.index.columns);
-    @print(@typeInfo(City).meta.unique.column);
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    val columns: string[] = @typeInfo(City).meta(Index)?.columns ?? [];
+    @print(columns.join(","));
+    @print(@typeInfo(City).meta(Unique)?.column ?? "none");
     @print(City(code: "SP", name: "São Paulo", state: "SP").name);
 }
+
+// What `#[entity]` records.
+type Entity(table: string)
+
+// What `#[index]` records.
+type Index(columns: string[])
+
+// What `#[unique]` records.
+type Unique(column: string)

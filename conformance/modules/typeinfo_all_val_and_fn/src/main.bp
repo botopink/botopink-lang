@@ -3,7 +3,7 @@
 //// function is refused at the query, naming both.
 
 fn tag(comptime decl: @Decl) {
-    decl.setMeta("seen", "yes");
+    decl.setMeta(Tag(seen: true));
 }
 
 #[tag]
@@ -17,3 +17,6 @@ pub fn twice() -> i32 {
 pub fn main() {
     @print(@TypeInfo.all(with: tag).length);
 }
+
+// What `#[tag]` records.
+type Tag(seen: bool)

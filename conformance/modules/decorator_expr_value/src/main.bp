@@ -23,20 +23,15 @@ fn mark<T>(
     val shown = if (loud.value) label.value.toUpper() else label.value;
     val lvl = if (level.value == Level.High) "high" else "low";
     decl.setMeta(
-        "mark",
-        shown
-            + " "
-            + weight.value.toString()
-            + " "
-            + lvl
-            + " "
-            + limits.value.min.toString()
-            + ".."
-            + limits.value.max.toString()
-            + " "
-            + key.value.name
-            + " "
-            + tags.value.join("+"),
+        Mark(
+            shown: shown,
+            weight: weight.value,
+            level: lvl,
+            min: limits.value.min,
+            max: limits.value.max,
+            key: key.value.name,
+            tags: tags.value,
+        ),
     );
 }
 
@@ -53,8 +48,37 @@ fn shout(comptime q: @Expr<string>) -> @Expr<string> {
 }
 
 pub fn main() {
-    @print(@typeInfo(City).meta.mark.mark);
+    val mark = @typeInfo(City).meta(Mark);
+    if (mark) {
+        m ->
+        @print(
+            m.shown
+                + " "
+                + m.weight.toString()
+                + " "
+                + m.level
+                + " "
+                + m.min.toString()
+                + ".."
+                + m.max.toString()
+                + " "
+                + m.key
+                + " "
+                + m.tags.join("+"),
+        );
+    }
     @print(scale(3, 7));
     @print(scale(5, 2));
     @print(shout "hello");
 }
+
+// What `#[mark]` records: each argument's value as the body read it.
+type Mark(
+    shown: string,
+    weight: f64,
+    level: string,
+    min: i32,
+    max: i32,
+    key: string,
+    tags: string[],
+)

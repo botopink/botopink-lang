@@ -4,7 +4,7 @@
 //// the query answered for the program the call is compiled in.
 
 pub fn m(comptime decl: @Decl) {
-    decl.setMeta("role", decl.name);
+    decl.setMeta(Role(role: decl.name));
 }
 
 #[m]
@@ -17,13 +17,7 @@ fn show(all: Declared<unknown>[]) {
         val run = d.value;
         val said = if (run is fn() -> string) run() else "?";
         @print(
-            d.module
-                + " "
-                + d.name
-                + " "
-                + d.meta.map({ x -> x.key + "=" + x.value }).join(",")
-                + " "
-                + said,
+            d.module + " " + d.name + " " + said,
         );
     }
 }
@@ -31,3 +25,6 @@ fn show(all: Declared<unknown>[]) {
 pub fn boot(comptime modules: @Expr<Declared<unknown>[]> = @TypeInfo.all(with: m)) {
     show(modules.value);
 }
+
+// What `#[m]` records: the role its declaration plays.
+pub type Role(role: string)

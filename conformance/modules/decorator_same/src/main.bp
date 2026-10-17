@@ -6,7 +6,7 @@
 
 pub mod local;
 
-import {serverOnly as srv, check} from "web";
+import {serverOnly as srv, check, Check} from "web";
 
 #[check]
 #[srv]
@@ -21,6 +21,8 @@ fn SameName() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(Aliased).meta.check.ids);
-    @print(@typeInfo(SameName).meta.check.ids);
+    val aliased: string[] = @typeInfo(Aliased).meta(Check)?.ids ?? [];
+    @print(aliased.join(" "));
+    val sameName: string[] = @typeInfo(SameName).meta(Check)?.ids ?? [];
+    @print(sameName.join(" "));
 }

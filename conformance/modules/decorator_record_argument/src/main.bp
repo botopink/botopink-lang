@@ -9,7 +9,7 @@ fn cacheable<A, T>(
     comptime decl: @Decl<fn(a: A) -> T>,
     comptime cache: @Expr<Cache<T>>,
 ) {
-    decl.setMeta("cache", cache.value.name);
+    decl.setMeta(Cacheable(cache: cache.value.name));
 }
 
 val products = Cache<Product[]>("products");
@@ -20,6 +20,9 @@ fn byCategory(c: string) -> Product[] {
 }
 
 pub fn main() {
-    @print(@typeInfo(byCategory).meta.cacheable.cache);
+    @print(@typeInfo(byCategory).meta(Cacheable)?.cache ?? "none");
     @print(byCategory("tea")[0]?.name ?? "none");
 }
+
+// What `#[cacheable]` records.
+type Cacheable(cache: string)

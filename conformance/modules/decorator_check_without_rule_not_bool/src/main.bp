@@ -15,7 +15,7 @@ fn check<T>(
 ) {
     if (decl.kind == DeclKind.Fn && decl.returnType != "bool")
         decl.fail("#[check] without `rule` annotates an `fn(x) -> bool`");
-    decl.setMeta("message", message.value);
+    decl.setMeta(Check(message: message.value));
 }
 
 type Account(password: string, handle: string)
@@ -28,3 +28,6 @@ fn bad(a: Account) -> string {
 pub fn main() {
     @print("unreached");
 }
+
+// What `#[check]` records.
+type Check(message: string)

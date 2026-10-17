@@ -2,7 +2,7 @@
 //// carried by a function and by a type cannot be catalogued together.
 
 fn tagged(comptime decl: @Decl) {
-    decl.setMeta("tag", decl.name);
+    decl.setMeta(Tagged(tag: decl.name));
 }
 
 #[tagged]
@@ -16,3 +16,6 @@ pub type Box(n: i32)
 pub fn main() {
     @print(@TypeInfo.all(with: tagged).length);
 }
+
+// What `#[tagged]` records.
+type Tagged(tag: string)

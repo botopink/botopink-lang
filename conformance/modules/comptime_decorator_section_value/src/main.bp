@@ -33,8 +33,12 @@ fn fallback() -> Tok {
 }
 
 fn mark(comptime decl: @Decl, comptime ..tokens: @Expr<Tok[]>) {
-    decl.setMeta("labels", tokens.value.map({ t -> label(t) }).join(","));
-    decl.setMeta("fallback", label(fallback()));
+    decl.setMeta(
+        Mark(
+            labels: tokens.value.map({ t -> label(t) }),
+            fallback: label(fallback()),
+        ),
+    );
 }
 
 #[mark(.Pad.All.4, .Bold, Tok.Pad.All.8)]
@@ -43,7 +47,11 @@ fn styled() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(styled).meta.mark.labels);
-    @print(@typeInfo(styled).meta.mark.fallback);
+    val labels: string[] = @typeInfo(styled).meta(Mark)?.labels ?? [];
+    @print(labels.join(","));
+    @print(@typeInfo(styled).meta(Mark)?.fallback ?? "none");
     @print(styled());
 }
+
+// What `#[mark]` records: each token's label, and the fallback's.
+type Mark(labels: string[], fallback: string)

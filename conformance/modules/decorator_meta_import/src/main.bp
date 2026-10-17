@@ -6,10 +6,11 @@ pub mod orm;
 pub mod models;
 import {models.City};
 import {models.City as Town};
+import {orm.Entity};
 
 pub fn main() {
-    @print(@typeInfo(City).meta.entity.table);
-    @print(@typeInfo(Town).meta.entity.table);
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    @print(@typeInfo(Town).meta(Entity)?.table ?? "none");
     @print(@typeInfo(Town).name);
-    @print(@typeInfo(models.Person).meta.entity.table);
+    @print(@typeInfo(models.Person).meta(Entity)?.table ?? "none");
 }

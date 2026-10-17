@@ -15,7 +15,7 @@ fn page<P>(
     comptime seg: @Expr<string>,
     comptime paths: @Expr<?fn() -> P[]> = null,
 ) {
-    decl.setMeta("seg", seg.value);
+    decl.setMeta(Page(seg: seg.value));
 }
 
 fn allUsers() -> User[] {
@@ -30,3 +30,6 @@ fn blog(route: Route<BlogParams>) -> View {
 pub fn main() {
     @print(blog(Route(params: BlogParams(slug: "a"))).html);
 }
+
+// What `#[page]` records.
+type Page(seg: string)

@@ -4,7 +4,7 @@
 //// call.
 
 fn note(comptime decl: @Decl, comptime message: @Expr<string>) {
-    decl.setMeta("message", message.text());
+    decl.setMeta(Note(text: message.text()));
 }
 
 #[note("x")]
@@ -15,3 +15,6 @@ fn f() -> i32 {
 pub fn main() {
     @print(f());
 }
+
+// What `#[note]` records.
+type Note(text: string)

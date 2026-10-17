@@ -7,8 +7,7 @@
 
 fn setting(comptime decl: @Decl, comptime key: @Expr<string>) {
     if (decl.kind != DeclKind.Val) decl.fail("#[setting] annotates a val");
-    decl.setMeta("key", key.value);
-    decl.setMeta("declared", decl.returnType);
+    decl.setMeta(Setting(key: key.value, declared: decl.returnType));
 }
 
 #[setting("port")]
@@ -18,11 +17,14 @@ pub val port: i32 = 8080;
 pub val host = "localhost";
 
 pub fn main() {
-    @print(@typeInfo(port).meta.setting.key);
-    @print(@typeInfo(port).meta.setting.declared);
-    @print("[" + @typeInfo(host).meta.setting.declared + "]");
+    @print(@typeInfo(port).meta(Setting)?.key ?? "none");
+    @print(@typeInfo(port).meta(Setting)?.declared ?? "none");
+    @print("[" + (@typeInfo(host).meta(Setting)?.declared ?? "none") + "]");
     val all = @TypeInfo.all(with: setting);
     @print(all.length);
     all.forEach({ d -> @print(d.name + " " + d.returnTypeName) });
     @print(port + 1);
 }
+
+// What `#[setting]` records: its key and the `val`'s declared type.
+type Setting(key: string, declared: string)
