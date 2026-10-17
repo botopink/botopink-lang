@@ -4,6 +4,8 @@
 //// `d.metaAll(Check)` is refused at the argument (question `130-s8-d`);
 //// `@typeInfo(X).metaAll(Check)` reads it.
 
+import {compiler} from "std";
+
 pub type Check<T>(note: string)
 
 fn check<T>(expr decl: T, comptime note: string) {

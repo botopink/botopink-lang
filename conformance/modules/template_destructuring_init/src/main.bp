@@ -1,6 +1,8 @@
 //// Decision 425 — a template call expands wherever an expression may stand:
 //// as a destructuring initializer.
 
+import {compiler} from "std";
+
 fn pair(expr q: string) -> #(i32, string) {
     return compiler.build(
         "#("

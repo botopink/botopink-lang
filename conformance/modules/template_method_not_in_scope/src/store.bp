@@ -1,5 +1,7 @@
 //// A type and a template method over it, in one module.
 
+import {compiler} from "std";
+
 pub type Memory(prefix: string) {
     pub fn fetch(self: Self, key: string) -> string {
         return self.prefix + key;

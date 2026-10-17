@@ -2,6 +2,8 @@
 //// where a declaration of the program is no value: `value` is refused at the
 //// read (`name`, `module`, `meta` and `returnTypeName` are answered).
 
+import {compiler} from "std";
+
 pub fn mark(expr decl: unknown) {
     compiler.setMeta(Mark(name: compiler.name(decl)!));
 }

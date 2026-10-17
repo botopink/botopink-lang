@@ -1,7 +1,7 @@
 //// Decision 280 (4) — a field is named exactly as declared: `.Code`
 //// against the field `code` is the missing-field error, at the `.Code`.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 fn index<T>(expr decl: T, comptime ..fields: Type.Field<T>[]) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));

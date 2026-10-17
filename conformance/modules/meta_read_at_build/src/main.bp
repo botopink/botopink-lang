@@ -2,6 +2,8 @@
 //// program: `d.meta(T)` in a decorator's body, which runs while the program
 //// compiles, is refused at the read.
 
+import {compiler} from "std";
+
 type Entity(table: string)
 
 fn entity(expr decl: unknown) {

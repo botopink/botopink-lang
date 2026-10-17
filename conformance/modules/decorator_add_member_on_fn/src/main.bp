@@ -2,6 +2,8 @@
 //// decorator on a function is refused at the annotation (a function has no
 //// body to add a member to).
 
+import {compiler} from "std";
+
 fn helper<T>(expr decl: T) {
     compiler.addMember("extra", fn() -> i32 {
         return 1;

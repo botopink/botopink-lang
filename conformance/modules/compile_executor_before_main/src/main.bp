@@ -7,6 +7,8 @@
 //// function of the decorator's module (`hello`), or an `expr` parameter
 //// (`run`), spliced as the annotation wrote it.
 
+import {compiler} from "std";
+
 fn registered(expr decl: unknown, comptime label: string) {
     val name = compiler.name(decl)!;
     compiler.compile({ -> @print(label + " " + name) });

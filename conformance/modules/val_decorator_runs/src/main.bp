@@ -2,6 +2,8 @@
 //// of kind `DeclKind.Val`: its `fail` refuses the program at the annotation.
 //// It used to be dropped silently, and the program printed `1`.
 
+import {compiler} from "std";
+
 fn mark(expr decl: unknown) {
     compiler.fail("#[mark] ran on the val " + compiler.name(decl)!, at: decl);
 }

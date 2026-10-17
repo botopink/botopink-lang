@@ -3,6 +3,8 @@
 //// as written code, where `userId` is the ordinary unbound-name error, at the
 //// annotation and from the `compiler.addMember` that wrote it.
 
+import {compiler} from "std";
+
 type Query(sql: string)
 
 fn sql(expr q: string, expr decl: unknown) -> string {

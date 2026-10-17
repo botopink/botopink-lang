@@ -7,6 +7,8 @@
 //// call to undefined function fieldSummary/1` and a library repeated the
 //// logic inline in the body.
 
+import {compiler} from "std";
+
 fn plural(n: i32, word: string) -> string {
     return if (n == 1) "1 " + word else n.toString() + " " + word + "s";
 }

@@ -3,6 +3,8 @@
 //// program that expands `looks "…"`, every module's decorators applied —
 //// not for this package, which declares no `#[theme]` of its own.
 
+import {compiler} from "std";
+
 pub fn theme(expr decl: unknown) {
     compiler.setMeta(Theme(named: compiler.name(decl)!));
 }

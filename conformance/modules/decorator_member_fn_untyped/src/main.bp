@@ -1,6 +1,8 @@
 //// Decision 370 (2) — a member is written as in the type's body: every
 //// parameter of the function handed to `decl.addMember(name, fn…)` is typed.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 fn check<T>(expr decl: T, expr rule: fn(v: T) -> bool) {

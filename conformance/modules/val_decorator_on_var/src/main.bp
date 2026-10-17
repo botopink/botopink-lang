@@ -2,6 +2,8 @@
 //// it is refused at the annotation (question `116-c` open). The parent binary
 //// dropped the decorator silently and printed `1`.
 
+import {compiler} from "std";
+
 fn mark(expr decl: unknown) {
     compiler.setMeta(Mark(seen: true));
 }

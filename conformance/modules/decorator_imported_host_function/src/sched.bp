@@ -1,7 +1,7 @@
 //// A decorator another module applies, whose body calls a host function of
 //// its own module and a std one through a leaf import.
 
-import {hash.contentHash} from "std";
+import {hash.contentHash, compiler} from "std";
 
 #[@external(
     .Node("""("<" + $0 + ">")"""),

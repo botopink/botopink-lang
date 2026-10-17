@@ -1,6 +1,8 @@
 //// Decision 216 (1) — a decorator cannot replace or shadow a member the type
 //// already has: a second `size` is refused at the annotation, naming it.
 
+import {compiler} from "std";
+
 fn sized<T>(expr decl: T) {
     compiler.addMember("size", fn(self: T) -> i32 {
         return 0;

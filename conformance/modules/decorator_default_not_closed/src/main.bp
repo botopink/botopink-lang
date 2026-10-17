@@ -2,6 +2,8 @@
 //// only when the default is closed: the body runs in its own module, where
 //// `base` does not exist. Refused at the annotation, naming the parameter.
 
+import {compiler} from "std";
+
 val base = "x";
 
 fn dec(expr decl: unknown, comptime name: string = base) {

@@ -5,7 +5,7 @@
 //// `comptime-host-cell-unavailable`, never the nested namespace `io.random`
 //// read as unbound (144 B-46).
 
-import {io} from "std";
+import {io, compiler} from "std";
 
 fn drawn(expr decl: unknown) {
     val x = io.random.float();

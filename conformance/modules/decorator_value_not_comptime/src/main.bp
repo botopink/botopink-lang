@@ -4,7 +4,7 @@
 //// The body reads `message`; one it never reads may be any expression
 //// (`run/decorator_expr_unread_argument`).
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

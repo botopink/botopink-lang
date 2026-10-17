@@ -3,7 +3,7 @@
 //// written (`#(1, 9)`) and the field key as its `.name` against the read's
 //// type (decision 308). Read back here on every target (144 B-19).
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 type Span(range: #(i32, i32), label: string)
 

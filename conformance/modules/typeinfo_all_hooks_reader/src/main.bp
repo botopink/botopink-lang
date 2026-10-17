@@ -4,6 +4,8 @@
 //// query is refused at the decorator's name (the parent binary answered it
 //// with the meta; a run after the bodies would have answered without it).
 
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 fn graph(expr decl: unknown) {

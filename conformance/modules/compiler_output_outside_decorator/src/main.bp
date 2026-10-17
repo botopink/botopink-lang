@@ -3,6 +3,8 @@
 //// whose first parameter is no `expr` is refused at the output
 //// (`compiler-output-outside-decorator`).
 
+import {compiler} from "std";
+
 pub type Mark(text: string)
 
 fn mark(comptime text: string) {

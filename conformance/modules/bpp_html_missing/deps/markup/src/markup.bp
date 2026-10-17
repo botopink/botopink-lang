@@ -1,6 +1,6 @@
 //// The markup's unfold target: answers the literal's length.
 
-import {bpp, compiler.CustomNode, compiler.Span} from "std";
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
 
 pub default fn markup(expr t: string) -> i32 {
     val root = CustomNode(

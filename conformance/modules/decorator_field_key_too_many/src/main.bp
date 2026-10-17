@@ -1,7 +1,7 @@
 //// Decision 280, example 6 — `unique` takes one field: a second is refused
 //// at the argument that has no parameter to meet (several are `index`'s).
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 fn index<T>(expr decl: T, comptime ..fields: Type.Field<T>[]) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));

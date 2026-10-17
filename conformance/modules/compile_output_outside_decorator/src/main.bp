@@ -3,6 +3,8 @@
 //// function whose first parameter is no `expr` is refused at the output
 //// (`compiler-output-outside-decorator`).
 
+import {compiler} from "std";
+
 fn setup(comptime text: string) {
     compiler.compile({ -> @print(text) });
 }

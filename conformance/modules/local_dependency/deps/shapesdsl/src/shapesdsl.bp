@@ -4,7 +4,7 @@
 //// reads by call location. `e.lookup("area")` resolves because the text spells
 //// `area` (decision 237: a capture carries only the bindings its text names).
 
-import {compiler.CustomNode, compiler.Span} from "std";
+import {compiler.CustomNode, compiler.Span, compiler} from "std";
 
 pub fn area(w: i32, h: i32) -> i32 {
     return w * h;

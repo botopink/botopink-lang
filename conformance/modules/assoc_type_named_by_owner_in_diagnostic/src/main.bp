@@ -2,6 +2,8 @@
 //// owner's path, `City.Columns`, as it is written — never as the top-level
 //// type it is hoisted into (144 B-19).
 
+import {compiler} from "std";
+
 fn columns(expr decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }

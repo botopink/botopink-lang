@@ -6,7 +6,7 @@
 //// The bare `if` must be the last statement of the decorator body: a value-less
 //// `if` followed by another statement does not parse today.
 
-import {compiler.DeclKind} from "std";
+import {compiler.DeclKind, compiler} from "std";
 
 fn wire(expr decl: unknown) {
     @emit("pub fn wiredSize() -> i32 { return 99; }");

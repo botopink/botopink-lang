@@ -2,6 +2,8 @@
 //// module answers for the whole program — and it also holds the package's
 //// default function.
 
+import {compiler} from "std";
+
 pub fn tagged(expr decl: unknown) {
     compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }

@@ -2,6 +2,8 @@
 //// type in scope: a misspelt one is the unknown-type error at the argument
 //// (it used to surface only at boot, from the string).
 
+import {compiler} from "std";
+
 pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
 }

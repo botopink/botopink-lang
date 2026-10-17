@@ -4,6 +4,8 @@
 //// parameters, each `@Expr` spliced where it was written. `rule` is
 //// `passwordsMatch`, called by `validate` at run time — never at build.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 fn check<T>(

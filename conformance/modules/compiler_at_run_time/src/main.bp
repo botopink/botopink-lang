@@ -2,6 +2,8 @@
 //// build; `main` runs when the program runs, and reading it there is
 //// refused at the read (`compiler-at-run-time`).
 
+import {compiler} from "std";
+
 pub fn main() {
     @print(compiler.src.line);
 }

@@ -2,6 +2,8 @@
 //// names, each `key=value` pair a labelled argument — the shape a markup
 //// template's `<Greeting name="Partner" />` lowers to.
 
+import {compiler} from "std";
+
 pub fn tag(expr q: string) -> string {
     val words = compiler.text(q).split(" ");
     var args: string[] = [];

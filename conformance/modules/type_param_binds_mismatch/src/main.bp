@@ -2,6 +2,8 @@
 //// `T`: here `T` is already `i32` from the declaration pattern `fn() -> T`,
 //// so the type argument `string` is refused where it is written.
 
+import {compiler} from "std";
+
 pub type Provides(name: string)
 
 fn provides<T>(expr decl: fn() -> T, comptime t: type<T>) {

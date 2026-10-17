@@ -2,6 +2,8 @@
 //// method: from a decorator on a `type` it is refused at the annotation (a
 //// type has no call to wrap).
 
+import {compiler} from "std";
+
 fn traced(expr decl: unknown) {
     compiler.wrapWith({ call -> call.run() });
 }

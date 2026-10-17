@@ -9,6 +9,8 @@
 //// or the other type's answer). A security proxy could call the wrong type's
 //// code. The same two proxies written by hand were always right.
 
+import {compiler} from "std";
+
 fn guard(label: string) -> i32 {
     return label.length();
 }

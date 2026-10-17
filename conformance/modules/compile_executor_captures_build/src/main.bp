@@ -3,6 +3,8 @@
 //// `compiler` read inside the executor is refused there
 //// (`expr-captures-build`).
 
+import {compiler} from "std";
+
 fn registered(expr decl: unknown) {
     compiler.compile({ -> @print(compiler.name(decl)!) });
 }

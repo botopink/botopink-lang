@@ -2,6 +2,8 @@
 //// and a decorator's name has type `Decorator`: a decorator with further
 //// arguments, a single decorator and a list of them are all accepted.
 
+import {compiler} from "std";
+
 fn route(expr decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
 }

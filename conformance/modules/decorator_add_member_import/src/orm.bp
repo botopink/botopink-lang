@@ -1,5 +1,7 @@
 //// The decorator lives in a library module of its own.
 
+import {compiler} from "std";
+
 pub fn entity(expr decl: unknown, comptime table: string) {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });

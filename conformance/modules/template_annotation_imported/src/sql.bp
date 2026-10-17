@@ -2,6 +2,8 @@
 //// module: `query` and the helper its body calls travel with it, and the
 //// owner's decorator `repository` (imported too) reads the method's typed meta.
 
+import {compiler} from "std";
+
 pub type Query(sql: string, params: string[])
 
 fn placeholder(n: i32) -> string {

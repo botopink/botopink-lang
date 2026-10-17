@@ -4,6 +4,8 @@
 //// `val` and by a parameter typed `fn(string) -> Town` — each call's record
 //// read by its field, on every target (144 B-19).
 
+import {compiler} from "std";
+
 fn maker(expr decl: unknown) {
     compiler.addMember(
         "pub fn make(name: string) -> "

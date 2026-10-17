@@ -1,6 +1,8 @@
 //// A package's template answering a record, its built code calling the
 //// package's own function.
 
+import {compiler} from "std";
+
 pub type Label(text: string, size: i32)
 
 pub fn makeLabel(text: string) -> Label {

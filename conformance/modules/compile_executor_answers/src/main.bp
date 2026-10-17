@@ -2,6 +2,8 @@
 //// `fn()`: what it answers is no value to drop. A lambda whose tail answers
 //// one is refused at the tail.
 
+import {compiler} from "std";
+
 fn count() -> i32 { 1 }
 
 fn written(expr decl: unknown) {

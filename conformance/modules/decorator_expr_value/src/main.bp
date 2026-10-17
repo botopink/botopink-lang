@@ -4,7 +4,7 @@
 //// key, an array. The same `.value` reads an ordinary function's `comptime`
 //// parameter (the call specialised) and a template's literal without holes.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Level { Low, High }
 

@@ -2,6 +2,8 @@
 //// type, as it follows the name in a declaration (`(id: string)`,
 //// `{ A, B }`): anything else is refused at the annotation, the source quoted.
 
+import {compiler} from "std";
+
 fn entity(expr decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string) fn extra() {}"));
 }

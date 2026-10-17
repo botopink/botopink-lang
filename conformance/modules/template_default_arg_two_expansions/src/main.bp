@@ -2,6 +2,9 @@
 // same offset of its built string: the first leaves out a default argument
 // (`greeting`), the second calls a function of one parameter — the shape of
 // jhonstart's `<GreetingHeadline name="Partner" />` and `<Footer />`.
+
+import {compiler} from "std";
+
 pub val partner = "Partner";
 
 pub fn headline(name: string, greeting: string = "Hello") -> string {

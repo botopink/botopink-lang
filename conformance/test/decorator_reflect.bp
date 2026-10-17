@@ -5,7 +5,7 @@
 //// `decl.kind` is compared through a `val` intermediate: `(a == b).toString()`
 //// inside an argument does not parse.
 
-import {compiler.DeclKind} from "std";
+import {compiler.DeclKind, compiler} from "std";
 
 fn describe(expr decl: unknown) {
     val isType = compiler.kind(decl) == DeclKind.Type;

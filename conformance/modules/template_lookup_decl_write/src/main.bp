@@ -3,6 +3,8 @@
 //// refused at the call (`template-lookup-decl-write`). A decorator on that
 //// declaration records what it carries.
 
+import {compiler} from "std";
+
 type Note(text: string)
 
 type User(id: i32)

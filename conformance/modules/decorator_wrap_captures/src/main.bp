@@ -4,6 +4,8 @@
 //// only while the program compiles: the wrapper reading it is refused at the
 //// read.
 
+import {compiler} from "std";
+
 fn labelled(expr decl: fn(..) -> string) {
     val label = compiler.name(decl)!;
     compiler.wrapWith({ call -> label + ": " + call.run() });

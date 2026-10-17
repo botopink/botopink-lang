@@ -2,6 +2,8 @@
 //// annotated declaration (`comptime decl: @Decl` beside its literal) is
 //// written only as an annotation; a call `f "…"` is refused at the call.
 
+import {compiler} from "std";
+
 type Query(sql: string)
 
 fn sql(expr q: string, expr decl: unknown) -> string {

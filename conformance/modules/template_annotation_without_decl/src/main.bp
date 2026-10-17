@@ -3,6 +3,8 @@
 //// (`expr decl: unknown`); a template that takes none has nowhere to put
 //// what it builds and is refused at the annotation.
 
+import {compiler} from "std";
+
 fn shout(expr q: string) -> string {
     return compiler.build("\"" + compiler.text(q).toUpper() + "\"");
 }

@@ -7,6 +7,7 @@
 
 mod store;
 import {store.Store, store.read};
+import {compiler} from "std";
 
 behavior Named {
     fn name(self: Self) -> string;

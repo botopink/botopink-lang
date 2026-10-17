@@ -2,6 +2,8 @@
 //// expression written at the call: its body is where the decorator's
 //// parameters are spliced. A function named elsewhere is refused at it.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 fn none(s: Signup) -> Violation[] {

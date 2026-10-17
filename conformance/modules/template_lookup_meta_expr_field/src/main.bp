@@ -3,6 +3,8 @@
 //// 370 (1)) holds code the program runs, so `decl.meta(T)` of it is refused at
 //// the read, naming the field (`template-lookup-meta-expr-field`).
 
+import {compiler} from "std";
+
 type Check(message: string, rule: fn(n: i32) -> bool)
 
 fn check(expr decl: unknown, comptime message: string, expr rule: fn(n: i32) -> bool) {

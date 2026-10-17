@@ -2,6 +2,8 @@
 //// behavior and the bare variant `DeclKind.Component`) and `Field` (a
 //// prelude type) — and a decorator whose `@Decl` names one of them.
 
+import {compiler} from "std";
+
 pub behavior Component {
     fn render(self: Self) -> string;
 }

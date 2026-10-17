@@ -4,6 +4,8 @@
 //// is the program's to evaluate. It is spliced where the member uses it —
 //// evaluated at run time, each time and only when that use is reached.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 fn check<T>(

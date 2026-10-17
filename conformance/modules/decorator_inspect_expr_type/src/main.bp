@@ -1,6 +1,8 @@
 //// Decision 364 (3) — an `@Expr` of a type has no `.value`: the type is not
 //// inspected while the program compiles. Reading it is refused at the read.
 
+import {compiler} from "std";
+
 pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
 }

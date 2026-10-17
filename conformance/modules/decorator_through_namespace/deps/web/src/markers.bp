@@ -1,6 +1,8 @@
 //// `web/markers` — `tag` records a typed meta value on the declaration it
 //// annotates; `serverOnly` is a marker that reads nothing.
 
+import {compiler} from "std";
+
 pub type Tag(label: string)
 
 pub fn tag(expr decl: unknown) {

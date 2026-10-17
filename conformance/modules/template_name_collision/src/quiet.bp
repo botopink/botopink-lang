@@ -1,5 +1,7 @@
 //// The other module exporting a template named `tag`.
 
+import {compiler} from "std";
+
 pub fn tag(expr q: string) -> string {
     return compiler.build("\"quiet\"");
 }

@@ -2,6 +2,8 @@
 //// answers one kind of value, so a decorator carried by a `val` and by a
 //// function is refused at the query, naming both.
 
+import {compiler} from "std";
+
 fn tag(expr decl: unknown) {
     compiler.setMeta(Tag(seen: true));
 }

@@ -1,5 +1,7 @@
 //// The decorator's member names `Violation`, a type of this module.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 pub fn check<T>(

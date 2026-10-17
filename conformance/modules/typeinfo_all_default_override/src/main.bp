@@ -4,6 +4,7 @@
 //// catalogue this module reads as an entry point; `boot([])` none.
 
 import {boot, m} from "frame";
+import {compiler} from "std";
 
 pub fn other(expr decl: unknown) {
     compiler.setMeta(Other(kind: "other"));

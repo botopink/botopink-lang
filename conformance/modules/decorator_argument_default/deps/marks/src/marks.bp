@@ -1,5 +1,7 @@
 //// A dependency's decorator whose trailing parameters declare a default.
 
+import {compiler} from "std";
+
 pub fn mark(
     expr decl: unknown,
     comptime label: string,

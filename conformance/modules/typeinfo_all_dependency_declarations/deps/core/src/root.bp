@@ -1,6 +1,8 @@
 //// The package that declares the decorator: `#[m]` records the role its
 //// declaration plays. It annotates nothing of its own.
 
+import {compiler} from "std";
+
 pub fn m(expr decl: unknown) {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }

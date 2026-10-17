@@ -7,6 +7,7 @@
 import {ui};
 
 import {ui.session as currentUser, ui.Element};
+import {compiler} from "std";
 
 fn graph(expr decl: unknown) {
     var nodes: string[] = [];

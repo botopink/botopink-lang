@@ -1,7 +1,7 @@
 //// The markup's unfold target: answers the literal's length, and refuses a
 //// `!` in it at the `!`.
 
-import {bpp, compiler.CustomNode, compiler.Span} from "std";
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
 
 #[bpp.html]
 pub default fn markup(expr t: string) -> i32 {

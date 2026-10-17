@@ -1,6 +1,8 @@
 //// Decision 425 — a template function exists only while the program
 //// compiles: named without a call it is no value, refused where it is read.
 
+import {compiler} from "std";
+
 fn shout(expr q: string) -> string {
     return compiler.build("\"template " + compiler.text(q) + "\"");
 }

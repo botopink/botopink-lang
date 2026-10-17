@@ -2,7 +2,7 @@
 //// as a call's is. `label = value` is a located parse error at the label,
 //// naming the form to write.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 fn check<T>(
     expr decl: T,

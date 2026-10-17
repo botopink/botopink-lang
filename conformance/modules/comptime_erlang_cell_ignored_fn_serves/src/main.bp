@@ -4,6 +4,8 @@
 //// Erlang cell binds the erlang and beam targets alone, and is never run by
 //// the compiler).
 
+import {compiler} from "std";
+
 #[@external(
     .Node("""$0.replace(/a/g, "b")"""),
     .Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))"""),

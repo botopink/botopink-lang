@@ -2,6 +2,8 @@
 //// the annotated function into the program's init list. The executor calls
 //// `remember`, private to this module: its names resolve here (decision 384).
 
+import {compiler} from "std";
+
 var table: string[] = [];
 
 fn remember(path: string, name: string) {

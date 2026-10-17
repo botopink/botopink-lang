@@ -2,6 +2,8 @@
 //// function returns: a cache of another type is refused at the argument,
 //// read through the module `val` that holds it.
 
+import {compiler} from "std";
+
 type Product(name: string)
 
 type User(name: string)

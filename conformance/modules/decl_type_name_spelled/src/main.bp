@@ -7,6 +7,8 @@
 //// `returnType` erased the same way. Each name is printed through a function
 //// the decorator emits.
 
+import {compiler} from "std";
+
 fn shape(expr decl: unknown) {
     val fields = compiler
         .fields(decl)

@@ -5,6 +5,7 @@
 
 pub mod text;
 import {text.shout};
+import {compiler} from "std";
 
 fn wrap(s: string) -> string {
     return "[" + s + "]";

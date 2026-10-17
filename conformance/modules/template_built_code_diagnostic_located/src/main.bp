@@ -4,6 +4,8 @@
 //// column, and `r.d` sits 19 bytes into it. A first expansion whose code
 //// sits at the same offsets reads `r.w` and is accepted.
 
+import {compiler} from "std";
+
 pub type Box(w: i32, h: i32)
 
 // The built code is the literal's own text.

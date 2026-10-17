@@ -2,6 +2,8 @@
 //// not called while the program compiles. Calling the rule in the decorator
 //// is refused at the read; the program calls it at run time.
 
+import {compiler} from "std";
+
 fn passwordsMatch(a: Signup) -> bool {
     return a.password == a.confirm;
 }

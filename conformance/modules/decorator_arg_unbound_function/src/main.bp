@@ -2,7 +2,7 @@
 //// where it is written: a misspelt name is the ordinary unbound-name error at
 //// the argument, not a string the body meets later.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

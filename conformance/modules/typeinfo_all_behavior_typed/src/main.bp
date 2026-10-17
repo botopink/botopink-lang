@@ -4,6 +4,8 @@
 //// at that type, each entry's `name`, `module` and `meta` read as for any
 //// catalogue.
 
+import {compiler} from "std";
+
 pub behavior Module {
     fn make() -> Self;
     fn start(self: Self) -> string;

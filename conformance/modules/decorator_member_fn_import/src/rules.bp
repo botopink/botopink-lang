@@ -2,6 +2,8 @@
 //// decorator's parameters and its own locals only, so it means the same in
 //// the module of every type it annotates (decision 370 (2); `s35-g`).
 
+import {compiler} from "std";
+
 pub fn rule<T>(
     expr decl: T,
     expr holds: fn(v: T) -> bool,

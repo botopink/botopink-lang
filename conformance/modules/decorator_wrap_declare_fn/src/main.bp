@@ -1,6 +1,8 @@
 //// Decision 316 — `decl.wrapWith(f)` wraps a function's body: a `declare fn`
 //// has none, so wrapping one is refused at the annotation.
 
+import {compiler} from "std";
+
 fn counted(expr decl: fn(..) -> i32) {
     compiler.wrapWith({ call -> call.run() });
 }

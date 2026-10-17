@@ -3,7 +3,7 @@
 //// after the three quotes, so the caret is on the `!` itself (it stood two
 //// columns to its left, as after one quote).
 
-import {compiler.Span} from "std";
+import {compiler.Span, compiler} from "std";
 
 fn markup(expr t: string) -> i32 {
     val text = compiler.text(t);

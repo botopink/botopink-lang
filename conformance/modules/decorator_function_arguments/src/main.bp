@@ -6,6 +6,8 @@
 //// (`reject/decorator_function_argument_mismatch`), a page of another shape
 //// at the annotation (`reject/decorator_decl_pattern_return`).
 
+import {compiler} from "std";
+
 type Route<P, D>(params: P, data: D)
 
 type View(html: string)

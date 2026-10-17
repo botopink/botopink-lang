@@ -1,5 +1,7 @@
 //// The meta record and the decorator that records it.
 
+import {compiler} from "std";
+
 pub type Table(name: string, schema: string = "public")
 
 pub fn entity(expr decl: unknown, comptime name: string) {

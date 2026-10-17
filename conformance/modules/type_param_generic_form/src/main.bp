@@ -3,6 +3,8 @@
 //// argument binds `T` for the rest of the signature — here the decorator's
 //// declaration pattern `fn() -> T`, and in `orDefault` the fallback.
 
+import {compiler} from "std";
+
 pub type Box<T>(value: T)
 
 pub type Provides(name: string)

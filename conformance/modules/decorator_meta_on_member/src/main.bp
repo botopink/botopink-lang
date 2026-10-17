@@ -2,6 +2,8 @@
 //// decorator on a field (or a method) has no `@typeInfo` to answer through,
 //// and `decl.setMeta` from it is refused at the annotation.
 
+import {compiler} from "std";
+
 fn column(expr decl: unknown) {
     compiler.setMeta(Column(name: compiler.name(decl)!));
 }

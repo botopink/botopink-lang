@@ -2,6 +2,8 @@
 //// the annotation on the declaration that added it, not past the file's last
 //// line; the `called from` line names the decorator's `decl.addMember` call.
 
+import {compiler} from "std";
+
 fn maker<T>(expr decl: T) {
     compiler.addMember("code", fn(self: T) -> i32 {
         return self.nope;

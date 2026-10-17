@@ -1,6 +1,8 @@
 //// Decision 277 — a cycle is an edge back to a listed node: `A` renders `B`
 //// and `B` renders `A` — two nodes, `B`'s call goes back to `A`, no third.
 
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as

@@ -5,6 +5,8 @@
 //// same path; a member the decorator adds names it too. A value prints under
 //// its owner's path (`City.Columns(…)`, `City.Size.Small`).
 
+import {compiler} from "std";
+
 fn entity(expr decl: unknown) {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });

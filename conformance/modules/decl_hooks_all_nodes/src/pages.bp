@@ -4,6 +4,8 @@
 //// and `Avatar` again — four nodes, `Avatar` listed once, `UserMenu`'s three
 //// calls in body order.
 
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as

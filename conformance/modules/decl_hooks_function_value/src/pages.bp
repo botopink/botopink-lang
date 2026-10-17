@@ -1,6 +1,8 @@
 //// Decision 277 — a `use` over a function value names no declaration: it
 //// enters with `hook: null` and reaches nothing.
 
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as

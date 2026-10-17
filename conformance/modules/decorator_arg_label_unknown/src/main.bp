@@ -1,7 +1,7 @@
 //// Decision 280 — a labelled decorator argument names a parameter; a label
 //// the decorator does not declare is refused at it.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

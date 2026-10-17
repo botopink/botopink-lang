@@ -3,6 +3,8 @@
 //// function's parameter. A function of that shape is accepted whatever it
 //// returns; the catalogue (`@TypeInfo.all(with: on)`) lists the listeners.
 
+import {compiler} from "std";
+
 pub type OrderPlaced(id: string, total: i64)
 
 pub type OrderCancelled(id: string)

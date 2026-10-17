@@ -3,6 +3,7 @@
 //// `Param` (`m.params`, `p.name`), never the imported types.
 
 import {model.Param, model.Field};
+import {compiler} from "std";
 
 pub fn described(expr decl: unknown) {
     var names = "";

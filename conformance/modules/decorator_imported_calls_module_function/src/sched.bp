@@ -1,6 +1,8 @@
 //// A decorator and the two functions of its module its body reaches; only
 //// the decorator is `pub`.
 
+import {compiler} from "std";
+
 fn fieldCount(expr: string) -> i32 {
     return expr.split(" ").length;
 }

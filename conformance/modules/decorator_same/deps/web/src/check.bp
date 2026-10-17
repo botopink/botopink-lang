@@ -4,6 +4,7 @@
 //// spells the name.
 
 import {markers.serverOnly};
+import {compiler} from "std";
 
 pub fn check(expr decl: unknown) {
     var out: string[] = [];

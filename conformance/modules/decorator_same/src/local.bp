@@ -1,5 +1,7 @@
 //// The project's own `serverOnly` — named like `web`'s, declared here.
 
+import {compiler} from "std";
+
 pub fn serverOnly(expr decl: unknown) {
     val _n = compiler.name(decl)!;
 }

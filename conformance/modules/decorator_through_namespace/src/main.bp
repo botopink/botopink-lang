@@ -5,6 +5,7 @@
 //// value — `same(markers.serverOnly)` is true for `#[markers.serverOnly]`.
 
 import {markers} from "web";
+import {compiler} from "std";
 
 type Found(names: string)
 

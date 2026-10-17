@@ -6,6 +6,8 @@
 //// collide. A field's decorator and an enum's method read their owner the
 //// same way; a module-level function's reads `null`.
 
+import {compiler} from "std";
+
 fn register(expr decl: unknown) {
     val owner = compiler.owner(decl)!;
     val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;

@@ -2,6 +2,8 @@
 //// `@Decl` parameter, where the call's record type is read. A function the
 //// body hands the handle to is refused at its call.
 
+import {compiler} from "std";
+
 type Entity(table: string)
 
 fn record(d: unknown) {

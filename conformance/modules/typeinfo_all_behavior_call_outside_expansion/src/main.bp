@@ -3,6 +3,8 @@
 //// only inside a function expanded at its call site (decision 562): in
 //// `main`, which runs, it is refused at the call.
 
+import {compiler} from "std";
+
 pub behavior Module {
     fn make() -> Self;
     fn start(self: Self) -> string;

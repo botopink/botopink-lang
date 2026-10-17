@@ -1,6 +1,8 @@
 //// Decision 216 (4) — one query answers one kind of value: a decorator
 //// carried by a function and by a type cannot be catalogued together.
 
+import {compiler} from "std";
+
 fn tagged(expr decl: unknown) {
     compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }

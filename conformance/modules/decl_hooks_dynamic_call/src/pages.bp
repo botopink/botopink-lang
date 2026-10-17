@@ -7,6 +7,8 @@
 //// answer: `~`); its reader decides on the safe side (277: such a page is
 //// per-request).
 
+import {compiler} from "std";
+
 pub type View(text: string) implement @Renderable
 
 pub type Menu(title: string) {

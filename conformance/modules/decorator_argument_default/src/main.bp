@@ -8,6 +8,7 @@
 pub mod local;
 import {local.pin};
 import {mark} from "marks";
+import {compiler} from "std";
 
 fn note(
     expr decl: unknown,

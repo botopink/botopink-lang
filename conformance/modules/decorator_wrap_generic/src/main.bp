@@ -2,6 +2,8 @@
 //// function's own signature: a function with type parameters is not wrapped
 //// (question B-11-b, as built) and is refused at the annotation.
 
+import {compiler} from "std";
+
 fn counted(expr decl: fn(..) -> i32) {
     compiler.wrapWith({ call -> call.run() });
 }

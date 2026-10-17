@@ -6,6 +6,8 @@
 //// binary re-read the argument and the body as written, untyped:
 //// `{error,{badmap,'Pad'}}` at the annotation.
 
+import {compiler} from "std";
+
 type Tok {
     Pad {
         All {

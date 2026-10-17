@@ -5,6 +5,8 @@
 //// calling it through `is fn() -> T` is front 130's. A type's entry has no
 //// return type: `returnTypeName` is `""` (decision 256).
 
+import {compiler} from "std";
+
 fn service(expr decl: unknown) {
     compiler.setMeta(Service(role: "service"));
     compiler.addMember("pub fn make() -> string { return \""

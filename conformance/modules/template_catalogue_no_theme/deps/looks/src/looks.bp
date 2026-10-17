@@ -2,6 +2,8 @@
 //// (decision 353): the program declares its theme, exactly one — none is
 //// refused at the literal that reads it (decision 358).
 
+import {compiler} from "std";
+
 pub fn theme(expr decl: unknown) {
     compiler.setMeta(Theme(named: compiler.name(decl)!));
 }

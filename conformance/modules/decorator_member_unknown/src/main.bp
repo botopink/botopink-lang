@@ -3,6 +3,8 @@
 //// `decl.addMember`. `City.revisions()` is refused where it is written: the
 //// decorator added `fromName` only.
 
+import {compiler} from "std";
+
 fn entity(expr decl: unknown) {
     compiler.addMember(
         "pub fn fromName(n: string) -> "

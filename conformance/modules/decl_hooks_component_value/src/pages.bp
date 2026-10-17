@@ -8,6 +8,8 @@
 //// `Lista` (so a page listing cards is per-request, never a wrong static
 //// prerender).
 
+import {compiler} from "std";
+
 type Item(name: string)
 
 type View(text: string, kids: @Component<View>[]) implement @Renderable

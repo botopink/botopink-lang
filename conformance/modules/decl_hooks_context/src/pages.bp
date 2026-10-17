@@ -4,7 +4,7 @@
 //// check that every context read has a provider on its path. std's `provide`
 //// / `context` get no node.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, compiler} from "std";
 
 type Theme(mode: string)
 

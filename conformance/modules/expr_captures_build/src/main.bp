@@ -2,6 +2,8 @@
 //// program runs; `compiler` exists only while it compiles, so a `compiler`
 //// read inside the member is refused there (`expr-captures-build`).
 
+import {compiler} from "std";
+
 fn named<T>(expr decl: T, expr rule: fn(v: T) -> bool) {
     compiler.addMember("ruleText", fn(self: T) -> string {
         return compiler.text(rule);

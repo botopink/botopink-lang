@@ -5,6 +5,8 @@
 //// members stay beside them. A field's decorator adds to the type that owns
 //// the field (`#[label]` below).
 
+import {compiler} from "std";
+
 fn entity(expr decl: unknown) {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });

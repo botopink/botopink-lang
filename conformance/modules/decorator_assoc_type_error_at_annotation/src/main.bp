@@ -3,6 +3,8 @@
 //// type by its owner's path (`City.Columns`); the `called from` line names the
 //// decorator's `decl.addType` call.
 
+import {compiler} from "std";
+
 fn columns(expr decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: Missing)"));
 }

@@ -1,5 +1,7 @@
 //// `b/theme` — `a` has a `theme` module too, declaring `Ns` and `make`.
 
+import {compiler} from "std";
+
 pub type Ns(size: i32, unit: string) {
     fn show(self: Self) -> string {
         return "b:" + self.size.toString() + self.unit;

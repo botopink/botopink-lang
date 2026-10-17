@@ -5,6 +5,8 @@
 //// behavior has the methods it declares. `x.greet "…"` calls that method; on
 //// a type without one, the template method runs.
 
+import {compiler} from "std";
+
 behavior Greets {
     fn greet(self: Self, word: string) -> string;
 }

@@ -1,6 +1,8 @@
 //// Decisions 280 (1), 281, example 5 — the cache is the record itself, not
 //// its name: a string against `Cache<T>` is refused at the argument.
 
+import {compiler} from "std";
+
 type Product(name: string)
 
 type User(name: string)

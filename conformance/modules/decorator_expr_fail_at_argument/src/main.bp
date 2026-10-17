@@ -2,6 +2,8 @@
 //// argument, not at the annotation: the upper bound below the lower one is
 //// refused at the `1`.
 
+import {compiler} from "std";
+
 fn sizeBetween(expr decl: unknown, comptime min: i32, comptime max: i32) {
     if (min > max) compiler.fail("the upper bound is below the lower one", at: max);
 }

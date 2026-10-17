@@ -3,6 +3,8 @@
 //// comes too late for the bodies already inferred, so `decl.addMember` in it
 //// is refused at the call.
 
+import {compiler} from "std";
+
 fn graph<T>(expr decl: T) {
     val count = compiler.hooks(decl).length;
     compiler.setMeta(Graph(count: count));

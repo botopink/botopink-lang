@@ -40,7 +40,7 @@
 ////     `Xxx.Mock` and the factory `Xxx.mock()` (decision 216). The compiler core learns nothing about mocking
 ////     (no lib-specific surface in core); every rule here is botopink.
 
-import {failure};
+import {failure, compiler};
 
 // ── host cells (the one mutable seam) ────────────────────────────────────────
 //

@@ -3,6 +3,8 @@
 //// a primitive is accepted; a misspelt name and a string are refused
 //// (`reject/decorator_type_argument_{unknown,string}`).
 
+import {compiler} from "std";
+
 pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
 }

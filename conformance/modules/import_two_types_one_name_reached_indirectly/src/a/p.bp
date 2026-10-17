@@ -1,3 +1,5 @@
+import {compiler} from "std";
+
 pub type Policy(ms: i32)
 
 pub fn slow() -> Policy {

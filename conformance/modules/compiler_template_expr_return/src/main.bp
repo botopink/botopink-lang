@@ -5,6 +5,8 @@
 //// as a literal (`shout`), and `compiler.build(source)` answers the code
 //// built from text, typed where the call stands (`-> anyvalue`, `twice`).
 
+import {compiler} from "std";
+
 fn shout(expr q: string) -> string {
     val loud = compiler.text(q).toUpper() + "!";
     return loud;

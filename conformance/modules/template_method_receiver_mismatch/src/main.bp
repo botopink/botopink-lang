@@ -2,6 +2,8 @@
 //// against its `self: @Expr<R>` as an argument is: a value whose type neither
 //// is `R` nor implements it is refused at the receiver.
 
+import {compiler} from "std";
+
 behavior Named {
     fn name(self: Self) -> string;
 }

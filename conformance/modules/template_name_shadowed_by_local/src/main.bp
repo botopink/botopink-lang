@@ -2,6 +2,8 @@
 //// a local named like a template function is the value called there, and the
 //// template stays the name's everywhere else.
 
+import {compiler} from "std";
+
 fn shout(expr q: string) -> string {
     return compiler.build("\"template " + compiler.text(q) + "\"");
 }

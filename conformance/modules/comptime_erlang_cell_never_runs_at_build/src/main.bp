@@ -10,6 +10,8 @@
 //// the BEAM, which called the Erlang cell: `Point:erlang` there, `Point:fn`
 //// on commonJS and wasm.
 
+import {compiler} from "std";
+
 #[@external(
     .Node("""($0 + ":node")"""),
     .Erlang("""<<($0)/binary, ":erlang">>"""),

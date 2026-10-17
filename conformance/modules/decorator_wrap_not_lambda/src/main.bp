@@ -3,6 +3,8 @@
 //// decorator's parameters are spliced. A function named in its place is
 //// refused at the argument.
 
+import {compiler} from "std";
+
 fn passThrough(call: unknown) -> string {
     return "wrapped";
 }

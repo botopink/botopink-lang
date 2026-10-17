@@ -3,6 +3,8 @@
 //// `@TypeInfo.all(with: m)`, `m` resolved here, in the declaring module, and
 //// the query answered for the program the call is compiled in.
 
+import {compiler} from "std";
+
 pub fn m(expr decl: unknown) {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }

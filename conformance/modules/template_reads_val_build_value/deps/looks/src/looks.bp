@@ -1,7 +1,7 @@
 //// A library's template function reading the program's catalogue and the
 //// build value of its one `#[theme]` `val` (decisions 353, 356).
 
-import {compiler.DeclKind} from "std";
+import {compiler.DeclKind, compiler} from "std";
 
 pub fn theme(expr decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)

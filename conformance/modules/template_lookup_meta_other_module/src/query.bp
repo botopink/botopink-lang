@@ -2,6 +2,7 @@
 //// name of this module; `q.lookup` finds it where the call stands.
 
 import {orm.Table};
+import {compiler} from "std";
 
 pub fn tableOf(expr q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"

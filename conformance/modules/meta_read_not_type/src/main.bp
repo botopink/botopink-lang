@@ -2,6 +2,8 @@
 //// that is no record type of the module or its imports is refused at the
 //// argument.
 
+import {compiler} from "std";
+
 type Entity(table: string)
 
 fn entity(expr decl: unknown) {

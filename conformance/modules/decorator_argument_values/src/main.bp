@@ -5,6 +5,8 @@
 //// meets the parameter it names, and an integer literal takes the integer
 //// type its parameter asks for.
 
+import {compiler} from "std";
+
 pub type Level { Low, High }
 
 fn mark(

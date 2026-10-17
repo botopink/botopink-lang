@@ -1,5 +1,7 @@
 //// The checks are written here, beside the private rule and hint they name.
 
+import {compiler} from "std";
+
 pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 
 pub type Note(text: string)

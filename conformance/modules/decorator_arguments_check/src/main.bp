@@ -8,7 +8,7 @@
 //// `@Expr` of a function, which has no `.value` — the function form is told
 //// apart by the declaration's kind (question `s35-b`).
 
-import {types.Type, compiler.DeclKind} from "std";
+import {types.Type, compiler.DeclKind, compiler} from "std";
 
 pub type Code { Custom, Required, TooShort, Mismatch }
 

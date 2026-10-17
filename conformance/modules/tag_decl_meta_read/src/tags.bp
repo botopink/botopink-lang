@@ -1,7 +1,7 @@
 //// A template function that reads one typed meta back by `d.meta(T)`
 //// (decision 302).
 
-import {compiler.DeclKind, compiler.Span} from "std";
+import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 pub type Hydrate(level: i32, note: string)
 

@@ -5,7 +5,7 @@
 //// `typeName` and its annotations, as `decl.fields` hands them out. On a
 //// field, `@Decl<T>` is the field's type.
 
-import {types.Type, compiler.DeclKind} from "std";
+import {types.Type, compiler.DeclKind, compiler} from "std";
 
 fn entity<T>(expr decl: T, comptime table: string) {
     compiler.setMeta(Entity(table: table));

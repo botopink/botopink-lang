@@ -5,6 +5,8 @@
 //// two `#[check]`s and the member checked again. The list is a constant of
 //// build (`comptime`); the loop and the rules run at run time.
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 pub type Check<T>(message: string, rule: fn(v: T) -> bool)

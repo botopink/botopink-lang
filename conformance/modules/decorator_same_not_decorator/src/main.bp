@@ -3,6 +3,8 @@
 //// decorator — the comparison is by declaration, never by the name — and is
 //// refused at the argument.
 
+import {compiler} from "std";
+
 fn serverOnly(expr decl: unknown) {
     val _n = compiler.name(decl)!;
 }

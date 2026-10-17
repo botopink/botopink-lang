@@ -25,7 +25,7 @@
 ////
 //// A root module (decision 106): pure, no import.
 
-import {compiler.DeclKind};
+import {compiler.DeclKind, compiler};
 
 // The value of a prelude module's marker `val`.
 pub type Prelude()

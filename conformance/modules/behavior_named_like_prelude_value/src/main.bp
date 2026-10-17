@@ -3,6 +3,8 @@
 //// `Component`, as a behavior. In this module each name is its own behavior,
 //// in a decorator's `@Decl<Component>`, a parameter and an `implement` clause.
 
+import {compiler} from "std";
+
 pub behavior Component {
     fn render(self: Self) -> string;
 }

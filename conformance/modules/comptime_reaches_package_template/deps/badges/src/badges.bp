@@ -1,6 +1,8 @@
 //// A package's template whose built code calls the package's own function,
 //// which builds the package's record.
 
+import {compiler} from "std";
+
 pub type Badge(label: string, size: i32)
 
 pub fn makeBadge(label: string) -> Badge {

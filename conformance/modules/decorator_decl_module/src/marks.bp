@@ -1,5 +1,7 @@
 //// A decorator that records the module of the declaration it annotates.
 
+import {compiler} from "std";
+
 pub type Origin(module: string)
 
 pub fn located(expr decl: unknown) {

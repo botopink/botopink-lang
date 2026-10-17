@@ -2,6 +2,8 @@
 //// bound by the page's own parameter: a function answering another type is
 //// refused at the argument.
 
+import {compiler} from "std";
+
 type View(html: string)
 
 type Route<P>(params: P)

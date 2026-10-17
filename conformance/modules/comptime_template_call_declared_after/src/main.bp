@@ -4,6 +4,8 @@
 //// `comptime` is refused, naming the call and the remedy, instead of reaching
 //// the emitter with a call no backend lowers.
 
+import {compiler} from "std";
+
 pub fn tag(expr t: string) -> string {
     return compiler.build("\"<" + compiler.text(t) + ">\"");
 }

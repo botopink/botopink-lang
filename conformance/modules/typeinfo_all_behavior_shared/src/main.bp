@@ -3,6 +3,8 @@
 //// `@TypeInfo.all(with: [service, repository])` answers
 //// `Declared<Bean>[]`, in the one order (decision 235).
 
+import {compiler} from "std";
+
 pub behavior Bean {
     fn make() -> Self;
 }

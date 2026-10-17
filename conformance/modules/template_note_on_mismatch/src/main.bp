@@ -2,6 +2,8 @@
 //// error reported at its call: the template never reads the type expected
 //// there, so it builds by its text and says why.
 
+import {compiler} from "std";
+
 fn rows(expr q: string) -> unknown {
     if (compiler.text(q).contains("limit 1"))
         return compiler.build("\"one row\"");

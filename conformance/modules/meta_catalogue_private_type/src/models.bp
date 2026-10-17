@@ -1,5 +1,7 @@
 //// An entity whose meta record is private to this module.
 
+import {compiler} from "std";
+
 type Entity(table: string)
 
 pub behavior Model {

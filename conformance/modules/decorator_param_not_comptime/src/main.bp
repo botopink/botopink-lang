@@ -3,6 +3,8 @@
 //// A parameter without it is refused at the parameter, where the decorator is
 //// declared.
 
+import {compiler} from "std";
+
 fn route(expr decl: unknown, path: string) {
     compiler.setMeta(Route(path: path));
 }

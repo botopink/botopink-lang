@@ -1,5 +1,7 @@
 //// Two markers and a decorator that takes one of them by name.
 
+import {compiler} from "std";
+
 pub fn email(expr decl: unknown) {
     val _n = compiler.name(decl)!;
 }

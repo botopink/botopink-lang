@@ -2,6 +2,8 @@
 //// runtime: 120 `val`s per field of a three-field record, then their joined
 //// length, on every target (144 B-10, decision 430).
 
+import {compiler} from "std";
+
 fn wide(expr decl: unknown) {
     var out: string[] = [];
     compiler

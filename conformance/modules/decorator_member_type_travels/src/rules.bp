@@ -2,6 +2,8 @@
 //// `Violation`, a type of this module, and `defaultMessage`, a private
 //// helper: each resolves here, where the decorator wrote it (decision 384).
 
+import {compiler} from "std";
+
 pub type Violation(field: string, message: string)
 
 fn defaultMessage(field: string) -> string {

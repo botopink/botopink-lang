@@ -3,6 +3,8 @@
 //// `methods` (each with its parameters and return — here a method with no
 //// `self`) and a function's `params`.
 
+import {compiler} from "std";
+
 type Color {
     Red,
     Green,

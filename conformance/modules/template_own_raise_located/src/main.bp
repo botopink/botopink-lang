@@ -3,6 +3,8 @@
 //// own file, with the use as the `called from` line: no call of an expansion
 //// is left unlocated.
 
+import {compiler} from "std";
+
 pub fn shout(expr t: string) -> string {
     val s = compiler.text(t);
     @panic("boom " + s);

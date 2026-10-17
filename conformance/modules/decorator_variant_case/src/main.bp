@@ -2,7 +2,7 @@
 //// included: `.custom` against `Custom` is the missing-name error, at the
 //// argument.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

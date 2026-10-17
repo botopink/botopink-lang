@@ -8,7 +8,7 @@
 //// callee's stage (`Any + Build = Build`, `Any + Run = Run`), and a
 //// `comptime` in a body is computed at build and gives it none.
 
-import {io.clock, math} from "std";
+import {io.clock, math, compiler} from "std";
 
 fn stage(expr decl: unknown) {
     var out: string[] = [];

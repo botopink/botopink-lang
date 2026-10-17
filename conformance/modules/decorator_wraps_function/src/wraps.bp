@@ -2,6 +2,8 @@
 //// its decorator's parameters, spliced, and the names of this module — the
 //// store `cacheThrough` keeps — wherever the wrapped function is declared.
 
+import {compiler} from "std";
+
 var hits: i32 = 0;
 
 var keys: i32[] = [];

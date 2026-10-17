@@ -2,6 +2,8 @@
 //// `#[page]` that answers a `string` where the pattern asks for a `View` is
 //// refused at the annotation.
 
+import {compiler} from "std";
+
 type View(html: string)
 
 type Route<P>(params: P)

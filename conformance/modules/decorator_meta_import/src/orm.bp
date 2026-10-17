@@ -1,5 +1,7 @@
 //// The decorator: it records the table a type maps to.
 
+import {compiler} from "std";
+
 pub fn entity(expr decl: unknown, comptime table: string) {
     compiler.setMeta(Entity(table: table));
 }

@@ -3,6 +3,7 @@
 //// module's types.
 
 import {items.Queue, items.Shape, items.area};
+import {compiler} from "std";
 
 pub fn pick<T>(a: T, b: T, first: bool) -> T {
     return if (first) a else b;

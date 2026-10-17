@@ -1,6 +1,8 @@
 //// A decorator that reports the name of the function it annotates, and one
 //// named like the file `m/page.bp` it is used in.
 
+import {compiler} from "std";
+
 pub fn named(expr decl: unknown) {
     @emit("pub fn doubleName() -> string { return \""
         + compiler.name(decl)!

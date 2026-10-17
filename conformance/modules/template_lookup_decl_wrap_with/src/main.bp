@@ -3,6 +3,8 @@
 //// (`template-lookup-decl-write`) — only a decorator wraps the function it
 //// annotates (decision 316).
 
+import {compiler} from "std";
+
 fn posts() -> string {
     return "posts";
 }

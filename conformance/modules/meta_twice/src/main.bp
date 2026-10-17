@@ -2,6 +2,8 @@
 //// declaration: a second `Entity` on `City` is refused at the annotation
 //// whose decorator recorded it.
 
+import {compiler} from "std";
+
 type Entity(table: string)
 
 fn entity(expr decl: unknown, comptime table: string) {

@@ -3,6 +3,8 @@
 //// module and package (the root package's is `""`), `compiler.isStd` whether
 //// it is std's.
 
+import {compiler} from "std";
+
 pub type Where(pkg: string, std: bool, module: string)
 
 fn where(expr decl: unknown) {

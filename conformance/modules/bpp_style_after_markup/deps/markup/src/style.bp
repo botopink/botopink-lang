@@ -2,7 +2,7 @@
 //// length, and refusing a `!` in it at the `!`. The code it builds calls
 //// `sized`, which the `.bpp` header imports.
 
-import {bpp, compiler.CustomNode, compiler.Span} from "std";
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
 
 pub fn sized(size: i32) -> @Component<i32> {
     return size;

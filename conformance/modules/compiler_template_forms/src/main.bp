@@ -3,6 +3,8 @@
 //// (its `expr self: R` receiver first), and the annotation `` #[name @`…`] ``,
 //// whose second `expr` parameter is the annotated declaration.
 
+import {compiler} from "std";
+
 pub type Query(sql: string)
 
 fn sql(expr q: string, expr decl: unknown) -> string {

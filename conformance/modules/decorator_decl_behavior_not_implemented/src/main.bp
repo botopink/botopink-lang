@@ -3,6 +3,8 @@
 //// `implement Module`, so the annotation is refused, naming the type and the
 //// behavior.
 
+import {compiler} from "std";
+
 pub behavior Module {
     fn make() -> Self;
     fn start(self: Self) -> string;

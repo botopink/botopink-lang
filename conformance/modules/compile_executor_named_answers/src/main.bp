@@ -1,6 +1,8 @@
 //// Decision 409 — an executor `compiler.compile` takes is checked against
 //// `fn()`: a named executor that answers a value is refused at its name.
 
+import {compiler} from "std";
+
 fn count() -> i32 { 1 }
 
 fn named(expr decl: unknown) {

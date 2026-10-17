@@ -2,6 +2,8 @@
 //// column names, `#[double]` a test double that implements the annotated
 //// behavior.
 
+import {compiler} from "std";
+
 pub fn entity(expr decl: unknown) {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });

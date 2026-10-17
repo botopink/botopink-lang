@@ -2,6 +2,8 @@
 //// `expr-call-outside-expr` at the annotation, naming the template form
 //// `#[f @`…`]`.
 
+import {compiler} from "std";
+
 type Query(sql: string)
 
 fn sql(expr q: string, expr decl: unknown) -> string {

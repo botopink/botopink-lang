@@ -4,6 +4,8 @@
 //// raise leaves — not the helper's call in the body, not the annotation
 //// `#[short]` that ran the body.
 
+import {compiler} from "std";
+
 fn requireShort(name: string) -> string {
     if (name.length() > 3) @panic("too long: " + name);
     return name;

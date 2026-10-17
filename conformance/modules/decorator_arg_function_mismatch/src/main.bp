@@ -2,7 +2,7 @@
 //// `T` the annotated type: a function over another type is refused at the
 //// argument, both types spelled.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

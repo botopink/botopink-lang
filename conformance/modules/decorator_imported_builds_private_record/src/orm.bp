@@ -1,6 +1,8 @@
 //// The decorator builds `Note`, a record private to this module, and
 //// records its meta from it.
 
+import {compiler} from "std";
+
 pub type Entity(table: string)
 
 type Note(text: string)

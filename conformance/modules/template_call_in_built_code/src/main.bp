@@ -4,6 +4,8 @@
 //// written as any template call is, its name before a template text
 //// (decision 577 (3)).
 
+import {compiler} from "std";
+
 fn inner(expr q: string) -> string {
     return compiler.build("\"inner " + compiler.text(q) + "\"");
 }

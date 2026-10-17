@@ -6,6 +6,8 @@
 //// and spliced into the member the program runs. In the member, `label` and
 //// the body's `val shown` are spliced as literals (the tree rule).
 
+import {compiler} from "std";
+
 pub type Violation(message: string)
 
 pub type Mark(text: string)

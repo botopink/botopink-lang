@@ -6,7 +6,7 @@
 
 mod models;
 import {models.User as Person};
-import {compiler.DeclKind} from "std";
+import {compiler.DeclKind, compiler} from "std";
 
 type City(name: string, size: i32)
 

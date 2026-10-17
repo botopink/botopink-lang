@@ -2,6 +2,8 @@
 //// itself and splices each expression into the code it builds, typed where
 //// the call stands.
 
+import {compiler} from "std";
+
 fn quoted(text: string) -> string {
     return "\"" + text + "\"";
 }

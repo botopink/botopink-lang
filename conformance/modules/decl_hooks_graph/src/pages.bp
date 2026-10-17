@@ -1,3 +1,5 @@
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 fn graph(expr decl: unknown) {

@@ -1,4 +1,4 @@
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Order { Asc, Desc }
 

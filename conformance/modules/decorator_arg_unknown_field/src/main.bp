@@ -2,7 +2,7 @@
 //// a field of the `T` that `@Decl<T>` bound: a field the type does not
 //// declare is refused at the `.name`.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 pub type Code { Custom, Mismatch }
 

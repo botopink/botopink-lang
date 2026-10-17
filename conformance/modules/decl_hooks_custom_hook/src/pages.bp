@@ -2,6 +2,8 @@
 //// `use`s `user`, and `user` `use`s `session` — three nodes, each holding
 //// only the `use` written in it.
 
+import {compiler} from "std";
+
 type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as

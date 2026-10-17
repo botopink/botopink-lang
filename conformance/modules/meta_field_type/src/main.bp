@@ -3,6 +3,8 @@
 //// optional of those) or an `@Expr<T>`: a function field is refused at the
 //// call, naming the field.
 
+import {compiler} from "std";
+
 type Hook(run: fn() -> i32)
 
 fn one() -> i32 {

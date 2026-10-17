@@ -5,7 +5,7 @@
 //// declared type as `returnTypeName`. On the parent binary the decorator was
 //// dropped silently (`DeclKind.Val` did not exist).
 
-import {compiler.DeclKind} from "std";
+import {compiler.DeclKind, compiler} from "std";
 
 fn setting(expr decl: unknown, comptime key: string) {
     if (compiler.kind(decl) != DeclKind.Val)

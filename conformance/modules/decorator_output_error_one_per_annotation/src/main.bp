@@ -2,6 +2,8 @@
 //// members fails to type-check: one error, at the annotation of the one that
 //// failed.
 
+import {compiler} from "std";
+
 fn maker<T>(expr decl: T) {
     if (compiler.name(decl)! == "Town")
         compiler.addMember("code", fn(self: T) -> i32 {

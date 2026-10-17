@@ -2,6 +2,8 @@
 //// (recorded with `decl.addMeta`) is read with `metaAll(T)`, and `meta(T)` is
 //// refused at the read.
 
+import {compiler} from "std";
+
 type Index(column: string)
 
 fn index(expr decl: unknown, comptime column: string) {

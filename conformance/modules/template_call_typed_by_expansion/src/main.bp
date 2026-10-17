@@ -5,6 +5,8 @@
 //// code fits, and the call keeps the built type (`string[]`, not
 //// `unknown[]`).
 
+import {compiler} from "std";
+
 fn data<T>(expr q: string) -> T {
     if (compiler.text(q) == "names")
         return compiler.build("[\"ana\", \"bia\"]");

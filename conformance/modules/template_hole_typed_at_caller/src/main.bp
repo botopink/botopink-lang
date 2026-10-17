@@ -4,7 +4,7 @@
 //// `CustomNode` at the hole. A mistyped hole, `cssValue(true)`, is refused
 //// at the hole.
 
-import {compiler.CustomNode, compiler.Span} from "std";
+import {compiler.CustomNode, compiler.Span, compiler} from "std";
 
 fn cssValue(v: string) -> string {
     return v;

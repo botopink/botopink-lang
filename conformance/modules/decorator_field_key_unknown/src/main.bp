@@ -2,7 +2,7 @@
 //// `..fields: Type.Field<T>[]` is a field of the annotated type: `.nmae` is
 //// refused at it. Renaming a field turns every `.name` of it red here.
 
-import {types.Type} from "std";
+import {types.Type, compiler} from "std";
 
 fn index<T>(expr decl: T, comptime ..fields: Type.Field<T>[]) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));

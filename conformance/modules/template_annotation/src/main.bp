@@ -11,6 +11,8 @@
 //// decorator, and its text may span lines. `decl.params` is a method's own
 //// parameter list.
 
+import {compiler} from "std";
+
 pub type Query(sql: string, params: string[])
 
 fn query(expr q: string, expr decl: unknown) -> string {

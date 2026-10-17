@@ -4,6 +4,8 @@
 //// left out read as its default. A declaration with no such meta answers
 //// `null` / `[]`, and the template refuses it with `q.fail`.
 
+import {compiler} from "std";
+
 type Size { Small, Large }
 
 type Table(name: string, rows: i32, cached: bool = false, size: Size = .Small, tags: string[] = [])
