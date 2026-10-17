@@ -1800,6 +1800,22 @@ it calls the function:
 
 <!-- example: modules/dependency_prints_with_fold_join -->
 
+A lambda bound with no annotation takes its parameters' types from the calls
+that use it: `val later = { n -> async { … n.toString() … } }` called as
+`later(2)` types `n` as `i32`, and `n.toString()` is `i32`'s method on every
+target. A parameter that no position, annotation or call types cannot choose a
+method: a method called on it is refused at the call, `cannot infer the type
+of `n`` (decision 328). A lambda passed where a parameter receives it is typed
+by that parameter, a type parameter of the callee included: `{ req, chain ->
+chain.next(req) }` handed to `register<Rq, Ch>(…, entry: fn(req: Rq, chain:
+Ch) -> string)` is not refused:
+
+<!-- example: modules/lambda_param_typed_by_later_call -->
+
+<!-- example: modules/lambda_param_untyped_method_refused -->
+
+<!-- example: modules/lambda_arg_generic_param_method -->
+
 A function value is a value like any other: a tuple's element holds one, read by position and
 called after its arguments are evaluated (`p.0("abc")`):
 

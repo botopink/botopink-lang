@@ -756,6 +756,9 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 
     // C10 second pass — every declaration is registered by now, so an annotation
     // that still names nothing is an unknown type, reported at the annotation.
+    // Decision 328 — the method calls on a receiver still free when checked,
+    // once every body has typed it.
+    try resolvePendingReceiverCalls(env);
     try env.checkPendingTypeNames();
     try flushBirthWarnings(env);
 
@@ -958,6 +961,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 
     // C10 second pass — every declaration is registered by now, so an annotation
     // that still names nothing is an unknown type, reported at the annotation.
+    // Decision 328 — the method calls on a receiver still free when checked,
+    // once every body has typed it.
+    try resolvePendingReceiverCalls(env);
     try env.checkPendingTypeNames();
     try flushBirthWarnings(env);
 
@@ -18956,6 +18962,54 @@ fn inferSequenceNext(
 /// receiver records its `PrimKind`; any other nominal type records as a record
 /// method carrying its type name (the backend resolves local vs imported owner).
 /// commonJS ignores the table (it dispatches natively).
+/// Decision 328 — a lambda's types come from where it is used. A method call
+/// whose receiver was still free when its body was checked (`val f = { n ->
+/// n.toString() }; f(2)`: `n` is `i32` only once `f(2)` is) is answered here,
+/// after the module's bodies: the receiver's type now known, the call records
+/// the lowering and the return type a call on that type records when it is
+/// checked, so wasm, erlang and beam lower it as commonJS dispatches it. A
+/// lambda parameter nothing typed is refused at the call: no position, no
+/// annotation and no use gave it a type (328), and no backend can choose a
+/// method for it.
+fn resolvePendingReceiverCalls(env: *Env) InferError!void {
+    defer env.pendingReceiverCalls.clearRetainingCapacity();
+    var i: usize = 0;
+    // A resolved call can type the receiver of a later one (`n.toString().length()`).
+    while (i < env.pendingReceiverCalls.items.len) : (i += 1) {
+        const p = env.pendingReceiverCalls.items[i];
+        const recvTy = p.receiver.deref();
+        switch (recvTy.*) {
+            .named => |n| {
+                if (env.instanceLowerings.get(p.loc) != null) continue;
+                if (primKindOfName(n.name)) |pk| {
+                    try recordInstanceCall(env, p.loc, n.name);
+                    if ((pk == .array or pk == .string or pk == .bytes) and
+                        (std.mem.eql(u8, p.callee, "len") or std.mem.eql(u8, p.callee, "size") or std.mem.eql(u8, p.callee, "length")))
+                    {
+                        try env.jsMethodRenames.put(p.loc, "length");
+                    } else if (try primMethodNodeRename(env, recvTy, p.callee)) |rn| {
+                        try env.jsMethodRenames.put(p.loc, rn);
+                    }
+                    if (try primMethodReturnTypeFromIface(env, recvTy, p.callee, p.args)) |ret| {
+                        try unifyAt(env, p.ret, ret, p.loc);
+                    } else try refuseUndeclaredPrimMethod(env, recvTy, p.callee, p.loc);
+                } else if (env.hasInherentMethod(n.name, p.callee)) {
+                    try recordInstanceCall(env, p.loc, n.name);
+                } else if (env.lookupTypeDef(n.name)) |td| if (!typeAnswersMember(env, td, p.callee)) {
+                    env.lastError = TypeError.unknownMethod(n.name, p.callee).withLoc(p.loc);
+                    return error.TypeError;
+                };
+            },
+            .typeVar => |cell| if (cell.state == .unbound) if (p.param) |name| {
+                const msg = try std.fmt.allocPrint(env.arena, "cannot infer the type of `{s}`: the lambda's parameter calls `{s}` and nothing gives it a type", .{ name, p.callee });
+                env.lastError = TypeError.custom(msg, "A lambda's types come from where it is used (decision 328): annotate the binding (`val f: fn(n: i32) -> string = { n -> … };`), pass the lambda where a function type is expected, or write a typed `fn` expression (`fn(n: i32) -> string { … }`).").withLoc(p.loc);
+                return error.TypeError;
+            },
+            else => {},
+        }
+    }
+}
+
 fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!void {
     if (primKindOfName(typeName)) |k| {
         try env.instanceLowerings.put(loc, .{ .prim = k });
@@ -22472,7 +22526,27 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // Other method calls (struct getters, activated extensions) are
                 // handled by sibling work — type them permissively as a fresh var
                 // so they don't error here.
-                return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.freshVar(), .kind = .{ .call = .{
+                const callTy = try env.freshVar();
+                // Decision 328 — a receiver still free (a lambda's parameter
+                // typed only by a later call, `val f = { n -> n.toString() };
+                // f(2)`) is answered once the module's bodies are inferred,
+                // when its type is known (`resolvePendingReceiverCalls`).
+                if (recvPtr.getType().isUnbound()) {
+                    const param: ?[]const u8 = if (call.receiver) |re| blk: {
+                        if (re.* != .identifier or re.*.identifier.kind != .ident) break :blk null;
+                        const bound = env.lookup(re.*.identifier.kind.ident) orelse break :blk null;
+                        break :blk env.freeLambdaParams.get(bound);
+                    } else null;
+                    try env.pendingReceiverCalls.append(env.arena, .{
+                        .loc = loc,
+                        .receiver = recvPtr.getType(),
+                        .callee = call.callee,
+                        .ret = callTy,
+                        .args = typedArgs,
+                        .param = param,
+                    });
+                }
+                return TypedExpr{ .call = .{ .loc = loc, .type_ = callTy, .kind = .{ .call = .{
                     .receiver = recvPtr,
                     .callee = call.callee,
                     .is_builtin = false,
@@ -23517,6 +23591,9 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
     // position's function type whatever its return. Decision 553 (4) — a
     // marked lambda is too (147).
     const typedExpected = if ((func.kind.syntax == .fnExpr and func.kind.isTyped()) or func.kind.marker != null) env.expectedType else null;
+    // Decision 328 — a lambda written where nothing expects a type (an
+    // unannotated `val`): its parameters are typed only by later calls.
+    env.lambdaWithoutExpected = env.expectedType == null;
     env.expectedType = null;
     return inferFunctionExprExpected(env, func, loc, typedExpected orelse fallibleExpected, false);
 }
@@ -23939,9 +24016,19 @@ fn inferFunctionExprExpectedInner(
         }
     }
 
+    const withoutExpected = env.lambdaWithoutExpected;
+    env.lambdaWithoutExpected = false;
     const params = try env.arena.alloc(*T.Type, fk.params.len);
     for (fk.params, 0..) |p, i| {
-        params[i] = if (expParams) |ep| ep[i] else try env.freshVar();
+        params[i] = if (expParams) |ep| ep[i] else blk: {
+            const v = try env.freshVar();
+            // A lambda passed where a parameter receives it is typed by that
+            // parameter, a free type variable of it included (`registerFilter<Rq,
+            // Ch>(…, entry: fn(req: Rq, chain: Ch) -> …)`): only one no position
+            // types can be left with nothing.
+            if (withoutExpected) try env.freeLambdaParams.put(env.arena, v, p);
+            break :blk v;
+        };
         try env.bind(p, params[i]);
     }
     // C1 — a lambda's `return`s unify with the expected return type, or with

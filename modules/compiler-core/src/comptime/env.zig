@@ -202,6 +202,21 @@ pub const DeferredMetaRead = struct {
     key: []const u8,
 };
 
+/// Decision 328 — a method call whose receiver was still a free type variable
+/// when it was checked (`{ n -> n.toString() }` bound with no annotation, its
+/// `n` typed only by a later `f(2)`): answered once the module's bodies are
+/// inferred (`infer.zig` `resolvePendingReceiverCalls`), so every backend sees
+/// the lowering its receiver's type asks for. `param` names the lambda
+/// parameter the receiver is, when it is one.
+pub const PendingReceiverCall = struct {
+    loc: ast.Loc,
+    receiver: *T.Type,
+    callee: []const u8,
+    ret: *T.Type,
+    args: []ast.CallArgOf(.typed),
+    param: ?[]const u8,
+};
+
 /// Decision 375 — the declaration a call or a `use` names, with the call's
 /// type (null for a `use`, whose operand is a hook): only a call whose type
 /// resolved to `@Component<R>` is one commonJS may leave unawaited.
@@ -1126,6 +1141,16 @@ pub const Env = struct {
     /// Decision 372 — the meta reads waiting for a `.hooks` reader of this
     /// module, answered (or refused, `typeinfo-meta-missing`) when it ran.
     deferredMetaReads: std.ArrayListUnmanaged(DeferredMetaRead) = .empty,
+    /// Decision 328 — the method calls on a receiver still free when checked
+    /// (`PendingReceiverCall`).
+    pendingReceiverCalls: std.ArrayListUnmanaged(PendingReceiverCall) = .empty,
+    /// Decision 328 — each parameter of a lambda written where no type is
+    /// expected (an unannotated `val`): the fresh variable it was bound to,
+    /// and its name.
+    freeLambdaParams: std.AutoHashMapUnmanaged(*T.Type, []const u8) = .empty,
+    /// Decision 328 — the lambda `inferFunctionExpr` is about to check is
+    /// written where no type is expected; read and cleared by the lambda.
+    lambdaWithoutExpected: bool = false,
     /// Decision 298 — the lines a typed meta read's answer is parsed on, one
     /// per read, past every line of the module (`infer.zig`
     /// `typedMetaRewriteLine`): no node of an answer shares a location with

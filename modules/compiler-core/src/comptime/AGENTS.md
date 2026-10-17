@@ -2370,6 +2370,19 @@ method sets, before `returnTarget`, which only a fn sets), through `inferFunctio
 its instance lowering (a backend without native method dispatch refused the call otherwise);
 conformance cell `task_lambda_method_to_string`.
 
+A lambda written where no type is expected (an unannotated `val`; `inferFunctionExpr` sets
+`Env.lambdaWithoutExpected`) records each parameter's fresh variable in `Env.freeLambdaParams`; a
+lambda a parameter receives is typed by it, a free type parameter of the callee included. A method call whose receiver is still a free variable when checked
+(`val f = { n -> n.toString() }; f(2)`: `n` is `i32` only once `f(2)` is) is typed by a fresh
+variable and kept in `Env.pendingReceiverCalls`; `resolvePendingReceiverCalls` (once the module's
+bodies and the `.hooks` readers ran, before `checkPendingTypeNames`) answers each with the receiver's
+type now known — the instance lowering, the commonJS rename and the primitive method's return type,
+or `unknown-method` — so wasm, erlang and beam lower it as commonJS dispatches it. A lambda
+parameter still free there is refused at the call, "cannot infer the type of `n`" (decision 328);
+a receiver that is no lambda parameter stays permissive. Cells
+`modules/lambda_param_typed_by_later_call`, `modules/lambda_param_untyped_method_refused`,
+`modules/lambda_arg_generic_param_method`.
+
 Because the lambda now UNIFIES its return with the expectation, the expectation a plain call reads
 (`declParamTypes` in `inferCallExpr`) is a fresh instance of the callee's signature —
 `instantiateCtorType` then `instantiateGenericType`, as the arm that types the call does — never the
