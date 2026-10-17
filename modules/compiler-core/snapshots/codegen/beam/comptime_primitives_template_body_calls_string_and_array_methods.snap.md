@@ -4333,13 +4333,6 @@ fn main() {
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<" hello big world ">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<" hello big world ">>,
-;;             span => #{start => 0, 'end' => 17, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 14, col => 15},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 14, col => 15},

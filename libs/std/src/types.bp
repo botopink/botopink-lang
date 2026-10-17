@@ -21,6 +21,8 @@
 //// take the fields as a variadic (`comptime ..fields: @Expr<Type.Field<T>[]>`,
 //// decision 267): `Type.pick(Recipe, .title, .servings)`.
 
+import {compiler.DeclAnnotation};
+
 pub type Type {
     // The field of `T` (decision 308): its name, its type as the source
     // spells it and its annotations. Its values are the fields of `T`'s
@@ -33,9 +35,7 @@ pub type Type {
     pub type Field<T>(
         name: string,
         typeName: string,
-        // `compiler.DeclAnnotation` by its internal name: an importer of
-        // `Type` reads the field without importing it (decision 576 (13)).
-        annotations: __Decl__Annotation[],
+        annotations: DeclAnnotation[],
     ) {
         // The key named `text`, or `null` when `T` declares no such field.
         pub declare fn of(text: string) -> ?Type.Field<T>;

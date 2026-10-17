@@ -529,13 +529,6 @@ val s = ui @`<Card title="x"><Badge/></Card>`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"<Card title=\"x\"><Badge/></Card>">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"<Card title=\"x\"><Badge/></Card>">>,
-;;             span => #{start => 0, 'end' => 31, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 17, col => 12},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 17, col => 12},

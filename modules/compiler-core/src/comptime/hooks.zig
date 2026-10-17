@@ -387,7 +387,7 @@ fn walk(comptime X: type, ptr: *const X, member: []const u8) bool {
 /// The first build-only resource `f`'s body writes outside a `comptime`
 /// (decision 376 (1)): a read of a `comptime` parameter — `@Decl` (`decl.*`),
 /// `@Expr<T>` / `@ExprCustom<T>` (`x.value`, `x.fail`, a template's
-/// `q.parts()` / `q.source()`). A `@typeInfo` of a type the body names is
+/// `q.source()`). A `@typeInfo` of a type the body names is
 /// answered at build as a constant (380 (1)) and is no resource.
 ///
 /// Decision 562 amends 376 (1): a function whose every parameter is

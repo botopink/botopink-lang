@@ -542,10 +542,6 @@ pub const expr_value_of_type: []const u8 = "expr-value-of-type";
 /// the body reads (`key.value`), at the argument.
 pub const decorator_value_not_comptime: []const u8 = "decorator-value-not-comptime";
 
-/// A template reads `q.value` of an argument with a `${…}` hole: not known
-/// while the program compiles, refused at the argument.
-pub const template_value_not_known: []const u8 = "template-value-not-known";
-
 /// A method of a `comptime` parameter's `@Expr` other than `.fail(…)` in a
 /// decorator: the parameter answers `.value`.
 pub const expr_param_method: []const u8 = "expr-param-method";
@@ -931,7 +927,6 @@ pub const all_codes = [_][]const u8{
     expr_value_of_type,
     decorator_value_not_comptime,
     expr_param_method,
-    template_value_not_known,
     comptime_default_outside_decorator,
     decorator_member_without_type,
     decorator_member_duplicate,

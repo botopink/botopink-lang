@@ -360,13 +360,6 @@ val r = need @`<Buttom/>`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"t">>,
 ;;     text => <<"<Buttom/>">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"<Buttom/>">>,
-;;             span => #{start => 0, 'end' => 9, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 11, col => 14},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 11, col => 14},

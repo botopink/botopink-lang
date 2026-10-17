@@ -174,13 +174,6 @@ val n = conf @`cfg-0`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"cfg-0">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"cfg-0">>,
-;;             span => #{start => 0, 'end' => 5, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 6, col => 14},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 6, col => 14},

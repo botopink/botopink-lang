@@ -98,13 +98,6 @@ val s = outer @`x`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"x">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"x">>,
-;;             span => #{start => 0, 'end' => 1, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 7, col => 15},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 7, col => 15},

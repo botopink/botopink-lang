@@ -7,6 +7,7 @@ const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const context_lower = @import("comptime/context_lower.zig");
+const typeIdentity = @import("comptime/type_identity.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
 const mod_tree = @import("./comptime/mod_tree.zig");
@@ -4239,13 +4240,29 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // enables case patterns / annotations over e.g. `Order`).
         {
             var type_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+            // Decision 576 (13) — a type this module exports that names an
+            // alias it imports (`types.bp`'s `annotations: DeclAnnotation[]`,
+            // `import {compiler.DeclAnnotation};`) names the alias's target:
+            // an importer of the type need not import the alias.
+            var imported_aliases: std.ArrayListUnmanaged(ast.TypeAliasDecl) = .empty;
+            for (program.decls) |decl| if (decl == .use) for (decl.use.imports) |imp| {
+                if (!imp.isQualified()) continue;
+                const decls = env.stdModuleTypes.get(try imp.prefixPath(env.arena)) orelse continue;
+                for (decls) |d| if (d == .typeAlias and std.mem.eql(u8, d.typeAlias.name, imp.leaf()) and d.typeAlias.target == .named)
+                    try imported_aliases.append(env.arena, d.typeAlias);
+            };
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
                     .type_ => |t| t.isPub,
                     .typeAlias => |a| a.isPub,
                     else => false,
                 };
-                if (is_pub_type) try type_decls.append(env.arena, decl);
+                if (!is_pub_type) continue;
+                if (decl == .type_ and imported_aliases.items.len > 0) {
+                    var t = decl.type_;
+                    for (imported_aliases.items) |a| t = try typeIdentity.renameTypeRefs(env.arena, t, a.name, a.target.named);
+                    try type_decls.append(env.arena, .{ .type_ = t });
+                } else try type_decls.append(env.arena, decl);
             }
             if (type_decls.items.len > 0) {
                 try env.stdModuleTypes.put(mod_name, try type_decls.toOwnedSlice(env.arena));

@@ -15,7 +15,7 @@
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`.
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`.
 //// - The reads of an `expr` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
 //// - A template's call site: `build`, `buildType`, `note`, `tagDecl`,
@@ -25,7 +25,7 @@
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 //// - The program: `catalogue`, `typeInfo`.
 ////
-//// `compile`, `implement`, `setBuiltin`, `embed`, `fields` over a type,
+//// `implement`, `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
 
 pub behavior Compiler {
@@ -58,6 +58,10 @@ pub behavior Compiler {
     // A wrapper of the annotated function, a lambda written at the call
     // (decision 316).
     fn wrapWith<F>(self: Self, wrapper: F);
+    // Run-time code compiled beside the annotated declaration, run once
+    // before `main` in the program's init list: modules in dependency order,
+    // declarations in source order, calls in order (decision 575 (3)).
+    fn compile(self: Self, executor: fn());
 
     // ── The reads of an `expr` (decision 576 (2)) ─────────────────────────
     // The expression as written.
@@ -260,6 +264,20 @@ pub type HookNode = __HookNode;
             {
               "name": "wrapper",
               "type": "F"
+            }
+          ],
+          "return_type": "void"
+        },
+        {
+          "name": "compile",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "executor",
+              "type": "fn() -> void"
             }
           ],
           "return_type": "void"

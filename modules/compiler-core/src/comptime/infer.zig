@@ -797,9 +797,6 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
             try list.append(env.arena, b);
         }
     }
-    // Decision 311 — a template annotation's `${…}` holes, typed in the
-    // annotated declaration's scope once every module-level name is bound.
-    try checkTemplateAnnotationHoles(env, program);
     // Decision 425 — a template call written as a record field's default
     // expands where it is written; the fill copies the expansion.
     try expandTemplateFieldDefaults(env, program);
@@ -1009,9 +1006,6 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
             },
         }
     }
-    // Decision 311 — a template annotation's `${…}` holes, typed in the
-    // annotated declaration's scope once every module-level name is bound.
-    try checkTemplateAnnotationHoles(env, program);
     // Decision 425 — a template call written as a record field's default
     // expands where it is written; the fill copies the expansion.
     try expandTemplateFieldDefaults(env, program);
@@ -4689,60 +4683,21 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
             const what: []const u8 = if (env.decorators.contains(a.name))
                 "a decorator"
             else if (env.lookup(a.name)) |ty| (if (ty.deref().* == .func) "a function that is not a template function" else "not a function") else "not declared";
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names `{s}`, which is {s}", .{ diagnostics.template_annotation_not_template, a.name, a.name, what });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} @`…`]` names `{s}`, which is {s}", .{ diagnostics.template_annotation_not_template, a.name, a.name, what });
             env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(expr q: string, expr decl: unknown) -> R` —; a decorator is written `#[f(…)]` (decisions 311, 578).").withLoc(at);
             return error.TypeError;
         };
         // Decision 577 (3) — a template annotation writes the template text.
         if (t.returnType) |rt| if (ast.isExprKeywordReturn(rt) and a.templateText == null) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template `{s}`, which takes a template text", .{ diagnostics.expr_call_outside_expr, a.name, a.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.expr_call_outside_expr, a.name, a.name, a.name });
             env.lastError = TypeError.custom(msg, "Write `#[f @`…`]` (decision 577 (3)).").withLoc(at);
             return error.TypeError;
         };
         if (!memberFn.isTemplateAnnotation(t)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template function `{s}`, which takes no `expr decl: unknown` beside its text", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} @`…`]` names the template function `{s}`, which takes no `expr decl: unknown` beside its text", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
             env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(expr q: string, expr decl: unknown) -> R` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
             return error.TypeError;
         }
-    };
-}
-
-/// Decision 311 — a template annotation's `${…}` holes resolve in the
-/// annotated declaration's scope: on a function or a method its parameters,
-/// by name and type (a method's `self` is its owner, `Self`); any other name
-/// in the module's scope, its imports included (112). Each hole is typed
-/// there, so an unknown name is the ordinary unbound-name error at the hole.
-fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void {
-    for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
-        const written = a.template orelse continue;
-        if (a.is_builtin or a.templateLoc == null) continue;
-        if (std.mem.indexOf(u8, written, "${") == null) continue;
-        const node = try parseDecoratorArg(env, written, a.templateLoc.?);
-        if (node.* != .literal or node.literal.kind != .stringTemplate) continue;
-
-        var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
-        const outerScope = env.openBodyScope(&bodyLog);
-        defer env.closeBodyScope(&bodyLog, outerScope, site.name);
-        var genericMap = std.StringHashMap(*T.Type).init(env.arena);
-        defer genericMap.deinit();
-        if (site.owner) |owner| {
-            const selfArgs = try env.arena.alloc(*T.Type, site.ownerGenerics.len);
-            for (site.ownerGenerics, 0..) |gp, i| {
-                selfArgs[i] = try env.freshVar();
-                try genericMap.put(gp.name, selfArgs[i]);
-            }
-            try genericMap.put("Self", if (selfArgs.len == 0) try env.namedType(owner) else try env.namedTypeArgs(owner, selfArgs));
-        }
-        for (site.generics) |gp| try genericMap.put(gp.name, try env.freshVar());
-        for (site.params) |p| {
-            if (p.destruct != null) continue;
-            const ty = try resolveParamType(env, p, genericMap);
-            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs(ast.expr_type_name, &.{ty}) else ty);
-        }
-        for (node.literal.kind.stringTemplate.parts) |part| switch (part) {
-            .expr => |hole| _ = try inferExprTyped(env, hole.*),
-            .text => {},
-        };
     };
 }
 
@@ -5887,21 +5842,15 @@ fn runDeclDecorators(
 /// Decision 311 — the literal of a template annotation `#[f "…"]` captured as
 /// a call site's is (`captureExprArg`): unevaluated, with its location, module
 /// and origin scope; `q.value` reads only a literal without a hole
-/// (`template-value-not-known` at the literal, decision 364 (2)).
+/// (decision 364 (2)); a template text holds no hole (decision 577 (5)).
 fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) InferError!*const template.CapturedExpr {
     const written = a.template.?;
     const at = a.templateLoc orelse a.loc orelse ast.Loc{ .line = 1, .col = 1 };
     const node = try parseDecoratorArg(env, written, at);
     const q = tfn.params[0].name;
-    const holed = node.* == .literal and node.literal.kind == .stringTemplate;
     // Decision 577 — a template text `#[f @`…`]` is its raw bytes.
     const text: ?[]const u8 = if (node.* == .literal and node.literal.kind == .stringLit) (a.templateText orelse node.literal.kind.stringLit) else null;
     const valueRead = exprParam.useOf(tfn, q).value;
-    if (valueRead and holed) {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]`'s literal has a `${{…}}` hole, so it is not known while the program compiles, and the template reads `{s}.value`", .{ diagnostics.template_value_not_known, a.name, q });
-        env.lastError = TypeError.custom(msg, "`.value` answers a literal without holes (decision 364 (2)); read the parts with `.parts()`.").withLoc(at);
-        return error.TypeError;
-    }
     const cap = try env.arena.create(template.CapturedExpr);
     cap.* = .{
         .callee = a.name,
@@ -9051,20 +9000,7 @@ fn captureExprArg(
         return error.TypeError;
     }
 
-    // Decision 364 (2) — `q.value` answers the literal known at build: a
-    // literal with a `${…}` hole is not, and is refused at the argument when
-    // the template reads it.
     const valueRead = if (env.templateFns.get(callee)) |tfn| exprParam.useOf(tfn, param.paramName).value else false;
-    if (valueRead and rawArg.* == .literal and rawArg.literal.kind == .stringTemplate) {
-        const holed = for (rawArg.literal.kind.stringTemplate.parts) |part| {
-            if (part == .expr) break true;
-        } else false;
-        if (holed) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}`'s argument has a `${{…}}` hole, so it is not known while the program compiles, and the template reads `{s}.value`", .{ diagnostics.template_value_not_known, callee, param.paramName });
-            env.lastError = TypeError.custom(msg, "`.value` answers a literal without holes (decision 364 (2)); read the parts with `.parts()`.").withLoc(typedArg.value.getLoc());
-            return error.TypeError;
-        }
-    }
 
     const litLoc = rawArg.getLoc();
     return template.CapturedExpr{
@@ -9865,7 +9801,9 @@ fn expandTemplateCallViaRuntime(
             // The `code` half is spliced exactly like a plain `.code` outcome —
             // runtime/codegen never learn it came from `q.custom`.
             const origin = builtCodeOrigin(env, captures, loc);
-            const parsed = parseCodeText(env, c.code, origin) orelse {
+            // The `ast` half: the reference tree the template built.
+            const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
+            const parsed = parseCodeTextAt(env, c.code, origin, if (captures.len > 0) &captures[0] else null, root) orelse {
                 env.lastError = TypeError.custom(
                     "the code built by the template does not parse as an expression",
                     "`q.custom(tree, code)` — the `code` must be a single well-formed botopink expression (e.g. from `q.build(…)`).",
@@ -9874,8 +9812,6 @@ fn expandTemplateCallViaRuntime(
             };
             try applyDslHygiene(env, tfn, @constCast(parsed), c.code, origin, captures);
             substituteHoles(@constCast(parsed), captures);
-            // The `ast` half: the reference tree the template built.
-            const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
             const prov: ?*const template.CapturedExpr = if (captures.len > 0) &captures[0] else null;
             env.customAstByLoc.put(loc, .{
                 .callee = tfn.name,
@@ -10550,6 +10486,61 @@ fn parseCodeText(env: *Env, src: []const u8, origin: ast.Loc) ?*const ast.Expr {
     for (@constCast(tokens)) |*tok| {
         if (tok.line == 1) tok.col += origin.col -| 1;
         tok.line += origin.line -| 1;
+        tok.expansion = origin.expansion;
+    }
+    var p = Parser.init(tokens);
+    const node = env.arena.create(ast.Expr) catch return null;
+    node.* = p.parseExpr(env.arena) catch return null;
+    if (!p.check(.endOfFile)) return null;
+    return node;
+}
+
+/// `parseCodeText` for the code half of a `compiler.custom` answer (decision
+/// 577 (1), 14s8-a (e)): the text a leaf `CustomNode` spans — a hole the
+/// template parsed — is found in the built code, in tree order, and its tokens
+/// are located at that span of the template text in the caller's file
+/// (`template.mapSpanToLoc`), so a mistyped hole is refused at the hole.
+fn parseCodeTextAt(env: *Env, src: []const u8, origin: ast.Loc, cap: ?*const template.CapturedExpr, root: template.CustomNode) ?*const ast.Expr {
+    const c = cap orelse return parseCodeText(env, src, origin);
+    const text = c.text orelse return parseCodeText(env, src, origin);
+    const Hole = struct { from: usize, to: usize, span_start: usize };
+    var holes: std.ArrayListUnmanaged(Hole) = .empty;
+    const Walk = struct {
+        fn leaves(arena: std.mem.Allocator, n: template.CustomNode, out: *std.ArrayListUnmanaged(template.CustomNode)) !void {
+            if (n.children.len == 0) return out.append(arena, n);
+            for (n.children) |ch| try leaves(arena, ch, out);
+        }
+    };
+    var leaves: std.ArrayListUnmanaged(template.CustomNode) = .empty;
+    Walk.leaves(env.arena, root, &leaves) catch return null;
+    var cursor: usize = 0;
+    for (leaves.items) |n| {
+        if (n.span.end <= n.span.start or n.span.end > text.len) continue;
+        const piece = text[n.span.start..n.span.end];
+        const at = std.mem.indexOfPos(u8, src, cursor, piece) orelse continue;
+        holes.append(env.arena, .{ .from = at, .to = at + piece.len, .span_start = n.span.start }) catch return null;
+        cursor = at + piece.len;
+    }
+    if (holes.items.len == 0) return parseCodeText(env, src, origin);
+    var lx = Lexer.init(src);
+    const tokens = lx.scanAll(env.arena) catch return null;
+    // Each token's byte offset in `src`, read from its line and column.
+    var line_starts: std.ArrayListUnmanaged(usize) = .empty;
+    line_starts.append(env.arena, 0) catch return null;
+    for (src, 0..) |ch, i| if (ch == '\n') line_starts.append(env.arena, i + 1) catch return null;
+    for (@constCast(tokens)) |*tok| {
+        const off: ?usize = if (tok.line >= 1 and tok.line <= line_starts.items.len) line_starts.items[tok.line - 1] + (tok.col -| 1) else null;
+        const hole: ?Hole = if (off) |o| for (holes.items) |h| {
+            if (o >= h.from and o < h.to) break h;
+        } else null else null;
+        if (hole) |h| {
+            const at = template.mapSpanToLoc(c, .{ .start = h.span_start + (off.? - h.from), .end = h.span_start + (off.? - h.from), .line = 1 });
+            tok.line = at.line;
+            tok.col = at.col;
+        } else {
+            if (tok.line == 1) tok.col += origin.col -| 1;
+            tok.line += origin.line -| 1;
+        }
         tok.expansion = origin.expansion;
     }
     var p = Parser.init(tokens);
@@ -18490,9 +18481,6 @@ fn inferTemplateMethod(
         } else if (std.mem.eql(u8, callee, "text")) {
             op = .text;
             retType = try env.namedType("string");
-        } else if (std.mem.eql(u8, callee, "parts")) {
-            op = .parts;
-            retType = try env.namedTypeArgs("array", &.{try env.namedType("Part")});
         } else if (std.mem.eql(u8, callee, "source")) {
             // Declaration position — where the expression was written.
             op = .source;
@@ -22619,8 +22607,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // annotated declaration's `@Decl` is written only as an
                     // annotation, `#[f "…"]`.
                     if (!localCallee) if (templateFnNamed(env, call.callee)) |tfn| if (memberFn.isTemplateAnnotation(tfn)) {
-                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`comptime {s}: @Decl`), so it is written as an annotation `#[{s} \"…\"]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
-                        env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `@Decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`expr {s}: unknown`), so it is written as an annotation `#[{s} @`…`]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
+                        env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `expr decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
                         return error.TypeError;
                     };
 
@@ -23571,13 +23559,13 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true, true);
     const expected = try env.funcType(&.{}, try env.freshVar());
 
-    // Each `@Expr<T>` parameter is its `T` in the executor.
+    // Each `expr x: T` parameter (a tree) is its `T` in the executor.
     const Rebound = struct { name: []const u8, was: *T.Type };
     var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
     for (env.currentParams) |p| if (p.exprWrapped) {
         const was = env.lookup(p.name) orelse continue;
         const d = was.deref();
-        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };

@@ -1143,7 +1143,11 @@ at build whose parameter the body never reads is accepted), and the refusals
 (`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
 `modules/expr_param_method` (`message.text()` on an `expr` parameter, decision 576 (2)), each red
-on the parent binary; `template_value_not_known` went with the holes (decision 577 (5)). `modules/decorator_arguments_check` and
+on the parent binary; `template_value_not_known` went with the holes (decision 577 (5)). Decision 577 (5) also deletes the cells that read a hole's
+value at build (decision 355): `hole_any_call_at_build`, `hole_any_call_raises`, `hole_known_at_build_raises`,
+`hole_imported_val_known_at_build`, `styled_holes_known_at_build`; `modules/template_hole_typed_at_caller` holds
+14s8-a (e)'s remaining rule (a hole the template parses is spliced and typed at the caller, a mistyped one refused
+at the hole through its `CustomNode` span, `infer.zig` `parseCodeTextAt`). `modules/decorator_arguments_check` and
 `modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `@Expr` of
 a function has no `.value`, question `s35-b`).
 
@@ -2155,7 +2159,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/std_template_host_fns_across_modules`, `modules/import_std_groups`, `modules/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
 | `modules/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` |
 | `modules/fs_error_variants`, `modules/fs_whole_file_shortcuts`, `modules/fs_read_text_not_utf8`, `modules/fs_file_handle`, `modules/fs_file_streams`, `modules/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
-| `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/hole_any_call_at_build`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
+| `modules/clock_rfc3339_domain`, `modules/clock_civil_past_rfc3339_aborts`, `modules/clock_format_past_rfc3339_aborts`, `modules/clock_offset_past_rfc3339_aborts`, `modules/std_generic_primitives`, `modules/stage_build_and_run`, `modules/stage_comptime_block_in_run`, `modules/stage_imported`, `modules/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
 | `modules/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
@@ -2599,9 +2603,7 @@ moves `decorator_raise_names_body_file` and `template_raise_names_body_file` —
 `tpl.snap` (`at src/deco.bp:3:5`, `from src/main.bp:9:3`), `main.snap` holds the header alone, the message no longer
 ends with `— raised at … while … ran the body` — and adds the `from <file>:<line>:<col>` record (`called from`
 lines, innermost first, after `at` and `label`; `compiler-cli/src/cli/cell_snap.zig`) to
-`decorator_helper_raise_located` (`from src/main.bp:13:13`, `from src/main.bp:17:3`), `hole_known_at_build_raises`
-and `hole_any_call_raises` (the template's use, `23:16`, and the hole, `25:25`: a call of an expansion takes the
-frame of the template's use), the three `*_unseeded` cells (the `comptime` or the annotation that ran the build is
+`decorator_helper_raise_located` (`from src/main.bp:13:13`, `from src/main.bp:17:3`), the three `*_unseeded` cells (the `comptime` or the annotation that ran the build is
 the last frame).
 Decision 533 (every division and remainder by zero at build reads `(division by zero)`, located at the operator)
 adds `modules/comptime_remainder_by_zero`, `comptime_nested_division_by_zero` and

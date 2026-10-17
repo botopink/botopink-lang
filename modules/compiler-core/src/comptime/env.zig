@@ -326,7 +326,7 @@ pub const TemplateBuilt = struct {
     notes: []const []const u8 = &.{},
 };
 
-pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, tagDecl, annotate, note };
+pub const TemplateOp = enum { value, text, source, context, lookup, bindings, build, custom, fail, failAt, tagDecl, annotate, note };
 
 /// Everything the inference-time template evaluator needs to run a template
 /// body in the external eval runtime (expr-templates F6-full). Null in

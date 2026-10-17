@@ -1,0 +1,60 @@
+//// Decision 577 (1), 14s8-a (e) — a `${…}` hole of a template text is the
+//// template's own syntax: `css` splices each hole's expression into the code
+//// it builds, `cssValue(<hole>)`, typed in the caller's scope, and records a
+//// `CustomNode` at the hole. A mistyped hole, `cssValue(true)`, is refused
+//// at the hole.
+
+import {compiler.CustomNode, compiler.Span} from "std";
+
+fn cssValue(v: string) -> string {
+    return v;
+}
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+fn css(expr q: string) -> string {
+    var code = "\"\"";
+    var holes: CustomNode[] = [];
+    var at = 0;
+    var first = true;
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            at = piece.length;
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            val hole = piece.slice(0, close);
+            holes.push(CustomNode(
+                kind: "hole",
+                span: Span(at + 2, at + 2 + close, 1),
+                label: "variable",
+                ref: null,
+                children: [],
+            ));
+            code = code
+                + " + cssValue("
+                + hole
+                + ") + "
+                + quoted(piece.slice(close + 1));
+            at = at + 2 + piece.length;
+        }
+    }
+    compiler.custom(CustomNode(
+        kind: "css",
+        span: Span(0, at, 1),
+        label: "none",
+        ref: null,
+        children: holes,
+    ));
+    return compiler.build(code);
+}
+
+val color = "red";
+
+pub fn main() {
+    @print(css @`color: ${color};`);
+    @print(css @`flag: ${true};`);
+}

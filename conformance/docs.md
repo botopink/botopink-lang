@@ -3316,11 +3316,7 @@ there is refused at the call that raised (§ Compile-time evaluation), with a
 
 <!-- example: modules/template_known_at_build -->
 
-<!-- example: modules/hole_known_at_build_raises -->
-
-<!-- example: modules/hole_any_call_at_build -->
-
-<!-- example: modules/hole_any_call_raises -->
+<!-- example: modules/template_hole_typed_at_caller -->
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer

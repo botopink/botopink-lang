@@ -18,7 +18,7 @@
 //! module reaches them by `-import`, which leaves the lowered body's own text
 //! unchanged:
 //!
-//!   bp_comptime_template    the capture API (`text/1`, `parts/1`, `source/1`,
+//!   bp_comptime_template    the capture API (`text/1`, `source/1`,
 //!                           `context/1`, `bindings/1`, `lookup/2`, `ref/1`),
 //!                           the result constructors (`build/2`, `custom/3`,
 //!                           `expr/1`, `code/1`), the failure throws
@@ -143,7 +143,7 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
 
     // Capture accessors: `text(#{text := Text}) -> Text.` …
     const accessors = [_][2][]const u8{
-        .{ "text", "Text" },       .{ "parts", "Parts" },       .{ "source", "Source" },
+        .{ "text", "Text" },       .{ "source", "Source" },
         .{ "context", "Context" }, .{ "bindings", "Bindings" },
     };
     var forms: std.ArrayListUnmanaged(Ast.Form) = .empty;
@@ -384,7 +384,7 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
 }
 
 /// Decision 311 — the capture API a template annotation's body reads its
-/// literal through (`text/1`, `parts/1`, `source/1`, `context/1`,
+/// literal through (`text/1`, `source/1`, `context/1`,
 /// `bindings/1`, `lookup/2`, `ref/1`) and the result constructors its
 /// `return` builds (`build/2`, `custom/3`, `expr/1`, `code/1`): the template
 /// prelude's forms of those names. A template annotation runs on the
@@ -393,7 +393,7 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
 /// clash with the decorator's `fail/2` / `failAt/3` / `compilerError/1`, which
 /// are not carried (the handle's report at the annotation).
 pub fn captureForms(b: Ast.Builder) Error![]const Ast.Form {
-    const names = [_][]const u8{ "text", "parts", "source", "context", "bindings", "lookup", "ref", "build", "custom", "expr", "code" };
+    const names = [_][]const u8{ "text", "source", "context", "bindings", "lookup", "ref", "build", "custom", "expr", "code" };
     var out: std.ArrayListUnmanaged(Ast.Form) = .empty;
     for (try templateForms(b)) |form| switch (form) {
         .function => |f| for (names) |n| {
@@ -607,7 +607,6 @@ test "prelude: both modules render, export every function and define no main" {
     for ([_][]const u8{
         "-module(bp_comptime_template).",
         "text/1",
-        "parts/1",
         "lookup/2",
         "build/2",
         "build/3",

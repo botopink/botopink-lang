@@ -28,7 +28,7 @@
 ///   {"kind":"error","message"}                    ← anything else raised
 ///
 /// A capture reaches the body as a map — `main/1`'s argument, not a literal; its
-/// methods (`q.text()`, `q.parts()`, `q.lookup(name)`, …) lower to the resident
+/// methods (`q.text()`, `q.lookup(name)`, …) lower to the resident
 /// host functions.
 const std = @import("std");
 const hostCells = @import("./host_cells.zig");
@@ -952,10 +952,8 @@ fn argPlans(
 // ── capture ───────────────────────────────────────────────────────────────────
 
 /// A capture as the map its host functions read:
-/// `#{'__bp_capture' => Param, text, parts, source, context, bindings, words}`.
-/// Text is the literal's raw text (escapes unprocessed); in a template with
-/// `${…}` holes each hole appears as its `__bp_hole_<param>_<i>` placeholder,
-/// which `infer.zig` substitutes back when the built code is spliced.
+/// `#{'__bp_capture' => Param, text, source, context, bindings, words}`.
+/// Text is the template text's raw bytes (decision 577).
 ///
 /// Decision 237: `words` are the words of the literal's own text
 /// (`appendWords`) and `bindings` the scope entries whose name is one of them,
@@ -964,45 +962,11 @@ fn argPlans(
 /// argument is O(text), never O(scope). `lookup/2` answers `undefined` for a
 /// word the scope lacks and fails the template for a name that is not a word.
 pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr) std.mem.Allocator.Error!Term {
-    var text: std.ArrayListUnmanaged(u8) = .empty;
-    var parts: std.ArrayListUnmanaged(Term) = .empty;
+    // Decision 577 — a template text is its raw bytes, with no hole.
+    const text_bytes = cap.text orelse "";
     var words: Words = .empty;
-
-    switch (cap.node.*) {
-        .literal => |lit| switch (lit.kind) {
-            .stringTemplate => |st| {
-                var hole: usize = 0;
-                for (st.parts) |part| switch (part) {
-                    .text => |t| {
-                        try appendWords(arena, &words, t);
-                        const start = text.items.len;
-                        try text.appendSlice(arena, t);
-                        try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, start));
-                    },
-                    .expr => {
-                        const placeholder = try std.fmt.allocPrint(arena, "__bp_hole_{s}_{d}", .{ cap.paramName, hole });
-                        const value: ?Term = if (hole < cap.holeValues.len) cap.holeValues[hole] else null;
-                        hole += 1;
-                        const start = text.items.len;
-                        try text.appendSlice(arena, placeholder);
-                        try parts.append(arena, try interpTerm(arena, placeholder, value, text.items, start));
-                    },
-                };
-            },
-            else => {
-                const t = cap.text orelse "";
-                try appendWords(arena, &words, t);
-                try text.appendSlice(arena, t);
-                if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
-            },
-        },
-        else => {
-            const t = cap.text orelse "";
-            try appendWords(arena, &words, t);
-            try text.appendSlice(arena, t);
-            if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
-        },
-    }
+    try appendWords(arena, &words, text_bytes);
+    const text: struct { items: []const u8 } = .{ .items = text_bytes };
 
     const source_entries = try arena.alloc(Term.MapEntry, 3);
     source_entries[0] = Term.field("file", Term.str(cap.modulePath));
@@ -1049,8 +1013,8 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     // Decision 302 — the answers `q.annotate` has had so far, in call order
     // (`expandTemplateCallViaRuntime`); the key only when there is one.
     const extra: usize = @as(usize, if (cap.valueRead) 1 else 0) + @as(usize, if (cap.tagAnswers.len > 0) 1 else 0);
-    const entries = try arena.alloc(Term.MapEntry, 7 + extra);
-    var next: usize = 7;
+    const entries = try arena.alloc(Term.MapEntry, 6 + extra);
+    var next: usize = 6;
     if (cap.valueRead) {
         entries[next] = Term.field("value", Term.str(text.items));
         next += 1;
@@ -1058,11 +1022,10 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     if (cap.tagAnswers.len > 0) entries[next] = .{ .key = Term.atomOf(preludeMod.annotations_key), .value = Term.listOf(cap.tagAnswers) };
     entries[0] = .{ .key = Term.atomOf("__bp_capture"), .value = Term.str(cap.paramName) };
     entries[1] = Term.field("text", Term.str(text.items));
-    entries[2] = Term.field("parts", Term.listOf(parts.items));
-    entries[3] = Term.field("source", source);
-    entries[4] = Term.field("context", Term.mapOf(context_entries));
-    entries[5] = Term.field("bindings", Term.listOf(bindings.items));
-    entries[6] = Term.field("words", Term.listOf(word_terms));
+    entries[2] = Term.field("source", source);
+    entries[3] = Term.field("context", Term.mapOf(context_entries));
+    entries[4] = Term.field("bindings", Term.listOf(bindings.items));
+    entries[5] = Term.field("words", Term.listOf(word_terms));
     return Term.mapOf(entries);
 }
 
@@ -1163,34 +1126,6 @@ fn appendWords(arena: std.mem.Allocator, words: *Words, text: []const u8) std.me
 
 fn isWordByte(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
-}
-
-/// An `Interp` part: `partTerm`'s map with the hole's build value (decision
-/// 355, 01-compiler/14 step 8) — `known => true, value => V` when every value
-/// the hole names is known at build, `known => false, value => undefined`
-/// (`null` in the body) when the hole is computed at render.
-fn interpTerm(arena: std.mem.Allocator, placeholder: []const u8, value: ?Term, text: []const u8, start: usize) !Term {
-    const base = (try partTerm(arena, "Interp", "code", placeholder, text, start)).map;
-    const entries = try arena.alloc(Term.MapEntry, base.len + 2);
-    @memcpy(entries[0..base.len], base);
-    entries[base.len] = Term.field("known", .{ .boolean = value != null });
-    entries[base.len + 1] = Term.field("value", value orelse Term.undefined_atom);
-    return Term.mapOf(entries);
-}
-
-/// `#{kind => Kind, <field> => Value, span => #{start, end, line}}` for the part
-/// occupying `text[start..]`.
-fn partTerm(arena: std.mem.Allocator, kind: []const u8, field: []const u8, value: []const u8, text: []const u8, start: usize) !Term {
-    const line = 1 + std.mem.count(u8, text[0..start], "\n");
-    const span = try arena.alloc(Term.MapEntry, 3);
-    span[0] = Term.field("start", Term.int(@intCast(start)));
-    span[1] = Term.field("end", Term.int(@intCast(text.len)));
-    span[2] = Term.field("line", Term.int(@intCast(line)));
-    const entries = try arena.alloc(Term.MapEntry, 3);
-    entries[0] = Term.field("kind", Term.str(kind));
-    entries[1] = Term.field(field, Term.str(value));
-    entries[2] = Term.field("span", Term.mapOf(span));
-    return Term.mapOf(entries);
 }
 
 // ── outcome ───────────────────────────────────────────────────────────────────

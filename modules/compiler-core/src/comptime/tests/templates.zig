@@ -186,14 +186,13 @@ test "template: expr methods typecheck and record lowerings" {
     );
 
     // Decision 576 (2) — every template op but `.value` (an `expr` is
-    // opaque: its value is no `compiler` member) and `.parts` (577: a
-    // template text holds no hole).
+    // opaque: its value is no `compiler` member).
     try std.testing.expectEqual(@as(usize, 12), env.templateLowerings.count());
     var counts = std.enums.EnumArray(envMod.TemplateOp, usize).initFill(0);
     var it = env.templateLowerings.valueIterator();
     while (it.next()) |op| counts.set(op.*, counts.get(op.*) + 1);
     for (std.enums.values(envMod.TemplateOp)) |op| {
-        try std.testing.expectEqual(@as(usize, if (op == .value or op == .parts) 0 else 1), counts.get(op));
+        try std.testing.expectEqual(@as(usize, if (op == .value) 0 else 1), counts.get(op));
     }
 }
 

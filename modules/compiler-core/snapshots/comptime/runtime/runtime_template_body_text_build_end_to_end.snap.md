@@ -223,13 +223,6 @@ val s = shout @`hey`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"hey">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"hey">>,
-;;             span => #{start => 0, 'end' => 3, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 5, col => 15},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 5, col => 15},

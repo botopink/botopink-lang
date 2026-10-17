@@ -399,7 +399,7 @@ caller and captured **unevaluated**:
   call loc) with text/parts, the opening-line location (the lexer stamps
   multiline literals with their *closing* line), module path and scope.
 - `inferTemplateMethod` resolves the comptime-only methods on `@Expr` receivers
-  (`value`/`text`/`parts`/`source`/`context`/`lookup`/`bindings`/`build`/
+  (`value`/`text`/`source`/`context`/`lookup`/`bindings`/`build`/
   `custom`/`fail`/`failAt`/`tagDecl`/`annotate`), recording
   `env.templateLowerings`. The contract is `behavior __Expr<E>` in
   `libs/std/src/builtins.d.bp`, alongside `__Span`/`__Source`/
@@ -841,16 +841,13 @@ the template's body as a decorator's.
   `template-annotation-not-template`, `template-annotation-without-decl` and,
   for `#[f(…)]`, `#[f]` or `#[f "…"]` naming a template, `expr-call-outside-expr`
   (decision 577 (3)); a call `` f @`…` `` of an annotation template is
-  `template-annotation-only` at the call. `checkTemplateAnnotationHoles` (after Pass 2, every module name bound)
-  types each `${…}` hole in the annotated declaration's scope — a function's
-  or a method's parameters (a method's `Self` its owner), then the module's —
-  so an unknown name is the ordinary unbound-name error at the hole
-  (`annotatedSites` lists every annotation with its declaration).
+  `template-annotation-only` at the call. A template text holds no hole
+  (decision 577 (5)): code the template builds from it is checked where it is
+  spliced (`annotatedSites` lists every annotation with its declaration).
 - **Run**: `runDeclDecorators` takes a template annotation as a decorator whose
   function is the template (`DecoratorSig` with no parameters of its own):
   `templateAnnotationCapture` captures the literal as `captureExprArg` does at
-  a call site (`parseDecoratorArg` re-reads it at its own location; `q.value`
-  of a holed literal is `template-value-not-known` at the literal), and
+  a call site (`parseDecoratorArg` re-reads it at its own location), and
   `decorator_eval.evaluate` gets it as `capture`: `annotationPlans` binds the
   capture term (`template_eval.captureToTerm`) to `q` and the handle to
   `decl`, the module (emit key `ann`) carries `prelude.captureForms` — the
@@ -1031,10 +1028,9 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   (the prelude throws the fail tag with the span `#{arg => J}`;
   `decorator_eval.parseOutcome` reads it as `Outcome.fail.arg`, reported at
   that argument's `DecoratorArgValue.loc`).
-- **Templates.** A capture carries `value` (the literal's text) when the
-  template body reads `q.value` (`CapturedExpr.valueRead`); a literal with a
-  `${…}` hole is not known at build, and `captureExprArg` refuses the read at
-  the argument (`template-value-not-known`).
+- **Templates.** A capture carries `value` (the text) when the template body
+  reads `q.value` (`CapturedExpr.valueRead`); a template text holds no hole
+  (decision 577 (5)), so the value is always known at build.
 - **Handed on — a typed member (decision 370 (2)).** `decl.addMember(name,
   fn(self: T) -> R { … })`: the parser reads a function expression's
   parameter types and `-> R` (`FunctionExpr.paramTypes` / `.returnType`,

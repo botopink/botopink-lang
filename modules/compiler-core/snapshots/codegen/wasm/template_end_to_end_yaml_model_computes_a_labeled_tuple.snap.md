@@ -260,13 +260,6 @@ fn main() {
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"yaml">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"yaml">>,
-;;             span => #{start => 0, 'end' => 4, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 7, col => 16},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 7, col => 16},

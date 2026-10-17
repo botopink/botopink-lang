@@ -413,7 +413,7 @@ fn buildModule(
     const b: Ast.Builder = .{ .arena = arena };
     const plans = if (capture) |cap| try annotationPlans(arena, dfn, handle, cap) else try argPlans(arena, dfn, handle, plainArgs);
     // Decision 311 — a template annotation's body reads its literal through
-    // the capture API (`q.text()`, `q.parts()`, `q.build(…)`), rendered into
+    // the capture API (`q.text()`, `q.build(…)`), rendered into
     // the module beside `main/1`; the handle's API is the resident prelude's.
     const texts = capture == null and try readsArgText(arena, dfn);
     const forms = if (capture != null)

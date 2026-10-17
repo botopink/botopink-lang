@@ -98,13 +98,6 @@ fn main() {
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"x">>,
-;;     parts => [
-;;         #{
-;;             kind => <<"Text">>,
-;;             text => <<"x">>,
-;;             span => #{start => 0, 'end' => 1, line => 1}
-;;         }
-;;     ],
 ;;     source => #{file => <<"">>, line => 5, col => 18},
 ;;     context => #{
 ;;         source => #{file => <<"">>, line => 5, col => 18},

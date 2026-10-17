@@ -405,7 +405,7 @@ pub type __Source(
 // Everything a second-layer language (a DSL compiler running inside a template
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
-// `lookup`/`bindings`; the segmented view via `parts`.
+// `lookup`/`bindings`.
 //
 // F1 — this record is `ExprContext`, not `Context`: `Context<T>` is std's
 // context object (decision 354). `q.context()` still reads `context`, because

@@ -27,6 +27,11 @@ pub fn renameDecl(arena: std.mem.Allocator, t: ast.TypeDecl, from: []const u8, t
     return out;
 }
 
+/// `t` with every type reference to `from` written `to`, its own name kept.
+pub fn renameTypeRefs(arena: std.mem.Allocator, t: ast.TypeDecl, from: []const u8, to: []const u8) Error!ast.TypeDecl {
+    return renamed(ast.TypeDecl, arena, t, from, to);
+}
+
 fn renamed(comptime V: type, arena: std.mem.Allocator, v: V, from: []const u8, to: []const u8) Error!V {
     if (V == ast.TypeRef) return renameRef(arena, v, from, to);
     if (comptime !mayHoldTypeRef(V)) return v;
