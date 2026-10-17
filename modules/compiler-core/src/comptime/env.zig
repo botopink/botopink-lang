@@ -933,12 +933,13 @@ pub const Env = struct {
     /// module, or one the driver marks `Module.std_member`. Only std's modules
     /// may write a `std:` cell (`infer.refuseStdBinding`).
     inStd: bool = false,
-    /// The module is a declaration file (`.d.bp`, `Module.declaration`; the
-    /// prelude's `builtins_fns.d.bp`): its bodyless declarations are the
+    /// The module's bodyless declarations are the compiler's (the prelude's
+    /// `builtins.d.bp` / `builtins_fns.d.bp`, the reflection cluster, std's
+    /// `types.bp`; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
     /// compiler's builtins, which no annotation implements until `#[builtin]`
     /// marks them (decision 575 (2)), so `declare-without-implementation` is
     /// not its rule.
-    declarationFile: bool = false,
+    compilerBodies: bool = false,
     /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
     /// inferred, relative to its package root, extension included
     /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from

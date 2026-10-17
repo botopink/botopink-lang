@@ -318,7 +318,7 @@ fn libHasTests(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
     return srcHasTestBlock(gpa, io, lib_dir);
 }
 
-/// Any `.bp` (non-`.d.bp`) file directly inside `test/`.
+/// Any `.bp` file directly inside `test/`.
 fn dirHasBpSuite(io: std.Io, lib_dir: std.Io.Dir) bool {
     var test_dir = lib_dir.openDir(io, "test", .{ .iterate = true }) catch return false;
     defer test_dir.close(io);
@@ -331,7 +331,7 @@ fn dirHasBpSuite(io: std.Io, lib_dir: std.Io.Dir) bool {
     return false;
 }
 
-/// Any `src/**/*.bp` (non-`.d.bp`) file containing a `test` block.
+/// Any `src/**/*.bp` file containing a `test` block.
 fn srcHasTestBlock(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
     var src_dir = lib_dir.openDir(io, "src", .{ .iterate = true }) catch return false;
     defer src_dir.close(io);
@@ -351,7 +351,7 @@ fn srcHasTestBlock(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool
     return false;
 }
 
-/// Any `src/**/*.bp` file, declaration files included. An IO error answers
+/// Any `src/**/*.bp` file. An IO error answers
 /// false — the lib is then reported `–` without a compile, as before.
 fn srcHasBpFile(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
     var src_dir = lib_dir.openDir(io, "src", .{ .iterate = true }) catch return false;
@@ -371,8 +371,7 @@ fn srcHasBpFile(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
 
 /// A runnable source file — `manifest.isModuleFile`, the one list every tool
 /// reads (a `.bpp` included: a `test` its header declares runs with the
-/// package's tests) — excluding declaration files (`*.d.bp`), which carry type
-/// surface only and have no executable `test` blocks.
+/// package's tests).
 pub fn isBpSource(name: []const u8) bool {
     return manifest.isModuleFile(name);
 }
@@ -413,11 +412,11 @@ fn isSpace(c: u8) bool {
 
 const testing = std.testing;
 
-test "isBpSource accepts .bp and .bpp, rejects .d.bp" {
+test "isBpSource accepts .bp, .bpp and a .d.bp (the module x.d)" {
     try testing.expect(isBpSource("erika.bp"));
     try testing.expect(isBpSource("Card.bpp"));
     try testing.expect(isBpSource("main.botopink"));
-    try testing.expect(!isBpSource("primitives.d.bp"));
+    try testing.expect(isBpSource("primitives.d.bp"));
     try testing.expect(!isBpSource("README.md"));
 }
 

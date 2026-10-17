@@ -5316,7 +5316,7 @@ row says otherwise):
 | `{ "path": … }` pointing at a workspace | `"x": path "../ws" is a workspace, not a package — depend on one of its members: a, b, c` |
 | `{ "git": … }` whose name is a workspace under a root | `"x" is a workspace, not a package — import one of its members: a, b, c` |
 | `{ "git": … }` whose name no root carries | `dependency 'x' was not found under any library root` |
-| two `files` entries of the resolved dependency naming one module (`p.bp` and `p.d.bp`, or one file listed twice) | `"files" lists p.bp and p.d.bp, one module (` p `) written twice — keep one of the two files` (located on the dependency's manifest, at the second entry; a package's own manifest is refused the same way) |
+| two `files` entries of the resolved dependency naming one module (one file listed twice, or `p.bp` beside `p.bpp`) | `"files" lists p.bp and p.bp, one module (` p `) written twice — keep one of the two files` (located on the dependency's manifest, at the second entry; a package's own manifest is refused the same way) |
 | a `files` entry of the resolved dependency that does not exist | `dependency 'x' lists "gone.bp" in ` files `, but <path> does not exist` (located on the dependency's manifest) |
 | `bpmp install`: a `subdir` holding no manifest | `"x": subdir "modules/x" holds no botopink.json in <git> at <rev12> (looked at <checkout>/modules/x/botopink.json)` |
 | `bpmp install`: a `subdir` holding a workspace | `"x": subdir "modules/ws" is a workspace, not a package — name one of its members' subdirs: modules/ws/a, modules/ws/b` |

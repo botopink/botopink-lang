@@ -46,12 +46,10 @@ pub const EnvMap = ?*const std.process.Environ.Map;
 pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 
 /// One resolved dependency module: a real file URI (so go-to-def can jump into
-/// it), its on-disk source, and whether it is a declaration-only `.d.bp` (those
-/// are kept for go-to-def but excluded from the compile, mirroring the CLI).
+/// it) and its on-disk source.
 pub const GraphModule = struct {
     uri: []const u8,
     source: []const u8,
-    declaration: bool,
 };
 
 /// A source the graph could not load, as a located diagnostic.
@@ -302,7 +300,7 @@ pub const ProjectGraph = struct {
             if (i >= lib.files.len) break;
             const file = lib.files[i];
             try list.append(a, .{
-                .module = .{ .path = try std.fmt.allocPrint(a, "{s}/{s}", .{ pkg, manifest.stripSourceExt(file) }), .source = gm.source, .declaration = gm.declaration },
+                .module = .{ .path = try std.fmt.allocPrint(a, "{s}/{s}", .{ pkg, manifest.stripSourceExt(file) }), .source = gm.source },
                 .file = lsp_types.uriToPath(gm.uri),
             });
         }
@@ -340,7 +338,6 @@ pub const ProjectGraph = struct {
             try deps.append(a, .{
                 .uri = try lsp_types.pathToUri(a, path),
                 .source = source,
-                .declaration = std.mem.endsWith(u8, file, ".d.bp"),
             });
         }
     }
@@ -453,7 +450,6 @@ pub const ProjectGraph = struct {
             try deps.append(a, .{
                 .uri = try lsp_types.pathToUri(a, abs),
                 .source = source,
-                .declaration = manifest.isDeclarationFile(entry.basename),
             });
         }
     }

@@ -117,8 +117,7 @@ resolves the dependency set with the same rules the CLI driver uses:
   holding `repository/` — the enclosing checkout, `manifest.isCheckoutRoot`; de-duped
   first-occurrence-wins; every workspace found there contributes its members).
   A link wins over the walk-up (`tests/project_graph.zig`, decision 483).
-  `.d.bp` declaration files are kept
-  for go-to-def but excluded from the compile (the CLI drops them too).
+  A name ending in `.d.bp` is a module `x.d`, nothing special (decision 575 (1)).
 - `mod` / `pub mod` siblings → every source file under the project's `src/`
   (`manifest.isSourceFile` — the CLI's one list), a `.bpp` read as the module
   it unfolds to (front 116 step 4): `buildProject` finds the roles of the

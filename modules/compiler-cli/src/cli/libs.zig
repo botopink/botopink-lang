@@ -755,7 +755,7 @@ fn loadOne(
         // Decision 519 — `@embed` in the dependency reads its own files.
         const root = try gpa.dupe(u8, dir);
         errdefer gpa.free(root);
-        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets), .files = bp.PackageFiles.disk(io, root) });
+        try out.append(gpa, .{ .path = mod_path, .source = source, .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets), .files = bp.PackageFiles.disk(io, root) });
         try file_paths.append(arena, try std.fs.path.relative(arena, cwd, null, cwd, file_path));
     }
     try checkImportSources(arena, dep, m, file_paths.items, out.items[first..]);
@@ -1144,10 +1144,6 @@ fn renderMissingFile(
         }
     }
     try diagnostics.renderLocated(w, message, manifest_path, manifest_text, line, offset - line_start + 1, span);
-}
-
-fn isDeclFile(name: []const u8) bool {
-    return manifest.isDeclarationFile(name);
 }
 
 /// The one list of source extensions (`manifest.SOURCE_EXTENSIONS`).
@@ -2142,16 +2138,11 @@ test "relocatedRequire reaches <out>/<owner>/<base> from the emitting module" {
     try std.testing.expectEqualStrings("./x.mjs", try relocatedRequire(a, "main", null, "x.mjs"));
 }
 
-test "stripSourceExt strips .d.bp before .bp" {
-    try std.testing.expectEqualStrings("rakun", stripSourceExt("rakun.d.bp"));
+test "stripSourceExt strips .bp; a .d.bp is the module x.d" {
+    try std.testing.expectEqualStrings("rakun.d", stripSourceExt("rakun.d.bp"));
     try std.testing.expectEqualStrings("http", stripSourceExt("http.bp"));
     try std.testing.expectEqualStrings("page", stripSourceExt("page.botopink"));
     try std.testing.expectEqualStrings("noext", stripSourceExt("noext"));
-}
-
-test "isDeclFile recognizes declaration modules" {
-    try std.testing.expect(isDeclFile("rakun.d.bp"));
-    try std.testing.expect(!isDeclFile("http.bp"));
 }
 
 test "loadDependencies with no deps touches no filesystem" {

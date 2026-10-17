@@ -4243,8 +4243,8 @@ fn refuseStdBinding(env: *Env, impl: ast.Implementation, name: []const u8, param
 /// Decision 575 (6) — a bodyless `declare fn` (top-level, a type's, static
 /// included) is implemented by an annotation, or refused at the declaration;
 /// a behavior's member is a signature or a `default fn`, never a `declare
-/// fn`. A declaration file's bodyless declarations are the compiler's
-/// builtins (`Env.declarationFile`), which `#[builtin]` marks with decision
+/// fn`. A compiler-bodies module's bodyless declarations are the compiler's
+/// builtins (`Env.compilerBodies`), which `#[builtin]` marks with decision
 /// 575 (2).
 fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
@@ -4257,7 +4257,7 @@ fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void 
         },
         else => {},
     };
-    if (env.declarationFile) return;
+    if (env.compilerBodies) return;
     for (program.decls) |decl| switch (decl) {
         // A bodyless decorator (its first parameter the declaration) is a
         // marker a library ships, read and never called.

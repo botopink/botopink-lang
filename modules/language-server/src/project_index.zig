@@ -171,7 +171,7 @@ pub const ProjectIndex = struct {
             const file_uri = lsp_types.pathToUri(self.gpa, file_path) catch continue;
             defer self.gpa.free(file_uri);
 
-            // Module name: filename without .d.bp or .bp extension.
+            // Module name: filename without its source extension.
             const module_name = manifest.stripSourceExt(name);
 
             self.module_uris.append(self.gpa, self.gpa.dupe(u8, module_name) catch continue) catch {};

@@ -9,8 +9,7 @@ const Module = bp.Module;
 // ── Extensions ───────────────────────────────────────────────────────────────
 
 /// A module file of the one list every tool reads (`manifest.isModuleFile`):
-/// declaration modules (`*.d.bp`) are type surface only — embedded by the
-/// compiler separately. A `.bpp` file is a module of a package's `mod` tree,
+/// a `.bpp` file is a module of a package's `mod` tree,
 /// which the resolver unfolds onto the package `"bpp"` names; a flat scan
 /// (the `test/` suite, the deprecated `src/` walk) has no such package and
 /// holds none.

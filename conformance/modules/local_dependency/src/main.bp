@@ -8,7 +8,7 @@
 ////     `root.bp` names the handle, `shapesdsl.bp` holds the handler, and
 ////     `import shapesdsl, {…} from "shapesdsl"` binds the handle so that
 ////     `shapesdsl "…"` expands at compile time;
-////   * a `.d.bp` shipped through the lib's `files` — `shapes.d.bp` declares the
+////   * a module shipped through the lib's `files` — `shapes.bp` declares the
 ////     `Rect` record this program constructs;
 ////   * `@ExprCustom` / `q.custom` — the handler returns the carrier: the `code`
 ////     half runs (the `area(…)` call the template's text spells), the `ast`

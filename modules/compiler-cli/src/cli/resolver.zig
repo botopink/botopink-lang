@@ -332,7 +332,7 @@ fn collectChildren(
     }
 }
 
-/// Walk `src_dir_path` for `.bp` files (excluding `.d.bp`) that nothing
+/// Walk `src_dir_path` for `.bp` files that nothing
 /// reaches. A module is reached by a `mod` path (it is then in `visited`) OR by
 /// the manifest's `files` (it is then in `declared`) — the second route is how a
 /// package ships a module to a consumer that is not its own module tree, which
@@ -1261,10 +1261,10 @@ test "stripBpExt strips source extensions" {
     try std.testing.expectEqualStrings("noext", stripBpExt("noext"));
 }
 
-test "isSource excludes declaration files" {
+test "isSource: a .d.bp is a module" {
     try std.testing.expect(isSource("geometry.bp"));
     try std.testing.expect(isSource("page.botopink"));
-    try std.testing.expect(!isSource("primitives.d.bp"));
+    try std.testing.expect(isSource("primitives.d.bp"));
     try std.testing.expect(!isSource("README.md"));
 }
 

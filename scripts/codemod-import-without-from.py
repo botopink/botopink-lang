@@ -86,7 +86,7 @@ def module_path_of(rel):
     """`shapes/circle.bp` -> `shapes/circle`; `shapes/mod.bp` -> `shapes`."""
     if rel.endswith(".fixture"):
         rel = rel[: -len(".fixture")]
-    for ext in (".d.bp", ".bp"):
+    for ext in (".bp",):
         if rel.endswith(ext):
             rel = rel[: -len(ext)]
             break

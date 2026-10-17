@@ -9,7 +9,7 @@
 Usage: python3 scripts/codemod-wasm-cells.py [--write] [--ext <.ext>]... <root>...
 
 Textual, over code and comments alike (`@External.Wasm("fn:…")` in prose becomes
-`@External.Wasm(fn: …)`). It reads `.bp`, `.d.bp` and `.bp.fixture` files, plus each
+`@External.Wasm(fn: …)`). It reads `.bp` and `.bp.fixture` files, plus each
 `--ext`. Prints one line per file it changes with the count, then the tally per root;
 without `--write` it only reports.
 """
@@ -41,7 +41,7 @@ def labelled(m):
 
 def main(argv):
     write = False
-    exts = [".bp", ".d.bp", ".bp.fixture"]
+    exts = [".bp", ".bp.fixture"]
     roots = []
     i = 0
     while i < len(argv):

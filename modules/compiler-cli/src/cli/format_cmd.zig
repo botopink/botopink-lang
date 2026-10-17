@@ -1,7 +1,7 @@
 /// `botopink format` — format source files with the Wadler-Lindig pretty-printer.
 ///
 /// **Scope** ([decision 66](../../../../../specs/1.0.5-beta/decisions-taken.md)):
-/// with no argument the command reaches every `.bp` — `.d.bp` included — under
+/// with no argument the command reaches every `.bp` under
 /// the current directory: `src/**`, `test/**`, `examples/**` and every project
 /// nested inside, because one walk from the root sees them all. An argument is a
 /// file, or a directory walked the same way. Before this the command scanned
@@ -98,9 +98,8 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
 // ── The walk ──────────────────────────────────────────────────────────────────
 
 /// Every source extension (`manifest.SOURCE_EXTENSIONS`, the one list every
-/// tool reads) — which includes every `.d.bp`: a declaration module is source
-/// the project owns and `format` prints it like any other (decision 66) — and
-/// every `.bpp`, whose header `format` prints as a module (front 116 step 5).
+/// tool reads) — a name ending in `.d.bp` is a module like any other (decision
+/// 575 (1)) — and every `.bpp`, whose header `format` prints as a module (front 116 step 5).
 fn hasSourceExt(name: []const u8) bool {
     return manifest.isSourceFile(name);
 }
@@ -494,7 +493,7 @@ fn freePaths(gpa: std.mem.Allocator, paths: []const []const u8) void {
     gpa.free(paths);
 }
 
-test "decision 66: the walk reaches src/, test/, examples/, a nested project and every .d.bp" {
+test "decision 66: the walk reaches src/, test/, examples/, a nested project and a .d.bp (a module `types.d`)" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 

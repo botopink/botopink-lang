@@ -160,7 +160,7 @@ pub fn importDiagnostics(
 }
 
 /// The logical module path of the file at `path` under `src_dir`, as the
-/// CLI's resolver names it: relative, `/`-separated, without `.bp` / `.d.bp`,
+/// CLI's resolver names it: relative, `/`-separated, without `.bp`,
 /// a folder index `x/mod.bp` named `x`. Null for a file outside `src_dir`.
 fn logicalPath(a: std.mem.Allocator, src_dir: []const u8, path: []const u8) ?[]const u8 {
     const dir = std.mem.trimEnd(u8, src_dir, "/");

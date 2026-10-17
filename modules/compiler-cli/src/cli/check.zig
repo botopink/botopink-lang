@@ -86,9 +86,8 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     // The compiled comptime modules beside it (decision 543).
     try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);
 
-    // A dependency's `.d.bp` modules are kept, as `build` and `run` keep them
-    // (decisions 514, 515): one module set under every command, so one level B
-    // entry, and a type a `.d.bp` declares checks here as it builds there.
+    // A dependency's modules are one set under every command, so one level B
+    // entry.
     const all_modules = try std.mem.concat(arena, bp.Module, &.{ dep_modules, loaded.modules, test_modules });
 
     reporter.checking(all_modules.len);

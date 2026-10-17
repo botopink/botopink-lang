@@ -270,18 +270,13 @@ pub fn failedOutputs(
     modules: []const Module,
     outputs: []const bp.codegen.ModuleOutput,
 ) ![]const []const u8 {
-    var declarations = std.StringHashMap(void).init(arena);
     var returned = std.StringHashMap(void).init(arena);
-    for (modules) |m| {
-        if (m.declaration) try declarations.put(moduleName(m), {});
-    }
     var failed: std.ArrayListUnmanaged([]const u8) = .empty;
     for (outputs) |o| {
         try returned.put(o.name, {});
-        if (o.result.failed() and !declarations.contains(o.name)) try failed.append(arena, o.name);
+        if (o.result.failed()) try failed.append(arena, o.name);
     }
     for (modules) |m| {
-        if (m.declaration) continue;
         const name = moduleName(m);
         if (!returned.contains(name)) try failed.append(arena, name);
     }
@@ -589,7 +584,6 @@ test "failedOutputs names diagnosed and absent modules, never a declaration file
         .{ .path = "main", .source = "" },
         .{ .path = "broken", .source = "" },
         .{ .path = "gone", .source = "" },
-        .{ .path = "decls", .source = "", .declaration = true },
     };
     var js_a = "a".*;
     var js_b = "b".*;

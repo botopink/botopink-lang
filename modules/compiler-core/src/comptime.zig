@@ -1662,7 +1662,7 @@ fn analyzeMerged(
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
-    env.declarationFile = declaresCompilerBodies(mod);
+    env.compilerBodies = declaresCompilerBodies(mod);
     env.reflection = reflection;
     if (typeinfo_plan) |pl| {
         env.typeinfoAll = pl.rewrites;
@@ -1833,7 +1833,7 @@ fn analyzeSource(
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
     env.inStd = mod.std_member;
-    env.declarationFile = declaresCompilerBodies(mod);
+    env.compilerBodies = declaresCompilerBodies(mod);
     // `@src().file` (decision 73): the package-relative display path.
     env.srcPath = try displaySrcPath(arena, mod);
     env.packageFiles = mod.files;
@@ -3855,12 +3855,11 @@ fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
 /// `Annotation`, `Decl`, … and 1.0.10-beta's `SourceLocation`) into `env`.
 /// Called for the global env and for every scratch env `registerStdlib` infers
 /// a std module in, so a std module's signature may name a prelude record.
-/// Whether `mod`'s bodyless declarations are the compiler's (`Env.declarationFile`):
-/// a declaration file, or std's `types.bp`, whose derived types the compiler
+/// Whether `mod`'s bodyless declarations are the compiler's (`Env.compilerBodies`):
+/// std's `types.bp`, whose derived types the compiler
 /// answers (`comptime/derived_types.zig`) until step B-140 writes them in
 /// botopink.
 fn declaresCompilerBodies(mod: Module) bool {
-    if (mod.declaration) return true;
     return mod.std_member and (std.mem.eql(u8, mod.path, "types") or std.mem.eql(u8, mod.path, "std/types"));
 }
 
@@ -3895,10 +3894,10 @@ pub fn registerExternalPrelude(env: *Env) anyerror!void {
 fn registerReflectionPrelude(env: *Env) anyerror!void {
     try registerExternalPrelude(env);
     // The cluster's bodyless members are the compiler's (a declaration
-    // file's, `Env.declarationFile`).
-    const was_decl = env.declarationFile;
-    env.declarationFile = true;
-    defer env.declarationFile = was_decl;
+    // file's, `Env.compilerBodies`).
+    const was_decl = env.compilerBodies;
+    env.compilerBodies = true;
+    defer env.compilerBodies = was_decl;
     const alloc = env.arena;
     // The tokens are scratch: the tree holds none (144 B-127).
     var token_scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -4053,7 +4052,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // is the tooling/`@Expr` surface and is not consumed as a standalone program.
     try registerReflectionPrelude(env);
     // The internal sources below declare the compiler's own bodyless members.
-    env.declarationFile = true;
+    env.compilerBodies = true;
 
     // The `@ExprCustom` reference-tree type (expr-custom): registered after the
     // `@Decl` cluster so a sub-language template body can construct `CustomNode`
@@ -4111,7 +4110,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // would stop the compiler from booting, so a failure surfaces
         // immediately.
         _ = try infer.inferProgram(env, program);
-        env.declarationFile = false;
+        env.compilerBodies = false;
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| try env.stdlibFnDecls.put(f.name, f),
             else => {},
@@ -4138,7 +4137,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // `types.bp`'s derived types: their bodies are the compiler's
         // (`comptime/derived_types.zig`) until step B-140 writes them in
         // botopink, so `declare-without-implementation` is not their rule.
-        env2.declarationFile = std.mem.eql(u8, mod_name, "types");
+        env2.compilerBodies = std.mem.eql(u8, mod_name, "types");
         defer env2.deinit();
         try env2.registerBuiltins();
         env2.ambientBehaviorDecls = try env.ambientBehaviorDecls.clone(env.arena);

@@ -21,7 +21,7 @@ one argument is already the new form and is left alone.
     scripts/codemod-component-contexts.py [--write] [--format BOTOPINK] [--ext EXT]... ROOT...
 
 ROOT is a file or a directory (walked, hidden and build directories skipped).
-The files read are `.bp`, `.d.bp` and `.bp.fixture`, plus every `--ext` given
+The files read are `.bp` and `.bp.fixture`, plus every `--ext` given
 (`--ext .md --ext .zig` for documentation and the compiler's own test
 sources). Without `--write` it only reports. With `--format`, each `.bp` /
 `.d.bp` file it changed that `botopink format --check` accepted before is
@@ -33,7 +33,7 @@ import subprocess
 import sys
 
 SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", ".git"}
-BASE_EXTS = (".bp", ".d.bp", ".bp.fixture")
+BASE_EXTS = (".bp", ".bp.fixture")
 OPEN = {"<": ">", "(": ")", "[": "]", "{": "}"}
 CLOSE = {v: k for k, v in OPEN.items()}
 
@@ -172,7 +172,7 @@ def main(argv):
             print(f"rewrite {path}: {c} @Component<C, R>, {x} @Context<C>")
             if not write:
                 continue
-            was_canonical = fmt is not None and path.endswith((".bp", ".d.bp")) and canonical(fmt, path)
+            was_canonical = fmt is not None and path.endswith(".bp") and canonical(fmt, path)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new)
             if was_canonical:

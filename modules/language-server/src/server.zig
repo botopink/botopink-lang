@@ -110,8 +110,7 @@ pub const Server = struct {
     /// Build the module list to compile for `uri`: its project dependencies
     /// (`from "<lib>"` packages + `mod` siblings, resolved from `botopink.json`)
     /// followed by the active document LAST, so it can import from every dep.
-    /// Declaration-only `.d.bp` modules are excluded from the compile (they carry
-    /// no bodies). When the file is not inside a project, falls back to the
+    /// When the file is not inside a project, falls back to the
     /// single active document. Entries are arena-allocated; their sources are
     /// borrowed (graph cache + the in-memory `source`), valid for this call.
     fn buildModuleEntries(
@@ -132,7 +131,6 @@ pub const Server = struct {
 
         var list: std.ArrayListUnmanaged(compiler_mod.ModuleEntry) = .empty;
         for (resolved.deps) |dep| {
-            if (dep.declaration) continue; // mirror the CLI: `.d.bp` not compiled
             if (samePath(lsp_types.uriToPath(dep.uri), active_path)) continue; // the active doc
             // Overlay an open buffer so unsaved edits to a dependency are seen.
             const src = self.files.get(dep.uri) orelse dep.source;

@@ -86,7 +86,6 @@ pub const PackageModule = struct {
 pub fn checkPackage(arena: std.mem.Allocator, project: manifest.Manifest, pkg: []const u8, mods: []const PackageModule) Error!Roles {
     var lists: [4]std.ArrayListUnmanaged(Marked) = .{ .empty, .empty, .empty, .empty };
     for (mods) |pm| {
-        if (pm.module.declaration) continue;
         const program = parse(arena, pm.module.source) orelse continue; // the build reports it
         const handles = try roleNames(arena, program);
         if (handles.count() == 0) continue;

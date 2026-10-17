@@ -6,7 +6,7 @@
 # file that ENTERS the commit — the staged blob, never the working tree — and
 # writes the result back into the index, so the commit records it:
 #
-#   1. the staged source files (`.bp`, `.d.bp`, `.bpp`, `.botopink`; added,
+#   1. the staged source files (`.bp`, `.bpp`, `.botopink`; added,
 #      copied, modified or renamed — a deletion and an unmerged path have
 #      nothing to format) are checked out of the index into a scratch tree
 #      with `git checkout-index --prefix`, together with the

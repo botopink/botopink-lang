@@ -755,7 +755,7 @@ run "$P" format --check
 expect_code 1 "format --check on a lex error"
 
 # ── decision 66 — format --check reaches the whole project; a refused cell module is exempt by shape ──
-# No argument: every `.bp` and `.d.bp` under the project — src/, test/, examples/
+# No argument: every `.bp` under the project — src/, test/, examples/
 # and the projects nested inside — is checked. Not entered: hidden directories and
 # node_modules. Not reached: a conformance cell's module whose
 # `snapshot/output/<module>.snap` holds a `refused` record — every target
@@ -1618,16 +1618,16 @@ else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
 fi
 
-echo "==> a dependency's .d.bp modules are one set under every command (decisions 514, 515)"
-# conformance/modules/local_dependency: its dependency's `shapes.d.bp`
-# declares `Rect`, which the cell's main builds. `build` keeps a dependency's
-# `.d.bp` modules; `check` and `test` keep them too — one module set, one
+echo "==> a dependency's modules are one set under every command (decisions 514, 575 (1))"
+# conformance/modules/local_dependency: its dependency's `shapes.bp`
+# declares `Rect`, which the cell's main builds. `check` and `test` keep
+# a dependency's modules as `build` does — one module set, one
 # level B entry — so `check` answers what `build` answers.
 DBP="$WORK/dbp-dependency"
 rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/local_dependency" "$DBP"
 rm -rf "$DBP/snapshot" "$DBP/docs.md"
 run "$DBP" check
-expect_code 0 "check of a consumer building a type its dependency's .d.bp declares"
+expect_code 0 "check of a consumer building a type its dependency declares"
 run "$DBP" build --target erlang --out out
 expect_code 0 "build of the same consumer"
 

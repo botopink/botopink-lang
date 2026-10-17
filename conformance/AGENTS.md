@@ -1575,8 +1575,8 @@ object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the
 `aa80e30b` — an array `"dependencies"` is refused since then), resolves from disk relative to the
 project, and the runner does nothing special for it. `modules/local_dependency` is the one
 cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
-(`pub default fn … -> @ExprCustom<T>`, the handler returning `e.custom(ast, code)`) and `shapes.d.bp`
-(a record declared in a `.d.bp` listed in `files`); the program does `import shapesdsl, {area, Rect}
+(`pub default fn … -> @ExprCustom<T>`, the handler returning `e.custom(ast, code)`) and `shapes.bp`
+(a record declared in a module listed in `files`); the program does `import shapesdsl, {area, Rect}
 from "shapesdsl"` and expands `shapesdsl "area(4, 5)"` at compile time (the text spells `area`, the
 name the handler's `e.lookup` asks for — decision 237: a capture carries only the bindings its text
 names, and `lookup` of any other name is a located error). Green on all four targets, measured
@@ -2542,7 +2542,7 @@ located at the call (it was accepted and answered `1.5`).
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /
-`q.custom` and `.d.bp` via `files` (`modules/local_dependency`, a local dependency needs no network);
+`q.custom` and a module shipped via `files` (`modules/local_dependency`, a local dependency needs no network);
 "no external target for the active backend" (`modules/external_erlang_only`, a cell refused on
 two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
 target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**

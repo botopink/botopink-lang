@@ -1,4 +1,4 @@
-//// A dependency whose `files` lists `p.bp` and `p.d.bp` names one module,
+//// A dependency whose `files` lists `p.bp` twice names one module,
 //// `p/p`, twice: the manifest is refused at the second entry, the way `x.bp`
 //// beside `x.bpp` or `x/mod.bp` is. The parent binary loaded them as two
 //// modules of one path, and every consumer of `p` read `Module` declared

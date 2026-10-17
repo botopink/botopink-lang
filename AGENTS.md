@@ -340,7 +340,7 @@ stage 1 only (`scripts/AGENTS.md` § Green-tree record).
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule). It first applies `botopink
 format` to the commit (decision 524 — `scripts/git-hooks/lib/format-staged.sh`):
-each staged `.bp` / `.d.bp` / `.bpp` is formatted **as staged** — its index blob,
+each staged `.bp` / `.bpp` is formatted **as staged** — its index blob,
 never the working tree — by this checkout's own build, and the result replaces it
 in the index; the working-tree file takes it too when it holds no unstaged change,
 and otherwise keeps its unstaged changes untouched. A file the formatter cannot
