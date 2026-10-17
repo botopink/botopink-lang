@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error: unknown field 'nope' on type 'Town'
 at src/main.bp:19:3
-from src/main.bp:7:14
+from src/main.bp:7:18

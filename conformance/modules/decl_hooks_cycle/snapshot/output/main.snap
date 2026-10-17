@@ -1,2 +1,2 @@
 botopink-cell 1
-out A(uses: [], calls: [B@pages:42:13]) B(uses: [], calls: [A@pages:36:13])
+out A(uses: [], calls: [B@pages:44:13]) B(uses: [], calls: [A@pages:38:13])
