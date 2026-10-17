@@ -1088,16 +1088,18 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   `written_names.sharesPrivates` counts a wrapper as it counts a member.
 - **Handed on — an executor (decision 575 (3)).** `compiler.compile(f)` (the
   handle's `decl.compile(f)`; `parser/compiler_surface.zig` makes a named
-  executor `{ -> f() }`) compiles run-time code beside the annotated
+  executor `{ -> f() }`, the call its tail) compiles run-time code beside the annotated
   declaration. `infer.zig` `inferCompileCall` types the lambda as a wrapper's
   (each `exprWrapped` parameter its `T`, `refuseCaptures` with the body's locals
-  allowed) against `fn() -> answer`, `answer` dropped. `eraseFn` hands the
+  allowed) and checks the executor against `fn()` (decision 409): a tail that
+  answers a value is refused at it by `refuseValueTailInVoid`, a named executor
+  that answers one at its name. `eraseFn` hands the
   runtime `decl.compile(<k>)` or `decl.compile(<k>, [locals…])`
   (`member_fn.collectExecutors`'s order, `capturedLocals` as a member's), the
   prelude's `compile/2` / `compile/3` reply `compile`; `runDeclDecorators`
   appends `executorSource` to `Env.contributions`: the executor rendered as
   `fn __bp_executor_<k>() { … }` (splices, the locals as literals and 384's
-  renames as a member's; its statements' tails dropped) and `val _bp_init_<k> =
+  renames as a member's; its statements as written, tails kept) and `val _bp_init_<k> =
   __bp_executor_<k>();`. The module-level `val` joins the module's body
   (decision 140): commonJS runs it at load, erlang and beam in
   `'_botopink_init'/0` (the entry calls its imports' first, dependencies

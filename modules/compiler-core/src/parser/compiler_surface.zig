@@ -413,7 +413,9 @@ fn isHandle(ctx: *Ctx, e: ast.Expr) bool {
     return !contains(ctx.trees, n) and !contains(ctx.values, n);
 }
 
-/// `{ -> e() }` — the executor `e` names, called (decision 575 (3)).
+/// `{ -> e() }` — the executor `e` names, called (decision 575 (3)); the call
+/// is the lambda's tail (decision 409), so an `e` that answers a value is
+/// refused at it like any executor.
 fn executorOf(ctx: *Ctx, e: *ast.Expr) error{OutOfMemory}!*ast.Expr {
     const loc = e.getLoc();
     const named = e.* == .identifier and e.identifier.kind == .ident;
@@ -426,7 +428,7 @@ fn executorOf(ctx: *Ctx, e: *ast.Expr) error{OutOfMemory}!*ast.Expr {
         .trailing = &.{},
     } } } };
     const body = try ctx.alloc.alloc(ast.Stmt, 1);
-    body[0] = .{ .expr = call };
+    body[0] = .{ .expr = call, .tail = .value };
     return box(ctx, .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } } });
 }
 

@@ -956,7 +956,7 @@ return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
 `compiler-output-outside-decorator`, `expr-captures-build` inside a member, a wrapper or an executor
 (`compiler.compile(f)`; one named, `compiler.compile(f)` with `f` no function written there, is the tree
-`{ -> f() }`),
+`{ -> f() }`, the call its tail, decision 409),
 `compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
 
 A record field written `@Expr<T>` (decision 370 (1), a typed meta record's field) is read off as before

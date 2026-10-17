@@ -1,0 +1,18 @@
+//// Decision 409 — an executor `compiler.compile` takes is checked against
+//// `fn()`: what it answers is no value to drop. A lambda whose tail answers
+//// one is refused at the tail.
+
+fn count() -> i32 { 1 }
+
+fn written(expr decl: unknown) {
+    compiler.compile({ -> count() });
+}
+
+#[written]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() {
+    @print(home());
+}

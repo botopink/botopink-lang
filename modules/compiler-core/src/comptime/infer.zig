@@ -6145,11 +6145,6 @@ fn executorSource(
     asFn.kind.params = &.{};
     asFn.kind.paramTypes = &.{};
     asFn.kind.returnType = null;
-    // What the lambda's last expression answers is dropped: each statement
-    // runs for its effect (`;`).
-    const stmts = try env.arena.dupe(ast.Stmt, func.kind.body);
-    for (stmts) |*st| st.tail = .none;
-    asFn.kind.body = stmts;
     const k = env.contributions.items.len;
     const name = try std.fmt.allocPrint(env.arena, "__bp_executor_{d}", .{k});
     const rendered = memberFn.render(env.arena, name, asFn, splices, typeArgs, "", renames) catch return error.OutOfMemory;
@@ -23594,8 +23589,9 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
 /// the call that takes nothing; it is the program's code, typed here as a
 /// wrapper is (`inferWrapWithCall`): each `comptime x: T` parameter read as
 /// its `T`, the body's locals read as the literals of their values (the tree
-/// rule, 575 (4)), never the handle (`decorator-member-captures`). Whatever
-/// its body answers is dropped: an executor runs for its effect.
+/// rule, 575 (4)), never the handle (`decorator-member-captures`). The
+/// executor is checked against `fn()` (decision 409): a tail that answers a
+/// value is refused at it.
 fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const func = call.args[0].value.function;
     try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true);
@@ -23626,6 +23622,13 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         }
         break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
     };
+    {
+        var tailTy: ?*T.Type = null;
+        for (func.kind.body, fnTyped.function.kind.body) |s, t| if (s.tail == .value) {
+            tailTy = t.expr.getType();
+        };
+        try refuseValueTailInVoid(env, "the executor", func.kind.body, tailTy);
+    }
     for (rebound.items) |r| try env.bind(r.name, r.was);
 
     const recv = try env.arena.create(TypedExpr);
