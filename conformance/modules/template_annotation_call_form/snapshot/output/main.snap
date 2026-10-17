@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: expr-call-outside-expr: `#[sql(…)]` names the template `sql`, which is written `#[sql @`…`]`
-at src/main.bp:12:3
+at src/main.bp:14:3

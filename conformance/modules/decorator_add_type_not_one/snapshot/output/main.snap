@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: decorator-type-not-one-type: `#[entity]` declares `City.Columns` from a source that is not one type: `(id: string) fn extra() {}`
-at src/main.bp:9:3
+at src/main.bp:11:3

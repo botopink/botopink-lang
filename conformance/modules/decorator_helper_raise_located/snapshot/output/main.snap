@@ -1,5 +1,5 @@
 botopink-cell 1
 refused error: {error,{panic,<<"too long: Point">>}}
-at src/main.bp:8:28
-from src/main.bp:13:13
-from src/main.bp:17:3
+at src/main.bp:10:28
+from src/main.bp:15:13
+from src/main.bp:19:3

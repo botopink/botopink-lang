@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: decorator-wrap-not-lambda: `decl.wrapWith(f)` takes the wrapper as a lambda written at the call
-at src/main.bp:11:23
+at src/main.bp:13:23

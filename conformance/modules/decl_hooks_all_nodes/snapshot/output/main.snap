@@ -1,2 +1,2 @@
 botopink-cell 1
-out Page(uses: [], calls: [UserMenu@pages:56:13]) UserMenu(uses: [], calls: [Avatar@pages:48:13, Badge@pages:49:13, Avatar@pages:50:13]) Avatar(uses: [], calls: []) Badge(uses: [], calls: [])
+out Page(uses: [], calls: [UserMenu@pages:58:13]) UserMenu(uses: [], calls: [Avatar@pages:50:13, Badge@pages:51:13, Avatar@pages:52:13]) Avatar(uses: [], calls: []) Badge(uses: [], calls: [])

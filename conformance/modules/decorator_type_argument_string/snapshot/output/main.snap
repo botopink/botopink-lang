@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: type mismatch: `#[conditionalOnMissingBean]`'s `t` expects a `type`, got `string`
-at src/main.bp:13:28
+at src/main.bp:15:28

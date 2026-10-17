@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: expr-call-outside-expr: `shout` is a template, called only with a template text, and is called here another way
-at src/main.bp:12:12
+at src/main.bp:14:12

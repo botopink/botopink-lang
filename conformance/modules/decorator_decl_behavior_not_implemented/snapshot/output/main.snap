@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `#[module]` needs a type implementing `Module` — `City` does not
-at src/main.bp:15:3
+at src/main.bp:17:3

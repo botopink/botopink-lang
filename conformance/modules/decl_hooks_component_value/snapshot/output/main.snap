@@ -1,2 +1,2 @@
 botopink-cell 1
-out Lista(uses: [], calls: [Card@pages:73:27, Badge@pages:74:16, Row@pages:75:27, Tag@pages:76:33]) Card(uses: [session], calls: []) Badge(uses: [], calls: []) Row(uses: [], calls: []) Tag(uses: [], calls: []) session(uses: [], calls: [])
+out Lista(uses: [], calls: [Card@pages:75:27, Badge@pages:76:16, Row@pages:77:27, Tag@pages:78:33]) Card(uses: [session], calls: []) Badge(uses: [], calls: []) Row(uses: [], calls: []) Tag(uses: [], calls: []) session(uses: [], calls: [])

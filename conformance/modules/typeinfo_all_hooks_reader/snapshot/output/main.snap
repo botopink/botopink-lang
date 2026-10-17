@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: typeinfo-all-hooks-reader: `@TypeInfo.all` lists a decorator that reads `.hooks` and annotates a declaration of this module; it runs after this module's bodies, so the answer could not carry its meta
-at src/main.bp:19:35
+at src/main.bp:21:35

@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: template-annotation-without-decl: `#[shout @`…`]` names the template function `shout`, which takes no `expr decl: unknown` beside its text
-at src/main.bp:10:3
+at src/main.bp:12:3

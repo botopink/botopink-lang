@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: decorator-member-fn-untyped: the member's parameter `self` has no type
-at src/main.bp:7:36
+at src/main.bp:9:36
