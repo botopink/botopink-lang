@@ -2270,7 +2270,8 @@ A `//` comment inside a loop body parses like any other comment.
 **Per backend.** On commonJS `iter …` is `(function* () { … })()` and
 `stream …` is `(async function* () { … })()`; erlang and beam make the prefixed
 loop a generator as they make an `@Iterator` / `@Stream` function's — the body
-runs in a process of its own, one step per item; wasm lowers it inline.
+runs in a process of its own, one step per item; wasm makes the body a resumable state machine
+as an asynchronous function's, each `yield` a suspension point.
 
 ### Assert
 

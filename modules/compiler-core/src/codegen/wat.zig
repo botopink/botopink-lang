@@ -1869,6 +1869,12 @@ fn emitWatPass(
     // The functions the lowering wrote — what a GC module's checks read.
     const program_lo = items.items.len;
     try items.appendSlice(ar, em.items.items);
+    // Decision 105 (144 B-128) — the step every generator consumer calls
+    // and the module's dispatch over its generators.
+    if (em.mode == .gc and em.gen_used) {
+        try items.append(ar, .{ .func = try em.genNextFunc() });
+        try items.append(ar, .{ .func = try em.genResumeFunc() });
+    }
     for (em.behavior_dispatch.values()) |bd| try items.append(ar, .{ .func = try em.behaviorDispatchFunc(bd) });
     // Decision 210 — each equality may ask for the equality of a part.
     var eq_i: usize = 0;
@@ -2833,6 +2839,27 @@ const Emitter = struct {
     /// The symbols whose call answers a task (`@Task<T>`): every function
     /// declaring the return, each specialisation, each bound adapter.
     task_syms: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 105 (144 B-128) — the body function of every generator
+    /// state machine, by its `kind` less `gen_body_base` (`genResumeFunc`).
+    gen_kinds: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The module steps a generator (`$__gen_next`, `$__gen_resume`), a
+    /// `map` / `filter` over one calls a closure in its dispatch.
+    gen_used: bool = false,
+    gen_map_used: bool = false,
+    gen_filter_used: bool = false,
+    /// The item a generator machine's body yields (its `yield`s are its
+    /// suspension points, `emitGenYield`); null outside one.
+    gen_item: ?GenItem = null,
+    /// The locals of the function being lowered bound to an `iter` loop (or
+    /// to an iterator derived from one): the lifted lambda whose environment
+    /// a step here syncs, and the local holding its handle
+    /// (`genSyncCaptures`).
+    gen_locals: std.StringHashMapUnmanaged(GenLocal) = .empty,
+    /// What each local of the function bound to a generator yields.
+    gen_items: std.StringHashMapUnmanaged(GenItem) = .empty,
+    /// Set while a call that hands a generator local on is lowered between
+    /// its syncs (`lowerGenSyncedCall`).
+    gen_call_synced: bool = false,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
@@ -3112,6 +3139,9 @@ const Emitter = struct {
         self.task_kinds.deinit(self.alloc);
         self.task_edges.deinit(self.alloc);
         self.task_syms.deinit(self.alloc);
+        self.gen_kinds.deinit(self.alloc);
+        self.gen_locals.deinit(self.alloc);
+        self.gen_items.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -4885,6 +4915,13 @@ const Emitter = struct {
         hostn,
         exn,
         frame: u32,
+        /// Decision 105 on wasm (144 B-128) — a generator handle: `state`
+        /// (0 live, 1 ended), `kind` (`$__gen_resume` dispatches on it),
+        /// `frame` (a body's `$frame<n>`), `value` (the item last produced,
+        /// in its box), `src` (a derived iterator's source), `aux` (the
+        /// body's environment, a `map` / `filter`'s closure) and `left`
+        /// (a `take` / `drop`'s count).
+        gen,
 
         /// A `bool` has a box of its own, so an `unknown` holding one prints
         /// and compares as a `bool` (front 164 s2 P2b).
@@ -4901,7 +4938,7 @@ const Emitter = struct {
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
                 .env => |n| n == b.env,
                 .frame => |n| n == b.frame,
-                .task, .waiter, .hostn, .exn => true,
+                .task, .waiter, .hostn, .exn, .gen => true,
             };
         }
     };
@@ -5062,6 +5099,7 @@ const Emitter = struct {
                     .result => self.gcTy(.result),
                     .closure => self.gcTy(.closure),
                     .task => self.gcTy(.task),
+                    .gen => self.gcTy(.gen),
                     .frame => |n| self.gcTy(.{ .frame = n }),
                     // A payload enum's value: a struct of one of its variants'
                     // types, tested by `ref.test`; an `unknown`: anything.
@@ -5236,9 +5274,13 @@ const Emitter = struct {
                 if (resultShapeOfTypeRef(t) != null) return .{ .ref = .result };
                 if (g.args.len == 1 and !g.is_builtin and std.mem.eql(u8, g.name, "Array"))
                     return .{ .ref = .{ .arr = self.gcElemOf(g.args[0]) } };
-                // An iterator or a stream runs eagerly here: the array of
-                // what it yields (`arrayElemOfTypeRef`).
-                if (g.args.len == 1 and g.is_builtin and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
+                // Decision 105 (144 B-128) — an iterator is a generator
+                // handle, its body run one item per `next` (§ generators);
+                // a stream runs eagerly here: the array of what it yields
+                // (`arrayElemOfTypeRef`).
+                if (g.args.len == 1 and g.is_builtin and std.mem.eql(u8, g.name, "Iterator"))
+                    return .{ .ref = .gen };
+                if (g.args.len == 1 and g.is_builtin and std.mem.eql(u8, g.name, "Stream"))
                     return .{ .ref = .{ .arr = self.gcElemOf(g.args[0]) } };
                 // `Self<K, V>`: the generic type the method belongs to.
                 const gname = if (std.mem.eql(u8, g.name, "Self")) (self.self_type orelse self.sig_owner orelse return null) else g.name;
@@ -5398,6 +5440,17 @@ const Emitter = struct {
                     fs[6] = .{ .name = "aux", .ty = .anyref, .mutable = true };
                     fs[7] = .{ .name = "left", .ty = .i32, .mutable = true };
                     try defs.append(ar, .{ .name = "task", .kind = .{ .@"struct" = fs } });
+                },
+                .gen => {
+                    const fs = try ar.alloc(wat.Field, 7);
+                    fs[0] = .{ .name = "state", .ty = .i32, .mutable = true };
+                    fs[1] = .{ .name = "kind", .ty = .i32 };
+                    fs[2] = .{ .name = "frame", .ty = .structref, .mutable = true };
+                    fs[3] = .{ .name = "value", .ty = .anyref, .mutable = true };
+                    fs[4] = .{ .name = "src", .ty = self.gcTy(.gen), .mutable = true };
+                    fs[5] = .{ .name = "aux", .ty = .anyref, .mutable = true };
+                    fs[6] = .{ .name = "left", .ty = .i32, .mutable = true };
+                    try defs.append(ar, .{ .name = "gen", .kind = .{ .@"struct" = fs } });
                 },
                 .waiter => {
                     const fs = try ar.alloc(wat.Field, 4);
@@ -5992,6 +6045,7 @@ const Emitter = struct {
 
     /// `try r`: an `Error` leaves the function with `r` itself, an `Ok` is its payload.
     fn gcTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
+        if (self.gen_item != null) return self.gcFail("a try inside a generator machine");
         if (self.yield_target != null and !(self.gen_repr.isArrRef() and self.gen_repr.ref.arr == .any)) return self.gcFail("a try inside a sequence of words");
         const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a @Result of no known shape");
         const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
@@ -8621,6 +8675,9 @@ const Emitter = struct {
         self.loop_seq = 0;
         self.yield_target = null;
         self.gen_end = null;
+        self.gen_item = null;
+        self.gen_locals.clearRetainingCapacity();
+        self.gen_items.clearRetainingCapacity();
         self.loop_depth = 0;
         self.defer_stack.clearRetainingCapacity();
         self.defer_loop_floor = 0;
@@ -9485,7 +9542,7 @@ const Emitter = struct {
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try self.itemComment(switch (f.effect.?) {
                 .task => "@Task — a state machine (decision 392)",
-                .iterator => "@Iterator — eager lowering",
+                .iterator => if (self.mode == .gc) "@Iterator — a generator state machine (decision 105)" else "@Iterator — eager lowering",
                 else => "@Stream — eager lowering",
             });
         }
@@ -9516,9 +9573,13 @@ const Emitter = struct {
             (e == .iterator or e == .stream) and has_result and bodyYieldsDeep(f.body)
         else
             false;
+        // Decision 105 (144 B-128) — in a GC module an `@Iterator<T>` body
+        // is a generator machine instead (§ generators).
+        const is_gen = accumulates and self.mode == .gc and f.effect.? == .iterator and f.returnType != null and isIteratorTypeRef(f.returnType.?);
+        if (is_gen) try self.beginGenMachine(f.body, self.genItemOfTypeRef(f.returnType.?.generic.args[0]), f.label);
         // A state machine's `return f(…)` answers a task: it is never a loop.
         if (!accumulates and !is_task) try self.noteSelfTailCalls(f);
-        const rendered = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
+        const rendered = if (is_gen) try self.renderGenBody(f.body) else if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
         const body = if (self.tail_self_used) try self.wrapTailLoop(rendered) else rendered;
 
         const ar = self.arena();
@@ -9531,11 +9592,12 @@ const Emitter = struct {
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
             .params = params.items,
-            .result = if (has_result or is_task) self.vtOf(self.cur_result) else null,
+            .result = if (is_gen) .i32 else if (has_result or is_task) self.vtOf(self.cur_result) else null,
             .locals = try self.localLines(),
             .body = body,
         });
         if (is_task) return self.emitStateMachine(func);
+        if (is_gen) return self.emitGenMachine(func, null);
         try self.item(.{ .func = func });
     }
 
@@ -9691,7 +9753,13 @@ const Emitter = struct {
         // which is what it returns. Rendered as a plain body, each `yield` was
         // dropped and the method answered `0` — or whatever its last
         // statement left.
-        const seq = if (has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body))
+        // Decision 105 (144 B-128) — in a GC module a method answering
+        // `@Iterator<T>` is a generator machine (§ generators).
+        const is_gen = has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body) and self.mode == .gc and isIteratorTypeRef(m.returnType.?);
+        if (is_gen) try self.beginGenMachine(body, self.genItemOfTypeRef(m.returnType.?.generic.args[0]), null);
+        const seq = if (is_gen)
+            try self.renderGenBody(body)
+        else if (has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body))
             try self.renderAccumulatingBody(body)
         else
             try self.renderBody(body, null);
@@ -9705,11 +9773,12 @@ const Emitter = struct {
         const func = try self.builder().func(.{
             .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ owner, m.name }),
             .params = params.items,
-            .result = if (has_result) self.vtOf(result_ty) else null,
+            .result = if (is_gen) .i32 else if (has_result) self.vtOf(result_ty) else null,
             .locals = try self.localLines(),
             .body = seq,
         });
         if (is_task) return self.emitStateMachine(func);
+        if (is_gen) return self.emitGenMachine(func, null);
         try self.item(.{ .func = func });
     }
 
@@ -11317,6 +11386,9 @@ const Emitter = struct {
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse .i32);
                     try self.emit(.{ .local_set = lb.name });
+                    // Decision 105 — a local holding an `iter` loop's handle:
+                    // its consumers here sync the loop's captures.
+                    try self.noteGenLocal(lb.name, lb.value.*, lambda_idx);
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
                     else if (self.fieldClosureOfExpr(lb.value.*)) |li|
@@ -11781,7 +11853,14 @@ const Emitter = struct {
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the
                         // ordinary call-kind handling.
+                        if (try self.lowerGenSyncedCall(e, cc)) return;
                         if (try self.lowerDispatchCall(cc, c.loc)) return;
+                        // Decision 105 (144 B-128) — a method over a generator
+                        // handle (§ generators).
+                        if (self.mode == .gc) {
+                            if (try self.lowerGenMethod(e)) return;
+                            if (cc.receiver) |recv| if (self.isGenExpr(recv.*)) return self.gcFail("a method over a generator this backend does not step");
+                        }
                         if (self.instance_lowerings.get(c.loc)) |il| if (il == .sequence_next) {
                             try self.lowerSequenceNext(cc);
                             return;
@@ -17984,6 +18063,11 @@ const Emitter = struct {
         param_seen: []?Repr = &.{},
         /// The repr a call through a closure local read the answer as.
         ret_seen: ?Repr = null,
+        /// Decision 105 (144 B-128) — an `iter` loop's body: the lambda's
+        /// body is a generator state machine and its closure answers the
+        /// handle (`lowerGenLoopValue`); `gen_item` is what it yields.
+        generator: bool = false,
+        gen_item: GenItem = .{ .repr = .i32 },
     };
 
     // ── decision 392: an asynchronous function is a state machine ───────────
@@ -19564,7 +19648,11 @@ const Emitter = struct {
     fn gcSyncCaptures(self: *Emitter, env: []const u8, l: Lifted, dir: enum { into_env, out_of_env }) anyerror!void {
         const ety = self.gcTyIndex(.{ .env = l.idx });
         for (l.captures, 0..) |cp, i| {
-            if (!cp.threaded) continue;
+            // Decision 105 — a captured `var` is one variable on both sides:
+            // what the function wrote since the closure was made is what the
+            // body reads (every capture copied in), what the body assigns is
+            // what the function reads after (the threaded ones copied out).
+            if (dir == .out_of_env and !cp.threaded) continue;
             if (!self.locals.contains(cp.name)) continue;
             const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(2 + i) };
             try self.emit(.{ .local_get = env });
@@ -19683,6 +19771,43 @@ const Emitter = struct {
         // awaits (decision 504): the body is a state machine whose answer is
         // the task's value; the wrapper answers the task.
         if (l.async_block) try self.beginMachine(l.body);
+        // Decision 105 (144 B-128) — an `iter` loop's body: a generator
+        // machine, its closure answering the handle (§ generators).
+        if (l.generator) {
+            defer self.machine = null;
+            defer self.gen_item = null;
+            const own: ?[]const u8 = if (l.body.len == 1 and l.body[0].expr == .loop) l.body[0].expr.loop.label else null;
+            try self.beginGenMachine(l.body, l.gen_item, own);
+            self.cur_result = .{ .ref = .gen };
+            self.cur_ret_typeref = null;
+            // The captures were loaded from the environment above, in `c`:
+            // every entry reads them again (a consumer syncs them in).
+            self.fn_has_result = false;
+            const gtail = try self.emitBody(l.body, false);
+            if (gtail != .terminated) try self.emitC(zero, "the sequence ended");
+            const gseq = self.seal(&c, if (gtail == .terminated) .terminated else .{ .value = .i32 });
+            const gname = try std.fmt.allocPrint(ar, "{s}__b", .{l.name});
+            try self.emitGenMachine(try self.builder().func(.{
+                .name = gname,
+                .params = params.items,
+                .result = .i32,
+                .locals = try self.localLines(),
+                .body = gseq,
+            }), "__env");
+            var gwc: Capture = .{};
+            self.open(&gwc);
+            try self.emit(.{ .local_get = "__env" });
+            try self.emit(.{ .ref_cast = env_vt });
+            try self.emit(.{ .call = gname });
+            const gwbody = self.seal(&gwc, .{ .value = .anyref });
+            try self.item(.{ .func = try self.builder().func(.{
+                .name = l.name,
+                .params = &.{wat.Builder.param("__env", self.gcTy(.closure))},
+                .result = .anyref,
+                .body = gwbody,
+            }) });
+            return;
+        }
         defer self.machine = null;
         const tail_type: ?Repr = if (l.body.len > 0) self.lambdaTailType(l.body) else null;
         const ret: Repr = if (l.ret_ft) |rt|
@@ -24007,6 +24132,7 @@ const Emitter = struct {
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
         if (lp.generator != null) return self.lowerGeneratorLoop(lp);
+        if (self.mode == .gc and !lp.condition and self.isGenExpr(lp.iter.*)) return self.lowerGenFor(lp);
         // Every other loop is a statement (decision 105); inside a generator
         // fn its `yield`s feed the fn's accumulator (`renderAccumulatingBody`).
         const result: ?[]const u8 = null;
@@ -24040,6 +24166,9 @@ const Emitter = struct {
     /// captured `var` is this function's local, so the loop's reassignments
     /// are read after it.
     fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
+        // Decision 105 (144 B-128) — an `iter` loop in a GC module is a
+        // generator machine (§ generators); a stream stays eager.
+        if (self.mode == .gc and lp.generator.? == .iterator) return self.lowerGenLoopValue(lp);
         const ra = self.reg_arena.allocator();
         const n = self.loop_seq;
         self.loop_seq += 1;
@@ -24067,14 +24196,17 @@ const Emitter = struct {
         }
         const saved_target = self.yield_target;
         const saved_end = self.gen_end;
+        const saved_item = self.gen_item;
         self.yield_target = tgt;
         self.gen_end = label;
+        self.gen_item = null;
         var c: Capture = .{};
         self.open(&c);
         {
             defer {
                 self.yield_target = saved_target;
                 self.gen_end = saved_end;
+                self.gen_item = saved_item;
             }
             try self.lowerConditionLoop(lp, null);
             try self.emit(.drop);
@@ -24097,6 +24229,7 @@ const Emitter = struct {
     /// a bare `break` at the body's own level (decision 103), and the tail
     /// of `break <v>`.
     fn emitGenEnd(self: *Emitter) anyerror!void {
+        if (self.gen_item != null) return self.emitGenMachineEnd();
         if (self.gen_end) |label| {
             try self.emit(.{ .br = label });
             return;
@@ -24192,6 +24325,7 @@ const Emitter = struct {
     /// `yield v` / `break v` inside a comprehension: append `v` to the
     /// accumulator. A float is appended as its cell (`emitToFloatSlot`).
     fn emitYield(self: *Emitter, v: ast.Expr) anyerror!void {
+        if (self.gen_item) |yitem| return self.emitGenYield(v, yitem);
         const tgt = self.yield_target.?;
         if (self.mode == .gc) {
             const ar = self.gen_repr;
@@ -24215,10 +24349,996 @@ const Emitter = struct {
         try self.emit(.{ .local_set = tgt });
     }
 
+    // ── decision 105 on wasm: a generator is a resumable state machine ──────
+    //
+    // 144 B-128, a GC module. An `@Iterator<T>` is a handle, `$gen`
+    // (`GcTy.gen`), and each `next` runs the body up to its next `yield`:
+    // nothing of it runs before the first, and an endless body is consumed
+    // one item at a time. The body is a state machine as an asynchronous
+    // function's is (decision 392): the same frame (`$frame<n>`, every local),
+    // the same resume guards (`emitStmt`, `lowerCondition`, `guardStart`),
+    // each `yield` its suspension point (`emitGenYield`) where a task has its
+    // `await`s. An `iter fn` (and a method answering `@Iterator<T>`) lowers to
+    //
+    //   $g(args) -> (ref $gen)    the handle: the frame, the arguments stored
+    //                             in it, the body's `kind`; it runs nothing
+    //   $g__body(gen) -> i32      the body, entered again at the frame's
+    //                             resume index: `1` when it stopped at a
+    //                             `yield` (the item boxed in `value`), `0`
+    //                             when it ended
+    //
+    // and an `iter` loop (a marked lambda `iter { -> … }` is one, decision
+    // 553) is a lifted lambda whose body is that machine (`gcEmitLifted`), its
+    // closure called where the loop is written answering the handle — as an
+    // `async { }` block's answers its task. The handle keeps the lambda's
+    // environment (`aux`): a consumer in the function that made it copies the
+    // captured locals in before each step and the ones the body assigns back
+    // out after it (`genSyncCaptures`), so a captured `var` is one variable
+    // on both sides. `$__gen_next(gen)` is the step every consumer calls (`0`
+    // once the sequence ended); `$__gen_resume` is the module's dispatch by
+    // `kind`: the derived iterators `take`, `drop`, `map`, `filter` (a `$gen`
+    // over a `src`), then each body. A stream stays the eager array it was.
+
+    /// The handle a generator machine's body is entered with.
+    const gen_handle = "__gen";
+    /// The `kind`s of the derived iterators; a body's is `gen_body_base` +
+    /// its index in `gen_kinds`.
+    const GenKind = enum(u32) { take, drop, map, filter };
+    const gen_body_base: u32 = 4;
+    /// The fields of `$gen`.
+    const gen_fld = struct {
+        const state = 0;
+        const kind = 1;
+        const frame = 2;
+        const value = 3;
+        const src = 4;
+        const aux = 5;
+        const left = 6;
+    };
+
+    /// What a generator yields: the repr its consumers read the item as, and
+    /// the type the program writes for it when one is known.
+    const GenItem = struct { repr: Repr, tr: ?ast.TypeRef = null, bool_: bool = false };
+
+    /// The methods over a generator this backend answers.
+    const GenMethod = enum { take, drop, map, filter, to_array, next };
+
+    fn isIteratorTypeRef(t: ast.TypeRef) bool {
+        return switch (t) {
+            .generic => |g| g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Iterator"),
+            else => false,
+        };
+    }
+
+    /// Whether the symbol's call answers a generator handle.
+    fn symAnswersGen(self: *Emitter, sym: []const u8) bool {
+        const sig = self.fn_sigs.get(sym) orelse return false;
+        const r = sig.result orelse return false;
+        return r == .ref and r.ref == .gen;
+    }
+
+    /// Whether `e` is a generator handle in a GC module: an `iter` loop, a
+    /// call answering `@Iterator<T>`, a local holding one, a derived
+    /// iterator over one.
+    fn isGenExpr(self: *Emitter, e: ast.Expr) bool {
+        if (self.mode != .gc) return false;
+        return switch (e) {
+            .loop => |lp| lp.generator != null and lp.generator.? == .iterator,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.isGenExpr(inner.*),
+                else => false,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| blk: {
+                    const rn = self.resolveName(n);
+                    const r = self.locals.get(rn) orelse self.global_types.get(rn) orelse break :blk false;
+                    break :blk r == .ref and r.ref == .gen;
+                },
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (self.genMethodOf(e)) |m| break :blk m != .to_array and m != .next;
+                    if (cc.is_builtin) break :blk false;
+                    if (cc.receiver != null) {
+                        if (self.recordMethodSym(cc, c.loc)) |sym| break :blk self.symAnswersGen(sym);
+                        break :blk false;
+                    }
+                    if (self.calleeSymbol(cc, c.loc)) |sym| if (self.symAnswersGen(sym)) break :blk true;
+                    if (self.locals.contains(cc.callee) or cc.calleeExpr != null) if (self.valueCallTypeRef(cc)) |t| break :blk isIteratorTypeRef(t);
+                    break :blk false;
+                },
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// The method a call makes over a generator receiver, or null.
+    fn genMethodOf(self: *Emitter, e: ast.Expr) ?GenMethod {
+        if (self.mode != .gc) return null;
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        const recv = cc.receiver orelse return null;
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        const argc = cc.args.len + cc.trailing.len;
+        const eq = std.mem.eql;
+        const m: GenMethod = if (eq(u8, cc.callee, "take") and argc == 1)
+            .take
+        else if (eq(u8, cc.callee, "drop") and argc == 1)
+            .drop
+        else if (eq(u8, cc.callee, "map") and argc == 1)
+            .map
+        else if (eq(u8, cc.callee, "filter") and argc == 1)
+            .filter
+        else if (eq(u8, cc.callee, "toArray") and argc == 0)
+            .to_array
+        else if (eq(u8, cc.callee, "next") and argc == 0)
+            .next
+        else
+            return null;
+        if (!self.isGenExpr(recv.*)) return null;
+        return m;
+    }
+
+    /// The item of the `@Iterator<T>` type `t`.
+    fn genItemOfTypeRef(self: *Emitter, t: ast.TypeRef) GenItem {
+        return .{ .repr = self.reprOf(t), .tr = t, .bool_ = isBoolTypeRef(t) };
+    }
+
+    /// What the generator `e` yields, null when nothing here tells.
+    fn genItemOf(self: *Emitter, e: ast.Expr) anyerror!?GenItem {
+        switch (e) {
+            .loop => |lp| return self.genLoopItem(lp.body),
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.genItemOf(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        if (plainIdentName(e)) |n| if (self.gen_items.get(self.resolveName(n))) |it| return it;
+        if (self.genMethodOf(e)) |m| {
+            const cc = e.call.kind.call;
+            const src = (try self.genItemOf(cc.receiver.?.*)) orelse return null;
+            if (m != .map) return src;
+            const lam = genMethodLambda(cc) orelse return null;
+            if (lam.params.len != 1) return null;
+            return self.lambdaAnswerOver(lam.params[0], src, lam.body);
+        }
+        if (self.typeRefOf(e)) |t0| {
+            const t = eagerTypeRef(t0);
+            if (isIteratorTypeRef(t)) return self.genItemOfTypeRef(t.generic.args[0]);
+        }
+        return null;
+    }
+
+    const GenLambda = struct { params: []const []const u8, body: []const ast.Stmt };
+
+    /// The lambda a `map` / `filter` over a generator is given, written at
+    /// the call (an argument or a trailing block).
+    fn genMethodLambda(cc: anytype) ?GenLambda {
+        if (cc.trailing.len == 1) return .{ .params = cc.trailing[0].params, .body = cc.trailing[0].body };
+        if (cc.args.len != 1) return null;
+        const v = cc.args[0].value.*;
+        if (v != .function or v.function.kind.syntax != .lambda) return null;
+        return .{ .params = v.function.kind.params, .body = v.function.kind.body };
+    }
+
+    /// The item a `map`'s lambda answers, its parameter the source's item.
+    fn lambdaAnswerOver(self: *Emitter, param: []const u8, src: GenItem, body: []const ast.Stmt) anyerror!?GenItem {
+        if (body.len == 0) return null;
+        const prev = self.locals.get(param);
+        const had_str = self.str_locals.contains(param);
+        const had_bool = self.bool_locals.contains(param);
+        try self.locals.put(param, src.repr);
+        if (src.repr.isStr()) try self.str_locals.put(param, {});
+        if (src.bool_) try self.bool_locals.put(param, {});
+        defer {
+            if (prev) |p| self.locals.put(param, p) catch {} else _ = self.locals.remove(param);
+            if (!had_str) _ = self.str_locals.remove(param);
+            if (!had_bool) _ = self.bool_locals.remove(param);
+        }
+        const last = body[ast.lastRealIndex(body)].expr;
+        const v: ast.Expr = if (last == .jump and last.jump.kind == .@"return") (if (last.jump.kind.@"return") |r| r.* else return null) else last;
+        return self.genValueItem(v, &.{}, 0);
+    }
+
+    /// What an `iter` loop yields, read off its first `yield v` / `break v`
+    /// where it is written (the lifted body is lowered after the function
+    /// that consumes it): the value's repr when every name it reads is known
+    /// here, or a binding of the body names it.
+    fn genLoopItem(self: *Emitter, body: []const ast.Stmt) anyerror!?GenItem {
+        const v = genFirstYield(body) orelse return null;
+        return self.genValueItem(v, body, 0);
+    }
+
+    fn genValueItem(self: *Emitter, v: ast.Expr, body: []const ast.Stmt, depth: u32) anyerror!?GenItem {
+        if (depth > 4) return null;
+        if (plainIdentName(v)) |n| if (!self.locals.contains(self.resolveName(n)) and !self.globals.contains(n)) {
+            const first = genBindingOf(body, n) orelse return null;
+            return self.genValueItem(first, body, depth + 1);
+        };
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectIdents(v, &names);
+        for (names.items) |n| {
+            if (self.locals.contains(self.resolveName(n)) or self.globals.contains(n) or self.fn_sigs.contains(n)) continue;
+            return null;
+        }
+        if (self.isBoolExpr(v)) return .{ .repr = .bool, .bool_ = true };
+        return .{ .repr = self.wasmTypeOf(v) };
+    }
+
+    /// The first `yield v` / `break v` of a generator scope's own body: its
+    /// `if` / `case` arms, blocks and unprefixed loops, not a lambda's or an
+    /// inner generator's.
+    fn genFirstYield(body: []const ast.Stmt) ?ast.Expr {
+        for (body) |st| if (genFirstYieldExpr(st.expr)) |v| return v;
+        return null;
+    }
+
+    fn genFirstYieldExpr(e: ast.Expr) ?ast.Expr {
+        return switch (e) {
+            .jump => |j| switch (j.kind) {
+                inline .@"break", .yield => |jl| if (jl.value) |v| v.* else null,
+                else => null,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| genFirstYield(i.then_) orelse (if (i.else_) |els| genFirstYield(els) else null),
+                else => null,
+            },
+            .loop => |lp| if (lp.generator == null) genFirstYield(lp.body) else null,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| genFirstYieldExpr(inner.*),
+                .case => |c| blk: {
+                    for (c.arms) |arm| {
+                        const r = if (arm.body == .function and c.isBlock) genFirstYield(arm.body.function.kind.body) else genFirstYieldExpr(arm.body);
+                        if (r) |v| break :blk v;
+                    }
+                    break :blk null;
+                },
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// The initialiser of the `val` / `var` named `n` in a generator body.
+    fn genBindingOf(body: []const ast.Stmt, n: []const u8) ?ast.Expr {
+        for (body) |st| switch (st.expr) {
+            .binding => |b| switch (b.kind) {
+                .localBind => |lb| if (std.mem.eql(u8, lb.name, n)) return lb.value.*,
+                else => {},
+            },
+            .loop => |lp| if (lp.generator == null) if (genBindingOf(lp.body, n)) |v| return v,
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    if (genBindingOf(i.then_, n)) |v| return v;
+                    if (i.else_) |els| if (genBindingOf(els, n)) |v| return v;
+                },
+                else => {},
+            },
+            else => {},
+        };
+        return null;
+    }
+
+    /// Whether a generator scope's `yield :l` / `break :l v` all name the
+    /// scope itself (`own`): one naming an enclosing scope has no lowering
+    /// here, the inner scope being a machine of its own.
+    fn genLabelsOwn(body: []const ast.Stmt, own: ?[]const u8) bool {
+        for (body) |st| if (!genLabelsOwnExpr(st.expr, own)) return false;
+        return true;
+    }
+
+    fn genLabelsOwnExpr(e: ast.Expr, own: ?[]const u8) bool {
+        return switch (e) {
+            .jump => |j| switch (j.kind) {
+                .yield => |jl| if (jl.label) |l| (if (own) |o| std.mem.eql(u8, l, o) else false) else true,
+                .@"break" => |jl| if (jl.value != null) (if (jl.label) |l| (if (own) |o| std.mem.eql(u8, l, o) else false) else true) else true,
+                else => true,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| genLabelsOwn(i.then_, own) and (if (i.else_) |els| genLabelsOwn(els, own) else true),
+                else => true,
+            },
+            .loop => |lp| if (lp.generator == null) genLabelsOwn(lp.body, own) else true,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| genLabelsOwnExpr(inner.*, own),
+                .case => |c| blk: {
+                    for (c.arms) |arm| {
+                        const ok = if (arm.body == .function and c.isBlock) genLabelsOwn(arm.body.function.kind.body, own) else genLabelsOwnExpr(arm.body, own);
+                        if (!ok) break :blk false;
+                    }
+                    break :blk true;
+                },
+                else => true,
+            },
+            else => true,
+        };
+    }
+
+    /// Open a generator machine over the function whose state was just
+    /// reset: a task machine's locals, the handle in place of the task, and
+    /// the item its `yield`s box.
+    fn beginGenMachine(self: *Emitter, body: []const ast.Stmt, yitem: GenItem, label: ?[]const u8) !void {
+        if (yitem.repr == .ref and yitem.repr.ref == .result) return self.gcFail("a generator of @Result items");
+        if (hasDefer(body)) return self.gcFail("a defer in a generator's body");
+        if (!genLabelsOwn(body, label)) return self.gcFail("a yield naming an enclosing generator scope");
+        self.machine = .{};
+        const n: u32 = @intCast(self.gc_frames.items.len);
+        try self.gc_frames.append(self.alloc, &.{});
+        self.machine.?.frame = n;
+        try self.declareLocal(gen_handle, .{ .ref = .gen });
+        try self.declareLocal(sm_frame, .{ .ref = .{ .frame = n } });
+        try self.declareLocal(sm_seek, .i32);
+        try self.declareLocal(sm_state, .i32);
+        self.gen_item = yitem;
+        self.yield_target = gen_handle;
+        self.gen_end = null;
+        self.gen_used = true;
+    }
+
+    /// A generator machine's body: every statement under its resume guard,
+    /// `0` (ended) when it falls off its end.
+    fn renderGenBody(self: *Emitter, body: []const ast.Stmt) !Seq {
+        var c: Capture = .{};
+        self.open(&c);
+        self.fn_has_result = false;
+        const tail = try self.emitBody(body, false);
+        if (tail != .terminated) try self.emitC(zero, "the sequence ended");
+        return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = .i32 });
+    }
+
+    /// `yield v` in a generator machine — its suspension point `k`: the item
+    /// boxed into the handle, the frame saved, `k` recorded, `1` answered.
+    /// Entered again at `k`, the body goes on after it:
+    ///
+    ///     (block $__yd<k>
+    ///       local.get $__seek
+    ///       (if (then (i32.eq $__state k) (if (then i32.const 0 local.set $__seek)) br $__yd<k>))
+    ///       local.get $__gen <v boxed> struct.set $gen value
+    ///       … save the frame, k …  i32.const 1 return)
+    fn emitGenYield(self: *Emitter, v: ast.Expr, yitem: GenItem) anyerror!void {
+        const k = self.machine.?.next;
+        self.machine.?.next += 1;
+        const label = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yd{d}", .{k});
+        var c: Capture = .{};
+        self.open(&c);
+        {
+            var seek_c: Capture = .{};
+            self.open(&seek_c);
+            try self.emit(.{ .local_get = sm_state });
+            try self.emit(try self.constInt(k));
+            try self.emit(opOf(.i32, "eq"));
+            var hit_c: Capture = .{};
+            self.open(&hit_c);
+            try self.emit(zero);
+            try self.emit(.{ .local_set = sm_seek });
+            const hit = self.seal(&hit_c, .none);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit } } });
+            try self.emitC(.{ .br = label }, "resumed after this yield, or seeking past it");
+            const seek = self.seal(&seek_c, .terminated);
+            try self.emit(.{ .local_get = sm_seek });
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = seek } } });
+        }
+        try self.emit(.{ .local_get = gen_handle });
+        if (yitem.repr == .bool) {
+            try self.lowerCoerced(v, .i32);
+        } else try self.lowerCoerced(v, yitem.repr);
+        try self.gcBox(yitem.repr);
+        try self.emitC(.{ .struct_set = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.value } }, "the yitem");
+        try self.emit(.{ .comment = save_marker });
+        try self.emit(.{ .local_get = sm_frame });
+        try self.emit(try self.constInt(k));
+        try self.emitC(.{ .struct_set = .{ .ty = self.gcTyIndex(.{ .frame = self.machine.?.frame }), .field = 0 } }, "the resume index");
+        try self.emit(one);
+        try self.emitC(.@"return", "an yitem");
+        const inner = self.seal(&c, .terminated);
+        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = inner } });
+    }
+
+    /// The end of a generator machine's sequence: `0`, the defers run.
+    fn emitGenMachineEnd(self: *Emitter) anyerror!void {
+        try self.runDefers(0);
+        try self.emitC(zero, "the sequence ended");
+        try self.emit(.@"return");
+    }
+
+    /// Decision 105 on wasm — `f`'s lowered body as a generator machine (§
+    /// above): the handle `$f` and the re-entered body `$f__body`. `aux`
+    /// names the parameter the handle keeps as its environment (a lifted
+    /// lambda's `__env`).
+    fn emitGenMachine(self: *Emitter, f: wat.Func, aux: ?[]const u8) !void {
+        const ar = self.arena();
+        const n = self.machine.?.frame;
+        var slots: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try slots.append(ar, .{ .name = p.name, .ty = p.ty });
+        var body_locals: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try body_locals.append(ar, .{ .name = p.name, .ty = p.ty });
+        for (f.locals) |group| for (group) |l| {
+            if (std.mem.eql(u8, l.name, gen_handle)) continue;
+            try body_locals.append(ar, l);
+            if (!isMachineLocal(l.name)) try slots.append(ar, l);
+        };
+        const slot_tys = try ar.alloc(ValType, slots.items.len);
+        for (slots.items, slot_tys) |sl, *t| t.* = sl.ty;
+        self.gc_frames.items[n] = slot_tys;
+        const fty = self.gcTyIndex(.{ .frame = n });
+        const frame_vt = ValType.def(fty);
+        const gi = self.gcTyIndex(.gen);
+        const gen_vt = ValType.def(gi);
+        const kind = gen_body_base + @as(u32, @intCast(self.gen_kinds.items.len));
+        const body_name = try std.fmt.allocPrint(ar, "{s}__body", .{f.name});
+        try self.gen_kinds.append(self.alloc, body_name);
+
+        var saves: std.ArrayListUnmanaged(wat.Line) = .empty;
+        var restores: std.ArrayListUnmanaged(wat.Line) = .empty;
+        for (slots.items, 0..) |sl, i| {
+            const field: wat.FieldRef = .{ .ty = fty, .field = @intCast(1 + i) };
+            try saves.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .local_get = sl.name } }, .{ .instr = .{ .struct_set = field } } });
+            try restores.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .struct_get = field } }, .{ .instr = .{ .local_set = sl.name } } });
+        }
+
+        // $f — the handle: nothing of the body runs.
+        var start: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try start.appendSlice(ar, &.{
+            .{ .instr = .{ .struct_new_default = fty }, .comment = "the frame: the resume index, then every local" },
+            .{ .instr = .{ .local_set = "__fr" } },
+        });
+        for (f.params, 0..) |p, i| try start.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = .{ .local_get = p.name } },
+            .{ .instr = .{ .struct_set = .{ .ty = fty, .field = @intCast(1 + i) } } },
+        });
+        try start.appendSlice(ar, &.{
+            .{ .instr = zero, .comment = "live" },
+            .{ .instr = try self.constInt(kind), .comment = body_name },
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = .{ .ref_null = .anyref } },
+            .{ .instr = .{ .ref_null = gen_vt } },
+            .{ .instr = if (aux) |a| .{ .local_get = a } else .{ .ref_null = .anyref }, .comment = "the environment" },
+            .{ .instr = zero },
+            .{ .instr = .{ .struct_new = gi }, .comment = "runs nothing until its first next" },
+        });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = f.name,
+            .exports = f.exports,
+            .params = f.params,
+            .result = gen_vt,
+            .locals = try self.builder().localLines(&.{.{ .name = "__fr", .ty = frame_vt }}),
+            .body = .{ .lines = start.items, .stack = .{ .value = gen_vt } },
+        }) });
+
+        // $f__body — entered again at the frame's resume index.
+        var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = gen_handle } },
+            .{ .instr = .{ .struct_get = .{ .ty = gi, .field = gen_fld.frame } } },
+            .{ .instr = .{ .ref_cast = frame_vt } },
+            .{ .instr = .{ .local_set = sm_frame } },
+        });
+        try lines.appendSlice(ar, restores.items);
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = sm_frame } },
+            .{ .instr = .{ .struct_get = .{ .ty = fty, .field = 0 } }, .comment = "the resume index" },
+            .{ .instr = .{ .local_tee = sm_state } },
+            .{ .instr = zero },
+            .{ .instr = opOf(.i32, "ne") },
+            .{ .instr = .{ .local_set = sm_seek } },
+        });
+        const replaced = try self.withFrameSaves(f.body, saves.items);
+        try lines.appendSlice(ar, replaced.lines);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = body_name,
+            .params = &.{wat.Builder.param(gen_handle, gen_vt)},
+            .result = .i32,
+            .locals = try self.builder().localLines(body_locals.items),
+            .body = .{ .lines = lines.items, .stack = replaced.stack },
+        }) });
+    }
+
+    /// `iter loop { … }` (and the `iter while` / `iter for` it stands for) in
+    /// a GC module: a lifted lambda whose body is the loop, unprefixed, as a
+    /// generator machine; its closure is made here and called, answering the
+    /// handle.
+    fn lowerGenLoopValue(self: *Emitter, lp: anytype) anyerror!void {
+        const yitem = (try self.genLoopItem(lp.body)) orelse return self.gcFail("an iter loop whose yitem type is not known");
+        const ra = self.reg_arena.allocator();
+        var inner = lp;
+        inner.generator = null;
+        inner.prefixedKeyword = null;
+        const body = try ra.alloc(ast.Stmt, 1);
+        body[0] = .{ .expr = .{ .loop = inner } };
+        const idx = self.lambdas.items.len;
+        const slot = try std.fmt.allocPrint(ra, "__gloop{d}", .{idx});
+        try self.declareLocal(slot, .{ .ref = .closure });
+        self.expected_fn = null;
+        try self.lowerLambdaValue(&.{}, body, lp.loc);
+        self.lambdas.items[idx].generator = true;
+        self.lambdas.items[idx].gen_item = yitem;
+        self.lambdas.items[idx].ret_seen = null;
+        try self.emit(.{ .local_set = slot });
+        try self.emitC(.{ .local_get = slot }, "the loop's environment");
+        try self.gcEmitIndirect(slot, 0);
+        try self.emit(.{ .ref_cast = self.gcTy(.gen) });
+    }
+
+    /// A local the function binds to a generator: what it yields, and — an
+    /// `iter` loop's handle, or an iterator derived from a local holding one
+    /// — the loop whose captures a step here syncs.
+    fn noteGenLocal(self: *Emitter, name: []const u8, value: ast.Expr, lambda_idx: u32) !void {
+        _ = self.gen_items.remove(name);
+        _ = self.gen_locals.remove(name);
+        if (!self.isGenExpr(value)) return;
+        if (try self.genItemOf(value)) |it| try self.gen_items.put(self.alloc, name, it);
+        if (value == .loop and self.lambdas.items.len > lambda_idx) {
+            try self.gen_locals.put(self.alloc, name, .{ .lambda = lambda_idx, .handle = name });
+            return;
+        }
+        if (self.genSourceLocal(value)) |gl| try self.gen_locals.put(self.alloc, name, gl);
+    }
+
+    const GenLocal = struct { lambda: u32, handle: []const u8 };
+
+    /// The `iter` loop a generator expression steps, through a derived
+    /// iterator's receivers to a local holding its handle.
+    fn genSourceLocal(self: *Emitter, e: ast.Expr) ?GenLocal {
+        var cur = e;
+        while (true) {
+            if (cur == .collection and cur.collection.kind == .grouped) {
+                cur = cur.collection.kind.grouped.*;
+                continue;
+            }
+            if (self.genMethodOf(cur) != null) {
+                cur = cur.call.kind.call.receiver.?.*;
+                continue;
+            }
+            break;
+        }
+        const n = plainIdentName(cur) orelse return null;
+        return self.gen_locals.get(self.resolveName(n));
+    }
+
+    /// Around a step of the generator `e` in the function that made it: the
+    /// locals its body captured copied into its environment (`into_env`), or
+    /// the ones the body assigns back out of it (`out_of_env`).
+    fn genSyncCaptures(self: *Emitter, e: ast.Expr, dir: GenSync) anyerror!void {
+        const gl = self.genSourceLocal(e) orelse return;
+        try self.genSyncLocal(gl, dir);
+    }
+
+    const GenSync = enum { into_env, out_of_env };
+
+    fn genSyncLocal(self: *Emitter, gl: GenLocal, dir: GenSync) anyerror!void {
+        const l = self.lambdas.items[gl.lambda];
+        const ety = self.gcTyIndex(.{ .env = l.idx });
+        for (l.captures, 0..) |cp, i| {
+            if (dir == .out_of_env and !cp.threaded) continue;
+            if (!self.locals.contains(cp.name)) continue;
+            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(2 + i) };
+            try self.emit(.{ .local_get = gl.handle });
+            try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.aux } });
+            try self.emit(.{ .ref_cast = ValType.def(ety) });
+            switch (dir) {
+                .into_env => {
+                    try self.emit(.{ .local_get = cp.name });
+                    try self.emitCf(.{ .struct_set = f }, "sync {s} into the generator", .{cp.name});
+                },
+                .out_of_env => {
+                    try self.emitCf(.{ .struct_get = f }, "sync {s} from the generator", .{cp.name});
+                    try self.emit(.{ .local_set = cp.name });
+                },
+            }
+        }
+    }
+
+    /// A call that hands a generator local of this function on (`line(g)`):
+    /// the callee may step it, so the loop's captures are synced around the
+    /// call — in before, out after. Answers whether it lowered `e`.
+    fn lowerGenSyncedCall(self: *Emitter, e: ast.Expr, cc: anytype) anyerror!bool {
+        if (self.mode != .gc or self.gen_call_synced or self.gen_locals.count() == 0) return false;
+        if (self.genMethodOf(e) != null) return false;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        const ra = self.reg_arena.allocator();
+        for (cc.args) |a| try self.collectIdents(a.value.*, &names);
+        if (cc.receiver) |r| try self.collectIdents(r.*, &names);
+        var used: std.ArrayListUnmanaged(GenLocal) = .empty;
+        outer: for (names.items) |n| {
+            const gl = self.gen_locals.get(self.resolveName(n)) orelse continue;
+            for (used.items) |u| if (std.mem.eql(u8, u.handle, gl.handle)) continue :outer;
+            try used.append(ra, gl);
+        }
+        if (used.items.len == 0) return false;
+        for (used.items) |gl| try self.genSyncLocal(gl, .into_env);
+        self.gen_call_synced = true;
+        {
+            defer self.gen_call_synced = false;
+            try self.lowerExpr(e);
+        }
+        for (used.items) |gl| try self.genSyncLocal(gl, .out_of_env);
+        return true;
+    }
+
+    /// One step of the handle in `base`: `$__gen_next` between the syncs of
+    /// the generator `e`'s captures; leaves `1` (an item in `value`) or `0`.
+    fn emitGenStep(self: *Emitter, base: []const u8, e: ast.Expr) anyerror!void {
+        try self.genSyncCaptures(e, .into_env);
+        try self.emit(.{ .local_get = base });
+        try self.emitC(.{ .call = "__gen_next" }, "the next yitem");
+        try self.genSyncCaptures(e, .out_of_env);
+    }
+
+    /// `for (g) { x -> … }` over a generator in a GC module: one step per
+    /// iteration, the item unboxed into the binder. Re-entering a machine
+    /// inside an iteration, the step is not taken again (the binder is the
+    /// frame's).
+    fn lowerGenFor(self: *Emitter, lp: anytype) anyerror!void {
+        if (lp.awaitLoop) return self.gcFail("a for await over a generator");
+        self.gen_used = true;
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const base = try std.fmt.allocPrint(ra, "__gfor{d}", .{n});
+        try self.declareLocal(base, .{ .ref = .gen });
+
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        const start_lo = if (self.machine) |m| m.next else 0;
+        var start: Capture = .{};
+        self.open(&start);
+        try self.lowerCoerced(lp.iter.*, .{ .ref = .gen });
+        try self.emit(.{ .local_set = base });
+        const yitem = (try self.genItemOf(lp.iter.*)) orelse {
+            _ = self.seal(&start, .none);
+            return self.gcFail("a loop over a generator whose yitem type is not known");
+        };
+        const elem0 = if (lp.params.len > 0) lp.params[0] else "__it";
+        const er: Repr = if (yitem.repr == .bool) .i32 else yitem.repr;
+        const elem = try self.bindTargetAs(elem0, er);
+        try self.declareLocal(elem, er);
+        if (er.isStr()) try self.str_locals.put(elem, {});
+        if (yitem.bool_) try self.bool_locals.put(elem, {});
+        if (yitem.tr) |t| try self.noteTypedBinder(elem, t);
+        if (er == .ref and er.ref == .record) try self.local_types.put(elem, er.ref.record);
+        self.installShadow(elem0, elem);
+        try self.guardStart(&start, start_lo);
+
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
+        {
+            var step_c: Capture = .{};
+            self.open(&step_c);
+            try self.emitGenStep(base, lp.iter.*);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.emit(.{ .br_if = break_label });
+            try self.emit(.{ .local_get = base });
+            try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.value } });
+            try self.gcUnbox(er);
+            try self.emit(.{ .local_set = elem });
+            const step = self.seal(&step_c, .none);
+            if (self.machine != null) {
+                try self.emit(.{ .local_get = sm_seek });
+                try self.emit(opOf(.i32, "eqz"));
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = step } } });
+            } else for (step.lines) |l| try self.cur.?.append(self.arena(), l);
+        }
+        try self.emitIterationBody(lp.body, lp.label);
+        try self.emit(.{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+        try self.emitLoopBlock(loop_seq, lp.label);
+        try self.emit(zero);
+    }
+
+    /// `g.take(n)`, `g.drop(n)`, `g.map(f)`, `g.filter(f)` over a generator:
+    /// a derived handle over `g` (`$__gen_resume`'s fixed kinds); `toArray`
+    /// steps `g` to its end into an array.
+    fn lowerGenMethod(self: *Emitter, e: ast.Expr) anyerror!bool {
+        const m = self.genMethodOf(e) orelse return false;
+        const cc = e.call.kind.call;
+        const recv = cc.receiver.?.*;
+        self.gen_used = true;
+        const gi = self.gcTyIndex(.gen);
+        const gen_r: Repr = .{ .ref = .gen };
+        if (m == .next) {
+            // `g.next()` by hand: one step, `Yield(item)` or `Done` — the
+            // item stays in its box, a generic payload's erased slot.
+            if (self.enums.get("YieldStep") == null) return self.gcFail("a next() with no YieldStep declared");
+            const base = try self.gcTemp(gen_r);
+            try self.lowerCoerced(recv, gen_r);
+            try self.emit(.{ .local_set = base });
+            try self.emitGenStep(base, recv);
+            const er: Repr = .{ .ref = .{ .enum_ = "YieldStep" } };
+            var y: Capture = .{};
+            self.open(&y);
+            try self.emit(.{ .local_get = base });
+            try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.value } });
+            try self.emit(.{ .struct_new = self.gcTyIndex(.{ .variant = .{ .en = "YieldStep", .name = "Yield" } }) });
+            const yes = self.seal(&y, .{ .value = self.vtOf(er) });
+            var d: Capture = .{};
+            self.open(&d);
+            try self.emit(.{ .struct_new = self.gcTyIndex(.{ .variant = .{ .en = "YieldStep", .name = "Done" } }) });
+            const no = self.seal(&d, .{ .value = self.vtOf(er) });
+            try self.emit(.{ .@"if" = .{ .result = self.vtOf(er), .then = .{ .seq = yes }, .@"else" = .{ .seq = no } } });
+            return true;
+        }
+        if (m == .to_array) {
+            const yitem = (try self.genItemOf(recv)) orelse return self.gcFail("a toArray over a generator whose yitem type is not known");
+            const er: Repr = if (yitem.repr == .bool) .i32 else yitem.repr;
+            const cls = gcElemClassOf(er);
+            const ti = self.gcTyIndex(.{ .arr = cls });
+            const base = try self.gcTemp(gen_r);
+            const acc = try self.gcTemp(.{ .ref = .{ .arr = cls } });
+            try self.lowerCoerced(recv, gen_r);
+            try self.emit(.{ .local_set = base });
+            try self.emit(zero);
+            try self.emit(.{ .array_new_default = ti });
+            try self.emit(.{ .local_set = acc });
+            var loop_c: Capture = .{};
+            self.open(&loop_c);
+            try self.emitGenStep(base, recv);
+            try self.emit(opOf(.i32, "eqz"));
+            try self.emit(.{ .br_if = break_label });
+            try self.emit(.{ .local_get = acc });
+            try self.emit(.{ .local_get = base });
+            try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.value } });
+            if (cls != .any) try self.gcUnbox(er);
+            try self.emit(.{ .call = try self.gcArrPush(cls) });
+            try self.emit(.{ .local_set = acc });
+            try self.emit(.{ .br = continue_label });
+            const loop_seq = self.seal(&loop_c, .terminated);
+            try self.emitLoopBlockPlain(loop_seq);
+            try self.emit(.{ .local_get = acc });
+            return true;
+        }
+        const kind: GenKind = switch (m) {
+            .take => .take,
+            .drop => .drop,
+            .map => .map,
+            .filter => .filter,
+            .to_array, .next => unreachable,
+        };
+        try self.emit(zero);
+        try self.emitC(try self.constInt(@intFromEnum(kind)), @tagName(kind));
+        try self.emit(.{ .ref_null = .structref });
+        try self.emit(.{ .ref_null = .anyref });
+        try self.lowerCoerced(recv, gen_r);
+        switch (kind) {
+            .take, .drop => {
+                try self.emit(.{ .ref_null = .anyref });
+                try self.lowerCoerced(cc.args[0].value.*, .i32);
+            },
+            .map, .filter => {
+                const src = (try self.genItemOf(recv)) orelse return self.gcFail("a map or filter over a generator whose yitem type is not known");
+                const lam = genMethodLambda(cc) orelse return self.gcFail("a map or filter over a generator of no lambda written at the call");
+                if (lam.params.len != 1) return self.gcFail("a map or filter over a generator of a lambda of no one parameter");
+                const idx = self.lambdas.items.len;
+                try self.lowerLambdaValue(lam.params, lam.body, self.call_loc);
+                const l = &self.lambdas.items[idx];
+                const pr: Repr = if (src.repr == .bool) .i32 else src.repr;
+                if (l.param_seen.len > 0) l.param_seen[0] = pr;
+                if (l.param_known.len > 0) l.param_known[0] = true;
+                if (l.param_str.len > 0 and pr.isStr()) l.param_str[0] = true;
+                if (kind == .map) {
+                    const out = (try self.lambdaAnswerOver(lam.params[0], src, lam.body)) orelse return self.gcFail("a map over a generator whose answer is not known");
+                    l.ret_seen = if (out.repr == .bool) .i32 else out.repr;
+                    self.gen_map_used = true;
+                } else {
+                    l.ret_seen = .i32;
+                    self.gen_filter_used = true;
+                }
+                self.uses_table = true;
+                try self.emit(zero);
+            },
+        }
+        try self.emitC(.{ .struct_new = gi }, "a derived iterator");
+        return true;
+    }
+
+    /// `$__gen_next(g) -> i32` — one step of a generator: `0` once its
+    /// sequence ended (and from then on), else `1` with the item in `value`.
+    fn genNextFunc(self: *Emitter) !wat.Func {
+        const gi = self.gcTyIndex(.gen);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .local_get = "g" });
+        try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.state } });
+        {
+            var d: Capture = .{};
+            self.open(&d);
+            try self.emit(zero);
+            try self.emit(.@"return");
+            const done = self.seal(&d, .terminated);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = done } } });
+        }
+        try self.emit(.{ .local_get = "g" });
+        try self.emit(.{ .call = "__gen_resume" });
+        try self.emit(.{ .local_tee = "r" });
+        try self.emit(opOf(.i32, "eqz"));
+        {
+            var e: Capture = .{};
+            self.open(&e);
+            try self.emit(.{ .local_get = "g" });
+            try self.emit(one);
+            try self.emitC(.{ .struct_set = .{ .ty = gi, .field = gen_fld.state } }, "ended");
+            try self.emit(.{ .local_get = "g" });
+            try self.emit(.{ .ref_null = .structref });
+            try self.emitC(.{ .struct_set = .{ .ty = gi, .field = gen_fld.frame } }, "its frame dropped");
+            const ended = self.seal(&e, .none);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = ended } } });
+        }
+        try self.emit(.{ .local_get = "r" });
+        const body = self.seal(&c, .{ .value = .i32 });
+        return self.builder().func(.{
+            .name = "__gen_next",
+            .params = &.{wat.Builder.param("g", ValType.def(gi))},
+            .result = .i32,
+            .locals = try self.builder().localLines(&.{.{ .name = "r", .ty = .i32 }}),
+            .body = body,
+        });
+    }
+
+    /// `g.<field>`.
+    fn genGet(self: *Emitter, field: u32) !void {
+        try self.emit(.{ .local_get = "g" });
+        try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.gen), .field = field } });
+    }
+
+    /// `if (!$__gen_next(g.src)) return 0`.
+    fn genStepSrcOrEnd(self: *Emitter) !void {
+        try self.genGet(gen_fld.src);
+        try self.emit(.{ .call = "__gen_next" });
+        try self.emit(opOf(.i32, "eqz"));
+        var d: Capture = .{};
+        self.open(&d);
+        try self.emit(zero);
+        try self.emit(.@"return");
+        const done = self.seal(&d, .terminated);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = done } } });
+    }
+
+    /// `g.value = <what the stack's code leaves>; return 1`.
+    fn genAnswer(self: *Emitter, value: Seq) !void {
+        try self.emit(.{ .local_get = "g" });
+        for (value.lines) |l| try self.cur.?.append(self.arena(), l);
+        try self.emit(.{ .struct_set = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.value } });
+        try self.emit(one);
+        try self.emit(.@"return");
+    }
+
+    /// The source's item, or the closure in `aux` called on it.
+    fn genSrcValue(self: *Emitter, call_aux: bool) !Seq {
+        var c: Capture = .{};
+        self.open(&c);
+        if (call_aux) {
+            try self.genGet(gen_fld.aux);
+            try self.emit(.{ .ref_cast = self.gcTy(.closure) });
+            try self.emit(.{ .local_tee = "f" });
+        }
+        try self.genGet(gen_fld.src);
+        try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.value } });
+        if (call_aux) try self.gcEmitIndirect("f", 1);
+        return self.seal(&c, .{ .value = .anyref });
+    }
+
+    /// `if (k == kind) { <the case> }` — the case sealed from `c`.
+    fn genCase(self: *Emitter, c: *Capture, kind: u32) !void {
+        const seq = self.seal(c, .terminated);
+        try self.emit(.{ .local_get = "k" });
+        try self.emit(try self.constInt(kind));
+        try self.emit(opOf(.i32, "eq"));
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = seq } } });
+    }
+
+    /// `$__gen_resume(g) -> i32` — the module's dispatch by `kind`: the
+    /// derived iterators, then each generator body (`gen_kinds`).
+    fn genResumeFunc(self: *Emitter) !wat.Func {
+        const gi = self.gcTyIndex(.gen);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.genGet(gen_fld.kind);
+        try self.emit(.{ .local_set = "k" });
+        // take: the source's next item while the count lasts.
+        {
+            var k: Capture = .{};
+            self.open(&k);
+            try self.genGet(gen_fld.left);
+            try self.emit(zero);
+            try self.emit(opOf(.i32, "le_s"));
+            var d: Capture = .{};
+            self.open(&d);
+            try self.emit(zero);
+            try self.emit(.@"return");
+            const done = self.seal(&d, .terminated);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = done } } });
+            try self.emit(.{ .local_get = "g" });
+            try self.genGet(gen_fld.left);
+            try self.emit(one);
+            try self.emit(opOf(.i32, "sub"));
+            try self.emit(.{ .struct_set = .{ .ty = gi, .field = gen_fld.left } });
+            try self.genStepSrcOrEnd();
+            try self.genAnswer(try self.genSrcValue(false));
+            try self.genCase(&k, @intFromEnum(GenKind.take));
+        }
+        // drop: the source's first `left` items skipped, then each one.
+        {
+            var k: Capture = .{};
+            self.open(&k);
+            var lc: Capture = .{};
+            self.open(&lc);
+            try self.genGet(gen_fld.left);
+            try self.emit(zero);
+            try self.emit(opOf(.i32, "le_s"));
+            try self.emit(.{ .br_if = break_label });
+            try self.emit(.{ .local_get = "g" });
+            try self.genGet(gen_fld.left);
+            try self.emit(one);
+            try self.emit(opOf(.i32, "sub"));
+            try self.emit(.{ .struct_set = .{ .ty = gi, .field = gen_fld.left } });
+            try self.genStepSrcOrEnd();
+            try self.emit(.{ .br = continue_label });
+            const lseq = self.seal(&lc, .terminated);
+            try self.emitLoopBlockPlain(lseq);
+            try self.genStepSrcOrEnd();
+            try self.genAnswer(try self.genSrcValue(false));
+            try self.genCase(&k, @intFromEnum(GenKind.drop));
+        }
+        if (self.gen_map_used) {
+            var k: Capture = .{};
+            self.open(&k);
+            try self.genStepSrcOrEnd();
+            try self.genAnswer(try self.genSrcValue(true));
+            try self.genCase(&k, @intFromEnum(GenKind.map));
+        }
+        if (self.gen_filter_used) {
+            var k: Capture = .{};
+            self.open(&k);
+            var lc: Capture = .{};
+            self.open(&lc);
+            try self.genStepSrcOrEnd();
+            const test_seq = try self.genSrcValue(true);
+            for (test_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+            try self.gcUnbox(.i32);
+            {
+                var y: Capture = .{};
+                self.open(&y);
+                try self.genAnswer(try self.genSrcValue(false));
+                const yes = self.seal(&y, .terminated);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = yes } } });
+            }
+            try self.emit(.{ .br = continue_label });
+            const lseq = self.seal(&lc, .terminated);
+            try self.emitLoopBlockPlain(lseq);
+            try self.emit(.@"unreachable");
+            try self.genCase(&k, @intFromEnum(GenKind.filter));
+        }
+        for (self.gen_kinds.items, 0..) |bname, i| {
+            var k: Capture = .{};
+            self.open(&k);
+            try self.emit(.{ .local_get = "g" });
+            try self.emit(.{ .call = bname });
+            try self.emit(.@"return");
+            try self.genCase(&k, gen_body_base + @as(u32, @intCast(i)));
+        }
+        try self.emit(.@"unreachable");
+        const body = self.seal(&c, .terminated);
+        return self.builder().func(.{
+            .name = "__gen_resume",
+            .params = &.{wat.Builder.param("g", ValType.def(gi))},
+            .result = .i32,
+            .locals = if (self.gen_map_used or self.gen_filter_used)
+                try self.builder().localLines(&.{ .{ .name = "k", .ty = .i32 }, .{ .name = "f", .ty = self.gcTy(.closure) } })
+            else
+                try self.builder().localLines(&.{.{ .name = "k", .ty = .i32 }}),
+            .body = body,
+        });
+    }
+
     /// `x` names an `[len][e0][e1]…` blob: an array literal, or a name bound to
     /// one. Deliberately narrow — walking the layout of something else would
     /// read its first word as an element count and trap.
     fn isArrayExpr(self: *Emitter, e: ast.Expr) bool {
+        // Decision 105 (144 B-128) — a generator is a handle in a GC module.
+        if (self.isGenExpr(e)) return false;
         if (self.genericResultOf(e)) |a| return self.isArrayExpr(a);
         return switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -24692,6 +25812,20 @@ const Emitter = struct {
         // Front 164 s2 P4 — a task is a `$task` in a GC module, whatever the
         // shape of what it settles with.
         if (self.mode == .gc and self.isTaskExpr(e)) return .{ .ref = .task };
+        // Decision 105 (144 B-128) — a generator is a `$gen` handle; its
+        // `toArray` the array of its items.
+        if (self.mode == .gc) {
+            if (self.genMethodOf(e)) |m| {
+                if (m == .next) return .{ .ref = .{ .enum_ = "YieldStep" } };
+                if (m != .to_array) return .{ .ref = .gen };
+                const yitem = (self.genItemOf(e.call.kind.call.receiver.?.*) catch null) orelse {
+                    self.gcGap("a toArray over a generator whose item type is not known");
+                    return .i32;
+                };
+                return .{ .ref = .{ .arr = gcElemClassOf(yitem.repr) } };
+            }
+            if (e == .loop and self.isGenExpr(e)) return .{ .ref = .gen };
+        }
         // What an awaited task settles with (`gcAwaitedRead`).
         if (self.mode == .gc and e == .jump and e.jump.kind == .await_ and runCallOf(e.jump.kind.await_.*) == null) {
             const op = innerClosureBlock(e.jump.kind.await_.*) orelse e.jump.kind.await_.*;

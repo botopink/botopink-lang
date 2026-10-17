@@ -40,6 +40,9 @@ pub const Repr = union(enum) {
         closure,
         /// A `@Task<T>`.
         task,
+        /// A generator handle (decision 105, 144 B-128): an `@Iterator<T>`,
+        /// the `$gen` struct a resumable body or a derived iterator runs in.
+        gen,
         /// A `var`'s mutable cell.
         cell,
         /// A value of any kind (`unknown`, a type parameter).
@@ -142,6 +145,7 @@ pub const Repr = union(enum) {
                 .enum_ => |n| n,
                 .closure => "function",
                 .task => "@Task",
+                .gen => "@Iterator",
                 .cell => "var cell",
                 .unknown => "unknown",
                 .bytes => "Bytes",

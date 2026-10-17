@@ -97,8 +97,9 @@ memory:
 The array walks with a closure written at the call (`map`, `filter`, `forEach`, `all`, `any`, `count`,
 `findIndex`, `fold`; P2b) inline the closure's body into a loop over the GC array (`gcArrayHof`), `map`'s
 answer an array of the class of what the body answers (`gcMapTail`, which `wasmTypeOf` reads too);
-`r.map(f)` / `r.flatMap(f)` over a `@Result` inline `f` the same way (`gcResultMap`). A generator loop or an
-`@Iterator` / `@Stream` fn collects its `yield`s into a GC array (`gen_repr`: the declared result's class, or
+`r.map(f)` / `r.flatMap(f)` over a `@Result` inline `f` the same way (`gcResultMap`). An `@Iterator<T>` is a
+generator handle, its body a resumable state machine (§ Generators as state machines). A `stream` loop or a
+`@Stream` fn collects its `yield`s into a GC array (`gen_repr`: the declared result's class, or
 `yieldElemKind`'s for a loop), `$__arr_push_<class>` each one; a `try` inside one whose item is a `@Result` (decision 122) pushes the `Error` as the last item and ends the sequence (`gcTryPropagate`); over any other item it is not lowered.
 
 Every other value — `bigint` — is still a word in
@@ -374,6 +375,43 @@ gives it back (`gc_task_host_poll_wasi`). `try r catch h` over a `$result` is `g
   delay kept in the task's `+28` word. An adapter over fixed types that
   answers a task says so (`Adapter.answers_task`, checked against the
   declared `@Task`).
+
+## Generators as state machines (decisions 105, 125, 392; 144 B-128)
+
+**The choice: a generator reuses the `@Task` machine, its `yield`s the suspension points.** In a GC module
+an `@Iterator<T>` is `Repr.ref(.gen)`, a `$gen` struct (`GcTy.gen`: `state` 0 live / 1 ended, `kind`, `frame`,
+`value` the item last produced in its box, `src`, `aux`, `left`). Each `next` runs the body up to its next
+`yield`; nothing runs before the first, so an endless body is consumed one item at a time and a handle is
+stateful (a second `for` over an exhausted one reads nothing).
+
+- **The body** is lowered with `Emitter.machine` set exactly as a task's (`beginGenMachine`): the same
+  `$frame<n>` of every local, the same resume guards (`emitStmt`, `lowerCondition`, `guardStart`). `yield v`
+  (`emitGenYield`) boxes `v` into the handle's `value`, saves the frame, records its index and answers `1`;
+  entered again at that index it goes on after the `yield`. The end of the sequence (`emitGenMachineEnd`: a
+  bare `break` / `return`, the body's end) answers `0`. `emitGenMachine` writes `$g(args) -> (ref $gen)` (the
+  frame, the arguments stored, the body's `kind`; it runs nothing) and `$g__body(gen) -> i32`.
+- **An `iter fn`** (and a method answering `@Iterator<T>`) is that machine, its item the declared `T`.
+  **An `iter` loop** (`iter while` / `iter for`, a marked lambda `iter { -> … }` — decision 553's desugaring)
+  is a lifted lambda whose body is the loop unprefixed (`lowerGenLoopValue`), its closure called where the
+  loop is written answering the handle, as an `async { }` block's answers its task; its item is read off its
+  first `yield` where it is written (`genLoopItem`).
+- **A captured `var` is one variable on both sides** (decision 105): the handle keeps the lambda's
+  environment in `aux`, every entry of the body reads the captures from it, and the body writes the ones it
+  assigns back (`writeBackCapture`). In the function that made it, a step (`for`, `toArray`, `next()`) and a
+  call handing the local on (`line(g)`, `lowerGenSyncedCall`) copy every capture in before and the assigned
+  ones out after (`genSyncCaptures`, `gen_locals` — a local of a derived iterator syncs its source's). A call
+  through a closure local copies every capture in too (`gcSyncCaptures`), so a lambda made before a
+  generator ran reads what it wrote.
+- **The consumers**: `for (g)` (`lowerGenFor`: `$__gen_next` per iteration, the item unboxed into the binder;
+  re-entering a machine inside an iteration takes no step), `g.next()` (`Yield(item)` / `Done`, the item
+  in the erased payload's box), `toArray()`, and `take(n)` / `drop(n)` / `map(f)` / `filter(f)` (a derived
+  `$gen` over `src`: `left` the count, `aux` the closure, called as `(closure, anyref) -> anyref`).
+  `$__gen_next(g)` answers `0` once the sequence ended and drops the frame; `$__gen_resume` (`genResumeFunc`)
+  dispatches by `kind`: `0`–`3` the derived iterators, `gen_body_base` + i each body of `gen_kinds`.
+- **What keeps a module in linear memory**, where an iterator is still the eager array: an item that is a
+  `@Result` (decision 122's `try` / `throw` sugar), a `defer` in the body, a `yield :l` naming an enclosing
+  generator scope, an item whose type nothing here tells, a method over a handle not listed above (printing
+  a handle's `toArray()` directly included). A `@Stream` stays the eager array on both lowerings.
 
 ## Components (decisions 388, 504)
 

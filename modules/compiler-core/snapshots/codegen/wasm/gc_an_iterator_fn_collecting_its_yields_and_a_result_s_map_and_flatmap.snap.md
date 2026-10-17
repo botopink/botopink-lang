@@ -27,29 +27,110 @@ pub fn main() {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
-    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $box_i32 (struct (field $v i32)))
+    (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32)) (field $s1 (mut i32)) (field $s2 (mut i32))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Iterator — eager lowering
-  (func $evens (param $n i32) (result (ref null $arr_i32))
-    (local $i i32)
-    (local $__yield_fn (ref null $arr_i32))
+  ;; @Iterator — a generator state machine (decision 105)
+  (func $evens (param $n i32) (result (ref null $gen))
+    (local $__fr (ref null $frame0))
+    struct.new_default $frame0 ;; the frame: the resume index, then every local
+    local.set $__fr
+    local.get $__fr
+    local.get $n
+    struct.set $frame0 $s0
+    i32.const 0 ;; live
+    i32.const 4 ;; evens__body
+    local.get $__fr
+    ref.null any
+    ref.null $gen
+    ref.null any ;; the environment
     i32.const 0
-    array.new_default $arr_i32
-    local.set $__yield_fn
+    struct.new $gen ;; runs nothing until its first next
+  )
+  (func $evens__body (param $__gen (ref null $gen)) (result i32)
+    (local $n i32)
+    (local $i i32)
+    (local $__frame (ref null $frame0))
+    (local $__seek i32)
+    (local $__state i32)
+    (local $__cnd0 i32)
+    local.get $__gen
+    struct.get $gen $frame
+    ref.cast (ref null $frame0)
+    local.set $__frame
+    local.get $__frame
+    struct.get $frame0 $s0
+    local.set $n
+    local.get $__frame
+    struct.get $frame0 $s1
+    local.set $i
+    local.get $__frame
+    struct.get $frame0 $s2
+    local.set $__cnd0
+    local.get $__frame
+    struct.get $frame0 $resume ;; the resume index
+    local.tee $__state
+    i32.const 0
+    i32.ne
+    local.set $__seek
+    local.get $__seek
+    i32.eqz
+    (if
+      (then
     i32.const 0
     local.set $i
+      )
+    )
+    local.get $__seek
+    i32.eqz
+    local.get $__state
+    i32.const 1
+    i32.ge_u
+    local.get $__state
+    i32.const 1
+    i32.le_u
+    i32.and
+    i32.or
+    (if
+      (then
     (block $__break
       (loop $__continue
+    local.get $__seek
+    (if (result i32)
+      (then
+    i32.const 1 ;; re-entering: inside an iteration
+      )
+      (else
     local.get $i
     local.get $n
     i32.lt_s
+      )
+    )
         i32.eqz
         br_if $__break
+    local.get $__seek
+    i32.eqz
+    local.get $__state
+    i32.const 1
+    i32.ge_u
+    local.get $__state
+    i32.const 1
+    i32.le_u
+    i32.and
+    i32.or
+    (if
+      (then
+    local.get $__seek
+    (if (result i32)
+      (then
+    local.get $__cnd0 ;; the condition, read back
+      )
+      (else
     local.get $i
     i32.const 2
     global.get $__s0
@@ -57,30 +138,74 @@ pub fn main() {
     i32.rem_s
     i32.const 0
     i32.eq
-    (if (result (ref null $arr_i32))
+    local.tee $__cnd0
+      )
+    )
+    (if (result (ref null $gen))
       (then
-    local.get $__yield_fn
+    (block $__yd1
+    local.get $__seek
+    (if
+      (then
+    local.get $__state
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    i32.const 0
+    local.set $__seek
+      )
+    )
+    br $__yd1 ;; resumed after this yield, or seeking past it
+      )
+    )
+    local.get $__gen
     local.get $i
-    call $__arr_push_i32
-    local.set $__yield_fn
-    ref.null $arr_i32
+    struct.new $box_i32
+    struct.set $gen $value ;; the yitem
+    local.get $__frame
+    local.get $n
+    struct.set $frame0 $s0
+    local.get $__frame
+    local.get $i
+    struct.set $frame0 $s1
+    local.get $__frame
+    local.get $__cnd0
+    struct.set $frame0 $s2
+    local.get $__frame
+    i32.const 1
+    struct.set $frame0 $resume ;; the resume index
+    i32.const 1
+    return ;; an yitem
+    )
+    ref.null $gen
       )
       (else
-        ref.null $arr_i32
+        ref.null $gen
       )
     )
     drop
+      )
+    )
+    local.get $__seek
+    i32.eqz
+    (if
+      (then
     local.get $i
     i32.const 1
     global.get $__s1
     call $__i32_add_chk
     local.set $i
+      )
+    )
         br $__continue
       )
     )
     i32.const 0
     drop
-    local.get $__yield_fn ;; everything the body yielded
+      )
+    )
+    i32.const 0 ;; the sequence ended
   )
   (func $parse (param $s (ref null $str)) (result (ref null $result))
     local.get $s
@@ -107,9 +232,7 @@ pub fn main() {
   )
   (func $main (export "main")
     (local $v i32)
-    (local $__iter0 (ref null $arr_i32))
-    (local $__idx0 i32)
-    (local $__len0 i32)
+    (local $__gfor0 (ref null $gen))
     (local $__gc0 (ref null $result))
     (local $__gc1 (ref null $result))
     (local $n i32)
@@ -120,29 +243,21 @@ pub fn main() {
     (local $__gc6 (ref null $result))
     i32.const 7
     call $evens
-    local.set $__iter0
-    local.get $__iter0
-    array.len
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
+    local.set $__gfor0
     (block $__break
       (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        array.get $arr_i32
-        local.set $v
+    local.get $__gfor0
+    call $__gen_next ;; the next yitem
+    i32.eqz
+    br_if $__break
+    local.get $__gfor0
+    struct.get $gen $value
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.set $v
     local.get $v
     call $__print_i32
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
+    br $__continue
       )
     )
     i32.const 0
@@ -292,28 +407,138 @@ pub fn main() {
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
-  (func $__arr_push_i32 (param $xs (ref null $arr_i32)) (param $x i32) (result (ref null $arr_i32))
-    (local $n i32)
-    (local $r (ref null $arr_i32))
-    local.get $xs
-    array.len
-    local.set $n
-    local.get $n
+  (func $__gen_next (param $g (ref null $gen)) (result i32)
+    (local $r i32)
+    local.get $g
+    struct.get $gen $state
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    call $__gen_resume
+    local.tee $r
+    i32.eqz
+    (if
+      (then
+    local.get $g
     i32.const 1
-    i32.add
-    array.new_default $arr_i32
-    local.set $r
+    struct.set $gen $state ;; ended
+    local.get $g
+    ref.null struct
+    struct.set $gen $frame ;; its frame dropped
+      )
+    )
     local.get $r
+  )
+  (func $__gen_resume (param $g (ref null $gen)) (result i32)
+    (local $k i32)
+    local.get $g
+    struct.get $gen $kind
+    local.set $k
+    local.get $k
     i32.const 0
-    local.get $xs
+    i32.eq
+    (if
+      (then
+    local.get $g
+    struct.get $gen $left
     i32.const 0
-    local.get $n
-    array.copy $arr_i32 $arr_i32
-    local.get $r
-    local.get $n
-    local.get $x
-    array.set $arr_i32
-    local.get $r
+    i32.le_s
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $left
+    i32.const 1
+    i32.sub
+    struct.set $gen $left
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $src
+    struct.get $gen $value
+    struct.set $gen $value
+    i32.const 1
+    return
+      )
+    )
+    local.get $k
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    (block $__break
+      (loop $__continue
+    local.get $g
+    struct.get $gen $left
+    i32.const 0
+    i32.le_s
+    br_if $__break
+    local.get $g
+    local.get $g
+    struct.get $gen $left
+    i32.const 1
+    i32.sub
+    struct.set $gen $left
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    br $__continue
+      )
+    )
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $src
+    struct.get $gen $value
+    struct.set $gen $value
+    i32.const 1
+    return
+      )
+    )
+    local.get $k
+    i32.const 4
+    i32.eq
+    (if
+      (then
+    local.get $g
+    call $evens__body
+    return
+      )
+    )
+    unreachable
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

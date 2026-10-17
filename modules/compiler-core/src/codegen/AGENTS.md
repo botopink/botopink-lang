@@ -2185,9 +2185,10 @@ codegen/
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
   as its `f64` cell, `$__box_f64`), and that array is the loop's value — the erlang reading
-  of `break <v>`. An `@Iterator` fn body that yields runs
+  of `break <v>`. In linear memory an `@Iterator` fn body that yields runs
   eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
-  `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
+  `@Iterator<T>` is then an array of `T`. In a GC module it is a generator
+  state machine (`wat/AGENTS.md` § Generators as state machines). A bare `break` branches out of the
   loop, `continue` out of the iteration's `(block $__next …)`. A float array
   prints as `[115, 287.5, 460]` (`$__print_arr_f64`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,

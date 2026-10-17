@@ -19,7 +19,8 @@ pub fn pulses() -> @Stream<@Result<i32, string>> {
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32))))
     (type $box_i32 (struct (field $v i32)))
-    (type $arr_i32 (array (mut i32)))
+    (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $frame1 (struct (field $resume (mut i32))))
     (type $arr_any (array (mut anyref)))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
@@ -77,17 +78,75 @@ pub fn pulses() -> @Stream<@Result<i32, string>> {
     struct.new $box_i32
     call $__task_settle
   )
-  ;; @Iterator — eager lowering
-  (func $count (export "count") (result (ref null $arr_i32))
-    (local $__yield_fn (ref null $arr_i32))
+  ;; @Iterator — a generator state machine (decision 105)
+  (func $count (export "count") (result (ref null $gen))
+    (local $__fr (ref null $frame1))
+    struct.new_default $frame1 ;; the frame: the resume index, then every local
+    local.set $__fr
+    i32.const 0 ;; live
+    i32.const 4 ;; count__body
+    local.get $__fr
+    ref.null any
+    ref.null $gen
+    ref.null any ;; the environment
     i32.const 0
-    array.new_default $arr_i32
-    local.set $__yield_fn
-    local.get $__yield_fn
+    struct.new $gen ;; runs nothing until its first next
+  )
+  (func $count__body (param $__gen (ref null $gen)) (result i32)
+    (local $__frame (ref null $frame1))
+    (local $__seek i32)
+    (local $__state i32)
+    local.get $__gen
+    struct.get $gen $frame
+    ref.cast (ref null $frame1)
+    local.set $__frame
+    local.get $__frame
+    struct.get $frame1 $resume ;; the resume index
+    local.tee $__state
+    i32.const 0
+    i32.ne
+    local.set $__seek
+    local.get $__seek
+    i32.eqz
+    local.get $__state
     i32.const 1
-    call $__arr_push_i32
-    local.set $__yield_fn
-    local.get $__yield_fn ;; everything the body yielded
+    i32.ge_u
+    local.get $__state
+    i32.const 1
+    i32.le_u
+    i32.and
+    i32.or
+    (if
+      (then
+    (block $__yd1
+    local.get $__seek
+    (if
+      (then
+    local.get $__state
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    i32.const 0
+    local.set $__seek
+      )
+    )
+    br $__yd1 ;; resumed after this yield, or seeking past it
+      )
+    )
+    local.get $__gen
+    i32.const 1
+    struct.new $box_i32
+    struct.set $gen $value ;; the yitem
+    local.get $__frame
+    i32.const 1
+    struct.set $frame1 $resume ;; the resume index
+    i32.const 1
+    return ;; an yitem
+    )
+      )
+    )
+    i32.const 0 ;; the sequence ended
   )
   ;; @Stream — eager lowering
   (func $pulses (export "pulses") (result (ref null $arr_any))
@@ -104,28 +163,138 @@ pub fn pulses() -> @Stream<@Result<i32, string>> {
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  (func $__arr_push_i32 (param $xs (ref null $arr_i32)) (param $x i32) (result (ref null $arr_i32))
-    (local $n i32)
-    (local $r (ref null $arr_i32))
-    local.get $xs
-    array.len
-    local.set $n
-    local.get $n
+  (func $__gen_next (param $g (ref null $gen)) (result i32)
+    (local $r i32)
+    local.get $g
+    struct.get $gen $state
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    call $__gen_resume
+    local.tee $r
+    i32.eqz
+    (if
+      (then
+    local.get $g
     i32.const 1
-    i32.add
-    array.new_default $arr_i32
-    local.set $r
+    struct.set $gen $state ;; ended
+    local.get $g
+    ref.null struct
+    struct.set $gen $frame ;; its frame dropped
+      )
+    )
     local.get $r
+  )
+  (func $__gen_resume (param $g (ref null $gen)) (result i32)
+    (local $k i32)
+    local.get $g
+    struct.get $gen $kind
+    local.set $k
+    local.get $k
     i32.const 0
-    local.get $xs
+    i32.eq
+    (if
+      (then
+    local.get $g
+    struct.get $gen $left
     i32.const 0
-    local.get $n
-    array.copy $arr_i32 $arr_i32
-    local.get $r
-    local.get $n
-    local.get $x
-    array.set $arr_i32
-    local.get $r
+    i32.le_s
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $left
+    i32.const 1
+    i32.sub
+    struct.set $gen $left
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $src
+    struct.get $gen $value
+    struct.set $gen $value
+    i32.const 1
+    return
+      )
+    )
+    local.get $k
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    (block $__break
+      (loop $__continue
+    local.get $g
+    struct.get $gen $left
+    i32.const 0
+    i32.le_s
+    br_if $__break
+    local.get $g
+    local.get $g
+    struct.get $gen $left
+    i32.const 1
+    i32.sub
+    struct.set $gen $left
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    br $__continue
+      )
+    )
+    local.get $g
+    struct.get $gen $src
+    call $__gen_next
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $g
+    local.get $g
+    struct.get $gen $src
+    struct.get $gen $value
+    struct.set $gen $value
+    i32.const 1
+    return
+      )
+    )
+    local.get $k
+    i32.const 4
+    i32.eq
+    (if
+      (then
+    local.get $g
+    call $count__body
+    return
+      )
+    )
+    unreachable
   )
   (func $__arr_push_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
     (local $n i32)
