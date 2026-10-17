@@ -47,6 +47,7 @@ const asmText = @import("./beam/asm_text.zig");
 const Op = beamEmitter.Operand;
 const Dst = beamEmitter.Dest;
 const Term = @import("./beam/term.zig").Term;
+const genRuntime = @import("./beam/gen_runtime.zig");
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -428,11 +429,37 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
 /// (decision 105).
 const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer, defer_floor: usize = 0 };
 
-/// A generator scope being emitted into a frame (decision 105) — a generator
-/// fn's body or an annotated `loop`: the y-slot its items are consed onto
-/// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
-/// pushed.
-const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer, defer_floor: usize = 0 };
+/// A generator scope being emitted into a frame (decision 105, 144 B-128) — a
+/// generator fn's body or an annotated `loop`, lifted into a fun of its own
+/// (`liftGenScope`) that `'__bp_gen_new'/1` runs lazily in a process: the
+/// label a `break <v>` jumps to once `v` is yielded, and — for an `iter`
+/// loop that reassigns variables of the enclosing frame — those `names` and
+/// the operand of the cell their latest values are put under before each
+/// item (erlang's `GenCell`).
+const GenLoop = struct {
+    exit: u32,
+    out: *std.Io.Writer,
+    defer_floor: usize = 0,
+    names: []const []const u8 = &.{},
+    cell: ?Op = null,
+};
+
+/// True when a name of `a` is in `b`.
+fn namesMeet(a: []const []const u8, b: []const []const u8) bool {
+    for (a) |x| for (b) |y| if (std.mem.eql(u8, x, y)) return true;
+    return false;
+}
+
+/// An `iter` / `stream` loop of the frame being emitted whose body reassigns
+/// names of the frame (erlang's `GenCell`): the frame's y-slot holding the
+/// cell's key, and the statement list whose later statements re-read the
+/// names from it before reading them (`refreshGenCells`).
+const GenCell = struct {
+    slot: u32,
+    names: []const []const u8,
+    body: [*]const ast.Stmt,
+    out: *std.Io.Writer,
+};
 
 /// Decision 539 — a `defer` the frame being emitted has not yet run: the
 /// statement, the catch tag of the `try` region that covers the rest of its
@@ -2420,6 +2447,10 @@ const Emitter = struct {
     label_jumps: std.ArrayListUnmanaged(LabelJump) = .empty,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
+    /// 144 B-128 — the `iter` loops whose captured variables later statements
+    /// re-read (`GenCell`), and the statement list being emitted.
+    gen_cells: std.ArrayListUnmanaged(GenCell) = .empty,
+    cur_body: [*]const ast.Stmt = undefined,
     /// Decision 539 — the `defer`s not yet run, outermost first. The frame
     /// being emitted owns the entries on top whose `out` is its buffer.
     defer_stack: std.ArrayListUnmanaged(DeferEntry) = .empty,
@@ -2735,6 +2766,7 @@ const Emitter = struct {
         self.defer_stack.deinit(self.alloc);
         self.label_funs.deinit(self.alloc);
         self.label_jumps.deinit(self.alloc);
+        self.gen_cells.deinit(self.alloc);
         self.ext_by_name.deinit();
         var rf = self.record_fields.valueIterator();
         while (rf.next()) |names| self.alloc.free(names.*);
@@ -3923,15 +3955,16 @@ const Emitter = struct {
 
         try beamEmitter.writeBlankLine(self.out);
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. The BEAM model is
-        // processes + message passing (spawn/receive); this backend emits the
-        // eager body (decision 120: a `@Task` is eager, `await` is identity).
+        // checked-Result value), which is a plain function. A `@Task` body is
+        // eager (decision 120: `await` is identity); an `@Iterator` /
+        // `@Stream` that yields is a generator, its body run lazily in a
+        // process of its own (144 B-128, `emitGeneratorBody`).
         // `-> @Component` is a plain function too (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
-            try beamEmitter.writeTopComment(self.out, "{s} — eager lowering", .{switch (f.effect.?) {
-                .task => "@Task",
-                .iterator => "@Iterator",
-                else => "@Stream",
+            try beamEmitter.writeTopComment(self.out, "{s}", .{switch (f.effect.?) {
+                .task => "@Task — eager lowering",
+                .iterator => "@Iterator — lazy lowering",
+                else => "@Stream — lazy lowering",
             }});
         }
         var fn_buf: [256]u8 = undefined;
@@ -4801,7 +4834,10 @@ const Emitter = struct {
     /// A statement list of a block: the defers it pushes end with it.
     fn emitStmtList(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         const mark = self.defer_stack.items.len;
-        for (body) |stmt| try self.emitStmt(stmt);
+        for (body) |stmt| {
+            try self.refreshGenCells(body, stmt);
+            try self.emitStmt(stmt);
+        }
         try self.closeDefers(mark, !endsInJump(body), false);
     }
 
@@ -5979,6 +6015,7 @@ const Emitter = struct {
     fn emitBody(self: *Emitter, body: []const ast.Stmt) !void {
         const mark = self.defer_stack.items.len;
         for (body) |stmt| {
+            try self.refreshGenCells(body, stmt);
             try self.emitStmt(stmt);
         }
         try self.closeDefers(mark, !bodyExits(body), false);
@@ -6057,7 +6094,7 @@ const Emitter = struct {
                     // `break <v>` in an annotated loop pushes `v` and ends it
                     // from any loop depth (decision 105).
                     if (br.value) |v| if (self.inGenLoop()) |gl| {
-                        try self.genPush(gl, v.*);
+                        try self.genYield(gl, v.*);
                         {
                             try self.runDefersForExit(gl.defer_floor, false);
                             try beamEmitter.writeJump(self.out, gl.exit);
@@ -6103,7 +6140,7 @@ const Emitter = struct {
                 },
                 .yield => |y| {
                     if (self.inGenLoop()) |gl| {
-                        try self.genPush(gl, if (y.value) |v| v.* else null);
+                        try self.genYield(gl, if (y.value) |v| v.* else null);
                         return;
                     }
                     if (y.value) |v| {
@@ -6169,7 +6206,7 @@ const Emitter = struct {
                     return;
                 }
                 if (!hasYieldOrBreakValue(lp.body)) {
-                    if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, labelOf(lp))) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, labelOf(lp), self.stepsSequence(lp))) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
             },
@@ -6179,7 +6216,7 @@ const Emitter = struct {
                     return;
                 }
                 if (self.forEachLambda(stmt.expr)) |each| {
-                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null, false)) return;
                 }
                 // `names.push(x)` on a module-level `var` (decision 28) is
                 // written back through its memory, as `names = …` is. The
@@ -7461,6 +7498,9 @@ const Emitter = struct {
                 // would, so the next `.next()` reads on.
                 .sequence_next => {
                     try self.lowerExprIntoX0(recv_expr.*);
+                    // 144 B-128 — a generator's next item before it (a list
+                    // is itself); a local generator stays the receiver.
+                    try self.callGenHelper(.step);
                     const helper = try self.ensureYieldStepHelper();
                     const labels = try self.fnLabelsFor(helper, 1);
                     try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = labels.entry }, 0);
@@ -7704,6 +7744,26 @@ const Emitter = struct {
                 // the same shape. Only when inference recorded NOTHING — a
                 // receiver it typed and whose method did not lower keeps the
                 // abort, which is this front's documented backstop.
+                // A method an `@Iterator` answers, on a receiver inference
+                // left untyped — what a generator's method call looks like
+                // (144 B-128): the generator runtime's helper, whose list
+                // clause is the Array lowering.
+                if (self.untypedOrSequence(loc, recv_expr.*)) iter: {
+                    const argc = cc.args.len + cc.trailing.len;
+                    const is_each = std.mem.eql(u8, cc.callee, "forEach") and argc == 1;
+                    const h: genRuntime.Helper = if (is_each) .foreach else genRuntime.Helper.ofMethod(cc.callee, argc) orelse break :iter;
+                    const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+                    try self.placeStaged(&st);
+                    // `foreach` takes the fun first, as `lists:foreach/2` does.
+                    if (is_each) {
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.xr(1));
+                    }
+                    try self.callGenHelper(h);
+                    if (mode == .tail) try self.emitReturn();
+                    return;
+                }
                 if (self.instanceLowering(loc, recv_expr.*) == null) {
                     if (try self.ensurePrimShim(cc.callee, cc.args.len + cc.trailing.len)) |shim_name| {
                         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
@@ -8472,6 +8532,14 @@ const Emitter = struct {
     /// Inside an interface `default fn` body (parsed from the prelude, so
     /// inference recorded nothing and its locs may collide with the program's)
     /// it is re-derived from `self`'s kind instead.
+    /// True when inference recorded nothing for the call at `loc`, or only
+    /// that its receiver is an `@Iterator` / `@Stream` it has no declaration
+    /// of — a generator's method call (144 B-128).
+    fn untypedOrSequence(self: *const Emitter, loc: ast.Loc, recv: ast.Expr) bool {
+        const il = self.instanceLowering(loc, recv) orelse return true;
+        return il == .unplaced_type and (std.mem.eql(u8, il.unplaced_type, "Iterator") or std.mem.eql(u8, il.unplaced_type, "Stream"));
+    }
+
     fn instanceLowering(self: *const Emitter, loc: ast.Loc, recv: ast.Expr) ?envMod.InstanceLowering {
         if (self.self_prim_kind != null) {
             const k = self.selfPrimKind(recv) orelse return null;
@@ -11957,7 +12025,15 @@ const Emitter = struct {
     /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
     /// for a statement loop over `iter` whose `body` reassigns outer names.
     /// Returns false (nothing emitted) when the body reassigns none.
-    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, label: ?[]const u8) anyerror!bool {
+    /// True when the `for` steps an `@Iterator` / `@Stream` (inference keys
+    /// `.sequence_next` by the loop's own loc, 144 B-128): what it walks may be
+    /// a generator, which `beam/gen_runtime.zig`'s helpers step lazily.
+    fn stepsSequence(self: *const Emitter, lp: anytype) bool {
+        const il = self.instance_lowerings.get(lp.loc) orelse return false;
+        return il == .sequence_next;
+    }
+
+    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, label: ?[]const u8, sequence: bool) anyerror!bool {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(self.alloc);
         var head_buf: [2][]const u8 = undefined;
@@ -11978,11 +12054,14 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
         try self.emitMakeFun(entry, 3, env_ops.items);
         const Call = struct {
-            fn emit(_: @This(), em: *Emitter) anyerror!void {
+            sequence: bool,
+            fn emit(c: @This(), em: *Emitter) anyerror!void {
+                // A sequence's fold steps a generator lazily (144 B-128).
+                if (c.sequence) return em.callGenHelper(.foldl);
                 try beamEmitter.writeCall(em.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
             }
         };
-        try self.emitLoopCall(body, label, Call{});
+        try self.emitLoopCall(body, label, Call{ .sequence = sequence });
         try self.unpackGroupFromX0(names.items);
         return true;
     }
@@ -12092,14 +12171,13 @@ const Emitter = struct {
     }
 
     /// The `{error, E}` in `x0` of a failing `try`, propagated: in a generator
-    /// scope it is the last item (decision 122 — pushed, then the scope
+    /// scope it is the last item (decision 122 — yielded, then the scope
     /// ends); in a loop's fun it is thrown as `{'__bp_try', E}` to the loop's
     /// call site (`guardLoopCall`), since a return there only leaves the fun;
     /// anywhere else it is this function's return value.
     fn emitTryError(self: *Emitter) anyerror!void {
         if (self.inGenLoop()) |gl| {
-            try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
-            try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
+            try self.genYieldX0(gl);
             {
                 try self.runDefersForExit(gl.defer_floor, false);
                 try beamEmitter.writeJump(self.out, gl.exit);
@@ -12174,61 +12252,210 @@ const Emitter = struct {
         return if (gl.out == self.out) gl else null;
     }
 
-    /// `[V | Acc]` into the annotated loop's accumulator slot.
-    /// A value-less `yield` pushes `undefined`, botopink's null.
-    fn genPush(self: *Emitter, gl: GenLoop, value: ?ast.Expr) anyerror!void {
+    /// `yield v` in the scope `gl` (144 B-128): `v` into `x0`, then
+    /// `genYieldX0`. A value-less `yield` hands `undefined`, botopink's null.
+    fn genYield(self: *Emitter, gl: GenLoop, value: ?ast.Expr) anyerror!void {
         if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
-        try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
-        try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
+        try self.genYieldX0(gl);
     }
 
-    /// A generator fn's body (decision 105) — eager, as on erlang: every
-    /// `yield v` in the frame conses onto a y-slot accumulator, `break <v>`
-    /// pushes and jumps to the end, a bare `break` or `return;` outside a
-    /// loop jumps there too, and the fn answers the reversed list.
+    /// The item in `x0` handed to the consumer: `'__bp_gen_yield'(V)`, or —
+    /// with a cell — `'__bp_gen_yield_put'(V, Cell, Group)`, which puts the
+    /// scope's captured variables first. The call waits for the next request.
+    fn genYieldX0(self: *Emitter, gl: GenLoop) anyerror!void {
+        if (gl.cell) |c| {
+            try beamEmitter.writeMoveOp(self.out, c, Dst.xr(1));
+            try self.emitGroupInto(gl.names, 2, 2);
+            try self.callGenHelper(.gen_yield_put);
+        } else try self.callGenHelper(.gen_yield);
+    }
+
+    /// A call of the generator runtime's helper `h` (`beam/gen_runtime.zig`),
+    /// compiled into this module as a template helper; its arguments are in
+    /// `x0…`, its answer comes back in `x0`.
+    fn callGenHelper(self: *Emitter, h: genRuntime.Helper) anyerror!void {
+        const body = try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}.", .{h.text()});
+        const labels = (try self.compiledTemplate(body, false, h.arity())) orelse return error.GenRuntimeDoesNotLower;
+        try beamEmitter.writeCall(self.out, .normal, @intCast(h.arity()), .{ .local = labels.entry }, 0);
+    }
+
+    /// A generator fn's body (decision 105, 144 B-128): lifted into a fun
+    /// (`liftGenScope`) the fn answers as `'__bp_gen_new'(Fun)` — the body runs
+    /// one step per item asked for. Every `yield v` in the fun's frame hands
+    /// `v` over, `break <v>` yields and jumps to the end, and a bare `break`
+    /// or `return;` outside a loop jumps there too.
     fn emitGeneratorBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
-        const acc = self.next_y;
-        self.next_y += 1;
-        const exit = self.allocLabel();
-        try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
-        const saved = self.gen_loop;
-        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
-        {
-            defer self.gen_loop = saved;
-            try self.emitStmtList(body);
-        }
-        try beamEmitter.writeLabel(self.out, exit);
-        try beamEmitter.writeMoveOp(self.out, Op.yr(acc), Dst.xr(0));
-        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "reverse" } }, 0);
+        try self.liftGenScope(body, null, &.{}, null);
         try self.emitReturn();
     }
 
-    /// `#[@generator] loop { … }` (decision 105) — eager on beam, as on erlang:
-    /// the body runs in this frame as `loop { … }` does, each `yield v` conses
-    /// onto a y-slot accumulator, and the expression is the reversed list:
-    ///
-    ///     {move, nil, Acc}  <the condition loop>  {label, Exit}
-    ///     {move, Acc, {x,0}}  {call_ext, 1, lists:reverse/1}
-    ///
-    /// A captured `var` is this frame's register, so a counter the body
-    /// advances is read after the loop at its last value. `break <v>` pushes
-    /// and jumps to `Exit`; a bare `break` leaves the condition loop, which
-    /// falls through to it. `#[@futureGenerator]` is the same list — beam's
-    /// `await` is identity.
+    /// `iter loop { … }` (decision 105, 144 B-128) — lazy on beam, as on
+    /// erlang: the loop is lifted into a fun (`liftGenScope`) whose body runs
+    /// it as `loop { … }` runs, and the expression is `'__bp_gen_new'(Fun)`
+    /// in `x0`. A variable of this frame the body reassigns is the fun's own
+    /// from the loop on; its latest value is put under a cell — a fresh
+    /// `make_ref()` in this frame's slot, put first with the values before
+    /// the loop — which the statements after the loop re-read
+    /// (`refreshGenCells`), so a counter the loop advances is read at its last
+    /// value once the loop has run. `stream loop` is the same generator —
+    /// beam's `await` is identity.
     fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
-        const acc = self.next_y;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        try self.collectMutations(lp.body, &.{}, &names);
+        // The slot `countLocalsInExpr` counts for the loop.
+        const slot = self.next_y;
         self.next_y += 1;
-        const exit = self.allocLabel();
-        try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
-        const saved = self.gen_loop;
-        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len };
-        {
-            defer self.gen_loop = saved;
-            try self.lowerConditionLoop(lp);
+        var cell: ?u32 = null;
+        if (names.items.len > 0 and names.items.len <= max_staged) {
+            for (names.items) |n| {
+                if (self.reg_map.get(n) == null) break;
+            } else cell = slot;
         }
+        if (cell) |c| {
+            try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = "erlang", .function = "make_ref" } }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(c));
+            try self.emitGroupInto(names.items, 1, 1);
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "put" } }, 0);
+            try self.gen_cells.append(self.alloc, .{
+                .slot = c,
+                .names = try self.prelude_arena.allocator().dupe([]const u8, names.items),
+                .body = self.cur_body,
+                .out = self.out,
+            });
+        }
+        const loop_expr: ast.Expr = .{ .loop = lp };
+        try self.liftGenScope(lp.body, &loop_expr, if (cell != null) names.items else &.{}, cell);
+    }
+
+    /// The name a lifted generator fun binds the cell's key to.
+    const gen_cell_param = "\x00bp_gen_cell";
+
+    /// 144 B-128 — a generator scope lifted into a fun of its own,
+    /// `'-<fn>/<arity>-gen-<n>-'`, whose parameters are the names `body`
+    /// reads from this frame (`closureEnv`, the cell's key last when `cell` is
+    /// set): the fun runs `loop`'s condition loop, or `body` when there is no
+    /// loop, as the generator scope (`GenLoop`), and answers `ok` at its end
+    /// — after putting `names` under the cell. In this frame, the fun is made
+    /// and handed to `'__bp_gen_new'/1`; the generator lands in `x0`.
+    fn liftGenScope(self: *Emitter, body: []const ast.Stmt, loop: ?*const ast.Expr, names: []const []const u8, cell: ?u32) anyerror!void {
+        const idx = self.lambda_count;
+        self.lambda_count += 1;
+
+        var env_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer env_names.deinit(self.alloc);
+        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
+        defer env_ops.deinit(self.alloc);
+        try self.closureEnv(body, &.{}, &env_names, &env_ops);
+        if (cell) |c| {
+            try env_names.append(self.alloc, gen_cell_param);
+            try env_ops.append(self.alloc, Op.yr(c));
+        }
+        const arity: u32 = @intCast(env_names.items.len);
+
+        var name_buf: [256]u8 = undefined;
+        const fun_name = try std.fmt.bufPrint(&name_buf, "'-{s}/{d}-gen-{d}-'", .{ self.cur_fn_name, self.cur_arity, idx });
+        try self.reserveFn(fun_name, arity);
+        const labels = try self.fnLabelsFor(fun_name, arity);
+
+        var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &lam_buf.writer;
+
+        const saved_reg_map = self.reg_map;
+        self.reg_map = std.StringHashMap(Reg).init(self.alloc);
+        const saved_y = self.next_y;
+        const saved_num_y = self.num_y;
+        const saved_arity = self.cur_arity;
+        const saved_loop_flag = self.in_loop_lambda;
+        const saved_min_live = self.min_live;
+        const saved_group = self.fold_group;
+        const saved_gen = self.gen_loop;
+        self.min_live = 0;
+        self.fold_group = null;
+
+        self.next_y = 0;
+        self.cur_arity = arity;
+        var slots: u32 = 1;
+        if (loop) |le| {
+            slots += self.precountLocalsInExpr(le.*);
+        } else {
+            slots += self.precountLocals(body);
+            countGenForSlots(self, body, &slots);
+        }
+        self.num_y = arity + slots;
+        self.in_loop_lambda = false;
+        try self.bindParams(env_names.items);
+
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
+
+        const exit = self.allocLabel();
+        const cell_op: ?Op = if (cell != null) self.reg_map.get(gen_cell_param).?.operand() else null;
+        self.gen_loop = .{ .exit = exit, .out = self.out, .defer_floor = self.defer_stack.items.len, .names = names, .cell = cell_op };
+        if (loop) |le| try self.lowerConditionLoop(le.loop) else try self.emitStmtList(body);
         try beamEmitter.writeLabel(self.out, exit);
-        try beamEmitter.writeMoveOp(self.out, Op.yr(acc), Dst.xr(0));
-        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "reverse" } }, 0);
+        if (cell_op) |c| {
+            try beamEmitter.writeMoveOp(self.out, c, Dst.xr(0));
+            try self.emitGroupInto(names, 1, 1);
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "put" } }, 0);
+        }
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        try self.emitReturn();
+
+        self.reg_map.deinit();
+        self.reg_map = saved_reg_map;
+        self.next_y = saved_y;
+        self.num_y = saved_num_y;
+        self.cur_arity = saved_arity;
+        self.in_loop_lambda = saved_loop_flag;
+        self.min_live = saved_min_live;
+        self.fold_group = saved_group;
+        self.gen_loop = saved_gen;
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try lam_buf.toOwnedSlice());
+        lam_buf.deinit();
+
+        try self.emitMakeFun(labels.entry, 0, env_ops.items);
+        try self.callGenHelper(.gen_new);
+    }
+
+    /// Before the statement `stmt` of `body` (144 B-128): each cell of this
+    /// frame tracked for `body` (`GenCell`) whose names `stmt` reads is read
+    /// back into their slots — `erlang:get(Cell)` — and one whose names
+    /// `stmt` reassigns stops being tracked.
+    fn refreshGenCells(self: *Emitter, body: []const ast.Stmt, stmt: ast.Stmt) anyerror!void {
+        self.cur_body = body.ptr;
+        var i: usize = 0;
+        while (i < self.gen_cells.items.len) {
+            const c = self.gen_cells.items[i];
+            if (c.body != body.ptr or c.out != self.out) {
+                i += 1;
+                continue;
+            }
+            var read: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer read.deinit(self.alloc);
+            try ast.collectRunNames(self.alloc, &.{stmt}, &read);
+            if (namesMeet(c.names, read.items)) {
+                try beamEmitter.writeMoveOp(self.out, Op.yr(c.slot), Dst.xr(0));
+                try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "get" } }, 0);
+                try self.unpackGroupFromX0(c.names);
+            }
+            var assigned: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer assigned.deinit(self.alloc);
+            try self.collectMutations(&.{stmt}, &.{}, &assigned);
+            if (namesMeet(c.names, assigned.items)) {
+                _ = self.gen_cells.orderedRemove(i);
+                continue;
+            }
+            i += 1;
+        }
     }
 
     /// A `for` that yields inside an annotated loop, walked in this frame so
@@ -12250,6 +12477,14 @@ const Emitter = struct {
         const top = self.allocLabel();
         const exit = self.allocLabel();
         try self.writeLoopTop(top);
+        // 144 B-128 — a sequence is stepped one item per round: a list is
+        // itself, a generator's next item comes before the generator.
+        const sequence = self.stepsSequence(lp);
+        if (sequence) {
+            try beamEmitter.writeMoveOp(self.out, Op.yr(rest), Dst.xr(0));
+            try self.callGenHelper(.step);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(rest));
+        }
         try beamEmitter.writeTest(self.out, .is_nonempty_list, exit, &.{Op.yr(rest)});
         try beamEmitter.writeGetList(self.out, Op.yr(rest), Dst.xr(0), Dst.xr(1));
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(item));
@@ -12272,6 +12507,12 @@ const Emitter = struct {
             try beamEmitter.writeJump(self.out, top);
         }
         try beamEmitter.writeLabel(self.out, exit);
+        // A generator the walk left by `break` is closed; one it ran to the
+        // end answers the close with nothing.
+        if (sequence) {
+            try beamEmitter.writeMoveOp(self.out, Op.yr(rest), Dst.xr(0));
+            try self.callGenHelper(.close);
+        }
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
@@ -12362,11 +12603,15 @@ const Emitter = struct {
         const func = if (has_map) "map" else "foreach";
         const Call = struct {
             name: []const u8,
+            sequence: bool,
             fn emit(c: @This(), em: *Emitter) anyerror!void {
+                // A sequence is stepped lazily, a generator closed when the
+                // walk is left early (144 B-128).
+                if (c.sequence) return em.callGenHelper(.foreach);
                 try beamEmitter.writeCall(em.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = c.name } }, 0);
             }
         };
-        try self.emitLoopCall(lp.body, labelOf(lp), Call{ .name = func });
+        try self.emitLoopCall(lp.body, labelOf(lp), Call{ .name = func, .sequence = !has_map and self.stepsSequence(lp) });
     }
 
     /// A loop's `lists:` call (`call.emit`), inside the catch sections its

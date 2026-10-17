@@ -1496,10 +1496,10 @@ declare fn utf8Offset(bytes: Bytes) -> i64;
 declare fn stripEol(line: Bytes) -> Bytes;
 
 // The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
-// (Node opens one; the template refuses it). The handle is host-owned and opaque: a
-// `{ fd, mem, pos, buf }` object on Node, the raw file descriptor on Erlang.
+// (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
+// mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
 #[@External.Node("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true)]
-#[@External.Erlang("""(fun(__P) -> case file:open(__P, [read, binary, raw, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
+#[@External.Erlang("""(fun(__P) -> case file:open(__P, [read, binary, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true)]
 declare fn rawOpen(path: string) -> @Result<unknown, HostError>;
 
 // The handle of the file at `path`, open for writing: created, or truncated.
@@ -1513,7 +1513,7 @@ declare fn rawCreate(path: string) -> @Result<unknown, HostError>;
 #[@External.Erlang("""{mem, $0, counters:new(1, [])}""")]
 declare fn memHandle(bytes: Bytes) -> unknown;
 
-// The size of the file behind `handle`, in bytes. Erlang's raw descriptor has no `fstat`, so it reads `path`.
+// The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
 #[@External.Node("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true)]
 #[@External.Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true)]
 declare fn rawSize(handle: unknown, path: string) -> @Result<i64, HostError>;
@@ -2790,9 +2790,9 @@ function rawAppendText(path, contents) { return __bp_host_result(require("../../
 
 // The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
 
-// (Node opens one; the template refuses it). The handle is host-owned and opaque: a
+// (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
 
-// `{ fd, mem, pos, buf }` object on Node, the raw file descriptor on Erlang.
+// mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
 
 function rawOpen(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __fs = require('fs'); const __p = path; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()); }
 
@@ -2806,7 +2806,7 @@ function rawCreate(path) { return __bp_host_result(require("../../std/failure.js
 
 // memHandle: per-call template (see annotation)
 
-// The size of the file behind `handle`, in bytes. Erlang's raw descriptor has no `fstat`, so it reads `path`.
+// The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
 
 function rawSize(handle, path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()); }
 

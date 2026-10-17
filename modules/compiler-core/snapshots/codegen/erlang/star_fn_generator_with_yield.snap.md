@@ -12,7 +12,7 @@ fn counter() -> @Iterator<i32> {
 -module(test@main).
 -export(['__bp_priv__counter'/0]).
 
-%% @Iterator — eager lowering
+%% @Iterator — lazy lowering
 counter() ->
     [1, 2, 3].
 

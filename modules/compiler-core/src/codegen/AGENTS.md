@@ -1684,18 +1684,35 @@ codegen/
     (`emitLoopCall`) (`modules/block_jump_label_continue_nested_shapes`).
   - **A generator scope** — a `@Iterator` / `@Stream`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
-    annotated `loop` — is eager: its items are pushed onto a list held in the
-    process dictionary under a fresh `make_ref()` (`GenScope`, `genPush`), so a
-    `yield` reaches the NEAREST scope from inside an `if`, a `lists:foreach` fun or
-    a loop's named fun without threading an accumulator. `break <v>` pushes and
-    ends the scope from any depth: `throw({'__bp_gen_end', Key, Group, V})`,
-    caught by the scope (`genEndCatch`, the key matched by a guard). A fn answers
-    `lists:reverse(erlang:erase(Key))` (`generatorFnBody`); a flat `yield` list
-    stays the literal list (`isPlainYieldGenerator`). `iter loop { … }`
-    (`generatorLoopNode`) runs as `loop { … }` does and is the list, the
-    variables it reassigns rebound after it — so a captured `var` counter is the
-    generator's state; `stream loop` is the same list (`await` is
-    identity here).
+    annotated `loop` — is lazy (decision 105, 144 B-128): its body is a fun
+    handed to `'__bp_gen_new'/1`, which runs it in a process of its own one
+    step per item asked for (`beam/gen_runtime.zig`, the text both backends
+    emit as helpers, `genCall` / `gen_helpers`). A `yield` anywhere below the
+    scope — inside an `if`, a `lists:foreach` fun or a loop's named fun — is
+    `'__bp_gen_yield'(V)` (`genYield`), which hands `V` to the consumer and
+    waits. `break <v>` yields and ends the scope from any depth:
+    `throw({'__bp_gen_end', Key, Group, V})`, caught by the scope
+    (`genEndCatch`, the key a fresh `make_ref()` matched by a guard). A fn
+    answers the generator (`generatorFnBody` in `fnForms`, the fn's
+    `'__bp_try'` guard inside the fun); a flat list of `yield`s of literals
+    stays the literal list (`isPlainYieldGenerator`: nothing in it runs).
+    `iter loop { … }` (`generatorLoopNode`) runs as `loop { … }` does inside
+    the fun; the variables it reassigns are the fun's own, so their latest
+    values are put under a cell (`GenCell`: `'__bp_gen_yield_put'/3` before
+    each item, `erlang:put` at the end) and a statement after the loop in the
+    same sequence that reads one re-reads the cell first (`genCellRefresh`, in
+    `bodyNode`) — a captured `var` counter is the generator's state, read at
+    its last value once the loop has run. `stream loop` is the same generator
+    (`await` is identity here). A consumer steps a sequence through the
+    runtime too: a `for` over an `@Iterator` / `@Stream` (inference keys
+    `.sequence_next` by the loop's loc, `stepsSequence`) is
+    `'__bp_iter_foreach'/2` / `'__bp_iter_foldl'/3`, or — walked in a named
+    fun — `'__bp_iter_step'/1` per round inside `'__bp_iter_with'/2`, which
+    closes a generator the walk leaves early; `it.next()` steps its receiver
+    (`sequenceStep`); `take`, `drop`, `map`, `filter`, `forEach`, `toArray`,
+    `reduce`, `some`, `every`, `find` on a receiver inference left untyped are
+    the runtime's helpers (`iterMethodNode`), whose list clause is the Array
+    lowering.
   - `a..b` → `lists:seq(A, B - 1)`, `a...b` → `lists:seq(A, B)`.
   A value-less `break` in a `lists:foreach` is `erlang:throw('__bp_break')` and
   its loop is wrapped in the `try … catch throw:'__bp_break' -> ok end` that ends
@@ -1970,9 +1987,10 @@ codegen/
   `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)` (a closure can't
   rebind a captured var). `classifyFoldStmt` recognizes `acc = e`, `acc += e`,
   `acc.push(x)` and a single-assignment `if`/`else`; anything else is not fused.
-- **Effects**: non-`@Result` effect fns are lowered eagerly (a `@Task<T>` is `T`;
-  a body of only `yield`s is a list); a failure is the `{error, E}` value the
-  transform built, never a `throw` (decision 120).
+- **Effects**: a non-`@Result` `@Task` fn is lowered eagerly (a `@Task<T>` is
+  `T`); an `@Iterator` / `@Stream` fn that yields is a lazy generator (above;
+  a body of only `yield`s of literals is a list); a failure is the `{error, E}`
+  value the transform built, never a `throw` (decision 120).
 - Structural `==`/`!=` is `=:=`/`=/=` (decision B2) — except with an operand
   declared `unknown` (`isUnknownOperand`, read off `local_types`), where it is
   erlang's by-value `==`/`/=`, so `2.0 == 2` holds (decision 8 §2.3). A value
@@ -2510,8 +2528,10 @@ codegen/
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
 - **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
-  `lists:foreach` fun (`lowerLoop`) — `for await` too (a `@Stream` is an
-  eager list here), so one that reassigns outer names is the same `foldl`, and
+  `lists:foreach` fun (`lowerLoop`) — `for await` too — and one over an
+  `@Iterator` / `@Stream` (`stepsSequence`) the generator runtime's
+  `'__bp_iter_foreach'/2` (144 B-128), so one that reassigns outer names is the
+  same `foldl` (`'__bp_iter_foldl'/3` over a sequence), and
   one whose body propagates a `try` (`bodyPropagates`: through member reads,
   `case` subjects, array/tuple literals too — `(try batch).length`) is called
   inside `guardLoopCall`'s catch section. A bare `break` of the loop's own
@@ -2537,22 +2557,40 @@ codegen/
   `lists:seq(A, B)`, `a..b` `lists:seq(A, B - 1)`.
   **A generator scope** — a `@Iterator` / `@Stream`
   fn (`emitGeneratorBody`) or an annotated `loop` (`lowerGeneratorLoop`) — is
-  eager: a y-slot accumulator (`GenLoop`, matched by the output buffer like
-  `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
-  `lists:reverse/1` at the scope's `Exit`. `break <v>` pushes and jumps to that
-  `Exit` from any loop depth; a bare `break` or `return;` with no loop to leave
-  jumps there too. A `for` that yields inside a scope — its own `yield`, or
-  one in an unprefixed loop nested in it (`ast.bodyYields`, decision 125: the
-  nearest generator scope) — is walked in the frame (`lowerInFrameFor`:
-  `is_nonempty_list` / `get_list` over a y-slot list), so its `yield`s reach
-  the accumulator; `countGenForSlots` adds its slots to the frame. A captured
-  `var` is the frame's register, so an `iter` loop's counter is read after it
-  at its last value. A generator METHOD is a scope exactly as a fn is
-  (`emitMethodAsFn`): `ast.BehaviorMethod` has no parsed `effect`, so it is
-  read off the return type (`ast.EffectKind.ofMethod`, erlang's
-  `methodEffect`). A body that yields outside any scope is
-  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`) — the checker
-  refuses it first.
+  lazy, as on erlang (144 B-128): the scope is lifted into a fun of its own,
+  `'-<fn>/<arity>-gen-<n>-'` (`liftGenScope`, its parameters the names the body
+  reads from the frame, `closureEnv`), and the fn or the expression answers
+  `'__bp_gen_new'(Fun)` — the generator runtime of `beam/gen_runtime.zig`,
+  compiled into the module as template helpers (`callGenHelper`,
+  `compiledTemplate`). In the fun, each `yield v` is a call of
+  `'__bp_gen_yield'/1` (`genYield`, `genYieldX0`; matched by the output buffer
+  like `cond_loop`, `GenLoop`), `break <v>` yields and jumps to the fun's
+  `Exit`, and a bare `break` or `return;` with no loop to leave jumps there
+  too; the fun answers `ok`. A `for` that yields inside a scope — its own
+  `yield`, or one in an unprefixed loop nested in it (`ast.bodyYields`,
+  decision 125: the nearest generator scope) — is walked in the fun's frame
+  (`lowerInFrameFor`: `is_nonempty_list` / `get_list` over a y-slot list,
+  `'__bp_iter_step'/1` first each round over a sequence and
+  `'__bp_iter_close'/1` at its exit), so its `yield`s are the scope's;
+  `countGenForSlots` adds its slots to the frame. A variable of the enclosing
+  frame an `iter` loop reassigns is the fun's own from the loop on: the loop
+  puts the group under a cell — a `make_ref()` in the slot
+  `countLocalsInExpr` counts for the loop, handed to the fun as its last
+  parameter — before each item (`'__bp_gen_yield_put'/3`) and at its end, and
+  a later statement of the same list that reads one re-reads the cell first
+  (`GenCell`, `refreshGenCells` in `emitStmtList` / `emitBody`), so an `iter`
+  loop's counter is read after it at its last value once the loop has run. A
+  generator METHOD is a scope exactly as a fn is (`emitMethodAsFn`):
+  `ast.BehaviorMethod` has no parsed `effect`, so it is read off the return
+  type (`ast.EffectKind.ofMethod`, erlang's `methodEffect`). A body that
+  yields outside any scope is `error.ConditionLoopValueUnsupported`
+  (`condLoopYieldsValue`) — the checker refuses it first. A consumer steps a
+  sequence through the runtime: a `for` over an `@Iterator` / `@Stream`
+  (`stepsSequence`) calls `'__bp_iter_foreach'/2` / `'__bp_iter_foldl'/3` in
+  place of `lists:foreach` / `lists:foldl`, `it.next()` steps its receiver
+  first, and `take`, `drop`, `map`, `filter`, `forEach`, `toArray`, `reduce`,
+  `some`, `every`, `find` on a receiver inference left untyped are the
+  runtime's helpers, before the `'__bp_prim_<m>'` shims.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
@@ -2729,7 +2767,8 @@ codegen/
   emitted twice — once as the case subject, once as the matched arm's body — so
   an effectful subject runs twice. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
   at register level.
-- **Effects**: non-`@Result` effect fns get an eager body (decision 120: a
+- **Effects**: a non-`@Result` `@Task` fn gets an eager body, an `@Iterator` /
+  `@Stream` fn that yields a lazy generator (above, 144 B-128) (decision 120: a
   failure is the `{error, E}` value, never a throw).
 - **Known gaps**: a value-less `if` yields `undefined` (B10, checker's
   question); a comptime value the transform parks in a number literal but is
@@ -3518,8 +3557,8 @@ no effect: it lowers as a plain function on every backend (decision 123).
 |---|---|---|---|---|
 | `-> @Result<T, E>` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `-> @Task<T>` | `async function`; `-> @Task<@Result<T, E>>` is a failing task (decision 432): a function answering `__bp_task((async () => { … })())`, whose body is the `-> @Result` lowering — the Promise rejects with `e` for a `throw` / `Error(e)` and resolves with the bare `T`; an `await` of a task that may fail reads it back through `__bp_await` (`js/AGENTS.md` § Failing tasks) | eager (`@Task<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Task` as a state machine) |
-| `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
-| `-> @Stream<T>` (yields) | `async function*` | eager | eager body | eager body |
+| `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | lazy: a generator process (`beam/gen_runtime.zig`); a body of only `yield`s of literals → list | lazy: the body lifted into a fun, a generator process | eager body (144 B-128's wasm half open) |
+| `-> @Stream<T>` (yields) | `async function*` | lazy, as `@Iterator` | lazy, as `@Iterator` | eager body |
 | `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method — a type's, an enum's, a `default fn` — marked by its own body, a lambda `async` only when its body awaits); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
 
 A sequence whose item is `@Result<U, E>` (decision 122): the transform writes
@@ -3530,7 +3569,7 @@ generator (`in_generator`) as `yield _tryN; return;`, and `yield try x` /
 `yield __bp_ok(try x)` at statement position through `buildTryStmt`
 (`TryHead.yield_ok_value` / `.yield_result`). A generator-scope `break <v>` is
 decision 105's (22-loops): commonJS's `function*` and beam run
-`modules/generator_break_value`; the eager erlang and wasm scopes were expected
+`modules/generator_break_value`; the erlang and wasm scopes were expected
 failures of `conformance` when it landed.
 
 **A negative index counts from the end** (decision 139), in the one reader
@@ -3606,9 +3645,11 @@ tagged `InstanceLowering.sequence_next`, and answers the prelude enum
 so each backend builds and matches `Yield(value)` / `Done` as it does any enum.
 commonJS maps the generator's own step: `__bp_yield_step(it.next())` on an
 `@Iterator` and `s.next().then(__bp_yield_step)` on a `@Stream` (prelude
-`yield_step`: `r.done ? YieldStep.Done : YieldStep.Yield(r.value)`). The eager
-backends hold a sequence as the list of its items, so the step is the head and
-a LOCAL receiver (a `val`, a `var`, a parameter) advances to the rest: erlang
+`yield_step`: `r.done ? YieldStep.Done : YieldStep.Yield(r.value)`). erlang
+and beam step the receiver through `'__bp_iter_step'/1` first (144 B-128): a
+generator answers `[Item | Generator]` (the handle itself is the rest) or `[]`,
+a list itself, so the step is the head and a LOCAL receiver (a `val`, a `var`,
+a parameter) advances to the rest — wasm holds the list of the items: erlang
 hoists `{BpStepN, It@v} = case It of [H | T] -> {{Yield, H}, T}; R -> {Done, R} end`
 in front of the statement (`hoistSequenceSteps`, over the positions
 `collectSeqNexts` knows run unconditionally — a call's receiver and arguments,

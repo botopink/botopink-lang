@@ -2224,8 +2224,9 @@ body starts the loop's next round:
 A `//` comment inside a loop body parses like any other comment.
 
 **Per backend.** On commonJS `iter …` is `(function* () { … })()` and
-`stream …` is `(async function* () { … })()`; erlang, beam and wasm lower the
-prefixed loop as they lower an `@Iterator` / `@Stream` function, inline.
+`stream …` is `(async function* () { … })()`; erlang and beam make the prefixed
+loop a generator as they make an `@Iterator` / `@Stream` function's — the body
+runs in a process of its own, one step per item; wasm lowers it inline.
 
 ### Assert
 
@@ -3095,6 +3096,13 @@ a next item may need waiting. Both answer one step type (decision 122):
 - a bare `break` outside any inner loop ends without emitting.
 
 <!-- example: modules/iterator_yield_break -->
+
+Nothing of the body runs before the first `next`, and nothing past the `yield` that
+answered the last one: a print before and after a `yield` comes out between the
+items, and an endless generator is consumed by `take(n)` — on every form, an
+`iter fn`, an `iter loop` and a marked lambda `iter { -> … }`.
+
+<!-- example: modules/generator_body_lazy -->
 
 **Items that can fail — `@Iterator<@Result<T, E>>`.** The iterator does not
 fail; **each item** may be an error. When the item is `@Result<U, E>` the body

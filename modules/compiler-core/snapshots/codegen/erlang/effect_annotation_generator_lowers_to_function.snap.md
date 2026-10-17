@@ -11,9 +11,69 @@ fn range(a: i32, b: i32) -> @Iterator<i32> {
 -module(test@main).
 -export(['__bp_priv__range'/2]).
 
-%% @Iterator — eager lowering
+%% @Iterator — lazy lowering
 range(A, B) ->
-    [A, B].
+    '__bp_gen_new'(fun() ->
+        __BpGen1 = erlang:make_ref(),
+        try
+            '__bp_gen_yield'(A),
+            '__bp_gen_yield'(B)
+        catch
+            throw:{'__bp_gen_end', __BpGenK1, _, __BpGenV1} when (__BpGenK1 =:= __BpGen1) -> '__bp_gen_yield'(__BpGenV1), ok
+        end
+    end).
+
+'__bp_gen_new'(__BpA0) ->
+    Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' end, erlang:get()) end,
+Load = fun(LD) ->
+    LOwn = erlang:get('__bp_gen_self'),
+    erlang:erase(),
+    lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
+    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end
+end,
+GenNew = fun(GBody) ->
+    {'__bp_gen', erlang:spawn(fun() ->
+        receive
+            {'__bp_gen', GCmd, GFrom, GM, GD} ->
+                Load(GD),
+                erlang:put('__bp_gen_self', {GFrom, GM}),
+                case GCmd of
+                    close -> ok;
+                    next ->
+                        try GBody() catch
+                            throw:'__bp_gen_closed' -> ok;
+                            GC:GR:GS ->
+                                {GF0, GM0} = erlang:erase('__bp_gen_self'),
+                                erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()}),
+                                erlang:exit(normal)
+                        end
+                end,
+                {GF, GM1} = erlang:erase('__bp_gen_self'),
+                erlang:send(GF, {GM1, done, Dict()})
+        end
+    end)}
+end,
+GenNew(__BpA0).
+
+'__bp_gen_yield'(__BpA0) ->
+    Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' end, erlang:get()) end,
+Load = fun(LD) ->
+    LOwn = erlang:get('__bp_gen_self'),
+    erlang:erase(),
+    lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
+    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end
+end,
+Yield = fun(YV) ->
+    {YFrom, YM} = erlang:erase('__bp_gen_self'),
+    erlang:send(YFrom, {YM, item, YV, Dict()}),
+    receive
+        {'__bp_gen', YCmd, YFrom2, YM2, YD} ->
+            Load(YD),
+            erlang:put('__bp_gen_self', {YFrom2, YM2}),
+            case YCmd of next -> undefined; close -> erlang:throw('__bp_gen_closed') end
+    end
+end,
+Yield(__BpA0).
 
 '__bp_priv__range'(A0, A1) -> range(A0, A1).
 ```

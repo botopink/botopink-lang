@@ -16769,6 +16769,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         }
         if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
             itemTy = try markResultSource(env, iterTy.named.args[0], .for_item);
+            try env.instanceLowerings.put(lp.loc, .{ .sequence_next = .stream });
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
                 diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
@@ -16800,7 +16801,14 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             // function and hands over each `X`, a `@Result` when `X` is one:
             // there is no implicit `try`.
             itemTy = try markResultSource(env, n.args[0], .for_item);
+            // 144 B-128 — the loop steps a sequence, which erlang and beam
+            // walk lazily (a generator is a process there).
+            try env.instanceLowerings.put(lp.loc, .{ .sequence_next = .iterator });
         }
+    } else if (iterTy.* == .typeVar) {
+        // An iterable nothing typed yet — an iterator method's answer
+        // (`gen().take(3)`) — may be a sequence too.
+        try env.instanceLowerings.put(lp.loc, .{ .sequence_next = .iterator });
     }
     for (lp.params) |p| try env.bind(p, itemTy orelse try env.freshVar());
 

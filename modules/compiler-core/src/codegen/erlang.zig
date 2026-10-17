@@ -27,6 +27,7 @@ const erlEmitter = @import("./beam/erl_emitter.zig");
 const Ast = @import("./beam/erl_ast.zig");
 const erlTemplate = @import("./beam/erl_template.zig");
 const Term = @import("./beam/term.zig").Term;
+const genRuntime = @import("./beam/gen_runtime.zig");
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -1982,6 +1983,7 @@ fn emitErlangModule(
     defer em.std_imports.deinit();
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
+    defer em.active_gen_cells.deinit(alloc);
     defer em.defer_watches.deinit(alloc);
     defer em.label_loops.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
@@ -2477,6 +2479,7 @@ fn emitErlangModule(
         if (typed_text) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
         if (em.needs_print_helper or typed_text) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        try appendGenHelperForms(b, &forms, em.gen_helpers);
     }
 
     if (comptime_module) |cm| {
@@ -2580,6 +2583,7 @@ const SavedUnitState = struct {
     needs_add_helper: bool,
     needs_int_helper: bool,
     needs_nz_helper: bool,
+    gen_helpers: GenHelpers,
     bif_shadows: []const Ast.FnRef,
     prim_shims: @FieldType(Emitter, "prim_shims"),
     needed_instance_defaults: @FieldType(Emitter, "needed_instance_defaults"),
@@ -2588,6 +2592,30 @@ const SavedUnitState = struct {
 };
 
 const Forms = std.ArrayListUnmanaged(Ast.Form);
+
+/// The lazy generator runtime's helpers a module reached (144 B-128,
+/// `beam/gen_runtime.zig`).
+const GenHelpers = std.EnumSet(genRuntime.Helper);
+
+/// True when a name of `a` is in `b`.
+fn namesMeet(a: []const []const u8, b: []const []const u8) bool {
+    for (a) |x| for (b) |y| if (std.mem.eql(u8, x, y)) return true;
+    return false;
+}
+
+/// One reached generator-runtime helper as its form,
+/// `'<name>'(__BpA0, …) -> <text>.`
+fn genHelperForm(b: Ast.Builder, h: genRuntime.Helper) !Ast.Form {
+    const params = try b.arena.alloc(Ast.Expr, h.arity());
+    for (params, 0..) |*p, i| p.* = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpA{d}", .{i}));
+    return blockFunction(b, h.name(), params, try b.body(&.{Ast.Expr.r(h.text())}));
+}
+
+/// Every helper of `set`, each after a blank line.
+fn appendGenHelperForms(b: Ast.Builder, out: *Forms, set: GenHelpers) !void {
+    var it = set.iterator();
+    while (it.next()) |h| try out.appendSlice(b.arena, &.{ .blank, try genHelperForm(b, h) });
+}
 
 /// True when this module must answer `f` — a `pub` host-backed `declare fn` —
 /// with a callable wrapper. Every `pub` host-backed declaration gets one:
@@ -3170,20 +3198,42 @@ fn isResultPath(name: []const u8) bool {
     return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
 }
 
-/// A generator scope on erlang (decision 105). Erlang is eager: a generator
-/// is the list of its items, collected while the body runs. The list lives in
-/// the process dictionary under a fresh `make_ref()` held by `key`, so a
-/// `yield` anywhere below the scope — inside an `if` arm, a `lists:foreach`
-/// fun, a condition loop's named fun — pushes without threading an
-/// accumulator through every construct between them. `names` are the
+/// A generator scope on erlang (decision 105, 144 B-128). The body runs
+/// lazily, one step per item asked for: it is a fun handed to
+/// `'__bp_gen_new'/1` (`beam/gen_runtime.zig`), which runs it in a process of
+/// its own, and a `yield v` anywhere below the scope — inside an `if` arm, a
+/// `lists:foreach` fun, a condition loop's named fun — is the call
+/// `'__bp_gen_yield'(V)`, which hands `V` to the consumer and waits for the
+/// next request. `key` is a fresh `make_ref()` the scope's `break <v>` throw
+/// carries, so a nested scope's end is not this one's. `names` are the
 /// variables an annotated `loop` reassigns, which its `break <v>` hands back
-/// (empty for a generator fn, whose locals die with it).
+/// (empty for a generator fn, whose locals die with it); `cell` the variable
+/// holding the key under which their latest values are put before each item
+/// (`GenCell`).
 const GenScope = struct {
     key: []const u8,
     names: []const []const u8,
     /// The scope is a generator fn's own body (`generatorFnBody`), which a bare
     /// `return` ends — not an `iter` / `stream` loop's.
     fn_level: bool = false,
+    cell: ?[]const u8 = null,
+};
+
+/// An `iter` / `stream` loop whose body reassigns variables of the enclosing
+/// function (`loop_generator_dobros`'s counter). Its body runs in the
+/// generator's process, so the function's own variables never see the
+/// writes: the body puts the group of their latest values in the process
+/// dictionary under `var`'s key before each item and when it ends, the
+/// generator runtime carries the dictionary back with every item, and the
+/// statements after the loop in the same body re-read the group before the
+/// first of them that reads one of `names` (`genCellRefresh`). A statement
+/// that assigns one of them ends the tracking.
+const GenCell = struct {
+    @"var": []const u8,
+    names: []const []const u8,
+    /// The statement sequence the loop's statement is in: only a statement of
+    /// that sequence (or its continuation) re-reads the cell.
+    body: [*]const ast.Stmt = undefined,
 };
 
 const LabelLoop = struct {
@@ -3489,6 +3539,16 @@ const Emitter = struct {
     /// The generator scope being lowered (decision 105): a `#[@generator]`
     /// fn or an annotated `loop`. Null outside one.
     gen_scope: ?GenScope = null,
+    /// The generator-runtime helpers this module's bodies reached
+    /// (`genCall`), emitted as forms with the other helpers.
+    gen_helpers: GenHelpers = .initEmpty(),
+    /// The `iter` / `stream` loops of the function being lowered whose body
+    /// reassigns names of the function: `bodyNode` reads them back from the
+    /// loop's cell before a later statement of the same sequence reads them
+    /// (`genCellRefresh`).
+    active_gen_cells: std.ArrayListUnmanaged(GenCell) = .empty,
+    /// The statement sequence `bodyNode` is lowering a statement of.
+    cur_body: [*]const ast.Stmt = undefined,
     /// Numbers the key variables of generator scopes (`__BpGen<n>`).
     gen_seq: u32 = 0,
     /// Numbers the named funs of condition loops so a nested one does not
@@ -6269,28 +6329,32 @@ const Emitter = struct {
 
     // ── fn ────────────────────────────────────────────────────────────────────
 
-    /// True when the body is a flat sequence of `yield` statements (a simple
-    /// finite generator that lowers to an eager Erlang list).
+    /// True when the body is a flat sequence of `yield` statements of
+    /// literals (a simple finite generator that lowers to an Erlang list):
+    /// nothing in it runs, so when it runs is not observable (144 B-128).
     fn isPlainYieldGenerator(f: ast.FnDecl) bool {
         if (f.effect == null or f.body.len == 0) return false;
         for (f.body) |stmt| {
             if (!(stmt.expr == .jump and stmt.expr.jump.kind == .yield)) return false;
+            if (stmt.expr.jump.kind.yield.value) |v| if (v.* != .literal) return false;
         }
         return true;
     }
 
     fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. Erlang is eager: a
-        // `@Task<T>` is `T` (so `await` is identity) and a finite
-        // `@Iterator<T>` is a list. `-> @Component` is a plain function too:
+        // checked-Result value), which is a plain function. A `@Task<T>` is
+        // `T` (so `await` is identity); an `@Iterator<T>` / `@Stream<T>` that
+        // yields is a generator, its body run lazily in a process of its own
+        // (144 B-128, `generatorFnBody`), and one whose body only yields
+        // literals the list of them. `-> @Component` is a plain function too:
         // the return gates `use` in the body (decision 88); nothing about it
         // is async.
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try out.append(b.arena, .{ .comment = Ast.Comment.doc(switch (f.effect.?) {
                 .task => "@Task — eager lowering",
-                .iterator => "@Iterator — eager lowering",
-                else => "@Stream — eager lowering",
+                .iterator => if (this.untyped) "@Iterator — eager lowering" else "@Iterator — lazy lowering",
+                else => if (this.untyped) "@Stream — eager lowering" else "@Stream — lazy lowering",
             }) });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
@@ -6341,24 +6405,36 @@ const Emitter = struct {
                 items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
             }
             break :blk try b.body(&.{.{ .list = items }});
-        } else if (effectChain.grants(f.effect, .yield_))
-            try this.generatorFnBody(b, f.body)
-        else
-            try this.bodyNode(b, f.body, 0, 1);
+        } else if (effectChain.grants(f.effect, .yield_)) blk: {
+            const inner = try this.generatorFnBody(b, f.body);
+            // A comptime module's generator is the list of its items: the
+            // comptime runtime runs no process (144 B-128).
+            if (this.untyped) break :blk inner;
+            // 144 B-128 — the body runs in the generator's process, so the
+            // guard of a thrown `return` is the fun's.
+            const guarded = if (this.try_throw_used) try this.guardTry(b, inner) else inner;
+            this.try_throw_used = false;
+            break :blk try b.body(&.{try this.genCall(b, .gen_new, &.{.{ .fun = .{ .params = &.{}, .body = guarded } }})});
+        } else try this.bodyNode(b, f.body, 0, 1);
         const body = if (this.try_throw_used) try this.guardTry(b, raw_body) else raw_body;
         try out.append(b.arena, try blockFunction(b, f.name, params.items, body));
     }
 
     /// A generator fn's body whose items are not a flat `yield` list
-    /// (decision 105 — `yield` reaches the fn through every loop between):
+    /// (decision 105 — `yield` reaches the fn through every loop between), as
+    /// the fun `fnForms` hands to `'__bp_gen_new'/1` (144 B-128):
     ///
     ///     __BpGen1 = make_ref(),
-    ///     erlang:put(__BpGen1, []),
-    ///     try Body catch throw:{'__bp_gen_end', __BpGen1, _, V} -> <push V> end,
-    ///     lists:reverse(erlang:erase(__BpGen1))
+    ///     try Body catch throw:{'__bp_gen_end', __BpGen1, _, V} -> '__bp_gen_yield'(V), ok end
     ///
-    /// `yield v` pushes onto the key's list; `break v` pushes and ends through
-    /// the throw, from any loop depth.
+    /// `yield v` is `'__bp_gen_yield'(V)`; `break v` yields `V` and ends
+    /// through the throw, from any loop depth. In a comptime module (`untyped`)
+    /// the generator is the list of its items, collected while the body runs
+    /// under the key in the process dictionary (`genPush`):
+    ///
+    ///     __BpGen1 = make_ref(), erlang:put(__BpGen1, []),
+    ///     try Body catch … -> <push V> end,
+    ///     lists:reverse(erlang:erase(__BpGen1))
     fn generatorFnBody(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt) anyerror!Ast.Body {
         const key = try this.genKey(b);
         const saved = this.gen_scope;
@@ -6373,13 +6449,71 @@ const Emitter = struct {
         const saved_nested_return = this.in_nested_return;
         this.in_nested_return = false;
         defer this.in_nested_return = saved_nested_return;
-        const inner = try this.bodyNode(b, body, 0, 2);
-        return b.body(&.{
+        const inner = try this.bodyNode(b, body, 0, if (this.untyped) 2 else 3);
+        if (this.untyped) return b.body(&.{
             try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})),
             try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }),
-            try this.genEndCatch(b, key, inner, false),
+            try this.genEndCatch(b, key, inner, false, null),
             try b.remote("lists", "reverse", &.{try b.remote("erlang", "erase", &.{Ast.Expr.v(key)})}),
         });
+        return b.body(&.{
+            try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})),
+            try this.genEndCatch(b, key, inner, false, null),
+        });
+    }
+
+    /// `erlang:put(Key, [V | erlang:get(Key)])` — one item onto a comptime
+    /// module's eager scope's list.
+    fn genPush(this: *Emitter, b: Ast.Builder, key: []const u8, value: Ast.Expr) anyerror!Ast.Expr {
+        _ = this;
+        return b.remote("erlang", "put", &.{
+            Ast.Expr.v(key),
+            try b.cons(&.{value}, try b.remote("erlang", "get", &.{Ast.Expr.v(key)})),
+        });
+    }
+
+    /// A call of the generator runtime's helper `h` (`beam/gen_runtime.zig`),
+    /// which the module then defines.
+    fn genCall(this: *Emitter, b: Ast.Builder, h: genRuntime.Helper, args: []const Ast.Expr) anyerror!Ast.Expr {
+        this.gen_helpers.insert(h);
+        return b.call(h.name(), args);
+    }
+
+    /// `yield v` in the scope `gs`: `'__bp_gen_yield'(V)`, or — when the
+    /// scope has a cell — `'__bp_gen_yield_put'(V, Cell, Group)`, which puts
+    /// the group first.
+    fn genYield(this: *Emitter, b: Ast.Builder, gs: GenScope, value: Ast.Expr) anyerror!Ast.Expr {
+        if (this.untyped) return this.genPush(b, gs.key, value);
+        const cell = gs.cell orelse return this.genCall(b, .gen_yield, &.{value});
+        return this.genCall(b, .gen_yield_put, &.{ value, Ast.Expr.v(cell), try this.varGroupExpr(b, gs.names) });
+    }
+
+    /// Before the statement `stmt` of `body`: for each tracked cell
+    /// (`GenCell`) of this sequence whose names `stmt` reads, the match
+    /// `Group' = erlang:get(Cell)`; a cell whose names `stmt` assigns stops
+    /// being tracked.
+    fn genCellRefresh(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, stmt: ast.Stmt, out: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
+        var i: usize = 0;
+        while (i < this.active_gen_cells.items.len) {
+            const c = this.active_gen_cells.items[i];
+            if (c.body != body.ptr) {
+                i += 1;
+                continue;
+            }
+            var read: std.ArrayListUnmanaged([]const u8) = .empty;
+            try ast.collectRunNames(b.arena, &.{stmt}, &read);
+            if (namesMeet(c.names, read.items)) try out.append(b.arena, .{ .expr = try b.match(
+                try this.bindVarGroupExpr(b, c.names),
+                try b.remote("erlang", "get", &.{Ast.Expr.v(c.@"var")}),
+            ) });
+            var assigned: std.ArrayListUnmanaged([]const u8) = .empty;
+            try this.collectMutations(b.arena, &.{stmt}, &.{}, &assigned);
+            if (namesMeet(c.names, assigned.items)) {
+                _ = this.active_gen_cells.orderedRemove(i);
+                continue;
+            }
+            i += 1;
+        }
     }
 
     /// A bare `break` at the level of a generator fn's body (decision 103):
@@ -6398,10 +6532,11 @@ const Emitter = struct {
         return std.fmt.allocPrint(b.arena, "__BpGen{d}", .{this.gen_seq});
     }
 
-    /// `try Body catch throw:{'__bp_gen_end', Key, G, V} -> <push V>, G end` —
+    /// `try Body catch throw:{'__bp_gen_end', Key, G, V} -> '__bp_gen_yield'(V), G end` —
     /// where a `break <v>` of the scope lands. With `group` the catch answers
-    /// the variables the throw carried (an annotated loop's); without, `ok`.
-    fn genEndCatch(this: *Emitter, b: Ast.Builder, key: []const u8, body: Ast.Body, group: bool) anyerror!Ast.Expr {
+    /// the variables the throw carried (an annotated loop's), put in `cell`
+    /// first when there is one; without, `ok`.
+    fn genEndCatch(this: *Emitter, b: Ast.Builder, key: []const u8, body: Ast.Body, group: bool, cell: ?[]const u8) anyerror!Ast.Expr {
         const g_var = if (group) try std.fmt.allocPrint(b.arena, "__BpGenG{s}", .{key["__BpGen".len..]}) else "_";
         const v_var = try std.fmt.allocPrint(b.arena, "__BpGenV{s}", .{key["__BpGen".len..]});
         // The key is matched by a guard: a bound variable in the pattern
@@ -6415,8 +6550,11 @@ const Emitter = struct {
                 Ast.Expr.v(v_var),
             }))},
             &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
-            &.{
-                try this.genPush(b, key, Ast.Expr.v(v_var)),
+            if (cell) |c| &.{
+                try this.genCall(b, .gen_yield_put, &.{ Ast.Expr.v(v_var), Ast.Expr.v(c), Ast.Expr.v(g_var) }),
+                Ast.Expr.v(g_var),
+            } else &.{
+                if (this.untyped) try this.genPush(b, key, Ast.Expr.v(v_var)) else try this.genCall(b, .gen_yield, &.{Ast.Expr.v(v_var)}),
                 if (group) Ast.Expr.v(g_var) else Ast.Expr.a("ok"),
             },
         );
@@ -6431,15 +6569,6 @@ const Emitter = struct {
             ),
         }) else try b.arena.dupe(Ast.Clause, &.{end_clause});
         return .{ .try_catch = .{ .body = body, .catches = catches } };
-    }
-
-    /// `erlang:put(Key, [V | erlang:get(Key)])` — one item onto the scope's list.
-    fn genPush(this: *Emitter, b: Ast.Builder, key: []const u8, value: Ast.Expr) anyerror!Ast.Expr {
-        _ = this;
-        return b.remote("erlang", "put", &.{
-            Ast.Expr.v(key),
-            try b.cons(&.{value}, try b.remote("erlang", "get", &.{Ast.Expr.v(key)})),
-        });
     }
 
     /// A `test { … }` body as `'__bp_test_<idx>'() -> Body.`, registered with
@@ -6495,6 +6624,16 @@ const Emitter = struct {
         const saved_indent = this.indent;
         this.indent = indent;
         defer this.indent = saved_indent;
+        const saved_body = this.cur_body;
+        defer this.cur_body = saved_body;
+        // A sequence lowered from its start again tracks no cell of an
+        // earlier lowering of it.
+        if (start == 0) {
+            var ci: usize = 0;
+            while (ci < this.active_gen_cells.items.len) {
+                if (this.active_gen_cells.items[ci].body == body.ptr) _ = this.active_gen_cells.orderedRemove(ci) else ci += 1;
+            }
+        }
 
         var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         // The body's tail (last value) keys off the last *real* statement, so
@@ -6506,6 +6645,8 @@ const Emitter = struct {
             try this.deferPuts(b, seen, &stmts);
             const stmt = body[i];
             const is_last = if (last_real) |lr| (i == lr) else (i == body.len - 1);
+            this.cur_body = body.ptr;
+            try this.genCellRefresh(b, body, stmt, &stmts);
 
             // Decision 539 — `defer e;` wraps the REST of the body:
             // `try <rest> after <e> end`, the body's last statement, so `e`
@@ -6986,7 +7127,7 @@ const Emitter = struct {
                 // named fun (`lists:foldl` cannot be stopped from inside).
                 if (hasJump(lp.body, .@"break") or hasJump(lp.body, .@"continue") or labelTargeted(lp) != null)
                     return try this.conditionLoopNode(b, lp, names.items);
-                return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
+                return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items, this.stepsSequence(lp));
             },
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| {
@@ -7020,7 +7161,7 @@ const Emitter = struct {
                 const each = forEachLambda(stmt.expr) orelse return null;
                 try this.collectMutations(b.arena, each.body, each.params, &names);
                 if (names.items.len == 0) return null;
-                return try this.mutatingFoldExpr(b, each.params[0], each.body, each.recv.*, names.items);
+                return try this.mutatingFoldExpr(b, each.params[0], each.body, each.recv.*, names.items, false);
             },
             else => return null,
         }
@@ -7110,8 +7251,11 @@ const Emitter = struct {
         const arm_indent = this.indent + 3;
         const saved = this.indent;
         this.indent = arm_indent;
+        // 144 B-128 — a sequence is stepped one item per round: a list is
+        // itself, a generator's next item comes before the generator.
+        const sequence = walk and this.stepsSequence(lp);
         const subject: ?Ast.Expr = if (walk)
-            Ast.Expr.v(iter_var)
+            (if (sequence) try this.genCall(b, .step, &.{Ast.Expr.v(iter_var)}) else Ast.Expr.v(iter_var))
         else if (isLiteralTrue(lp.iter.*)) null else try this.condNode(b, lp.iter.*);
         this.indent = saved;
         const arm_pattern: Ast.Expr = if (walk)
@@ -7172,12 +7316,19 @@ const Emitter = struct {
             .body = fun_body,
         } };
         var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-        if (walk) try args.append(b.arena, try this.exprNode(b, lp.iter.*));
+        const with_var = try std.fmt.allocPrint(b.arena, "__BpWith{d}", .{n});
+        if (walk) try args.append(b.arena, if (sequence) Ast.Expr.v(with_var) else try this.exprNode(b, lp.iter.*));
         if (has_group) try args.append(b.arena, try this.varGroupExpr(b, names));
-        const plain_call: Ast.Expr = .{ .apply = .{
+        const walk_call: Ast.Expr = .{ .apply = .{
             .fun = try b.ptr(try b.paren(fun)),
             .args = args.items,
         } };
+        // A generator the walk leaves early — a `break`, a thrown `return` or
+        // a raise — is closed (`'__bp_iter_with'/2`).
+        const plain_call: Ast.Expr = if (sequence) try this.genCall(b, .with, &.{
+            try this.exprNode(b, lp.iter.*),
+            .{ .fun = .{ .params = try b.exprs(&.{Ast.Expr.v(with_var)}), .body = try b.body(&.{walk_call}) } },
+        }) else walk_call;
         if (!hasJump(lp.body, .@"break")) return plain_call;
         return .{ .try_catch = .{
             .body = try b.body(&.{plain_call}),
@@ -7189,9 +7340,68 @@ const Emitter = struct {
         } };
     }
 
-    /// `#[@generator] loop { … }` (decision 105) — eager on erlang: the body
-    /// runs as `loop { … }` does, its items collected under a fresh key, and
-    /// the expression is the list:
+    /// `iter loop { … }` (decision 105, 144 B-128) — lazy: a generator over a
+    /// fun whose body runs the loop as `loop { … }` does:
+    ///
+    ///     '__bp_gen_new'(fun() ->
+    ///         __BpGen1 = make_ref(),
+    ///         Group' = try <the loop's call>
+    ///                  catch throw:{'__bp_gen_end', __BpGen1, G, V} -> '__bp_gen_yield'(V), G end,
+    ///         ok
+    ///     end)
+    ///
+    /// The variables the body reassigns are the generator's state: they are
+    /// the fun's own from the loop on, and their latest values are put under
+    /// a cell (`GenCell`) — `case make_ref() of __BpGenC1 -> erlang:put(…),
+    /// <the generator> end`, the single-clause `case` exporting the cell's
+    /// variable — so a counter the loop advances is read after it, once the
+    /// loop has run, at its last value. `stream loop` is the same generator:
+    /// erlang's `await` is identity.
+    fn generatorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
+        if (this.untyped) return this.eagerGeneratorLoopNode(b, lp);
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try this.collectMutations(b.arena, lp.body, &.{}, &names);
+        const key = try this.genKey(b);
+        const cell: ?[]const u8 = if (names.items.len > 0)
+            try std.fmt.allocPrint(b.arena, "__BpGenC{s}", .{key["__BpGen".len..]})
+        else
+            null;
+        // The group as the function holds it before the loop: the cell's
+        // first value, read by a statement that runs before any item.
+        const group_before: ?Ast.Expr = if (cell != null) try this.varGroupExpr(b, names.items) else null;
+        // The versions the body binds are the fun's: the function goes on with
+        // the ones it had.
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const saved_scope = this.gen_scope;
+        this.gen_scope = .{ .key = key, .names = names.items, .cell = cell };
+        const saved_cells = this.active_gen_cells.items.len;
+        const call = blk: {
+            defer this.gen_scope = saved_scope;
+            break :blk try this.recursiveLoopCall(b, lp, names.items);
+        };
+        // A cell the body's own statements tracked is the body's.
+        if (this.active_gen_cells.items.len > saved_cells) this.active_gen_cells.shrinkRetainingCapacity(saved_cells);
+        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0, cell);
+        var fun_body: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        try fun_body.append(b.arena, .{ .expr = try b.match(Ast.Expr.v(key), try b.remote("erlang", "make_ref", &.{})) });
+        if (cell) |c| {
+            try fun_body.append(b.arena, .{ .expr = try b.match(try this.bindVarGroupExpr(b, names.items), caught) });
+            try fun_body.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(c), try this.varGroupExpr(b, names.items) }) });
+        } else try fun_body.append(b.arena, .{ .expr = caught });
+        try fun_body.append(b.arena, .{ .expr = Ast.Expr.a("ok") });
+        try this.restoreVersions(&snapshot);
+        const gen = try this.genCall(b, .gen_new, &.{.{ .fun = .{ .params = &.{}, .body = .{ .stmts = fun_body.items } } }});
+        const c = cell orelse return gen;
+        try this.active_gen_cells.append(this.alloc, .{ .@"var" = c, .names = try b.arena.dupe([]const u8, names.items), .body = this.cur_body });
+        return b.caseOf(try b.remote("erlang", "make_ref", &.{}), &.{.{
+            .patterns = try b.exprs(&.{Ast.Expr.v(c)}),
+            .body = try b.body(&.{ try b.remote("erlang", "put", &.{ Ast.Expr.v(c), group_before.? }), gen }),
+        }});
+    }
+
+    /// `iter loop { … }` in a comptime module (`untyped`): the list of its
+    /// items, the loop run in place — the comptime runtime runs no process:
     ///
     ///     case make_ref() of
     ///         __BpGen1 ->
@@ -7200,13 +7410,7 @@ const Emitter = struct {
     ///                      catch throw:{'__bp_gen_end', __BpGen1, G, V} -> <push V>, G end,
     ///             lists:reverse(erlang:erase(__BpGen1))
     ///     end
-    ///
-    /// The variables the body reassigns come back in the group, so a counter
-    /// the loop advances is read after it at its last value; a `break <v>`
-    /// hands them back through the throw. The single-clause `case` exports
-    /// the group's bindings. `#[@futureGenerator]` is the same list: erlang's
-    /// `await` is identity.
-    fn generatorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
+    fn eagerGeneratorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         try this.collectMutations(b.arena, lp.body, &.{}, &names);
         const key = try this.genKey(b);
@@ -7216,7 +7420,7 @@ const Emitter = struct {
             defer this.gen_scope = saved_scope;
             break :blk try this.recursiveLoopCall(b, lp, names.items);
         };
-        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0);
+        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0, null);
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         try arm.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }) });
         try arm.append(b.arena, .{ .expr = if (names.items.len > 0)
@@ -7735,7 +7939,15 @@ const Emitter = struct {
     }
 
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
-    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
+    /// True when the `for` steps an `@Iterator` / `@Stream` (inference keys
+    /// `.sequence_next` by the loop's own loc, 144 B-128): what it walks may be
+    /// a generator, which `beam/gen_runtime.zig`'s helpers step lazily.
+    fn stepsSequence(this: *const Emitter, lp: anytype) bool {
+        const il = this.instance_lowerings.get(lp.loc) orelse return false;
+        return il == .sequence_next;
+    }
+
+    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8, sequence: bool) anyerror!Ast.Expr {
         const saved_cond_loop = this.cond_loop;
         this.cond_loop = null;
         defer this.cond_loop = saved_cond_loop;
@@ -7752,11 +7964,12 @@ const Emitter = struct {
         const group_init = try this.varGroupExpr(b, names);
         const iter_expr = try this.exprNode(b, iter);
 
-        const fold = try b.remote("lists", "foldl", &.{
+        const fold_args: []const Ast.Expr = &.{
             .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
             group_init,
             iter_expr,
-        });
+        };
+        const fold = if (sequence) try this.genCall(b, .foldl, fold_args) else try b.remote("lists", "foldl", fold_args);
         const target = try this.bindVarGroupExpr(b, names);
         return b.match(target, fold);
     }
@@ -8545,9 +8758,9 @@ const Emitter = struct {
                     this.genStopThrow(b, this.gen_scope.?)
                 else
                     b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
-                // `yield v` pushes onto the nearest generator scope's list.
+                // `yield v` hands `v` to the nearest generator scope's consumer.
                 .yield => |y| if (this.gen_scope) |gs|
-                    this.genPush(b, gs.key, if (y.value) |val| try this.exprNode(b, val.*) else A("undefined"))
+                    this.genYield(b, gs, if (y.value) |val| try this.exprNode(b, val.*) else A("undefined"))
                 else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => |cont| if (cont.label != null and this.labelLoop(cont.label.?) != null)
                     this.labelContinueThrow(b, this.labelLoop(cont.label.?).?)
@@ -8685,7 +8898,9 @@ const Emitter = struct {
                 const param = V(try this.arenaVar(b, lp.params[0]));
                 this.addLocal(lp.params[0]);
                 const fun: Ast.Expr = .{ .fun = .{ .params = try b.exprs(&.{param}), .body = try this.bodyNode(b, lp.body, 0, this.indent + 1) } };
-                return this.loopBreakCatch(b, try b.remote("lists", "foreach", &.{ fun, try this.exprNode(b, lp.iter.*) }), lp.body);
+                const each_args: []const Ast.Expr = &.{ fun, try this.exprNode(b, lp.iter.*) };
+                const each = if (this.stepsSequence(lp)) try this.genCall(b, .foreach, each_args) else try b.remote("lists", "foreach", each_args);
+                return this.loopBreakCatch(b, each, lp.body);
             },
 
             .call => |c| {
@@ -9294,6 +9509,7 @@ const Emitter = struct {
         // A value receiver with no recorded lowering (inference bailed out, e.g.
         // on a chained call): try the Array primitive defaults and the universal
         // `toString` before the bare `m(Recv, args)` call.
+        if (try this.iterMethodNode(b, cc.callee, recv, cc, false)) |node| return node;
         if (try this.arrayPrimFallbackNode(b, cc.callee, recv, cc)) |node| return node;
         // A comptime body has no types at all: dispatch on the receiver at runtime.
         // A comptime body has no types at all, and a typed module whose inference
@@ -9302,6 +9518,7 @@ const Emitter = struct {
         // either: dispatch on it at runtime — unless the module defines a
         // function of that name taking the receiver first.
         if (this.untyped or !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }))) {
+            if (try this.iterMethodNode(b, cc.callee, recv, cc, true)) |node| return node;
             if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
         }
         // A method exactly one local type declares, on a receiver inference
@@ -10470,7 +10687,9 @@ const Emitter = struct {
     fn sequenceStep(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, name: []const u8) anyerror!SequenceStep {
         const yield_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Yield"));
         const done_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Done"));
-        const subject = try this.exprNode(b, recv.*);
+        // 144 B-128 — a generator's next item before it (the rest is the
+        // generator itself); a list is itself.
+        const subject = try this.genCall(b, .step, &.{try this.exprNode(b, recv.*)});
         this.pattern_var_next += 1;
         const id = this.pattern_var_next;
         const head = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpStepHead{d}", .{id}));
@@ -10571,7 +10790,8 @@ const Emitter = struct {
         const name = local orelse {
             const yield_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Yield"));
             const done_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Done"));
-            const subject = try this.exprNode(b, recv.*);
+            // 144 B-128 — a generator's next item before it; a list is itself.
+            const subject = try this.genCall(b, .step, &.{try this.exprNode(b, recv.*)});
             this.pattern_var_next += 1;
             const head = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpStepHead{d}", .{this.pattern_var_next}));
             return b.caseInline(subject, &.{
@@ -11449,6 +11669,28 @@ const Emitter = struct {
         try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
     }
 
+    /// A method an `@Iterator` answers, on a receiver inference left untyped
+    /// — what a generator's method call looks like (144 B-128): the generator
+    /// runtime's helper (`beam/gen_runtime.zig`), whose list clause is the
+    /// Array lowering. `late` picks the methods the Array fallback below does
+    /// not take (`map`, `filter`, `find`, …), asked after it; the others
+    /// (`take`, `drop`, `forEach`) take its place.
+    fn iterMethodNode(this: *Emitter, b: Ast.Builder, callee: []const u8, recv: *const ast.Expr, cc: anytype, late: bool) anyerror!?Ast.Expr {
+        // A comptime module holds no generator: its sequences are lists.
+        if (this.untyped) return null;
+        const arity = cc.args.len + cc.trailing.len;
+        if (std.mem.eql(u8, callee, "forEach") and arity == 1) {
+            if (late) return null;
+            return try this.genCall(b, .foreach, &.{ try this.argNode(b, cc, 0), try this.exprNode(b, recv.*) });
+        }
+        const h = genRuntime.Helper.ofMethod(callee, arity) orelse return null;
+        if (late != (h != .take and h != .drop)) return null;
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        try args.append(b.arena, try this.exprNode(b, recv.*));
+        for (0..arity) |i| try args.append(b.arena, try this.argNode(b, cc, i));
+        return try this.genCall(b, h, args.items);
+    }
+
     /// The std Array default fns as erlang BIFs (`forEach`/`fold`/`drop`/
     /// `take`/`toList`), or null for any other method.
     fn arrayPrimFallbackNode(this: *Emitter, b: Ast.Builder, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
@@ -11681,6 +11923,7 @@ const Emitter = struct {
             .needs_add_helper = this.needs_add_helper,
             .needs_int_helper = this.needs_int_helper,
             .needs_nz_helper = this.needs_nz_helper,
+            .gen_helpers = this.gen_helpers,
             .prim_shims = this.prim_shims,
             .needed_instance_defaults = this.needed_instance_defaults,
             .forms = .empty,
@@ -11699,6 +11942,7 @@ const Emitter = struct {
         this.needs_add_helper = false;
         this.needs_int_helper = false;
         this.needs_nz_helper = false;
+        this.gen_helpers = .initEmpty();
         this.prim_shims = .empty;
         this.needed_instance_defaults = .empty;
         return saved;
@@ -11760,6 +12004,7 @@ const Emitter = struct {
         if (this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
         if (this.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
         if (this.needs_print_helper or this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        try appendGenHelperForms(b, forms, this.gen_helpers);
     }
 
     /// Set the file module's helper state aside for a unit lowered beside it
@@ -11779,6 +12024,7 @@ const Emitter = struct {
             .needs_add_helper = this.needs_add_helper,
             .needs_int_helper = this.needs_int_helper,
             .needs_nz_helper = this.needs_nz_helper,
+            .gen_helpers = this.gen_helpers,
             .prim_shims = this.prim_shims,
             .needed_instance_defaults = this.needed_instance_defaults,
             .forms = .empty,
@@ -11796,6 +12042,7 @@ const Emitter = struct {
         this.needs_add_helper = false;
         this.needs_int_helper = false;
         this.needs_nz_helper = false;
+        this.gen_helpers = .initEmpty();
         this.prim_shims = .empty;
         this.needed_instance_defaults = .empty;
         return saved;
@@ -11923,6 +12170,7 @@ const Emitter = struct {
         this.needs_add_helper = unit.needs_add_helper;
         this.needs_int_helper = unit.needs_int_helper;
         this.needs_nz_helper = unit.needs_nz_helper;
+        this.gen_helpers = unit.gen_helpers;
         this.prim_shims = unit.prim_shims;
         this.needed_instance_defaults = unit.needed_instance_defaults;
     }

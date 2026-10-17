@@ -526,9 +526,13 @@ pub const InstanceLowering = union(enum) {
     /// Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
     /// (answers `YieldStep<T>`) or a `@Stream<T>` (answers
     /// `@Task<YieldStep<T>>`). commonJS maps the generator's `{ value, done }`
-    /// onto the variants; the eager backends (erlang, beam, wasm), whose
-    /// sequence is the list of its items, pop the head and rebind the receiver
-    /// to the rest when it is a local name.
+    /// onto the variants; erlang and beam step a generator first (144 B-128:
+    /// its next item before the generator itself) and wasm, whose sequence is
+    /// the list of its items, does not, then each pops the head and rebinds
+    /// the receiver to the rest when it is a local name. Also keyed by a `for` / `for
+    /// await` loop's own loc when what it iterates is an `@Iterator` /
+    /// `@Stream` (144 B-128): erlang and beam step a generator lazily there,
+    /// one item per round.
     sequence_next: SequenceKind,
     /// An arithmetic operator's result type, keyed by its operator's loc —
     /// `+`, `-`, `*`, `/`, `%`, a unary `-`, and a `+=` (keyed by its

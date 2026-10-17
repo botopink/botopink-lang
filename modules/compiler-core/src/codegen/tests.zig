@@ -42,6 +42,7 @@ test {
     _ = @import("beam/beam_file.zig");
     _ = @import("beam/asm_text.zig");
     _ = @import("beam/opcodes.zig");
+    _ = @import("beam/gen_runtime.zig");
     _ = @import("wat/wat_emitter.zig");
     _ = @import("wat/wasm_binary_emitter.zig");
 }

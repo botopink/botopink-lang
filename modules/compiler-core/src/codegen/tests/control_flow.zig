@@ -1682,11 +1682,12 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\  for (nums(0)) { x -> runs = runs + 1; };
         \\  @print(runs);
         \\}
-    , "012\n0\n", &.{"lists:reverse(erlang:erase(__BpGen1))"});
+    , "012\n0\n", &.{ "'__bp_gen_new'(fun() ->", "'__bp_gen_yield'(I@1)" });
 }
 
 test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
-    // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
+    // `isPlainYieldGenerator`'s path: literals only, so nothing in it runs and
+    // the lazy generator (144 B-128) is not needed.
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
         \\fn main() {
