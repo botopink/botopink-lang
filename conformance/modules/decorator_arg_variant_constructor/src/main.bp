@@ -1,0 +1,22 @@
+//// Decision 587 — a decorator argument that is a variant constructor
+//// (`.Circle(radius: 2)`) is known at build, like a literal: the decorator's
+//// `comptime` parameter receives it and the program runs.
+
+pub type Shape { Circle(radius: i32), Dot }
+
+pub type Mark(text: string)
+
+fn shaped(expr decl: unknown, comptime shape: Shape) {
+    compiler.setMeta(Mark(text: "shaped"));
+}
+
+#[shaped(Shape.Circle(radius: 2))]
+type Plot(id: i32)
+
+#[shaped(.Dot)]
+type Spot(id: i32)
+
+pub fn main() {
+    @print(@typeInfo(Plot).meta(Mark)?.text ?? "none");
+    @print(@typeInfo(Spot).meta(Mark)?.text ?? "none");
+}

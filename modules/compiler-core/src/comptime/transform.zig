@@ -1421,6 +1421,12 @@ fn expandTrailingDefaultsWithParams(agg: *Aggregator, params: []const ast.Param,
 /// and beam the atom `'Top'` (printed `'Top'`). Any other default is the
 /// parameter's own node, unchanged.
 fn injectedDefault(agg: *Aggregator, param: *const ast.Param) !*ast.Expr {
+    return injectedDefaultIn(agg.spec_cache.arena, param);
+}
+
+/// `injectedDefault` over an arena alone — the decorator module's copy of a
+/// call (`block_eval.filledCall`) is filled the way the transform fills it.
+pub fn injectedDefaultIn(arena: std.mem.Allocator, param: *const ast.Param) !*ast.Expr {
     const dflt = &param.default.?;
     if (dflt.* != .identifier or dflt.identifier.kind != .dotIdent) return @constCast(dflt);
     const enum_name = switch (param.typeRef) {
@@ -1434,7 +1440,6 @@ fn injectedDefault(agg: *Aggregator, param: *const ast.Param) !*ast.Expr {
     // A section path (`Token.Layout`) or a builtin spelling is not one plain
     // name to qualify with; it keeps the written node.
     if (enum_name.len == 0 or std.mem.indexOfScalar(u8, enum_name, '.') != null or !std.ascii.isUpper(enum_name[0])) return @constCast(dflt);
-    const arena = agg.spec_cache.arena;
     const loc = dflt.identifier.loc;
     const recv = try arena.create(ast.Expr);
     recv.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = enum_name } } };

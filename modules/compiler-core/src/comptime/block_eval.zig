@@ -47,6 +47,7 @@ const trace = @import("./trace.zig");
 const diagnostics = @import("./diagnostics.zig");
 const formatMod = @import("../format.zig");
 const hostCells = @import("./host_cells.zig");
+const transform = @import("./transform.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -338,6 +339,12 @@ pub const Rewrites = struct {
     index: *const SectionRewrites,
     /// Decision 519 — each `@embed` call's `Asset(…)` constructor.
     embeds: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = &empty_embeds,
+    /// Decision 587 — the argument fills inference planned (`Env.defaultInjections`),
+    /// for a body the decorator module reads untyped: a variant constructor
+    /// called with labels, or with defaults left out, is written out in
+    /// declaration order (`filledCall`). Null: no fill is applied.
+    fills: ?*const std.AutoHashMap(ast.Loc, envMod.DefaultFill) = null,
+    arena: ?std.mem.Allocator = null,
 
     const empty_embeds: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty;
 
@@ -345,8 +352,17 @@ pub const Rewrites = struct {
         return .{ .sections = &env.enumSectionRewrites, .index = &env.indexRewrites, .embeds = &env.embedRewrites };
     }
 
+    /// `of`, with the fills of the calls the body wrote.
+    pub fn withFills(env: *const Env) Rewrites {
+        var rw = of(env);
+        rw.fills = &env.defaultInjections;
+        rw.arena = env.arena;
+        return rw;
+    }
+
     fn empty(self: Rewrites) bool {
-        return self.sections.count() == 0 and self.index.count() == 0 and self.embeds.count() == 0;
+        const filled = if (self.fills) |f| f.count() != 0 else false;
+        return self.sections.count() == 0 and self.index.count() == 0 and self.embeds.count() == 0 and !filled;
     }
 };
 
@@ -360,7 +376,7 @@ pub const Rewrites = struct {
 /// (`.Bold`), a leading-dot constructor (`.Hover(…)`) and a section's payload
 /// leaf (`.Color.Hex(…)`) are the qualified forms inference resolved
 /// (`Env.indexRewrites`). Null when nothing was recorded for `e`.
-fn sectionRewrite(rw: Rewrites, e: ast.Expr) ?ast.Expr {
+fn sectionRewrite(rw: Rewrites, e: ast.Expr) Error!?ast.Expr {
     switch (e) {
         .identifier => |id| switch (id.kind) {
             .identAccess => if (rw.sections.get(id.loc)) |r| return r.*,
@@ -375,6 +391,9 @@ fn sectionRewrite(rw: Rewrites, e: ast.Expr) ?ast.Expr {
             if (!c.kind.call.is_builtin and (c.kind.call.calleeExpr != null or isPathReceiver(c.kind.call.receiver))) {
                 if (rw.index.get(c.loc)) |r| if (r.* != .jump) return r.*;
             }
+            if (rw.fills) |fills| if (fills.get(c.loc)) |fill| if (!rw.sections.contains(c.loc)) {
+                if (try filledCall(rw.arena.?, fill, c)) |out| return .{ .call = out };
+            };
             const r = rw.sections.get(c.loc) orelse return null;
             if (r.* != .call or r.call.kind != .call) return null;
             var out = c;
@@ -385,6 +404,43 @@ fn sectionRewrite(rw: Rewrites, e: ast.Expr) ?ast.Expr {
         else => {},
     }
     return null;
+}
+
+/// Decision 587 — `c` with the arguments inference planned for it
+/// (`Env.defaultInjections`): written in declaration order, a parameter left
+/// out given its declared default — what the transform does for a call of the
+/// module (`transform.applyDefaultFill`). Null when the plan no longer
+/// describes the call.
+fn filledCall(arena: std.mem.Allocator, fill: envMod.DefaultFill, c: anytype) Error!?@TypeOf(c) {
+    if (c.kind != .call) return null;
+    const args = c.kind.call.args;
+    if (args.len > fill.params.len) return null;
+    var written: usize = 0;
+    for (fill.slots) |slot| {
+        const ai = slot orelse continue;
+        if (ai >= args.len) return null;
+        written += 1;
+    }
+    if (written != args.len) return null;
+    const new_args = try arena.alloc(ast.CallArg, fill.params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        new_args[pi] = if (slot) |ai| args[ai] else .{
+            .label = null,
+            .value = try transform.injectedDefaultIn(arena, &fill.params[pi]),
+            .comments = &.{},
+            .is_default_inj = true,
+        };
+    }
+    var out = c;
+    out.kind.call.args = new_args;
+    return out;
+}
+
+/// Whether `sectionRewrite` replaces the node (no allocation).
+fn rewritesNode(rw: Rewrites, e: ast.Expr) bool {
+    if (e != .call or e.call.kind != .call) return false;
+    const fills = rw.fills orelse return false;
+    return fills.contains(e.call.loc);
 }
 
 /// `transform.zig`'s `isPathReceiver`: a receiver written as a path.
@@ -431,7 +487,7 @@ const RewriteWalk = struct {
 
     fn walk(self: *RewriteWalk, comptime U: type, ptr: *const U) void {
         if (self.found) return;
-        if (U == ast.Expr) if (sectionRewrite(self.rw, ptr.*) != null) {
+        if (U == ast.Expr) if (rewritesNode(self.rw, ptr.*) or ((sectionRewrite(self.rw, ptr.*) catch null) != null)) {
             self.found = true;
             return;
         };
@@ -463,7 +519,7 @@ const SectionCopier = struct {
     rw: Rewrites,
 
     fn clone(self: *SectionCopier, comptime U: type, v: U) Error!U {
-        const w: U = if (U == ast.Expr) (sectionRewrite(self.rw, v) orelse v) else v;
+        const w: U = if (U == ast.Expr) ((try sectionRewrite(self.rw, v)) orelse v) else v;
         switch (@typeInfo(U)) {
             .@"struct" => |st| {
                 var out: U = w;
@@ -589,7 +645,7 @@ const Preparer = struct {
     }
 
     fn replace(self: *Preparer, written: ast.Expr) Error!?ast.Expr {
-        const rewritten = sectionRewrite(self.rw, written);
+        const rewritten = try sectionRewrite(self.rw, written);
         const e = rewritten orelse written;
         if (try self.replaceOne(e)) |r| return r;
         return if (rewritten != null) try self.copyNode(ast.Expr, e) else null;
@@ -1236,6 +1292,69 @@ const UseWalk = struct {
                 return;
             },
             else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Decision 587 — whether `f`'s body calls a variant constructor with labels
+/// (`Implementation.Wasm(op: "f64.floor")`, `.Wasm(op: "f64.floor")`): a
+/// decorator's function that does is inferred before the decorator runs
+/// (`infer.sameLoweredFn`), so the call's fill is known and the module the
+/// decorator runs in reads the arguments in declaration order.
+pub fn writesLabelledCtorCall(f: ast.FnDecl) bool {
+    var w = CtorWalk{};
+    for (f.body) |*st| w.walk(ast.Expr, &st.expr);
+    return w.found;
+}
+
+const CtorWalk = struct {
+    found: bool = false,
+
+    fn isCtorCall(e: ast.Expr) bool {
+        if (e != .call or e.call.kind != .call) return false;
+        const c = e.call.kind.call;
+        if (c.is_builtin) return false;
+        // `.Erlang(…)`: the type a leading dot names is resolved by inference.
+        if (c.calleeExpr) |ce| if (ce.* == .identifier and ce.identifier.kind == .dotIdent) return true;
+        var labelled = false;
+        for (c.args) |a| if (a.label) |l| {
+            if (!std.mem.eql(u8, l, "..")) labelled = true;
+        };
+        if (!labelled) return false;
+        if (c.calleeExpr != null) return true;
+        const r = c.receiver orelse return false;
+        if (r.* != .identifier) return false;
+        return switch (r.identifier.kind) {
+            .dotIdent => true,
+            .ident => |n| n.len > 0 and std.ascii.isUpper(n[0]),
+            else => false,
+        };
+    }
+
+    fn walk(self: *CtorWalk, comptime U: type, ptr: *const U) void {
+        if (self.found) return;
+        if (U == ast.Expr) if (isCtorCall(ptr.*)) {
+            self.found = true;
+            return;
         };
         if (U == ast.TypeRef or U == ast.Pattern) return;
         switch (@typeInfo(U)) {

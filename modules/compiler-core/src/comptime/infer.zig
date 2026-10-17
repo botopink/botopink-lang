@@ -779,7 +779,10 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // Decision 575 (6) — every declaration's implementations: std's
     // `external` read where it is written, a library's source annotation
     // added by the run above.
-    try applyImplementContributions(env, program);
+    // A module whose decorators also emit, add a member or wrap is
+    // re-analysed on the merged program, which receives them there
+    // (`comptime.zig`); they stay on the env until then.
+    if (!hasSplicedContributions(env)) try applyImplementContributions(env, program);
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
@@ -947,7 +950,10 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // Decision 575 (6) — every declaration's implementations: std's
     // `external` read where it is written, a library's source annotation
     // added by the run above.
-    try applyImplementContributions(env, program);
+    // A module whose decorators also emit, add a member or wrap is
+    // re-analysed on the merged program, which receives them there
+    // (`comptime.zig`); they stay on the env until then.
+    if (!hasSplicedContributions(env)) try applyImplementContributions(env, program);
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
@@ -4356,10 +4362,16 @@ fn refuseUnimplemented(env: *Env, name: []const u8, loc: ?ast.Loc) InferError {
     ), "Name its host code on each target: `#[@external(.Erlang(\"…\"), .Node(\"…\"), .Wasm(…))]`, or give it a body (`fn`).");
 }
 
+/// Whether this pass's decorators contributed text the module is re-analysed
+/// with (`@emit`, `addMember`, `addType`, `wrapWith`, `@TypeInfo.all`).
+pub fn hasSplicedContributions(env: *Env) bool {
+    return env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending;
+}
+
 /// Decision 575 (6) — each implementation a library's source annotation gave
 /// (`compiler.implement`, `Env.implementContributions`) appended to its
 /// declaration's, in the order the decorators ran.
-fn applyImplementContributions(env: *Env, program: ast.Program) InferError!void {
+pub fn applyImplementContributions(env: *Env, program: ast.Program) InferError!void {
     if (env.implementContributions.items.len == 0) return;
     for (env.implementContributions.items) |c| {
         for (program.decls) |*d| switch (d.*) {
@@ -5679,7 +5691,11 @@ fn runDeclDecorators(
         // (a package record an imported helper builds) travel with them
         // (`block_eval.typesReached`); the evaluator's own (`DeclKind`,
         // `Span`) are injected by it.
-        const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
+        // Decision 587 — the types the body names once inference resolved its
+        // leading-dot variants (`.Erlang(…)` is `Implementation.Erlang(…)`).
+        var hosts = try hostCells.Writer.init(env, program.decls);
+        const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
+        const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, found.fns, builtFns.items });
         const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         // Decision 364 — the body reads `x.value`; the module holds the value
@@ -5690,8 +5706,6 @@ fn runDeclDecorators(
         // Decision 341 — the std calls of this module's functions renamed to
         // the std functions the module carries (`host_cells.zig`), which
         // join the support with the host functions the run reaches.
-        var hosts = try hostCells.Writer.init(env, program.decls);
-        const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
         // What only the run reads — the decorator's erased body and the erased
         // support functions, a copy of every function the run reaches — is scratch:
         // it is gone when the run ends, not held until the session ends (144 B-117).
@@ -6894,6 +6908,13 @@ fn isDeclWrite(callee: []const u8) bool {
     return false;
 }
 
+/// Whether the call is `decl.implement(…)` on the declaration handle
+/// (`compiler.implement`), whose one parameter is an `Implementation`.
+fn isDeclImplementCall(receiver: ?*ast.TypedExpr, callee: []const u8) bool {
+    const r = receiver orelse return false;
+    return std.mem.eql(u8, callee, "implement") and isDeclHandleType(r.getType());
+}
+
 /// Whether `t` is the `@Decl` handle's type.
 fn isDeclHandleType(t: *T.Type) bool {
     const d = t.deref();
@@ -6911,7 +6932,10 @@ fn isDeclHandleType(t: *T.Type) bool {
 /// untyped, where the path is a chain of map reads.
 fn sameLoweredFn(env: *Env, program: ast.Program, f: ast.FnDecl) InferError!ast.FnDecl {
     const sections = f.body.len > 0 and blockEval.writesSectionPath(env, f);
-    if (f.body.len == 0 or !(decoratorSameMod.mentionsSame(f) or sections)) return f;
+    // Decision 587 — a variant constructor called with labels is typed now,
+    // so its fill (the declaration order, the defaults left out) is known.
+    const labelled = f.body.len > 0 and blockEval.writesLabelledCtorCall(f);
+    if (f.body.len == 0 or !(decoratorSameMod.mentionsSame(f) or sections or labelled)) return f;
     const gop = try env.decoratorBodiesChecked.getOrPut(env.arena, @intFromPtr(f.body.ptr));
     if (!gop.found_existing) {
         if (!env.earlyValsBound) {
@@ -6923,7 +6947,7 @@ fn sameLoweredFn(env: *Env, program: ast.Program, f: ast.FnDecl) InferError!ast.
         _ = try inferFnDecl(env, f);
     }
     const lowered = if (decoratorSameMod.mentionsSame(f)) try decoratorSameMod.lower(env.arena, &env.decoratorSame, f) else f;
-    return if (sections) try blockEval.sectionRewritten(env.arena, blockEval.Rewrites.of(env), lowered) else lowered;
+    return if (sections or labelled) try blockEval.sectionRewritten(env.arena, blockEval.Rewrites.withFills(env), lowered) else lowered;
 }
 
 /// Decision 372 — the two phases a module's decorators run in: every
@@ -21995,7 +22019,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         i;
                     if (pi >= ps.len) break :blk null;
                     break :blk ps[pi];
-                } else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
+                } else if (i == 0 and isDeclImplementCall(typedReceiver, call.callee))
+                    // Decision 587 — `compiler.implement(.Erlang(…))`: the
+                    // parameter's type, `Implementation`, names the variant
+                    // a leading dot writes.
+                    try env.namedType("Implementation")
+                else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
                 // Decision 148 — a `forEach` body may write a captured `var`.
                 if (arg.value.* == .function and typedReceiver != null and std.mem.eql(u8, call.callee, "forEach") and (isArrayType(typedReceiver.?.getType()) or typedReceiver.?.getType().deref().* == .typeVar))
                     env.nextLambdaExempt = true;

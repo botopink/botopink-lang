@@ -1,0 +1,18 @@
+//// Decision 587 — `compiler.implement` takes `Implementation`, so its argument
+//// may be the dot shorthand `.Erlang(…)`.
+
+fn bif(expr decl: unknown, comptime module: string) {
+    compiler.implement(.Erlang(module + ":reverse($0)"));
+}
+
+#[bif("lists")]
+#[@external(.Node("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+pub fn main() {
+    @print(backwards([1, 2, 3]));
+}

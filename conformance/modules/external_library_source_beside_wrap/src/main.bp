@@ -1,0 +1,29 @@
+//// Decision 575 (6) — a library's `compiler.implement` survives the module's
+//// re-analysis: a decorator of the same module that wraps a function
+//// (`compiler.wrapWith`) does not lose the implementation `#[bif]` gave.
+
+fn bif(expr decl: unknown, comptime module: string) {
+    compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
+}
+
+fn loud(expr decl: fn() -> string) {
+    compiler.wrapWith({ call -> call.run() + "!" });
+}
+
+#[loud]
+fn hello() -> string {
+    return "hello";
+}
+
+#[bif("lists")]
+#[@external(.Node("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+pub fn main() {
+    @print(hello());
+    @print(backwards([1, 2, 3]));
+}

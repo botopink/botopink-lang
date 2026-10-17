@@ -4395,6 +4395,46 @@ decorator that hands `compiler.implement` an `Implementation`:
 
 <!-- example: modules/external_library_source_annotation -->
 
+`compiler.implement` takes an `Implementation`, so its argument may be the dot shorthand: `compiler.implement(.Erlang(module + ":reverse($0)"))`.
+
+<!-- example: modules/external_library_source_dot_shorthand -->
+
+A library's `compiler.implement` survives the module's re-analysis: a decorator of the same module that adds a member (`compiler.addMember`) does not lose it.
+
+<!-- example: modules/external_library_source_beside_member -->
+
+A decorator of the same module that wraps a function (`compiler.wrapWith`) does not lose a library's `compiler.implement` either.
+
+<!-- example: modules/external_library_source_beside_wrap -->
+
+Nor does a decorator of the same module that emits a declaration.
+
+<!-- example: modules/external_library_source_beside_emit -->
+
+A variant constructor called with labels and with its defaulted fields left out answers one value on every target: the fields written keep their labels' values and the others take their defaults.
+
+<!-- example: modules/enum_variant_labelled_defaults -->
+
+The labels of a variant constructor name its fields, so the order they are written in does not matter.
+
+<!-- example: modules/enum_variant_labelled_reorder -->
+
+The same holds for std's `Implementation` called in a decorator of the module: `Implementation.Wasm(op: "f64.floor")` takes every other field from its default.
+
+<!-- example: modules/enum_variant_labelled_implementation -->
+
+A `?unknown` parameter admits a function value, as `Implementation.Wasm(body: reverseBody)` names the function it runs.
+
+<!-- example: modules/optional_unknown_takes_function -->
+
+A decorator argument that is a variant constructor (`Shape.Circle(radius: 2)`, `.Dot`) is known at build, like a literal.
+
+<!-- example: modules/decorator_arg_variant_constructor -->
+
+`botopink format` prints an annotation whose arguments end in a trailing comma one per line, the comma kept.
+
+<!-- example: modules/format_annotation_trailing_comma -->
+
 <!-- example: modules/external_wasm_host_binding -->
 
 A declaration takes the signature a `fn` does — generic parameters, `comptime`

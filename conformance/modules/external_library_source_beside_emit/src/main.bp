@@ -1,0 +1,27 @@
+//// Decision 575 (6) — a library's `compiler.implement` survives the module's
+//// re-analysis: a decorator of the same module that emits a declaration does
+//// not lose the implementation `#[bif]` gave.
+
+fn bif(expr decl: unknown, comptime module: string) {
+    compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
+}
+
+fn greeting(expr decl: unknown) {
+    @emit("pub fn greeted() -> string { return \"hi\"; }");
+}
+
+#[greeting]
+fn anchor() {}
+
+#[bif("lists")]
+#[@external(.Node("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+pub fn main() {
+    @print(greeted());
+    @print(backwards([1, 2, 3]));
+}

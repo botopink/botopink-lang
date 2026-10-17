@@ -2127,6 +2127,9 @@ fn analyzeSource(
             prepended += imports.len;
         }
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items, env.executorAnchors.items, prepended)) |merged_program| {
+            // Decision 575 (6): a library's `compiler.implement` of this pass
+            // joins the declarations the re-analysis reads.
+            try infer.applyImplementContributions(&env, merged_program);
             var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan, hygiene.items);
             if (reanalysis == .typeError) reanalysis.typeError = locateInOutputs(arena, reanalysis.typeError, source, &env);
             if (reanalysis == .success) {

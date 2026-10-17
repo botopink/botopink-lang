@@ -1,0 +1,17 @@
+//// Decision 587 — std's `Implementation` is a variant constructor called with
+//// labels and its defaulted fields left out: `Implementation.Wasm(op:
+//// "f64.floor")` takes `template`, `std`, `wasi`, `body`, `host`
+//// and `needs` from their defaults, on every target, in a library's source
+//// annotation.
+
+fn floorOp(expr decl: unknown) {
+    compiler.implement(Implementation.Wasm(op: "f64.floor"));
+}
+
+#[floorOp]
+#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
+declare fn floor(x: f64) -> f64;
+
+pub fn main() {
+    @print(floor(2.5).toString());
+}
