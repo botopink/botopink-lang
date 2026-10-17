@@ -1,13 +1,7 @@
 //// A package that does not declare `Asset` — the compiler's record — reads its fields.
 
-// Passes a value through the host. It has no wasm binding, which keeps this cell off wasm: the
-// wasm backend cannot yet place a field of a record the module does not declare.
-#[@External.Node("""$0""")]
-#[@External.Erlang("""$0""")]
-declare fn through(s: string) -> string;
-
 pub fn pathOf(a: Asset) -> string {
-    return through(a.path);
+    return a.path;
 }
 
 pub fn sizeOf(a: Asset) -> i64 {

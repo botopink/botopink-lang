@@ -1,1 +1,1 @@
-{ "name": "declared_field_read_other_module", "targets": ["commonJS", "erlang", "beam"], "dependencies": { "lib": { "path": "deps/lib" } } }
+{ "name": "declared_field_read_other_module", "dependencies": { "lib": { "path": "deps/lib" } } }

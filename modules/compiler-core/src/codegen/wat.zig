@@ -1264,6 +1264,44 @@ fn collectStrings(comptime T: type, value: T, set: *std.StringHashMapUnmanaged(v
     }
 }
 
+/// A record the compiler splices into the module that uses it
+/// (`comptime.spliced_record_names`: `Asset`, `SourceLocation`, `Declared` and its
+/// entries) is no declaration of a module that only NAMES it — a dependency's
+/// `pub fn pathOf(a: Asset)` reading `a.path`, `show(all: Declared<unknown>[])`
+/// reading `d.name`. Its source joins the declarations, private, when a
+/// declaration names one of its types and nothing declares any of them, so the
+/// read finds the record's slot as it does in the module that spliced it
+/// (144 B-95, B-97).
+fn spliceNamedRecords(
+    ar: std.mem.Allocator,
+    decls: *std.ArrayListUnmanaged(ast.DeclKind),
+    owner: *std.ArrayListUnmanaged(usize),
+    own: usize,
+) !void {
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    for (decls.items) |d| try collectStrings(ast.DeclKind, d, &seen, ar);
+    const sources = [_][]const u8{ comptimeMod.declared_decl_src, comptimeMod.source_location_decl_src, comptimeMod.asset_decl_src };
+    for (sources) |src| {
+        var lx = lexerMod.Lexer.init(src);
+        const tokens = try lx.scanAll(ar);
+        var p = @import("../parser.zig").Parser.init(tokens);
+        const prog = p.parse(ar) catch continue;
+        var named = false;
+        var declared = false;
+        for (prog.decls) |d| if (d == .type_) {
+            if (seen.contains(d.type_.name)) named = true;
+            for (decls.items) |e| if (e == .type_ and std.mem.eql(u8, e.type_.name, d.type_.name)) {
+                declared = true;
+            };
+        };
+        if (!named or declared) continue;
+        for (prog.decls) |d| if (d == .type_) {
+            try decls.append(ar, d);
+            try owner.append(ar, own);
+        };
+    }
+}
+
 /// Whether any of `methods` is named by a string of `seen`.
 fn anyMethodSeen(methods: anytype, seen: *const std.StringHashMapUnmanaged(void)) bool {
     for (methods) |m| if (seen.contains(m.name)) return true;
@@ -1665,6 +1703,7 @@ fn emitWatPass(
     // what the module reaches, so it would not meet the refusal; the module is
     // lowered in linear memory, which links everything, as it always did.
     if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
+    try spliceNamedRecords(ar0, &decls, &owner, linked.len);
     if (plan.mode == .gc) try pruneUnreached(ar0, &decls, &owner, linked.len);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
@@ -21864,6 +21903,8 @@ const Emitter = struct {
         };
         const name = switch (elem) {
             .named => |n| n,
+            // `Declared<unknown>[]`: the generic record the element names.
+            .generic => |g| if (g.is_builtin) return null else g.name,
             else => return null,
         };
         return self.resolveRecordName(name);

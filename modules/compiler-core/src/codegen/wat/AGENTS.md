@@ -107,6 +107,13 @@ lowered in `.linear`. The module's type group is built once the module is lowere
 first, then the types the lowering asked for, in the order it asked), and a type's fields may ask for more.
 `reprOf` is `watType` for a written type with the references added in a GC module (`memberRepr` for a
 method's parameters and answer), `gcReprOfExpr` the same for an expression `wasmTypeOf` took for a word.
+A record the compiler splices (`comptime.spliced_record_names`: `Asset`, `SourceLocation`, `Declared`, `DeclaredMeta`,
+`DeclaredTypedMeta`) that a module only NAMES — a dependency's `pathOf(a: Asset)` reading `a.path`, `show(all:
+Declared<unknown>[])` reading `d.name` — is no declaration of it: `spliceNamedRecords` adds the source (`declared_decl_src`,
+`source_location_decl_src`, `asset_decl_src`) to the declarations, before `pruneUnreached`, when a declaration's strings name
+one of its types and no declaration holds any, so the read finds the record's slot as in the module that spliced it
+(144 B-95, B-97; `conformance/modules/{embed,declared}_field_read_other_module`, on all four targets). An array of a
+generic record (`Declared<unknown>[]`) gives its lambda parameter the record (`elemRecordOfTypeRef`).
 The GC pass lowers only the declarations the module can reach by name (`pruneUnreached`): a linked module
 brings all of its own, and one without a GC form sent a module that never named it to linear memory. A
 function a linked declaration brought that still touches linear memory (std's `Dict.fold`, over a closure)
