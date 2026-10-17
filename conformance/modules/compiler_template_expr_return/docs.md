@@ -1,4 +1,6 @@
-> Decision 575 (4) — `-> expr T` is a template's return: the expression
-> returned is spliced at the call. A `comptime` parameter's value computed
-> at build is spliced as a literal (`shout`); an `expr` parameter hands the
-> expression written on (`same`).
+> Decisions 577, 578 — a template is a function whose first parameter is
+> its text, `expr q: string`, called `` name @`…` ``: the text arrives raw
+> (no escape but `` \` ``, no hole) and `compiler.text(q)` reads it. The
+> call becomes the template's return: a value computed at build is spliced
+> as a literal (`shout`), and `compiler.build(source)` answers the code
+> built from text, typed where the call stands (`-> anyvalue`, `twice`).

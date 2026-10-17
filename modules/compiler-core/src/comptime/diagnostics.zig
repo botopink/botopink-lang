@@ -728,6 +728,13 @@ pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending
 /// Decision 376 (2) — a function that reaches a build-only resource and a
 /// run-time one (directly or through its calls): refused at the second,
 /// naming the first. A `comptime` separates them.
+/// Decision 578 (4) — `anyvalue` written anywhere but a template's return.
+pub const anyvalue_outside_template: []const u8 = "anyvalue-outside-template";
+
+/// Decision 578 (1), 577 (4) — a template (a function whose first parameter
+/// is its `expr q: string` text) declared with other parameters.
+pub const template_signature: []const u8 = "template-signature";
+
 /// Decision 575 (3) — `compiler` in a body that runs only when the program
 /// runs (`main`, a `test`).
 pub const compiler_at_run_time: []const u8 = "compiler-at-run-time";
@@ -956,6 +963,8 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_several,
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
+    anyvalue_outside_template,
+    template_signature,
     compiler_at_run_time,
     compiler_output_outside_decorator,
     expr_captures_build,

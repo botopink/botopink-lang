@@ -14,17 +14,17 @@
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
 ////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`.
-//// - The reads of an `expr` (decision 576 (2)): `text`, `name`, `parts`,
-////   `source`, `context`, `lookup`, `bindings`, `fail`.
-//// - A template's call site: `build`, `note`, `tagDecl`, `annotate`,
-////   `custom`.
+//// - The reads of an `expr` (decision 576 (2)): `text`, `name`, `source`,
+////   `context`, `lookup`, `bindings`, `fail`.
+//// - A template's call site: `build`, `buildType`, `note`, `tagDecl`,
+////   `annotate`, `custom` (decision 578 (3)).
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 //// - The program: `catalogue`, `typeInfo`.
 ////
-//// `compile`, `implement`, `setBuiltin`, `embed`, `record`, `fields` over a
-//// type, `optional` and `required` join it with the steps that build them.
+//// `compile`, `implement`, `setBuiltin`, `embed`, `fields` over a type,
+//// `optional` and `required` join it with the steps that build them.
 
 pub behavior Compiler {
     // ── The point ─────────────────────────────────────────────────────────
@@ -63,8 +63,7 @@ pub behavior Compiler {
     // The name the expression is written as, or the declaration's name;
     // `null` for a lambda or `a + b`.
     fn name(self: Self, e: unknown) -> ?string;
-    // A template literal's parts, its source and the context it stands in.
-    fn parts(self: Self, e: unknown) -> Part[];
+    // A template text's source and the context it stands in.
     fn source(self: Self, e: unknown) -> Source;
     fn context(self: Self, e: unknown) -> ExprContext;
     // A name resolved where the call stands, and every name in scope there.
@@ -72,8 +71,12 @@ pub behavior Compiler {
     fn bindings(self: Self, e: unknown) -> unknown[];
 
     // ── A template's call site ────────────────────────────────────────────
-    // Code built from source text, typed at the call (decision 426 (1)).
-    fn build<R>(self: Self, source: string) -> R;
+    // Code built from source text, typed at the call (decisions 426 (1),
+    // 578 (3)).
+    fn build(self: Self, source: string) -> anyvalue;
+    // A type built from source text — the one way a type is built
+    // (decision 578 (3)).
+    fn buildType(self: Self, source: string) -> anytype;
     // A tag's declaration handle (decision 302), and a handle's annotation.
     fn tagDecl(self: Self, kind: DeclKind, name: string, attrs: unknown) -> unknown;
     fn annotate(self: Self, d: unknown, at: Span) -> unknown;

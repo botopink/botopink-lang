@@ -927,6 +927,17 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   (decision 311) is a template whose second parameter is `expr d: unknown`: that one is the handle.
 - `-> expr T` (`parseReturnTypeRef`) — a template's return, the tree type; `ast.isExprKeywordReturn` tells
   it from an `@Expr<T>` written while both parse.
+- Decisions 577, 578 — a **template** is a function whose first parameter (after an `expr self: R`
+  receiver, for a template method) is its text `expr q: string` (`ast.templateTextIndex`); `unwrapProgram`
+  keeps its trees, and `compiler_surface.zig` reads its return — `T`, or `anyvalue` (a type parameter
+  `ast.anyvalue_param_name` the built code binds at each call) — as the tree type the machinery knows. It
+  is called only `` name @`…` `` / `` recv.name @`…` `` (`CallExpr.call.templateText`, the raw text) or
+  `` #[name @`…`] `` (`Annotation.templateText`); any other call is `expr-call-outside-expr` (the checker),
+  another parameter `template-signature` (`compiler_surface.zig`), and `anyvalue` elsewhere
+  `anyvalue-outside-template` (the checker; std's `compiler.bp` declares `build`'s answer with it).
+  `anytype` is the bare `type` (`types.zig`, a `typeparam` with no member; the printer writes it).
+  `compiler.addType(name, compiler.buildType("(…)"))` hands the built type's text to `addType`;
+  `buildType` elsewhere waits for B-140. The `-> expr T` return still parses until the codemod's run lands.
 - `type<T>` — the type of the type `T` (`types.zig`, a `typeparam` with one member; `type<A | B>` keeps
   a constraint list); `type T` is `removed-type-bare-param`, at the name. `type` alone, `type(` and
   `type {` are unchanged.

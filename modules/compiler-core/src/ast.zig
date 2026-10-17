@@ -1262,6 +1262,12 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// `callee """..."""` — a single string-literal argument with no
             /// parentheses. Formatting preserves the tagged form.
             is_tagged: bool = false,
+            /// Decision 577 — the call `` name @`…` ``: its raw text (the
+            /// bytes between the backticks, `` \` `` resolved), kept for the
+            /// printer; the argument is the same text as a string literal
+            /// with no hole. Null for every other call, and left out of the
+            /// AST dump then.
+            templateText: ?[]const u8 = null,
             /// true for the optional-chaining call form `recv?.method(args)` —
             /// when the receiver is null/absent the call short-circuits to null.
             optional: bool = false,
@@ -1311,7 +1317,7 @@ pub fn CallExprOf(comptime phase: Phase) type {
             recordPacked: bool = false,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "templateText" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -1872,6 +1878,28 @@ pub fn isExprKeywordReturn(rt: TypeRef) bool {
     return rt.isExprType() and rt.generic.name.ptr == expr_type_name.ptr;
 }
 
+/// Decision 578 (1) — the position of a template's text parameter: the first
+/// parameter, after an `expr self: R` receiver for a template method,
+/// written `expr q: string` (the parser read it as the tree type of
+/// `string`). Null for any other function — it is no template by its
+/// parameters.
+pub fn templateTextIndex(params: []const Param) ?usize {
+    const q: usize = if (params.len > 0 and params[0].arrival == .expr and std.mem.eql(u8, params[0].name, "self")) 1 else 0;
+    if (q >= params.len) return null;
+    const p = params[q];
+    if (p.arrival != .expr or !p.typeRef.isExprType() or p.typeRef.generic.args.len != 1) return null;
+    const inner = p.typeRef.generic.args[0];
+    if (inner != .named or !std.mem.eql(u8, inner.named, "string")) return null;
+    return q;
+}
+
+/// Decision 578 (2) — a value whose type is known once its code is built: a
+/// template's return, `compiler.build`'s answer.
+pub const anyvalue_type_name = "anyvalue";
+/// The type parameter a template answering `anyvalue` is given, which the
+/// built code's type binds at each call (426 (1)); no source spells it.
+pub const anyvalue_param_name = "__anyvalue";
+
 /// The internal handle type of a decorator's first `expr` parameter.
 pub const decl_type_name = "Decl";
 
@@ -2248,6 +2276,10 @@ pub const Annotation = struct {
     template: ?[]const u8 = null,
     /// Where the template annotation's literal starts.
     templateLoc: ?Loc = null,
+    /// Decision 577 — `` #[f @`…`] ``: the raw text, kept for the printer;
+    /// `template` holds it as a string literal with no hole. Null for every
+    /// other annotation.
+    templateText: ?[]const u8 = null,
     /// Decision 286 — how the annotation was written, for the formatter only
     /// (never serialized): which `#[…]` block it sits in and the comments
     /// around it.

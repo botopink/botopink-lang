@@ -63,12 +63,12 @@ pub const members = [_]Member{
     .{ .name = "typeInfo", .kind = .site },
     .{ .name = "text", .kind = .read },
     .{ .name = "name", .kind = .read },
-    .{ .name = "parts", .kind = .read },
     .{ .name = "source", .kind = .read },
     .{ .name = "context", .kind = .read },
     .{ .name = "lookup", .kind = .read },
     .{ .name = "bindings", .kind = .read },
     .{ .name = "build", .kind = .site },
+    .{ .name = "buildType", .kind = .site },
     .{ .name = "note", .kind = .site },
     .{ .name = "tagDecl", .kind = .site },
     .{ .name = "annotate", .kind = .site },
@@ -136,11 +136,11 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
     defer arena.deinit();
     const P = Pass{ .alloc = alloc, .scratch = arena.allocator() };
     for (program.decls) |*d| switch (d.*) {
-        .@"fn" => |*f| try expandFn(P, f.name, f.params, &f.returnType, f.body),
+        .@"fn" => |*f| try expandFn(P, f.name, f.params, &f.returnType, &f.genericParams, f.body),
         .type_ => |*t| try expandType(P, t),
-        .behavior => |*b| for (b.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, body),
-        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, &none, m.body),
-        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, &none, m.body),
+        .behavior => |*b| for (b.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body),
+        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, &none, null, m.body),
+        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, &none, null, m.body),
         .@"test" => |*t| {
             var ctx: Ctx = .{ .alloc = alloc, .scratch = P.scratch, .runTime = true };
             try walkStmts(&ctx, t.body);
@@ -163,14 +163,48 @@ var none: ?ast.TypeRef = null;
 const custom_tree_name = "__bp_customTree";
 
 fn expandType(P: Pass, t: *ast.TypeDecl) error{OutOfMemory}!void {
-    for (t.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, body);
+    for (t.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body);
     for (t.assocTypes) |*inner| try expandType(P, inner);
 }
 
-fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, body: []ast.Stmt) error{OutOfMemory}!void {
+fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, gps: ?*[]ast.GenericParam, body: []ast.Stmt) error{OutOfMemory}!void {
+    // Decision 578 (1) — a template by its text parameter answers its return
+    // (`T`, or `anyvalue`: the type the built code has at each call) as the
+    // tree the machinery knows; its returns are lifted as `-> expr T`'s were.
+    var byText = false;
+    if (ast.templateTextIndex(params) != null) {
+        const already = if (returnRef.*) |rt| rt.isTemplateReturnType() else false;
+        if (!already) {
+            byText = true;
+            const written: ast.TypeRef = returnRef.* orelse .{ .named = ast.anyvalue_type_name };
+            var inner = written;
+            if (written == .named and std.mem.eql(u8, written.named, ast.anyvalue_type_name)) {
+                inner = .{ .named = ast.anyvalue_param_name };
+                if (gps) |g| {
+                    const grown = try P.alloc.alloc(ast.GenericParam, g.len + 1);
+                    @memcpy(grown[0..g.len], g.*);
+                    grown[g.len] = .{ .name = ast.anyvalue_param_name };
+                    g.* = grown;
+                }
+            }
+            const args = try P.alloc.alloc(ast.TypeRef, 1);
+            args[0] = inner;
+            returnRef.* = .{ .generic = .{ .name = ast.expr_type_name, .args = args, .is_builtin = true } };
+        }
+    }
     const returnType = returnRef.*;
     const alloc = P.scratch;
     var ctx: Ctx = .{ .alloc = P.alloc, .scratch = P.scratch };
+    // Decision 577 (4) — a template takes its text (an `expr self` receiver
+    // before it for a method, the annotated declaration after it for an
+    // annotation) and nothing else: refused at the parameter.
+    if (ast.templateTextIndex(params)) |q| for (params, 0..) |p, i| {
+        if (i <= q) continue;
+        if (i == q + 1 and p.typeRef.isDeclType()) continue;
+        if (body.len == 0) break;
+        body[0].expr = try refusal(&ctx, if (p.loc.line != 0) p.loc else p.typeLoc, diagnostics.template_signature, try std.fmt.allocPrint(P.alloc, "the template `{s}` takes its text and nothing else, and declares `{s}`", .{ name, p.name }), "A template's parameters are its text `expr q: string` (after an `expr self: R` receiver for a method), and for an annotation the declaration `expr decl: unknown` (decision 577 (4)); make it an ordinary function, or read the input from the text.");
+        return;
+    };
     ctx.runTime = std.mem.eql(u8, name, "main");
     if (params.len > 0 and params[0].typeRef.isDeclType()) ctx.decl = params[0].name;
     // A template annotation's handle is its second parameter (decision 311).
@@ -185,7 +219,7 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
         if (p.arrival != .value and tree) try trees.append(alloc, p.name);
         if (template and ctx.site == null and p.typeRef.isExprType()) {
             // A template method's literal is its second parameter (311 (3)).
-            if (!(i == 0 and ast.isTemplateMethodSignature(params, returnType))) ctx.site = p.name;
+            if (!(i == 0 and (ast.isTemplateMethodSignature(params, returnType) or ast.templateTextIndex(params) == 1))) ctx.site = p.name;
         }
     }
     ctx.values = values.items;
@@ -194,7 +228,7 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     // the tree is kept (`val <custom_tree_name> = tree`), the template is the
     // custom carrier the machinery knows (`@ExprCustom<T>`), and each return
     // hands the tree with its expression (`q.custom(tree, e)`).
-    const keyword = if (returnType) |rt| ast.isExprKeywordReturn(rt) else false;
+    const keyword = byText or (if (returnType) |rt| ast.isExprKeywordReturn(rt) else false);
     if (keyword) for (body) |*st| if (compilerCall(st.expr)) |c| if (std.mem.eql(u8, c.callee, "custom") and c.args.len == 1) {
         st.expr = .{ .binding = .{ .loc = st.expr.getLoc(), .kind = .{ .localBind = .{ .name = custom_tree_name, .value = c.args[0].value, .mutable = false } } } };
         ctx.custom = true;
@@ -333,6 +367,8 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     if (std.mem.eql(u8, name, "catalogue")) return builtinCall(loc, "TypeInfo.all", args, c.trailing);
     if (member.kind == .site) {
         const s = ctx.site orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` reads a template's call site, and this body is no template", .{name}), "A template answers `-> expr T`; its body reads the call site through `compiler` (decision 576 (2)).");
+        if (std.mem.eql(u8, name, "buildType"))
+            return refusal(ctx, loc, diagnostics.compiler_member_unknown, "`compiler.buildType(source)` builds a type only as `compiler.addType`'s source yet", "Write `compiler.addType(name, compiler.buildType(\"(…)\"))`; a derived type built from its text joins with step B-140 (decision 578 (3)).");
         if (std.mem.eql(u8, name, "annotate")) {
             // `compiler.annotate(d, at: span)` → `q.annotate(d, span)`.
             const pos = try positional(ctx, args);
@@ -440,6 +476,11 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             p.* = try treeRefusal(ctx, at);
             return;
         }
+        // Decision 578 (3) — `compiler.addType(name, compiler.buildType(s))`:
+        // the type built from its text (the text the machinery takes).
+        if (std.mem.eql(u8, c.callee, "addType") and c.args.len == 2) if (compilerCall(c.args[1].value.*)) |bt| if (std.mem.eql(u8, bt.callee, "buildType") and bt.args.len == 1) {
+            c.args[1].value = bt.args[0].value;
+        };
         // The arguments first: a member and a wrapper are trees.
         const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith");
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;

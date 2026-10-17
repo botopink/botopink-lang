@@ -1,4 +1,4 @@
-> Decision 575 (4) — a `-> expr T` function answers an expression spliced
-> where it is called: it is called by the template syntax (`shout "hi"`),
-> an annotation, or inside a tree. Called as a function it is refused at
-> the call (`expr-call-outside-expr`).
+> Decision 577 (3) — a template is called one way: its name before a
+> template text, `` shout @`hi` ``. A string literal after its name, a call
+> with parentheses, or `#[shout(…)]` is refused at the call
+> (`expr-call-outside-expr`).

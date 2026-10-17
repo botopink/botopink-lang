@@ -60,6 +60,11 @@ pub const TokenKind = enum {
     identifier,
     stringLiteral,
     multilineStringLiteral,
+    /// `` @`…` `` — decision 577's template text: a template's one literal,
+    /// raw bytes up to the closing backtick (`` \` `` writes a backtick), any
+    /// number of lines, no escape and no interpolation. The lexeme is the
+    /// whole token, `` @` `` and `` ` `` included.
+    templateText,
     linesStringLiteral, // `\\`-prefixed line string (Zig style): consecutive
     //                     `\\ …` lines join with newlines
     /// `'a'` — a character literal, which the language does not have: lexed as

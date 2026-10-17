@@ -1585,6 +1585,15 @@ pub const Formatter = struct {
                 })
             else
                 try this.text(c.callee);
+            // Decision 577 — `` name @`…` ``, the raw text as written.
+            if (@hasField(@TypeOf(c), "templateText")) if (c.templateText) |raw| {
+                const escaped = try std.mem.replaceOwned(u8, this.arena, raw, "`", "\\`");
+                return this.concatAll(&.{
+                    head,
+                    try this.text(" "),
+                    try this.text(try std.mem.concat(this.arena, u8, &.{ "@`", escaped, "`" })),
+                });
+            };
             return this.concatAll(&.{
                 head,
                 try this.text(" "),
@@ -2472,6 +2481,7 @@ pub const Formatter = struct {
         const prefix: []const u8 = if (ann.is_builtin) "@" else "";
         // Decision 311 — the template annotation prints as written: the
         // name, one space, the literal (`"…"` or `"""…"""`) untouched.
+        if (ann.templateText) |raw| return std.fmt.allocPrint(this.arena, "{s} @`{s}`", .{ ann.name, try std.mem.replaceOwned(u8, this.arena, raw, "`", "\\`") });
         if (ann.template) |lit| return std.fmt.allocPrint(this.arena, "{s} {s}", .{ ann.name, lit });
         if (ann.writtenArgs().len == 0) return std.fmt.allocPrint(this.arena, "{s}{s}", .{ prefix, ann.name });
         // A labelled argument prints `label: value` (decision 305: the
@@ -3293,7 +3303,8 @@ pub const Formatter = struct {
                     });
             },
             .typeparam => |constraints| blk: {
-                if (constraints.len == 0) break :blk this.text("type");
+                // Decision 578 (2) — the bare `type` is written `anytype`.
+                if (constraints.len == 0) break :blk this.text("anytype");
                 var docs = try this.arena.alloc(*const Doc, constraints.len);
                 // The constraint list is `|`-separated like a union's members,
                 // and `parseTypeRefMember` parses it the same way.

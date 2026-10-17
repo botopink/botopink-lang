@@ -1736,18 +1736,24 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // Tagged-call sugar: a string literal immediately after a plain
         // identifier or `a.b` access is a call with that single argument:
         // `html """<Button/>"""` => `html("""<Button/>""")`.
-        if ((this.check(.stringLiteral) or this.check(.multilineStringLiteral) or this.check(.linesStringLiteral)) and base == .identifier) {
+        if ((this.check(.stringLiteral) or this.check(.multilineStringLiteral) or this.check(.linesStringLiteral) or this.check(.templateText)) and base == .identifier) {
             switch (base.identifier.kind) {
                 .dotIdent => {}, // `.Red "x"` is not callable — leave for the normal error path
                 else => {
                     const strTok = this.advance();
                     const multiline = strTok.kind != .stringLiteral;
+                    // Decision 577 — `` @`…` ``: the raw text, no hole.
+                    const raw: ?[]const u8 = if (strTok.kind == .templateText) try templateTextRaw(alloc, strTok.lexeme) else null;
                     const content = switch (strTok.kind) {
                         .multilineStringLiteral => strTok.lexeme[3 .. strTok.lexeme.len - 3],
                         .linesStringLiteral => try materializeLineString(alloc, strTok.lexeme),
+                        .templateText => try templateTextContent(alloc, raw.?),
                         else => strTok.lexeme[1 .. strTok.lexeme.len - 1],
                     };
-                    const strExpr = try makeStringExpr(this, alloc, strTok, content, multiline);
+                    const strExpr = if (raw != null)
+                        Expr{ .literal = .{ .loc = locFromToken(strTok), .kind = .{ .stringLit = content } } }
+                    else
+                        try makeStringExpr(this, alloc, strTok, content, multiline);
                     const argPtr = try this.boxExpr(alloc, strExpr);
                     var args = try alloc.alloc(CallArg, 1);
                     args[0] = .{ .label = null, .value = argPtr, .comments = &.{} };
@@ -1763,6 +1769,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                         .dotIdent => unreachable,
                     };
                     base.call.kind.call.is_tagged = true;
+                    base.call.kind.call.templateText = raw;
                 },
             }
         }
@@ -2766,6 +2773,30 @@ pub fn parseStringToken(this: *This, alloc: std.mem.Allocator, strTok: Token) Pa
 /// Hole sources are sub-lexed/sub-parsed on their own; `retargetHoleTokens`
 /// then maps the sub-lexer's hole-relative positions back onto the source, so
 /// a hole's AST locs are absolute like every other node's.
+/// Decision 577 — the raw bytes of a template text token `` @`…` ``: what
+/// lies between the backticks, `` \` `` read as a backtick.
+pub fn templateTextRaw(alloc: std.mem.Allocator, lexeme: []const u8) ParseError![]const u8 {
+    const inner = lexeme[2 .. lexeme.len - 1];
+    return std.mem.replaceOwned(u8, alloc, inner, "\\`", "`");
+}
+
+/// The raw text as a string literal's content — every byte the escape
+/// sequences would read written as one, so the literal answers the raw bytes
+/// and holds no hole.
+pub fn templateTextContent(alloc: std.mem.Allocator, raw: []const u8) ParseError![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (raw) |ch| switch (ch) {
+        '\\' => try out.appendSlice(alloc, "\\\\"),
+        '"' => try out.appendSlice(alloc, "\\\""),
+        '$' => try out.appendSlice(alloc, "\\$"),
+        '\n' => try out.appendSlice(alloc, "\\n"),
+        '\r' => try out.appendSlice(alloc, "\\r"),
+        '\t' => try out.appendSlice(alloc, "\\t"),
+        else => try out.append(alloc, ch),
+    };
+    return out.toOwnedSlice(alloc);
+}
+
 fn makeStringExpr(this: *This, alloc: std.mem.Allocator, tok: Token, content: []const u8, multiline: bool) ParseError!Expr {
     const loc = locFromToken(tok);
     if (findInterpStart(content, 0) == null)

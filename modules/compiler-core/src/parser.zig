@@ -1556,6 +1556,21 @@ pub const Parser = struct {
         // node of its own beside the call form) and read again by the checker,
         // which captures it unevaluated; its `${…}` holes are parsed here so a
         // malformed hole is a parse error at the literal.
+        if (!is_builtin and this.check(.templateText)) {
+            // Decision 577 — `` #[f @`…`] ``: the raw text, read as a literal
+            // with no hole.
+            const tok = this.advance();
+            const raw = try exprs.templateTextRaw(alloc, tok.lexeme);
+            const content = try exprs.templateTextContent(alloc, raw);
+            return Annotation{
+                .name = name,
+                .args = &.{},
+                .template = try std.mem.concat(alloc, u8, &.{ "\"", content, "\"" }),
+                .templateLoc = locFromToken(tok),
+                .templateText = raw,
+                .loc = .{ .line = name_start.line, .col = name_start.col },
+            };
+        }
         if (!is_builtin and (this.check(.stringLiteral) or this.check(.multilineStringLiteral))) {
             const strTok = this.advance();
             var probe = try exprs.parseStringToken(this, alloc, strTok);

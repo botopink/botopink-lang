@@ -586,7 +586,9 @@ pub fn parseFnBody(
     }
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
-    if (selfTok) |tok| if (!ast.isTemplateMethodSignature(params, returnType)) {
+    // Decision 578 (1) — a template method by its text parameter keeps its
+    // `expr self` receiver too.
+    if (selfTok) |tok| if (!ast.isTemplateMethodSignature(params, returnType) and ast.templateTextIndex(params) != 1) {
         this.parseError = ParseErrorInfo.fromToken(.selfParamOutsideType, tok);
         return ParseError.UnexpectedToken;
     };

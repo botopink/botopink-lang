@@ -4746,6 +4746,12 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
             env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` —; a decorator is written `#[f(…)]` (decision 311).").withLoc(at);
             return error.TypeError;
         };
+        // Decision 577 (3) — a template annotation writes the template text.
+        if (t.returnType) |rt| if (ast.isExprKeywordReturn(rt) and a.templateText == null) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template `{s}`, which takes a template text", .{ diagnostics.expr_call_outside_expr, a.name, a.name });
+            env.lastError = TypeError.custom(msg, "Write `#[f @`…`]` (decision 577 (3)).").withLoc(at);
+            return error.TypeError;
+        };
         if (!memberFn.isTemplateAnnotation(t)) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template function `{s}`, which takes no `comptime decl: @Decl` beside its literal", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
             env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
@@ -12306,6 +12312,15 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // (`comptime.zig`, `withSourceLocationDecl`).
             if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
             if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
+            // Decision 578 (4) — `anyvalue` is a template's return (read as
+            // its built code's type) and nothing else — but in std's
+            // `compiler.bp`, where `Compiler.build` declares it as its answer.
+            if (std.mem.eql(u8, n, ast.anyvalue_type_name) and !std.mem.eql(u8, env.modulePath, "std/compiler")) {
+                var err = TypeError.custom(diagnostics.anyvalue_outside_template ++ ": `anyvalue` — a value whose type is known once its code is built — is written only as a template's return", "A template (`fn f(expr q: string) -> anyvalue`) answers the code it builds; anywhere else write the type.");
+                if (env.typeRefLoc) |l| err = err.withLoc(l);
+                env.lastError = err;
+                return error.TypeError;
+            }
             // 1.0.5 decision 31 — `any` is deleted. It was a closed type no
             // botopink value inhabited (`val a: any = 1` read "expected any,
             // got i32"); what a host parameter or handle means by it is
@@ -22668,12 +22683,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.
                         const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
-                        // Decision 575 (4) — a `-> expr T` function is called by
-                        // the template syntax, an annotation, or inside a tree
-                        // (a template's body, the code a template built).
-                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and !call.is_tagged and !env.inTemplateFn and loc.expansion == 0) {
-                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` answers `-> expr`, an expression spliced where it is called, and is called here as a function", .{ diagnostics.expr_call_outside_expr, call.callee });
-                            env.lastError = TypeError.custom(msg, "Call it with the template syntax (`f \"…\"`), as an annotation, or inside a tree (decision 575 (4)).").withLoc(loc);
+                        // Decisions 577 (3), 578 (1) — a template is called one
+                        // way: its name before a template text, `` f @`…` ``.
+                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and call.templateText == null) {
+                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.expr_call_outside_expr, call.callee });
+                            env.lastError = TypeError.custom(msg, "Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).").withLoc(loc);
                             return error.TypeError;
                         };
                         var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;

@@ -374,6 +374,11 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         return ast.TypeRef{ .typeparam = try constraints.toOwnedSlice(alloc) };
     }
 
+    // Decision 578 (2) — `anytype`, the type of any type: the bare `type`.
+    if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "anytype")) {
+        _ = this.advance();
+        return ast.TypeRef{ .typeparam = &.{} };
+    }
     // Plain named type, possibly followed by <T1, T2> and/or []
     const nameTok = try this.consumeTypeName();
     // N28 — a section of an enum-shaped `type` is named by its path

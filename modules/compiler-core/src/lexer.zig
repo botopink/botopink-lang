@@ -315,7 +315,17 @@ pub const Lexer = struct {
             },
 
             '@' => {
-                if (!self.isAtEnd() and isAlpha(self.peek())) {
+                if (!self.isAtEnd() and self.peek() == '`') {
+                    _ = self.advance(); // opening '`'
+                    while (!self.isAtEnd() and self.peek() != '`') {
+                        if (self.peek() == '\n') self.newlineAt();
+                        if (self.peek() == '\\' and self.peekNext() == '`') _ = self.advance();
+                        _ = self.advance();
+                    }
+                    if (self.isAtEnd()) return LexerError.UnterminatedString;
+                    _ = self.advance(); // closing '`'
+                    try self.addToken(.templateText, allocator);
+                } else if (!self.isAtEnd() and isAlpha(self.peek())) {
                     while (!self.isAtEnd() and isAlphaNumeric(self.peek())) _ = self.advance();
                     try self.addToken(.builtinIdent, allocator);
                 } else {

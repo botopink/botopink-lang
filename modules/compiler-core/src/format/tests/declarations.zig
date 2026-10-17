@@ -194,7 +194,7 @@ test "format: pub fn ---- comptime params" {
 
 test "format: pub fn ---- type meta-kind no constraint" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn wrap(comptime T: type) -> type {
+        \\pub fn wrap(comptime T: anytype) -> anytype {
         \\    todo;
         \\}
     );
@@ -981,7 +981,7 @@ test "format: declare fn ---- unannotated generics, discard param and generic re
     try h.assertFormatLossless(std.testing.allocator,
         \\pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
         \\
-        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, unknown>;
+        \\pub declare fn getContext<T>(comptime _: anytype) -> Component<T, unknown>;
         \\
         \\declare fn marker(comptime decl: @Decl);
     );
@@ -1048,7 +1048,7 @@ test "format: a variadic parameter keeps its `..`" {
         \\pub declare fn pick<T>(
         \\    comptime source: type<T>,
         \\    comptime ..fields: string[],
-        \\) -> type;
+        \\) -> anytype;
     );
 }
 

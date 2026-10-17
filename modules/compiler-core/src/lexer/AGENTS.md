@@ -177,3 +177,10 @@ The keyword `compiler` (a build-time body's `Compiler`) is read as an identifier
 refuses it as a parameter name (`consumeParamName`, `reserved-word-as-name`) and
 `parser/compiler_surface.zig` reads the expression `compiler` (`ast.compiler_keyword`). The
 parameter modifier `syntax` left the keyword table with `TokenKind.syntax`: it is an ordinary name.
+
+## The template text `` @`…` `` (decision 577)
+
+`` @` `` opens a `templateText` token that runs to the next unescaped backtick: any number of lines,
+its bytes as written — `` \` `` is its one escape — and no `${…}` interpolation. It is a template's one
+literal (`` name @`…` ``, `` #[name @`…`] ``); the parser reads it as a string literal with no hole
+(`parser/exprs.zig` `templateTextRaw` / `templateTextContent`) and keeps the raw text for the printer.

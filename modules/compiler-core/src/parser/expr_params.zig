@@ -58,7 +58,7 @@ fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.Ty
     // Decision 311 — a template annotation (`fn sql(expr q: string, expr
     // decl: unknown) -> expr string`): its second parameter, an `expr` typed
     // `unknown`, is the annotated declaration.
-    if (returnType) |rt| if (rt.isTemplateReturnType()) {
+    if ((if (returnType) |rt| rt.isTemplateReturnType() else false) or ast.templateTextIndex(params) != null) {
         if (params.len < 2 or params[0].arrival != .expr or std.mem.eql(u8, params[0].name, "self")) return;
         const d = &params[1];
         if (d.arrival != .expr or d.variadic or !d.typeRef.isExprType()) return;
@@ -67,7 +67,7 @@ fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.Ty
         alloc.free(d.typeRef.generic.args);
         d.typeRef = .{ .generic = .{ .name = ast.decl_type_name, .args = &.{}, .is_builtin = true } };
         return;
-    };
+    }
     if (params.len == 0 or params[0].arrival != .expr or params[0].variadic) return;
     const p = &params[0];
     if (!p.typeRef.isExprType()) return;
@@ -83,6 +83,8 @@ fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.Ty
 
 fn unwrap(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {
     if (returnType) |rt| if (rt.isTemplateReturnType()) return;
+    // Decision 578 (1) — a template by its text parameter keeps its trees.
+    if (ast.templateTextIndex(params) != null) return;
     for (params) |*p| {
         if (p.modifier != .@"comptime" or !p.typeRef.isExprType()) continue;
         const g = p.typeRef.generic;
