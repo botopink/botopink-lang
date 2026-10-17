@@ -1685,9 +1685,9 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
     , "012\n0\n", &.{ "'__bp_gen_new'(fun() ->", "'__bp_gen_yield'(I@1)" });
 }
 
-test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
-    // `isPlainYieldGenerator`'s path: literals only, so nothing in it runs and
-    // the lazy generator (144 B-128) is not needed.
+test "erlang: generator ---- a bare-yield body is a generator too" {
+    // Literals only, so nothing in it runs, yet the handle is stateful like any
+    // other (144 B-134).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
         \\fn main() {

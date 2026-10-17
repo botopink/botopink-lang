@@ -31,7 +31,15 @@ pub fn main() {
 
 %% @Iterator — lazy lowering
 two() ->
-    [1, 2].
+    '__bp_gen_new'(fun() ->
+        __BpGen1 = erlang:make_ref(),
+        try
+            '__bp_gen_yield'(1),
+            '__bp_gen_yield'(2)
+        catch
+            throw:{'__bp_gen_end', __BpGenK1, _, __BpGenV1} when (__BpGenK1 =:= __BpGen1) -> '__bp_gen_yield'(__BpGenV1), ok
+        end
+    end).
 
 stepText(S) ->
     T = case S of
@@ -76,15 +84,79 @@ main() ->
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
+'__bp_gen_new'(__BpA0) ->
+    Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' andalso DK =/= '__bp_gen_mon' end, erlang:get()) end,
+Load = fun(LD) ->
+    LOwn = erlang:get('__bp_gen_self'),
+    LMon = erlang:get('__bp_gen_mon'),
+    erlang:erase(),
+    lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
+    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end,
+    case LMon of undefined -> ok; _ -> erlang:put('__bp_gen_mon', LMon) end
+end,
+GenNew = fun(GBody) ->
+    GCreator = erlang:self(),
+    {'__bp_gen', erlang:spawn(fun() ->
+        GMon = erlang:monitor(process, GCreator),
+        erlang:put('__bp_gen_mon', GMon),
+        receive
+            {'DOWN', GMon, process, _, _} -> ok;
+            {'__bp_gen', GCmd, GFrom, GM, GD} ->
+                Load(GD),
+                erlang:put('__bp_gen_self', {GFrom, GM}),
+                case GCmd of
+                    close -> ok;
+                    next ->
+                        try GBody() catch
+                            throw:'__bp_gen_closed' -> ok;
+                            GC:GR:GS ->
+                                {GF0, GM0} = erlang:erase('__bp_gen_self'),
+                                erlang:send(GF0, {GM0, raise, GC, GR, GS, Dict()}),
+                                erlang:exit(normal)
+                        end
+                end,
+                {GF, GM1} = erlang:erase('__bp_gen_self'),
+                erlang:send(GF, {GM1, done, Dict()})
+        end
+    end)}
+end,
+GenNew(__BpA0).
+
+'__bp_gen_yield'(__BpA0) ->
+    Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' andalso DK =/= '__bp_gen_mon' end, erlang:get()) end,
+Load = fun(LD) ->
+    LOwn = erlang:get('__bp_gen_self'),
+    LMon = erlang:get('__bp_gen_mon'),
+    erlang:erase(),
+    lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
+    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end,
+    case LMon of undefined -> ok; _ -> erlang:put('__bp_gen_mon', LMon) end
+end,
+Yield = fun(YV) ->
+    {YFrom, YM} = erlang:erase('__bp_gen_self'),
+    erlang:send(YFrom, {YM, item, YV, Dict()}),
+    YMon = erlang:get('__bp_gen_mon'),
+    receive
+        {'DOWN', YMon, process, _, _} -> erlang:throw('__bp_gen_closed');
+        {'__bp_gen', YCmd, YFrom2, YM2, YD} ->
+            Load(YD),
+            erlang:put('__bp_gen_self', {YFrom2, YM2}),
+            case YCmd of next -> undefined; close -> erlang:throw('__bp_gen_closed') end
+    end
+end,
+Yield(__BpA0).
+
 '__bp_iter_step'(__BpA0) ->
     case __BpA0 of
 {'__bp_gen', P} = G ->
-Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' end, erlang:get()) end,
+Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' andalso DK =/= '__bp_gen_mon' end, erlang:get()) end,
 Load = fun(LD) ->
     LOwn = erlang:get('__bp_gen_self'),
+    LMon = erlang:get('__bp_gen_mon'),
     erlang:erase(),
     lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
-    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end
+    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end,
+    case LMon of undefined -> ok; _ -> erlang:put('__bp_gen_mon', LMon) end
 end,
 Call = fun(CPid, CCmd) ->
     CM = erlang:monitor(process, CPid),

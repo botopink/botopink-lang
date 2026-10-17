@@ -1498,6 +1498,7 @@ loop that is a value — a generator whose body is a closed generator scope.
 | `test/loop_yield_nearest_scope.bp` | `yield :out` from inside a `for` names the generator fn; an unannotated `loop` inside a generator fn is an ordinary loop |
 | `modules/loop_generator_dobros` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
 | `modules/generator_body_lazy` | 144 B-128: a generator's body runs one step per item asked for — on an `iter fn`, an `iter loop` and a marked lambda `iter { -> … }`, a print before and after the first `yield` comes out between the items, and an endless generator is consumed by `take(3)`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
+| `modules/generator_handle_stateful` | 144 B-134: a generator handle is stateful whatever its body — a second `for` over an exhausted handle reads nothing, on an `iter fn` of only literal `yield`s, an `iter fn` that runs code and an `iter loop`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
 | `modules/loop_range_inclusive` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
 
 The refusal cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,

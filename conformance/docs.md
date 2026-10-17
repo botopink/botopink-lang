@@ -3104,6 +3104,12 @@ items, and an endless generator is consumed by `take(n)` — on every form, an
 
 <!-- example: modules/generator_body_lazy -->
 
+A generator handle is stateful, whatever its body: a second `for` over a handle the
+first one exhausted reads nothing — on an `iter fn`, whether its body is only
+literal `yield`s or runs code, and on an `iter loop`.
+
+<!-- example: modules/generator_handle_stateful -->
+
 **Items that can fail — `@Iterator<@Result<T, E>>`.** The iterator does not
 fail; **each item** may be an error. When the item is `@Result<U, E>` the body
 gains the sugar: `yield v` with `v: U` emits `Ok(v)` (with `v: @Result<U, E>` it

@@ -6329,25 +6329,12 @@ const Emitter = struct {
 
     // ── fn ────────────────────────────────────────────────────────────────────
 
-    /// True when the body is a flat sequence of `yield` statements of
-    /// literals (a simple finite generator that lowers to an Erlang list):
-    /// nothing in it runs, so when it runs is not observable (144 B-128).
-    fn isPlainYieldGenerator(f: ast.FnDecl) bool {
-        if (f.effect == null or f.body.len == 0) return false;
-        for (f.body) |stmt| {
-            if (!(stmt.expr == .jump and stmt.expr.jump.kind == .yield)) return false;
-            if (stmt.expr.jump.kind.yield.value) |v| if (v.* != .literal) return false;
-        }
-        return true;
-    }
-
     fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `-> @Result` (the
         // checked-Result value), which is a plain function. A `@Task<T>` is
         // `T` (so `await` is identity); an `@Iterator<T>` / `@Stream<T>` that
         // yields is a generator, its body run lazily in a process of its own
-        // (144 B-128, `generatorFnBody`), and one whose body only yields
-        // literals the list of them. `-> @Component` is a plain function too:
+        // (144 B-128, `generatorFnBody`), whatever its body (144 B-134). `-> @Component` is a plain function too:
         // the return gates `use` in the body (decision 88); nothing about it
         // is async.
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
@@ -6397,15 +6384,7 @@ const Emitter = struct {
         const saved_nested_return = this.in_nested_return;
         this.in_nested_return = false;
         defer this.in_nested_return = saved_nested_return;
-        const raw_body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
-            // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
-            const items = try b.arena.alloc(Ast.Expr, f.body.len);
-            for (f.body, 0..) |stmt, i| {
-                // A bare `yield;` yields no value: `undefined`, botopink's null.
-                items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
-            }
-            break :blk try b.body(&.{.{ .list = items }});
-        } else if (effectChain.grants(f.effect, .yield_)) blk: {
+        const raw_body: Ast.Body = if (effectChain.grants(f.effect, .yield_)) blk: {
             const inner = try this.generatorFnBody(b, f.body);
             // A comptime module's generator is the list of its items: the
             // comptime runtime runs no process (144 B-128).

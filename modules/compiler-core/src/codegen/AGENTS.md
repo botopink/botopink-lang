@@ -1694,8 +1694,8 @@ codegen/
     `throw({'__bp_gen_end', Key, Group, V})`, caught by the scope
     (`genEndCatch`, the key a fresh `make_ref()` matched by a guard). A fn
     answers the generator (`generatorFnBody` in `fnForms`, the fn's
-    `'__bp_try'` guard inside the fun); a flat list of `yield`s of literals
-    stays the literal list (`isPlainYieldGenerator`: nothing in it runs).
+    `'__bp_try'` guard inside the fun), whatever its body — a flat list of `yield`s of literals
+    too, so its handle is as stateful as any (144 B-134).
     `iter loop { … }` (`generatorLoopNode`) runs as `loop { … }` does inside
     the fun; the variables it reassigns are the fun's own, so their latest
     values are put under a cell (`GenCell`: `'__bp_gen_yield_put'/3` before
@@ -3557,7 +3557,7 @@ no effect: it lowers as a plain function on every backend (decision 123).
 |---|---|---|---|---|
 | `-> @Result<T, E>` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `-> @Task<T>` | `async function`; `-> @Task<@Result<T, E>>` is a failing task (decision 432): a function answering `__bp_task((async () => { … })())`, whose body is the `-> @Result` lowering — the Promise rejects with `e` for a `throw` / `Error(e)` and resolves with the bare `T`; an `await` of a task that may fail reads it back through `__bp_await` (`js/AGENTS.md` § Failing tasks) | eager (`@Task<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Task` as a state machine) |
-| `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | lazy: a generator process (`beam/gen_runtime.zig`); a body of only `yield`s of literals → list | lazy: the body lifted into a fun, a generator process | eager body (144 B-128's wasm half open) |
+| `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | lazy: a generator process (`beam/gen_runtime.zig`); a body of only `yield`s of literals is one too | lazy: the body lifted into a fun, a generator process | eager body (144 B-128's wasm half open) |
 | `-> @Stream<T>` (yields) | `async function*` | lazy, as `@Iterator` | lazy, as `@Iterator` | eager body |
 | `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method — a type's, an enum's, a `default fn` — marked by its own body, a lambda `async` only when its body awaits); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
 

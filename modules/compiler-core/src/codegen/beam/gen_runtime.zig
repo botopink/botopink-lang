@@ -31,8 +31,12 @@
 //! `close` (a `for` left by `break`, `return` or a raise; `take` past its
 //! count) makes the suspended `yield` throw `'__bp_gen_closed'`: the body
 //! unwinds through its `defer`s, as commonJS's `return()` runs a generator's
-//! `finally`, and the reply is `done`. A consumer that never closes leaves the
-//! process waiting until the node halts.
+//! `finally`, and the reply is `done`. A consumer that never closes does
+//! not leak it: the generator monitors its creator (`GenNew` captures
+//! `erlang:self()`) and, on the creator's `'DOWN'`, ends in either of its two
+//! `receive`s — before the first request it just ends, suspended at a `yield`
+//! it unwinds as a `close` does (144 B-133). The monitor reference lives under
+//! `'__bp_gen_mon'`, which like `'__bp_gen_self'` never travels.
 //!
 //! A list stays a list: every consumer helper answers a list receiver as the
 //! eager lowering did (`lists:foreach/2`, `lists:sublist/2`, …).
@@ -40,7 +44,7 @@ const std = @import("std");
 
 /// The process dictionary, the generator's own reply address left out.
 const dict =
-    \\Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' end, erlang:get()) end,
+    \\Dict = fun() -> lists:filter(fun({DK, _}) -> DK =/= '__bp_gen_self' andalso DK =/= '__bp_gen_mon' end, erlang:get()) end,
     \\
 ;
 
@@ -49,9 +53,11 @@ const dict =
 const load =
     \\Load = fun(LD) ->
     \\    LOwn = erlang:get('__bp_gen_self'),
+    \\    LMon = erlang:get('__bp_gen_mon'),
     \\    erlang:erase(),
     \\    lists:foreach(fun({LK, LV}) -> erlang:put(LK, LV) end, LD),
-    \\    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end
+    \\    case LOwn of undefined -> ok; _ -> erlang:put('__bp_gen_self', LOwn) end,
+    \\    case LMon of undefined -> ok; _ -> erlang:put('__bp_gen_mon', LMon) end
     \\end,
     \\
 ;
@@ -78,7 +84,9 @@ const yield_ =
     \\Yield = fun(YV) ->
     \\    {YFrom, YM} = erlang:erase('__bp_gen_self'),
     \\    erlang:send(YFrom, {YM, item, YV, Dict()}),
+    \\    YMon = erlang:get('__bp_gen_mon'),
     \\    receive
+    \\        {'DOWN', YMon, process, _, _} -> erlang:throw('__bp_gen_closed');
     \\        {'__bp_gen', YCmd, YFrom2, YM2, YD} ->
     \\            Load(YD),
     \\            erlang:put('__bp_gen_self', {YFrom2, YM2}),
@@ -92,8 +100,12 @@ const yield_ =
 /// waits for its first request before the body runs.
 const gen_new =
     \\GenNew = fun(GBody) ->
+    \\    GCreator = erlang:self(),
     \\    {'__bp_gen', erlang:spawn(fun() ->
+    \\        GMon = erlang:monitor(process, GCreator),
+    \\        erlang:put('__bp_gen_mon', GMon),
     \\        receive
+    \\            {'DOWN', GMon, process, _, _} -> ok;
     \\            {'__bp_gen', GCmd, GFrom, GM, GD} ->
     \\                Load(GD),
     \\                erlang:put('__bp_gen_self', {GFrom, GM}),
@@ -288,4 +300,39 @@ test "every helper's text names only its own parameters" {
             try std.testing.expect(std.mem.indexOf(u8, t, hole) == null);
         }
     }
+}
+
+test "a generator ends with its creator, started or not (144 B-133)" {
+    // Two generators made by a process that then ends: one suspended at a
+    // `yield` (its first item taken), one never asked. Both must be dead soon
+    // after, with no request and no `close`.
+    const io = std.testing.io;
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const eval = try std.fmt.allocPrint(arena,
+        \\Gen = fun(__BpA0) -> {s} end,
+        \\Yld = fun(__BpA0) -> {s} end,
+        \\Stp = fun(__BpA0) -> {s} end,
+        \\Self = erlang:self(),
+        \\erlang:spawn(fun() ->
+        \\    XA = Gen(fun() -> Yld(1), Yld(2) end),
+        \\    XB = Gen(fun() -> Yld(1) end),
+        \\    [1 | _] = Stp(XA),
+        \\    {{'__bp_gen', PA}} = XA,
+        \\    {{'__bp_gen', PB}} = XB,
+        \\    Self ! {{pids, PA, PB}}
+        \\end),
+        \\receive {{pids, QA, QB}} -> ok end,
+        \\Wait = fun(WP) ->
+        \\    WM = erlang:monitor(process, WP),
+        \\    receive {{'DOWN', WM, process, _, _}} -> dead after 5000 -> alive end
+        \\end,
+        \\io:format("~p ~p~n", [Wait(QA), Wait(QB)]),
+        \\erlang:halt().
+    , .{ Helper.gen_new.text(), Helper.gen_yield.text(), Helper.step.text() });
+    const res = std.process.run(arena, io, .{
+        .argv = &.{ "erl", "-noshell", "-eval", eval },
+    }) catch return;
+    try std.testing.expectEqualStrings("dead dead\n", res.stdout);
 }
