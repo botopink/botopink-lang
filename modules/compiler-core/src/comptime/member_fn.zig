@@ -248,6 +248,76 @@ const Binder = struct {
 
 /// The names `func` reads without binding them itself: each identifier and
 /// each callee written without a receiver, in source order (duplicates kept).
+/// Decision 575 (4), the tree rule — the names of the decorator `dfn`'s body
+/// that the tree `func` (a member, a wrapper) reads: each a local the body
+/// binds (a `val`, a loop's or a pattern's name), none of `dfn`'s parameters.
+/// The body hands their values with the tree (`expr_param.zig`), and the
+/// member spells each as a literal (`literalSource`). First read first, each
+/// once.
+pub fn capturedLocals(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.FunctionExpr) ![]const []const u8 {
+    const locals = try boundNames(arena, &.{}, dfn.body);
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (try freeNames(arena, func)) |n| {
+        if (!locals.contains(n.name)) continue;
+        const isParam = for (dfn.params) |p| {
+            if (std.mem.eql(u8, p.name, n.name)) break true;
+        } else false;
+        if (isParam) continue;
+        const seen = for (out.items) |x| {
+            if (std.mem.eql(u8, x, n.name)) break true;
+        } else false;
+        if (!seen) try out.append(arena, n.name);
+    }
+    return out.items;
+}
+
+/// A value the decorator body computed, as the botopink literal a member
+/// spells it with (the tree rule): a string, a number, a `bool`, `null`, an
+/// array of those. Null for any other value (a record, a function).
+pub fn literalSource(arena: std.mem.Allocator, v: std.json.Value) !?[]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (!try writeLiteral(arena, &out, v)) return null;
+    return out.items;
+}
+
+fn writeLiteral(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), v: std.json.Value) !bool {
+    switch (v) {
+        .null => try out.appendSlice(arena, "null"),
+        .bool => |b| try out.appendSlice(arena, if (b) "true" else "false"),
+        .integer => |i| try out.print(arena, "{d}", .{i}),
+        .float => |f| {
+            const t = try std.fmt.allocPrint(arena, "{d}", .{f});
+            try out.appendSlice(arena, t);
+            if (std.mem.indexOfAny(u8, t, ".eE") == null) try out.appendSlice(arena, ".0");
+        },
+        .number_string => |t| try out.appendSlice(arena, t),
+        .string => |str| {
+            try out.append(arena, '"');
+            var i: usize = 0;
+            while (i < str.len) : (i += 1) switch (str[i]) {
+                '"' => try out.appendSlice(arena, "\\\""),
+                '\\' => try out.appendSlice(arena, "\\\\"),
+                '\n' => try out.appendSlice(arena, "\\n"),
+                '\t' => try out.appendSlice(arena, "\\t"),
+                '\r' => try out.appendSlice(arena, "\\r"),
+                '$' => try out.appendSlice(arena, if (i + 1 < str.len and str[i + 1] == '{') "\\$" else "$"),
+                else => |ch| try out.append(arena, ch),
+            };
+            try out.append(arena, '"');
+        },
+        .array => |items| {
+            try out.append(arena, '[');
+            for (items.items, 0..) |x, i| {
+                if (i > 0) try out.appendSlice(arena, ", ");
+                if (!try writeLiteral(arena, out, x)) return false;
+            }
+            try out.append(arena, ']');
+        },
+        .object => return false,
+    }
+    return true;
+}
+
 pub fn freeNames(arena: std.mem.Allocator, func: ast.FunctionExpr) ![]const Name {
     const bound = try boundNames(arena, func.kind.params, func.kind.body);
     var out: std.ArrayListUnmanaged(Name) = .empty;

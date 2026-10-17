@@ -6036,9 +6036,21 @@ fn memberFnSource(
         }
     }
 
-    // Splice each decorator parameter's argument.
-    const splices = try env.arena.alloc(memberFn.Splice, values.len);
+    // Splice each decorator parameter's argument, then each local of the
+    // body the member reads as the literal of the value the body handed
+    // (decision 575 (4), the tree rule).
+    const captured = try memberFn.capturedLocals(env.arena, dfn, func);
+    const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
+    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (captured, 0..) |n, k| {
+        const v: std.json.Value = if (k < handed.len) handed[k] else .null;
+        const lit = (try memberFn.literalSource(env.arena, v)) orelse {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, c.name, n });
+            return decoratorError(env, a, msg, "A member holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
+        };
+        splices[values.len + k] = .{ .param = n, .lexeme = lit };
+    }
 
     // Decision 384 — a decorator of another module: each name its member
     // writes beyond the parameters resolves where the decorator wrote it.
@@ -6067,7 +6079,7 @@ fn wrapperSource(
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back a wrapper the body does not write", "Report it: `decl.wrapWith(f)` numbers the body's wrappers in source order.");
     const func = fns[c.index];
     // A decorator of this module runs before its body is checked.
-    if (local) try refuseMemberCaptures(env, func, dfn.params, dfn.body);
+    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, false);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
     const splices = try env.arena.alloc(memberFn.Splice, values.len);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
@@ -18390,7 +18402,9 @@ fn inferTemplateMethod(
             const recvExpr: ast.Expr = .{ .identifier = .{ .loc = recvPtr.getLoc(), .kind = .{ .ident = p.name } } };
             try refuseExprValueRead(env, recvExpr, named.args[0], loc);
         }
-        if (!(env.inDecoratorFn and std.mem.eql(u8, callee, "fail"))) {
+        // Decision 576 (2) — in a decorator, `compiler.text(x)` reads the
+        // argument as the annotation wrote it.
+        if (!(env.inDecoratorFn and (std.mem.eql(u8, callee, "fail") or (std.mem.eql(u8, callee, "text") and typedArgs.len == 0)))) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `comptime` parameter, whose `@Expr` answers `.value`{s} — not `.{s}(…)`", .{ diagnostics.expr_param_method, p.name, if (env.inDecoratorFn) " and `.fail(…)`" else "", callee });
             env.lastError = TypeError.custom(msg, "Read the argument's value at build with `x.value` (decision 364); a template function's capture is the one `@Expr` with the template methods.").withLoc(loc);
             return error.TypeError;
@@ -23404,7 +23418,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
         return error.TypeError;
     }
     const func = fnArg.?.function;
-    try refuseMemberCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{});
+    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, false);
 
     // The call value and the return, from the `@Decl<…>` pattern.
     const declParam = env.currentParams[0];
@@ -23488,13 +23502,16 @@ fn refuseMemberFnShape(env: *Env, func: ast.FunctionExpr, params: []const ast.Pa
         env.lastError = TypeError.custom(msg, "A member is written as in the type's body: `fn(self: T, x: i32) -> R { … }`, every parameter typed (decision 370 (2)).").withLoc(func.loc);
         return error.TypeError;
     }
-    return refuseMemberCaptures(env, func, params, body);
+    return refuseCaptures(env, func, params, body, true);
 }
 
 /// Decision 370 (2), 316 — a member function or a wrapper reads no `@Decl`
 /// handle and no local of the decorator's body (`decorator-member-captures`),
 /// refused where it is read.
-fn refuseMemberCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt) InferError!void {
+/// Decision 575 (4), the tree rule — a member holds the body's locals as
+/// literals (`member_fn.capturedLocals`): `locals` admits them; a wrapper
+/// does not yet, and neither reads the handle.
+fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt, locals: bool) InferError!void {
     const declName = if (params.len > 0) params[0].name else "";
     const decoratorLocals = try memberFn.boundNames(env.arena, &.{}, body);
     for (try memberFn.freeNames(env.arena, func)) |n| {
@@ -23503,7 +23520,7 @@ fn refuseMemberCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.P
         } else false;
         if (isExprParam) continue;
         const isHandle = std.mem.eql(u8, n.name, declName);
-        if (!isHandle and !decoratorLocals.contains(n.name)) continue;
+        if (!isHandle and (locals or !decoratorLocals.contains(n.name))) continue;
         const msg = if (isHandle)
             try std.fmt.allocPrint(env.arena, "{s}: the member reads `{s}`, the decorator's `@Decl` handle, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name })
         else

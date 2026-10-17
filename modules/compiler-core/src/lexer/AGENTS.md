@@ -170,3 +170,10 @@ the `n` (every other suffix leaves): the backends read a `bigint` literal by its
 
 `defer` is a keyword (`TokenKind.@"defer"`, `keywordOrIdent`; the language server's keyword list names it too).
 It begins a statement of a block and nothing else: anywhere else it is the ordinary unexpected-token parse error.
+
+## `compiler` lexes as a name; `syntax` is gone (decisions 575 (3), 576 (1))
+
+The keyword `compiler` (a build-time body's `Compiler`) is read as an identifier: the parser
+refuses it as a parameter name (`consumeParamName`, `reserved-word-as-name`) and
+`parser/compiler_surface.zig` reads the expression `compiler` (`ast.compiler_keyword`). The
+parameter modifier `syntax` left the keyword table with `TokenKind.syntax`: it is an ordinary name.

@@ -2,19 +2,25 @@
 //// first `expr` is the annotated declaration (`decl`, read through
 //// `compiler.name`); `comptime label: string` holds the value at build
 //// (`label.toUpper()`); `expr rule: fn(v: T) -> bool` holds the expression
-//// written, spliced into the member the program runs, where `label` is
-//// spliced as a literal.
+//// written, read at build as the annotation wrote it (`compiler.text(rule)`)
+//// and spliced into the member the program runs. In the member, `label` and
+//// the body's `val shown` are spliced as literals (the tree rule).
 
 pub type Violation(message: string)
 
 pub type Mark(text: string)
 
 fn check<T>(expr decl: T, comptime label: string, expr rule: fn(v: T) -> bool) {
+    val shown = label + " (" + compiler.text(rule) + ")";
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
-        return [Violation(message: label)];
+        return [Violation(message: label), Violation(message: shown)];
     });
-    compiler.setMeta(Mark(text: label.toUpper() + " " + compiler.name(decl)!));
+    compiler.setMeta(Mark(text: label.toUpper()
+        + " "
+        + compiler.name(decl)!
+        + " "
+        + compiler.text(rule)));
 }
 
 fn positive(a: Account) -> bool {

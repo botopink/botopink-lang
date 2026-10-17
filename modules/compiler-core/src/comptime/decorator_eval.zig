@@ -287,7 +287,7 @@ const placeholder_module = "decorator_module";
 /// are resident (`runtime/prelude.zig`), reached by the `-import`
 /// `emitComptimeModule` writes. Nothing here depends on the declaration it runs
 /// over any more — that is what makes the module's hash a hash of the decorator.
-fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPlan, annotation: bool) Ast.Builder.Error![]const Ast.Form {
+fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPlan, annotation: bool, texts: bool) Ast.Builder.Error![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.decorator_fail_tag);
@@ -341,7 +341,23 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     else
         try b.arena.dupe(Ast.Clause, &.{ all_catches[0], all_catches[2] });
 
-    const main_body = try b.body(&.{
+    // Decision 576 (2) — a body that reads `compiler.text(x)`: `main/1`
+    // takes `{Arguments, Texts}` and keeps the texts for `'__bp_argText'/1`.
+    const put_texts = try b.remote("erlang", "put", &.{ A(preludeMod.arg_texts_key), V("ArgTexts") });
+    const main_body = try b.body(if (texts) &.{
+        put_texts,
+        try b.remote("erlang", "erase", &.{emitted_key}),
+        .{ .try_catch = .{
+            .body = try b.body(&.{
+                invoke,
+                try encode(b, &.{
+                    Ast.field("kind", Ast.str("ok")),
+                    Ast.field("contributions", try b.remote("lists", "reverse", &.{emitted})),
+                }),
+            }),
+            .catches = catches,
+        } },
+    } else &.{
         try b.remote("erlang", "erase", &.{emitted_key}),
         .{ .try_catch = .{
             .body = try b.body(&.{
@@ -357,11 +373,19 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
 
     const forms = [_]Ast.Form{
         .{ .function = .{ .name = "main", .clauses = try b.arena.dupe(Ast.Clause, &.{.{
-            .patterns = try b.exprs(&.{try templateEval.mainPattern(b, plans)}),
+            .patterns = try b.exprs(&.{if (texts) try b.tuple(&.{ try templateEval.mainPattern(b, plans), V("ArgTexts") }) else try templateEval.mainPattern(b, plans)}),
             .body = main_body,
         }}) } },
     };
     return b.arena.dupe(Ast.Form, &forms);
+}
+
+/// Whether the (erased) decorator `dfn` reads an argument's text
+/// (`'__bp_argText'/1`, decision 576 (2)).
+fn readsArgText(arena: std.mem.Allocator, dfn: ast.FnDecl) !bool {
+    const body: ast.FunctionExpr = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .syntax = .lambda, .params = &.{}, .body = dfn.body } };
+    for (try memberFnMod.freeNames(arena, body)) |n| if (std.mem.eql(u8, n.name, preludeMod.arg_text_fn)) return true;
+    return false;
 }
 
 fn buildModule(
@@ -383,10 +407,11 @@ fn buildModule(
     // Decision 311 — a template annotation's body reads its literal through
     // the capture API (`q.text()`, `q.parts()`, `q.build(…)`), rendered into
     // the module beside `main/1`; the handle's API is the resident prelude's.
+    const texts = capture == null and try readsArgText(arena, dfn);
     const forms = if (capture != null)
-        try std.mem.concat(arena, Ast.Form, &.{ try mainForms(b, dfn, plans, true), try preludeMod.captureForms(b) })
+        try std.mem.concat(arena, Ast.Form, &.{ try mainForms(b, dfn, plans, true, false), try preludeMod.captureForms(b) })
     else
-        try mainForms(b, dfn, plans, false);
+        try mainForms(b, dfn, plans, false, texts);
     const resident = try preludeMod.decoratorForms(b);
 
     const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
@@ -425,7 +450,12 @@ fn buildModule(
         .unsupported_method = unsupported,
         .located = located,
     };
-    const argument = try templateEval.argumentTerm(arena, plans);
+    const plain_argument = try templateEval.argumentTerm(arena, plans);
+    const argument = if (texts) blk: {
+        const items = try arena.alloc(Term, @max(dfn.params.len, 1) - 1);
+        for (items, 0..) |*t, i| t.* = Term.str(if (i < plainArgs.len) plainArgs[i].source else "");
+        break :blk Term.tupleOf(try arena.dupe(Term, &.{ plain_argument, Term.listOf(items) }));
+    } else plain_argument;
     // Emitted once per decorator and plan, not once per annotated declaration
     // (`template_eval` § one emit per declaration).
     // The located functions change the code, so they are part of the key —
@@ -944,7 +974,7 @@ test "decorator module: lowered body, handle term and host glue" {
     // the host glue is imported rather than defined.
     const expected = [_][]const u8{
         "-export([main/1]).",
-        "-import(bp_comptime_decorator, [fail/2, failAt/3, compilerError/1, emit/1, addMember/2,",
+        "-import(bp_comptime_decorator, [fail/2, failAt/3, compilerError/1, '__bp_argText'/1, emit/1, addMember/2,",
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
         "main({Arg0, Arg1, _}) ->",

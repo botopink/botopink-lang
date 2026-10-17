@@ -447,12 +447,12 @@ test "decision 364: an `@Expr` of a function or a type has no `.value`" {
     , "expr-value-of-function: `#[pass]`'s `v` is a function here");
 }
 
-test "decision 364: a `comptime` parameter's `@Expr` answers `.value`, and `.fail` in a decorator" {
-    try expectDecoratorError(
+test "decision 364: a `comptime` parameter's `@Expr` answers `.value`, and `.fail` and `.text` in a decorator (576 (2))" {
+    try h.assertInfersOk(std.testing.allocator,
         \\fn note(comptime decl: @Decl, comptime m: @Expr<string>) {
         \\    decl.setMeta("m", m.text());
         \\}
-    , "expr-param-method: `m` is a `comptime` parameter, whose `@Expr` answers `.value` and `.fail(…)` — not `.text(…)`");
+    );
     try expectDecoratorError(
         \\fn twice(comptime n: @Expr<i32>) -> i32 {
         \\    n.fail("no");

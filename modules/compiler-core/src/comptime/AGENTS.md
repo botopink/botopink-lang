@@ -964,11 +964,24 @@ method's, a `declare fn`'s (std's `builtins.d.bp` and `types.bp` included).
   specialisation, a backend's signature — reads `T`. A variadic is
   `comptime ..xs: @Expr<T[]>` (`parser/decls.zig` `checkVariadicParam` reads
   through the wrapper). The formatter prints `@Expr<T>` back.
-- **Declaration.** `validateDecorators` runs `refuseBareComptimeParams`: a
-  `comptime` parameter neither `exprWrapped`, `@Expr` nor `@Decl` is
-  `comptime-param-not-expr` at the parameter, naming `@Expr<T>`, over every
-  `fn`, `declare fn`, type / behavior / `implement` / `extend` method and a
-  type's associated types' methods.
+- **Decision 575 (4)'s surface.** `comptime x: T` (`Param.arrival = .value`)
+  and `expr x: T` (`.expr`) parse into this same internal form, and
+  `parser/compiler_surface.zig` reads a `comptime x: T`'s bare reads as
+  `x.value`, `compiler.*` onto the handle / the template site / the builtins,
+  and a `-> expr T` template's returns as lifted trees (`parser/AGENTS.md`
+  § `comptime`, `expr` and `compiler`). 364 (4)'s `comptime-param-not-expr`
+  is gone (575 reverts it). `type<T>`, `T` a type parameter of the function,
+  binds `T` from the type argument (`resolveTypeRefInContext`, a decorator's
+  argument check `checkDecoratorArgs`), and is no constraint.
+  `compiler.text(x)` on a decorator's `expr` parameter is the argument as the
+  annotation wrote it (`'__bp_argText'(j)`, `decorator_eval.zig` hands the
+  texts to `main/1` as `{Arguments, Texts}` when the body reads one).
+  A member a decorator writes reads the body's locals (575 (4), the tree
+  rule): `refuseCaptures` admits them in a member (not yet in a wrapper),
+  the body hands their values with it (`decl.addMember(name, k, [v, …])`,
+  `member_fn.capturedLocals`) and `memberFnSource` splices each as a literal
+  (`member_fn.literalSource`: a string, a number, a `bool`, `null`, an array
+  of those; any other value is `decorator-member-captures`).
 - **Body.** `inferFnDecl` and `inferTypeMethods` bind an `exprWrapped`
   parameter as `Expr<T>` (the signature keeps `T`, so a call checks the
   argument against `T`) and set `Env.currentParams`. `x.value` (the

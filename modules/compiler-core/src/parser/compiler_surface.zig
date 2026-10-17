@@ -359,6 +359,13 @@ fn mapProperty(ctx: *Ctx, loc: ast.Loc, name: []const u8) error{OutOfMemory}!ast
     ctx.changed = true;
     if (std.mem.eql(u8, name, "src")) return builtinCall(loc, "src", &.{}, &[_]ast.TrailingLambda{});
     if (std.mem.eql(u8, name, "module")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "module");
+    // Whether the annotated declaration is std's: its module is `std/…`.
+    if (std.mem.eql(u8, name, "isStd")) if (ctx.decl) |d| {
+        const args = try ctx.alloc.alloc(ast.CallArg, 1);
+        args[0] = .{ .label = null, .value = try stringLit(ctx, "std/", loc) };
+        const module = try box(ctx, fieldRead(ctx, loc, try ident(ctx, d, loc), "module"));
+        return methodCall(ctx, loc, module, "startsWith", args, &[_]ast.TrailingLambda{}, null);
+    };
     if (memberOf(name)) |m| if (m.kind == .property)
         return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` is read only in a decorator's body yet", .{name}), "The annotated declaration answers it (decision 575 (3)).");
     return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` is a call, or no member of `Compiler`", .{name}), "The members of `compiler` are declared by the behavior `Compiler` in std's `compiler.bp` (decision 575 (3)).");

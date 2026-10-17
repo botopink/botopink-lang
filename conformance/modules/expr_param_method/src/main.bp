@@ -1,20 +1,12 @@
-//// Decision 364 — a `comptime` parameter's `@Expr` answers `.value` (and, in
-//// a decorator, `.fail(…)`); a template's capture is the one `@Expr` with the
-//// template methods. `.text()` on a decorator's parameter is refused at the
-//// call.
+//// Decision 576 (2) — `compiler.text(e)` reads an `expr` as written in a
+//// decorator or a template (the argument as the annotation wrote it). An
+//// ordinary function's `comptime` parameter is a value, not an expression:
+//// `.text()` on it is refused at the call (`expr-param-method`).
 
-fn note(comptime decl: @Decl, comptime message: @Expr<string>) {
-    decl.setMeta(Note(text: message.text()));
-}
-
-#[note("x")]
-fn f() -> i32 {
-    return 1;
+fn shout(comptime message: @Expr<string>) -> string {
+    return message.text();
 }
 
 pub fn main() {
-    @print(f());
+    @print(shout("x"));
 }
-
-// What `#[note]` records.
-type Note(text: string)

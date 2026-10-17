@@ -1139,7 +1139,8 @@ at build whose parameter the body never reads is accepted), and the refusals
 `env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `modules/decorator_call_expr_fn`
 (`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
-`modules/expr_param_method` (`message.text()`) and `modules/template_value_not_known` (a holed literal's
+`modules/expr_param_method` (`message.text()` in an ordinary function — a decorator's reads it since
+decision 576 (2)) and `modules/template_value_not_known` (a holed literal's
 `q.value`), each red on the parent binary. `modules/decorator_arguments_check` and
 `modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `@Expr` of
 a function has no `.value`, question `s35-b`).
@@ -1154,9 +1155,10 @@ of a decorator in another module, reading only its parameters and locals) and
 decorator's module — decision 384: each resolves there, the user's own same-named helper is not
 captured; it was `decorator-member-fn-imported-name` on the parent binary), and the refusals
 `modules/decorator_member_not_fn`, `modules/decorator_member_fn_untyped`,
-`modules/decorator_member_captures` (a local of the decorator's body),
 `modules/decorator_member_captures_handle` (`decl`) and `modules/decorator_member_type` (a field's
-`fn(self: T)`, `T` the field's type), each red on the parent binary.
+`fn(self: T)`, `T` the field's type), each red on the parent binary. Decision 575 (4)'s tree rule
+turns `modules/decorator_member_captures` (a local of the decorator's body) from a refusal into the
+literal the member holds (`member_fn.capturedLocals`).
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds

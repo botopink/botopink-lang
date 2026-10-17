@@ -35,6 +35,9 @@ const Ctx = struct {
     /// (`member_fn.collect`'s order) instead of the function, which is the
     /// program's code, not the body's.
     declName: ?[]const u8 = null,
+    /// The decorator itself: a member reads its body's locals, handed with
+    /// the member (decision 575 (4), the tree rule).
+    dfn: ?ast.FnDecl = null,
     members: usize = 0,
     /// Decision 316 — each `decl.wrapWith(f)` hands the runtime the wrapper's
     /// index (`member_fn.collectWrappers`'s order): the wrapper is the
@@ -69,7 +72,7 @@ pub fn eraseForRun(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !as
         try indices.append(arena, if (decorator and i > 0) i - 1 else i);
     }
     const declName: ?[]const u8 = if (decorator) memberFn.declParamName(f) else null;
-    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName, .methodMeta = true };
+    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName, .methodMeta = true, .dfn = if (decorator) f else null };
     var out = f;
     out.body = try clone([]ast.Stmt, &ctx, f.body);
     return out;
@@ -110,7 +113,7 @@ pub fn eraseFn(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.Fn
         plain.params = params;
         return plain;
     }
-    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName };
+    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName, .dfn = if (decorator) f else null };
     var out = f;
     out.params = params;
     out.body = try clone([]ast.Stmt, &ctx, f.body);
@@ -216,13 +219,23 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         if (ctx.declName) |dn| if (memberFn.asCall(v, dn)) |mc| {
             var out = v;
             const c = v.call.kind.call;
-            const args = try ctx.arena.alloc(ast.CallArg, 2);
+            // Decision 575 (4), the tree rule — the body's locals the member
+            // reads, handed with it: `decl.addMember(name, <k>, [v, …])`.
+            const captured: []const []const u8 = if (ctx.dfn) |dfn| try memberFn.capturedLocals(ctx.arena, dfn, mc.func) else &.{};
+            const args = try ctx.arena.alloc(ast.CallArg, if (captured.len > 0) 3 else 2);
             args[0] = c.args[0];
             args[0].value = try clone(*ast.Expr, ctx, mc.name);
             const idx = try ctx.arena.create(ast.Expr);
             idx.* = .{ .literal = .{ .loc = mc.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.members}) } } };
             ctx.members += 1;
             args[1] = .{ .label = c.args[1].label, .value = idx };
+            if (captured.len > 0) {
+                const elems = try ctx.arena.alloc(ast.Expr, captured.len);
+                for (captured, 0..) |n, k| elems[k] = .{ .identifier = .{ .loc = mc.loc, .kind = .{ .ident = n } } };
+                const list = try ctx.arena.create(ast.Expr);
+                list.* = .{ .collection = .{ .loc = mc.loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+                args[2] = .{ .label = null, .value = list };
+            }
             out.call.kind.call.args = args;
             return out;
         };
@@ -285,6 +298,21 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         if (v == .identifier and v.identifier.kind == .identAccess) {
             const ia = v.identifier.kind.identAccess;
             if (!ia.optional and std.mem.eql(u8, ia.member, "value") and indexOf(ctx, ia.receiver.*) != null) return ia.receiver.*;
+        }
+        // `x.text()` → `__bp_argText(j)` in a decorator body (576 (2)).
+        if (ctx.failArg and v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            if (c.receiver) |r| if (std.mem.eql(u8, c.callee, "text") and c.args.len == 0) if (indexOf(ctx, r.*)) |k| {
+                var out = v;
+                const args = try ctx.arena.alloc(ast.CallArg, 1);
+                const idx = try ctx.arena.create(ast.Expr);
+                idx.* = .{ .literal = .{ .loc = v.call.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.indices[k]}) } } };
+                args[0] = .{ .label = null, .value = idx };
+                out.call.kind.call.receiver = null;
+                out.call.kind.call.callee = preludeMod.arg_text_fn;
+                out.call.kind.call.args = args;
+                return out;
+            };
         }
         // `x.fail(m)` → `__bp_failArg(j, m)` in a decorator body.
         if (ctx.failArg and v == .call and v.call.kind == .call) {

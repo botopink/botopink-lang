@@ -1,7 +1,8 @@
-//// Decision 370 (2) — a member function uses the decorator's parameters, each
-//// `@Expr` spliced where it was written, and what its own body declares. A
-//// local of the decorator's body exists only while the program compiles: the
-//// member reading it is refused at the read.
+//// Decision 575 (4), the tree rule — a member a decorator writes holds the
+//// run-time code written in it, the decorator's parameters spliced where
+//// they are written, and the body's locals spliced as literals: `field`,
+//// computed at build from the declaration's name, is a string in the member.
+//// (Decision 370 (2) refused the read; 575 makes it the literal.)
 
 pub type Violation(field: string, message: string)
 
@@ -21,5 +22,8 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    @print(Signup(password: "a", confirm: "a").validate().length);
+    Signup(password: "a", confirm: "b")
+        .validate()
+        .forEach({ v -> @print(v.field + ": " + v.message) });
 }

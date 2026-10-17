@@ -84,6 +84,13 @@ pub const Error = Ast.Builder.Error;
 /// (`comptime/expr_param.zig`): `'__bp_failArg'(Index, Message)`.
 pub const fail_arg_fn = "__bp_failArg";
 
+/// Decision 576 (2) — the function a decorator body's `compiler.text(x)`
+/// becomes (`comptime/expr_param.zig`): `'__bp_argText'(Index)`, the
+/// argument as the annotation wrote it, read from `arg_texts_key`, which
+/// `main/1` sets (`decorator_eval.zig`).
+pub const arg_text_fn = "__bp_argText";
+pub const arg_texts_key = "__bp_arg_texts";
+
 /// Decision 298 — the function `decl.setMeta(v)` / `decl.addMeta(v)` becomes
 /// in a decorator body (`typed_meta.typed_meta_fn`).
 pub const typed_meta_fn = "__bp_typedMeta";
@@ -426,6 +433,9 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         // (a member of the annotated type), `setMeta` (a comptime key/value)
         // and `addType` (a type associated with the annotated one). The
         // compiler reads the list back in call order (`decorator_eval.Reply`).
+        try b.function(arg_text_fn, &.{V("Index")}, &.{}, &.{
+            try b.remote("lists", "nth", &.{ try b.binop("+", V("Index"), Ast.Expr.r("1")), try b.remote("erlang", "get", &.{A(arg_texts_key)}) }),
+        }),
         try b.function("emit", &.{V("Source")}, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("emit")), Ast.field("source", V("Source")) })}),
         }),
@@ -437,6 +447,12 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         // `member_fn.collect`'s order) and the name it gets.
         try b.function("addMember", &.{ V("_Decl"), V("Name"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")) })}),
+        }),
+        // Decision 575 (4), the tree rule — the body's locals the member
+        // reads, their values in `member_fn.capturedLocals`'s order; the
+        // compiler spells each as a literal in the member.
+        try b.function("addMember", &.{ V("_Decl"), V("Name"), V("Index"), V("Captured") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Captured")})) })}),
         }),
         // Decision 316 — `decl.wrapWith(f)`: the wrapper is the program's
         // code, so the body hands its index (`expr_param.eraseFn`,
