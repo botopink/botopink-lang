@@ -135,7 +135,7 @@ before any cell runs.
 `"targets"` in its `botopink.json`; an excluded target is not a cell and is
 never run. The exclusion is **audited on every run** instead: `botopink build
 --target <excluded>` must be refused, its first error the missing host binding
-(`has no #[@external(.<Target>(…))]`) — the member structurally cannot run there.
+(`has no implementation for the <target> backend`) — the member structurally cannot run there.
 A member that builds on the target it excludes, or fails there for any other
 reason, fails the run by name ([`scripts/AGENTS.md`](scripts/AGENTS.md)
 § test-libs.sh). `zig build test-libs -- --list` prints the plan — cells and

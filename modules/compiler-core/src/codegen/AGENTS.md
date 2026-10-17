@@ -120,7 +120,10 @@ codegen/
   A `pub val` is followed by `exports.<name> = <binding>;` (`valExport`), as a
   `pub fn` is (decision 140): the importer's `require` destructures it by
   name, and read `undefined` before.
-- **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
+- **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) are no
+  backend's by name (decision 575 (6)): the declarations' `.Node("__bp_print($args)")` cell lowers
+  (the cell naming the helper is what `renderDispatch` hands to `buildPrintCall`, which adds the static
+  print shapes; a template that names a prelude helper pulls it in, `renderTemplate`) to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
   argument is written by `__bp_show` — a top-level string bare, a nested string
   quoted with the source escapes, an array `[1, 2]`, a tuple `#(1, "a")`, a
@@ -719,12 +722,13 @@ codegen/
   line, if either does not lex or parse — it used to `catch return`, which hid that
   `builtins.d.bp` did not parse at all. `codegen/tests/builtins.zig` pins that both parse.
   What the parseable file adds, measured when front 20 made it parse: on commonJS nothing
-  observable (the free-call entries `print`/`println`/`debug` are registered inline first,
+  observable (the free-call entries `print`/`println`/`debug` are read from the prelude like any other,
   its behaviors carry no `.Node`, and `ambiguous_prim_renames` is the same set,
   `at` and `contains`); on erlang the three `'__bp_print'([$args])` templates, which
-  `builtinCallNode` never consults for those names (`isPrintBuiltin` answers first) and
-  `preludeHelperNode` reads only for a bare call inside an inlined interface `default fn`
-  body, where no std body calls them. No codegen snapshot moved.
+  `builtinAnnotationNode` renders (and marks the `'__bp_print'/1` helper needed); on beam the same cell
+  lowers through `lowerHostCall`, whose `'__bp_print'([$args])` template is the module's own helper
+  bytecode (`lowerPrint`). `zig build test`'s grep gate (`build.zig`) fails when a backend compares a
+  callee to `print` / `println` / `debug`; wasm (`wat.zig`) still lowers them by name until 164 s3.
 - **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
 - **Effects**: `effectShape` is the one table — it answers the two JS
   modifiers (`is_async`, `is_generator`) an effect asks for, and `FnShape

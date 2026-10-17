@@ -29,6 +29,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const prelude_cache = @import("prelude_cache.zig");
 const hostMethods = @import("./hostMethods.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
@@ -163,13 +164,6 @@ fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
     if (a == .int and b == .int) return .int;
     if (a != null or b != null) return .number;
     return null;
-}
-
-/// True for the builtins that print their arguments (`@print`, `@println`,
-/// `@debug`) — all lowered to `'__bp_print'/1`.
-fn isPrintBuiltin(callee: []const u8) bool {
-    return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or
-        std.mem.eql(u8, callee, "debug");
 }
 
 /// The bare variant name of a pattern's written path. `Shape.Circle` and the
@@ -1215,8 +1209,10 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                     }
                     if (cc.trailing.len > 0) count.* += 1;
                 }
-                // `@print(a, b, …)` builds its argument list on the stack.
-                if (cc.is_builtin and isPrintBuiltin(cc.callee) and cc.args.len > 1) count.* += 1;
+                // A print cell (`'__bp_print'([$args])`) builds its argument list on the stack.
+                if (cc.is_builtin and cc.args.len > 1) if (em.externalDeclFor(cc.callee)) |f| if (hostRefOf(f.implementations, f.params.len)) |ref| {
+                    if (std.mem.eql(u8, ref.symbol, Emitter.print_helper_template)) count.* += 1;
+                };
                 // `names.pop()` on a module-level `var` parks the popped pair
                 // and the rest it writes back (`primPop`). Counted for any
                 // bare receiver named like one: a local of the same name only
@@ -2874,6 +2870,11 @@ const Emitter = struct {
         // The program's own declarations win; the prelude fills the rest.
         try self.collectDefaultsAndExternals(program.decls, false);
         try self.collectDefaultsAndExternals(prim_program.decls, true);
+        // `print` / `println` / `debug` and the other host-backed free fns of
+        // `builtins.d.bp` lower as any `declare fn` (decision 575 (6)).
+        if (prelude_cache.builtins()) |bp| {
+            for (bp.decls) |d| if (d == .@"fn") try self.collectDefaultsAndExternals(&[_]ast.DeclKind{d}, true);
+        }
     }
 
     /// Index the bodied instance `default fn`s and the `-> Self` methods of
@@ -7398,6 +7399,13 @@ const Emitter = struct {
             return;
         }
         if (cc.is_builtin) {
+            // `print` / `println` / `debug` are no backend's by name (decision
+            // 575 (6)): a builtin declared `#[external(.Erlang(…))]` lowers as
+            // any other `declare fn`.
+            if (self.externalDeclFor(cc.callee)) |f| {
+                try self.lowerExternalCall(f, cc, mode, loc);
+                return;
+            }
             try self.lowerBuiltinCall(cc, mode);
             return;
         }
@@ -8692,6 +8700,13 @@ const Emitter = struct {
         // caller's.
         const result = ast.implementationResult(f.implementations, "erlang");
         const ref = hostRefOf(f.implementations, f.params.len) orelse return error.MissingExternalTarget;
+        // A cell whose template is the backend's own print helper called on
+        // the argument list (`'__bp_print'([$args])`): the helper is bytecode
+        // this module emits once, not a function a template module could call.
+        if (!result and !self_first and std.mem.eql(u8, ref.symbol, print_helper_template)) {
+            try self.lowerPrint(cc.args, mode);
+            return;
+        }
         if (result) {
             if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) {
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return error.MissingExternalTarget;
@@ -9748,10 +9763,6 @@ const Emitter = struct {
             );
             return;
         }
-        if (isPrintBuiltin(cc.callee)) {
-            try self.lowerPrint(cc.args, mode);
-            return;
-        }
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) {
             try self.lowerIsCall(cc);
             if (mode == .tail) try self.emitReturn();
@@ -9992,6 +10003,8 @@ const Emitter = struct {
     /// helper prints every value on one line, space-separated — a binary as its
     /// text (`~ts`), anything else through `~p` — the verb picked at runtime,
     /// byte-identical to the erlang backend's `'__bp_print'/1`.
+    const print_helper_template = "'__bp_print'([$args])";
+
     fn lowerPrint(self: *Emitter, args: anytype, mode: CallMode) anyerror!void {
         if (args.len == 1) {
             try self.lowerExprIntoX0(args[0].value.*);

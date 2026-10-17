@@ -224,6 +224,7 @@ pub fn requires(h: Helper) []const Helper {
         .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg => &.{.wide_norm},
         .show => &.{.f64_text},
         .text => &.{ .show, .f64_text },
+        .print, .print_as => &.{.show},
         .host_result => &.{.host_fail},
         .host_result_task => &.{ .host_fail, .task },
         .string_char_at, .str_length => &.{.str_surrogate},

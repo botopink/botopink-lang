@@ -1442,6 +1442,7 @@ const NameScan = struct {
 /// (`Emitter.shape_fns`). Read-only, every field of every node by type.
 const ShapeSiteScan = struct {
     kept: *const std.StringHashMapUnmanaged(void),
+    dispatch: *const std.StringHashMap(BuiltinNodeCall),
     found: bool = false,
 
     fn visit(s: *ShapeSiteScan, e: *const ast.Expr) void {
@@ -1452,7 +1453,8 @@ const ShapeSiteScan = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| {
                     if (cc.is_builtin) {
-                        for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, cc.callee, b)) {
+                        // A builtin whose Node cell is the print helper writes its arguments as text.
+                        if (s.dispatch.get(cc.callee)) |d| if (std.mem.eql(u8, d.symbol, Emitter.print_helper_template)) {
                             s.found = true;
                         };
                     } else if (cc.receiver == null) {
@@ -2295,7 +2297,7 @@ const Emitter = struct {
                     if (p.variadic or p.destruct != null) break true;
                 } else false;
                 if (variadic) continue;
-                var scan = ShapeSiteScan{ .kept = &keep };
+                var scan = ShapeSiteScan{ .kept = &keep, .dispatch = &self.builtin_node_dispatch };
                 for (f.body) |*st| scan.walk(ast.Stmt, st);
                 if (!scan.found) continue;
                 keep.put(self.arena(), e.key_ptr.*, {}) catch return;
@@ -5572,6 +5574,8 @@ const Emitter = struct {
     /// helper, space-separated, one `console.log` line. A tuple is a JS array,
     /// so when an argument's static shape holds one the call passes the shapes
     /// first: `__bp_print_as([["#", null, null], null], a, b)`.
+    const print_helper_template = "__bp_print($args)";
+
     fn buildPrintCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         const args = try self.arena().alloc(js.Expr, cc.args.len + 1);
         const shapes = try self.arena().alloc(js.Expr, cc.args.len);
@@ -6615,6 +6619,10 @@ const Emitter = struct {
             }
             return null;
         }
+        // A cell that is the prelude's print helper on the argument list
+        // (`__bp_print($args)`): the call site adds the static print shapes
+        // (`buildPrintCall`), which a template cannot.
+        if (std.mem.eql(u8, call.symbol, print_helper_template)) return try self.buildPrintCall(cc);
         // A template, or a bare host expression (`"process.cwd()"`): it
         // renders verbatim, like a template.
         return try self.renderTemplate(call.symbol, cc, argc, recv_err);
@@ -6718,6 +6726,11 @@ const Emitter = struct {
     }
 
     fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
+        // A template that names a prelude helper (`__bp_print($args)`) pulls it in.
+        inline for (@typeInfo(jsPrelude.Helper).@"enum".fields) |fld| {
+            const h: jsPrelude.Helper = @enumFromInt(fld.value);
+            if (std.mem.indexOf(u8, template, jsPrelude.name(h)) != null) _ = self.helper(h);
+        }
         const Holes = CallHoles(@TypeOf(cc));
         var holes = Holes{ .em = self, .cc = cc, .err = recv_err };
         var tmpl = HostTemplate(Holes){ .arena = self.arena(), .holes = &holes, .argc = argc };
@@ -7239,8 +7252,6 @@ const Emitter = struct {
     }
 
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
-        if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
-            return self.buildPrintCall(cc);
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
             return self.buildIsCall(cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name))

@@ -3168,11 +3168,6 @@ const PrimIfaceWalker = struct {
     }
 };
 
-/// `@print` / `@println` / `@debug` — the builtins lowered to `'__bp_print'/1`.
-fn isPrintBuiltin(callee: []const u8) bool {
-    return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or std.mem.eql(u8, callee, "debug");
-}
-
 /// True when the `.Erlang(…)` implementation writes `inline: true`.
 fn hasExternalInline(implementations: []const ast.Implementation, target: []const u8) bool {
     return ast.implementationInline(implementations, target);
@@ -3864,9 +3859,8 @@ const Emitter = struct {
             .{ .argc = 0, .template = "erlang:error({panic, \"panic\"})" },
             .{ .argc = 1, .template = "erlang:error({panic, $0})" },
         });
-        // `print`/`println`/`debug` are not templates: they lower to the
-        // `'__bp_print'/1` helper (`builtinCallNode`), whatever the prelude's
-        // `builtins.d.bp` annotation still spells.
+        // `print`/`println`/`debug` are no backend's by name (decision 575 (6)):
+        // their `.Erlang` templates, read from the prelude.
     }
 
     fn putInlineErlangBuiltin(this: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
@@ -3892,6 +3886,8 @@ const Emitter = struct {
     fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         const template = templateFor(call, cc) orelse return null;
+        // A template that names the `'__bp_print'/1` helper pulls it in.
+        if (std.mem.indexOf(u8, template, "'__bp_print'") != null) this.needs_print_helper = true;
         return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
     }
 
@@ -9048,10 +9044,6 @@ const Emitter = struct {
         // `@print(a, b)` → `'__bp_print'([A, B])`: the helper picks `~ts` for a
         // binary and `~p` for anything else at runtime (semantics decision 1),
         // so a string prints as its text on the typed and the comptime path.
-        if (isPrintBuiltin(cc.callee)) {
-            this.needs_print_helper = true;
-            return b.call("__bp_print", &.{try b.list(try this.callArgs(b, null, cc))});
-        }
         if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);

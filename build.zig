@@ -413,6 +413,20 @@ pub fn build(b: *std.Build) void {
     lib_agnostic_gate.has_side_effects = true; // never cache — always re-scan
     test_step.dependOn(&lib_agnostic_gate.step);
 
+    // ── no print by name in a backend (decision 575 (6), decision 67) ──────────
+    // HARD RULE: no backend dispatches a builtin by the names `print` /
+    // `println` / `debug`; each target lowers the declaration's `Implementation`
+    // cell as any other `declare fn`. Scans the backends' sources (not their
+    // tests) for a callee compared to one of the three names. `wat.zig` is
+    // the allow-list: wasm still lowers them by name until 164 s3 lands
+    // `.Wasm(std: "print")`.
+    const print_by_name_gate = b.addSystemCommand(&.{
+        "sh",                                                                                                                                                                                             "-c",
+        "! grep -rnIE --include='*.zig' --exclude-dir=tests --exclude=wat.zig 'callee, \"(print|println|debug)\"|\"print\", \"println\", \"debug\"|fn isPrintBuiltin' modules/compiler-core/src/codegen",
+    });
+    print_by_name_gate.has_side_effects = true; // never cache — always re-scan
+    test_step.dependOn(&print_by_name_gate.step);
+
     // ── labelled binding cells (decision 305) ─────────────────────────────────
     // HARD RULE: a binding cell is a labelled argument (`fn: powBody`,
     // `op: "f64.sqrt"`, `wasi: .RandomF64`); the prefixed strings `"fn:…"`,
