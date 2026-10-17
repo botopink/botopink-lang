@@ -22,6 +22,7 @@ test "infer error: two pub default fn in one package" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub default fn one(expr q: string) -> i32 { return compiler.build("0"); }
         \\pub default fn two(expr q: string) -> i32 { return compiler.build("0"); }
+        \\import {compiler} from "std";
     );
 }
 

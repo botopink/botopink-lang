@@ -29,7 +29,7 @@ const FIXTURE =
     \\    return code;
     \\}
     \\val xs = q @`select name from Users`;
-    \\import {compiler.Span, compiler.CustomNode} from "std";
+    \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;
 
 /// Semantic tokens with the sub-language overlay merged in (mirrors the server's
@@ -84,7 +84,7 @@ const FIXTURE_FAIL =
     \\    return code;
     \\}
     \\val xs = q @`select name`;
-    \\import {compiler.Span, compiler.CustomNode} from "std";
+    \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;
 
 /// Byte offset of `pos` in `source` (test-side mirror of the engine's mapping).
@@ -243,7 +243,7 @@ const X_DEP =
     \\    compiler.custom(root);
     \\    return code;
     \\}
-    \\import {compiler.Span, compiler.CustomNode} from "std";
+    \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;
 const X_MAIN =
     \\import { erika, Cities } from "erika";
@@ -301,7 +301,7 @@ const X_DEP_FAIL =
     \\    compiler.custom(root);
     \\    return code;
     \\}
-    \\import {compiler.Span, compiler.CustomNode} from "std";
+    \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;
 
 test "sublanguage R4: a malformed cross-module query diagnoses inside the string" {

@@ -4,6 +4,7 @@ pub fn hard(expr t: string) -> string {
     return t;
 }
 val c = hard @`SELECT 1`;
+import {compiler} from "std";
 
 ----- ERROR
 error: cannot expand this template function at compile time

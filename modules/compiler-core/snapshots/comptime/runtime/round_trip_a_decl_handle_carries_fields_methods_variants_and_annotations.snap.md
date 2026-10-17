@@ -32,6 +32,7 @@ type Mode {
 }
 val p = describePoint();
 val m = describeMode();
+import {compiler} from "std";
 ```
 
 ----- COMPTIME WAT -- decorator describe

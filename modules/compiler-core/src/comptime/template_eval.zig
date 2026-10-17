@@ -1360,6 +1360,7 @@ test "template module: one module per declaration, the capture as the argument" 
         \\pub fn shout(expr q: string) -> string {
         \\    return compiler.build(compiler.text(q));
         \\}
+        \\import {compiler} from "std";
     );
     var p = parserMod.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);
@@ -1443,6 +1444,7 @@ test "template module: the emit memo is keyed by the declaration's text and the 
         \\pub fn shout(expr q: string) -> string {
         \\    return compiler.build(compiler.text(q));
         \\}
+        \\import {compiler} from "std";
     ;
     const original = try parse(arena, body);
     // The same declaration parsed again at other positions (another session,
@@ -1452,6 +1454,7 @@ test "template module: the emit memo is keyed by the declaration's text and the 
         \\pub fn shout(expr q: string) -> string {
         \\    return compiler.build(compiler.text(q) + "!");
         \\}
+        \\import {compiler} from "std";
     );
 
     const bound = [_]ArgPlan{.{ .term = Term.str("alpha"), .expr = Ast.Expr.v("Arg0"), .bound = true }};

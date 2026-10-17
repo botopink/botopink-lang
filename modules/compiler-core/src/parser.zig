@@ -702,7 +702,11 @@ pub const Parser = struct {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
                     // `#[d] pub default fn …` — an annotated default function
                     // (decision 289; `.bpp`'s route decorator).
-                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn" or
+                    // Decision 579 — `#[builtin] pub default declare val <name>: <Type>;`.
+                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .declare and
+                        this.peekAt((if (isPub) annEnd + 1 else annEnd) + 2).kind == .val)
+                        DeclKind{ .builtinVal = try this.parseBuiltinValDecl(alloc) }
+                    else if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn" or
                         this.markedFnAt((if (isPub) annEnd + 1 else annEnd) + 1))
                         DeclKind{ .@"fn" = try this.parseFnDecl(alloc) }
                     else
@@ -829,6 +833,39 @@ pub const Parser = struct {
                 target.pubByDefault = true;
             }
         }
+    }
+
+    /// Decision 579 (1) — `#[builtin] pub default declare val <name>: <Type>;`,
+    /// the cursor on the first annotation. The one bodyless value declaration:
+    /// `pub`, `default`, a type and `#[builtin]` are each required, and it
+    /// takes no value; anything else is refused at the token that departs.
+    fn parseBuiltinValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.BuiltinValDecl {
+        const annTok = this.peek();
+        const anns = try this.parseAnnotations(alloc);
+        errdefer {
+            for (anns) |*ann| ann.deinit(alloc);
+            alloc.free(anns);
+        }
+        const builtin = for (anns) |a| {
+            if (!a.is_builtin and std.mem.eql(u8, a.name, "builtin") and a.args.len == 0) break true;
+        } else false;
+        if (!builtin) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, annTok);
+            return ParseError.UnexpectedToken;
+        }
+        _ = try this.consume(.@"pub");
+        _ = try this.consume(.default);
+        _ = try this.consume(.declare);
+        _ = try this.consume(.val);
+        const nameTok = try this.consume(.identifier);
+        _ = try this.consume(.colon);
+        var ty = try this.parseTypeRef(alloc);
+        errdefer ty.deinit(alloc);
+        if (!this.check(.semicolon)) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        return .{ .name = nameTok.lexeme, .nameLoc = locFromToken(nameTok), .annotations = anns, .typeAnnotation = ty };
     }
 
     /// Parses a top-level `mod Name;` / `pub mod Name;` module declaration.
@@ -2113,11 +2150,6 @@ pub const Parser = struct {
     /// declaration (noted in `discardParam` for `refuseDiscardParam`).
     pub fn consumeParamName(this: *This) ParseError!Token {
         if (this.check(.identifier)) {
-            // Decision 575 (3) — `compiler` is a keyword, never a parameter.
-            if (std.mem.eql(u8, this.peek().lexeme, ast.compiler_keyword)) {
-                this.parseError = ParseErrorInfo.fromTokenDetail(.reservedWordAsName, this.peek(), this.peek().lexeme);
-                return ParseError.UnexpectedToken;
-            }
             const tok = this.advance();
             if (this.selfParam == null and std.mem.eql(u8, tok.lexeme, "self")) this.selfParam = tok;
             return tok;

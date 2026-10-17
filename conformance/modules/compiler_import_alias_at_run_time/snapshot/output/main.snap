@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: compiler-at-run-time: `compiler` is the compiler of a body that runs at build, and this body runs when the program runs
+at src/main.bp:8:12

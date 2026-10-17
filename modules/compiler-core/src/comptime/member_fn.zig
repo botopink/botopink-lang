@@ -703,6 +703,7 @@ test "a member function: collected in order, its free names, rendered with each 
         \\        return [Violation(field: "confirm", message: m)];
         \\    });
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const f = (try p.parse(arena)).decls[0].@"fn";
@@ -737,6 +738,7 @@ test "decision 316 — a wrapper: collected in order apart from the members, ren
         \\    compiler.wrapWith({ call -> mark + call.run() });
         \\    compiler.wrapWith({ call -> call.run() });
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const f = (try p.parse(arena)).decls[0].@"fn";

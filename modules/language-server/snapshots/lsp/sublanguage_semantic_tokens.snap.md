@@ -10,7 +10,7 @@ pub fn q(expr e: string) -> anyvalue {
     return code;
 }
 val xs = q @`select name from Users`;
-import {compiler.Span, compiler.CustomNode} from "std";
+import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- SEMANTIC TOKENS
@@ -76,10 +76,11 @@ import {compiler.Span, compiler.CustomNode} from "std";
   (9,20) +4  property  "name"
   (10,0) +6  keyword  "import"
   (10,8) +8  variable  "compiler"
-  (10,17) +4  property  "Span"
-  (10,23) +8  variable  "compiler"
-  (10,32) +10  property  "CustomNode"
-  (10,44) +4  keyword  "from"
+  (10,18) +8  variable  "compiler"
+  (10,27) +4  property  "Span"
+  (10,33) +8  variable  "compiler"
+  (10,42) +10  property  "CustomNode"
+  (10,54) +4  keyword  "from"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 3 9 0
   0 4 4 9 0
@@ -143,6 +144,7 @@ import {compiler.Span, compiler.CustomNode} from "std";
   0 7 4 8 0
   1 0 6 9 0
   0 8 8 7 0
+  0 10 8 7 0
   0 9 4 8 0
   0 6 8 7 0
   0 9 10 8 0

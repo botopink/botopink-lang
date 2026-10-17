@@ -819,6 +819,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
         \\    return compiler.text(e) + ": " + themes.length.toString();
         \\}
         \\
+        \\import {compiler} from "std";
         },
         .{ .path = "middle/mid", .package = "middle", .source =
         \\import looks from "looks";
@@ -853,8 +854,9 @@ test "level B: a package expanding a template that reads the catalogue is never 
     var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
     defer second.deinit(testing.allocator);
     for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
-    // `looks` read back; `middle` and `main` analysed again.
-    try testing.expectEqual(@as(usize, 2), mem.store.stats.modules_read);
+    // `looks` read back, with std's `compiler` it imports (decision 579);
+    // `middle` and `main` analysed again.
+    try testing.expectEqual(@as(usize, 3), mem.store.stats.modules_read);
     try testing.expectEqual(@as(usize, 2), mem.store.stats.modules_analysed);
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
 }
@@ -879,6 +881,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
         \\    @print(modules.length.toString());
         \\}
         \\
+        \\import {compiler} from "std";
         },
         .{ .path = "main", .root = true, .source =
         \\import {boot, m as mark} from "frame";
@@ -913,7 +916,8 @@ test "level B: a package declaring a catalogue default is stored and read back w
     var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
     defer second.deinit(testing.allocator);
     for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
-    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
+    // `frame`'s module and std's `compiler`, which `frame` imports (decision 579).
+    try testing.expectEqual(@as(usize, 2), mem.store.stats.modules_read);
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
     // The root's answer read from the entry's query: the same two entries.
     for (second.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) {
@@ -942,6 +946,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
         \\    return @TypeInfo.all(with: listed).length;
         \\}
         \\
+        \\import {compiler} from "std";
         },
         .{ .path = "main", .source =
         \\pub fn main() {
@@ -956,7 +961,8 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     var session = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
     defer session.deinit(testing.allocator);
     try testing.expect(!mem.staged.contains("cat"));
-    try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
+    // Only std's `compiler`, which `cat` imports (decision 579), is staged.
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.entries_staged);
 }
 
 test "level B: a hit is the dependency's module — one of the package under test spelled like it is analysed" {

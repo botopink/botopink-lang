@@ -17,6 +17,7 @@ pub fn ui(expr q: string) -> string {
     };
 }
 val s = ui @`<Card title="x"><Badge/></Card>`;
+import {compiler} from "std";
 ```
 
 ----- COMPTIME WAT -- template ui

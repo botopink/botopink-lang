@@ -30,7 +30,7 @@ const MARKUP =
     \\    return compiler.build(text.length().toString());
     \\}
     \\
-    \\import {compiler.Span, compiler.CustomNode} from "std";
+    \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;
 
 const CARD =

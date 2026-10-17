@@ -96,6 +96,7 @@ const loop_decorator =
     \\        if (f.name == "bad") { compiler.fail("field 'bad' not allowed", at: decl); }
     \\    });
     \\}
+    \\import {compiler} from "std";
 ;
 
 test "decorator regression: loop in body" {
@@ -136,7 +137,7 @@ const conditional_decorator =
     \\        }
     \\    }
     \\}
-    \\import {compiler.DeclKind} from "std";
+    \\import {compiler, compiler.DeclKind} from "std";
 ;
 
 test "decorator regression: conditional in body" {
@@ -175,6 +176,7 @@ const concat_decorator =
     \\    msg = msg + compiler.name(decl)!;
     \\    if (compiler.name(decl)! == "Forbidden") { compiler.fail(msg, at: decl); }
     \\}
+    \\import {compiler} from "std";
 ;
 
 test "decorator regression: string concat in body" {
@@ -207,6 +209,7 @@ test "decorator regression: @emit in body" {
         \\#[addHelper]
         \\type Service(x: i32)
         \\fn useHelper() -> i32 { return helper_Service(); }
+        \\import {compiler} from "std";
     , "call $bp_comptime_decorator:__bp_add/2",
         \\{"kind":"ok","contributions":[{"source":"pub fn helper_Service() -> i32 { return 42; }","kind":"emit"}]}
     );
@@ -225,6 +228,7 @@ const fold_decorator =
     \\    compiler.fields(decl).forEach({ f -> count = count + 1; });
     \\    if (count > 5) { compiler.fail("too many fields", at: decl); }
     \\}
+    \\import {compiler} from "std";
 ;
 
 test "decorator regression: fold fusion counts every element" {

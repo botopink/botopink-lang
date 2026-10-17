@@ -182,7 +182,7 @@ test "template: expr methods typecheck and record lowerings" {
         \\    compiler.note("a reason");
         \\    return template;
         \\}
-        \\import {compiler.Span, compiler.CustomNode, compiler.DeclKind} from "std";
+        \\import {compiler, compiler.Span, compiler.CustomNode, compiler.DeclKind} from "std";
     );
 
     // Decision 576 (2) — every template op but `.value` (an `expr` is
@@ -300,6 +300,7 @@ test "infer: context/source/bindings/build methods typecheck against std.syntax"
         \\    val names = compiler.bindings(template);
         \\    return compiler.build("file + raw");
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -390,6 +391,7 @@ test "infer error: template body not expandable by the V1 driver (F6)" {
         \\    return t;
         \\}
         \\val c = hard @`SELECT 1`;
+        \\import {compiler} from "std";
     );
 }
 
@@ -429,6 +431,7 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
         \\    return compiler.build(t.frobnicate());
         \\}
         \\val s = shout @`hey`;
+        \\import {compiler} from "std";
     ;
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
@@ -450,6 +453,7 @@ test "comptime: runtime template body ---- text() + build() end to end" {
         \\    return compiler.build("\"" + t + "!\"");
         \\}
         \\val s = shout @`hey`;
+        \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -468,6 +472,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\    return compiler.build("\"ok\"");
         \\}
         \\val r = need @`<Buttom/>`;
+        \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -493,6 +498,7 @@ test "template: runtime fail() maps into the caller's template" {
         \\    return q;
         \\}
         \\val s = lint @`bad`;
+        \\import {compiler} from "std";
     ;
     const io = std.testing.io;
     var session = try comptimeMod.compile(
@@ -504,7 +510,8 @@ test "template: runtime fail() maps into the caller's template" {
     );
     defer session.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
+    // std's `compiler`, which the module imports (decision 579), then the module.
+    try std.testing.expectEqual(@as(usize, 2), session.outputs.items.len);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
     const te = outcome.typeError;
@@ -536,7 +543,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
         \\    return code;
         \\}
         \\val rows = dsl @`select id from Item`;
-        \\import {compiler.Span, compiler.CustomNode} from "std";
+        \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "shapes", .source = shapes },
@@ -639,6 +646,7 @@ test "decision 237 ---- a text that names nothing in scope carries no binding" {
         \\    return n;
         \\}
         \\val n = conf @`cfg-0`;
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -669,6 +677,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
         \\    };
         \\}
         \\val s = ui @`<Card title="x"><Badge/></Card>`;
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -696,12 +705,14 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
         \\    };
         \\}
         \\val r = need @`<Card/>`;
+        \\import {compiler} from "std";
     ;
     const io = std.testing.io;
     {
         var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
         defer session.deinit(std.testing.allocator);
-        try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
+        // std's `compiler`, which the module imports (decision 579), then the module.
+        try std.testing.expectEqual(@as(usize, 2), session.outputs.items.len);
         const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
         try std.testing.expect(outcome == .typeError);
         const message = try outcome.typeError.message(std.testing.allocator);
@@ -734,7 +745,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
         \\    compiler.custom(root);
         \\    return code;
         \\}
-        \\import {compiler.Span, compiler.CustomNode} from "std";
+        \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     );
     try std.testing.expect(env.templateFns.contains("dsl"));
 }
@@ -751,7 +762,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         \\}
         \\val rows = dsl @`select id from Item`;
         \\val answer = rows + 1;
-        \\import {compiler.Span, compiler.CustomNode} from "std";
+        \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const io = std.testing.io;
     var session = try comptimeMod.compile(
@@ -819,7 +830,7 @@ test "decision 112: lookup answers the declaration's identity, never the alias" 
         \\    compiler.custom(root);
         \\    return code;
         \\}
-        \\import {compiler.Span, compiler.CustomNode} from "std";
+        \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const main =
         \\import shapesdsl, {area as surface} from "shapesdsl";
@@ -994,6 +1005,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
         \\    return compiler.build("inner @`deep`");
         \\}
         \\val s = outer @`x`;
+        \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -1016,6 +1028,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
         \\    return compiler.build("fragment([Page1(), Page2()])");
         \\}
         \\val page = html @`<Page1/><Page2/>`;
+        \\import {compiler} from "std";
     );
 }
 
@@ -1051,6 +1064,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\    return compiler.build("\"" + wrap(helper(compiler.text(q))) + depth(3).toString() + "\"");
         \\}
         \\val here = shout @`in`;
+        \\import {compiler} from "std";
     ;
     const main =
         \\import {shout} from "tags";
@@ -1062,6 +1076,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\}
         \\val a = shout @`ab`;
         \\val b = echo @`xy`;
+        \\import {compiler} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "text", .source = text },
@@ -1101,6 +1116,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\    };
         \\    return compiler.build("\"" + out + kindOf(#("w", 7)) + "\"");
         \\}
+        \\import {compiler} from "std";
     ;
     const main =
         \\import {pairs} from "pairs";
@@ -1110,6 +1126,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\}
         \\val a = probe @`ab`;
         \\val b = pairs @`xy`;
+        \\import {compiler} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "pairs", .source = pairs },
@@ -1149,6 +1166,7 @@ test "decision 331: a template body of more variables than a frame holds compile
         \\    return compiler.build("\"" + s.slice(0, 6) + n.toString() + "\"");
         \\}
         \\val got = big @`q`;
+        \\import {compiler} from "std";
     );
     const replies = try h.canonicalReplies(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
@@ -1173,6 +1191,7 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\    @print(g.greet("hello"));
         \\    @print(g.greet @`hello`);
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -1200,6 +1219,7 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\    @print(Waver(name: "Ana").greet "hello");
         \\    @print(wave(Waver(name: "Bia")));
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -1245,6 +1265,7 @@ test "templates: a raise in another module's template body names the body's file
         \\    @panic("boom " + s);
         \\    return compiler.build("\"" + s + "\"");
         \\}
+        \\import {compiler} from "std";
     ;
     const src =
         \\import {tpl.shout};

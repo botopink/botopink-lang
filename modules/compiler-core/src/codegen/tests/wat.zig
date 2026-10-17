@@ -2953,6 +2953,7 @@ test "wat: a package template's answer is its library's record, its field read a
         \\pub default fn label(expr t: string) -> Label {
         \\    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
         \\}
+        \\import {compiler} from "std";
         },
         .{ .path = "shelf/root", .source =
         \\pub default mod shelf;

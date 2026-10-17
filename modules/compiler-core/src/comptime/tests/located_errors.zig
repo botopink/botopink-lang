@@ -151,6 +151,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\    @print(label());
             \\}
             \\
+            \\import {compiler} from "std";
             ,
             .line = 4,
             .col = 13,
@@ -194,6 +195,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\    @print(label());
             \\}
             \\
+            \\import {compiler} from "std";
             ,
             .line = 3,
             .col = 9,
@@ -267,6 +269,7 @@ test "a raise inside a decorator is located in its own build when an earlier bui
         \\    @print(moved());
         \\}
         \\
+        \\import {compiler} from "std";
     ;
     const cases = [_]struct { src: []const u8, line: u32 }{
         .{ .src = "\n\n\n" ++ decorated, .line = 7 },

@@ -22,6 +22,7 @@ const frame =
     \\    @print(modules.length.toString());
     \\}
     \\
+    \\import {compiler} from "std";
 ;
 
 /// The names the answers of `program` import (`import {<name> as __bp_ti_<k>} from "<module>"`),

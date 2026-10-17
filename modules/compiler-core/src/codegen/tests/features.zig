@@ -588,6 +588,7 @@ test "js: import ---- disk-lib namespace member binds + emits the namespace obje
         \\pub fn qlib(expr e: string) -> i32 {
         \\    return compiler.build("99");
         \\}
+        \\import {compiler} from "std";
         },
         .{ .path = "", .source =
         \\import {make, qlib} from "qlib";
@@ -619,6 +620,7 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\pub fn mlib(expr e: string) -> i32 {
         \\    return compiler.build("7");
         \\}
+        \\import {compiler} from "std";
         },
         .{ .path = "mlib/extra", .source =
         \\pub fn twice(x: i32) -> i32 {
@@ -1378,6 +1380,7 @@ test "js: comptime primitives ---- template body calls string and array methods"
         \\fn main() {
         \\    @print(s);
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -1401,6 +1404,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\fn main() {
         \\    @print(describeUser());
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -1448,6 +1452,7 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\    @print(wireService());
         \\    @print(collect([1, 2, 3]).join(","));
         \\}
+        \\import {compiler} from "std";
     );
 }
 

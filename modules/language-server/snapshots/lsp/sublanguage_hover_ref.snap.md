@@ -11,7 +11,7 @@ pub fn q(expr e: string) -> anyvalue {
 }
 val xs = q @`select name from Users`;
                      ↑
-import {compiler.Span, compiler.CustomNode} from "std";
+import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- HOVER at (line 9, char 21)

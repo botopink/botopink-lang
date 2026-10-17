@@ -1860,10 +1860,10 @@ pub const ParamModifier = enum {
 /// print back.
 pub const Arrival = enum { written, value, expr };
 
-/// Decision 575 (3) — the keyword `compiler`. The lexer reads it as a name
-/// (no binding may take it: a parameter is refused by the parser, any other
-/// binding by `comptime/compiler_surface.zig`), so the expression `compiler`
-/// is an identifier of this spelling.
+/// Decision 579 — the name std's `compiler.bp` gives its default value, the
+/// item `import {compiler} from "std";` imports. It is no keyword: a module
+/// that imports it reads `compiler` (or its alias) through
+/// `parser/compiler_surface.zig`; anywhere else it is an ordinary name.
 pub const compiler_keyword = "compiler";
 
 /// The internal tree type a `expr x: T` parameter and a `-> expr T` return
@@ -3479,6 +3479,31 @@ pub const TestDecl = struct {
     }
 };
 
+/// Decision 579 (1) — `#[builtin] pub default declare val compiler: Compiler;`:
+/// the one bodyless value declaration, a module's default whose value the
+/// compiler gives at each point (`compiler` is std's `compiler.bp`'s). It has
+/// no value and lowers to nothing; importing its module binds the name, and
+/// `parser/compiler_surface.zig` reads each use off that binding.
+pub const BuiltinValDecl = struct {
+    name: []const u8,
+    /// Where the name is written. `{0,0}` when synthesised; left out of the
+    /// AST dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
+    /// The `#[builtin]` written above it (and any other annotation).
+    annotations: []Annotation = &.{},
+    typeAnnotation: TypeRef,
+
+    pub fn deinit(this: *BuiltinValDecl, allocator: std.mem.Allocator) void {
+        this.typeAnnotation.deinit(allocator);
+        for (this.annotations) |*ann| ann.deinit(allocator);
+        allocator.free(this.annotations);
+    }
+
+    pub fn jsonStringify(this: @This(), jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{});
+    }
+};
+
 pub const DeclKind = union(enum) {
     type_: TypeDecl,
     /// `[pub] type Name<T> = Target;` — see `TypeAliasDecl`.
@@ -3490,6 +3515,8 @@ pub const DeclKind = union(enum) {
     behavior: BehaviorDecl,
     @"fn": FnDecl,
     val: ValDecl,
+    /// Decision 579 — `#[builtin] pub default declare val <name>: <Type>;`.
+    builtinVal: BuiltinValDecl,
     @"test": TestDecl,
     /// A standalone comment at the top level (not attached to any declaration).
     /// `text` is the comment content without the `//` / `///` / `////` prefix.
@@ -3537,6 +3564,7 @@ pub const DeclKind = union(enum) {
             .extend => |*x| x.deinit(allocator),
             .@"fn" => |*f| f.deinit(allocator),
             .val => |*v| v.deinit(allocator),
+            .builtinVal => |*v| v.deinit(allocator),
             .@"test" => |*t| t.deinit(allocator),
             .mod => {},
             .comment => {},

@@ -3464,14 +3464,42 @@ functions build an inline parameter type as the written calls do (decisions
 
 <!-- example: modules/template_builds_inline_props -->
 
+### `compiler`
+
+A body that runs at build — a decorator, a template, a function called at
+build, a `comptime { … }` block — talks to the compiler through `compiler`
+(decisions 575 (3), 579). It is no keyword: it is the default of std's module
+`compiler.bp`, `#[builtin] pub default declare val compiler: Compiler;`, whose
+value the compiler gives at each point — the annotated declaration in a
+decorator, the call site elsewhere —, and a file binds it by importing it:
+`import {compiler} from "std";` (`import {compiler};` in a std module), an
+alias included. `compiler.Span` and the other types of the module are imported
+by their path, `import {compiler.Span} from "std";`. A file that does not
+import it gets the ordinary unbound-name error, and `compiler` is an ordinary
+name there — a local, a field, a parameter.
+
+<!-- example: modules/compiler_import_missing -->
+<!-- example: modules/compiler_ordinary_name -->
+<!-- example: modules/compiler_import_alias -->
+
+Its rules are read off the binding, not the spelling: in a body that runs when
+the program runs it is `compiler-at-run-time`, an output outside a decorator
+`compiler-output-outside-decorator`, a read inside a tree `expr-captures-build`;
+it is read only through its members, and passed as an argument or stored it is
+`compiler-escapes`, at the name.
+
+<!-- example: modules/compiler_import_alias_at_run_time -->
+<!-- example: modules/compiler_escapes_passed -->
+<!-- example: modules/compiler_escapes_stored -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `expr` (decisions 575 (4),
 576 (10)) — `fn mark<T>(expr decl: T, comptime label: string)`, `expr decl:
 unknown` when the declaration has no pattern; `#[name(args)]` runs it at
 compile time over the declaration it annotates, the annotation's arguments after
-that parameter. `decl` is an opaque handle, read through the keyword `compiler`
-(decision 575 (3)): `compiler.kind(decl)`, `compiler.name(decl)!`,
+that parameter. `decl` is an opaque handle, read through `compiler`
+(§ `compiler`): `compiler.kind(decl)`, `compiler.name(decl)!`,
 `compiler.fields(decl)`, `compiler.variants(decl)`, `compiler.methods(decl)`,
 `compiler.returnType(decl)`, `compiler.annotations(decl)`,
 `compiler.owner(decl)`, a function's or a method's own `compiler.params(decl)`,

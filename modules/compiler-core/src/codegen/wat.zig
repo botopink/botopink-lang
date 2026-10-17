@@ -1620,7 +1620,7 @@ fn emitWatPass(
                     break :blk .{ .extend = c };
                 },
                 // `declName` answers null for these, and they were skipped above.
-                .use, .mod, .comment, .@"test", .typeAlias => unreachable,
+                .use, .mod, .comment, .@"test", .typeAlias, .builtinVal => unreachable,
             };
             try decls.append(ar0, renamed);
             try owner.append(ar0, li);
@@ -3188,7 +3188,7 @@ const Emitter = struct {
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
-            .use, .behavior, .mod, .@"test", .typeAlias => {},
+            .use, .behavior, .mod, .@"test", .typeAlias, .builtinVal => {},
         }
     }
 

@@ -171,12 +171,14 @@ the `n` (every other suffix leaves): the backends read a `bigint` literal by its
 `defer` is a keyword (`TokenKind.@"defer"`, `keywordOrIdent`; the language server's keyword list names it too).
 It begins a statement of a block and nothing else: anywhere else it is the ordinary unexpected-token parse error.
 
-## `compiler` lexes as a name; `syntax` is gone (decisions 575 (3), 576 (1))
+## `compiler` is a name; `syntax` is gone (decisions 575 (3), 576 (1), 579)
 
-The keyword `compiler` (a build-time body's `Compiler`) is read as an identifier: the parser
-refuses it as a parameter name (`consumeParamName`, `reserved-word-as-name`) and
-`parser/compiler_surface.zig` reads the expression `compiler` (`ast.compiler_keyword`). The
-parameter modifier `syntax` left the keyword table with `TokenKind.syntax`: it is an ordinary name.
+`compiler` is no keyword: it is std's value, the default of `compiler.bp`
+(`#[builtin] pub default declare val compiler: Compiler;`, `ast.BuiltinValDecl`), bound by
+`import {compiler} from "std";`. `parser/compiler_surface.zig` reads the expression under the name the
+module's import binds it to (`boundCompilerName`; `ast.compiler_keyword` is the imported item's
+spelling); without the import it is an ordinary name. The parameter modifier `syntax` left the keyword
+table with `TokenKind.syntax`: it is an ordinary name.
 
 ## The template text `` @`…` `` (decision 577)
 

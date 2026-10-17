@@ -443,11 +443,13 @@ test "bpp roles: one #[bpp.html], the others at most once, through a handle, an 
             \\import {bpp} from "std";
             \\#[bpp.html]
             \\pub fn html(expr t: string) -> i32 { return t.custom(t.node(), compiler.build("1")); }
+            \\import {compiler} from "std";
         ),
         testModule("ui/style",
             \\import {bpp.style as role} from "std";
             \\#[role]
             \\pub fn css(expr t: string) -> i32 { return t.custom(t.node(), compiler.build("1")); }
+            \\import {compiler} from "std";
         ),
         testModule("ui/prelude",
             \\import {bpp as b} from "std";

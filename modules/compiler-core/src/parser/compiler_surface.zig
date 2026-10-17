@@ -136,6 +136,12 @@ const Ctx = struct {
 /// Read the program's new surface onto the machinery (see the file comment).
 /// A program that writes none of it is left untouched.
 pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutOfMemory}!void {
+    // Decision 579 — `compiler` is std's value, bound by its import:
+    // `import {compiler} from "std";` (`import {compiler};` in std), an alias
+    // included. A module that does not import it has no `compiler`.
+    const saved_name = compiler_name;
+    defer compiler_name = saved_name;
+    compiler_name = boundCompilerName(program.*);
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const P = Pass{ .alloc = alloc, .scratch = arena.allocator() };
@@ -158,6 +164,34 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
 }
 
 const Pass = struct { alloc: std.mem.Allocator, scratch: std.mem.Allocator };
+
+/// The name the module binds std's `compiler` value to (decision 579), while
+/// `expandProgram` runs.
+threadlocal var compiler_name: ?[]const u8 = null;
+
+/// The local name of `import {compiler} from "std";` / `import {compiler};`
+/// (a std module's), or null when the module does not import it.
+fn boundCompilerName(program: ast.Program) ?[]const u8 {
+    for (program.decls) |d| if (d == .use) {
+        const u = d.use;
+        const fromStd = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => true,
+            .key => false,
+        };
+        if (!fromStd) continue;
+        for (u.imports) |imp| {
+            if (imp.segments.len == 1 and std.mem.eql(u8, imp.segments[0], ast.compiler_keyword)) return imp.name();
+        }
+    };
+    return null;
+}
+
+/// Whether `e` is the name the module binds `compiler` to.
+fn isCompiler(e: ast.Expr) bool {
+    const n = compiler_name orelse return false;
+    return isIdent(e, n);
+}
 
 /// The return of a function that writes none (an `implement` method's).
 var none: ?ast.TypeRef = null;
@@ -265,7 +299,7 @@ fn compilerCall(e: ast.Expr) ?CallData {
     if (e != .call or e.call.kind != .call) return null;
     const c = e.call.kind.call;
     const r = c.receiver orelse return null;
-    if (c.is_builtin or !isIdent(r.*, ast.compiler_keyword)) return null;
+    if (c.is_builtin or !isCompiler(r.*)) return null;
     return c;
 }
 
@@ -552,8 +586,8 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     }
     if (e == .identifier) switch (e.identifier.kind) {
         .ident => |n| {
-            if (std.mem.eql(u8, n, ast.compiler_keyword)) {
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else if (ctx.inTree) try treeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_member_unknown, "`compiler` is read through its members", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 575 (3)).");
+            if (compiler_name != null and std.mem.eql(u8, n, compiler_name.?)) {
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else if (ctx.inTree) try treeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
                 return;
             }
             if (!ctx.inTree and contains(ctx.values, n) and !contains(ctx.shadow.items, n)) {
@@ -567,7 +601,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
                 p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is an `expr` — the expression written — and has no field `.{s}`", .{ ia.receiver.identifier.kind.ident, ia.member }), "Read it through the compiler — `compiler.text(e)`, … — or hand it to a tree (decision 576 (2)).");
                 return;
             }
-            if (isIdent(ia.receiver.*, ast.compiler_keyword)) {
+            if (isCompiler(ia.receiver.*)) {
                 const at = ia.receiver.getLoc();
                 p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else if (ctx.inTree) try treeRefusal(ctx, at) else try mapProperty(ctx, loc, ia.member);
                 return;
@@ -714,6 +748,7 @@ test "a template's value return is lifted (decision 578)" {
         \\fn shout(expr q: string) -> string {
         \\    return compiler.text(q).toUpper();
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);

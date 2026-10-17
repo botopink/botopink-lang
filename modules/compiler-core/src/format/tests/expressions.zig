@@ -67,6 +67,8 @@ test "format: lambda ---- typed parameters and return (decision 370 (2))" {
         \\        return 0;
         \\    });
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 

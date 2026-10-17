@@ -979,6 +979,7 @@ test "typeinfo.all: a template body's query makes no reader (decision 353)" {
         \\    val n = @TypeInfo.all(with: d).length;
         \\    return compiler.text(e) + n.toString();
         \\}
+        \\import {compiler} from "std";
     ;
     try std.testing.expect(!try readsSource(arena, src));
     var lx = Lexer.init(src);

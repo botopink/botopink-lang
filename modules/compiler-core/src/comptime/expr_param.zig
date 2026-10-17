@@ -520,6 +520,7 @@ test "`x.value` is `x`, and a decorator's `x.fail(m)` names its argument" {
         \\    if (key == "") compiler.fail("empty", at: n);
         \\    decl.setMeta("key", key + n.toString());
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);
@@ -548,6 +549,7 @@ test "a typed meta call hands the runtime its index; a parameter given to an `@E
         \\    compiler.setMeta(Entity(table: table));
         \\    compiler.addMeta(Check(message: "m", rule: rule));
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const f = (try p.parse(arena)).decls[0].@"fn";
@@ -579,6 +581,7 @@ test "a body's use of a parameter: read, `.value`, `.fail` only" {
         \\    decl.setMeta("a", a);
         \\    if (compiler.name(decl)! == "") compiler.fail("no", at: b);
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const f = (try p.parse(arena)).decls[0].@"fn";

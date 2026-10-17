@@ -166,6 +166,7 @@ test "decorator body: @compilerError aborts compilation" {
         \\
         \\#[service]
         \\type UserService(name: string)
+        \\import {compiler} from "std";
     );
 }
 
@@ -184,6 +185,7 @@ test "decorator body: reads decl.kind and calls decl.fail" {
         \\
         \\#[service]
         \\type UserService(name: string)
+        \\import {compiler} from "std";
     );
 }
 
@@ -196,6 +198,7 @@ test "decorator body: reads decl.name and decl.returnType" {
         \\
         \\#[describe]
         \\type Point(x: i32, y: i32)
+        \\import {compiler} from "std";
     );
 }
 
@@ -211,6 +214,7 @@ test "decorator body: reads the aggregate members (fields/methods/annotations)" 
         \\
         \\#[component]
         \\type Service(repo: string)
+        \\import {compiler} from "std";
     );
 }
 
@@ -404,6 +408,7 @@ test "decision 575 (4): `comptime x: T` holds the value — decorator, function,
         \\#[mark(2, .High, ["a"])]
         \\type A(x: i32)
         \\val s = scale(3, 4);
+        \\import {compiler} from "std";
     );
 }
 
@@ -431,6 +436,7 @@ test "decision 364: an `@Expr` of a function or a type has no `.value`" {
         \\fn rule(expr decl: unknown, comptime r: ?fn(x: i32) -> bool = null) {
         \\    if (r == null) compiler.fail("none", at: decl);
         \\}
+        \\import {compiler} from "std";
     , "expr-value-of-function");
     try expectDecoratorError(
         \\fn bean(expr decl: unknown, comptime t: anytype) {
@@ -453,10 +459,12 @@ test "decision 364: a `comptime` parameter's `@Expr` answers `.value`, and `.fai
         \\fn note(expr decl: unknown, expr m: string) {
         \\    decl.setMeta("m", compiler.text(m));
         \\}
+        \\import {compiler} from "std";
     );
     try h.assertInfersOk(std.testing.allocator,
         \\fn check(expr decl: unknown, comptime n: i32) {
         \\    if (n < 0) compiler.fail("negative", at: n);
         \\}
+        \\import {compiler} from "std";
     );
 }

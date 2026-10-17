@@ -487,6 +487,7 @@ test "typed meta calls, in body order; the string form and a member's body are n
         \\    compiler.addMember("v", fn(self: string) -> string { return m; });
         \\    compiler.addMeta(orm.Index(column: "y"));
         \\}
+        \\import {compiler} from "std";
     );
     var p = parser.Parser.init(try lx.scanAll(arena));
     const f = (try p.parse(arena)).decls[0].@"fn";

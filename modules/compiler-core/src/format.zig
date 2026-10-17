@@ -2307,14 +2307,14 @@ pub const Formatter = struct {
                 .val => |v| v.docComment,
                 .@"test" => |v| v.docComment,
                 .mod => |v| v.docComment,
-                .comment => null,
+                .builtinVal, .comment => null,
             };
             const prefix = try this.fmtDocPrefix(docComment);
             // Add semicolon after declarations that don't have a body
             const needsSemi = switch (d) {
                 .@"fn" => false,
                 .@"test" => false,
-                .val => true,
+                .val, .builtinVal => true,
                 // 1.0.3 declarations end with `)` or `}` and take no `;`.
                 .type_ => false,
                 // An alias ends with its target type, which has no closing token.
@@ -2397,6 +2397,7 @@ pub const Formatter = struct {
             .extend => |ext| this.fmtExtend(ext),
             .@"fn" => |f| this.fmtFnDecl(f),
             .val => |v| this.fmtValDecl(v),
+            .builtinVal => |v| this.fmtBuiltinValDecl(v),
             .@"test" => |t| this.fmtTestDecl(t),
             // `[pub] [default] mod Name;`. `default` names the package handle
             // that `import <pkg>` resolves to (`comptime.zig`'s package-default
@@ -3344,6 +3345,18 @@ pub const Formatter = struct {
         try parts.append(this.arena, try this.text(" = "));
         try parts.append(this.arena, try this.fmtExpr(v.value.*));
         return this.concatAll(parts.items);
+    }
+
+    /// Decision 579 — `#[builtin] pub default declare val <name>: <Type>`; the
+    /// `;` is added by the program loop (`needsSemi`).
+    fn fmtBuiltinValDecl(this: *Formatter, v: ast.BuiltinValDecl) !*const Doc {
+        return this.concatAll(&.{
+            try this.fmtAnnotations(v.annotations),
+            try this.text("pub default declare val "),
+            try this.text(v.name),
+            try this.text(": "),
+            try this.fmtTypeRef(v.typeAnnotation),
+        });
     }
 
     /// `[pub] type Name<A, B> = Target` — the `;` is added by the program

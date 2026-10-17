@@ -1,6 +1,7 @@
 ----- SOURCE CODE
 pub default fn one(expr q: string) -> i32 { return compiler.build("0"); }
 pub default fn two(expr q: string) -> i32 { return compiler.build("0"); }
+import {compiler} from "std";
 
 ----- ERROR
 error: default-twice: a module has one default function

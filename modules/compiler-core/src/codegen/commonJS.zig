@@ -602,6 +602,8 @@ fn emitProgramOptsX(
             .typeAlias => {},
             // Test blocks are the test unit's (`emitTestUnit`, decision 513).
             .@"test" => |t| try tests.append(alloc, t),
+            // Decision 579 — a builtin value lowers to nothing: the compiler gives it.
+            .builtinVal => {},
             .comment => |c| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
                 .style = if (c.is_doc) .doc else if (c.is_module) .module else .line,
                 .text = c.text,

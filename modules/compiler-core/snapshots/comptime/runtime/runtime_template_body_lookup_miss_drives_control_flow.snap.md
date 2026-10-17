@@ -11,6 +11,7 @@ pub fn need(expr t: string) -> string {
     return compiler.build("\"ok\"");
 }
 val r = need @`<Buttom/>`;
+import {compiler} from "std";
 ```
 
 ----- COMPTIME WAT -- template need

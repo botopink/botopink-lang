@@ -31,7 +31,7 @@ test "comptime module: host enum member lowers to an atom, method call to a host
         \\fn service(expr decl: unknown) {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("must annotate a type", at: decl); }
         \\}
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , .{
         .host_enums = &.{"DeclKind"},
         .exports = &.{.{ .name = "main", .arity = 0 }},
@@ -59,6 +59,7 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
         \\    msg = msg + compiler.name(decl)!;
         \\    if (compiler.fields(decl).len > 5) { compiler.fail(msg, at: decl); }
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "Msg = <<\"invalid name: \">>,");
     try expectContains(out, "Msg@1 = '__bp_add'(Msg, maps:get(name, Decl))");
@@ -81,6 +82,7 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
         \\    });
         \\    @emit("type Mock" + compiler.name(decl)! + " {" + methods + "}");
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "lists:foldl(fun(M, Methods) ->");
     try expectContains(out, "'__bp_add'('__bp_add'(Methods, <<\"fn \">>), maps:get(name, M))");
@@ -104,6 +106,7 @@ test "comptime module: a counted loop folds the counter through lists:foldl" {
         \\    };
         \\    @emit(first);
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "lists:foldl(fun(F, {First@1, Idx@1}) ->");
     try expectContains(out, "end, {First, Idx}, maps:get(fields, Decl)),");
@@ -124,6 +127,7 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
         \\    compiler.fields(decl).forEach({ f -> emit(f.name); });
         \\    @emit(toks.join(","));
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "Emit = fun(T, Toks@1) ->");
     try expectContains(out, "Toks@3 = Emit(<<\"first\">>, Toks),");
@@ -147,6 +151,7 @@ test "comptime module: a condition loop threads the variables its body reassigns
         \\    };
         \\    @emit(names);
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "{Names@3, I@3} = (fun __BpLoop({Names@1, I@1}) ->");
     try expectContains(out, "case (I@1 < 3) of");
@@ -186,6 +191,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
         \\    });
         \\    @emit(args.join(", "));
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     // Straight-line position rebinds the local.
     try expectContains(out, "Args@1 = '__bp_prim_push'(Args, <<\"first\">>),");
@@ -201,6 +207,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
         \\    names.push(compiler.name(decl)!);
         \\    @emit(names.join(", "));
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(param, "    '__bp_prim_push'(Names, maps:get(name, Decl)),");
     try expectContains(param, "emit('__bp_prim_join'(Names, <<\", \">>))");
@@ -237,6 +244,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
         \\    val first = all.at(0);
         \\    return compiler.build(all.join(",") + tail);
         \\}
+        \\import {compiler} from "std";
     , .{ .forms = &.{ hostFn("text", 1), hostFn("build", 2) } });
     // Host API calls stay bare local calls.
     try expectContains(out, "text(Q)");
@@ -286,6 +294,7 @@ test "comptime module: decorator body primitive methods dispatch through shims" 
         \\    val names = compiler.fields(decl).map({ f -> f.name });
         \\    if (compiler.name(decl)!.startsWith("_")) { compiler.fail("private: " + names.join(", "), at: decl); }
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"}, .forms = &.{hostFn("fail", 2)} });
     try expectContains(out, "Names = '__bp_prim_map'(maps:get(fields, Decl), fun(F) ->");
     try expectContains(out, "'__bp_prim_startsWith'(maps:get(name, Decl), <<\"_\">>)");
@@ -303,6 +312,7 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
         \\    val c = compiler.fields(decl).size;
         \\    val d = a.abs() + b.round() + c.floor() + a.ceil();
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
     try expectContains(out, "A = '__bp_prim_length'(maps:get(name, Decl))");
     try expectContains(out, "B = '__bp_prim_length'(maps:get(fields, Decl))");
@@ -329,6 +339,7 @@ test "comptime module: a method nothing answers is a located error, not an undef
         \\    val n = compiler.name(decl)!;
         \\    val x = n.frobnicate(1, 2);
         \\}
+        \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"}, .unsupported_method = &unsupported });
     try std.testing.expectError(error.UnsupportedComptimeMethod, result);
     try std.testing.expectEqualStrings("frobnicate", unsupported.callee);
@@ -354,6 +365,7 @@ test "comptime module: a listing shows the shim calls but not the shims" {
         \\fn names(expr decl: unknown) {
         \\    @emit(compiler.fields(decl).map({ f -> f.name }).join(", "));
         \\}
+        \\import {compiler} from "std";
     , .{ .listing = true });
     try expectContains(out, "'__bp_prim_join'('__bp_prim_map'(maps:get(fields, Decl), fun(F) ->");
     try std.testing.expect(std.mem.indexOf(u8, out, "'__bp_prim_join'(Recv") == null);

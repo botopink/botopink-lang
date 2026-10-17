@@ -7,6 +7,7 @@ pub fn outer(expr q: string) -> string {
     return compiler.build("inner @`deep`");
 }
 val s = outer @`x`;
+import {compiler} from "std";
 ```
 
 ----- COMPTIME WAT -- template outer

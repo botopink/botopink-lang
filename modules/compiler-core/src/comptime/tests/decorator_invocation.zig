@@ -68,7 +68,7 @@ test "decorator invocation: body accepts a record" {
         \\}
         \\#[service]
         \\type UserService(name: string)
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
@@ -79,7 +79,7 @@ test "decorator invocation: body rejects wrong placement (fn instead of record)"
         \\}
         \\#[service]
         \\fn notARecord() { }
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a type with fields");
 }
 
@@ -91,7 +91,7 @@ test "decorator invocation: rejection points at the annotation" {
         \\
         \\#[service]
         \\fn notARecord() { }
-        \\import {compiler.Span, compiler.DeclKind} from "std";
+        \\import {compiler, compiler.Span, compiler.DeclKind} from "std";
     , "must annotate a type with fields", .{ 5, 3 });
 }
 
@@ -108,6 +108,7 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
         \\
         \\#[check]
         \\type A(x: i32)
+        \\import {compiler} from "std";
     , "unknown-primitive-method: `string` has no method `frobnicate`", .{ 3, 15 });
 }
 
@@ -121,6 +122,7 @@ test "decorator invocation: a raise in another module's decorator body names the
         \\    val n = compiler.name(decl)!;
         \\    @panic("boom " + n);
         \\}
+        \\import {compiler} from "std";
     ;
     const src =
         \\import {deco.check};
@@ -191,6 +193,7 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
         \\}
         \\val p = describePoint();
         \\val m = describeMode();
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -244,6 +247,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
         \\}
         \\#[smile("[\u{2028}\u{263A}]")]
         \\type Face(x: i32)
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -268,7 +272,7 @@ test "decorator invocation: method placement accepted" {
         \\    #[getMapping("/users")]
         \\    fn index(self: Self) -> string;
         \\}
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
@@ -279,7 +283,7 @@ test "decorator invocation: method decorator rejects a record" {
         \\}
         \\#[getMapping("/x")]
         \\type Nope()
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a method");
 }
 
@@ -290,6 +294,7 @@ test "decorator invocation: body reads the reflected name" {
         \\}
         \\#[named]
         \\type Bad()
+        \\import {compiler} from "std";
     , "the name Bad is reserved");
 }
 
@@ -302,7 +307,7 @@ test "decorator invocation: @compilerError rejects wrong placement" {
         \\}
         \\#[service]
         \\fn notARecord() { }
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a type with fields");
 }
 
@@ -313,7 +318,7 @@ test "decorator invocation: @compilerError body accepts the right placement" {
         \\}
         \\#[service]
         \\type UserService(name: string)
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
@@ -327,7 +332,7 @@ test "decorator invocation: decl.variants tells an enum-shaped type from a recor
         \\}
         \\#[service]
         \\type Mode { Fast, Slow }
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a type with fields");
 }
 
@@ -339,7 +344,7 @@ test "decorator invocation: decl.variants is empty on a record" {
         \\}
         \\#[service]
         \\type UserService(name: string)
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
@@ -427,7 +432,7 @@ test "decorator invocation: interface-level marker runs over the interface" {
         \\}
         \\#[onlyRecords]
         \\behavior Repo { fn find(self: Self, id: i32) -> string; }
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     , "not allowed on a behavior");
 }
 
@@ -446,6 +451,7 @@ test "decorator invocation: mock-style synthesis from an interface compiles" {
         \\#[mock]
         \\behavior Counter { fn value(self: Self) -> i32; }
         \\fn useit() -> i32 { return mockCounter().value(); }
+        \\import {compiler} from "std";
     );
 }
 
@@ -476,6 +482,7 @@ test "decorator invocation: a helper of another module builds that module's reco
         \\#[page]
         \\type Home(x: i32)
         \\val shown = seenHome();
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -508,6 +515,7 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
         \\}
         \\#[labelled]
         \\type Point(x: i32, y: i32)
+        \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -532,7 +540,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     const calls = 60;
     var body: std.ArrayListUnmanaged(u8) = .empty;
     defer body.deinit(alloc);
-    try body.appendSlice(alloc, "fn big(expr decl: unknown) {\n");
+    try body.appendSlice(alloc, "import {compiler} from \"std\";\nfn big(expr decl: unknown) {\n");
     var k: usize = 0;
     while (k < 250) : (k += 1) try body.print(alloc, "    if (compiler.name(decl)! == \"never{d}\") {{ compiler.fail(\"message {d}\", at: decl); }}\n", .{ k, k });
     try body.appendSlice(alloc, "}\n");

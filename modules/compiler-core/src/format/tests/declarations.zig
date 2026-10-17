@@ -1020,6 +1020,15 @@ test "format: `pub default <name>;` stays after its private function" {
     );
 }
 
+// ── decision 579: a builtin default value ───────────────────────────────────
+
+test "format: `#[builtin] pub default declare val` keeps its annotation and type" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[builtin]
+        \\pub default declare val compiler: Compiler;
+    );
+}
+
 // ── decision 297: a value-or-type parameter ─────────────────────────────────
 
 test "format: `comptime s: Box<T> | type T` prints without parentheses" {

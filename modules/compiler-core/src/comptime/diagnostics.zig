@@ -759,6 +759,10 @@ pub const expr_captures_build: []const u8 = "expr-captures-build";
 /// without a member, or a member read where the point has none.
 pub const compiler_member_unknown: []const u8 = "compiler-member-unknown";
 
+/// Decision 579 (3) — `compiler` read other than through a member: passed as
+/// an argument, stored, returned. It is the compiler at that point only.
+pub const compiler_escapes: []const u8 = "compiler-escapes";
+
 /// Decision 575 (4) — a `-> expr T` function called as a function, outside
 /// the template syntax, an annotation and a tree.
 pub const expr_call_outside_expr: []const u8 = "expr-call-outside-expr";
@@ -976,6 +980,7 @@ pub const all_codes = [_][]const u8{
     compiler_output_outside_decorator,
     expr_captures_build,
     compiler_member_unknown,
+    compiler_escapes,
     expr_call_outside_expr,
     build_and_run,
     run_in_build,

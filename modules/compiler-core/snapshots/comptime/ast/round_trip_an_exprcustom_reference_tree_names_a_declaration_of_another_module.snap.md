@@ -1,13 +1,19 @@
 ----- SOURCE CODE -- std/compiler.bp
 ```botopink
-//// The compiler a body that runs at build talks to (decisions 575 (3), 576).
+//// The compiler a body that runs at build talks to (decisions 575 (3), 576,
+//// 579).
 ////
-//// In a body that runs at build — a decorator, a template, a function called
-//// at build, a `comptime { … }` block — the keyword `compiler` is the
+//// `compiler`, this module's default, is a value, not a keyword: importing
+//// the module binds it — `import {compiler} from "std";` outside std,
+//// `import {compiler};` in a std module, an alias (`import {compiler as c}
+//// from "std";`) included. In a body that runs at build — a decorator, a
+//// template, a function called at build, a `comptime { … }` block — it is the
 //// `Compiler` of that point: the annotated declaration in a decorator, the
 //// call site elsewhere. It is a `Build` resource (decision 376 (1)); a body
 //// that runs only when the program runs is refused there
-//// (`compiler-at-run-time`), and it is never a parameter.
+//// (`compiler-at-run-time`), and it is read only through its members — never
+//// passed nor stored (`compiler-escapes`). A file that does not import it
+//// has no `compiler`: the name is an ordinary one there.
 ////
 //// `Compiler` has one implementor, the compiler itself: a unit test holds the
 //// compiler's table of members (`parser/compiler_surface.zig` `members`) to
@@ -112,18 +118,32 @@ pub behavior Compiler {
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
 }
 
+// The value the module's import binds (decision 579): its value is given by
+// the compiler at each point, so it has no body.
+#[builtin]
+pub default declare val compiler: Compiler;
+
 // ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 // No prelude name: a file naming one imports it, `import {compiler.Span} from
 // "std";`. Each is the compiler's own type, written here under its name.
 pub type Span = __Span;
+
 pub type Source = __Source;
+
 pub type ExprContext = __ExprContext;
+
 pub type CustomNode = __CustomNode;
+
 pub type DeclKind = __DeclKind;
+
 pub type DeclAnnotation = __Decl__Annotation;
+
 pub type Param = __Decl__Param;
+
 pub type Field = __Decl__Field;
+
 pub type Method = __Decl__Method;
+
 pub type HookNode = __HookNode;
 
 ```
@@ -763,7 +783,7 @@ pub fn dsl(expr e: string) -> anyvalue {
     return code;
 }
 val rows = dsl @`select id from Item`;
-import {compiler.Span, compiler.CustomNode} from "std";
+import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
@@ -772,7 +792,7 @@ import {Item} from "shapes";
 
 pub val rows = 41;
 
-import {compiler.Span, compiler.CustomNode} from "std";
+import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

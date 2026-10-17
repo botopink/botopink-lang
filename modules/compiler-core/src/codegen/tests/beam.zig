@@ -506,6 +506,7 @@ test "beam: a member call through a library's default handle is a call into the 
         \\pub fn qlib(expr e: string) -> i32 {
         \\    return compiler.build("99");
         \\}
+        \\import {compiler} from "std";
         },
         .{ .path = "", .source =
         \\import {qlib} from "qlib";

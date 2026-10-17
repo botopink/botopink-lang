@@ -9,7 +9,7 @@ pub fn dsl(expr e: string) -> anyvalue {
     return code;
 }
 val rows = dsl @`select id from Item`;
-import {compiler.Span, compiler.CustomNode} from "std";
+import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- COMPTIME WAT -- template dsl

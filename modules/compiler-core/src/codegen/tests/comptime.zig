@@ -319,6 +319,7 @@ test "js: template end to end ---- an anyvalue answer built from text" {
         \\    val p = port @`x` + 1;
         \\    @print(p);
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -375,6 +376,7 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
         \\fn main() {
         \\    @print(s);
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -390,6 +392,7 @@ test "js: template end to end ---- yaml model computes a labeled tuple" {
         \\fn main() {
         \\    @print(cfg.port + 1);
         \\}
+        \\import {compiler} from "std";
     );
 }
 

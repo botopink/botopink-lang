@@ -950,7 +950,7 @@ test "decorator module: lowered body, handle term and host glue" {
         \\fn getMapping(expr decl: unknown, comptime path: string, comptime verb: string) {
         \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
-        \\import {compiler.DeclKind} from "std";
+        \\import {compiler, compiler.DeclKind} from "std";
     );
     var p = parserMod.Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);
