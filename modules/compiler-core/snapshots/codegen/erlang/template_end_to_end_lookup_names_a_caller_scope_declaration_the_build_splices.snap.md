@@ -21,7 +21,8 @@
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`.
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+////   `implement`.
 //// - The reads of an `expr` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
 //// - A template's call site: `build`, `buildType`, `note`, `tagDecl`,
@@ -31,7 +32,7 @@
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 //// - The program: `catalogue`, `typeInfo`.
 ////
-//// `implement`, `setBuiltin`, `embed`, `fields` over a type,
+//// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
 
 pub behavior Compiler {
@@ -68,6 +69,10 @@ pub behavior Compiler {
     // before `main` in the program's init list: modules in dependency order,
     // declarations in source order, calls in order (decision 575 (3)).
     fn compile(self: Self, executor: fn());
+    // A host source of the annotated `declare fn` (decision 575 (6)): one per
+    // target (`implementation-twice`), never on a declaration with a body
+    // (`implement-with-body`).
+    fn implement(self: Self, source: Implementation);
 
     // ── The reads of an `expr` (decision 576 (2)) ─────────────────────────
     // The expression as written.
@@ -194,7 +199,9 @@ pub type HookNode = __HookNode;
 
 %%% - The outputs, a decorator's only (`compiler-output-outside-decorator`):
 
-%%%   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`.
+%%%   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+
+%%%   `implement`.
 
 %%% - The reads of an `expr` (decision 576 (2)): `text`, `name`, `source`,
 
@@ -214,7 +221,7 @@ pub type HookNode = __HookNode;
 
 %%% 
 
-%%% `implement`, `setBuiltin`, `embed`, `fields` over a type,
+%%% `setBuiltin`, `embed`, `fields` over a type,
 
 %%% `optional` and `required` join it with the steps that build them.
 
