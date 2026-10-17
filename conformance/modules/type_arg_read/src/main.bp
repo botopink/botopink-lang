@@ -5,7 +5,9 @@
 type Box<T>(value: T)
 
 fn peek<T>(comptime s: @Expr<Box<T> | type<T>>) -> string {
-    if (s is type) return s.value.value;
+    if (s is type) {
+        return s.value.value;
+    }
     return "v";
 }
 
