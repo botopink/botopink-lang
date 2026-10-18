@@ -75,8 +75,10 @@ def matching(s, i, open_c, close_c):
     return -1
 
 
-def split_top(s):
-    """`s` split at its top-level commas, each piece with its offset."""
+def split_top(s, angles=False):
+    """`s` split at its top-level commas, each piece with its offset.
+
+    With `angles`, `<…>` nests too (a parameter list: `x: Map<K, V>`); a `->` is no bracket."""
     out = []
     depth = 0
     start = 0
@@ -89,9 +91,12 @@ def split_top(s):
         if s.startswith('//', j):
             j = skip_comment(s, j)
             continue
-        if c in '([{':
+        if angles and s.startswith('->', j):
+            j += 2
+            continue
+        if c in '([{' or (angles and c == '<'):
             depth += 1
-        elif c in ')]}':
+        elif c in ')]}' or (angles and c == '>'):
             depth -= 1
         elif c == ',' and depth == 0:
             out.append((start, s[start:j]))
@@ -142,7 +147,7 @@ def params_after(s, i):
         return None
     names = []
     variadic = [False]
-    for _, piece in split_top(s[open_at + 1:close_at]):
+    for _, piece in split_top(s[open_at + 1:close_at], angles=True):
         p = piece.strip()
         p = re.sub(r'^(comptime|expr)\s+', '', p)
         if p.startswith('..'):
@@ -163,7 +168,8 @@ JS_GLOBALS = {"globalThis", "Math", "JSON", "console", "Number", "Date", "Object
 def two_string_template(target, module, symbol, params):
     mod = module[1:-1]
     sym = symbol[1:-1]
-    if '/' in mod or mod.endswith('.mjs') or mod.endswith('.js'):
+    local = '/' in mod or mod.endswith('.mjs') or mod.endswith('.js')
+    if local and (target not in ('Node', 'Typescript') or '/' in mod and not mod.startswith('.')):
         return None
     markers = ', '.join('$%d' % k for k in range(len(params)))
     # `"sym(a, self)"` names the host's argument order by parameter name.
@@ -180,6 +186,9 @@ def two_string_template(target, module, symbol, params):
         # A JS host takes a variadic's values one by one; erlang takes the list.
         if getattr(params, 'variadic', False) and not m:
             markers = '$args'
+        if local:
+            # A local module, as std writes it (`io/random.bp`).
+            return '"""require(\'%s\').%s(%s)"""' % (mod, sym, markers)
         if mod in JS_GLOBALS:
             return '"%s.%s(%s)"' % (mod, sym, markers)
         # A module the program requires (`node:path`).
