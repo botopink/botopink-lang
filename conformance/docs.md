@@ -993,10 +993,17 @@ A `type` whose body lists variants is an enum:
 
 <!-- example: modules/enum_declaration -->
 
-A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)`;
-inside a `case` pattern the bare name is enough. A bare `Red` in expression
-position type-checks but no backend lowers it (the generated program reports an
-unbound `Red` at run time), so always write the qualified form.
+A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)` —
+or by its leading dot where the position expects the enum (`val c: Color = .Red;`);
+inside a `case` pattern the bare name is enough. A bare variant in expression
+position (`Square(2)`, `val k: Kind = Element;`) is refused, located at the use
+and naming `Shape.Square(…)` and `.Square(…)` (decision 587) — also where the
+bare name is another enum's variant too, as a `Kind`'s `Element` is the prelude's
+`DeclKind.Element`:
+
+<!-- example: modules/enum_variant_bare_call_refused -->
+
+<!-- example: modules/enum_variant_bare_unit_refused -->
 
 #### Sections of an enum
 

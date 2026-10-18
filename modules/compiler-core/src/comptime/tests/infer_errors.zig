@@ -1842,7 +1842,7 @@ test "variant table: a qualified constructor is the enum written, whatever else 
     );
 }
 
-test "variant table: a leading dot takes the expected enum; with none, two claimants are a named refusal (row 1)" {
+test "variant table: a leading dot takes the expected enum; a bare name is refused naming both spellings (row 1, decision 587)" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Warm { Red, Orange }
         \\type Cold { Blue, Red }
@@ -1854,7 +1854,7 @@ test "variant table: a leading dot takes the expected enum; with none, two claim
         \\fn main() { val x = Red; @print(0); }
     );
     defer std.testing.allocator.free(msg);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant of `Warm` and of `Cold`, and nothing here says which") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant, and a bare variant is no expression — write `Warm.Red` or `Cold.Red`, or `.Red` where the position expects the enum") != null);
 }
 
 // ── 01-std handover: an integer literal takes the width its position asks for ─

@@ -1,0 +1,16 @@
+//// Decision 587 — a bare variant in expression position is refused at the
+//// call, located, naming the two spellings that say which enum is meant:
+//// `Shape.Square(…)`, and `.Square(…)` where the position expects a `Shape`.
+//// Before the rule `Square(2)` checked and then failed at run time on
+//// commonJS, erlang and beam (`Square is not defined`). The bare name stays
+//// a `case` pattern's (decision 8).
+
+pub type Shape {
+    Circle(radius: i32),
+    Square(side: i32),
+}
+
+pub fn main() {
+    val s = Square(2);
+    @print(0);
+}

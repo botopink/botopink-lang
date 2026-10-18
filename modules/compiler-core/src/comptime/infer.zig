@@ -1440,6 +1440,40 @@ fn refuseAmbiguousVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc
     return error.TypeError;
 }
 
+/// Decision 587 — a bare variant in expression position (`Two(t)`, `Red`) is
+/// a located refusal naming the spellings that say which enum is meant:
+/// `E.Two(t)`, and `.Two(t)` where the position expects `E`. A bare variant
+/// stays a `case` pattern's (decision 8), and a local or a function that
+/// shadows the name is not a variant use. `payload` is true for a call.
+fn refuseBareVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc, payload: bool) InferError!void {
+    const claims = env.variantClaims.get(name) orelse return;
+    if (claims.len == 0) return;
+    if (env.lookupTypeDef(name) != null or env.assocInterfaceDecls.contains(name)) return;
+    if (env.localBindDepth(name) != null) return;
+    const isCtor = for (claims) |c| {
+        const q = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ c, name });
+        if (env.variantCtors.get(q)) |ct| if (ct == ty) break true;
+    } else false;
+    if (!isCtor) return;
+    const args: []const u8 = if (payload) "(…)" else "";
+    var spellings: std.ArrayListUnmanaged(u8) = .empty;
+    // An enum whose name no source can spell (`__`-mangled, a prelude's
+    // internal one) is no spelling to offer.
+    for (claims) |c| {
+        if (std.mem.startsWith(u8, c, "__")) continue;
+        if (spellings.items.len > 0) try spellings.appendSlice(env.arena, " or ");
+        try spellings.print(env.arena, "`{s}.{s}{s}`", .{ c, name, args });
+    }
+    if (spellings.items.len == 0) try spellings.print(env.arena, "`{s}.{s}{s}`", .{ claims[0], name, args });
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "`{s}` is a variant, and a bare variant is no expression — write {s}, or `.{s}{s}` where the position expects the enum",
+        .{ name, spellings.items, name, args },
+    );
+    env.lastError = TypeError.custom(msg, "A variant is built through its enum (`Shape.Square(2)`), or by its leading dot where the expected type names the enum; the bare name is a `case` pattern's only (decision 587).").withLoc(loc);
+    return error.TypeError;
+}
+
 /// 01 step 9 — attach `loc` when the declaration recorded one (a synthesised
 /// declaration carries `{0, 0}` and stays unlocated rather than point at
 /// line 0).
@@ -15321,7 +15355,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 return inferIdentifierExpr(env, renamed.identifier, loc);
             }
             if (env.lookup(name)) |ty| {
-                try refuseAmbiguousVariant(env, name, ty, loc);
+                try refuseBareVariant(env, name, ty, loc, false);
                 try refuseKeyedWholeRead(env, name, ty, loc);
                 if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which == .provide or which == .context)
                     return refuseContextHookWithoutUse(env, name, loc);
@@ -22566,7 +22600,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 env.lastError = try unboundAt(env, call.callee, loc);
                 return error.TypeError;
             };
-            try refuseAmbiguousVariant(env, call.callee, calleeTypeRaw, loc);
+            try refuseBareVariant(env, call.callee, calleeTypeRaw, loc, true);
             // The nearest binding wins: a parameter or a local named like a
             // module function (a template, one with comptime parameters) is
             // the value called here, never that function — no expansion, no

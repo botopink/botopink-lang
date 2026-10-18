@@ -6,8 +6,8 @@ val Option = type <T> {
 };
 val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
     return case opt {
-        Some(v) -> Some(value: f(v));
-        None -> None;
+        Some(v) -> Option.Some(value: f(v));
+        None -> Option.None;
     };
 };
 ```

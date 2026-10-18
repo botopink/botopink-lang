@@ -6,8 +6,8 @@ val Shape = type {
 };
 val scale = fn(s: Shape, factor: f64) -> Shape {
     return case s {
-        Circle(r) -> Circle(radius: r * factor);
-        Square(side) -> Square(side: side * factor);
+        Circle(r) -> Shape.Circle(radius: r * factor);
+        Square(side) -> Shape.Square(side: side * factor);
     };
 };
 ```

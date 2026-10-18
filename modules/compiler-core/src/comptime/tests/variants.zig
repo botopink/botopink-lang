@@ -317,8 +317,8 @@ test "variant inference: access variant-specific field after matching" {
         \\};
         \\val scale = fn(s: Shape, factor: f64) -> Shape {
         \\    return case s {
-        \\        Circle(r) -> Circle(radius: r * factor);
-        \\        Square(side) -> Square(side: side * factor);
+        \\        Circle(r) -> Shape.Circle(radius: r * factor);
+        \\        Square(side) -> Shape.Square(side: side * factor);
         \\    };
         \\};
     );
@@ -332,8 +332,8 @@ test "variant inference: pattern matching on generic enum" {
         \\};
         \\val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
         \\    return case opt {
-        \\        Some(v) -> Some(value: f(v));
-        \\        None -> None;
+        \\        Some(v) -> Option.Some(value: f(v));
+        \\        None -> Option.None;
         \\    };
         \\};
     );
