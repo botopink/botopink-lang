@@ -1,6 +1,8 @@
 //// Decision 541 (2) — a bare `break` in a block `{ … }` or in a `case` arm's
 //// block leaves the enclosing loop: the block is no closure.
 
+import {io.terminal.print} from "std";
+
 fn firstBig(xs: i32[]) -> i32 {
     var found = 0;
     for (xs) { x ->
@@ -29,6 +31,6 @@ fn sumUntilThree(xs: i32[]) -> i32 {
 }
 
 pub fn main() {
-    @print(firstBig([1, 2, 3, 4]));
-    @print(sumUntilThree([1, 2, 3, 4, 5]));
+    print(firstBig([1, 2, 3, 4]));
+    print(sumUntilThree([1, 2, 3, 4, 5]));
 }

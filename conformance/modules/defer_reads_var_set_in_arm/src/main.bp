@@ -2,29 +2,29 @@
 //// runs, and a reassignment inside a nested arm counts: an arm that
 //// reassigns and then panics hands the defer the new value.
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
 
 fn boom() -> i32 {
-    @panic("boom");
+    panic("boom");
 }
 
 fn viaIf(c: bool) -> i32 {
     var f = "a";
-    defer @print("close " + f);
+    defer print("close " + f);
     if (c) {
         f = "b";
-        @panic("x");
+        panic("x");
     }
     return 1;
 }
 
 fn viaCase(n: i32) -> i32 {
     var f = "a";
-    defer @print("close " + f);
+    defer print("close " + f);
     case n {
         0 {
             f = "c";
-            @panic("y");
+            panic("y");
         }
         _ {
             f = "d";
@@ -35,7 +35,7 @@ fn viaCase(n: i32) -> i32 {
 
 fn viaValueCase(n: i32) -> i32 {
     var f = "a";
-    defer @print("close " + f);
+    defer print("close " + f);
     val r = case n {
         0 {
             f = "e";
@@ -51,7 +51,7 @@ fn viaValueCase(n: i32) -> i32 {
 
 fn viaValueIf(c: bool) -> i32 {
     var f = "a";
-    defer @print("close " + f);
+    defer print("close " + f);
     val r = if (c) {
         f = "h";
         boom();
@@ -62,10 +62,10 @@ fn viaValueIf(c: bool) -> i32 {
     return r;
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 

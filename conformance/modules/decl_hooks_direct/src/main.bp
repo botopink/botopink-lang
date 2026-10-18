@@ -5,8 +5,9 @@
 pub mod pages;
 
 import {pages.Page, pages.Graph};
+import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    val nodes: string[] = @typeInfo(Page).meta(Graph)?.nodes ?? [];
-    @print(nodes.join(" "));
+    val nodes: string[] = comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? [];
+    print(nodes.join(" "));
 }

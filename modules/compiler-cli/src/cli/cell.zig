@@ -85,9 +85,10 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
 const MAIN_BP =
     \\pub fn main() {
-    \\    @print("hello");
+    \\    print("hello");
     \\}
     \\
+    \\import {io.terminal.print} from "std";
 ;
 
 fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
@@ -1425,13 +1426,14 @@ test "refusalsOf reads the called-from lines of a raise at build under the refus
         \\error: {error,{panic,<<"boom">>}}
         \\ --> src/deco.bp:3:5
         \\  |
-        \\3 |     @panic("boom");
+        \\3 |     panic("boom");
         \\  |     ^
         \\  |
         \\  = hint: the decorator's body raised
         \\  = called from src/main.bp:9:3
         \\  = called from src/main.bp:12:1
         \\
+        \\import {failure.panic} from "std";
     ;
     const got = try refusalsOf(a, text);
     try testing.expect(got.get("main") == null);

@@ -5,7 +5,7 @@
 //// `r.d` is refused at `d`. A first expansion whose code sits at the same
 //// offsets reads `r.w` and is accepted.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Box(w: i32, h: i32)
 
@@ -18,6 +18,6 @@ pub fn main() {
     val boxes = [Box(w: 2, h: 3)];
     val widths = code @`boxes.map({ r -> r.w })`;
     val depths = code @`boxes.map({ r -> r.d })`;
-    @print(widths);
-    @print(depths);
+    print(widths);
+    print(depths);
 }

@@ -5,14 +5,16 @@
 //// Basic Multilingual Plane only: past it Node's `codePointAt` indexes UTF-16
 //// units.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val s = "héllo";
-    @print(s.charCodeAt(1));
-    @print(s.charCodeAt(4));
-    @print(s.charCodeAt(5));
+    print(s.charCodeAt(1));
+    print(s.charCodeAt(4));
+    print(s.charCodeAt(5));
     val jp = "日本語";
-    @print(jp.charCodeAt(0));
-    @print(jp.charCodeAt(2));
-    @print(jp.charCodeAt(3));
-    @print("A".charCodeAt(0));
+    print(jp.charCodeAt(0));
+    print(jp.charCodeAt(2));
+    print(jp.charCodeAt(3));
+    print("A".charCodeAt(0));
 }

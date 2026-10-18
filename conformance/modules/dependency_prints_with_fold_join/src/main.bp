@@ -2,7 +2,8 @@
 // lambda is linked whole: a program that calls none of it prints as it
 // would with no dependency.
 import {residue} from "strip";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print("hello");
+    print("hello");
 }

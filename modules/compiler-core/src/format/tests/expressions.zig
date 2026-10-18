@@ -270,16 +270,18 @@ test "format: access ---- chained tuple access" {
 test "format: panic ---- simple" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    @panic();
+        \\    panic();
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "format: panic ---- with message" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    @panic("panicking");
+        \\    panic("panicking");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -335,31 +337,34 @@ test "format: block ---- one tail on one line, statements open (decision 525)" {
         \\        x * 10
         \\    };
         \\    {
-        \\        @print(b);
+        \\        print(b);
         \\    }
         \\    val c = comptime { 2 * 3 };
         \\    val t = async { a + c };
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "format: block ---- a trailing lambda without `->` gains it (decision 525)" {
     try h.assertFormatAs(std.testing.allocator,
         \\fn main() {
-        \\    xs.forEach { @print("x"); };
+        \\    xs.forEach { print("x"); };
         \\    xs.each {
         \\        val y = 1;
-        \\        @print(y);
+        \\        print(y);
         \\    };
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\fn main() {
-        \\    xs.forEach { -> @print("x"); };
+        \\    xs.forEach { -> print("x"); };
         \\    xs.each { ->
         \\        val y = 1;
-        \\        @print(y);
+        \\        print(y);
         \\    };
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -428,14 +433,15 @@ test "format: block ---- the last `;` of a value `case` arm is dropped (decision
         \\    };
         \\    case n {
         \\        1 {
-        \\            @print("one");
+        \\            print("one");
         \\        }
         \\        _ {
-        \\            @print(v);
+        \\            print(v);
         \\        }
         \\    }
         \\    return v;
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\fn f(n: i32) -> string {
         \\    val v = case n {
@@ -449,14 +455,15 @@ test "format: block ---- the last `;` of a value `case` arm is dropped (decision
         \\    };
         \\    case n {
         \\        1 {
-        \\            @print("one");
+        \\            print("one");
         \\        }
         \\        _ {
-        \\            @print(v);
+        \\            print(v);
         \\        }
         \\    }
         \\    return v;
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -513,8 +520,9 @@ test "format: labeled args ---- with comments" {
 test "format: panic ---- with message and comment" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    @panic("wibble");
+        \\    panic("wibble");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -536,7 +544,7 @@ test "format: multiline string ---- as function argument" {
 
 test "format: await ---- prefix expression" {
     try h.assertFormat(std.testing.allocator,
-        \\fn run() -> @Task<Int> {
+        \\fn run() -> Task<Int> {
         \\    val x = await load(url);
         \\    return x;
         \\}
@@ -645,18 +653,18 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[], gen: @Stream<i32>) {
+        \\fn f(xs: i32[], gen: Stream<i32>) {
         \\    for :outer (xs) { x ->
         \\        if (x == 2) break :outer;
         \\    }
         \\    for (0..xs.length) { i ->
-        \\        @print(i);
+        \\        print(i);
         \\    }
         \\    for (1...3) { i ->
-        \\        @print(i);
+        \\        print(i);
         \\    }
         \\    for await (gen) { v ->
-        \\        @print(v);
+        \\        print(v);
         \\    }
         \\    var n = 0;
         \\    while :w (n < 3 && true) {
@@ -679,12 +687,13 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
         \\        yield 1;
         \\    };
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "format: the front-24 forms round-trip — async block, the prefixed while / for, try await, yield :label" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[]) -> @Task<@Result<i32, string>> {
+        \\fn f(xs: i32[]) -> Task<Result<i32, string>> {
         \\    val t = async {
         \\        return try await load(1);
         \\    };
@@ -709,7 +718,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\    return n;
         \\}
         \\
-        \\fn g(xs: i32[]) -> @Iterator<i32> :out {
+        \\fn g(xs: i32[]) -> Iterator<i32> :out {
         \\    for (xs) { x ->
         \\        yield :out x;
         \\    }
@@ -870,9 +879,10 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
         \\fn f(o: ?i32) {
         \\    if (o) {
         \\        n ->
-        \\        @print(n);
+        \\        print(n);
         \\    }
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -884,8 +894,9 @@ test "format: lambda ---- a parameterless lambda on one line stays on one line" 
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    val g = { -> 3 + 4 };
-        \\    @print(g());
+        \\    print(g());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1008,11 +1019,12 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
         \\fn pick(n: i32) {
         \\    case n {
         \\        1 {
-        \\            @print("one");
+        \\            print("one");
         \\        }
         \\        _ {}
         \\    }
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1025,10 +1037,11 @@ test "format: call ---- a lambda argument's body indents +4 and its brace lines 
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    xs.forEach({ x ->
-        \\        @print(x);
-        \\        @print(x + 1);
+        \\        print(x);
+        \\        print(x + 1);
         \\    });
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1061,11 +1074,12 @@ test "format: call ---- nesting compounds by +4 a level, not +8" {
         \\fn walk(decl: Decl) {
         \\    decl.methods.forEach({ m ->
         \\        m.annotations.forEach({ a ->
-        \\            @print(a);
-        \\            @print(m);
+        \\            print(a);
+        \\            print(m);
         \\        });
         \\    });
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1089,11 +1103,12 @@ test "format: call ---- a comment on an argument still opens the list" {
         \\        // why
         \\        1,
         \\        { x ->
-        \\            @print(x);
-        \\            @print(x);
+        \\            print(x);
+        \\            print(x);
         \\        },
         \\    );
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1206,9 +1221,10 @@ test "format: method chain ---- a link whose lambda breaks opens the whole chain
         \\    xs
         \\        .map({ x -> x * 2 })
         \\        .forEach({ x ->
-        \\            @print(x);
+        \\            print(x);
         \\        });
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1228,9 +1244,10 @@ test "format: method chain ---- round trip is idempotent and lossless" {
         \\    xs
         \\        .map({ x -> x * 2 })
         \\        .forEach({ x ->
-        \\            @print(x);
+        \\            print(x);
         \\        });
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1313,7 +1330,7 @@ test "format: C-12 ---- the binary breaks before the argument list inside it" {
 
 test "format: C-12 ---- a brace-less if puts its branch on the next line, not its condition" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(absDiff: f64, tolerance: f64) -> @Result<void, string> {
+        \\fn f(absDiff: f64, tolerance: f64) -> Result<void, string> {
         \\    if (absDiff > tolerance)
         \\        throw "asserts.approxEquals: values differ by more than tolerance";
         \\    return;
@@ -1382,10 +1399,11 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\    for (xs) { x -> n = n + x; n = n - 1; };
         \\    while (n > 100) { n = n - 1; };
         \\    loop { break; };
-        \\    case n { 1 -> @print("one"); _ -> @print("other"); };
+        \\    case n { 1 -> print("one"); _ -> print("other"); };
         \\    if (c) n = 3 else { n = 4; n = 5; };
         \\    return n;
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\fn f(c: bool, xs: i32[]) -> i32 {
         \\    var n = 0;
@@ -1404,8 +1422,8 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\        break;
         \\    }
         \\    case n {
-        \\        1 -> @print("one");
-        \\        _ -> @print("other");
+        \\        1 -> print("one");
+        \\        _ -> print("other");
         \\    }
         \\    if (c) n = 3 else {
         \\        n = 4;
@@ -1413,6 +1431,7 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\    }
         \\    return n;
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1554,24 +1573,24 @@ test "format: a label on continue prints as on break" {
 
 test "format: body markers print as written (decision 553)" {
     try h.assertFormat(std.testing.allocator,
-        \\pub async fn one() -> @Task<i32> {
+        \\pub async fn one() -> Task<i32> {
         \\    return 1;
         \\}
         \\
-        \\iter fn two() -> @Iterator<i32> {
+        \\iter fn two() -> Iterator<i32> {
         \\    yield 2;
         \\}
         \\
-        \\async iter fn three() -> @Stream<i32> {
+        \\async iter fn three() -> Stream<i32> {
         \\    yield 3;
         \\}
         \\
-        \\component fn Four() -> @Component<i32> {
+        \\component fn Four() -> Component<i32> {
         \\    return 4;
         \\}
         \\
         \\type Grid(n: i32) {
-        \\    iter fn each(self: Self) -> @Iterator<i32> {
+        \\    iter fn each(self: Self) -> Iterator<i32> {
         \\        yield self.n;
         \\    }
         \\}
@@ -1579,22 +1598,23 @@ test "format: body markers print as written (decision 553)" {
         \\behavior Source {
         \\    fn base(self: Self) -> i32;
         \\
-        \\    default async fn scaled(self: Self) -> @Task<i32> {
+        \\    default async fn scaled(self: Self) -> Task<i32> {
         \\        return self.base();
         \\    }
         \\}
         \\
-        \\fn main() -> @Task<void> {
-        \\    val f: fn(x: i32) -> @Task<i32> = async { x -> await one() + x };
-        \\    val g: fn(n: i32) -> @Iterator<i32> = iter { n ->
+        \\fn main() -> Task<void> {
+        \\    val f: fn(x: i32) -> Task<i32> = async { x -> await one() + x };
+        \\    val g: fn(n: i32) -> Iterator<i32> = iter { n ->
         \\        yield n;
         \\        yield n + 1;
         \\    };
-        \\    val s: fn() -> @Stream<i32> = async iter { ->
+        \\    val s: fn() -> Stream<i32> = async iter { ->
         \\        yield await one();
         \\    };
-        \\    val k: fn(x: i32) -> @Task<i32> = async fn(x) { await one() };
-        \\    @print(await f(1));
+        \\    val k: fn(x: i32) -> Task<i32> = async fn(x) { await one() };
+        \\    print(await f(1));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }

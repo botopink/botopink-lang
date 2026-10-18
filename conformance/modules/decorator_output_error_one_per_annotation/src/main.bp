@@ -2,7 +2,7 @@
 //// members fails to type-check: one error, at the annotation of the one that
 //// failed.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn maker<T>(syntax decl: T) {
     if (compiler.name(decl) == "Town")
@@ -22,5 +22,5 @@ pub type City(name: string)
 pub type Town(name: string)
 
 pub fn main() {
-    @print(City(name: "a").code());
+    print(City(name: "a").code());
 }

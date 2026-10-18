@@ -8,21 +8,21 @@
 //// no context (`constant`) registers nothing; one standing on its own
 //// (`alone`) registers itself.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Rule(name: string, text: string) implement @Renderable
+type Rule(name: string, text: string) implement Renderable
 
 type SheetWriter(layer: string, add: fn(layer: string, rule: Rule))
 
 pub val sheetContext = createContext(SheetWriter(layer: "", add: discard));
 
 fn printed(layer: string, rule: Rule) -> void {
-    @print("registered " + layer + " " + rule.name + " " + rule.text);
+    print("registered " + layer + " " + rule.name + " " + rule.text);
 }
 
 fn discard(layer: string, rule: Rule) -> void {}
 
-fn computed(name: string, parts: Rule[]) -> @Component<Rule> {
+fn computed(name: string, parts: Rule[]) -> Component<Rule> {
     val sheet = use context(SheetWriter);
     var text = name;
     for (parts) { r ->
@@ -33,27 +33,27 @@ fn computed(name: string, parts: Rule[]) -> @Component<Rule> {
     return out;
 }
 
-fn quiet(view: fn() -> @Component<Rule>) -> @Component<Rule> {
+fn quiet(view: fn() -> Component<Rule>) -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "", add: discard)));
     val r = await view();
     return r;
 }
 
-fn constant(name: string) -> @Component<Rule> {
+fn constant(name: string) -> Component<Rule> {
     return Rule(name: name, text: name);
 }
 
-fn Root() -> @Component<Rule> {
+fn Root() -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "components", add: printed)));
     val a = await computed("badge", [quiet({ -> computed("pad", []) })]);
     val b = await computed("badge", [quiet({ -> computed("pad", []) })]);
     val c = await constant("tab");
     val d = await computed("alone", []);
-    @print(a.text + " " + b.text + " " + c.text + " " + d.text);
+    print(a.text + " " + b.text + " " + c.text + " " + d.text);
     return a;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val r = await Root();
-    @print("root " + r.name);
+    print("root " + r.name);
 }

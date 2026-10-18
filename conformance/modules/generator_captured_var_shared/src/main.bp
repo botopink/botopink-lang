@@ -4,6 +4,8 @@
 //// next; what the body writes is what the function reads after it — in the same
 //// sequence, in a nested block, and in a lambda made before or after the run.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var k = 5;
     val reads = iter loop {
@@ -13,9 +15,9 @@ pub fn main() {
     };
     k = 0;
     for (reads) { x ->
-        @print(x);
+        print(x);
     }
-    @print(k);
+    print(k);
 
     var n = 0;
     val counter = iter loop {
@@ -24,10 +26,10 @@ pub fn main() {
         if (n > 20) break;
     };
     for (counter) { x ->
-        @print(x);
+        print(x);
         n = n + 10;
     }
-    @print(n);
+    print(n);
 
     var total = 0;
     val adds = iter loop {
@@ -37,13 +39,13 @@ pub fn main() {
     };
     val before: fn() -> i32 = { -> total };
     for (adds) { x ->
-        @print(x);
+        print(x);
     }
-    @print(total);
+    print(total);
     if (total > 0) {
-        @print(total);
+        print(total);
     }
     val after: fn() -> i32 = { -> total };
-    @print(after());
-    @print(before());
+    print(after());
+    print(before());
 }

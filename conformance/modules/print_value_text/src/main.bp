@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 type Shape { Square(side: i32), Nothing }
@@ -13,10 +15,10 @@ type Money(cents: i32) implement Display {
 }
 
 fn main() {
-    @print([1, 2]); // [1, 2]
-    @print(#(1, "a")); // #(1, "a")
-    @print(Point(x: 1, y: 2)); // Point(x: 1, y: 2)
-    @print(Shape.Square(side: 4)); // Shape.Square(side: 4)
-    @print(Shape.Nothing); // Shape.Nothing
-    @print([Money(cents: 1)]); // [$1]
+    print([1, 2]); // [1, 2]
+    print(#(1, "a")); // #(1, "a")
+    print(Point(x: 1, y: 2)); // Point(x: 1, y: 2)
+    print(Shape.Square(side: 4)); // Shape.Square(side: 4)
+    print(Shape.Nothing); // Shape.Nothing
+    print([Money(cents: 1)]); // [$1]
 }

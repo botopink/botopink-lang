@@ -7,7 +7,7 @@
 //// parameter named initialMs`).
 
 pub mod kit;
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 import {kit.store.Dict as OwnDict, kit.store.make};
 
 fn delayOf(d: OwnDict) -> i32 {
@@ -16,7 +16,7 @@ fn delayOf(d: OwnDict) -> i32 {
 
 pub fn main() {
     val d: OwnDict = make(5);
-    @print(delayOf(d));
-    @print(d.initialMs + 1);
-    @print(collections.toInt(collections.gt()));
+    print(delayOf(d));
+    print(d.initialMs + 1);
+    print(collections.toInt(collections.gt()));
 }

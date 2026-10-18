@@ -7,7 +7,7 @@
 //// `returnType` erased the same way. Each name is printed through a function
 //// the decorator emits.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn shape(syntax decl: unknown) {
     val fields = compiler
@@ -39,5 +39,5 @@ type Info(a: Array<string>, b: Array<#(string, string)>, c: string[], d: fn(x: i
 }
 
 pub fn main() {
-    @print(shapeOfInfo());
+    print(shapeOfInfo());
 }

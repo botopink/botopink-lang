@@ -1,7 +1,7 @@
 //// Decision 356 — a `val` owns no type: `decl.addMember` from a decorator
 //// on a `val` is refused at the annotation, as on a function.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn helper<T>(syntax decl: T) {
     compiler.addMember("extra", fn() -> i32 {
@@ -13,5 +13,5 @@ fn helper<T>(syntax decl: T) {
 pub val limit = 2;
 
 pub fn main() {
-    @print(limit);
+    print(limit);
 }

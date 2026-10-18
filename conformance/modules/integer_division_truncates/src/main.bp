@@ -3,6 +3,8 @@
 //// `div`). commonJS divided every `/` as a float and printed `3.5`. A `/`
 //// with a float operand stays a float division.
 
+import {io.terminal.print} from "std";
+
 fn half(n: i32) -> i32 {
     return n / 2;
 }
@@ -17,14 +19,14 @@ fn ratio(x: f64, y: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(half(7));
-    @print(half(-7));
-    @print(7 / 2);
-    @print(mean([1, 2, 4]));
+    print(half(7));
+    print(half(-7));
+    print(7 / 2);
+    print(mean([1, 2, 4]));
     val per = [10, 11].map({ n -> n / 3 });
-    @print(per);
+    print(per);
     val big: i64 = 90001;
-    @print(big / 2);
-    @print(ratio(7.0, 2.0));
-    @print(half(7) * 2 == 6);
+    print(big / 2);
+    print(ratio(7.0, 2.0));
+    print(half(7) * 2 == 6);
 }

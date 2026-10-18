@@ -7,6 +7,8 @@
 //// every field read as a bare word: `d.name` printed an address
 //// (`dog 324 3`, `cat 332`). The other targets were right.
 
+import {io.terminal.print} from "std";
+
 type DogB(name: string, age: i32, tags: string[])
 
 type CatB(name: string, owner: ?string)
@@ -35,9 +37,9 @@ fn guarded(p: DogB | CatB) -> string {
 
 pub fn main() {
     val rex = DogB(name: "rex", age: 3, tags: ["a", "b"]);
-    @print(describe(rex));
-    @print(describe(CatB(name: "tom", owner: null)));
-    @print(describe(CatB(name: "kit", owner: "ann")));
-    @print(guarded(rex));
-    @print(guarded(CatB(name: "tom", owner: null)));
+    print(describe(rex));
+    print(describe(CatB(name: "tom", owner: null)));
+    print(describe(CatB(name: "kit", owner: "ann")));
+    print(guarded(rex));
+    print(guarded(CatB(name: "tom", owner: null)));
 }

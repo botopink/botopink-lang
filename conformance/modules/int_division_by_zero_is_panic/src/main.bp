@@ -4,7 +4,7 @@
 //// as a host raise. `attempt` contains it and the program goes on — on wasm
 //// too, where the division is checked and raises (decisions 518, 527 (3)).
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, io.terminal.print} from "std";
 
 fn div(a: i32, b: i32) -> i32 {
     return a / b;
@@ -14,10 +14,10 @@ fn rem(a: i32, b: i32) -> i32 {
     return a % b;
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
@@ -25,5 +25,5 @@ pub fn main() {
     show(failure.attempt({ -> div(7, 2) }));
     show(failure.attempt({ -> div(7, 0) }));
     show(failure.attempt({ -> rem(7, 0) }));
-    @print("after");
+    print("after");
 }

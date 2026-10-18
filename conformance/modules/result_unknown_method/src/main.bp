@@ -3,11 +3,13 @@
 //// `isError`) was typed permissively and failed at run time. It is refused,
 //// located at the method name.
 
-fn half(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn half(n: i32) -> Result<i32, string> {
     if (n % 2 == 0) return n / 2;
     throw "odd";
 }
 
 pub fn main() {
-    @print(half(4).get());
+    print(half(4).get());
 }

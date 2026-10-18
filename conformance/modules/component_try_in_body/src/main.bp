@@ -4,24 +4,24 @@
 //// `Page`, `load("x")` the value. `load` reads a context before its `try`,
 //// so it runs with the scope `Page` received — the one `Root` provided.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 pub val unitContext = comptime createContext("");
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return 7;
 }
 
-fn load(s: string) -> @Component<@Result<string, string>> {
+fn load(s: string) -> Component<Result<string, string>> {
     val unit = use context(string);
     val n = try parse(s);
     return (n + 1).toString() + unit;
 }
 
-fn Page(s: string) -> @Component<View> {
+fn Page(s: string) -> Component<View> {
     val r = use load(s);
     val text = case r {
         Ok(v) -> v;
@@ -30,15 +30,15 @@ fn Page(s: string) -> @Component<View> {
     return View(text: text);
 }
 
-fn Root(s: string) -> @Component<View> {
+fn Root(s: string) -> Component<View> {
     use provide(createContext("kg"));
     val p = Page(s);
     return View(text: p.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val a = await Root("x");
-    @print(a.text);
+    print(a.text);
     val b = await Root("");
-    @print(b.text);
+    print(b.text);
 }

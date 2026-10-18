@@ -2,7 +2,9 @@
 //// lowers it: commonJS emitted `@module()` verbatim and erlang called an
 //// undefined `module/0`. The checker refuses it at the `@`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val m = @module();
-    @print("unreachable");
+    print("unreachable");
 }

@@ -6,7 +6,7 @@
 //// binary re-read the argument and the body as written, untyped:
 //// `{error,{badmap,'Pad'}}` at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Tok {
     Pad {
@@ -49,10 +49,10 @@ fn styled() -> string {
 }
 
 pub fn main() {
-    val labels: string[] = @typeInfo(styled).meta(Mark)?.labels ?? [];
-    @print(labels.join(","));
-    @print(@typeInfo(styled).meta(Mark)?.fallback ?? "none");
-    @print(styled());
+    val labels: string[] = comptime compiler.typeInfo(styled).meta(Mark)?.labels ?? [];
+    print(labels.join(","));
+    print(comptime compiler.typeInfo(styled).meta(Mark)?.fallback ?? "none");
+    print(styled());
 }
 
 // What `#[mark]` records: each token's label, and the fallback's.

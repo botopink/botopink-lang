@@ -1,19 +1,19 @@
 //// A `Dict`'s value may be a float or a 64-bit integer: `insert` keeps the value whole and
 //// `at` answers it as the same `?V` — present, absent, or overwritten — on every target.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 pub fn main() {
     val empty: Dict<string, f64> = Dict.empty();
     val floats = empty.insert("a", 1.5).insert("b", 0.25);
-    @print(floats.at("a"), floats.at("b"), floats.at("c"));
-    @print(floats.at("a") ?? 0.0, floats.at("c") ?? 0.5);
+    print(floats.at("a"), floats.at("b"), floats.at("c"));
+    print(floats.at("a") ?? 0.0, floats.at("c") ?? 0.5);
     val over = floats.insert("a", 2.75);
-    @print(over.at("a"), floats.at("a"), over.size());
+    print(over.at("a"), floats.at("a"), over.size());
 
     val wide: Dict<string, i64> = Dict.empty();
     val big = wide.insert("n", 5000000000l);
-    @print(big.at("n"), big.at("m"));
+    print(big.at("n"), big.at("m"));
     val unsigned: Dict<string, u64> = Dict.empty();
-    @print(unsigned.insert("u", 18446744073709551615ul).at("u"));
+    print(unsigned.insert("u", 18446744073709551615ul).at("u"));
 }

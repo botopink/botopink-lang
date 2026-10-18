@@ -6,7 +6,7 @@
 //// `t.startsWith()` and printed `false` for `"abc"`. `endsWith` is a plain
 //// function of another arity, called beside the method of its name.
 
-import {compiler.DeclKind, compiler} from "std";
+import {compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 pub fn startsWith(syntax decl: unknown, comptime prefix: string) {
     if (compiler.kind(decl) != DeclKind.Field)
@@ -26,9 +26,9 @@ fn closes(t: string) -> bool {
 }
 
 pub fn main() {
-    @print(opens("abc"));
-    @print(opens("xbc"));
-    @print(closes("abc"));
-    @print(closes("abx"));
-    @print(endsWith(1, 2));
+    print(opens("abc"));
+    print(opens("xbc"));
+    print(closes("abc"));
+    print(closes("abx"));
+    print(endsWith(1, 2));
 }

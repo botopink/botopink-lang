@@ -4,11 +4,13 @@
 //// `await-without-async` (renamed from `effect-await-without-future`), at
 //// the `await`.
 
-fn fetchCount() -> @Task<i32> { return 1; }
+import {io.terminal.print} from "std";
 
-fn noAwait() -> @Result<i32, string> {
+fn fetchCount() -> Task<i32> { return 1; }
+
+fn noAwait() -> Result<i32, string> {
     val x = await fetchCount();
     return x;
 }
 
-pub fn main() { @print(try noAwait() catch 0); }
+pub fn main() { print(try noAwait() catch 0); }

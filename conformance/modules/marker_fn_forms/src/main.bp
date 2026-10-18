@@ -4,13 +4,13 @@
 //// marker names. On a declaration and a type's method the marked body
 //// answers what the unmarked one answers.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 pub val prefixContext = comptime createContext("");
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
-iter fn upTo(n: i32) -> @Iterator<i32> {
+iter fn upTo(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -18,35 +18,35 @@ iter fn upTo(n: i32) -> @Iterator<i32> {
     }
 }
 
-pub async fn double(x: i32) -> @Task<i32> {
+pub async fn double(x: i32) -> Task<i32> {
     return x * 2;
 }
 
-async iter fn doubled(n: i32) -> @Stream<i32> {
+async iter fn doubled(n: i32) -> Stream<i32> {
     for (upTo(n)) { x ->
         yield await double(x);
     }
 }
 
-component fn Label(text: string) -> @Component<View> {
+component fn Label(text: string) -> Component<View> {
     val p = use context(string);
     return View(text: p + text);
 }
 
-component fn Page() -> @Component<View> {
+component fn Page() -> Component<View> {
     use provide(createContext("> "));
     val v = await Label("page");
     return View(text: v.text);
 }
 
 type Grid(cells: i32[]) {
-    iter fn each(self: Self) -> @Iterator<i32> {
+    iter fn each(self: Self) -> Iterator<i32> {
         for (self.cells) { c ->
             yield c * 10;
         }
     }
 
-    async fn total(self: Self) -> @Task<i32> {
+    async fn total(self: Self) -> Task<i32> {
         var acc = 0;
         for (self.cells) { c ->
             acc = acc + await double(c);
@@ -55,19 +55,19 @@ type Grid(cells: i32[]) {
     }
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     for (upTo(3)) { x ->
-        @print(x);
+        print(x);
     }
-    @print(await double(21));
+    print(await double(21));
     for await (doubled(3)) { x ->
-        @print(x);
+        print(x);
     }
     val page = await Page();
-    @print(page.text);
+    print(page.text);
     val g = Grid(cells: [1, 2]);
     for (g.each()) { c ->
-        @print(c);
+        print(c);
     }
-    @print(await g.total());
+    print(await g.total());
 }

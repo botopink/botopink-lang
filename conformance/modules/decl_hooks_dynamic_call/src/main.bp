@@ -5,7 +5,8 @@
 pub mod pages;
 
 import {pages.Page, pages.Graph};
+import {io.terminal.print, compiler} from "std";
 
 pub fn main() {
-    @print(@typeInfo(Page).meta(Graph)?.nodes ?? "none");
+    print(comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? "none");
 }

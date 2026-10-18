@@ -4,6 +4,8 @@
 //// end. The loop builds 4000 strings of growing length — about 8 MB, nothing
 //// freed — and an array of 20000 elements.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var s = "";
     var i = 0;
@@ -11,14 +13,14 @@ pub fn main() {
         s = s + "x";
         i = i + 1;
     }
-    @print(s.length);
-    @print(s.slice(3990));
+    print(s.length);
+    print(s.slice(3990));
     var xs: i32[] = [];
     var j = 0;
     while (j < 20000) {
         xs.push(j);
         j = j + 1;
     }
-    @print(xs.length);
-    @print(xs.at(19999) ?? -1);
+    print(xs.length);
+    print(xs.at(19999) ?? -1);
 }

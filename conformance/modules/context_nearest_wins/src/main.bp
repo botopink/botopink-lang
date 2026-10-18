@@ -5,9 +5,9 @@
 //// only, never a sibling: `Sibling`, rendered by `Outer` after `Inner`, reads
 //// `Outer`'s depth. Depth and step are two types over one `i32` (379 (5)).
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 type Depth(n: i32)
 
@@ -17,24 +17,24 @@ pub val depthContext = comptime createContext(Depth(n: 0));
 
 pub val stepContext = comptime createContext(Step(n: 1));
 
-fn Leaf(name: string) -> @Component<Element> {
+fn Leaf(name: string) -> Component<Element> {
     val depth = use context(Depth);
     val step = use context(Step);
     return Element(text: name + "=" + (depth.n * step.n).toString());
 }
 
-fn Inner() -> @Component<Element> {
+fn Inner() -> Component<Element> {
     use provide(createContext(Depth(n: 2)));
     val l = Leaf("inner");
     return Element(text: l.text);
 }
 
-fn Sibling() -> @Component<Element> {
+fn Sibling() -> Component<Element> {
     val l = Leaf("sibling");
     return Element(text: l.text);
 }
 
-fn Outer() -> @Component<Element> {
+fn Outer() -> Component<Element> {
     use provide(createContext(Depth(n: 1)));
     use provide(createContext(Step(n: 10)));
     val a = Leaf("outer");
@@ -43,7 +43,7 @@ fn Outer() -> @Component<Element> {
     return Element(text: a.text + " " + b.text + " " + c.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val e = await Outer();
-    @print(e.text);
+    print(e.text);
 }

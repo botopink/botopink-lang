@@ -3,7 +3,9 @@
 //// trims through its helper, never the JS engine's `trim`, which removes the
 //// NBSP too.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val s = "\u{a0}x\u{a0} ";
-    @print("[" + s.trim() + "]");
+    print("[" + s.trim() + "]");
 }

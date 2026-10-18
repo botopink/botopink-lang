@@ -4,31 +4,33 @@
 //// `Error(e)` and its `try` propagates the error; a `default fn` of the
 //// behavior that `try`s the dispatched method wraps the same.
 
-behavior KeyValueStore {
-    fn get(self: Self, key: string) -> @Result<string, string>;
+import {io.terminal.print} from "std";
 
-    default fn getTwice(self: Self, key: string) -> @Result<string, string> {
+behavior KeyValueStore {
+    fn get(self: Self, key: string) -> Result<string, string>;
+
+    default fn getTwice(self: Self, key: string) -> Result<string, string> {
         val once = try self.get(key);
         return once + once;
     }
 }
 
 type Memory(prefix: string) implement KeyValueStore {
-    fn get(self: Self, key: string) -> @Result<string, string> {
+    fn get(self: Self, key: string) -> Result<string, string> {
         if (key == "") throw "empty key";
         return self.prefix + key;
     }
 }
 
 type Layered(inner: Memory) implement KeyValueStore {
-    fn get(self: Self, key: string) -> @Result<string, string> {
+    fn get(self: Self, key: string) -> Result<string, string> {
         if (key == "secret") throw "denied";
         val found = try self.inner.get(key);
         return "[" + found + "]";
     }
 }
 
-fn describe(r: @Result<string, string>) -> string {
+fn describe(r: Result<string, string>) -> string {
     return case r {
         Ok(v) {
             "ok " + v
@@ -50,11 +52,11 @@ fn readTwice(store: KeyValueStore, key: string) -> string {
 pub fn main() {
     val memory = Memory(prefix: "m:");
     val layered = Layered(inner: memory);
-    @print(read(memory, "a"));
-    @print(read(memory, ""));
-    @print(read(layered, "b"));
-    @print(read(layered, ""));
-    @print(read(layered, "secret"));
-    @print(readTwice(memory, "c"));
-    @print(readTwice(layered, ""));
+    print(read(memory, "a"));
+    print(read(memory, ""));
+    print(read(layered, "b"));
+    print(read(layered, ""));
+    print(read(layered, "secret"));
+    print(readTwice(memory, "c"));
+    print(readTwice(layered, ""));
 }

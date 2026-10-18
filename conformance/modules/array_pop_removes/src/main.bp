@@ -5,6 +5,8 @@
 //// as a call argument, as a statement in a branch, under `??` in a loop body,
 //// on an empty array (absent, and the array stays empty), and before a `push`.
 
+import {io.terminal.print} from "std";
+
 fn drain(start: Array<i32>) -> i32 {
     var xs = start;
     var sum = 0;
@@ -18,16 +20,16 @@ fn drain(start: Array<i32>) -> i32 {
 pub fn main() {
     var xs = [1, 2, 3];
     val last = xs.pop();
-    @print(last);
-    @print(xs);
-    @print(xs.pop());
-    @print(xs.length());
+    print(last);
+    print(xs);
+    print(xs.pop());
+    print(xs.length());
     if (xs.length() > 0) xs.pop();
-    @print(xs);
-    @print(xs.pop());
-    @print(drain([4, 5, 6]));
+    print(xs);
+    print(xs.pop());
+    print(drain([4, 5, 6]));
     var names = ["a", "b"];
     names.pop();
     names.push("c");
-    @print(names);
+    print(names);
 }

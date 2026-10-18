@@ -2,7 +2,9 @@
 //// literal; `'a'` is written `"a"`. The lexer scans `'…'` as one token so the
 //// parser refuses it by name (it used to be an unnamed lexer error).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val c = 'a';
-    @print(c);
+    print(c);
 }

@@ -5,8 +5,9 @@
 pub mod rules;
 pub mod models;
 import {models.Range};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Range(low: 1, high: 2).check());
-    @print(Range(low: 3, high: 2).check());
+    print(Range(low: 1, high: 2).check());
+    print(Range(low: 3, high: 2).check());
 }

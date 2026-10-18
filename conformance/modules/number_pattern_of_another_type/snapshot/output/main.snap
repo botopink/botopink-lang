@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: the pattern `1.5` is an `f64` literal and the subject is `u8`
-at src/main.bp:6:9
+at src/main.bp:8:9

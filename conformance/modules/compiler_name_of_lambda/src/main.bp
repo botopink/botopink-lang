@@ -3,11 +3,11 @@
 //// argument `{ x -> x }` is refused at that argument (`syntax-has-no-name`),
 //// naming its kind.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn named(syntax decl: unknown, syntax rule: fn(x: i32) -> i32) {
     val n = compiler.name(rule);
-    compiler.init({ -> @print(n) });
+    compiler.init({ -> print(n) });
 }
 
 #[named({ x -> x })]
@@ -16,5 +16,5 @@ pub fn home() -> i32 {
 }
 
 pub fn main() {
-    @print(home());
+    print(home());
 }

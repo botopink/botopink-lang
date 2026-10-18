@@ -3,6 +3,8 @@
 //// annotation; the fix-it is `iter loop`, whose item becomes `@Result` from the
 //// body's own `throw` / `try`. The new form is `run/prefixed_loop_result_item.bp`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var n = 0;
     val g = #[@resultGenerator] loop {
@@ -10,5 +12,5 @@ pub fn main() {
         if (n > 3) { throw "stop"; }
         yield n;
     };
-    for (g) { r -> @print(r.unwrapOr(0)); }
+    for (g) { r -> print(r.unwrapOr(0)); }
 }

@@ -5,8 +5,10 @@
 //// whenever a byte was outside ASCII, and wasm trapped with no text, so only
 //// commonJS carried the text.
 
+import {failure.panic, io.terminal.print} from "std";
+
 fn refuse(name: string) {
-    @panic(
+    panic(
         "lib check: '"
             + name
             + "' is in no known namespace — a name must start with a prefix",
@@ -14,7 +16,7 @@ fn refuse(name: string) {
 }
 
 pub fn main() {
-    @print("before");
+    print("before");
     refuse("--gutter");
-    @print("after");
+    print("after");
 }

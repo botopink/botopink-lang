@@ -3,7 +3,7 @@
 //// type by its owner's path (`City.Columns`); the `called from` line names the
 //// decorator's `decl.addType` call.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn columns(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: Missing)"));
@@ -13,5 +13,5 @@ fn columns(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "a").name);
+    print(City(name: "a").name);
 }

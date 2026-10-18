@@ -6,9 +6,11 @@
 //// spellings answer the same thing. Reported by `12-language-tests` (1.0.5-beta
 //// front 04's handover section) and carried by C-18.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print(42.toString());
+    print(42.toString());
     val n = 7;
-    @print(n.toString());
-    @print(3.toString().length());
+    print(n.toString());
+    print(3.toString().length());
 }

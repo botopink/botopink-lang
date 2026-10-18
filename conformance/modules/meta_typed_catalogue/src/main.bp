@@ -12,12 +12,13 @@ import {orm.Entity};
 import {orm.Index};
 import {orm.entity};
 import {orm.describe};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val all = @TypeInfo.all(with: entity);
     for (all) { d ->
         val e = d.meta(Entity);
-        @print(
+        print(
             d.name
                 + " "
                 + (e?.table ?? "none")
@@ -25,5 +26,5 @@ pub fn main() {
                 + d.metaAll(Index).length.toString(),
         );
     }
-    @print(describe(all));
+    print(describe(all));
 }

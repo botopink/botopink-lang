@@ -2,6 +2,8 @@
 //// field, a parameter of another function and a local, each read as any
 //// other.
 
+import {io.terminal.print} from "std";
+
 pub type Tool(compiler: string)
 
 fn describe(compiler: string) -> string {
@@ -11,5 +13,5 @@ fn describe(compiler: string) -> string {
 pub fn main() {
     val compiler = "zig";
     val tool = Tool(compiler: compiler);
-    @print(describe(tool.compiler) + ", " + compiler.toUpper());
+    print(describe(tool.compiler) + ", " + compiler.toUpper());
 }

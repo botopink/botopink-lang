@@ -6,8 +6,9 @@ pub mod label;
 
 import {greeting} from "boot/greet";
 import {label.describe};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greeting);
-    @print(describe());
+    print(greeting);
+    print(describe());
 }

@@ -4,7 +4,7 @@
 //// module reads it through `q.lookup`: the read is refused at the call's
 //// literal (`typeinfo-meta-hooks-pending`), as `@typeInfo(X).meta(T)` is.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Count(uses: i32)
 
@@ -24,6 +24,6 @@ fn uses(syntax q: string) -> i32 {
 }
 
 pub fn main() {
-    @print(page());
-    @print(uses @`page`);
+    print(page());
+    print(uses @`page`);
 }

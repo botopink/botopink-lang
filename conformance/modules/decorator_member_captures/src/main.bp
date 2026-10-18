@@ -4,7 +4,7 @@
 //// computed at build from the declaration's name, is a string in the member.
 //// (Decision 370 (2) refused the read; 575 makes it the literal.)
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
@@ -24,8 +24,8 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print(Signup(password: "a", confirm: "a").validate().length);
+    print(Signup(password: "a", confirm: "a").validate().length);
     Signup(password: "a", confirm: "b")
         .validate()
-        .forEach({ v -> @print(v.field + ": " + v.message) });
+        .forEach({ v -> print(v.field + ": " + v.message) });
 }

@@ -6,6 +6,8 @@
 //// calling the use ambiguous, and `.Element` is `Kind`'s where a `Kind` is
 //// expected.
 
+import {io.terminal.print} from "std";
+
 pub type Kind {
     Element,
     Other,
@@ -13,5 +15,5 @@ pub type Kind {
 
 pub fn main() {
     val k: Kind = Element;
-    @print(0);
+    print(0);
 }

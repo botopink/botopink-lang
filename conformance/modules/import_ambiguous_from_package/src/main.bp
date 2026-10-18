@@ -6,7 +6,8 @@
 //// (`import_same_fn_name_in_dependency`).
 
 import {NotFound} from "site";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(NotFound());
+    print(NotFound());
 }

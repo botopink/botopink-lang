@@ -6,7 +6,7 @@
 //// and spliced into the member the program runs. In the member, `label` and
 //// the body's `val shown` are spliced as literals (the tree rule).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(message: string)
 
@@ -33,7 +33,7 @@ fn positive(a: Account) -> bool {
 pub type Account(balance: i32)
 
 pub fn main() {
-    @print(@typeInfo(Account).meta(Mark)?.text ?? "none");
-    @print(Account(balance: 5).validate().length);
-    Account(balance: -1).validate().forEach({ v -> @print(v.message) });
+    print(comptime compiler.typeInfo(Account).meta(Mark)?.text ?? "none");
+    print(Account(balance: 5).validate().length);
+    Account(balance: -1).validate().forEach({ v -> print(v.message) });
 }

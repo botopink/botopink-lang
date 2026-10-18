@@ -20,6 +20,8 @@
 //// uses the stack on every backend. That is the documented limit, not an
 //// oversight — see `conformance/docs.md` § Recursion.
 
+import {io.terminal.print} from "std";
+
 fn sumDown(n: i32, acc: i32) -> i32 {
     if (n == 0) return acc;
     return sumDown(n - 1, acc + n);
@@ -32,6 +34,6 @@ fn depth(n: i32) -> i32 {
 
 pub fn main() {
     val bound = 20000;
-    @print(sumDown(bound, 0));
-    @print(depth(100));
+    print(sumDown(bound, 0));
+    print(depth(100));
 }

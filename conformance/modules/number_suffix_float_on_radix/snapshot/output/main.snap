@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[number-suffix-float-on-radix]: a hexadecimal, octal or binary literal is an integer and takes an integer suffix only
-at src/main.bp:5:16
+at src/main.bp:7:16
 label a floating suffix

@@ -6,6 +6,7 @@
 
 pub mod shapes;
 import {shapes.Shape, shapes.Dot};
+import {io.terminal.print} from "std";
 
 type Sq(n: i32) implement Shape {
     fn area(self: Self) -> i32 {
@@ -36,9 +37,9 @@ fn doubled(s: Shape) -> i32 {
 }
 
 pub fn main() {
-    @print(Sq(n: 3).twice());
-    @print(Sq(n: 3).shout());
-    @print(Big(n: 3).twice());
-    @print(doubled(Sq(n: 2)));
-    @print(doubled(Dot(n: 5)));
+    print(Sq(n: 3).twice());
+    print(Sq(n: 3).shout());
+    print(Big(n: 3).twice());
+    print(doubled(Sq(n: 2)));
+    print(doubled(Dot(n: 5)));
 }

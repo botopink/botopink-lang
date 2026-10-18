@@ -3,7 +3,8 @@
 //// on every target.
 
 import {shapes} from "shapes";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(shapes.twice(21));
+    print(shapes.twice(21));
 }

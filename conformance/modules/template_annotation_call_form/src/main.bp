@@ -2,7 +2,7 @@
 //// `syntax-call-outside-syntax` at the annotation, naming the template form
 //// `#[f @`…`]`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Query(sql: string)
 
@@ -17,5 +17,5 @@ fn one() -> i32 {
 }
 
 pub fn main() {
-    @print(one().toString());
+    print(one().toString());
 }

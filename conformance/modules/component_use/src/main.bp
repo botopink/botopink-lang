@@ -1,20 +1,22 @@
-type Element(count: i32) implement @Renderable
+import {io.terminal.print} from "std";
+
+type Element(count: i32) implement Renderable
 
 type State(value: i32, name: string)
 
 // Read with `use`: the noun, the yield.
-fn state(initial: i32) -> @Component<State> {
+fn state(initial: i32) -> Component<State> {
     return State(value: initial, name: "state");
 }
 
 // One read with `use` composes others.
-fn counter(start: i32) -> @Component<State> {
+fn counter(start: i32) -> Component<State> {
     val s = use state(start * 2);
     return s;
 }
 
 // A component: its `R` implements `@Renderable`, and it may `await` too.
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> Component<Element> {
     val c = use state(n);
     val { value, name } = use counter(n);
     return Element(count: c.value + value);
@@ -25,8 +27,8 @@ fn Loading() -> Element {
     return Element(count: 0);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val w = await Widget(2);
-    @print(w.count); // 6: state(2) is 2, counter(2) reads state(4)
-    @print(Loading().count); // 0
+    print(w.count); // 6: state(2) is 2, counter(2) reads state(4)
+    print(Loading().count); // 0
 }

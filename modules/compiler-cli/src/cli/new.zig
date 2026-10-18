@@ -23,9 +23,10 @@ const MAIN_BP =
     \\}
     \\
     \\pub fn main() {
-    \\    @print(greet("world"));
+    \\    print(greet("world"));
     \\}
     \\
+    \\import {io.terminal.print} from "std";
 ;
 
 const GITIGNORE =

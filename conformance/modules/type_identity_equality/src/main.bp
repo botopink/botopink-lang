@@ -6,10 +6,12 @@
 //// Two values of the SAME type with equal fields are equal (decision 210);
 //// `run/record_structural_equality.bp` is that half.
 
+import {io.terminal.print} from "std";
+
 type Person(name: string, age: i32)
 
 type Vec(name: string, age: i32)
 
 pub fn main() {
-    @print(Person(name: "a", age: 1) == Vec(name: "a", age: 1));
+    print(Person(name: "a", age: 1) == Vec(name: "a", age: 1));
 }

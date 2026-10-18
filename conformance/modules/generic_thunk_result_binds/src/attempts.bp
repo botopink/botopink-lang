@@ -4,12 +4,12 @@
 
 // Attempt `n` and every one after it, up to `last`: the thunk passed on as
 // the parameter it is, as `async.retryFrom` passes `work`.
-fn attemptFrom<T, E>(work: fn() -> @Task<@Result<T, E>>, n: i32, last: i32) -> @Task<@Result<T, E>> {
+fn attemptFrom<T, E>(work: fn() -> Task<Result<T, E>>, n: i32, last: i32) -> Task<Result<T, E>> {
     val outcome = await work();
     if (outcome.isOk() || n >= last) return try outcome;
     return try await attemptFrom(work, n + 1, last);
 }
 
-pub fn attempt<T, E>(work: fn() -> @Task<@Result<T, E>>) -> @Task<@Result<T, E>> {
+pub fn attempt<T, E>(work: fn() -> Task<Result<T, E>>) -> Task<Result<T, E>> {
     return try await attemptFrom(work, 1, 3);
 }

@@ -3,8 +3,10 @@
 //// Its helper is `note`, not `config`'s `announce`: wasm links the modules
 //// into one namespace, where two private functions of one name collide.
 
+import {io.terminal.print} from "std";
+
 fn note(what: string) -> i32 {
-    @print(what);
+    print(what);
     return 1;
 }
 

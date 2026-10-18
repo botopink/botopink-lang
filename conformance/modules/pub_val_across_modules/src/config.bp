@@ -2,6 +2,7 @@
 //// module body is evaluated once, in order, when the module loads).
 
 import {base.unit};
+import {io.terminal.print} from "std";
 
 pub type Globals(payload: string, fill: string, count: i32) {
     pub fn label(self: Self) -> string {
@@ -12,7 +13,7 @@ pub type Globals(payload: string, fill: string, count: i32) {
 pub type Mode { Fast, Slow }
 
 fn announce(what: string) -> i32 {
-    @print(what);
+    print(what);
     return 1;
 }
 

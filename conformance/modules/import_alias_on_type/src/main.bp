@@ -8,7 +8,7 @@
 pub mod shapes;
 
 import {shapes.Point as P, shapes.Pair as Two};
-import {collections.Dict as D} from "std";
+import {collections.Dict as D, io.terminal.print} from "std";
 
 fn total(p: P) -> i32 {
     return p.sum();
@@ -20,8 +20,8 @@ fn first(t: Two<string, i32>) -> string {
 
 pub fn main() {
     val p: P = P(x: 2, y: 3);
-    @print(total(p));
-    @print(first(#("a", 1)));
+    print(total(p));
+    print(first(#("a", 1)));
     val d: D<string, i32> = D.empty().insert("k", 7);
-    @print(d.size());
+    print(d.size());
 }

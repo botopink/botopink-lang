@@ -1,6 +1,8 @@
+import {io.terminal.print} from "std";
+
 fn work() {
     var f = "a";
-    defer @print("close " + f);
+    defer print("close " + f);
     f = "b";
 }
 

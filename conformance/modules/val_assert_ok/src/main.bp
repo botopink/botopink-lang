@@ -1,11 +1,13 @@
-fn parse(s: string) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty input";
     return 42;
 }
 
 fn load() {
     val assert Ok(n) = parse("42");
-    @print(n);
+    print(n);
 }
 
 pub fn main() {

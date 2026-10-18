@@ -2,7 +2,7 @@
 //// and a decorator's name has type `Decorator`: a decorator with further
 //// arguments, a single decorator and a list of them are all accepted.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn route(syntax decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
@@ -23,9 +23,9 @@ pub fn sweep() -> string {
 }
 
 pub fn main() {
-    @print(@TypeInfo.all(with: route).length);
-    @print(@TypeInfo.all(with: job)[0]?.name ?? "none");
-    @print(@TypeInfo.all(with: [route, job]).map({ d -> d.name }).join(","));
+    print(@TypeInfo.all(with: route).length);
+    print(@TypeInfo.all(with: job)[0]?.name ?? "none");
+    print(@TypeInfo.all(with: [route, job]).map({ d -> d.name }).join(","));
 }
 
 // What `#[route]` records.

@@ -6,6 +6,8 @@
 //// map reads on the comptime runtime: `{error,{badmap,'Pad'}}` at the
 //// `comptime`.
 
+import {io.terminal.print} from "std";
+
 type Tok {
     Pad {
         All {
@@ -50,16 +52,16 @@ fn padX() -> Tok {
 
 pub fn main() {
     val one = comptime name(.Pad.All.8);
-    @print(one);
+    print(one);
     val many = comptime names([.Pad.All.4, .Bold, Tok.Pad.X.2]);
-    @print(many);
+    print(many);
     val nested = comptime names([.Hover([.Pad.All.4, .Hover([.Pad.X.2])])]);
-    @print(nested);
+    print(nested);
     val picked: Tok = comptime first([.Pad.All.8, .Bold]);
-    @print(name(picked));
+    print(name(picked));
     val built: Tok = comptime padX();
-    @print(name(built));
+    print(name(built));
     val list: Tok[] = comptime [.Pad.All.4, Tok.Hover([.Pad.All.8]), .Bold];
-    @print(names(list));
-    @print(picked == Tok.Pad.All.8);
+    print(names(list));
+    print(picked == Tok.Pad.All.8);
 }

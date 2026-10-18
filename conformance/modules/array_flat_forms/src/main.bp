@@ -4,21 +4,23 @@
 //// parameter, and one level only. wasm trapped on all three
 //// (`01-compiler/05-wasm` step 1).
 
+import {io.terminal.print} from "std";
+
 fn total(rows: i32[][]) -> i32 {
     return rows.flatten().fold(0, { acc, x -> acc + x });
 }
 
 pub fn main() {
-    @print([[1, 2], [], [3]].flatten());
-    @print([["a"], ["b", "c"]].flat());
+    print([[1, 2], [], [3]].flatten());
+    print([["a"], ["b", "c"]].flat());
     val rows = [[1], [2, 3]];
     val flat = rows.flatten();
-    @print(flat.length);
-    @print(flat.at(2));
-    @print(total([[4], [5, 6]]));
-    @print([[[1]], [[2]]].flatten());
-    @print([1, 2].flatMap({ x -> [x, x * 10] }));
-    @print(["ab", "c"].flatMap({ s -> s.chars() }));
+    print(flat.length);
+    print(flat.at(2));
+    print(total([[4], [5, 6]]));
+    print([[[1]], [[2]]].flatten());
+    print([1, 2].flatMap({ x -> [x, x * 10] }));
+    print(["ab", "c"].flatMap({ s -> s.chars() }));
     val none: i32[][] = [];
-    @print(none.flatten());
+    print(none.flatten());
 }

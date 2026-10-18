@@ -11,6 +11,7 @@
 
 pub mod view;
 import {view.ElementView, view.Node, view.raw, view.other, view.open, view.Box, view.firstOf, view.count};
+import {io.terminal.print} from "std";
 
 fn label(raw: string) -> string {
     return "[" + raw + "]";
@@ -21,16 +22,16 @@ pub fn main() {
         tagOf: { e -> e.tag },
         isVoid: { t -> t == "br" },
     );
-    @print(open(v, raw("p")));
-    @print(open(v, raw("br")));
-    @print(v.tagOf(Node(tag: "em")));
-    @print(other(2));
-    @print(label("x"));
+    print(open(v, raw("p")));
+    print(open(v, raw("br")));
+    print(v.tagOf(Node(tag: "em")));
+    print(other(2));
+    print(label("x"));
     val first: string = firstOf(Box(items: ["a", "b"]), "z");
-    @print(first);
+    print(first);
     val none: Array<string> = [];
     val fallback: string = firstOf(Box(items: none), "z");
-    @print(fallback);
-    val thunks: Array<fn() -> @Task<Node>> = [];
-    @print(count(v, thunks));
+    print(fallback);
+    val thunks: Array<fn() -> Task<Node>> = [];
+    print(count(v, thunks));
 }

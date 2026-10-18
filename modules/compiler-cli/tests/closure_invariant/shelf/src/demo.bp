@@ -4,7 +4,8 @@
 //// does.
 
 import {items.Queue, items.describe};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(describe(Queue(label: "demo", size: 0)));
+    print(describe(Queue(label: "demo", size: 0)));
 }

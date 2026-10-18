@@ -5,8 +5,10 @@
 //// (A function expression `fn(x) { … }` keeps its last statement's value,
 //// decision 409.)
 
+import {io.terminal.print} from "std";
+
 fn bump(n: i32) -> i32 {
-    @print(n);
+    print(n);
     return n + 1;
 }
 
@@ -16,11 +18,11 @@ fn each(xs: i32[], f: fn(i32) -> void) {
 
 pub fn main() {
     val inc = { x -> x + 1 };
-    @print(inc(1));
-    @print([1, 2].map({ n -> n * 3 }));
+    print(inc(1));
+    print([1, 2].map({ n -> n * 3 }));
     each([7, 8], { x -> bump(x); });
     val dbl = fn(x) {
         x * 2;
     };
-    @print(dbl(4));
+    print(dbl(4));
 }

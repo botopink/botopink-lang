@@ -111,19 +111,19 @@ test "§1G — defaulted struct trailing param is accepted" {
 
 test "§1G RG3 — @Task<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> @Task<> { return 0; }
+        \\fn empty() -> Task<> { return 0; }
     );
 }
 
 test "§1G RG3 — @Stream<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> @Stream<> { break; }
+        \\fn empty() -> Stream<> { break; }
     );
 }
 
 test "§1G RG3 — @Result<i32> rejects (E is required, no default)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse() -> @Result<i32> { return 0; }
+        \\fn parse() -> Result<i32> { return 0; }
     );
 }
 
@@ -131,13 +131,13 @@ test "§1G RG3 — @Result<i32> rejects (E is required, no default)" {
 
 test "§1G RG4 — @Result<i32, , i64> rejects (middle slot empty)" {
     try expectParseKind(
-        \\fn middle() -> @Result<i32, , i64> { return 0; }
+        \\fn middle() -> Result<i32, , i64> { return 0; }
     , .genericArgSkipForbidden);
 }
 
 test "§1G RG4 — trailing `, >` is also a skipped slot" {
     try expectParseKind(
-        \\fn trail() -> @Result<i32, > { return 0; }
+        \\fn trail() -> Result<i32, > { return 0; }
     , .genericArgSkipForbidden);
 }
 
@@ -155,25 +155,25 @@ test "§1G RG4 — user-defined skip rejected (nominal TypeRef site)" {
 
 test "§1G resolution — @Task<i32> resolves (one argument, no error parameter)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn fetch(id: i64) -> @Task<i32> { return 0; }
+        \\fn fetch(id: i64) -> Task<i32> { return 0; }
     );
 }
 
 test "§1G resolution — @Iterator<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn count(n: i32) -> @Iterator<i32> { yield n; }
+        \\fn count(n: i32) -> Iterator<i32> { yield n; }
     );
 }
 
 test "§1G resolution — @Stream<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn run(n: i32) -> @Stream<@Result<i32, string>> { yield n; }
+        \\fn run(n: i32) -> Stream<Result<i32, string>> { yield n; }
     );
 }
 
 test "§1G resolution — @Iterator<i32> resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn range(a: i32) -> @Iterator<i32> { yield a; }
+        \\fn range(a: i32) -> Iterator<i32> { yield a; }
     );
 }
 

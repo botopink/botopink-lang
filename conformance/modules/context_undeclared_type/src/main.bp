@@ -2,18 +2,18 @@
 //// at build, at the read, naming the remedy: `Theme` has no
 //// `createContext(…)` declaration.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
-fn Label() -> @Component<Element> {
+fn Label() -> Component<Element> {
     val t = use context(Theme);
     return Element(text: t.mode);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val l = await Label();
-    @print(l.text);
+    print(l.text);
 }

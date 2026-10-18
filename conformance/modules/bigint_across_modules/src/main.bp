@@ -5,10 +5,11 @@
 mod numbers;
 
 import {numbers.factorial, numbers.Tally, numbers.googolish, numbers.add};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(factorial(30));
+    print(factorial(30));
     val t = Tally(count: 2, sum: factorial(25));
-    @print(add(t, googolish).sum);
-    @print(googolish);
+    print(add(t, googolish).sum);
+    print(googolish);
 }

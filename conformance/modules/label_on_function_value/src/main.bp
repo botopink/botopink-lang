@@ -3,6 +3,8 @@
 //// be ignored and the arguments zipped by position — `f(s: "x", n: 1)` was
 //// `f("x", 1)`, and with the labels the other way round it checked.
 
+import {io.terminal.print} from "std";
+
 fn describe(n: i32, s: string) -> string {
     return s + n.toString();
 }
@@ -12,5 +14,5 @@ fn apply(f: fn(i32, string) -> string) -> string {
 }
 
 pub fn main() {
-    @print(apply(describe));
+    print(apply(describe));
 }

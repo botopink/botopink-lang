@@ -6,6 +6,8 @@
 //// The cell asks for `effect-type-removed` (the family's code; decision 127
 //// names none for the older names — reported as a choice).
 
+import {io.terminal.print} from "std";
+
 fn total(xs: @Iterable<i32>) -> i32 { return 0; }
 
-pub fn main() { @print(total([1, 2])); }
+pub fn main() { print(total([1, 2])); }

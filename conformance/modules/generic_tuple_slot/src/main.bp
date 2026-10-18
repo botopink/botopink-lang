@@ -2,6 +2,8 @@
 //// `fn`, held in a generic record's field, read back element by element and compared with
 //// `==` by its elements, on every target.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 fn id<T>(x: T) -> T {
@@ -14,14 +16,14 @@ fn wrap<T>(x: T) -> Box<T> {
 
 pub fn main() {
     val t = id(#(4, 5));
-    @print(t._0 + t._1);
+    print(t._0 + t._1);
     val u = id(#("x", 2.5));
-    @print(u._0);
-    @print(u._1);
+    print(u._0);
+    print(u._1);
     val b = wrap(#(1, "a"));
-    @print(b.value._1);
-    @print(id(#(1, 2)) == #(1, 2));
-    @print(id(#(1, 2)) == #(2, 1));
-    @print(wrap(#(1, "a")) == wrap(#(1, "a")));
-    @print(wrap(#(1, "a")) == wrap(#(1, "b")));
+    print(b.value._1);
+    print(id(#(1, 2)) == #(1, 2));
+    print(id(#(1, 2)) == #(2, 1));
+    print(wrap(#(1, "a")) == wrap(#(1, "a")));
+    print(wrap(#(1, "a")) == wrap(#(1, "b")));
 }

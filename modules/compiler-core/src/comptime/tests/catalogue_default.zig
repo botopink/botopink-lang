@@ -19,10 +19,11 @@ const frame =
     \\}
     \\
     \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
-    \\    @print(modules.length.toString());
+    \\    print(modules.length.toString());
     \\}
     \\
     \\import {compiler} from "std";
+    \\import {io.terminal.print} from "std";
 ;
 
 /// The names the answers of `program` import (`import {<name> as __bp_ti_<k>} from "<module>"`),
@@ -119,9 +120,10 @@ test "catalogue default: a call outside the package's root is refused at the cal
         \\pub mod setup;
         \\
         \\pub fn main() {
-        \\    @print("main");
+        \\    print("main");
         \\}
         \\
+        \\import {io.terminal.print} from "std";
         },
     };
     var session = try comptimeMod.compile(std.testing.allocator, &modules, io, build_root, "erlang");

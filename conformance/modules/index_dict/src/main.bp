@@ -20,15 +20,15 @@
 //// boxes a `?V` over a type parameter (C-18's wasm half) — unboxed, the absent
 //// key printed `0`.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 pub fn main() {
     val d = Dict.empty().insert("a", 1);
-    @print(d["a"]);
+    print(d["a"]);
 
     val o: Dict<string, ?i32> = Dict.empty();
-    @print(o["missing"]);
+    print(o["missing"]);
 
-    @print(d["zz"]);
-    @print("after");
+    print(d["zz"]);
+    print("after");
 }

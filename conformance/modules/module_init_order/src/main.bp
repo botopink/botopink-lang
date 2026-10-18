@@ -7,8 +7,10 @@
 //// each READ, so `first` printed twice from `main` and `_second` never printed.
 //// (`fix/erlang-module-load`, front 00 · 02-erlang.)
 
+import {io.terminal.print} from "std";
+
 fn note(tag: string) -> i32 {
-    @print(tag);
+    print(tag);
     return 1;
 }
 
@@ -17,7 +19,7 @@ val first = note("first");
 val _second = note("second");
 
 pub fn main() {
-    @print("main");
-    @print(first);
-    @print(first);
+    print("main");
+    print(first);
+    print(first);
 }

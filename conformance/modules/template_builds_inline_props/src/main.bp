@@ -8,13 +8,14 @@
 
 pub mod tags;
 import {tags.tag};
+import {io.terminal.print} from "std";
 
 fn Greeting(props: type(name: string, greeting: string = "Hello")) -> string {
     return props.greeting + ", " + props.name + "!";
 }
 
 pub fn main() {
-    @print(tag @`Greeting name=Partner`);
-    @print(tag @`Greeting greeting=Howdy name=Partner`);
-    @print(Greeting(name: "Bob"));
+    print(tag @`Greeting name=Partner`);
+    print(tag @`Greeting greeting=Howdy name=Partner`);
+    print(Greeting(name: "Bob"));
 }

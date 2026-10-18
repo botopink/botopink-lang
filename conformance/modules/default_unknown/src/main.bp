@@ -3,6 +3,8 @@
 //// `default-unknown` at the name. The parent binary refused the line as an
 //// unexpected token, naming nothing.
 
+import {io.terminal.print} from "std";
+
 fn render() -> string {
     return "x";
 }
@@ -10,5 +12,5 @@ fn render() -> string {
 pub default nope;
 
 pub fn main() {
-    @print(render());
+    print(render());
 }

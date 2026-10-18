@@ -3,7 +3,9 @@
 //// naming the expression and `(division by zero)`, at the expression — never
 //// the raw `{error,badarith}` term. One message on every target.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val atBuild = comptime 1.0 / 0.0;
-    @print(atBuild);
+    print(atBuild);
 }

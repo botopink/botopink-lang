@@ -2,7 +2,7 @@
 //// itself and splices each expression into the code it builds, typed where
 //// the call stands.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn quoted(text: string) -> string {
     return "\"" + text + "\"";
@@ -43,6 +43,6 @@ fn greet(who: string) -> string {
 }
 
 pub fn main() {
-    @print(fixed); // HELLO WORLD
-    @print(greet("bob")); // HELLO BOB
+    print(fixed); // HELLO WORLD
+    print(greet("bob")); // HELLO BOB
 }

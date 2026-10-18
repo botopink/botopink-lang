@@ -21,7 +21,7 @@ const h = @import("helpers.zig");
 test "@Result: try unwraps Result to D" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type AppError(msg: string)
-        \\fn fetch() -> @Result<i32, AppError> {
+        \\fn fetch() -> Result<i32, AppError> {
         \\    throw AppError(msg: "fail");
         \\}
         \\fn process() -> i32 {
@@ -34,10 +34,10 @@ test "@Result: try unwraps Result to D" {
 test "@Result: try propagates without catch" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type IoError(path: string)
-        \\fn load() -> @Result<string, IoError> {
+        \\fn load() -> Result<string, IoError> {
         \\    throw IoError(path: "/data");
         \\}
-        \\fn run() -> @Result<string, IoError> {
+        \\fn run() -> Result<string, IoError> {
         \\    val s = try load();
         \\    return s;
         \\}
@@ -47,10 +47,10 @@ test "@Result: try propagates without catch" {
 test "@Result: multiple catch with different types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type UserError(msg: string)
-        \\fn getName() -> @Result<string, UserError> {
+        \\fn getName() -> Result<string, UserError> {
         \\    throw UserError(msg: "missing");
         \\}
-        \\fn getAge() -> @Result<i32, UserError> {
+        \\fn getAge() -> Result<i32, UserError> {
         \\    throw UserError(msg: "missing");
         \\}
         \\fn loadUser() {
@@ -62,7 +62,7 @@ test "@Result: multiple catch with different types" {
 
 test "throw check: string matches declared E = string" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn parse(s: string) -> @Result<i32, string> {
+        \\fn parse(s: string) -> Result<i32, string> {
         \\    if (s == "") {
         \\        throw "empty input";
         \\    };
@@ -74,7 +74,7 @@ test "throw check: string matches declared E = string" {
 test "throw check: record matches declared E = ErrorRecord" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type AppError(code: i32, msg: string)
-        \\fn load() -> @Result<string, AppError> {
+        \\fn load() -> Result<string, AppError> {
         \\    throw AppError(code: 500, msg: "boom");
         \\}
     );
@@ -82,10 +82,10 @@ test "throw check: record matches declared E = ErrorRecord" {
 
 test "throw check: throw inside catch handler checks enclosing fn E" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    throw "primary";
         \\}
-        \\fn process() -> @Result<i32, string> {
+        \\fn process() -> Result<i32, string> {
         \\    val r = try fetch() catch throw "secondary";
         \\    return r;
         \\}
@@ -94,7 +94,7 @@ test "throw check: throw inside catch handler checks enclosing fn E" {
 
 test "throw check: multiple throw sites all match E" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn validate(n: i32) -> @Result<i32, string> {
+        \\fn validate(n: i32) -> Result<i32, string> {
         \\    if (n < 0) {
         \\        throw "negative";
         \\    };
@@ -108,8 +108,8 @@ test "throw check: multiple throw sites all match E" {
 
 test "throw check: throw inside nested fn does not check outer fn E" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn outer() -> @Result<i32, string> {
-        \\    val cb: fn() -> @Result<void, i32> = fn() {
+        \\fn outer() -> Result<i32, string> {
+        \\    val cb: fn() -> Result<void, i32> = fn() {
         \\        throw 404;
         \\    };
         \\    throw "outer error";
@@ -119,7 +119,7 @@ test "throw check: throw inside nested fn does not check outer fn E" {
 
 test "throw check error: type mismatch i32 thrown but E = string" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(s: string) -> @Result<i32, string> {
+        \\fn parse(s: string) -> Result<i32, string> {
         \\    throw 404;
         \\}
     );
@@ -140,8 +140,8 @@ test "throw check error: throw without enclosing Result return type" {
 // the wrapped value.
 test "infer: net-new ---- @Result as a record field" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn parse(n: i32) -> @Result<i32, string> { return n; }
-        \\type Cell(value: @Result<i32, string>)
+        \\fn parse(n: i32) -> Result<i32, string> { return n; }
+        \\type Cell(value: Result<i32, string>)
         \\fn main() {
         \\    val c = Cell(value: parse(2));
         \\    val v: i32 = c.value.unwrapOr(0);
@@ -164,8 +164,8 @@ test "infer: net-new ---- optional chain yields an Option resolved by the nullis
 // is then usable as the underlying `T`.
 test "infer: net-new ---- val x = try f() binds the unwrapped Ok value" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn parse(n: i32) -> @Result<i32, string> { return n; }
-        \\fn compute() -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> { return n; }
+        \\fn compute() -> Result<i32, string> {
         \\    val x = try parse(2);
         \\    return x + 1;
         \\}
@@ -180,7 +180,7 @@ test "infer: net-new ---- throw of an enum error variant unifies with E" {
         \\    NotFound,
         \\    Invalid(reason: string),
         \\}
-        \\fn load() -> @Result<i32, LoadError> {
+        \\fn load() -> Result<i32, LoadError> {
         \\    throw LoadError.Invalid(reason: "bad");
         \\}
     );
@@ -195,7 +195,7 @@ test "infer: net-new ---- effect marker on a record method" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Fetcher(
         \\    url: string) {
-        \\    fn load(self: Self) -> @Result<string, string> {
+        \\    fn load(self: Self) -> Result<string, string> {
         \\        throw self.url;
         \\    }
         \\}
@@ -207,13 +207,13 @@ test "infer: net-new ---- effect marker on a record method" {
 // fn — the two effect layers compose.
 test "infer: net-new ---- compound @Task<@Result> return type-checks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    return n;
         \\}
-        \\fn ready() -> @Task<i32> {
+        \\fn ready() -> Task<i32> {
         \\    return 5;
         \\}
-        \\fn fetch() -> @Task<@Result<i32, string>> {
+        \\fn fetch() -> Task<Result<i32, string>> {
         \\    val n = await ready();
         \\    return parse(n);
         \\}
@@ -225,11 +225,11 @@ test "infer: net-new ---- compound @Task<@Result> return type-checks" {
 // decides the base every `use` must agree on.
 test "context: use with binding in @Context fn passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn thing() -> @Component<i32> {
+        \\fn thing() -> Component<i32> {
         \\    val x = use state(0);
         \\    return state(0);
         \\}
@@ -238,11 +238,11 @@ test "context: use with binding in @Context fn passes" {
 
 test "context: use void hook with discard binding passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn effect(cb: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn effect(cb: i32) -> Component<i32> {
         \\    return cb;
         \\}
-        \\fn comp() -> @Component<i32> {
+        \\fn comp() -> Component<i32> {
         \\    use effect(0);
         \\    return effect(0);
         \\}
@@ -251,11 +251,11 @@ test "context: use void hook with discard binding passes" {
 
 test "context: record implement @Context resolved via inline impl passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val n = use state(0);
         \\    return Element();
         \\}
@@ -266,18 +266,18 @@ test "context: a custom hook composes hooks" {
     // Hooks compose (decision 104, rule 4): a `@Component<_>` may `use` another
     // `@Component<_>`, and the record it answers is destructured at the caller.
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\val AuthState = type(
         \\    loggedIn: bool
         \\)
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn auth() -> @Component<AuthState> {
+        \\fn auth() -> Component<AuthState> {
         \\    val t = use state(0);
         \\    return AuthState(loggedIn: true);
         \\}
-        \\fn Dashboard() -> @Component<Element> {
+        \\fn Dashboard() -> Component<Element> {
         \\    val {loggedIn} = use auth();
         \\    return Element();
         \\}
@@ -286,8 +286,8 @@ test "context: a custom hook composes hooks" {
 
 test "context error: use in fn returning string" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
         \\fn bad() -> string {
@@ -299,12 +299,12 @@ test "context error: use in fn returning string" {
 
 test "context error: record without @Context impl used with use" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\val Plain = type(x: i32)
         \\fn make() -> Plain {
         \\    return Plain(x: 0);
         \\}
-        \\fn comp() -> @Component<i32> {
+        \\fn comp() -> Component<i32> {
         \\    val p = use make();
         \\    return 0;
         \\}
@@ -316,8 +316,8 @@ test "context error: record without @Context impl used with use" {
 // in it is refused, naming the annotation.
 test "context error: use without @Component on a -> Element body" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
         \\fn Counter() -> Element {
@@ -331,15 +331,15 @@ test "context error: use without @Component on a -> Element body" {
 // (`@Component<T>`, `T: @Renderable`) under the one annotation; hooks compose.
 test "context: @Component hook and component compose" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn counter(n: i32) -> @Component<i32> {
+        \\fn counter(n: i32) -> Component<i32> {
         \\    val c = use state(n);
         \\    return c;
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val n = use counter(0);
         \\    return Element();
         \\}
@@ -351,12 +351,12 @@ test "context: @Component hook and component compose" {
 // uses is `fn … -> @Component<Element>` (the next cell).
 test "context error: @Task fn -> @Task<Element> does not activate" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\val Request = type(path: string)
-        \\fn request() -> @Component<Request> {
+        \\fn request() -> Component<Request> {
         \\    return Request(path: "/");
         \\}
-        \\fn Page() -> @Task<Element> {
+        \\fn Page() -> Task<Element> {
         \\    val r = use request();
         \\    return Element();
         \\}
@@ -365,15 +365,15 @@ test "context error: @Task fn -> @Task<Element> does not activate" {
 
 test "context: @Component fn -> @Component<Element> uses and awaits" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\val Request = type(path: string)
-        \\fn request() -> @Component<Request> {
+        \\fn request() -> Component<Request> {
         \\    return Request(path: "/");
         \\}
-        \\fn load() -> @Task<i32> {
+        \\fn load() -> Task<i32> {
         \\    return 1;
         \\}
-        \\fn Page() -> @Component<Element> {
+        \\fn Page() -> Component<Element> {
         \\    val r = use request();
         \\    val n = await load();
         \\    return Element();
@@ -385,7 +385,7 @@ test "context: @Component fn -> @Component<Element> uses and awaits" {
 // wrapper is missing (`effect-missing-wrapper`), not wrong.
 test "context: a fn returning a bare owner (`-> Element`) activates nothing and is legal" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\fn Card() -> Element {
         \\    return Element();
         \\}
@@ -395,11 +395,11 @@ test "context: a fn returning a bare owner (`-> Element`) activates nothing and 
 // Decision 104, rule 3: a component is called, never `use`d.
 test "context error: use of a component is refused — a component is called" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn Card() -> @Component<Element> {
+        \\val Element = type() implement Renderable
+        \\fn Card() -> Component<Element> {
         \\    return Element();
         \\}
-        \\fn Page() -> @Component<Element> {
+        \\fn Page() -> Component<Element> {
         \\    val c = use Card();
         \\    return Element();
         \\}
@@ -436,12 +436,12 @@ test "context: fn() -> T[] parses" {
 // fn-typed `set`, and a component uses it (`s.set(s.value)`).
 test "context: {value, set} hook shape type-checks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\type State<T>(value: T, set: fn(next: T))
-        \\fn state<T>(initial: T) -> @Component<State<T>> {
+        \\fn state<T>(initial: T) -> Component<State<T>> {
         \\    return State(value: initial, set: { n -> });
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val s = use state(0);
         \\    s.set(s.value);
         \\    return Element();
@@ -463,7 +463,7 @@ test "context: anonymous record type as return annotation" {
 // model `div([a, b])`); a single `Element` and a `string` coerce too.
 test "context: Element[] coerces into Children" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\fn div(children: Children) -> Element { return Element(); }
         \\fn a() -> Element { return Element(); }
         \\val list = div([a(), a()]);
@@ -486,14 +486,14 @@ test "context: Element[] coerces into Children" {
 // `async function`, decision 104).
 
 const chain_preamble =
-    \\val Element = type() implement @Renderable
-    \\fn state(initial: i32) -> @Component<i32> {
+    \\val Element = type() implement Renderable
+    \\fn state(initial: i32) -> Component<i32> {
     \\    return initial;
     \\}
-    \\fn parse(n: i32) -> @Result<i32, string> {
+    \\fn parse(n: i32) -> Result<i32, string> {
     \\    return n;
     \\}
-    \\fn fetch(n: i32) -> @Task<i32> {
+    \\fn fetch(n: i32) -> Task<i32> {
     \\    return n;
     \\}
     \\
@@ -501,7 +501,7 @@ const chain_preamble =
 
 test "chain: @Result is the base — it answers `try`" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn doubled(n: i32) -> @Result<i32, string> {
+        \\fn doubled(n: i32) -> Result<i32, string> {
         \\    val v = try parse(n);
         \\    return v * 2;
         \\}
@@ -510,7 +510,7 @@ test "chain: @Result is the base — it answers `try`" {
 
 test "chain: @Task — `await`; `try` only when its value is a `@Result` (decision 121)" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn load(n: i32) -> @Task<@Result<i32, string>> {
+        \\fn load(n: i32) -> Task<Result<i32, string>> {
         \\    val v = try parse(n);
         \\    val w = await fetch(v);
         \\    return w;
@@ -520,7 +520,7 @@ test "chain: @Task — `await`; `try` only when its value is a `@Result` (decisi
 
 test "chain: @Iterator<@Result<…>> — its item answers `try`, and it yields" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+        \\fn upTo(n: i32) -> Iterator<Result<i32, string>> {
         \\    val limit = try parse(n);
         \\    yield limit;
         \\}
@@ -529,7 +529,7 @@ test "chain: @Iterator<@Result<…>> — its item answers `try`, and it yields" 
 
 test "chain: @Stream implements @Task — `await`, `yield`; `try` on its @Result item" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn stream(n: i32) -> @Stream<@Result<i32, string>> {
+        \\fn stream(n: i32) -> Stream<Result<i32, string>> {
         \\    val v = try parse(n);
         \\    val w = await fetch(v);
         \\    yield w;
@@ -539,13 +539,13 @@ test "chain: @Stream implements @Task — `await`, `yield`; `try` on its @Result
 
 test "chain: @Component — @Component implements @Task — `use`, `await`; `try` when `T` is a `@Result`" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn Widget(n: i32) -> @Component<Element> {
+        \\fn Widget(n: i32) -> Component<Element> {
         \\    val c = use state(0);
         \\    val v = try parse(n) catch 0;
         \\    val w = await fetch(v);
         \\    return Element();
         \\}
-        \\fn tenant(n: i32) -> @Component<@Result<i32, string>> {
+        \\fn tenant(n: i32) -> Component<Result<i32, string>> {
         \\    val c = use state(0);
         \\    val v = try parse(n);
         \\    return await fetch(v);
@@ -558,7 +558,7 @@ test "chain: @Component — @Component implements @Task — `use`, `await`; `try
 // `@Iterator<@Result<T, E>>`, the generator that has one.
 test "chain error: `try` inside @Iterator<i32> — the item is no @Result" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn counted(n: i32) -> @Iterator<i32> {
+        \\fn counted(n: i32) -> Iterator<i32> {
         \\    val v = try parse(n);
         \\    yield v;
         \\}
@@ -578,7 +578,7 @@ test "chain error: `try` in a plain fn — no effect, no error channel" {
 
 test "chain error: `await` inside @Iterator reds iter-await" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn bad(n: i32) -> @Iterator<i32> {
+        \\fn bad(n: i32) -> Iterator<i32> {
         \\    val w = await fetch(n);
         \\    yield w;
         \\}
@@ -587,7 +587,7 @@ test "chain error: `await` inside @Iterator reds iter-await" {
 
 test "chain error: `yield` inside @Result — `yield` is no level of the chain" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn bad(n: i32) -> @Result<i32, string> {
+        \\fn bad(n: i32) -> Result<i32, string> {
         \\    yield n;
         \\}
     );
@@ -595,7 +595,7 @@ test "chain error: `yield` inside @Result — `yield` is no level of the chain" 
 
 test "chain error: `yield` inside @Component — the top of the chain still cannot yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn Bad(n: i32) -> @Component<Element> {
+        \\fn Bad(n: i32) -> Component<Element> {
         \\    yield n;
         \\}
     );
@@ -607,7 +607,7 @@ test "chain error: `yield` inside @Component — the top of the chain still cann
 // comprehension) before the decision.
 test "chain error: `yield` inside a loop still needs a generator scope (decision 105)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn collected() -> @Task<i32> {
+        \\fn collected() -> Task<i32> {
         \\    var n = 0;
         \\    for ([1, 2, 3]) { x -> yield x * 2; };
         \\    return n;
@@ -633,14 +633,14 @@ test "chain: `try … catch` needs no channel — it propagates nothing" {
 
 test "hooks: a body using several hooks compiles" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn memo(value: i32) -> @Component<i32> {
+        \\fn memo(value: i32) -> Component<i32> {
         \\    return value;
         \\}
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> Component<Element> {
         \\    val a = use state(0);
         \\    val b = use memo(a);
         \\    return Element();
@@ -650,19 +650,19 @@ test "hooks: a body using several hooks compiles" {
 
 test "hooks: two components, each returning its own `@Renderable` type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\val Http = type() implement @Renderable { }
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\val Http = type() implement Renderable { }
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn connection() -> @Component<i32> {
+        \\fn connection() -> Component<i32> {
         \\    return 0;
         \\}
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> Component<Element> {
         \\    val a = use state(0);
         \\    return Element();
         \\}
-        \\fn Server() -> @Component<Http> {
+        \\fn Server() -> Component<Http> {
         \\    val c = use connection();
         \\    return Http();
         \\}
@@ -680,11 +680,11 @@ test "hooks: two components, each returning its own `@Renderable` type" {
 test "decision 122: a type exposes a fn iter answering @Iterator<@Result<…>> and a body iterates it with `try`" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Bag(items: i32[]) {
-        \\    fn iter(self: Self) -> @Iterator<@Result<i32, string>> {
+        \\    fn iter(self: Self) -> Iterator<Result<i32, string>> {
         \\        for (self.items) { x -> yield x; };
         \\    }
         \\}
-        \\fn total(b: Bag) -> @Result<i32, string> {
+        \\fn total(b: Bag) -> Result<i32, string> {
         \\    var acc = 0;
         \\    for (b.iter()) { r -> val v = try r; acc = acc + v; };
         \\    return acc;
@@ -697,7 +697,7 @@ test "decision 122: a type exposes a fn iter answering @Iterator<@Result<…>> a
 // `@Iterator<T>` is infallible and iterable anywhere.
 test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result — no implicit `try` (decision 122)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+        \\fn upTo(n: i32) -> Iterator<Result<i32, string>> {
         \\    yield n;
         \\}
         \\fn total(n: i32) -> i32 {
@@ -714,10 +714,10 @@ test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result —
 // `try` / `throw` that made it one. `conformance/modules/result_hint_*`.
 test "chain error: E3.9 — a @Result from `await` used as its value hints `try await`" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+        \\fn fetchCount(n: i32) -> Task<Result<i32, string>> {
         \\    return n;
         \\}
-        \\fn run() -> @Task<@Result<i32, string>> {
+        \\fn run() -> Task<Result<i32, string>> {
         \\    val count: i32 = await fetchCount(3);
         \\    return count;
         \\}
@@ -726,10 +726,10 @@ test "chain error: E3.9 — a @Result from `await` used as its value hints `try 
 
 test "chain error: E3.9 — an async block made a @Result by its `try` points at the `try`" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(s: string) -> @Result<i32, string> {
+        \\fn parse(s: string) -> Result<i32, string> {
         \\    return 1;
         \\}
-        \\fn run() -> @Task<void> {
+        \\fn run() -> Task<void> {
         \\    val t = async {
         \\        val n = try parse("7");
         \\        return n + 1;
@@ -755,7 +755,7 @@ test "chain error: E3.9 — an iter item made a @Result by its `throw` points at
 
 test "chain: a plain fn iterates a @Iterator<T> — infallible, no level needed" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn upTo(n: i32) -> @Iterator<i32> {
+        \\fn upTo(n: i32) -> Iterator<i32> {
         \\    yield n;
         \\}
         \\fn total(n: i32) -> i32 {
@@ -772,12 +772,12 @@ test "chain: a plain fn iterates a @Iterator<T> — infallible, no level needed"
 // binding, as is that `R` is a tuple at all (decision 67: located, no flag).
 test "context: use tuple destructure binds element types" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
+        \\val Element = type() implement Renderable
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> @Component<Element> {
+        \\fn LikeWidget() -> Component<Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    return Element();
@@ -787,12 +787,12 @@ test "context: use tuple destructure binds element types" {
 
 test "context error: use tuple destructure element is R's, not a fresh var" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
+        \\val Element = type() implement Renderable
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> @Component<Element> {
+        \\fn LikeWidget() -> Component<Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push("x");
         \\    return Element();
@@ -802,12 +802,12 @@ test "context error: use tuple destructure element is R's, not a fresh var" {
 
 test "context error: use tuple destructure arity mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
+        \\val Element = type() implement Renderable
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> @Component<Element> {
+        \\fn LikeWidget() -> Component<Element> {
         \\    val #(shown) = use optimistic(12, { c, a -> c + a });
         \\    return Element();
         \\}
@@ -816,11 +816,11 @@ test "context error: use tuple destructure arity mismatch" {
 
 test "context error: use tuple destructure of a hook whose R is not a tuple" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val #(count, setCount) = use state(0);
         \\    return Element();
         \\}

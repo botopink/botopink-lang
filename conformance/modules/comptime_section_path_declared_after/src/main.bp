@@ -5,6 +5,8 @@
 //// a template call there is (01-compiler/14 step 8). The parent binary ran
 //// the path as a chain of map reads: `{error,{badmap,'Pad'}}`.
 
+import {io.terminal.print} from "std";
+
 type Tok {
     Pad {
         All {
@@ -23,7 +25,7 @@ fn label(t: Tok) -> string {
 }
 
 pub fn main() {
-    @print(comptime label(later()));
+    print(comptime label(later()));
 }
 
 fn later() -> Tok {

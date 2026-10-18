@@ -4,11 +4,13 @@
 //// printed as integers at exit 0 (`00 · gate-wasm-wrong-answers`). wasm
 //// refuses the push; `var xs: Array<f64> = []` is the form it lowers.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val base = [100, 250];
     var taxed = [];
     for (base) { v ->
         taxed.push(v * 1.5);
     }
-    @print(taxed.length);
+    print(taxed.length);
 }

@@ -7,7 +7,9 @@
 //// wrapper around one is not. A member that needs the wrapper restricts its
 //// own `targets`, or the declaration gains the other target's binding.
 
-#[@external(.Erlang("erlang:system_info(otp_release)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("erlang:system_info(otp_release)"))]
 declare fn otpRelease() -> string;
 
 fn linkStatus() -> string {
@@ -15,5 +17,5 @@ fn linkStatus() -> string {
 }
 
 pub fn main() {
-    @print("up");
+    print("up");
 }

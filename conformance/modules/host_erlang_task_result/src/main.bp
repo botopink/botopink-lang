@@ -8,25 +8,27 @@
 //// `.targets` is `erlang beam`: the claim is the Erlang host's, which beam
 //// binds too; `run/host_node_task_result.bp` is Node's.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .Erlang("""(case $0 > 0 of true -> {ok, $0 * 2}; false -> {error, <<"refused">>} end)"""),
 )]
-declare fn hostDouble(n: i32) -> @Task<@Result<i32, string>>;
+declare fn hostDouble(n: i32) -> Task<Result<i32, string>>;
 
-fn show(r: @Result<i32, string>) {
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("ok " + v.toString());
-        Error(e) -> @print("error " + e);
+        Ok(v) -> print("ok " + v.toString());
+        Error(e) -> print("error " + e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     show(await hostDouble(21));
     show(await hostDouble(0));
     val a = try await hostDouble(1) catch 0;
     val b = try await hostDouble(-1) catch 100;
     val sum = a + b;
-    @print(sum);
+    print(sum);
 }
 
 pub fn main() {

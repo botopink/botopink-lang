@@ -4,13 +4,15 @@
 //// message. (How `botopink test` reports a failed assertion — the FAIL line,
 //// its `src/main.bp:<line>` — is the CLI's contract and stays in the script.)
 
+import {io.terminal.print} from "std";
+
 fn double(n: i32) -> i32 {
     return n * 2;
 }
 
 pub fn main() {
     assert double(2) == 4, "double(2) should be four";
-    @print("held");
+    print("held");
     assert double(2) == 5, "double(2) should be five";
-    @print("not reached");
+    print("not reached");
 }

@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error: {error,{panic,<<"boom A">>}}
 at src/deco.bp:5:5
-from src/main.bp:9:3
+from src/main.bp:10:3

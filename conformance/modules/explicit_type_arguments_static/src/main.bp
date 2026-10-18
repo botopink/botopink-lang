@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Slot<T> { Full(value: T), Empty }
 
 type Box<T>(value: T) {
@@ -9,6 +11,6 @@ type Box<T>(value: T) {
 fn main() {
     val b = Box<i32>.make(7);
     val o = Slot<string>.Empty;
-    @print(b.value);
-    @print(o == Slot<string>.Empty);
+    print(b.value);
+    print(o == Slot<string>.Empty);
 }

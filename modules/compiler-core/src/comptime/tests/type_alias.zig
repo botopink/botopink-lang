@@ -83,8 +83,8 @@ test "type alias: the target does not see the caller's generics" {
 test "type alias: an alias of @Result returned by a function that only passes the value along" {
     try h.assertInfersOk(std.testing.allocator,
         \\type ParseError { Empty }
-        \\pub type Parser<T> = @Result<T, ParseError>;
-        \\fn parsePort(s: string) -> @Result<i32, ParseError> {
+        \\pub type Parser<T> = Result<T, ParseError>;
+        \\fn parsePort(s: string) -> Result<i32, ParseError> {
         \\    if (s == "") { throw ParseError.Empty; };
         \\    return 8080;
         \\}
@@ -147,12 +147,12 @@ test "type alias: aliasedWrapper sees the wrapper behind a return alias" {
     const alloc = arena.allocator();
     const src =
         \\type E { Bad }
-        \\type Parser<T> = @Result<T, E>;
+        \\type Parser<T> = Result<T, E>;
         \\type Again<T> = Parser<T>;
         \\type Id = i32;
         \\fn a() -> Parser<i32> { return b(); }
         \\fn b() -> Again<i32> { return c(); }
-        \\fn c() -> @Result<i32, E> { return 1; }
+        \\fn c() -> Result<i32, E> { return 1; }
         \\fn d() -> Id { return 1; }
     ;
     var lx = lexerMod.Lexer.init(src);

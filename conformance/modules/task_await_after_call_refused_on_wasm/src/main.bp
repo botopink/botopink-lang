@@ -4,12 +4,14 @@
 //// to a `val` first is the form every target runs. commonJS, erlang and beam
 //// run it as written.
 
+import {io.terminal.print} from "std";
+
 fn label(s: string) -> string {
-    @print("label " + s);
+    print("label " + s);
     return s;
 }
 
-fn answer(n: i32) -> @Task<i32> {
+fn answer(n: i32) -> Task<i32> {
     return n * 2;
 }
 
@@ -17,8 +19,8 @@ fn pair(a: string, b: i32) -> string {
     return a + b.toString();
 }
 
-fn run() -> @Task<void> {
-    @print(pair(label("x"), await answer(21)));
+fn run() -> Task<void> {
+    print(pair(label("x"), await answer(21)));
 }
 
 pub fn main() {

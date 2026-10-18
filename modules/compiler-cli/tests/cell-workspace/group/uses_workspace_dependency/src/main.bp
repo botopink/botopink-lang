@@ -2,7 +2,8 @@
 //// members as `group/*`, inherits the workspace's dependency as it does in place.
 
 import {greeting} from "greeter";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greeting());
+    print(greeting());
 }

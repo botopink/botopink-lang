@@ -6,7 +6,8 @@
 //// nothing bound and answer `unbound variable 'greet'`.
 
 import {start} from "starter";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(start());
+    print(start());
 }

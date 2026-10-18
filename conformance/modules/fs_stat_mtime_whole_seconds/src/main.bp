@@ -2,7 +2,7 @@
 //// on every target: the Node form floors `mtimeNs` to the second as erlang and beam read it
 //// (the parent floored it to the millisecond on commonJS).
 
-import {io.fs} from "std";
+import {io.fs, io.terminal.print} from "std";
 
 fn wholeSeconds(epochMillis: i64) -> bool {
     return epochMillis % 1000l == 0l;
@@ -17,9 +17,9 @@ pub fn main() {
     fs.writeText("five.txt", "12345");
     case fs.stat("five.txt") {
         Ok(s) {
-            @print(wholeSeconds(s.mtime));
-            @print(recent(s.mtime));
+            print(wholeSeconds(s.mtime));
+            print(recent(s.mtime));
         }
-        Error(reason) -> @print(reason);
+        Error(reason) -> print(reason);
     }
 }

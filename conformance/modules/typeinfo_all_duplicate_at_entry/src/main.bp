@@ -4,6 +4,8 @@
 //// declarations — never by a decorator body collecting names in a
 //// module-level `var` (`reject/decorator_writes_module_var`).
 
+import {failure.panic, io.terminal.print} from "std";
+
 fn command(syntax decl: unknown, comptime name: string) {
     decl.setMeta("command", name);
 }
@@ -26,7 +28,7 @@ fn uniqueCommands(entries: Declared<unknown>[]) -> i32 {
             var i = 0;
             while (i < seen.length) {
                 if (seen.at(i) == m.value)
-                    @panic(
+                    panic(
                         "two commands named `"
                             + m.value
                             + "`: "
@@ -45,5 +47,5 @@ fn uniqueCommands(entries: Declared<unknown>[]) -> i32 {
 
 pub fn main() {
     val count = comptime uniqueCommands(@TypeInfo.all(with: command));
-    @print(count);
+    print(count);
 }

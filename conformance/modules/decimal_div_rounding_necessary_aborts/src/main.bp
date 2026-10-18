@@ -2,12 +2,12 @@
 //// `1 / 3` at scale 2 does not, and the division aborts (Java's `ArithmeticException:
 //// Rounding necessary`), on every target.
 
-import {decimal.Decimal, decimal.Rounding} from "std";
+import {decimal.Decimal, decimal.Rounding, io.terminal.print} from "std";
 
 pub fn main() {
     val one = Decimal(unscaled: 1n, scale: 0);
     val three = Decimal(unscaled: 3n, scale: 0);
-    @print("before");
-    @print(one.div(three, 2, Rounding.Unnecessary).toString());
-    @print("after");
+    print("before");
+    print(one.div(three, 2, Rounding.Unnecessary).toString());
+    print("after");
 }

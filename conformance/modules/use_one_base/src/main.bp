@@ -6,32 +6,34 @@
 //// so both fix the same anchor at their first activation and agree at every
 //// one after it.
 
-type Element(count: i32) implement @Renderable
+import {io.terminal.print} from "std";
 
-fn state(initial: i32) -> @Component<i32> {
+type Element(count: i32) implement Renderable
+
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn memo(value: i32) -> @Component<i32> {
+fn memo(value: i32) -> Component<i32> {
     return value * 2;
 }
 
-fn counter(start: i32) -> @Component<i32> {
+fn counter(start: i32) -> Component<i32> {
     val s = use state(start);
     val m = use memo(s);
     return s + m;
 }
 
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> Component<Element> {
     val c = use state(n);
     val k = use counter(1);
     val m = use memo(c);
-    @print(c + k + m);
+    print(c + k + m);
     return Element(count: c + k + m);
 }
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     await Widget(10);
 }

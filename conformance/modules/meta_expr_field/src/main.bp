@@ -7,7 +7,7 @@
 //// counts its calls, and the count moves only when the program reads the
 //// meta.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 
@@ -40,22 +40,22 @@ pub type Signup(handle: string, password: string, confirm: string)
 
 fn violations(s: Signup) -> string[] {
     var out: string[] = [];
-    for (@typeInfo(Signup).metaAll(Check)) { c ->
+    for (comptime compiler.typeInfo(Signup).metaAll(Check)) { c ->
         if (!c.rule(s)) out.push(c.message);
     }
     return out;
 }
 
 pub fn main() {
-    @print(calls);
+    print(calls);
     val ok = violations(Signup(handle: "ana", password: "abc", confirm: "abc"));
-    @print(ok.length);
+    print(ok.length);
     val bad = violations(
         Signup(handle: "admin", password: "abc", confirm: "abd"),
     );
-    @print(bad.length);
+    print(bad.length);
     for (bad) { m ->
-        @print(m);
+        print(m);
     }
-    @print(calls);
+    print(calls);
 }

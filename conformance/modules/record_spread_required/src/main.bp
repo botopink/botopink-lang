@@ -3,7 +3,7 @@
 //// a spread into `Pessoa`, as a record of another type, at the `...`
 //// (question B-14-c as built).
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Pessoa(nome: string, idade: i32)
 
@@ -14,5 +14,5 @@ val Full = Type.required(Patch);
 pub fn main() {
     val f = Full(nome: "Ana", idade: 3);
     val p = Pessoa(..f);
-    @print(p.idade);
+    print(p.idade);
 }

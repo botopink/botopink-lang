@@ -6,6 +6,7 @@
 
 import {App} from "srv";
 import {App as SiteApp, makeSite} from "site";
+import {io.terminal.print} from "std";
 
 fn port(a: App) -> i32 {
     return a.port;
@@ -20,12 +21,12 @@ fn kind(v: unknown) -> string {
 pub fn main() {
     val a = App(port: 1, basePath: "");
     val s: SiteApp = makeSite();
-    @print(a.describe());
-    @print(s.render());
-    @print(a);
-    @print(s);
-    @print(port(a));
-    @print(kind(a));
-    @print(kind(s));
-    @print(SiteApp(title: "u").title);
+    print(a.describe());
+    print(s.render());
+    print(a);
+    print(s);
+    print(port(a));
+    print(kind(a));
+    print(kind(s));
+    print(SiteApp(title: "u").title);
 }

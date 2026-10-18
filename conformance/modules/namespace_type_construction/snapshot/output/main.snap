@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: namespace-type-construction: `MathOps` is a namespace type — it has no field list and no value, so `MathOps()` constructs nothing
-at src/main.bp:11:15
+at src/main.bp:13:15

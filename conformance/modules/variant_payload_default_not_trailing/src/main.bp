@@ -1,10 +1,12 @@
 //// Decision 244 — the same rule on a variant's payload.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Rect(width: i32 = 1, height: i32),
     Dot,
 }
 
 pub fn main() {
-    @print(1);
+    print(1);
 }

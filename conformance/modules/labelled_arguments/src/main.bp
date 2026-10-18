@@ -17,6 +17,8 @@
 //// `type mismatch: expected i32, got string` on every target — the refusal is
 //// that front's, not this cell's claim.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 type Shape { Rect(width: i32, height: i32), Dot }
@@ -33,19 +35,19 @@ fn shown(s: Shape) -> i32 {
 pub fn main() {
     // A record constructor, written out of declared order.
     val p = Point(y: 2, x: 1);
-    @print(p.x);
-    @print(p.y);
+    print(p.x);
+    print(p.y);
 
     // The same constructor in declared order, and positionally.
-    @print(Point(x: 1, y: 2).x);
-    @print(Point(1, 2).x);
+    print(Point(x: 1, y: 2).x);
+    print(Point(1, 2).x);
 
     // An enum variant through its own enum, all three ways.
-    @print(shown(Shape.Rect(height: 2, width: 5)));
-    @print(shown(Shape.Rect(width: 5, height: 2)));
-    @print(shown(Shape.Rect(5, 2)));
+    print(shown(Shape.Rect(height: 2, width: 5)));
+    print(shown(Shape.Rect(width: 5, height: 2)));
+    print(shown(Shape.Rect(5, 2)));
 
     // A label naming the second field leaves the first to its default.
-    @print(Port(host: "a").number);
-    @print(Port(host: "a").host);
+    print(Port(host: "a").number);
+    print(Port(host: "a").host);
 }

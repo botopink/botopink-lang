@@ -18,8 +18,9 @@ test "js: comptime folding ---- integer addition folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val v1 = comptime 1 + 1;
         \\fn main() {
-        \\    @print(v1);
+        \\    print(v1);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -27,8 +28,9 @@ test "js: comptime folding ---- block with a tail value inlines result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val t = comptime { 2 + 22 };
         \\fn main() {
-        \\    @print(t);
+        \\    print(t);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -36,8 +38,9 @@ test "js: comptime folding ---- float multiplication folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val pi2 = comptime { 3.14 * 2.0 };
         \\fn main() {
-        \\    @print(pi2);
+        \\    print(pi2);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -45,8 +48,9 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val n = comptime { 2 + 3 * 4 };
         \\fn main() {
-        \\    @print(n);
+        \\    print(n);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -58,8 +62,9 @@ test "js: comptime validation ---- runtime identifier inside comptime raises err
         \\val greeting = "hi";
         \\val msg = comptime { greeting };
         \\fn main() {
-        \\    @print(msg);
+        \\    print(msg);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -73,8 +78,9 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime 10 + 20;
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -88,10 +94,11 @@ test "js: comptime specialization ---- distinct string args generate specialized
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("WARN", "Memória alta");
         \\    val r3 = build("INFO", "Log replicado");
-        \\    @print(r1);
-        \\    @print(r2);
-        \\    @print(r3);
+        \\    print(r1);
+        \\    print(r2);
+        \\    print(r3);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -105,10 +112,11 @@ test "js: comptime specialization ---- distinct integer args generate specialize
         \\    val double = multiply(2, 21);
         \\    val triple = multiply(3, 21);
         \\    val doubleAgain = multiply(2, 10);
-        \\    @print(double);
-        \\    @print(triple);
-        \\    @print(doubleAgain);
+        \\    print(double);
+        \\    print(triple);
+        \\    print(doubleAgain);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -124,9 +132,10 @@ test "js: comptime specialization ---- same string arg reuses specialized functi
         \\fn main() {
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("INFO", "Log replicado");
-        \\    @print(r1);
-        \\    @print(r2);
+        \\    print(r1);
+        \\    print(r2);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -291,8 +300,9 @@ test "js: comptime ---- block with a tail" {
         \\    x * 2
         \\};
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -305,8 +315,9 @@ test "js: template end to end ---- bounded html expansion" {
         \\<p>world</p>
         \\`;
         \\fn main() {
-        \\    @print(page);
+        \\    print(page);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -317,9 +328,10 @@ test "js: template end to end ---- an anyvalue answer built from text" {
         \\}
         \\fn main() {
         \\    val p = port @`x` + 1;
-        \\    @print(p);
+        \\    print(p);
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -343,8 +355,9 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             \\  <Page1/>
             \\</div>`;
             \\fn main() {
-            \\    @print(page);
+            \\    print(page);
             \\}
+            \\import {io.terminal.print} from "std";
             ,
         },
     });
@@ -374,9 +387,10 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
         \\}
         \\val s = refer @`greeting`;
         \\fn main() {
-        \\    @print(s);
+        \\    print(s);
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -390,9 +404,10 @@ test "js: template end to end ---- yaml model computes a labeled tuple" {
         \\}
         \\val cfg = conf @`yaml`;
         \\fn main() {
-        \\    @print(cfg.port + 1);
+        \\    print(cfg.port + 1);
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -424,14 +439,15 @@ test "js: comptime runtime ---- a block with a call and a loop is evaluated at b
         \\
         \\fn main() {
         \\    val a = comptime two();
-        \\    @print(a);
+        \\    print(a);
         \\    val d = comptime {
         \\        var d = 0;
         \\        for ([1, 2, 3]) { b -> d = add(d, b); }
         \\        d
         \\    };
-        \\    @print(d);
+        \\    print(d);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -448,9 +464,10 @@ test "js: comptime runtime ---- a record holding a function reference is lifted"
         \\
         \\fn main() {
         \\    val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
-        \\    @print(op.name);
-        \\    @print(op.run());
-        \\    @print(op.twice());
+        \\    print(op.name);
+        \\    print(op.run());
+        \\    print(op.twice());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }

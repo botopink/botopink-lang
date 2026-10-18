@@ -7,6 +7,8 @@
 //// no package for: "the comptime block could not be lowered for the
 //// comptime runtime (MissingPackage)".
 
+import {io.terminal.print} from "std";
+
 type Block(header: string, body: string)
 
 type Rule(selector: string, decl: string)
@@ -50,12 +52,12 @@ fn header(b: Block) -> string {
 }
 
 pub fn main() {
-    @print(comptime shape(Rule(selector: ".a", decl: "color:red")));
-    @print(comptime shape(Tok.Bold));
-    @print(comptime decl(Rule(selector: ".b", decl: "margin:0")));
-    @print(comptime isRule(Rule(selector: ".c", decl: "")));
-    @print(comptime isRule(Tok.Bold));
-    @print(comptime header(Block(header: "h1", body: "b1")));
-    @print(comptime kind(.Layout.Block));
-    @print(comptime kind(.Layout.Flex));
+    print(comptime shape(Rule(selector: ".a", decl: "color:red")));
+    print(comptime shape(Tok.Bold));
+    print(comptime decl(Rule(selector: ".b", decl: "margin:0")));
+    print(comptime isRule(Rule(selector: ".c", decl: "")));
+    print(comptime isRule(Tok.Bold));
+    print(comptime header(Block(header: "h1", body: "b1")));
+    print(comptime kind(.Layout.Block));
+    print(comptime kind(.Layout.Flex));
 }

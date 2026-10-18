@@ -2,8 +2,8 @@
 //// the module's functions through the handle its annotation is written with
 //// (`#[mocks.mock]` emits `mocks.invoke(…)`), and a leaf import leaves it none.
 
-import {testing.mocks.mock} from "std";
+import {testing.mocks.mock, io.terminal.print} from "std";
 
 pub fn main() {
-    @print(0);
+    print(0);
 }

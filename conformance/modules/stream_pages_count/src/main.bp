@@ -1,9 +1,11 @@
-fn fetchPage(n: i32) -> @Task<@Result<i32[], string>> {
+import {io.terminal.print} from "std";
+
+fn fetchPage(n: i32) -> Task<Result<i32[], string>> {
     if (n > 9) throw "no page " + n.toString();
     return [n, n + 1];
 }
 
-fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
+fn pages(count: i32) -> Stream<Result<i32[], string>> {
     var page = 0;
     while (page < count) {
         val rows = try await fetchPage(page); // failed: emits Error(e) and ends
@@ -12,7 +14,7 @@ fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
     }
 }
 
-fn countRows() -> @Task<@Result<i32, string>> {
+fn countRows() -> Task<Result<i32, string>> {
     var n = 0;
     for await (pages(3)) { batch ->
         val rows = try batch; // `n + (try batch).length` is refused
@@ -21,7 +23,7 @@ fn countRows() -> @Task<@Result<i32, string>> {
     return n;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val rows = await countRows();
-    @print(rows.unwrapOr(-1)); // 6
+    print(rows.unwrapOr(-1)); // 6
 }

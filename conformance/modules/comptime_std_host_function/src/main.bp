@@ -6,7 +6,7 @@
 //// program computes when it runs. It used to be refused: the block called
 //// `.contentHash(…)`, which nothing in the comptime module provided.
 
-import {hash} from "std";
+import {hash, io.terminal.print} from "std";
 import {hash.contentHash} from "std";
 
 fn className(rules: string) -> string {
@@ -15,10 +15,10 @@ fn className(rules: string) -> string {
 
 pub fn main() {
     val atBuild = comptime hash.contentHash("hello");
-    @print(atBuild);
+    print(atBuild);
     val leaf = comptime contentHash("héllo €");
-    @print(leaf);
+    print(leaf);
     val built = comptime className(".x{padding:4px}");
-    @print(built);
-    @print(built == className(".x{padding:4px}"));
+    print(built);
+    print(built == className(".x{padding:4px}"));
 }

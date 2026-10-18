@@ -3,10 +3,10 @@
 //// function whose first parameter is no `syntax` is refused at the output
 //// (`compiler-output-outside-decorator`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn setup(comptime text: string) {
-    compiler.init({ -> @print(text) });
+    compiler.init({ -> print(text) });
 }
 
 pub fn main() {

@@ -1,5 +1,7 @@
 //// Decision 8 §5.4 — a missing variant makes the case non-exhaustive.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(radius: i32),
     Rect(width: i32, height: i32),
@@ -10,5 +12,5 @@ pub fn main() {
     val y = case s {
         .Circle(r) { r }
     };
-    @print(y);
+    print(y);
 }

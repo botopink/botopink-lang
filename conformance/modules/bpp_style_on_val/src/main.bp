@@ -2,11 +2,11 @@
 //// file's style section unfolds onto; on a `val` it is refused at the
 //// annotation.
 
-import {bpp} from "std";
+import {bpp, io.terminal.print} from "std";
 
 #[bpp.style]
 pub val sheet = "";
 
 pub fn main() {
-    @print(sheet);
+    print(sheet);
 }

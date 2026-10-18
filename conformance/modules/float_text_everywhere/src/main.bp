@@ -9,31 +9,31 @@
 
 pub mod geo;
 import {geo.Pt, geo.origin};
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 pub fn main() {
     val five = 5.0;
-    @print("${5.0}");
-    @print(5.0.toString());
-    @print("x" + 2.0);
-    @print("${1.0e21}");
-    @print("${-3.0}");
-    @print("${0.25}");
-    @print("${-0.5}");
-    @print("v=${five}");
-    @print(five.toString());
-    @print("a" + five + "b");
+    print("${5.0}");
+    print(5.0.toString());
+    print("x" + 2.0);
+    print("${1.0e21}");
+    print("${-3.0}");
+    print("${0.25}");
+    print("${-0.5}");
+    print("v=${five}");
+    print(five.toString());
+    print("a" + five + "b");
 
     val p = Pt(x: 1.0, n: 3);
-    @print(p.x);
-    @print("x=${p.x}");
-    @print("x=" + p.x);
-    @print(origin().x);
-    @print([p.x, 2.5]);
-    @print(p);
+    print(p.x);
+    print("x=${p.x}");
+    print("x=" + p.x);
+    print(origin().x);
+    print([p.x, 2.5]);
+    print(p);
 
     val counts: Dict<string, f64> = Dict.empty();
     val stored = counts.insert("a", 3.0);
-    @print(stored.at("a"));
-    @print("a=${stored.at("a") ?? 0.0}");
+    print(stored.at("a"));
+    print("a=${stored.at("a") ?? 0.0}");
 }

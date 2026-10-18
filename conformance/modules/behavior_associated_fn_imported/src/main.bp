@@ -8,8 +8,9 @@
 pub mod shapes;
 import {shapes.Shape};
 import {shapes.Shape as Area};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Shape.unit());
-    @print(Area.scaled(7));
+    print(Shape.unit());
+    print(Area.scaled(7));
 }

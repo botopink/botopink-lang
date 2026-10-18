@@ -12,6 +12,8 @@
 //// the top of the body — and its accumulator reads the OLD `n`, which pins
 //// that every argument is evaluated before any parameter is re-bound.
 
+import {io.terminal.print} from "std";
+
 fn count(n: i32, acc: i32) -> i32 {
     if (n == 0) return acc else return count(n - 1, acc + 1);
 }
@@ -22,8 +24,8 @@ fn sumTo(n: i32, acc: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(count(10000, 0));
-    @print(count(100000, 0));
-    @print(count(1000000, 0));
-    @print(sumTo(1000, 0));
+    print(count(10000, 0));
+    print(count(100000, 0));
+    print(count(1000000, 0));
+    print(sumTo(1000, 0));
 }

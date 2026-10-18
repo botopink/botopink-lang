@@ -9,6 +9,8 @@
 //// with the scale kept (`"1.00"`, never `1E+2`); `Decimal.parse(text)` reads a
 //// numeral. Pure botopink over `bigint`, so every target answers alike.
 
+import {failure.panic};
+
 // How `div` rounds a quotient its scale cannot hold — Java's `RoundingMode`.
 // `Up` rounds away from zero, `Down` toward zero, `Ceiling` toward +∞,
 // `Floor` toward −∞; the three `Half` modes round to the nearest and break a
@@ -65,7 +67,7 @@ pub type Decimal(
         scale: i32,
         rounding: Rounding,
     ) -> Decimal {
-        if (other.unscaled == 0n) @panic("Decimal.div: division by zero");
+        if (other.unscaled == 0n) panic("Decimal.div: division by zero");
         // unscaled = self.unscaled × 10^shift / other.unscaled
         val shift = scale - self.scale + other.scale;
         val num = if (shift >= 0)
@@ -106,7 +108,7 @@ pub type Decimal(
     // optional sign and digits — the whole text. Its scale is the count of
     // fraction digits less the exponent (`"1.50"` is scale 2, `"1E+2"` is
     // scale -2). Anything else is an `Error` naming the text.
-    pub fn parse(text: string) -> @Result<Decimal, string> {
+    pub fn parse(text: string) -> Result<Decimal, string> {
         val e = exponentAt(text);
         val mantissa = if (e < 0) text else text.slice(0, e);
         val exponent = if (e < 0) "0" else text.slice(e + 1);
@@ -169,7 +171,7 @@ fn roundedQuotient(num: bigint, den: bigint, mode: Rounding) -> bigint {
     val q = num / den;
     val r = num % den;
     if (r == 0n) return q;
-    if (isUnnecessary(mode)) @panic("Decimal.div: rounding necessary");
+    if (isUnnecessary(mode)) panic("Decimal.div: rounding necessary");
     val positive = (num < 0n) == (den < 0n);
     val half = order(magnitude(r) * 2n, magnitude(den));
     val away = case mode {

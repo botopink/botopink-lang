@@ -3,16 +3,18 @@
 //// marker is refused, `marker-on-declaration`. Its return type alone says
 //// what it answers.
 
+import {io.terminal.print} from "std";
+
 behavior Clock {
-    async fn now(self: Self) -> @Task<i32>;
+    async fn now(self: Self) -> Task<i32>;
 }
 
 type Fixed(t: i32) implement Clock {
-    fn now(self: Self) -> @Task<i32> {
+    fn now(self: Self) -> Task<i32> {
         return self.t;
     }
 }
 
-pub fn main() -> @Task<void> {
-    @print(await Fixed(t: 7).now());
+pub fn main() -> Task<void> {
+    print(await Fixed(t: 7).now());
 }

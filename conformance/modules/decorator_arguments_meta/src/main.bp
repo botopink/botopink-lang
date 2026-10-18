@@ -1,4 +1,4 @@
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 type Level { Low, High }
 
@@ -27,10 +27,10 @@ fn mark(
 type City(code: string, name: string, state: string)
 
 fn main() {
-    val columns: string[] = @typeInfo(City).meta(Index)?.columns ?? [];
-    @print(columns.join(",")); // state,name
-    @print(@typeInfo(City).meta(Mark)?.sizes ?? 0); // 2
-    @print(@typeInfo(City).meta(Mark)?.level ?? "none"); // high
+    val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
+    print(columns.join(",")); // state,name
+    print(comptime compiler.typeInfo(City).meta(Mark)?.sizes ?? 0); // 2
+    print(comptime compiler.typeInfo(City).meta(Mark)?.level ?? "none"); // high
 }
 
 // What `#[index]` records.

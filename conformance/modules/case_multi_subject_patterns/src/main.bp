@@ -6,6 +6,8 @@
 //// a type arm matched every value (`i32, 0` took `"s"`); commonJS tested a
 //// variant's tag and never bound its payload (`r is not defined`).
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(r: i32),
     Square(side: i32),
@@ -56,22 +58,22 @@ fn flags(a: bool, b: bool) -> string {
 }
 
 pub fn main() {
-    @print(classify(0, "x"));
-    @print(classify(0, "y"));
-    @print(classify(1, "x"));
-    @print(classify(1, "y"));
-    @print(kind(1, 0));
-    @print(kind("s", 0));
-    @print(kind(1, 1));
-    @print(area(Shape.Circle(r: 2), 1));
-    @print(area(Shape.Circle(r: 2), 2));
-    @print(area(Shape.Square(side: 3), 4));
-    @print(area(Shape.Empty, 9));
-    @print(guarded(5, 2));
-    @print(guarded(3, 3));
-    @print(guarded(1, 7));
-    @print(flags(true, true));
-    @print(flags(true, false));
-    @print(flags(false, true));
-    @print(flags(false, false));
+    print(classify(0, "x"));
+    print(classify(0, "y"));
+    print(classify(1, "x"));
+    print(classify(1, "y"));
+    print(kind(1, 0));
+    print(kind("s", 0));
+    print(kind(1, 1));
+    print(area(Shape.Circle(r: 2), 1));
+    print(area(Shape.Circle(r: 2), 2));
+    print(area(Shape.Square(side: 3), 4));
+    print(area(Shape.Empty, 9));
+    print(guarded(5, 2));
+    print(guarded(3, 3));
+    print(guarded(1, 7));
+    print(flags(true, true));
+    print(flags(true, false));
+    print(flags(false, true));
+    print(flags(false, false));
 }

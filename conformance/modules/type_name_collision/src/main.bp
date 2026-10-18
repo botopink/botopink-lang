@@ -27,17 +27,18 @@ pub mod parser;
 pub mod net;
 import {parser.Outcome, parser.parserOutcome};
 import {net.netOutcome};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     // The field axis, through each module's own fn.
-    @print(parserOutcome().tag);
-    @print(netOutcome().tag);
+    print(parserOutcome().tag);
+    print(netOutcome().tag);
     // The method axis: each `describe` reads its OWN record's `tag`.
-    @print(parserOutcome().describe());
-    @print(netOutcome().describe());
+    print(parserOutcome().describe());
+    print(netOutcome().describe());
     // The construction axis: the import names `parser`, so this is parser's
     // field order and nothing else's.
     val o = Outcome(tag: "local-tag", note: "local-note");
-    @print(o.tag);
-    @print(o.note);
+    print(o.tag);
+    print(o.note);
 }

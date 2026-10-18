@@ -2,7 +2,7 @@
 //// where a declaration of the program is no value: `value` is refused at the
 //// read (`name`, `module`, `meta` and `returnTypeName` are answered).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub fn mark(syntax decl: unknown) {
     compiler.setMeta(Mark(name: compiler.name(decl)));
@@ -20,7 +20,7 @@ pub fn job() -> i32 {
 }
 
 pub fn main() {
-    @print(first @`x`);
+    print(first @`x`);
 }
 
 // What `#[mark]` records.

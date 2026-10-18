@@ -3,14 +3,16 @@
 //// awaited, it reads back as `Error(e)` carrying the thrown text, the same as
 //// when the binding is annotated.
 
-fn show(r: @Result<i32, string>) {
+import {io.terminal.print} from "std";
+
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("error", e);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val failing = { n ->
         async {
             throw "inner";
@@ -19,8 +21,8 @@ fn run() -> @Task<void> {
     show(await failing(1));
     val r = await failing(2);
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("again", e);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("again", e);
     }
     val maybe = { n ->
         async {

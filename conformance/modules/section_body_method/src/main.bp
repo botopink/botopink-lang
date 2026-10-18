@@ -2,6 +2,8 @@
 //// by name: a section holds leaves and nested sections, and a method is
 //// declared in the enum's own body. `EnumSection` has no method slot.
 
+import {io.terminal.print} from "std";
+
 type Tok {
     Alpha {
         A,
@@ -13,5 +15,5 @@ type Tok {
 }
 
 pub fn main() {
-    @print(1);
+    print(1);
 }

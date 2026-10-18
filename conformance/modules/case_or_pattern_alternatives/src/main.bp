@@ -6,6 +6,8 @@
 //// alternative and dropped every other shape, so `C | D -> true` answered
 //// `false`, and an arm of bare variants matched nothing (`case_clause`).
 
+import {io.terminal.print} from "std";
+
 type Card {
     A,
     B,
@@ -84,36 +86,36 @@ fn mixed(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(late(Card.A));
-    @print(late(Card.B));
-    @print(late(Card.C));
-    @print(late(Card.D));
-    @print(early(Card.A));
-    @print(early(Card.B));
-    @print(early(Card.C));
-    @print(early(Card.D));
-    @print(small(2));
-    @print(small(15));
-    @print(small(100));
-    @print(small(4));
-    @print(greeting("hi"));
-    @print(greeting("hello"));
-    @print(greeting("bye"));
-    @print(greeting("yo"));
-    @print(round(Shape.Circle(r: 4)));
-    @print(round(Shape.Empty));
-    @print(round(Shape.Square(side: 1)));
-    @print(round(Shape.Rect(w: 1, h: 3)));
-    @print(round(Shape.Square(side: 6)));
-    @print(round(Shape.Rect(w: 2, h: 3)));
-    @print(shown(Shape.Circle(r: 9), true));
-    @print(shown(Shape.Square(side: 2), true));
-    @print(shown(Shape.Square(side: 2), false));
-    @print(shown(Shape.Empty, true));
-    @print(pair(#(0, 5)));
-    @print(pair(#(5, 0)));
-    @print(pair(#(5, 5)));
-    @print(mixed(0));
-    @print(mixed(7));
-    @print(mixed(3));
+    print(late(Card.A));
+    print(late(Card.B));
+    print(late(Card.C));
+    print(late(Card.D));
+    print(early(Card.A));
+    print(early(Card.B));
+    print(early(Card.C));
+    print(early(Card.D));
+    print(small(2));
+    print(small(15));
+    print(small(100));
+    print(small(4));
+    print(greeting("hi"));
+    print(greeting("hello"));
+    print(greeting("bye"));
+    print(greeting("yo"));
+    print(round(Shape.Circle(r: 4)));
+    print(round(Shape.Empty));
+    print(round(Shape.Square(side: 1)));
+    print(round(Shape.Rect(w: 1, h: 3)));
+    print(round(Shape.Square(side: 6)));
+    print(round(Shape.Rect(w: 2, h: 3)));
+    print(shown(Shape.Circle(r: 9), true));
+    print(shown(Shape.Square(side: 2), true));
+    print(shown(Shape.Square(side: 2), false));
+    print(shown(Shape.Empty, true));
+    print(pair(#(0, 5)));
+    print(pair(#(5, 0)));
+    print(pair(#(5, 5)));
+    print(mixed(0));
+    print(mixed(7));
+    print(mixed(3));
 }

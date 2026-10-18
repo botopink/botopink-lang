@@ -2,7 +2,8 @@
 
 pub mod helper;
 import {helper.twice};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(twice(2));
+    print(twice(2));
 }

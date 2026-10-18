@@ -3,6 +3,8 @@
 //// candidates: picking one is what made the answer depend on the order the
 //// type definitions came out of their hash map.
 
+import {io.terminal.print} from "std";
+
 type Token {
     Color {
         Red { 100, 500 }
@@ -17,5 +19,5 @@ type Border {
 
 pub fn main() {
     val x = .Color.Red.500;
-    @print("unreachable");
+    print("unreachable");
 }

@@ -17,17 +17,19 @@
 //// fails; here `ks.at(1) ?? "none"` comes first and resolves the element type
 //// for the checker, which is what lets commonJS answer the last line too.
 
+import {io.terminal.print} from "std";
+
 type Entry(key: string)
 
 pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];
     val ks = es.map({ e -> e.key });
-    @print(ks);
-    @print(ks.join("-"));
-    @print(ks.at(1) ?? "none");
-    @print(es.map({ e -> e.key + "!" }).at(0) ?? "none");
+    print(ks);
+    print(ks.join("-"));
+    print(ks.at(1) ?? "none");
+    print(es.map({ e -> e.key + "!" }).at(0) ?? "none");
     val ws = ["x", "yz"];
-    @print(ws.at(1) ?? "none");
-    @print(ws.at(5) ?? "none");
-    @print(ks.at(0)?.length());
+    print(ws.at(1) ?? "none");
+    print(ws.at(5) ?? "none");
+    print(ks.at(0)?.length());
 }

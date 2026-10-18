@@ -5,6 +5,8 @@
 //// argument's value, and the specialization answers what the function
 //// declares (a `string[]` joined as strings).
 
+import {io.terminal.print} from "std";
+
 fn campos(comptime names: string) -> string[] {
     return names.split(",");
 }
@@ -18,8 +20,8 @@ fn grito(comptime s: string) -> string {
 }
 
 pub fn main() {
-    @print(campos("a,b,c").join("|"));
-    @print(campos("x").length());
-    @print(tamanho("abcd"));
-    @print(grito("oi"));
+    print(campos("a,b,c").join("|"));
+    print(campos("x").length());
+    print(tamanho("abcd"));
+    print(grito("oi"));
 }

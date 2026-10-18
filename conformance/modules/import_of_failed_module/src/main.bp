@@ -5,7 +5,8 @@
 
 pub mod shapes;
 import {shapes.area};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(area(3));
+    print(area(3));
 }

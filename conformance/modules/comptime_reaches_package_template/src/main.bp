@@ -7,6 +7,7 @@
 //// where it is written.
 
 import badges from "badges";
+import {io.terminal.print} from "std";
 
 fn ready() -> string {
     return "${(badges @`ready`).label}!";
@@ -17,7 +18,7 @@ pub val label = comptime ready();
 pub val whole = comptime badges @`done`;
 
 pub fn main() {
-    @print(label);
-    @print(whole.label);
-    @print(whole.size);
+    print(label);
+    print(whole.label);
+    print(whole.size);
 }

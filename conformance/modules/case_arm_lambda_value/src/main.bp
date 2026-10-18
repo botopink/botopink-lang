@@ -4,6 +4,8 @@
 //// lambda as a statement, the arm answered `ok`, and the call was `{badfun, ok}`;
 //// every target now prints the applied value.
 
+import {io.terminal.print} from "std";
+
 type Mode {
     Mark(suffix: string),
     Same,
@@ -26,6 +28,6 @@ fn pick(m: Mode) -> fn(item: string) -> string {
 }
 
 pub fn main() {
-    @print(pick(Mode.Mark(suffix: "?"))("a"));
-    @print(pick(Mode.Same)("b"));
+    print(pick(Mode.Mark(suffix: "?"))("a"));
+    print(pick(Mode.Same)("b"));
 }

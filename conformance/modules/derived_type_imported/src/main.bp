@@ -5,7 +5,7 @@
 pub mod attrs;
 
 import {attrs.AnchorProps, attrs.GlobalAttrs};
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 val IdOnly = Type.pick(GlobalAttrs, .id);
 
@@ -21,8 +21,8 @@ fn plain(link: Link) -> string {
 }
 
 pub fn main() {
-    @print(a(AnchorProps(href: "/home", lang: "pt")));
-    @print(a(AnchorProps(href: "/about")));
-    @print(IdOnly(id: "main").id ?? "-");
-    @print(plain(Link(href: "/x")));
+    print(a(AnchorProps(href: "/home", lang: "pt")));
+    print(a(AnchorProps(href: "/about")));
+    print(IdOnly(id: "main").id ?? "-");
+    print(plain(Link(href: "/x")));
 }

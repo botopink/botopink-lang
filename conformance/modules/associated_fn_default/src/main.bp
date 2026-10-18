@@ -3,6 +3,8 @@
 //// like every other call — a short call is filled, a label names its
 //// parameter, and a generic associated fn instantiates around the fill.
 
+import {io.terminal.print} from "std";
+
 behavior Scale {
     default fn by(x: i32, factor: i32 = 10) -> i32 {
         return x * factor;
@@ -17,9 +19,9 @@ behavior Pick<A> {
 }
 
 pub fn main() {
-    @print(Scale.by(2, 3));
-    @print(Scale.by(2));
-    @print(Scale.by(factor: 4, x: 5));
-    @print(Pick.either(7, 0));
-    @print(Pick.either(7, 9, useFallback: true));
+    print(Scale.by(2, 3));
+    print(Scale.by(2));
+    print(Scale.by(factor: 4, x: 5));
+    print(Pick.either(7, 0));
+    print(Pick.either(7, 9, useFallback: true));
 }

@@ -1,5 +1,7 @@
 //// Decision 8 §5 — a whole program whose `case` results are printed.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(radius: i32),
     Rect(width: i32, height: i32),
@@ -20,7 +22,7 @@ fn describe(s: Shape) -> string {
 }
 
 pub fn main() {
-    @print(describe(Shape.Circle(radius: 0)));
-    @print(describe(Shape.Circle(radius: 3)));
-    @print(describe(Shape.Rect(width: 2, height: 5)));
+    print(describe(Shape.Circle(radius: 0)));
+    print(describe(Shape.Circle(radius: 3)));
+    print(describe(Shape.Rect(width: 2, height: 5)));
 }

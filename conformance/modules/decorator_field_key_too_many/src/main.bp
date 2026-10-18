@@ -1,7 +1,7 @@
 //// Decision 280, example 6 — `unique` takes one field: a second is refused
 //// at the argument that has no parameter to meet (several are `index`'s).
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 fn index<T>(syntax decl: T, comptime ..fields: Type.Field<T>[]) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
@@ -15,7 +15,7 @@ fn unique<T>(syntax decl: T, comptime field: Type.Field<T>) {
 type City(code: string, name: string, state: string)
 
 pub fn main() {
-    @print(City(code: "SP", name: "São Paulo", state: "SP").name);
+    print(City(code: "SP", name: "São Paulo", state: "SP").name);
 }
 
 // What `#[index]` records.

@@ -1,9 +1,11 @@
+import {io.terminal.print, failure.panic} from "std";
+
 fn greet() {
-    @print("hello");
+    print("hello");
 }
 
 fn notReady() -> i32 {
-    @todo();
+    panic("not implemented");
 }
 
 pub fn main() {

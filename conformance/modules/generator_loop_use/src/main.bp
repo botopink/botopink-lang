@@ -4,14 +4,16 @@
 //// `use` would activate a hook outside the render — and a `use` stands at the
 //// top level of its body only (`use-not-top-level`, naming the loop).
 
-type Element(count: i32) implement @Renderable
+import {io.terminal.print} from "std";
+
+type Element(count: i32) implement Renderable
 type State(value: i32)
 
-fn state(initial: i32) -> @Component<State> {
+fn state(initial: i32) -> Component<State> {
     return State(value: initial);
 }
 
-fn Counter() -> @Component<Element> {
+fn Counter() -> Component<Element> {
     val g = iter loop {
         val s = use state(0);
         break s.value;
@@ -19,4 +21,4 @@ fn Counter() -> @Component<Element> {
     return Element(count: 1);
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

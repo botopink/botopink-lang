@@ -4,11 +4,12 @@
 //// module's `pub default`.
 
 import kit;
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val t = kit("hi");
-    @print(kit.shout(t));
-    @print(kit.shout(kit.Tag(label: "direct")));
+    print(kit.shout(t));
+    print(kit.shout(kit.Tag(label: "direct")));
     val make = kit;
-    @print(make("bound").label);
+    print(make("bound").label);
 }

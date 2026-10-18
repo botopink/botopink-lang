@@ -5,11 +5,13 @@
 //// that needs no channel (it handles the error on the spot); this one does
 //// not have it.
 
-fn parse(n: i32) -> @Result<i32, string> { return n; }
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> { return n; }
 
 fn plain(n: i32) -> i32 {
     val v = try parse(n);
     return v;
 }
 
-pub fn main() { @print(plain(1)); }
+pub fn main() { print(plain(1)); }

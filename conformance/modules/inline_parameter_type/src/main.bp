@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 fn link(
     props: type(href: string, label: string, external: bool = false),
 ) -> string {
@@ -5,5 +7,5 @@ fn link(
 }
 
 fn main() {
-    @print(link(href: "/a", label: "A")); // A </a>
+    print(link(href: "/a", label: "A")); // A </a>
 }

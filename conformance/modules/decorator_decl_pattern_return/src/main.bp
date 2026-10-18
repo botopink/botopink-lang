@@ -2,7 +2,7 @@
 //// `#[page]` that answers a `string` where the pattern asks for a `View` is
 //// refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type View(html: string)
 
@@ -21,7 +21,7 @@ fn blog(route: Route<string>) -> string {
 }
 
 pub fn main() {
-    @print(blog(Route(params: "x")));
+    print(blog(Route(params: "x")));
 }
 
 // What `#[page]` records.

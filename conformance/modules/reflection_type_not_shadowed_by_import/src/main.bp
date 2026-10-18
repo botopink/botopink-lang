@@ -8,6 +8,7 @@ pub mod model;
 pub mod deco;
 import {deco.described, deco.labelOf};
 import {model.Param};
+import {io.terminal.print} from "std";
 
 #[described]
 type Scaler(base: i32) {
@@ -17,7 +18,7 @@ type Scaler(base: i32) {
 }
 
 pub fn main() {
-    @print(paramNames());
-    @print(Scaler(base: 2).scale(3));
-    @print(labelOf(Param(key: "k", weight: 1)).label);
+    print(paramNames());
+    print(Scaler(base: 2).scale(3));
+    print(labelOf(Param(key: "k", weight: 1)).label);
 }

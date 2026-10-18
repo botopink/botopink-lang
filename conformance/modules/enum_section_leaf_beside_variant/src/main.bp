@@ -8,14 +8,15 @@
 
 pub mod tokens;
 import {tokens.Token, tokens.render, tokens.breakToCss};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(render(Token.After([Token.Plain])));
-    @print(render(Token.After(inner: [])));
+    print(render(Token.After([Token.Plain])));
+    print(render(Token.After(inner: [])));
     val b: Token = .After([Token.Plain, Token.Plain]);
-    @print(render(b));
-    @print(render(Token.Layout.Break.After));
-    @print(breakToCss(.After));
+    print(render(b));
+    print(render(Token.Layout.Break.After));
+    print(breakToCss(.After));
     val leaf: Token.Layout.Break = .Before;
-    @print(breakToCss(leaf));
+    print(breakToCss(leaf));
 }

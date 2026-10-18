@@ -5,7 +5,7 @@
 //// `clock.hours` — std's `toI64()`, no host cell — and printed as the same digits.
 //// Refused on wasm (`.wasm.expect`): std's `io/fs` host cells have no wasm binding.
 
-import {io.fs, io.clock} from "std";
+import {io.fs, io.clock, io.terminal.print} from "std";
 
 // After 2020-01-01T00:00:00Z.
 fn recent(epochMillis: i64) -> bool {
@@ -15,24 +15,24 @@ fn recent(epochMillis: i64) -> bool {
 fn printStat(p: string) -> void {
     case fs.stat(p) {
         Ok(s) {
-            @print(s.size);
-            @print(s.isDir);
-            @print(recent(s.mtime));
+            print(s.size);
+            print(s.isDir);
+            print(recent(s.mtime));
         }
-        Error(reason) -> @print(reason);
+        Error(reason) -> print(reason);
     }
 }
 
 pub fn main() {
     fs.writeText("five.txt", "12345");
     printStat("five.txt");
-    @print(fs.stat(".").isOk());
+    print(fs.stat(".").isOk());
     val most = clock.hours(2147483647);
     val twice = clock.add(most, most);
-    @print(clock.toMillis(most));
-    @print(clock.toMillis(twice));
-    @print(
+    print(clock.toMillis(most));
+    print(clock.toMillis(twice));
+    print(
         clock.toMillis(twice) - clock.toMillis(most) == clock.toMillis(most),
     );
-    @print(clock.parseDuration("9007199254740991ms").unwrapOr(0l));
+    print(clock.parseDuration("9007199254740991ms").unwrapOr(0l));
 }

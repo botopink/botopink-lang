@@ -1,10 +1,12 @@
-fn work() -> @Task<i32> {
-    defer @print("done");
+import {io.terminal.print} from "std";
+
+fn work() -> Task<i32> {
+    defer print("done");
     val v = await (async { 20 });
-    @print("got " + v.toString());
+    print("got " + v.toString());
     return v + 1;
 }
 
-pub fn main() -> @Task<void> {
-    @print(await work());
+pub fn main() -> Task<void> {
+    print(await work());
 }

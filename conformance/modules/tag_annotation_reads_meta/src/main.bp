@@ -5,7 +5,7 @@
 //// annotations do not depend on their written order. `checked` reads the
 //// meta `level` recorded before it on the same tag: refused at the read.
 
-import {compiler.DeclKind, compiler.Span, compiler} from "std";
+import {compiler.DeclKind, compiler.Span, compiler, io.terminal.print} from "std";
 
 pub type Level(n: i32)
 
@@ -32,5 +32,5 @@ pub fn markup(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(markup @`<div #[level(2)] #[checked]>hi</div>`);
+    print(markup @`<div #[level(2)] #[checked]>hi</div>`);
 }

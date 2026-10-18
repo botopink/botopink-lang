@@ -1,10 +1,12 @@
 //// Decision 267 — only the last parameter may be variadic: `..rest` before
 //// `n` is refused at its `..`.
 
+import {io.terminal.print} from "std";
+
 fn first(..rest: string[], n: i32) -> i32 {
     return n;
 }
 
 pub fn main() {
-    @print(first(1));
+    print(first(1));
 }

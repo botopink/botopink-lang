@@ -4,8 +4,9 @@
 
 pub mod ui;
 import {ui.link, ui.home};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(home());
-    @print(link(href: "/a", label: "A"));
+    print(home());
+    print(link(href: "/a", label: "A"));
 }

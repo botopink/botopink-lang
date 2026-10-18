@@ -13,13 +13,15 @@
 //// `@External.Erlang`-only function (`run/external_erlang_only.bp`); the beam
 //// build ships the same sidecars and refuses this one the same way.
 
-#[@external(.Erlang("lists:sum($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("lists:sum($0)"))]
 declare fn total(xs: i32[]) -> i32;
 
-#[@external(.Erlang("nosuchhost:answer()"))]
+#[compiler.external(.Erlang("nosuchhost:answer()"))]
 declare fn answer() -> i32;
 
 pub fn main() {
-    @print(total([1, 2]));
-    @print(answer());
+    print(total([1, 2]));
+    print(answer());
 }

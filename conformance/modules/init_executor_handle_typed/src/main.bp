@@ -9,6 +9,7 @@ pub mod marks;
 pub mod registry;
 import {marks.module};
 import {registry.all};
+import {io.terminal.print} from "std";
 
 #[module("singleton")]
 pub fn home() -> string {
@@ -22,6 +23,6 @@ fn about() -> string {
 
 pub fn main() {
     for (all()) { m ->
-        @print(m.name + " " + m.lifecycle + " " + m.make());
+        print(m.name + " " + m.lifecycle + " " + m.make());
     }
 }

@@ -27,52 +27,60 @@ const h = @import("helpers.zig");
 
 test "typeInfo: primitive i32 returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val info = @typeInfo(i32);
+        \\val info = comptime compiler.typeInfo(i32);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: primitive string returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val info = @typeInfo(string);
+        \\val info = comptime compiler.typeInfo(string);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: primitive bool returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val info = @typeInfo(bool);
+        \\val info = comptime compiler.typeInfo(bool);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: void type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val info = @typeInfo(void);
+        \\val info = comptime compiler.typeInfo(void);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: record type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Point = type(x: i32, y: string);
-        \\val info = @typeInfo(Point);
+        \\val info = comptime compiler.typeInfo(Point);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: enum type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Color = type { Red, Blue };
-        \\val info = @typeInfo(Color);
+        \\val info = comptime compiler.typeInfo(Color);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: fn type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn add(a: i32, b: i32) -> i32 { return a + b; }
-        \\val info = @typeInfo(add);
+        \\val info = comptime compiler.typeInfo(add);
+        \\import {compiler} from "std";
     );
 }
 
 test "typeInfo: float type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val info = @typeInfo(f64);
+        \\val info = comptime compiler.typeInfo(f64);
+        \\import {compiler} from "std";
     );
 }
 
@@ -156,7 +164,8 @@ test "field: record value field access" {
 
 test "typeInfo: TypeInfo record is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val ti: TypeInfo<i32> = @typeInfo(i32);
+        \\val ti: TypeInfo<i32> = comptime compiler.typeInfo(i32);
+        \\import {compiler} from "std";
     );
 }
 

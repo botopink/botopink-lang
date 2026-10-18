@@ -11,6 +11,7 @@
 
 pub mod tags;
 import {tags.markup, tags.cls, tags.ClassName};
+import {io.terminal.print, compiler} from "std";
 
 #[cls("b")]
 type Card(title: string)
@@ -20,10 +21,10 @@ fn Badge() -> string {
 }
 
 pub fn main() {
-    @print(markup @`<div id="x" #[cls("a")]>hi</div>`);
-    @print(markup @`<Badge #[cls("c")]>new</Badge>`);
-    @print(Badge());
-    for (@typeInfo(Card).metaAll(ClassName)) { c ->
-        @print("Card: " + c.names.join(" "));
+    print(markup @`<div id="x" #[cls("a")]>hi</div>`);
+    print(markup @`<Badge #[cls("c")]>new</Badge>`);
+    print(Badge());
+    for (comptime compiler.typeInfo(Card).metaAll(ClassName)) { c ->
+        print("Card: " + c.names.join(" "));
     }
 }

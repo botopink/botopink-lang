@@ -5,10 +5,12 @@
 //// It used to compile, and the call failed at run time: `… .find is not a
 //// function` on commonJS, `undef` on erlang.
 
+import {io.terminal.print} from "std";
+
 pub type Repo() {
     pub declare fn find(self: Self) -> i32;
 }
 
 pub fn main() {
-    @print(Repo().find());
+    print(Repo().find());
 }

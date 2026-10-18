@@ -5,7 +5,7 @@
 //// answers `null` there too. (A cell cannot give its program an input: the lines themselves — `\n`, `\r\n`,
 //// a last line with no terminator, UTF-8 — were read off a piped input by hand on the three targets.)
 
-import {io.stdin} from "std";
+import {io.stdin, io.terminal.print} from "std";
 
 fn show(line: ?string) -> string {
     return case line {
@@ -14,11 +14,11 @@ fn show(line: ?string) -> string {
     };
 }
 
-fn scenario() -> @Task<void> {
-    @print("isTTY " + stdin.isTTY().toString());
-    @print(show(await stdin.readLine()));
-    @print(show(await stdin.readLine()));
-    @print(show(await stdin.readChunk()));
+fn scenario() -> Task<void> {
+    print("isTTY " + stdin.isTTY().toString());
+    print(show(await stdin.readLine()));
+    print(show(await stdin.readLine()));
+    print(show(await stdin.readChunk()));
 }
 
 pub fn main() {

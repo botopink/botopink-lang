@@ -6,12 +6,12 @@
 //// `@Result`, `reject/result_hint_inferred_async.bp` and
 //// `reject/result_hint_inferred_iter.bp`.
 
-fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+fn fetchCount(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     return n;
 }
 
-fn run() -> @Task<@Result<i32, string>> {
+fn run() -> Task<Result<i32, string>> {
     val count: i32 = await fetchCount(3);
     return count;
 }

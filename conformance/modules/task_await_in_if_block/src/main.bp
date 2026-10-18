@@ -7,11 +7,13 @@
 //// module did not load (`SyntaxError: await is only valid in async
 //// functions`). The test runner then printed no summary for that module.
 
-fn one() -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn one() -> Task<i32> {
     return 1;
 }
 
-fn maybe(flag: bool) -> @Task<i32> {
+fn maybe(flag: bool) -> Task<i32> {
     var total = 0;
     if (flag) {
         val got = await one();
@@ -20,7 +22,7 @@ fn maybe(flag: bool) -> @Task<i32> {
     return total;
 }
 
-fn nested(a: bool, b: bool) -> @Task<i32> {
+fn nested(a: bool, b: bool) -> Task<i32> {
     var total = 10;
     if (a) {
         if (b) {
@@ -35,12 +37,12 @@ fn nested(a: bool, b: bool) -> @Task<i32> {
     return total;
 }
 
-fn run() -> @Task<void> {
-    @print(await maybe(true));
-    @print(await maybe(false));
-    @print(await nested(true, true));
-    @print(await nested(true, false));
-    @print(await nested(false, true));
+fn run() -> Task<void> {
+    print(await maybe(true));
+    print(await maybe(false));
+    print(await nested(true, true));
+    print(await nested(true, false));
+    print(await nested(false, true));
 }
 
 pub fn main() {

@@ -5,7 +5,7 @@
 //// `Error`, and nothing follows). Reading goes on from the position, so `lines` after `read`
 //// starts where `read` stopped.
 
-import {io.fs, encoding} from "std";
+import {io.fs, encoding, io.terminal.print} from "std";
 
 fn describe(e: fs.FsError) -> string {
     return case e {
@@ -22,31 +22,31 @@ fn describe(e: fs.FsError) -> string {
     };
 }
 
-fn printChunks(f: fs.File, size: i32) -> @Task<void> {
+fn printChunks(f: fs.File, size: i32) -> Task<void> {
     for await (f.chunks(size)) { r ->
         case r {
-            Ok(b) -> @print("chunk " + encoding.hexEncodeBytes(b));
-            Error(e) -> @print("error " + describe(e));
+            Ok(b) -> print("chunk " + encoding.hexEncodeBytes(b));
+            Error(e) -> print("error " + describe(e));
         }
     }
-    @print("end of chunks");
+    print("end of chunks");
 }
 
-fn printLines(f: fs.File) -> @Task<void> {
+fn printLines(f: fs.File) -> Task<void> {
     for await (f.lines()) { r ->
         case r {
-            Ok(line) -> @print("line [" + line + "]");
-            Error(e) -> @print("error " + describe(e));
+            Ok(line) -> print("line [" + line + "]");
+            Error(e) -> print("error " + describe(e));
         }
     }
-    @print("end of lines");
+    print("end of lines");
 }
 
 fn open(path: string) -> fs.File {
     return fs.open(path).unwrapOr(fs.openAsset(@embed("assets/empty.txt")));
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     fs.writeText("sample.txt", "ab\r\n\nçd\nlast");
     await printChunks(open("sample.txt"), 4);
     await printChunks(open("sample.txt"), 65536);
@@ -54,7 +54,7 @@ fn run() -> @Task<void> {
 
     val partway = open("sample.txt");
     val head = partway.read(2).unwrapOr(Bytes.fromUtf8("?"));
-    @print(encoding.hexEncodeBytes(head));
+    print(encoding.hexEncodeBytes(head));
     await printLines(partway);
 
     fs.writeText("empty.txt", "");

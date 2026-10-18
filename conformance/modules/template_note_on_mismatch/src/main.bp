@@ -2,7 +2,7 @@
 //// error reported at its call: the template never reads the type expected
 //// there, so it builds by its text and says why.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn rows(syntax q: string) -> unknown {
     if (compiler.text(q).contains("limit 1"))
@@ -13,5 +13,5 @@ fn rows(syntax q: string) -> unknown {
 
 pub fn main() {
     val one: string = rows @`select name`;
-    @print(one);
+    print(one);
 }

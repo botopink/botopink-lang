@@ -6,6 +6,7 @@
 //// `value` is called at build.
 
 import {boot, module} from "frame";
+import {io.terminal.print} from "std";
 
 #[module(2)]
 pub fn cache() -> string {
@@ -23,7 +24,7 @@ pub fn db() -> string {
 }
 
 pub fn main() {
-    @print("boot");
+    print("boot");
     boot();
-    @print("done");
+    print("done");
 }

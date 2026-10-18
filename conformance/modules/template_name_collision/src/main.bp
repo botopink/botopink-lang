@@ -9,8 +9,9 @@ pub mod quiet;
 
 import {loud.tag};
 import {quiet.marker};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(tag @`x`);
-    @print(marker());
+    print(tag @`x`);
+    print(marker());
 }

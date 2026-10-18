@@ -9,6 +9,8 @@
 //// with `__bp_eq` whatever `T` is: two integer zeros are equal, an `f64`
 //// `0.0` and `-0.0` are not (`zero() * -1.0`, built at run time).
 
+import {io.terminal.print} from "std";
+
 fn zi() -> i32 {
     return 0;
 }
@@ -27,13 +29,13 @@ pub fn main() {
     val n = -x;
     val r = -4 % 2;
     val q = x / -3;
-    @print(m);
-    @print(n);
-    @print(r);
-    @print(q);
-    @print([m, n, r, q]);
-    @print(0 * -1 == 0);
-    @print(m == 0);
-    @print(same(0, x * -1));
-    @print(same(0.0, zero() * -1.0));
+    print(m);
+    print(n);
+    print(r);
+    print(q);
+    print([m, n, r, q]);
+    print(0 * -1 == 0);
+    print(m == 0);
+    print(same(0, x * -1));
+    print(same(0.0, zero() * -1.0));
 }

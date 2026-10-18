@@ -8,21 +8,21 @@
 //// `race` over started tasks answers element zero on erlang (its tasks ran
 //// before the call), so its fastest task is element zero here.
 
-import {async} from "std";
+import {async, io.terminal.print} from "std";
 
-fn slow(millis: i32, value: string) -> @Task<@Result<string, string>> {
+fn slow(millis: i32, value: string) -> Task<Result<string, string>> {
     val v = await async.delay(millis, value);
     return v;
 }
 
 // `value` once `gate` opens, a value naming the failure when it never does.
-fn gated(gate: async.Gate, value: string) -> @Task<string> {
+fn gated(gate: async.Gate, value: string) -> Task<string> {
     val opened = await async.awaitGate(gate, 10000);
     return if (opened) value else "never opened: " + value;
 }
 
 // Open `mine`, then answer `value` once `theirs` is open.
-fn handshake(mine: async.Gate, theirs: async.Gate, value: string) -> @Task<string> {
+fn handshake(mine: async.Gate, theirs: async.Gate, value: string) -> Task<string> {
     async.openGate(mine);
     return await gated(theirs, value);
 }
@@ -32,22 +32,22 @@ fn pauseText(policy: async.RetryPolicy, attempt: i32) -> string {
     return if (pause != null) pause.toString() else "none";
 }
 
-fn show(label: string, r: @Result<Array<string>, string>) {
+fn show(label: string, r: Result<Array<string>, string>) {
     case r {
-        Ok(xs) -> @print(label + " ok " + xs.join(","));
-        Error(e) -> @print(label + " error " + e);
+        Ok(xs) -> print(label + " ok " + xs.join(","));
+        Error(e) -> print(label + " error " + e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val d = await async.delay(5, "delayed");
-    @print("delay " + d);
+    print("delay " + d);
     val all = await async.all([async.delay(20, "a"), async.delay(1, "b")]);
-    @print("all " + all.join(","));
+    print("all " + all.join(","));
     show("allOf", await async.allOf([slow(20, "x"), slow(1, "y")]));
     show("allOf", await async.allOf([slow(1, "x"), async.failed("down"), async.failed("later")]));
     val first = await async.race([async.delay(1, "first"), async.delay(60, "second")]);
-    @print("race " + first);
+    print("race " + first);
     val ran = await async.runAll(
         [
             { -> async.delay(20, "one") },
@@ -55,20 +55,20 @@ fn run() -> @Task<void> {
             { -> async.delay(1, "three") },
         ],
     );
-    @print("runAll " + ran.join(","));
+    print("runAll " + ran.join(","));
     val won = await async.raceOf(
         [
             { -> async.delay(40, "slow") },
             { -> async.delay(1, "fast") },
         ],
     );
-    @print("raceOf " + won);
+    print("raceOf " + won);
     val inTime = await async.timeout({ -> async.delay(1, "in time") }, 1000);
-    @print("timeout " + inTime.unwrapOr("-") + "/" + async.errorText(inTime));
+    print("timeout " + inTime.unwrapOr("-") + "/" + async.errorText(inTime));
     val gate = async.newGate();
     val late = await async.timeout({ -> gated(gate, "too late") }, 20);
     async.openGate(gate);
-    @print("timeout " + late.unwrapOr("-") + "/" + async.errorText(late));
+    print("timeout " + late.unwrapOr("-") + "/" + async.errorText(late));
     val shared = async.newGate();
     val values = await async.runAll(
         [
@@ -76,15 +76,15 @@ fn run() -> @Task<void> {
             { -> handshake(shared, shared, "opened") },
         ],
     );
-    @print("gate " + values.join(","));
+    print("gate " + values.join(","));
     val open = await async.awaitGate(shared, 10000);
     val closed = await async.awaitGate(async.newGate(), 10);
-    @print("awaitGate " + open.toString() + " " + closed.toString());
+    print("awaitGate " + open.toString() + " " + closed.toString());
     val policy = async.RetryPolicy(4, 100, 1.5, 300);
     val delays = Array
         .range(1, 6)
         .map({ attempt -> pauseText(policy, attempt) });
-    @print("nextDelay " + delays.join(","));
+    print("nextDelay " + delays.join(","));
 }
 
 pub fn main() {

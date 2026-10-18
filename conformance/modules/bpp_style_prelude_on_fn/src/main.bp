@@ -2,7 +2,7 @@
 //// (315): `#[bpp.stylePrelude]` marks the marker `val` the prelude module
 //// declares, and on a function it is refused at the annotation.
 
-import {bpp} from "std";
+import {bpp, io.terminal.print} from "std";
 
 #[bpp.stylePrelude]
 pub fn prelude() -> i32 {
@@ -10,5 +10,5 @@ pub fn prelude() -> i32 {
 }
 
 pub fn main() {
-    @print(prelude());
+    print(prelude());
 }

@@ -9,6 +9,8 @@
 //// typed parameter, an annotation — `.Circle` is that enum's
 //// (`run/variant_leading_dot_expected.bp`).
 
+import {io.terminal.print} from "std";
+
 pub type Shape {
     Circle,
     Square,
@@ -21,5 +23,5 @@ pub type Hole {
 
 pub fn main() {
     val c = .Circle;
-    @print(0);
+    print(0);
 }

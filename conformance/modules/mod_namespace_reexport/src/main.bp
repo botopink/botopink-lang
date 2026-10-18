@@ -1,4 +1,7 @@
 // src/main.bp
+
+import {io.terminal.print} from "std";
+
 pub mod config;
 mod text;
 
@@ -7,7 +10,7 @@ fn show(p: text.Pair) -> string {
 }
 
 fn main() {
-    @print(config.label("x")); // [x]
-    @print(text.splitPath("a/b")); // a b
-    @print(show(text.Pair(a: "c", b: "d"))); // c+d
+    print(config.label("x")); // [x]
+    print(text.splitPath("a/b")); // a b
+    print(show(text.Pair(a: "c", b: "d"))); // c+d
 }

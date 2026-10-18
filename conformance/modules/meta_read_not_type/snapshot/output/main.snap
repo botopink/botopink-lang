@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: typeinfo-meta-type: `metaAll(T)` takes one record type of this module or its imports — `metaAll(Entity)`, `metaAll(orm.Entity)`
-at src/main.bp:21:36
+at src/main.bp:21:52

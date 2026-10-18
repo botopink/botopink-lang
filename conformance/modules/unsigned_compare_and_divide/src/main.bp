@@ -5,6 +5,8 @@
 //// answered at exit 0 as if the high bit were a sign. (`u64`'s `%` is
 //// `codegen/tests/wat.zig`'s: commonJS refuses it at run time, `04-js`'s row.)
 
+import {io.terminal.print} from "std";
+
 fn bigger(a: u32, b: u32) -> u32 {
     if (a > b) return a;
     return b;
@@ -13,16 +15,16 @@ fn bigger(a: u32, b: u32) -> u32 {
 pub fn main() {
     val a: u32 = 3000000000;
     val b: u32 = 7;
-    @print(a > b);
-    @print(a < b);
-    @print(a >= b);
-    @print(b <= a);
-    @print(a / b);
-    @print(a % b);
-    @print(bigger(b, a));
+    print(a > b);
+    print(a < b);
+    print(a >= b);
+    print(b <= a);
+    print(a / b);
+    print(a % b);
+    print(bigger(b, a));
     val w: u64 = 10000000000000000000;
     val v: u64 = 3000000000000000000;
-    @print(w > v);
-    @print(v < w);
-    @print(w / v);
+    print(w > v);
+    print(v < w);
+    print(w / v);
 }

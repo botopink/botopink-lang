@@ -95,10 +95,11 @@ test "decision 8 N20: the type meta-kind still separates its constraints with a 
 test "decision 8 N21: is tests a value in an if condition and in a binding" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f(a: unknown) -> bool {
-        \\    if (a is i32) { @print(a); };
+        \\    if (a is i32) { print(a); };
         \\    val b = a is string;
         \\    return b;
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 

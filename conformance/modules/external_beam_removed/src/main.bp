@@ -3,9 +3,11 @@
 //// variant binds no host and is a located error at the annotation, never an
 //// alias.
 
-#[@external(.Erlang("math:sqrt($0)"), .Beam("math", "sqrt"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("math:sqrt($0)"), .Beam("math", "sqrt"))]
 declare fn root(x: f64) -> f64;
 
 pub fn main() {
-    @print(root(16.0));
+    print(root(16.0));
 }

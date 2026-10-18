@@ -5,18 +5,20 @@
 //// again outside (`variable 'K@1' is unbound`), and a parameter `e` over an
 //// outer `e` left the outer one `E@1` — erlc refused the module.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val k = 5;
     [1].forEach({ e ->
         val k = "l";
-        @print(k)
+        print(k)
     });
-    @print(k);
+    print(k);
     val e = 10;
     [1, 2].forEach({ e ->
-        @print(e)
+        print(e)
     });
     val twice = { e -> e * 2 };
-    @print(twice(3));
-    @print(e);
+    print(twice(3));
+    print(e);
 }

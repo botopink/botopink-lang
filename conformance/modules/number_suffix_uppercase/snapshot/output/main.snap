@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[number-suffix-uppercase]: a numeric suffix is written in lower case
-at src/main.bp:5:15
+at src/main.bp:7:15
 label write `l`

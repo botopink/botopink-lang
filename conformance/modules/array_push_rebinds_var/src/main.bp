@@ -2,6 +2,8 @@
 //// `val` that read the array earlier keeps the array of its moment. A module
 //// `var` and a local `var`, on every target.
 
+import {io.terminal.print} from "std";
+
 var xs: string[] = [];
 
 fn add(s: string) {
@@ -16,11 +18,11 @@ pub fn main() {
     add("a");
     val before = all();
     add("b");
-    @print(before);
-    @print(all());
+    print(before);
+    print(all());
     var ys = [1];
     val snap = ys;
     ys.push(2);
-    @print(snap);
-    @print(ys);
+    print(snap);
+    print(ys);
 }

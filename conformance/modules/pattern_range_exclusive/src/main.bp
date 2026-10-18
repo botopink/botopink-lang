@@ -3,6 +3,8 @@
 //// refused at the range, named, with `1...9` as the hint — never read as an
 //// exclusive range and never as an arm that matches nothing.
 
+import {io.terminal.print} from "std";
+
 fn describe(n: i32) -> string {
     return case n {
         0 {
@@ -18,5 +20,5 @@ fn describe(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(describe(5));
+    print(describe(5));
 }

@@ -6,12 +6,12 @@
 //// which has no wasm binding — STD-001 refuses the call, never the import
 //// (decision 518 (4)).
 
-import {io} from "std";
+import {io, io.terminal.print} from "std";
 import {io.clock as clock} from "std";
 
 pub fn main() {
     val t = io.clock.nowMillis();
-    @print(t > 0);
-    @print(io.clock.toMillis(io.clock.seconds(2)));
-    @print(clock.nowMillis() >= t);
+    print(t > 0);
+    print(io.clock.toMillis(io.clock.seconds(2)));
+    print(clock.nowMillis() >= t);
 }

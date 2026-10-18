@@ -1,32 +1,32 @@
 //// An `await` inside a `case` arm of a `@Task` function suspends the task and resumes
 //// into the arm — in a generic function, a non-generic one, an `if` branch and a nested `case`.
 
-import {async.delay} from "std";
+import {async.delay, io.terminal.print} from "std";
 
-fn double(n: i32) -> @Task<i32> {
+fn double(n: i32) -> Task<i32> {
     return delay(1, n * 2);
 }
 
-fn viaCase<T>(r: @Result<@Task<T>, string>, fallback: T) -> @Task<T> {
+fn viaCase<T>(r: Result<Task<T>, string>, fallback: T) -> Task<T> {
     case r {
         Ok(t) -> return await t;
         Error(_) -> return fallback;
     }
 }
 
-fn plainCase(r: @Result<@Task<i32>, string>) -> @Task<i32> {
+fn plainCase(r: Result<Task<i32>, string>) -> Task<i32> {
     case r {
         Ok(t) -> return await t;
         Error(_) -> return 0 - 1;
     }
 }
 
-fn viaIf(flag: bool, t: @Task<i32>) -> @Task<i32> {
+fn viaIf(flag: bool, t: Task<i32>) -> Task<i32> {
     if (flag) return await t;
     return 0;
 }
 
-fn nested(a: @Result<@Task<i32>, string>, b: @Result<@Task<i32>, string>) -> @Task<i32> {
+fn nested(a: Result<Task<i32>, string>, b: Result<Task<i32>, string>) -> Task<i32> {
     case a {
         Ok(x) -> case b {
             Ok(y) -> return await y;
@@ -36,7 +36,7 @@ fn nested(a: @Result<@Task<i32>, string>, b: @Result<@Task<i32>, string>) -> @Ta
     }
 }
 
-fn viaCaseValue(r: @Result<@Task<i32>, string>) -> @Task<i32> {
+fn viaCaseValue(r: Result<Task<i32>, string>) -> Task<i32> {
     val v = case r {
         Ok(t) -> await t;
         Error(_) -> 7;
@@ -44,39 +44,39 @@ fn viaCaseValue(r: @Result<@Task<i32>, string>) -> @Task<i32> {
     return v + 1;
 }
 
-fn present() -> @Result<@Task<i32>, string> {
+fn present() -> Result<Task<i32>, string> {
     return double(21);
 }
 
-fn absent() -> @Result<@Task<i32>, string> {
+fn absent() -> Result<Task<i32>, string> {
     throw "none";
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val ok = present();
     val no = absent();
     val r1 = await viaCase(ok, 5);
-    @print(r1);
+    print(r1);
     val r2 = await viaCase(no, 5);
-    @print(r2);
+    print(r2);
     val r3 = await plainCase(ok);
-    @print(r3);
+    print(r3);
     val r4 = await plainCase(no);
-    @print(r4);
+    print(r4);
     val r5 = await viaIf(true, double(4));
-    @print(r5);
+    print(r5);
     val r6 = await viaIf(false, double(4));
-    @print(r6);
+    print(r6);
     val r7 = await nested(ok, ok);
-    @print(r7);
+    print(r7);
     val r8 = await nested(ok, no);
-    @print(r8);
+    print(r8);
     val r9 = await nested(no, ok);
-    @print(r9);
+    print(r9);
     val r10 = await viaCaseValue(ok);
-    @print(r10);
+    print(r10);
     val r11 = await viaCaseValue(no);
-    @print(r11);
+    print(r11);
 }
 
 pub fn main() {

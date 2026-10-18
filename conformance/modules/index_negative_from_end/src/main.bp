@@ -4,22 +4,24 @@
 //// `xs[i]` is `xs.at(i)`, so it reads the same; `String.at` / `s[i]` too.
 //// `Dict.at` is by key and has no position to count from.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2, 3];
-    @print(xs.at(-1));
-    @print(xs.at(-3));
-    @print(xs.at(-4));
-    @print(xs.at(3));
-    @print(xs[-2]);
+    print(xs.at(-1));
+    print(xs.at(-3));
+    print(xs.at(-4));
+    print(xs.at(3));
+    print(xs[-2]);
     val i = -1;
-    @print(xs.at(i));
+    print(xs.at(i));
     val s = "abc";
-    @print(s.at(-1));
-    @print(s.at(-3));
-    @print(s.at(-4));
-    @print(s.at(3));
-    @print(s[-2]);
+    print(s.at(-1));
+    print(s.at(-3));
+    print(s.at(-4));
+    print(s.at(3));
+    print(s[-2]);
     val names = ["ana", "bia"];
-    @print(names.at(-1));
-    @print(names[-3]);
+    print(names.at(-1));
+    print(names[-3]);
 }

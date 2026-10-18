@@ -4,21 +4,23 @@
 //// overrides still evaluated, though its field is the spread's — the fields
 //// apply left to right, the later winning.
 
+import {io.terminal.print} from "std";
+
 type Pessoa(nome: string, idade: i32)
 
 fn diz(texto: string) -> string {
-    @print(texto);
+    print(texto);
     return texto;
 }
 
 fn faz() -> Pessoa {
-    @print("faz");
+    print("faz");
     return Pessoa(nome: "Ana", idade: 3);
 }
 
 pub fn main() {
     val p = Pessoa(nome: diz("n"), ..faz());
-    @print(p);
+    print(p);
     val q = Pessoa(..faz(), nome: diz("m"));
-    @print(q);
+    print(q);
 }

@@ -2,6 +2,8 @@
 //// field called `tag`, of a plain or a generic record, is a field like any other, and a variant of
 //// an enum still prints as `Enum.Variant(…)`. commonJS printed `Box.t(value: 1, tag: "t")`.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T, tag: string)
 
 type Label(tag: string, size: i32)
@@ -12,10 +14,10 @@ type Shape {
 }
 
 pub fn main() {
-    @print(Box(value: 1, tag: "t"));
-    @print(Box(value: "s", tag: "u"));
-    @print(Label(tag: "big", size: 3));
-    @print([Label(tag: "a", size: 1)]);
-    @print(Shape.Circle(radius: 2));
-    @print(Shape.Dot);
+    print(Box(value: 1, tag: "t"));
+    print(Box(value: "s", tag: "u"));
+    print(Label(tag: "big", size: 3));
+    print([Label(tag: "a", size: 1)]);
+    print(Shape.Circle(radius: 2));
+    print(Shape.Dot);
 }

@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 fn graph(syntax decl: unknown) {
     var names: string[] = [];
@@ -12,17 +12,17 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: names));
 }
 
-fn session() -> @Component<string> {
+fn session() -> Component<string> {
     return "alice";
 }
 
-fn user() -> @Component<string> {
+fn user() -> Component<string> {
     val s = use session();
     return "user " + s;
 }
 
 #[graph]
-pub fn Page() -> @Component<Element> {
+pub fn Page() -> Component<Element> {
     val u = use user();
     return Element(text: u);
 }

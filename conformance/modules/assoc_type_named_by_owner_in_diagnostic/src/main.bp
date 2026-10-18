@@ -2,7 +2,7 @@
 //// owner's path, `City.Columns`, as it is written — never as the top-level
 //// type it is hoisted into (144 B-19).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn columns(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
@@ -13,5 +13,5 @@ type City(name: string)
 
 pub fn main() {
     val c = City.Columns(id: "a");
-    @print(c.nope);
+    print(c.nope);
 }

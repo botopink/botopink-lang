@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 fn box() -> #(value: i32) {
     val value = 1;
     return #(value); // the variable lends the label
@@ -9,5 +11,5 @@ fn read() -> i32 {
 }
 
 pub fn main() {
-    @print(read()); // 1
+    print(read()); // 1
 }

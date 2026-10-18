@@ -2,8 +2,10 @@
 //// `val` named like a primitive type is refused at its name, as a `fn` is.
 //// The parent binary accepted it and printed `3`.
 
+import {io.terminal.print} from "std";
+
 val i64 = 3;
 
 pub fn main() {
-    @print(i64);
+    print(i64);
 }

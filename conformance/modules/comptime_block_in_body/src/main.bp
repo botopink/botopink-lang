@@ -5,31 +5,33 @@
 //// (`x is not defined`), and refused it on wasm (no lowering for
 //// `comptimeBlock`).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val d = comptime {
         val x = 3;
         x * 4
     };
-    @print(d);
+    print(d);
     val s = comptime {
         val a = "ab";
         var b = a + "c";
         b = b + "d";
         b
     };
-    @print(s);
+    print(s);
     val f = comptime {
         val r = 1.5;
         if (r > 1.0) r * -2.0 else 0.0
     };
-    @print(f);
+    print(f);
     val w: i64 = comptime {
         val big = 3000000000l;
         big * 2l
     };
-    @print(w + 1l);
+    print(w + 1l);
     val xs = comptime { [1, 2, 3] };
-    @print(xs.length());
+    print(xs.length());
     val n = comptime -7 + 2;
-    @print(n);
+    print(n);
 }

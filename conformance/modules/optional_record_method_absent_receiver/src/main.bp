@@ -6,6 +6,8 @@
 //// is a primitive receiver, `modules/optional_enum_method_absent_receiver`
 //// an enum with payloads).
 
+import {io.terminal.print} from "std";
+
 type P(x: i32) {
     fn twice(self: Self) -> i32 {
         return self.x * 2;
@@ -47,18 +49,18 @@ fn col(c: i32) -> ?C {
 }
 
 pub fn main() {
-    @print(p(true)?.twice());
-    @print(p(true)?.half() ?? -1.0);
-    @print(p(false)?.half() ?? -1.0);
-    @print(p(true)?.zero() ?? false);
-    @print(p(false)?.zero() ?? false);
-    @print(p(true)?.maybe() ?? -1);
-    @print(p(false)?.maybe() ?? -1);
-    @print(p(true)?.me()?.x ?? -1);
-    @print(p(false)?.me()?.x ?? -1);
-    @print(col(1)?.n() ?? -1);
-    @print(col(2)?.n() ?? -1);
-    @print(col(0)?.n() ?? -1);
+    print(p(true)?.twice());
+    print(p(true)?.half() ?? -1.0);
+    print(p(false)?.half() ?? -1.0);
+    print(p(true)?.zero() ?? false);
+    print(p(false)?.zero() ?? false);
+    print(p(true)?.maybe() ?? -1);
+    print(p(false)?.maybe() ?? -1);
+    print(p(true)?.me()?.x ?? -1);
+    print(p(false)?.me()?.x ?? -1);
+    print(col(1)?.n() ?? -1);
+    print(col(2)?.n() ?? -1);
+    print(col(0)?.n() ?? -1);
     val q = p(true);
-    @print(q?.twice() ?? 7);
+    print(q?.twice() ?? 7);
 }

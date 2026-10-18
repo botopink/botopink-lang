@@ -9,6 +9,7 @@
 
 pub mod sink;
 import {sink.ChunkWriter, sink.File, sink.writer};
+import {io.terminal.print} from "std";
 
 fn emit(out: ChunkWriter, x: string) -> string {
     return out.write(x);
@@ -16,7 +17,7 @@ fn emit(out: ChunkWriter, x: string) -> string {
 
 pub fn main() {
     val w = writer("> ");
-    @print(w.write("a"));
-    @print(emit(w, "b"));
-    @print(File(path: "p").write("c"));
+    print(w.write("a"));
+    print(emit(w, "b"));
+    print(File(path: "p").write("c"));
 }

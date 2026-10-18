@@ -3,13 +3,15 @@
 //// the rest read from the source, whatever order the labels are written in
 //// (question B-14-a as built).
 
+import {io.terminal.print} from "std";
+
 type Pessoa(nome: string, idade: i32)
 
 pub fn main() {
     val ana = Pessoa(nome: "Ana", idade: 3);
     val a = Pessoa(..ana, nome: "Bia");
     val b = Pessoa(..ana, idade: 3, nome: "Bia");
-    @print(a);
-    @print(b);
-    @print(a == b);
+    print(a);
+    print(b);
+    print(a == b);
 }

@@ -4,7 +4,7 @@
 //// `CustomNode` at the hole. A mistyped hole, `cssValue(true)`, is refused
 //// at the hole.
 
-import {compiler.CustomNode, compiler.Span, compiler} from "std";
+import {compiler.CustomNode, compiler.Span, compiler, io.terminal.print} from "std";
 
 fn cssValue(v: string) -> string {
     return v;
@@ -55,6 +55,6 @@ fn css(syntax q: string) -> string {
 val color = "red";
 
 pub fn main() {
-    @print(css @`color: ${color};`);
-    @print(css @`flag: ${true};`);
+    print(css @`color: ${color};`);
+    print(css @`flag: ${true};`);
 }

@@ -10,6 +10,8 @@
 //// printed as its cell's address read as a float. A float slot now holds the
 //// address of the float's own 8-byte cell.
 
+import {io.terminal.print} from "std";
+
 type P(x: f64, n: i32)
 
 type Shape {
@@ -19,45 +21,45 @@ type Shape {
 
 pub fn main() {
     val xs = [1.1, 2.2];
-    @print(xs);
-    @print(xs[0]);
-    @print(xs.at(1));
-    @print(xs.first());
-    @print(xs.map({ x -> x * 3.0 }));
-    @print(xs.fold(0.0, { a, x -> a + x }));
+    print(xs);
+    print(xs[0]);
+    print(xs.at(1));
+    print(xs.first());
+    print(xs.map({ x -> x * 3.0 }));
+    print(xs.fold(0.0, { a, x -> a + x }));
     for (xs) { x ->
-        @print(x);
+        print(x);
     }
-    @print(xs.indexOf(2.2));
-    @print(xs.lastIndexOf(1.1));
-    @print(xs.contains(1.1));
-    @print(xs.join(","));
-    @print([1.1, 1.1, 2.2].unique());
-    @print(xs.fill(0.3));
-    @print(xs.filter({ x -> x > 2.0 }));
+    print(xs.indexOf(2.2));
+    print(xs.lastIndexOf(1.1));
+    print(xs.contains(1.1));
+    print(xs.join(","));
+    print([1.1, 1.1, 2.2].unique());
+    print(xs.fill(0.3));
+    print(xs.filter({ x -> x > 2.0 }));
     var ys: Array<f64> = [];
     ys.push(0.1);
-    @print(ys);
+    print(ys);
     val t = #(1.1, "a");
-    @print(t);
-    @print(t.0);
+    print(t);
+    print(t.0);
     val #(a, b) = t;
-    @print(a, b);
-    @print(Shape.Circle(r: 1.1));
+    print(a, b);
+    print(Shape.Circle(r: 1.1));
     case Shape.Circle(r: 2.2) {
-        Shape.Circle(r) -> @print(r);
-        Shape.Dot -> @print(0.0);
+        Shape.Circle(r) -> print(r);
+        Shape.Dot -> print(0.0);
     }
-    @print(P(x: 1.1, n: 2));
-    @print(P(x: 1.1, n: 2) == P(x: 1.1, n: 2));
+    print(P(x: 1.1, n: 2));
+    print(P(x: 1.1, n: 2) == P(x: 1.1, n: 2));
     val o: ?f64 = 1.1;
-    @print(o);
-    @print(o ?? 0.0 + 1.0);
-    @print(o == 1.1);
+    print(o);
+    print(o ?? 0.0 + 1.0);
+    print(o == 1.1);
     if (o) {
         v ->
-        @print(v * 2.0);
+        print(v * 2.0);
     }
     val r = 1.1;
-    @print([1, 2].map({ x -> r * 2.0 }));
+    print([1, 2].map({ x -> r * 2.0 }));
 }

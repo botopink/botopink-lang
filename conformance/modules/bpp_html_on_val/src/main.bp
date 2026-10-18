@@ -2,11 +2,11 @@
 //// file's markup unfolds onto; on a `val` (a decorator that runs since 356)
 //// it is refused at the annotation.
 
-import {bpp} from "std";
+import {bpp, io.terminal.print} from "std";
 
 #[bpp.html]
 pub val page = 1;
 
 pub fn main() {
-    @print(page);
+    print(page);
 }

@@ -5,7 +5,7 @@
 //// code fits, and the call keeps the built type (`string[]`, not
 //// `unknown[]`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn data<T>(syntax q: string) -> T {
     if (compiler.text(q) == "names")
@@ -20,8 +20,8 @@ fn listed(syntax q: string) -> unknown[] {
 pub fn main() {
     val names = data @`names`;
     val n = data @`count`;
-    @print(names.join(","));
-    @print((n + 1).toString());
+    print(names.join(","));
+    print((n + 1).toString());
     val xs = listed @`solo`;
-    @print(xs.join("") + "!");
+    print(xs.join("") + "!");
 }

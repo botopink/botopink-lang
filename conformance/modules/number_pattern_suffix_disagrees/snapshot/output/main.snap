@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: the pattern `1l` is an `i64` literal and the subject is `i32`
-at src/main.bp:6:9
+at src/main.bp:8:9

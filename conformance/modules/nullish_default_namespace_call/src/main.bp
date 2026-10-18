@@ -3,7 +3,7 @@
 //// own (`names.fallback()`). It is a call of that module's function, run
 //// only when the left side is absent — never a method call on the namespace.
 
-import {path} from "std";
+import {path, io.terminal.print} from "std";
 
 mod names;
 
@@ -12,10 +12,10 @@ fn find(key: string) -> ?string {
 }
 
 pub fn main() {
-    @print(find("a") ?? path.basename("/srv/data.txt"));
-    @print(find("b") ?? path.basename("/srv/data.txt"));
-    @print((find("b") ?? path.dirname("/srv/data.txt")).length());
-    @print(find("a") ?? names.fallback());
+    print(find("a") ?? path.basename("/srv/data.txt"));
+    print(find("b") ?? path.basename("/srv/data.txt"));
+    print((find("b") ?? path.dirname("/srv/data.txt")).length());
+    print(find("a") ?? names.fallback());
     val who = find("b") ?? names.fallback();
-    @print(who);
+    print(who);
 }

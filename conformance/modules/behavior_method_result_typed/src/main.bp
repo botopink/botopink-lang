@@ -2,6 +2,8 @@
 //// type: `x.name()` is a `string`, and binding it to an `i32` is refused. It
 //// was a fresh variable and checked.
 
+import {io.terminal.print} from "std";
+
 behavior Named {
     fn name(self: Self) -> string;
 }
@@ -14,7 +16,7 @@ type Dog(n: string) implement Named {
 
 fn show(x: Named) {
     val s: i32 = x.name();
-    @print(s);
+    print(s);
 }
 
 pub fn main() {

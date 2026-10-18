@@ -10,22 +10,24 @@
 //// erlang target's), which every value below shares with commonJS; the forms
 //// where the two differ (`5.0`, `1.0e21`) are pinned in `codegen/tests/wat.zig`.
 
+import {io.terminal.print} from "std";
+
 fn id(x: f64) -> f64 {
     return x;
 }
 
 pub fn main() {
-    @print(0.1 + 0.2);
-    @print(1.0 / 3.0);
-    @print(id(2.0) / 3.0);
-    @print(0.26642920868471265);
-    @print(123456789012.5);
-    @print(4294967296.5);
-    @print(100.0);
-    @print(id(-2.5));
-    @print(id(0.1) * 3.0);
-    @print((0.1 + 0.2).toString());
-    @print("x" + 2.5);
-    @print("x" + (1.0 / 3.0));
-    @print([0.1, 1.0 / 3.0]);
+    print(0.1 + 0.2);
+    print(1.0 / 3.0);
+    print(id(2.0) / 3.0);
+    print(0.26642920868471265);
+    print(123456789012.5);
+    print(4294967296.5);
+    print(100.0);
+    print(id(-2.5));
+    print(id(0.1) * 3.0);
+    print((0.1 + 0.2).toString());
+    print("x" + 2.5);
+    print("x" + (1.0 / 3.0));
+    print([0.1, 1.0 / 3.0]);
 }

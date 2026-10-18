@@ -21,20 +21,22 @@
 //// rename (the node symbol equals the botopink name), so it pins that the
 //// element type reaching the lambda is what dispatches, not the rename table.
 
+import {io.terminal.print} from "std";
+
 type Item(name: string)
 
 pub fn main() {
     val names = ["box", "cup", "axe"];
 
-    @print("box".contains("x"));
+    print("box".contains("x"));
 
     val it = Item(name: "box");
-    @print(it.name.contains("x"));
+    print(it.name.contains("x"));
 
-    @print(names.filter({ s -> s.contains("x") }).join(","));
+    print(names.filter({ s -> s.contains("x") }).join(","));
 
-    @print(names.filter({ s -> s.startsWith("c") }).join(","));
+    print(names.filter({ s -> s.startsWith("c") }).join(","));
 
     val items = [Item(name: "box"), Item(name: "cup"), Item(name: "axe")];
-    @print(items.filter({ e -> e.name.contains("x") }).length);
+    print(items.filter({ e -> e.name.contains("x") }).length);
 }

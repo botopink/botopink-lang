@@ -6,20 +6,20 @@
 //// error and `try` propagates it. `reject/effect_annotation_removed_result.bp`
 //// is the old spelling.
 
-fn check(n: i32) -> @Result<i32, string> {
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn doubled(n: i32) -> @Result<i32, string> {
+fn doubled(n: i32) -> Result<i32, string> {
     val v = try check(n);
     return v * 2;
 }
 
 fn firstOk(
-    a: @Result<i32, string>,
-    b: @Result<i32, string>,
-) -> @Result<i32, string> {
+    a: Result<i32, string>,
+    b: Result<i32, string>,
+) -> Result<i32, string> {
     if (a.isOk()) return a;
     return b;
 }

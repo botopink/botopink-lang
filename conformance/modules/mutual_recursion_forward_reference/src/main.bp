@@ -4,11 +4,13 @@
 //// case followed by the recursive tail call, so a backend that ends the function
 //// in an else-less `if` statement's false branch answers wrongly.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print(isEven(10));
-    @print(isOdd(10));
-    @print(isEven(7));
-    @print(isOdd(7));
+    print(isEven(10));
+    print(isOdd(10));
+    print(isEven(7));
+    print(isOdd(7));
 }
 
 fn isEven(n: i32) -> bool {

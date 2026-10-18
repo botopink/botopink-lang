@@ -5,6 +5,8 @@
 //// nothing. `@block`'s `return` was the block's value
 //// (`modules/block_builtin_removed`).
 
+import {io.terminal.print} from "std";
+
 fn grade(n: i32) -> string {
     val label = {
         if (n > 5) return "high";
@@ -52,20 +54,20 @@ fn skipTwo() -> i32 {
 
 fn early() {
     {
-        @print("inside");
+        print("inside");
         return;
     }
-    @print("never");
+    print("never");
 }
 
 pub fn main() {
-    @print(grade(9));
-    @print(grade(1));
-    @print(classify(0));
-    @print(classify(3));
-    @print(nested(4));
-    @print(nested(-1));
-    @print(skipTwo());
+    print(grade(9));
+    print(grade(1));
+    print(classify(0));
+    print(classify(3));
+    print(nested(4));
+    print(nested(-1));
+    print(skipTwo());
     early();
-    @print("after");
+    print("after");
 }

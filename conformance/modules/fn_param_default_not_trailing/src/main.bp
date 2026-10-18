@@ -2,10 +2,12 @@
 //// was: a parameter without a default after one with a default is refused at
 //// that parameter.
 
+import {io.terminal.print} from "std";
+
 fn lead(a: i32 = 1, b: i32) -> i32 {
     return a + b;
 }
 
 pub fn main() {
-    @print(lead(b: 2));
+    print(lead(b: 2));
 }

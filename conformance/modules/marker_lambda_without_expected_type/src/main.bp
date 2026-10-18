@@ -2,13 +2,15 @@
 //// written. `f` is bound with no type and the lambda writes none, so it is
 //// refused at its marker, `marker-lambda-without-expected-type`.
 
-fn double(x: i32) -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn double(x: i32) -> Task<i32> {
     return x * 2;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val f = async { x ->
         await double(x)
     };
-    @print(await f(2));
+    print(await f(2));
 }

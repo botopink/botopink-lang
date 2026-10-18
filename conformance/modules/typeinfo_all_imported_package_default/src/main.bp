@@ -4,7 +4,8 @@
 //// this module's scope and fail at the use (`unbound variable 'cat'`).
 
 import cat from "cat";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(cat @`x`);
+    print(cat @`x`);
 }

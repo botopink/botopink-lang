@@ -3,6 +3,8 @@
 //// `floor`: the parent row failed a commonJS build with a bare `TypeError`.
 //// A pin: the row no longer reproduces, the cell guards it on every target.
 
+import {io.terminal.print} from "std";
+
 val t = "a b".split(" ");
 
 fn half(x: f64) -> f64 {
@@ -14,7 +16,7 @@ fn count() -> i32 {
 }
 
 pub fn main() {
-    @print(count());
-    @print(t.at(1) ?? "?");
-    @print(half(3.7));
+    print(count());
+    print(t.at(1) ?? "?");
+    print(half(3.7));
 }

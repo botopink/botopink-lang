@@ -1,6 +1,8 @@
 //// Decision 247 — a suffixed number pattern is its suffix's type: `1l` is an
 //// `i64` and cannot match an `i32` subject.
 
+import {io.terminal.print} from "std";
+
 fn kind(n: i32) -> string {
     return case n {
         1l -> "one";
@@ -9,5 +11,5 @@ fn kind(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(kind(1));
+    print(kind(1));
 }

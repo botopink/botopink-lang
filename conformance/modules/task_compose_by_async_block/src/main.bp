@@ -4,16 +4,18 @@
 //// binds one task into another. Every
 //// composition reads the same on every target.
 
-fn load(n: i32) -> @Task<@Result<i32, string>> {
+import {io.terminal.print} from "std";
+
+fn load(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
 fn show(label: string, n: i32) {
-    @print(label + " " + n.toString());
+    print(label + " " + n.toString());
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val safeGood = async {
         val v = try await load(5) catch 0;
         return v;

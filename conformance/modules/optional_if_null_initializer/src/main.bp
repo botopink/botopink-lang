@@ -3,6 +3,8 @@
 //// `false` included — as a `val` / `var` initializer, an assignment and a
 //// `return`, an `else if` chain and a float payload too, on every target.
 
+import {io.terminal.print} from "std";
+
 fn pick(c: bool) -> ?i32 {
     return if (c) 0 else null;
 }
@@ -19,20 +21,20 @@ pub fn main() {
     val words = ["alpha", "be"];
     val n: ?i32 = if (words.length() > 5) 3 else null;
     val z: ?i32 = if (words.length() > 1) 0 else null;
-    @print(n ?? -1);
-    @print(z ?? -1);
-    @print(pick(false) ?? -1);
-    @print(pick(true) ?? -1);
-    @print(grade(20) ?? -1);
-    @print(grade(7) ?? -1);
-    @print(grade(1) ?? -1);
-    @print(half(true) ?? -1.0);
-    @print(half(false) ?? -1.0);
+    print(n ?? -1);
+    print(z ?? -1);
+    print(pick(false) ?? -1);
+    print(pick(true) ?? -1);
+    print(grade(20) ?? -1);
+    print(grade(7) ?? -1);
+    print(grade(1) ?? -1);
+    print(half(true) ?? -1.0);
+    print(half(false) ?? -1.0);
     var m: ?i32 = null;
     m = if (pick(true) != null) 0 else null;
-    @print(m ?? -1);
+    print(m ?? -1);
     val b: ?bool = if (words.length() > 5) false else null;
-    @print(b ?? true);
-    @print(n);
-    @print(z);
+    print(b ?? true);
+    print(n);
+    print(z);
 }

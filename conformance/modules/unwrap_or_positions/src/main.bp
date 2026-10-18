@@ -8,6 +8,8 @@
 //// or not (`if-operand`): the branch is bound by a `val` and the group reads
 //// `( … unwrapOr … ).v`.
 
+import {io.terminal.print} from "std";
+
 type R(v: string)
 
 type Box(items: Array<R>, sizes: Array<i32>) {
@@ -63,19 +65,19 @@ fn inverted(flags: Array<bool>) -> bool {
 
 pub fn main() {
     val b = Box(items: [R(v: ""), R(v: "a")], sizes: [4, 5]);
-    @print(b.firstV());
-    @print(Box(items: [], sizes: []).firstV());
-    @print(b.size(1));
-    @print(b.size(2));
-    @print(b.pick(true));
-    @print(b.pick(false));
-    @print(Box(items: [], sizes: []).pick(true));
-    @print(b.nested());
-    @print(b.pairs());
-    @print(pick([R(v: "x")], true));
-    @print(pick([], true));
-    @print(nested([1], [4]));
-    @print(nested([], []));
-    @print(negated([]));
-    @print(inverted([]));
+    print(b.firstV());
+    print(Box(items: [], sizes: []).firstV());
+    print(b.size(1));
+    print(b.size(2));
+    print(b.pick(true));
+    print(b.pick(false));
+    print(Box(items: [], sizes: []).pick(true));
+    print(b.nested());
+    print(b.pairs());
+    print(pick([R(v: "x")], true));
+    print(pick([], true));
+    print(nested([1], [4]));
+    print(nested([], []));
+    print(negated([]));
+    print(inverted([]));
 }

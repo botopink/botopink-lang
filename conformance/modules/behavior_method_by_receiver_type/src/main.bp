@@ -13,6 +13,8 @@
 //// On all four targets: wasm, which trapped at a method called through a
 //// behavior-typed value, reads the type from the value's header.
 
+import {io.terminal.print} from "std";
+
 pub behavior Source {
     fn query(self: Self, name: string) -> string;
 }
@@ -45,11 +47,11 @@ fn open(disk: bool) -> Source {
 }
 
 pub fn main() {
-    @print(read(Memory(prefix: "m")));
-    @print(read(Disk(root: "/d")));
+    print(read(Memory(prefix: "m")));
+    print(read(Disk(root: "/d")));
     val s = open(true);
-    @print(s.query("x"));
+    print(s.query("x"));
     val t = open(false);
-    @print(t.query("y"));
-    @print(Table(rows: "r").query("z"));
+    print(t.query("y"));
+    print(Table(rows: "r").query("z"));
 }

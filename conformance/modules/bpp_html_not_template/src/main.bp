@@ -2,7 +2,7 @@
 //// `@ExprCustom<R>` (275 reads `R` from it): a plain function is refused at
 //// the annotation, naming what it answers.
 
-import {bpp} from "std";
+import {bpp, io.terminal.print} from "std";
 
 #[bpp.html]
 pub fn page() -> i32 {
@@ -10,5 +10,5 @@ pub fn page() -> i32 {
 }
 
 pub fn main() {
-    @print(page());
+    print(page());
 }

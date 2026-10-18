@@ -4,12 +4,12 @@
 //// would read std's `Order` as this module's. Refused at the call
 //// (`run/std_namespace_beside_own_type` is the accepted half).
 
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 
 type Order(rank: i32)
 
 pub fn main() {
     val o = Order(rank: 1);
-    @print(o.rank);
+    print(o.rank);
     val s = collections.lt();
 }

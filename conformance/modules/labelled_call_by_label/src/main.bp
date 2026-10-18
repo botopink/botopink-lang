@@ -12,9 +12,9 @@
 
 pub mod helper;
 import {helper.describe, helper.Box};
-import {testing.asserts} from "std";
+import {testing.asserts, io.terminal.print} from "std";
 
-fn verdict(r: @Result<void, string>) -> string {
+fn verdict(r: Result<void, string>) -> string {
     return case r {
         Ok(_) -> "ok";
         Error(_) -> "refused";
@@ -22,11 +22,11 @@ fn verdict(r: @Result<void, string>) -> string {
 }
 
 pub fn main() {
-    @print(Box.make(count: 3, label: "b="));
-    @print(describe(s: "a=", n: 1));
-    @print(helper.describe(s: "c=", n: 4));
-    @print(helper.pad("p"));
-    @print(helper.pad(width: 7, s: "q"));
-    @print(verdict(asserts.greaterThan(bound: 5, actual: 3)));
-    @print(verdict(asserts.greaterThan(bound: 3, actual: 5)));
+    print(Box.make(count: 3, label: "b="));
+    print(describe(s: "a=", n: 1));
+    print(helper.describe(s: "c=", n: 4));
+    print(helper.pad("p"));
+    print(helper.pad(width: 7, s: "q"));
+    print(verdict(asserts.greaterThan(bound: 5, actual: 3)));
+    print(verdict(asserts.greaterThan(bound: 3, actual: 5)));
 }

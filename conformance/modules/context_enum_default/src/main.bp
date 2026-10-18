@@ -2,9 +2,9 @@
 //// `comptime createContext(Mode.Light)` declares `Mode`'s default, read
 //// outside every provider, and `Dark` provides `Mode.Dark` below it.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 type Mode {
     Light,
@@ -20,20 +20,20 @@ fn name(m: Mode) -> string {
     };
 }
 
-fn Label() -> @Component<View> {
+fn Label() -> Component<View> {
     val m = use context(Mode);
     return View(text: name(m));
 }
 
-fn Dark() -> @Component<View> {
+fn Dark() -> Component<View> {
     use provide(createContext(Mode.Dark));
     val l = Label();
     return View(text: l.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val l = await Label();
-    @print(l.text);
+    print(l.text);
     val d = await Dark();
-    @print(d.text);
+    print(d.text);
 }

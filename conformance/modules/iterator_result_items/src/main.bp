@@ -9,18 +9,20 @@
 //// `parseAll` yields each `@Result` as is, so the items after an error are
 //// still emitted.
 
-fn check(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
-fn parseAll(xs: i32[]) -> @Iterator<@Result<i32, string>> {
+fn parseAll(xs: i32[]) -> Iterator<Result<i32, string>> {
     for (xs) { x ->
         yield check(x);
     }
 }
 
-fn sum(xs: i32[]) -> @Result<i32, string> {
+fn sum(xs: i32[]) -> Result<i32, string> {
     var total = 0;
     for (parseAll(xs)) { r ->
         val v = try r;
@@ -32,16 +34,16 @@ fn sum(xs: i32[]) -> @Result<i32, string> {
 fn printAll(xs: i32[]) {
     for (parseAll(xs)) { r ->
         case r {
-            Ok(v) -> @print(v);
-            Error(e) -> @print("error: " + e);
+            Ok(v) -> print(v);
+            Error(e) -> print("error: " + e);
         }
     }
 }
 
-fn show(r: @Result<i32, string>) {
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("sum " + v.toString());
-        Error(e) -> @print("sum failed: " + e);
+        Ok(v) -> print("sum " + v.toString());
+        Error(e) -> print("sum failed: " + e);
     }
 }
 

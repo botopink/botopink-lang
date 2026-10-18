@@ -3,7 +3,7 @@
 //// annotation; the fix-it is the prefix `stream`. The new form is
 //// `run/stream_loop_no_failure.bp`.
 
-fn tick(n: i32) -> @Task<i32> { return n; }
+fn tick(n: i32) -> Task<i32> { return n; }
 
 pub fn main() {
     var n = 0;

@@ -4,7 +4,7 @@
 //// is the program's to evaluate. It is spliced where the member uses it —
 //// evaluated at run time, each time and only when that use is reached.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
@@ -20,7 +20,7 @@ fn check<T>(
 }
 
 fn t(key: string) -> string {
-    @print("t(" + key + ")");
+    print("t(" + key + ")");
     if (key == "signup.mismatch") return "the passwords differ";
     return key;
 }
@@ -33,11 +33,11 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print("start");
+    print("start");
     val ok = Signup(password: "abc", confirm: "abc").validate();
-    @print(ok.length);
+    print(ok.length);
     val bad = Signup(password: "abc", confirm: "abd").validate();
-    bad.forEach({ v -> @print(v.message) });
+    bad.forEach({ v -> print(v.message) });
     val again = Signup(password: "x", confirm: "y").validate();
-    @print(again.length);
+    print(again.length);
 }

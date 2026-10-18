@@ -1,9 +1,11 @@
 //// Narrowed to erlang and beam: `magnitude` is bound for the BEAM alone, so
 //// commonJS and wasm refuse the cell on a host binding — the audit checks it.
 
-#[@external(.Erlang("erlang:abs($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("erlang:abs($0)"))]
 declare fn magnitude(n: i32) -> i32;
 
 pub fn main() {
-    @print(magnitude(0 - 7));
+    print(magnitude(0 - 7));
 }

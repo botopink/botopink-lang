@@ -2,7 +2,9 @@
 //// is refused at the operator, naming the type: `s?.length()` with
 //// `s: string` says something the program does not mean.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val s = "abc";
-    @print(s?.length());
+    print(s?.length());
 }

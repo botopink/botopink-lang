@@ -12,6 +12,7 @@ import {marks.registered};
 import {registry.names};
 import {alpha.first};
 import {beta.second};
+import {io.terminal.print} from "std";
 
 #[registered]
 pub fn own() -> string {
@@ -19,6 +20,6 @@ pub fn own() -> string {
 }
 
 pub fn main() {
-    @print(names());
-    @print(first() + " " + second() + " " + own());
+    print(names());
+    print(first() + " " + second() + " " + own());
 }

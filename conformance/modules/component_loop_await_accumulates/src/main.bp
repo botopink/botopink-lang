@@ -3,17 +3,19 @@
 //// `spliced`. The `for` body is a lambda that closes over `out` and `k`; every
 //// target answers the joined text.
 
-pub type Piece(text: string) implement @Renderable
+import {io.terminal.print} from "std";
+
+pub type Piece(text: string) implement Renderable
 
 fn piece(s: string) -> Piece {
     return Piece(text: s);
 }
 
-pub fn Item(s: string) -> @Component<Piece> {
+pub fn Item(s: string) -> Component<Piece> {
     return piece(s);
 }
 
-fn joined(texts: string[], parts: string[]) -> @Component<string> {
+fn joined(texts: string[], parts: string[]) -> Component<string> {
     var out = texts.at(0) ?? "";
     var k = 0;
     for (parts) { s ->
@@ -24,7 +26,7 @@ fn joined(texts: string[], parts: string[]) -> @Component<string> {
     return out;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val s = await joined(["<", "|", "|", ">"], ["a", "b", "c"]);
-    @print(s);
+    print(s);
 }

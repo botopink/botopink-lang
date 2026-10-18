@@ -1,5 +1,8 @@
 // hello — the smallest runnable botopink program (botopink-lang's
 // `examples/hello.bp` until 144 B-29 step H made it a cell).
+
+import {io.terminal.print} from "std";
+
 fn main() {
-    @print("hello, botopink");
+    print("hello, botopink");
 }

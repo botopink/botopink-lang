@@ -15,14 +15,15 @@ pub mod shop;
 import {marks.service} from "kit";
 import {catalog.Widget, catalog.Gadget as G} from "kit";
 import {shop.parts.Part};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val made = @TypeInfo.all(with: service, member: "make");
     for (made) { e ->
-        @print(e.module + " " + e.name);
+        print(e.module + " " + e.name);
     }
-    @print(Widget.make().name());
-    @print(G.make().tag);
-    @print(G(tag: "g").tag);
-    @print(Part.make().tag);
+    print(Widget.make().name());
+    print(G.make().tag);
+    print(G(tag: "g").tag);
+    print(Part.make().tag);
 }

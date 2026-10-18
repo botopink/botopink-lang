@@ -1,6 +1,8 @@
 //// Decision 8 §7 — a type implementing `Display` prints as its `display()`,
 //// nested inside a container too.
 
+import {io.terminal.print} from "std";
+
 behavior Display {
     fn display(self: Self) -> string;
 }
@@ -12,6 +14,6 @@ type Money(cents: i32) implement Display {
 }
 
 pub fn main() {
-    @print(Money(cents: 5));
-    @print([Money(cents: 1), Money(cents: 2)]);
+    print(Money(cents: 5));
+    print([Money(cents: 1), Money(cents: 2)]);
 }

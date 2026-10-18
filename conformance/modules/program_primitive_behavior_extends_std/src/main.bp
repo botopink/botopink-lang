@@ -6,6 +6,8 @@
 //// fn of a primitive (`prim method not lowered on wasm`); it calls a copy of
 //// the default with `Self` written as the receiver's primitive.
 
+import {io.terminal.print} from "std";
+
 behavior String {
     default fn tailShout(self: Self) -> string {
         val tail = self.slice(1);
@@ -24,14 +26,14 @@ behavior Number {
 }
 
 pub fn main() {
-    @print("a+b".tailShout());
-    @print("ab".tailShout());
-    @print("abc".twiceLen());
+    print("a+b".tailShout());
+    print("ab".tailShout());
+    print("abc".twiceLen());
     val word = "x+yz";
-    @print(word.tailShout().length());
-    @print("x".startsWith("x"));
-    @print("ab".slice(1));
+    print(word.tailShout().length());
+    print("x".startsWith("x"));
+    print("ab".slice(1));
     val n: i32 = 50;
-    @print(n.clampTo(0, 10));
-    @print(3.clampTo(5, 9));
+    print(n.clampTo(0, 10));
+    print(3.clampTo(5, 9));
 }

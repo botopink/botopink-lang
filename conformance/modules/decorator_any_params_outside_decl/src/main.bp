@@ -2,10 +2,12 @@
 //// decorator's `@Decl<…>` names; written as any other type it is refused at
 //// the `..`.
 
+import {io.terminal.print} from "std";
+
 fn apply(f: fn(..) -> i32) -> i32 {
     return 1;
 }
 
 pub fn main() {
-    @print(apply({ -> 2 }));
+    print(apply({ -> 2 }));
 }

@@ -2,7 +2,7 @@
 //// the program declares: an entry's `value` is `unknown`, and using it as a
 //// function without testing it is refused where it is used.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn route(syntax decl: unknown) {
     compiler.setMeta(Route(path: "/"));
@@ -14,7 +14,7 @@ pub fn home() -> string { return "home"; }
 pub fn main() {
     for (@TypeInfo.all(with: route)) { r ->
         val page: fn() -> string = r.value;
-        @print(page());
+        print(page());
     }
 }
 

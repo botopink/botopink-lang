@@ -4,7 +4,7 @@
 //// parameters, each `@Expr` spliced where it was written. `rule` is
 //// `passwordsMatch`, called by `validate` at run time — never at build.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
@@ -28,8 +28,8 @@ pub type Signup(password: string, confirm: string)
 
 pub fn main() {
     val ok = Signup(password: "abc", confirm: "abc").validate();
-    @print(ok.length);
+    print(ok.length);
     val bad = Signup(password: "abc", confirm: "abd").validate();
-    @print(bad.length);
-    bad.forEach({ v -> @print(v.field + ": " + v.message) });
+    print(bad.length);
+    bad.forEach({ v -> print(v.field + ": " + v.message) });
 }

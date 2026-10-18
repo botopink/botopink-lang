@@ -1,6 +1,8 @@
 //// Decision 529 (2) — `..props: R` needs `R` a record type: the fields of an
 //// enum are no parameters. Refused at the declaration, at the type.
 
+import {io.terminal.print} from "std";
+
 type Color {
     Red,
     Green,
@@ -11,5 +13,5 @@ fn paint(..props: Color) -> string {
 }
 
 pub fn main() {
-    @print(paint());
+    print(paint());
 }

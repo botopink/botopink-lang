@@ -3,6 +3,8 @@
 //// `Shape.Circle(radius: 4)`. The name is in the value, which is
 //// `13-module-identity`'s subject; this is the program that shows it.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 type Shape {
@@ -11,8 +13,8 @@ type Shape {
 }
 
 pub fn main() {
-    @print(Point(x: 1, y: 2));
-    @print(Shape.Dot);
-    @print(Shape.Circle(radius: 4));
-    @print([Point(x: 1, y: 2), Point(x: 3, y: 4)]);
+    print(Point(x: 1, y: 2));
+    print(Shape.Dot);
+    print(Shape.Circle(radius: 4));
+    print([Point(x: 1, y: 2), Point(x: 3, y: 4)]);
 }

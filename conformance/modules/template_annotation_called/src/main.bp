@@ -2,7 +2,7 @@
 //// annotated declaration (`comptime decl: @Decl` beside its literal) is
 //// written only as an annotation; a call `f "…"` is refused at the call.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Query(sql: string)
 
@@ -13,5 +13,5 @@ fn sql(syntax q: string, syntax decl: unknown) -> string {
 
 pub fn main() {
     val s = sql @`select 1`;
-    @print(s);
+    print(s);
 }

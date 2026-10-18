@@ -3,8 +3,9 @@
 
 pub mod shapes;
 import {shapes.describe, shapes.lucky};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(describe());
-    @print(lucky());
+    print(describe());
+    print(lucky());
 }

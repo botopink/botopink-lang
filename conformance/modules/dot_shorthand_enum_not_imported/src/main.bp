@@ -7,9 +7,10 @@
 pub mod sizes;
 import {label} from "lib";
 import {sizes.width};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(label(.Top));
-    @print(label(.Two("x")));
-    @print(width(.Large));
+    print(label(.Top));
+    print(label(.Two("x")));
+    print(width(.Large));
 }

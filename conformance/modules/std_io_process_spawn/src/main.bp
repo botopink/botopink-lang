@@ -5,7 +5,7 @@
 //// `NotFound`, a directory or a file that is not executable `PermissionDenied`. The same on commonJS,
 //// erlang and beam.
 
-import {io.process, io.fs} from "std";
+import {io.process, io.fs, io.terminal.print} from "std";
 
 fn failure(e: process.ProcessError) -> string {
     return case e {
@@ -18,50 +18,50 @@ fn failure(e: process.ProcessError) -> string {
     };
 }
 
-fn refusal(r: @Result<process.Child, process.ProcessError>) -> string {
+fn refusal(r: Result<process.Child, process.ProcessError>) -> string {
     return case r {
         Ok(_) -> "started";
         Error(e) -> failure(e);
     };
 }
 
-fn killed(r: @Result<void, process.ProcessError>) -> string {
+fn killed(r: Result<void, process.ProcessError>) -> string {
     return case r {
         Ok(_) -> "signalled";
         Error(e) -> failure(e);
     };
 }
 
-fn childScenario() -> @Task<void> {
+fn childScenario() -> Task<void> {
     val first = process.spawn("sh", ["-c", "echo the child speaks; exit 3"]);
     case first {
         Ok(c) {
-            @print("pid is positive " + (c.pid > 0).toString());
+            print("pid is positive " + (c.pid > 0).toString());
             val code = await c.wait();
-            @print("exit " + code.toString());
+            print("exit " + code.toString());
             val again = await c.wait();
-            @print("exit again " + again.toString());
+            print("exit again " + again.toString());
         }
-        Error(e) -> @print(failure(e));
+        Error(e) -> print(failure(e));
     }
 
     val sleeper = process.spawn("sleep", ["30"]);
     case sleeper {
         Ok(c) {
-            @print(killed(c.kill(process.Signal.Term)));
+            print(killed(c.kill(process.Signal.Term)));
             val code = await c.wait();
-            @print("exit " + code.toString());
-            @print(killed(c.kill(process.Signal.Term)));
+            print("exit " + code.toString());
+            print(killed(c.kill(process.Signal.Term)));
         }
-        Error(e) -> @print(failure(e));
+        Error(e) -> print(failure(e));
     }
 }
 
-fn scenario() -> @Task<void> {
-    @print(refusal(process.spawn("definitely-not-a-binary-bp-std", [])));
-    @print(refusal(process.spawn("/", [])));
+fn scenario() -> Task<void> {
+    print(refusal(process.spawn("definitely-not-a-binary-bp-std", [])));
+    print(refusal(process.spawn("/", [])));
     fs.writeText("not-executable.txt", "plain text");
-    @print(refusal(process.spawn("./not-executable.txt", [])));
+    print(refusal(process.spawn("./not-executable.txt", [])));
     fs.rm("not-executable.txt");
     await childScenario();
 }

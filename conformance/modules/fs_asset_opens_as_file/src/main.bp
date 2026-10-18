@@ -3,37 +3,37 @@
 //// and `close` a no-op. Code that takes a `File` reads one on disk (`fs.open`) and an embedded
 //// one alike; here one function reads both, and the two answer the same text.
 
-import {io.fs, encoding} from "std";
+import {io.fs, encoding, io.terminal.print} from "std";
 
 pub val poem = @embed("assets/poem.txt");
 
-fn describe(f: fs.File, expected: string) -> @Task<void> {
+fn describe(f: fs.File, expected: string) -> Task<void> {
     val size = f.size().unwrapOr(-1l);
-    @print(size);
+    print(size);
     val digest = f.hash().unwrapOr("?");
-    @print(digest == expected);
+    print(digest == expected);
     val head = f.read(3).unwrapOr(Bytes.fromUtf8("?"));
-    @print(encoding.hexEncodeBytes(head));
+    print(encoding.hexEncodeBytes(head));
     for await (f.lines()) { r ->
         case r {
-            Ok(line) -> @print("line [" + line + "]");
-            Error(e) -> @print("error");
+            Ok(line) -> print("line [" + line + "]");
+            Error(e) -> print("error");
         }
     }
     val rest = f.bytes().unwrapOr(Bytes.fromUtf8("?"));
-    @print(rest.length());
+    print(rest.length());
     f.close();
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     fs.writeBytes("poem-copy.txt", poem.bytes);
-    @print("on disk");
+    print("on disk");
     await describe(fs.open("poem-copy.txt").unwrapOr(poem.open()), poem.hash);
-    @print("embedded");
+    print("embedded");
     await describe(poem.open(), poem.hash);
     val whole = poem.open();
     val text = whole.text().unwrapOr("?");
-    @print(text == poem.text());
+    print(text == poem.text());
     fs.rm("poem-copy.txt");
 }
 

@@ -2,7 +2,7 @@
 //// declaration: a second `Entity` on `City` is refused at the annotation
 //// whose decorator recorded it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
@@ -15,5 +15,5 @@ fn entity(syntax decl: unknown, comptime table: string) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

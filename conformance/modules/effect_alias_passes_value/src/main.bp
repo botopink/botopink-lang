@@ -6,9 +6,11 @@
 //// is the refused half. The alias declaration is the guide's spelling
 //// (`type Name<T> = …;`), which does not parse at compiler `82e32e36`.
 
-pub type Checked<T> = @Result<T, string>;
+import {io.terminal.print} from "std";
 
-fn check(n: i32) -> @Result<i32, string> {
+pub type Checked<T> = Result<T, string>;
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
@@ -18,6 +20,6 @@ fn pass(r: Checked<i32>) -> Checked<i32> {
 }
 
 pub fn main() {
-    @print(pass(check(4)).unwrapOr(0));
-    @print(pass(check(-4)).unwrapOr(0));
+    print(pass(check(4)).unwrapOr(0));
+    print(pass(check(-4)).unwrapOr(0));
 }

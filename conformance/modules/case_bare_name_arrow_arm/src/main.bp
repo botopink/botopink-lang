@@ -2,6 +2,8 @@
 //// `k -> k + 1` is refused at the arm, as `k { … }` is. It was accepted, and commonJS bound
 //// nothing (`k is not defined`); the matched value is named in the body: `_ { k -> k + 1 }`.
 
+import {io.terminal.print} from "std";
+
 fn plus(n: i32) -> i32 {
     return case n {
         0 -> 0;
@@ -10,5 +12,5 @@ fn plus(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(plus(4));
+    print(plus(4));
 }

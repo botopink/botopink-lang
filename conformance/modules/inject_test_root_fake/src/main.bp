@@ -2,9 +2,9 @@
 //// test's root swaps one: `FakeRoot` provides a fake `Mailer` above the same
 //// `Signup` the application renders, and `inject` reads the fake.
 
-import {context.createContext, context.provide, context.context, context.inject} from "std";
+import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 behavior Mailer {
     fn send(self: Self, to: string) -> string;
@@ -26,20 +26,20 @@ type Services(mailer: Mailer)
 
 pub val mailerContext = createContext(SmtpMailer(), Mailer);
 
-fn Signup(email: string) -> @Component<View> {
+fn Signup(email: string) -> Component<View> {
     val s = use inject(Services);
     return View(text: s.mailer.send(email));
 }
 
-fn FakeRoot() -> @Component<View> {
+fn FakeRoot() -> Component<View> {
     use provide(createContext(FakeMailer(log: "fake:"), Mailer));
     val v = Signup("a@b.c");
     return View(text: v.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val real = await Signup("x@y.z");
-    @print(real.text);
+    print(real.text);
     val fake = await FakeRoot();
-    @print(fake.text);
+    print(fake.text);
 }

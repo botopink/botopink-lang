@@ -3,10 +3,12 @@
 //// and the refusal used to name whichever enum the type table's walk met
 //// first (`Token` here).
 
+import {io.terminal.print} from "std";
+
 type Token  { Color { Red { 100, 500 } } }
 type Border { Color { Blue { 100 } } }
 
 pub fn main() {
     val a: Border = .Color.Green.100;
-    @print(0);
+    print(0);
 }

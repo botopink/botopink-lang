@@ -9,7 +9,7 @@
 
 import {compiler} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as
 // `name: sync` or `name: async`.
@@ -24,46 +24,46 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn loadComments() -> @Task<string> {
+fn loadComments() -> Task<string> {
     return "2 comments";
 }
 
-fn Card(title: string) -> @Component<Element> {
+fn Card(title: string) -> Component<Element> {
     return Element(text: title);
 }
 
-fn Header() -> @Component<Element> {
+fn Header() -> Component<Element> {
     val c = Card("title");
     return Element(text: c.text);
 }
 
-fn Comments() -> @Component<Element> {
+fn Comments() -> Component<Element> {
     val text = await loadComments();
     return Element(text: text);
 }
 
 #[graph]
-pub fn Page() -> @Component<Element> {
+pub fn Page() -> Component<Element> {
     val h = Header();
     val c = Comments();
     return Element(text: h.text + " " + c.text);
 }
 
 #[graph]
-pub fn Ring(depth: i32) -> @Component<Element> {
+pub fn Ring(depth: i32) -> Component<Element> {
     if (depth == 0) return Element(text: "ring");
     val l = Link(depth - 1);
     return Element(text: l.text);
 }
 
-fn Link(depth: i32) -> @Component<Element> {
+fn Link(depth: i32) -> Component<Element> {
     val text = await loadComments();
     val r = Ring(depth);
     return Element(text: r.text + " " + text);
 }
 
 #[graph]
-pub fn Feed(render: fn() -> @Component<Element>) -> @Component<Element> {
+pub fn Feed(render: fn() -> Component<Element>) -> Component<Element> {
     val item = render();
     return Element(text: item.text);
 }

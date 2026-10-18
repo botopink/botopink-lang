@@ -6,11 +6,12 @@ pub mod orm;
 pub mod models;
 import {models.City};
 import {models.City as Town};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val c = City.fromRow(["re", "ci", "fe"]);
-    @print(c.name);
-    @print(c.size);
-    @print(City.table());
-    @print(Town.fromRow(["x"]).columns());
+    print(c.name);
+    print(c.size);
+    print(City.table());
+    print(Town.fromRow(["x"]).columns());
 }

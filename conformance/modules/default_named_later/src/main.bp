@@ -7,8 +7,9 @@
 pub mod m;
 import {m.tree};
 import {m.tree as Tree};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(tree(2));
-    @print(Tree(0));
+    print(tree(2));
+    print(Tree(0));
 }

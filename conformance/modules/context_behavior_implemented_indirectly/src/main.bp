@@ -3,9 +3,9 @@
 //// implement Cached`, `Cached extends Repository`), as a parameter typed `B`
 //// does; it is read back with `use context(Repository)`.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 behavior Repository {
     fn fetch(self: Self, id: i32) -> string;
@@ -35,20 +35,20 @@ type Memory(tag: string) implement Cached {
 
 pub val repoContext = createContext(CachedRepository(prefix: "cached-"), Repository);
 
-fn Lookup() -> @Component<View> {
+fn Lookup() -> Component<View> {
     val r = use context(Repository);
     return View(text: r.fetch(1));
 }
 
-fn Root() -> @Component<View> {
+fn Root() -> Component<View> {
     use provide(createContext(Memory(tag: "mem"), Repository));
     val l = Lookup();
     return View(text: l.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val outside = await Lookup();
-    @print(outside.text);
+    print(outside.text);
     val inside = await Root();
-    @print(inside.text);
+    print(inside.text);
 }

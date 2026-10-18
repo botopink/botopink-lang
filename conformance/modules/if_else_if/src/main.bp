@@ -1,5 +1,7 @@
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val a = true;
     val b = false;
-    if (a && b) @print("both") else if (a || b) @print("either");
+    if (a && b) print("both") else if (a || b) print("either");
 }

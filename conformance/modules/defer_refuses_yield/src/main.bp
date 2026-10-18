@@ -1,4 +1,6 @@
-pub fn nums() -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+pub fn nums() -> Iterator<i32> {
     defer {
         yield 9;
     }
@@ -6,5 +8,5 @@ pub fn nums() -> @Iterator<i32> {
 }
 
 pub fn main() {
-    @print("unreachable");
+    print("unreachable");
 }

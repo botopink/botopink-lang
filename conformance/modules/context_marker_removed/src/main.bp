@@ -2,8 +2,10 @@
 //// component's `R` implements `@Renderable`, and the name `Context` is std's
 //// context object. Refused where it is written, naming the marker to write.
 
+import {io.terminal.print} from "std";
+
 type Element(count: i32) implement @Context<Element>
 
 pub fn main() {
-    @print(Element(count: 1).count);
+    print(Element(count: 1).count);
 }

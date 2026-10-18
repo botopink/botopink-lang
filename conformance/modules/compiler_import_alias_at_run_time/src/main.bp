@@ -2,8 +2,8 @@
 //// an alias, `c.src` in `main`, a body that runs when the program runs, is
 //// refused at the read.
 
-import {compiler as c} from "std";
+import {compiler as c, io.terminal.print} from "std";
 
 pub fn main() {
-    @print(c.src.line);
+    print(c.src.line);
 }

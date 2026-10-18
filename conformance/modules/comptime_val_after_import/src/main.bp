@@ -5,7 +5,7 @@
 //// by binding, which the backends read by declaration. A module-level
 //// `comptime` may call a function now, and build a record.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 fn two() -> i32 {
     return 2;
@@ -18,7 +18,7 @@ val called = comptime two() * 10;
 val table: Dict<string, i32> = comptime Dict.empty().insert("k", 7);
 
 pub fn main() {
-    @print(short);
-    @print(called);
-    @print(table["k"] ?? 0);
+    print(short);
+    print(called);
+    print(table["k"] ?? 0);
 }

@@ -4,7 +4,9 @@
 //// `type P(…) implement A { … }`, or name the block `Impl implement A for P`.
 //// Refused by name at the `for`.
 
+import {io.terminal.print} from "std";
+
 behavior Named { fn name(self: Self) -> string; }
 type P(x: i32)
 implement Named for P { fn name(self: Self) -> string { return "p"; } }
-pub fn main() { @print(P(x: 1).name()); }
+pub fn main() { print(P(x: 1).name()); }

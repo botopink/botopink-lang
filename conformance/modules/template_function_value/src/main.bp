@@ -1,7 +1,7 @@
 //// Decision 425 — a template function exists only while the program
 //// compiles: named without a call it is no value, refused where it is read.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn shout(syntax q: string) -> string {
     return compiler.build("\"template " + compiler.text(q) + "\"");
@@ -9,5 +9,5 @@ fn shout(syntax q: string) -> string {
 
 pub fn main() {
     val f = shout;
-    @print(f("x"));
+    print(f("x"));
 }

@@ -4,8 +4,10 @@
 //// `String.fromCodePoint` would answer a lone surrogate) and wasm's
 //// std-wasm's `text.fromCodepoint` traps. What was printed before stays printed.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print("before");
-    @print(String.fromCodepoint(55296));
-    @print("after");
+    print("before");
+    print(String.fromCodepoint(55296));
+    print("after");
 }

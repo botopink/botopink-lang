@@ -10,6 +10,8 @@
 //// a `?i32` field read off the pattern as a plain word, so `"${a ?? 0}"`
 //// printed the box's address.
 
+import {io.terminal.print} from "std";
+
 type Dog(name: string, breed: string, age: ?i32 = null)
 
 type Cat(name: string, lives: i32)
@@ -100,18 +102,18 @@ fn guarded(d: Dog) -> string {
 pub fn main() {
     val rex = Dog(name: "rex", breed: "lab", age: 3);
     val max = Dog(name: "max", breed: "pug");
-    @print(show(rex));
-    @print(show(max));
-    @print(swapped(rex));
-    @print(breedOf(max));
-    @print(positional(rex));
-    @print(positional(max));
-    @print(pet(rex));
-    @print(pet(Cat(name: "tom", lives: 9)));
-    @print(owner(Owner(who: "ann", dog: rex)));
-    @print(pairs(Pair(a: 5, b: 0)));
-    @print(pairs(Pair(a: 0, b: 6)));
-    @print(pairs(Pair(a: 1, b: 1)));
-    @print(guarded(rex));
-    @print(guarded(max));
+    print(show(rex));
+    print(show(max));
+    print(swapped(rex));
+    print(breedOf(max));
+    print(positional(rex));
+    print(positional(max));
+    print(pet(rex));
+    print(pet(Cat(name: "tom", lives: 9)));
+    print(owner(Owner(who: "ann", dog: rex)));
+    print(pairs(Pair(a: 5, b: 0)));
+    print(pairs(Pair(a: 0, b: 6)));
+    print(pairs(Pair(a: 1, b: 1)));
+    print(guarded(rex));
+    print(guarded(max));
 }

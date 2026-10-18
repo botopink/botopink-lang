@@ -2,6 +2,8 @@
 //// top-level declaration of that name is `module-item-collision` at its name
 //// (decision 582 (4): `config` would name both the item and the module).
 
+import {io.terminal.print} from "std";
+
 pub mod config;
 
 fn config() -> string {
@@ -9,5 +11,5 @@ fn config() -> string {
 }
 
 pub fn main() {
-    @print(config());
+    print(config());
 }

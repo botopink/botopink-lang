@@ -206,7 +206,7 @@ test "erase: a plain alias and a generic one expand; a wrapper return keeps its 
     const src =
         \\type Id = i32;
         \\type Pair<A, B> = #(A, B);
-        \\type Parser<T> = @Result<T, string>;
+        \\type Parser<T> = Result<T, string>;
         \\fn f(x: Id, p: Pair<Id, string>) -> Id { return x; }
         \\fn g(s: string) -> Parser<Id> { return h(s); }
     ;

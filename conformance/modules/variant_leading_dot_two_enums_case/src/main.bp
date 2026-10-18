@@ -5,6 +5,8 @@
 //// was a `ReferenceError`, erlang bound `Warm.Red` to a `Cool`); wasm's half
 //// landed after it.
 
+import {io.terminal.print} from "std";
+
 type Warm { Red, Orange }
 
 type Cool { Blue, Red }
@@ -25,9 +27,9 @@ fn warmName(c: Warm) -> string {
 
 pub fn main() {
     val c: Cool = .Red;
-    @print(coolName(c));
+    print(coolName(c));
     val w: Warm = .Red;
-    @print(warmName(w));
-    @print(coolName(.Red));
-    @print(warmName(.Red));
+    print(warmName(w));
+    print(coolName(.Red));
+    print(warmName(.Red));
 }

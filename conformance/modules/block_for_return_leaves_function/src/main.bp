@@ -2,6 +2,8 @@
 //// enclosing function, on every target; the block's value is its tail on
 //// every other path.
 
+import {io.terminal.print} from "std";
+
 fn firstAbove(xs: Array<i32>, limit: i32) -> i32 {
     val found = {
         for (xs) { x ->
@@ -23,8 +25,8 @@ fn labelOf(xs: Array<string>) -> string {
 }
 
 pub fn main() {
-    @print(firstAbove([1, 7, 9], 5));
-    @print(firstAbove([1, 2], 5));
-    @print(labelOf(["a", "abc", "abcd"]));
-    @print(labelOf(["a"]));
+    print(firstAbove([1, 7, 9], 5));
+    print(firstAbove([1, 2], 5));
+    print(labelOf(["a", "abc", "abcd"]));
+    print(labelOf(["a"]));
 }

@@ -3,7 +3,9 @@
 //// the element that widened the literal (`run/array_literal_union` is the
 //// accepted half).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, "a"];
-    xs.forEach({ x -> @print(x + 1) });
+    xs.forEach({ x -> print(x + 1) });
 }

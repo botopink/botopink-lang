@@ -2,12 +2,13 @@ pub mod registry;
 pub mod component;
 import {registry.registered, registry.register, registry.unregisterLast};
 import {component.componentName};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(componentName());
-    @print(registered());
+    print(componentName());
+    print(registered());
     register("second");
-    @print(registered());
-    @print(unregisterLast());
-    @print(registered());
+    print(registered());
+    print(unregisterLast());
+    print(registered());
 }

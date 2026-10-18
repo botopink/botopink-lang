@@ -4,14 +4,14 @@
 //// its body (`catch`, `case`, `notFound()`) and a propagating `try` is
 //// `effect-try-without-fallible-channel`, at the `try`.
 
-type Element(count: i32) implement @Renderable
+type Element(count: i32) implement Renderable
 
-fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+fn fetchCount(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     return n;
 }
 
-fn Propaga() -> @Component<Element> {
+fn Propaga() -> Component<Element> {
     val n = try await fetchCount(1);
     return Element(count: n);
 }

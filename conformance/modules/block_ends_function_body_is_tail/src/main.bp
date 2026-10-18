@@ -1,6 +1,8 @@
 //// Decision 541 (4) — a block `{ … }` as the last statement of a function body
 //// is its tail: the function answers the block's value.
 
+import {io.terminal.print} from "std";
+
 fn answer() -> i32 {
     { 41 + 1 }
 }
@@ -14,7 +16,7 @@ fn greeting(loud: bool) -> string {
 }
 
 pub fn main() {
-    @print(answer());
-    @print(greeting(true));
-    @print(greeting(false));
+    print(answer());
+    print(greeting(true));
+    print(greeting(false));
 }

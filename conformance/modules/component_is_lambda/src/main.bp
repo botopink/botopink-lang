@@ -6,24 +6,24 @@
 //// scope `Lista`'s run answered — the one its `use provide` made — so every
 //// card reads `Lista`'s prefix, after `Lista`'s own body ended.
 
-import {context.createContext, context.provide, context.context, context.RenderScope} from "std";
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
 
 type Item(name: string)
 
-type View(text: string, kids: @Component<View>[]) implement @Renderable
+type View(text: string, kids: Component<View>[]) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn Card(item: Item) -> @Component<View> {
+fn Card(item: Item) -> Component<View> {
     val p = use context(string);
-    @print("ran " + item.name);
+    print("ran " + item.name);
     return View(text: p + item.name, kids: []);
 }
 
-fn Lista(itens: Item[]) -> @Component<View> {
+fn Lista(itens: Item[]) -> Component<View> {
     use provide(createContext("#"));
     val cards = itens.map(Card);
-    @print("lista made " + cards.length.toString());
+    print("lista made " + cards.length.toString());
     return View(text: "lista", kids: cards);
 }
 
@@ -32,7 +32,7 @@ fn twice<T>(x: T) -> T[] {
 }
 
 // Run `c` with `scope`, then each child with the scope `c`'s run answered.
-fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
+fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
     val r = await c.run(scope);
     var out = r.value.text;
     for (r.value.kids) { k ->
@@ -42,11 +42,11 @@ fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
     return out;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val c = Card(Item(name: "x"));
     val cs = twice(c);
-    @print("made " + cs.length.toString());
-    @print(
+    print("made " + cs.length.toString());
+    print(
         await render(
             Lista([Item(name: "a"), Item(name: "b")]),
             RenderScope.root(),

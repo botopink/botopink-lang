@@ -3,6 +3,8 @@
 //// written `pattern { … }` or `pattern -> { … }`, in a `case` nested in an
 //// arm, in the `if` / `else` blocks of an arm and before a lambda value.
 
+import {io.terminal.print} from "std";
+
 fn pick(n: i32) -> i32 {
     val r = case n {
         0 {
@@ -49,9 +51,9 @@ fn pick(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(pick(0));
-    @print(pick(1));
-    @print(pick(2));
-    @print(pick(3));
-    @print(pick(4));
+    print(pick(0));
+    print(pick(1));
+    print(pick(2));
+    print(pick(3));
+    print(pick(4));
 }

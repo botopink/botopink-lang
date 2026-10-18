@@ -7,11 +7,12 @@ pub mod models;
 pub mod marks;
 import {models.User};
 import {marks.located, marks.Origin};
+import {io.terminal.print, compiler} from "std";
 
 #[located]
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Origin)?.module ?? "none");
-    @print(@typeInfo(User).meta(Origin)?.module ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Origin)?.module ?? "none");
+    print(comptime compiler.typeInfo(User).meta(Origin)?.module ?? "none");
 }

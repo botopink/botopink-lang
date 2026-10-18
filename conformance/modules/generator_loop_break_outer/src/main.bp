@@ -1,6 +1,8 @@
 //// Decision 105 — an annotated loop's border is a closure's: a `break :outer`
 //// naming a loop outside it is refused as crossing the border, not as unbound.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var n = 0;
     for :outer ([1, 2, 3]) { x ->
@@ -10,5 +12,5 @@ pub fn main() {
             yield n;
         };
     }
-    @print(n);
+    print(n);
 }

@@ -5,7 +5,8 @@
 //// import site (rakun-metrics read `unknown type 'CacheLife'` there).
 
 import {lifeOf, make} from "b";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(lifeOf(make(7)));
+    print(lifeOf(make(7)));
 }

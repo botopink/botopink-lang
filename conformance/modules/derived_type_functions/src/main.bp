@@ -4,7 +4,7 @@
 //// position, constructed by its fields, read, printed and matched by name, on
 //// all four targets.
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Recipe(
     title: string,
@@ -53,27 +53,27 @@ fn kind(v: unknown) -> string {
 }
 
 pub fn main() {
-    @print(titleOf(RecipeTitle(title: "Feijoada")));
+    print(titleOf(RecipeTitle(title: "Feijoada")));
     val brief = RecipeBrief(title: "Moqueca");
-    @print(brief.servings);
+    print(brief.servings);
     val before = Recipe(title: "Feijoada", description: null);
     val after = patched(
         before,
         RecipePatch(title: null, description: "black beans", servings: 6),
     );
-    @print(after.title);
-    @print(after.description ?? "-");
-    @print(after.servings);
+    print(after.title);
+    print(after.description ?? "-");
+    print(after.servings);
     val full = RecipeFull(title: "Acarajé", description: "fried", servings: 4);
-    @print(full.description);
+    print(full.description);
     val rex: unknown = DogWithBreed(name: "Rex", age: null, breed: "mutt");
     val bia: unknown = Dog(name: "Bia", age: 3);
-    @print(kind(rex));
-    @print(kind(bia));
+    print(kind(rex));
+    print(kind(bia));
     val mixed = DogWithBreed(name: "Lua", age: 3, breed: "beagle");
-    @print("${mixed.name} (${mixed.breed})");
+    print("${mixed.name} (${mixed.breed})");
     val noted = NotedDog(name: "Lua", age: 1, breed: "poodle", text: "calm");
-    @print(noted.text);
-    @print(TitleOnly(title: "Vatapá").title);
-    @print(RecipeTitle(title: "Bobó"));
+    print(noted.text);
+    print(TitleOnly(title: "Vatapá").title);
+    print(RecipeTitle(title: "Bobó"));
 }

@@ -5,9 +5,10 @@
 //// library's. The parent binary knew no `@embed`.
 
 import {loader.load, loader.own} from "loader";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(load("assets/note.txt").bytes.toUtf8().unwrapOr("?"));
-    @print(own().bytes.toUtf8().unwrapOr("?"));
-    @print(load("assets/note.txt").path);
+    print(load("assets/note.txt").bytes.toUtf8().unwrapOr("?"));
+    print(own().bytes.toUtf8().unwrapOr("?"));
+    print(load("assets/note.txt").path);
 }

@@ -2,12 +2,14 @@
 //// aborts naming the value, on every target; it never wraps (`2147483648` is not `-2147483648`)
 //// and never saturates. The parent declared no `toI32`.
 
+import {io.terminal.print} from "std";
+
 fn grow(a: i64, b: i64) -> i64 {
     return a + b;
 }
 
 pub fn main() {
-    @print(grow(2147483646l, 1l).toI32());
-    @print(grow(2147483647l, 1l).toI32());
-    @print("unreachable");
+    print(grow(2147483646l, 1l).toI32());
+    print(grow(2147483647l, 1l).toI32());
+    print("unreachable");
 }

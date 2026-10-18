@@ -12,6 +12,8 @@
 //// The unknown floats are not printed: commonJS stores nothing extra (§11), so
 //// `2.0` in an `unknown` slot prints `2` there where wasm prints `2.0`.
 
+import {io.terminal.print} from "std";
+
 fn describe(x: unknown) -> string {
     return case x {
         i32 { n ->
@@ -44,27 +46,27 @@ fn plusOne(x: unknown) -> i32 {
 
 pub fn main() {
     val a: unknown = 3.0;
-    @print(describe(a));
+    print(describe(a));
     val b: unknown = 2.5;
-    @print(describe(b));
+    print(describe(b));
     val e: unknown = "";
-    @print(describe(e));
+    print(describe(e));
     val t: unknown = "hi";
-    @print(describe(t));
+    print(describe(t));
     val c: unknown = true;
-    @print(describe(c));
-    @print(show(1));
-    @print(show("s"));
-    @print(show(2.5));
-    @print(show(true));
+    print(describe(c));
+    print(show(1));
+    print(show("s"));
+    print(show(2.5));
+    print(show(true));
     val two: unknown = 2.0;
-    @print(two == 2);
-    @print(two == 3);
-    @print(t == "hi");
-    @print(plusOne(2.0));
-    @print(plusOne("x"));
-    @print(300 is i8);
-    @print(100 is i8);
-    @print(2 is f64);
-    @print(t);
+    print(two == 2);
+    print(two == 3);
+    print(t == "hi");
+    print(plusOne(2.0));
+    print(plusOne("x"));
+    print(300 is i8);
+    print(100 is i8);
+    print(2 is f64);
+    print(t);
 }

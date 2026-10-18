@@ -10,12 +10,12 @@ pub mod shape;
 import {shape.Box};
 import {describeA} from "a";
 import {describeB} from "b";
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 val Named = Type.pick(Box, .name);
 
 pub fn main() {
-    @print(describeA());
-    @print(describeB());
-    @print(Named(name: "own").name);
+    print(describeA());
+    print(describeB());
+    print(Named(name: "own").name);
 }

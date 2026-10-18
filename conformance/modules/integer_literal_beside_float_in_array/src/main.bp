@@ -2,7 +2,9 @@
 //// expected is refused at the integer literal (it was `f64[]`, the `1`
 //// re-spelt `1.0`); write `[1.0, 2.5]`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2.5];
-    @print(xs.length);
+    print(xs.length);
 }

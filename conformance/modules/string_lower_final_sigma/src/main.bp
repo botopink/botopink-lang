@@ -3,6 +3,8 @@
 //// commonJS maps case through its helper (std-wasm's table), never the
 //// engine's `toLowerCase`, which answers `ς`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print("ΟΔΟΣ".toLower());
+    print("ΟΔΟΣ".toLower());
 }

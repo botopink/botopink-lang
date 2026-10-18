@@ -26,6 +26,8 @@
 //// `font-size:large`; it takes the enum's variant since 1.0.10-beta
 //// `00 · 05-wasm` (a variant reached through its enum is the enum's).
 
+import {io.terminal.print} from "std";
+
 type Block(size: i32)
 
 type Vec(x: i32)
@@ -80,10 +82,10 @@ fn shapeName(v: Block | Vec) -> string {
 }
 
 pub fn main() {
-    @print(tokenCss(.Layout.Block));
-    @print(tokenCss(.Layout.Inline));
-    @print(tokenCss(.Layout.Size.Large));
-    @print(tokenCss(.Text.Bold));
-    @print(shapeName(Vec(x: 1)));
-    @print(shapeName(Block(size: 2)));
+    print(tokenCss(.Layout.Block));
+    print(tokenCss(.Layout.Inline));
+    print(tokenCss(.Layout.Size.Large));
+    print(tokenCss(.Text.Bold));
+    print(shapeName(Vec(x: 1)));
+    print(shapeName(Block(size: 2)));
 }

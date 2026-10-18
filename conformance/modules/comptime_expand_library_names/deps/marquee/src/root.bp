@@ -3,7 +3,7 @@
 //// this module holds: the type `Label`, the private function `shout` and the
 //// std namespace `path`, none of which the caller imports.
 
-import {path} from "std";
+import {path, io.terminal.print} from "std";
 
 type Label(text: string)
 
@@ -13,6 +13,6 @@ fn shout(label: Label) -> string {
 
 pub fn marquee(comptime title: string) {
     val label: Label = Label(text: title);
-    @print(shout(label));
-    @print(path.relative("/" + label.text, "/" + label.text + "/docs"));
+    print(shout(label));
+    print(path.relative("/" + label.text, "/" + label.text + "/docs"));
 }

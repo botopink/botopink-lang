@@ -5,6 +5,8 @@
 //// Circle is not defined`; a variant's identity is its `tag`, which is what a
 //// `case` arm tests. `run/val_assert_record_pattern` is the record's half.
 
+import {io.terminal.print} from "std";
+
 type Shape { Circle(r: i32), Square(side: i32) }
 
 fn radius(s: Shape) -> i32 {
@@ -18,8 +20,8 @@ fn radiusQualified(s: Shape) -> i32 {
 }
 
 pub fn main() {
-    @print(radius(Shape.Circle(r: 3)));
-    @print(radius(Shape.Square(side: 2)));
-    @print(radiusQualified(Shape.Circle(r: 5)));
-    @print(radiusQualified(Shape.Square(side: 5)));
+    print(radius(Shape.Circle(r: 3)));
+    print(radius(Shape.Square(side: 2)));
+    print(radiusQualified(Shape.Circle(r: 5)));
+    print(radiusQualified(Shape.Square(side: 5)));
 }

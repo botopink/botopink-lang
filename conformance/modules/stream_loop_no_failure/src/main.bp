@@ -7,9 +7,11 @@
 //// function; the consumer's `for await` is in a `@Task` body. A bare `break`
 //// ends the stream. Printed from inside `run`.
 
-type Ticker(s: @Stream<i32>)
+import {io.terminal.print} from "std";
 
-fn tick(n: i32) -> @Task<i32> {
+type Ticker(s: Stream<i32>)
+
+fn tick(n: i32) -> Task<i32> {
     return n * 100;
 }
 
@@ -23,11 +25,11 @@ fn ticks(limit: i32) -> Ticker {
     return Ticker(s: s);
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     for await (ticks(3).s) { v ->
-        @print(v);
+        print(v);
     }
-    @print("done");
+    print("done");
 }
 
 pub fn main() {

@@ -9,7 +9,7 @@ pub mod text;
 pub mod sched;
 import {sched.scheduled};
 import {text.shout as yell};
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn tag(syntax decl: unknown) {
     @emit("pub fn tagged() -> string { return \""
@@ -28,7 +28,7 @@ fn tock() -> i32 {
 }
 
 pub fn main() {
-    @print(schedule());
-    @print(tagged());
-    @print(tick() + tock());
+    print(schedule());
+    print(tagged());
+    print(tick() + tock());
 }

@@ -3,7 +3,7 @@
 //// namespace"): a return, a parameter and a `val` annotation. The return was
 //// checked as a type spelled `collections.Dict` that no value inhabits.
 
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 
 fn make() -> collections.Dict<string, i32> {
     return collections.Dict.empty();
@@ -15,5 +15,5 @@ fn sizeOf(d: collections.Dict<string, i32>) -> i32 {
 
 pub fn main() {
     val d: collections.Dict<string, i32> = make();
-    @print(sizeOf(d));
+    print(sizeOf(d));
 }

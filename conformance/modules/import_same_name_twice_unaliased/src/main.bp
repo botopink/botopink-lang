@@ -10,7 +10,8 @@ pub mod app;
 
 import {app.page.title};
 import {app.blog.page.title};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(title());
+    print(title());
 }

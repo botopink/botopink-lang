@@ -23,18 +23,19 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
         \\#[@BeamMemory.ProcessDict]
         \\var hits: i32 = 0;
         \\
-        \\fn request() -> @Task<i32> {
+        \\fn request() -> Task<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    return hits;
         \\}
         \\
-        \\fn main() -> @Task<void> {
+        \\fn main() -> Task<void> {
         \\    val seen = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
-        \\    @print(seen);
-        \\    @print(hits);
+        \\    print(seen);
+        \\    print(hits);
         \\}
+        \\import {io.terminal.print} from "std";
     , "[3, 3, 3, 3, 3]\n0\n", &.{
         "std@beam:pdGet(",
         "std@beam:pdPut(",
@@ -53,18 +54,19 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\#[@BeamMemory.Ets]
         \\var hits: i32 = 0;
         \\
-        \\fn request() -> @Task<i32> {
+        \\fn request() -> Task<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits += 1;
         \\    return 0;
         \\}
         \\
-        \\fn main() -> @Task<void> {
+        \\fn main() -> Task<void> {
         \\    val done = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
-        \\    @print(done.length());
-        \\    @print(hits);
+        \\    print(done.length());
+        \\    print(hits);
         \\}
+        \\import {io.terminal.print} from "std";
     , "5\n15\n", &.{
         "std@beam:etsBump(",
         "'__bp_ets_owner'(Name, Seed) ->",
@@ -80,16 +82,17 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
         \\#[@BeamMemory.Ets]
         \\var hits: i32 = 0;
         \\
-        \\fn read() -> @Task<i32> {
+        \\fn read() -> Task<i32> {
         \\    return hits;
         \\}
         \\
-        \\fn main() -> @Task<void> {
+        \\fn main() -> Task<void> {
         \\    hits = 40;
         \\    hits = hits - 2;
         \\    val seen = await async.runAll([{ -> read() }]);
-        \\    @print(seen);
+        \\    print(seen);
         \\}
+        \\import {io.terminal.print} from "std";
     , "[38]\n", &.{
         "std@beam:etsPut(",
     });
@@ -105,15 +108,16 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         \\#[@BeamMemory.PersistentTerm]
         \\var version: i32 = 101;
         \\
-        \\fn read() -> @Task<i32> {
+        \\fn read() -> Task<i32> {
         \\    return version;
         \\}
         \\
-        \\fn main() -> @Task<void> {
+        \\fn main() -> Task<void> {
         \\    val seen = await async.runAll([{ -> read() }, { -> read() }]);
-        \\    @print(seen);
-        \\    @print(version);
+        \\    print(seen);
+        \\    print(version);
         \\}
+        \\import {io.terminal.print} from "std";
     , "[101, 101]\n101\n", &.{
         "-on_load('__bp_load'/0).",
         "std@beam:ptGet(",
@@ -131,7 +135,7 @@ const keyed_program =
     \\#[@BeamMemory.Ets(keyed: true)]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
     \\
-    \\fn writer(key: string) -> @Task<i32> {
+    \\fn writer(key: string) -> Task<i32> {
     \\    var i = 0;
     \\    while (i < 2000) {
     \\        i += 1;
@@ -140,11 +144,12 @@ const keyed_program =
     \\    return i;
     \\}
     \\
-    \\fn main() -> @Task<void> {
+    \\fn main() -> Task<void> {
     \\    val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
-    \\    @print(done);
-    \\    @print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
+    \\    print(done);
+    \\    print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 
 test "erlang: beam memory ---- a keyed Ets var writes and reads one row per key" {
@@ -174,7 +179,7 @@ const bump_program =
     \\#[@BeamMemory.Ets(keyed: true)]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
     \\
-    \\fn worker(n: i32) -> @Task<i32> {
+    \\fn worker(n: i32) -> Task<i32> {
     \\    var i = 0;
     \\    while (i < 2000) {
     \\        i += 1;
@@ -183,12 +188,13 @@ const bump_program =
     \\    return i;
     \\}
     \\
-    \\fn main() -> @Task<void> {
+    \\fn main() -> Task<void> {
     \\    val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
     \\    counts = counts.bump("seed", 5);
-    \\    @print(done);
-    \\    @print(counts.at("hot"), counts.at("seed"), counts.at("none"));
+    \\    print(done);
+    \\    print(counts.at("hot"), counts.at("seed"), counts.at("none"));
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 
 test "erlang: beam memory ---- bump on a keyed Ets var loses no concurrent increment of one key" {
@@ -216,8 +222,9 @@ test "erlang: beam memory ---- a var in a module that imports nothing from std r
         \\fn main() {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
-        \\    @print(hits);
+        \\    print(hits);
         \\}
+        \\import {io.terminal.print} from "std";
     , "2\n", &.{
         "std@beam:pdGet(",
         "std@beam:pdPut(",

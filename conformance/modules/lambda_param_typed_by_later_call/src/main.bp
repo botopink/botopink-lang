@@ -3,14 +3,16 @@
 //// is `i32`'s method on every target. wasm refused it, "cannot resolve the call
 //// `toString/0`", while `n` was still free when the body was checked.
 
-fn show(r: @Result<string, string>) {
+import {io.terminal.print} from "std";
+
+fn show(r: Result<string, string>) {
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("error", e);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val later = { n ->
         async {
             if (n < 0) throw "negative " + n.toString();
@@ -23,10 +25,10 @@ fn run() -> @Task<void> {
 
 pub fn main() {
     val label = { n -> "n=" + n.toString() };
-    @print(label(7));
+    print(label(7));
     val width = { n -> n.toString().length() };
-    @print(width(12345));
+    print(width(12345));
     val shout = { s -> s.toUpper() };
-    @print(shout("hey"));
+    print(shout("hey"));
     run();
 }

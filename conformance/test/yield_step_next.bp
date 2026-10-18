@@ -6,12 +6,12 @@
 //// `Done` (`throw` ends the iterator). `reject/yield_step_error_param.bp` is the
 //// old spelling.
 
-fn two() -> @Iterator<i32> {
+fn two() -> Iterator<i32> {
     yield 1;
     yield 2;
 }
 
-fn failing() -> @Iterator<@Result<i32, string>> {
+fn failing() -> Iterator<Result<i32, string>> {
     yield 1;
     throw "boom";
 }
@@ -24,7 +24,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     return t;
 }
 
-fn resultStepText(s: YieldStep<@Result<i32, string>>) -> string {
+fn resultStepText(s: YieldStep<Result<i32, string>>) -> string {
     val t = case s {
         Yield(r) -> "yield " + r.unwrapOr(-1).toString();
         Done -> "done";

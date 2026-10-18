@@ -2,6 +2,8 @@
 //// value, as a free function's is: `fn area(self: Self) -> i32 { self.w *
 //// self.h }`, an associated function and a generic type's method alike.
 
+import {io.terminal.print} from "std";
+
 type Rect(w: i32, h: i32) {
     fn area(self: Self) -> i32 { self.w * self.h }
 
@@ -18,8 +20,8 @@ type Box<T>(value: T) {
 }
 
 pub fn main() {
-    @print(Rect(w: 2, h: 3).area());
-    @print(Rect.square(4).area());
-    @print(Rect(w: 2, h: 2).describe());
-    @print(Box(value: "x").get());
+    print(Rect(w: 2, h: 3).area());
+    print(Rect.square(4).area());
+    print(Rect(w: 2, h: 2).describe());
+    print(Box(value: "x").get());
 }

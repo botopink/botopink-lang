@@ -2,6 +2,8 @@
 //// of a type derived from it; an optional of it may be null, so it is
 //// neither. Refused at the `...`, naming both types.
 
+import {io.terminal.print} from "std";
+
 type Pessoa(nome: string, idade: i32)
 
 fn achar(nome: string) -> ?Pessoa {
@@ -11,5 +13,5 @@ fn achar(nome: string) -> ?Pessoa {
 pub fn main() {
     val talvez = achar("Ana");
     val p = Pessoa(..talvez, idade: 4);
-    @print(p.nome);
+    print(p.nome);
 }

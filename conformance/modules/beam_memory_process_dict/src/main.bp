@@ -5,20 +5,20 @@
 //// the whole program, and decision 167 refuses the annotation there, which
 //// the narrowing (`.targets`) stands on and `run/beam_memory_off_beam` pins.
 
-import {async} from "std";
+import {async, io.terminal.print} from "std";
 
 #[@BeamMemory.ProcessDict]
 var scratch: i32 = 0;
 
-fn elsewhere() -> @Task<i32> {
+fn elsewhere() -> Task<i32> {
     val before = scratch;
     scratch = 99;
     return before;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     scratch = 5;
     val seen = await async.runAll([{ -> elsewhere() }]);
-    @print(seen);
-    @print(scratch);
+    print(seen);
+    print(scratch);
 }

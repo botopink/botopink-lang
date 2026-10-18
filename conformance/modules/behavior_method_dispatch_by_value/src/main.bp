@@ -7,6 +7,8 @@
 //// and calls that type's method (`$__bdispatch_<method>_<n>`), and no longer
 //// reads every element of the array as the first literal's `Page`.
 
+import {io.terminal.print} from "std";
+
 behavior Request {
     fn path(self: Self) -> string;
     fn weight(self: Self, factor: i32) -> i32;
@@ -39,11 +41,11 @@ fn home() -> Request {
 }
 
 pub fn main() {
-    @print(describe(Page(route: "/about")));
+    print(describe(Page(route: "/about")));
     val r: Request = Api(version: 2);
-    @print(r.path());
-    @print(r.weight(10));
-    @print(home().path());
+    print(r.path());
+    print(r.weight(10));
+    print(home().path());
     val all: Array<Request> = [Page(route: "/p"), Api(version: 3)];
-    @print(all.map({ q -> q.weight(2) }));
+    print(all.map({ q -> q.weight(2) }));
 }

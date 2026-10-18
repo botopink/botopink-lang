@@ -5,7 +5,7 @@
 //// `typeName` and its annotations, as `decl.fields` hands them out. On a
 //// field, `@Decl<T>` is the field's type.
 
-import {types.Type, compiler.DeclKind, compiler} from "std";
+import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 fn entity<T>(syntax decl: T, comptime table: string) {
     compiler.setMeta(Entity(table: table));
@@ -43,11 +43,11 @@ pub type City(
 )
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
-    val columns: string[] = @typeInfo(City).meta(Index)?.columns ?? [];
-    @print(columns.join(","));
-    @print(@typeInfo(City).meta(Unique)?.column ?? "none");
-    @print(City(code: "SP", name: "São Paulo", state: "SP").name);
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+    val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
+    print(columns.join(","));
+    print(comptime compiler.typeInfo(City).meta(Unique)?.column ?? "none");
+    print(City(code: "SP", name: "São Paulo", state: "SP").name);
 }
 
 // What `#[entity]` records.

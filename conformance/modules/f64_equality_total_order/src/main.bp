@@ -12,6 +12,8 @@
 //// backend that has NaN pins it in its own RUN LOG fixture
 //// (`codegen/tests/commonjs.zig`, `codegen/tests/wat.zig`).
 
+import {io.terminal.print} from "std";
+
 type F(x: f64)
 
 type V {
@@ -27,30 +29,30 @@ pub fn main() {
     val z = zero();
     val neg = z * -1.0;
 
-    @print(z == neg);
-    @print(z != neg);
-    @print(z == zero());
-    @print(neg == neg);
-    @print(neg < z);
-    @print(neg <= z);
-    @print(neg >= z);
+    print(z == neg);
+    print(z != neg);
+    print(z == zero());
+    print(neg == neg);
+    print(neg < z);
+    print(neg <= z);
+    print(neg >= z);
 
-    @print(F(x: z) == F(x: neg));
-    @print(F(x: z) != F(x: neg));
-    @print(F(x: z) == F(x: zero()));
+    print(F(x: z) == F(x: neg));
+    print(F(x: z) != F(x: neg));
+    print(F(x: z) == F(x: zero()));
 
     val ta = #(z, 1);
     val tb = #(neg, 1);
     val tc = #(zero(), 1);
-    @print(ta == tb);
-    @print(ta == tc);
+    print(ta == tb);
+    print(ta == tc);
 
     val xs = [z, 1.5];
     val ys = [neg, 1.5];
     val zs = [zero(), 1.5];
-    @print(xs == ys);
-    @print(xs == zs);
+    print(xs == ys);
+    print(xs == zs);
 
-    @print(V.W(x: z) == V.W(x: neg));
-    @print(V.W(x: z) == V.W(x: zero()));
+    print(V.W(x: z) == V.W(x: neg));
+    print(V.W(x: z) == V.W(x: zero()));
 }

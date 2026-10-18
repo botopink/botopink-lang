@@ -4,7 +4,8 @@
 
 pub mod tags;
 import {tags.markup, tags.withEmit};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(markup @`<div #[withEmit]>hi</div>`);
+    print(markup @`<div #[withEmit]>hi</div>`);
 }

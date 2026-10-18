@@ -3,12 +3,14 @@
 //// `iter fn` (a body of only literal `yield`s, and one that runs code) and on an
 //// `iter loop`.
 
-iter fn literals() -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+iter fn literals() -> Iterator<i32> {
     yield 1;
     yield 2;
 }
 
-iter fn computed() -> @Iterator<i32> {
+iter fn computed() -> Iterator<i32> {
     var n = 1;
     while (n < 3) {
         yield n;
@@ -19,21 +21,21 @@ iter fn computed() -> @Iterator<i32> {
 pub fn main() {
     val a = literals();
     for (a) { x ->
-        @print(x);
+        print(x);
     }
     for (a) { x ->
-        @print(x);
+        print(x);
     }
-    @print("fn literals done");
+    print("fn literals done");
 
     val b = computed();
     for (b) { x ->
-        @print(x);
+        print(x);
     }
     for (b) { x ->
-        @print(x);
+        print(x);
     }
-    @print("fn computed done");
+    print("fn computed done");
 
     val c = iter loop {
         yield 1;
@@ -41,10 +43,10 @@ pub fn main() {
         break;
     };
     for (c) { x ->
-        @print(x);
+        print(x);
     }
     for (c) { x ->
-        @print(x);
+        print(x);
     }
-    @print("loop done");
+    print("loop done");
 }

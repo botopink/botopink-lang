@@ -3,11 +3,11 @@
 
 pub type ParseError { Empty }
 
-pub type Parser<T> = @Result<T, ParseError>;
+pub type Parser<T> = Result<T, ParseError>;
 
 pub type Port = i32;
 
-pub fn portOf(s: string) -> @Result<Port, ParseError> {
+pub fn portOf(s: string) -> Result<Port, ParseError> {
     if (s == "") throw ParseError.Empty;
     return 8080;
 }

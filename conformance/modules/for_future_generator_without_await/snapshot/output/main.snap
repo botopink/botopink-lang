@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: for-over-stream: a `@Stream` suspends between items — iterate it with `for await`
-at src/main.bp:11:5
+at src/main.bp:13:5

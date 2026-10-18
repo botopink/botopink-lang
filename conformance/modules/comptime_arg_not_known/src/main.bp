@@ -3,6 +3,8 @@
 //// run-time value, `comptime-arg-not-known` at the argument. The parent binary
 //// accepted `twice(k)` and the erlang build failed (`twice/1 undefined`).
 
+import {io.terminal.print} from "std";
+
 fn twice(comptime n: i32) -> i32 {
     return n * 2;
 }
@@ -10,6 +12,6 @@ fn twice(comptime n: i32) -> i32 {
 pub fn main() {
     var k = 3;
     k = k + 1;
-    @print(twice(2));
-    @print(twice(k));
+    print(twice(2));
+    print(twice(k));
 }

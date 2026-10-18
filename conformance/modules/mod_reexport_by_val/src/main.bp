@@ -4,11 +4,13 @@
 //// has one public path (`text.splitPath`), and the type is `split`'s own, not
 //// a second one: a `text.Pair` built here is what `split.join` takes.
 
+import {io.terminal.print} from "std";
+
 mod text;
 mod user;
 
 pub fn main() {
-    @print(text.splitPath("a/b"));
-    @print(text.join(text.Pair(a: "x", b: "y")));
-    @print(user.run());
+    print(text.splitPath("a/b"));
+    print(text.join(text.Pair(a: "x", b: "y")));
+    print(user.run());
 }

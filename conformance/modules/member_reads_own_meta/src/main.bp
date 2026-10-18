@@ -5,7 +5,7 @@
 //// two `#[check]`s and the member checked again. The list is a constant of
 //// build (`comptime`); the loop and the rules run at run time.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
@@ -22,7 +22,7 @@ fn check<T>(
 fn validated<T>(syntax decl: T) {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         var out: Violation[] = [];
-        for (comptime @typeInfo(T).metaAll(Check)) { c ->
+        for (comptime compiler.typeInfo(T).metaAll(Check)) { c ->
             if (!c.rule(self))
                 out.push(Violation(field: "conta", message: c.message));
         }
@@ -44,7 +44,7 @@ fn handleFree(c: Conta) -> bool {
 pub type Conta(handle: string, password: string, confirm: string)
 
 pub fn main() {
-    @print(
+    print(
         Conta(handle: "ana", password: "abc", confirm: "abc").validate().length,
     );
     val bad = Conta(
@@ -52,8 +52,8 @@ pub fn main() {
         password: "abc",
         confirm: "abd",
     ).validate();
-    @print(bad.length);
+    print(bad.length);
     for (bad) { v ->
-        @print(v.field + ": " + v.message);
+        print(v.field + ": " + v.message);
     }
 }

@@ -7,9 +7,9 @@
 //// `canonical` — decision 146's rule, which `std_asserts_on_every_target`
 //// pins — until `canonical` gains a botopink body (503).
 
-import {testing.asserts} from "std";
+import {testing.asserts, io.terminal.print} from "std";
 
 pub fn main() {
-    @print(asserts.errorText(asserts.deepEquals([1, 2], [1, 2])).length);
-    @print(asserts.errorText(asserts.deepEquals([1, 2], [2, 1])));
+    print(asserts.errorText(asserts.deepEquals([1, 2], [1, 2])).length);
+    print(asserts.errorText(asserts.deepEquals([1, 2], [2, 1])));
 }

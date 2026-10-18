@@ -3,6 +3,8 @@
 //// called; a `var` holding a function, reassigned, calls the new one; and a
 //// second `val f` in a later block calls its own function, not the first.
 
+import {io.terminal.print} from "std";
+
 fn one() -> i32 {
     return 1;
 }
@@ -47,7 +49,7 @@ fn siblings() -> i32 {
 pub fn main() {
     val a: unknown = one;
     val b: unknown = two;
-    @print(narrowed([a, b], [b]));
-    @print(reassigned());
-    @print(siblings());
+    print(narrowed([a, b], [b]));
+    print(reassigned());
+    print(siblings());
 }

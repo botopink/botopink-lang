@@ -3,10 +3,12 @@
 //// `1 + if (c) { 2 } else { 3 }` is refused at the `if` as `if-operand`, with
 //// the fix-it that binds the value first: `val x = if …; 1 + x`.
 
+import {io.terminal.print} from "std";
+
 fn f(c: bool) -> i32 {
     return 1 + if (c) { 2 } else { 3 };
 }
 
 pub fn main() {
-    @print(f(true));
+    print(f(true));
 }

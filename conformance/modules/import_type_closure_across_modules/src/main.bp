@@ -6,6 +6,7 @@
 //// 'Outline'" located in this file. Neither `Outline` nor `Point` is named.
 
 import {Canvas, canvas.canvas} from "shapes";
+import {io.terminal.print} from "std";
 
 fn make() -> Canvas {
     return canvas();
@@ -13,9 +14,9 @@ fn make() -> Canvas {
 
 pub fn main() {
     val c = make();
-    @print(c.count());
-    @print(c.origin.y);
+    print(c.count());
+    print(c.origin.y);
     for (c.outlines) { o ->
-        @print(o.first().x);
+        print(o.first().x);
     }
 }

@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Color { Red, Green, Blue }
 
 fn warm(c: Color) -> bool {
@@ -16,9 +18,9 @@ fn size(items: i32[]) -> string {
 }
 
 pub fn main() {
-    @print(warm(Color.Red)); // true
-    @print(warm(Color.Blue)); // false
-    @print(size([])); // empty
-    @print(size([1])); // one
-    @print(size([1, 2, 3])); // many
+    print(warm(Color.Red)); // true
+    print(warm(Color.Blue)); // false
+    print(size([])); // empty
+    print(size([1])); // one
+    print(size([1, 2, 3])); // many
 }

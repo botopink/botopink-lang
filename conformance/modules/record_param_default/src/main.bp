@@ -1,6 +1,8 @@
 //// Decision 529 (2) — a record parameter takes no default: the defaults are
 //// its record type's fields'. Refused at the `=`.
 
+import {io.terminal.print} from "std";
+
 type CardProps(title: string)
 
 fn Card(..props: CardProps = CardProps(title: "a")) -> string {
@@ -8,5 +10,5 @@ fn Card(..props: CardProps = CardProps(title: "a")) -> string {
 }
 
 pub fn main() {
-    @print(Card());
+    print(Card());
 }

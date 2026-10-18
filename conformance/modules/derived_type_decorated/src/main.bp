@@ -4,7 +4,7 @@
 //// `Type.partial` writes each field's type `?T` — what the decorator emits
 //// runs on all four targets.
 
-import {types.Type, compiler.DeclKind, compiler} from "std";
+import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 fn label(syntax decl: unknown, comptime text: string) {}
 
@@ -45,9 +45,9 @@ val RecipePatch = Type.partial(Recipe);
 val RecipeTitle = Type.pick(Recipe, .title);
 
 pub fn main() {
-    @print(RecipePatchSchema());
-    @print(RecipeTitleSchema());
-    @print(
+    print(RecipePatchSchema());
+    print(RecipeTitleSchema());
+    print(
         RecipePatch(
             title: "Feijoada",
             description: null,

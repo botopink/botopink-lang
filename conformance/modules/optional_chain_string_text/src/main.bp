@@ -4,18 +4,20 @@
 //// final sigma. commonJS calls its helpers under the `?.` guard, never the
 //// JS engine's `trim` / `toLowerCase`; an absent receiver answers absent.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val o: ?string = "\u{a0}ΟΔΟΣ\u{a0} ";
     val none: ?string = null;
-    @print("[" + (o?.trim() ?? "-") + "]");
-    @print("[" + (o?.trimStart() ?? "-") + "]");
-    @print("[" + (o?.trimEnd() ?? "-") + "]");
-    @print(o?.toLower() ?? "-");
-    @print(o?.trim().toLower() ?? "-");
+    print("[" + (o?.trim() ?? "-") + "]");
+    print("[" + (o?.trimStart() ?? "-") + "]");
+    print("[" + (o?.trimEnd() ?? "-") + "]");
+    print(o?.toLower() ?? "-");
+    print(o?.trim().toLower() ?? "-");
     val s: ?string = "straße";
-    @print(s?.toUpper() ?? "-");
-    @print(none?.trim() ?? "absent");
-    @print(none?.toLower() ?? "absent");
+    print(s?.toUpper() ?? "-");
+    print(none?.trim() ?? "absent");
+    print(none?.toLower() ?? "absent");
     val f: ?f64 = 5.0;
-    @print(f?.toString() ?? "-");
+    print(f?.toString() ?? "-");
 }

@@ -8,6 +8,8 @@
 //// and printed nothing at exit 0, and a `val assert Error(m)` was a fatal
 //// "did not match" although `isError()` answered `true`.
 
+import {io.terminal.print} from "std";
+
 type Level {
     Info,
     Error,
@@ -18,12 +20,12 @@ type Status {
     Down,
 }
 
-fn load(n: i32) -> @Result<string, string> {
+fn load(n: i32) -> Result<string, string> {
     if (n < 0) throw "negative";
     return "loaded";
 }
 
-fn describe(r: @Result<string, string>) -> string {
+fn describe(r: Result<string, string>) -> string {
     return case r {
         Ok(v) {
             "ok " + v
@@ -36,20 +38,20 @@ fn describe(r: @Result<string, string>) -> string {
 
 pub fn main() {
     val failed = load(-1);
-    @print(failed.isError());
-    @print(describe(failed));
-    @print(describe(load(1)));
+    print(failed.isError());
+    print(describe(failed));
+    print(describe(load(1)));
     case load(-2) {
         Error(e) {
-            @print("statement " + e);
+            print("statement " + e);
         }
         Ok(v) {
-            @print("statement " + v);
+            print("statement " + v);
         }
     }
     val assert Error(message) = load(-3);
-    @print(message);
-    @print(
+    print(message);
+    print(
         case Level.Error {
             Info {
                 "info"
@@ -59,7 +61,7 @@ pub fn main() {
             }
         },
     );
-    @print(
+    print(
         case Status.Ok {
             Ok {
                 "status ok"

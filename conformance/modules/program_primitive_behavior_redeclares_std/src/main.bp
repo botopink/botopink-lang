@@ -2,6 +2,8 @@
 //// redeclares none: a `startsWith` of its own is `behavior-member-redeclared`
 //// at the member.
 
+import {io.terminal.print} from "std";
+
 behavior String {
     default fn startsWith(self: Self, p: string) -> bool {
         return false;
@@ -9,5 +11,5 @@ behavior String {
 }
 
 pub fn main() {
-    @print("x".startsWith("x"));
+    print("x".startsWith("x"));
 }

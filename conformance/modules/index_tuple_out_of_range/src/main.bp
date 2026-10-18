@@ -3,7 +3,9 @@
 //// refusal rather than decision 47's `null`: absence is an answer an ARRAY or a
 //// `Dict` can give, and a tuple position either exists in the type or does not.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val t = #(1, "a");
-    @print(t[2]);
+    print(t[2]);
 }

@@ -2,6 +2,8 @@
 //// C2), a cell since 144 B-29 step H: a record, an enum dispatched by `case`
 //// and a captured lambda answer alike on every target.
 
+import {io.terminal.print} from "std";
+
 type Shape { Circle, Square, Triangle }
 
 type Box(w: i32, h: i32)
@@ -20,8 +22,8 @@ fn area(b: Box) -> i32 {
 }
 
 pub fn main() {
-    @print(sides(Shape.Circle));
-    @print(sides(Shape.Square));
-    @print(sides(Shape.Triangle));
-    @print(area(Box(w: 2, h: 3)));
+    print(sides(Shape.Circle));
+    print(sides(Shape.Square));
+    print(sides(Shape.Triangle));
+    print(area(Box(w: 2, h: 3)));
 }

@@ -4,11 +4,11 @@
 //// is built in a plain fn (handed out in a record field — a plain fn's return
 //// type may not be a wrapper, N25) and consumed by a `#[@future]` body.
 
-fn fetch(n: i32) -> @Task<i32> {
+fn fetch(n: i32) -> Task<i32> {
     return n * 2;
 }
 
-type Ticker(gen: @Stream<i32>)
+type Ticker(gen: Stream<i32>)
 
 fn ticks(limit: i32) -> Ticker {
     var i = 0;
@@ -21,7 +21,7 @@ fn ticks(limit: i32) -> Ticker {
     return Ticker(gen: gen);
 }
 
-fn total(limit: i32) -> @Task<i32> {
+fn total(limit: i32) -> Task<i32> {
     var sum = 0;
     for await (ticks(limit).gen) { v ->
         sum = sum + v;

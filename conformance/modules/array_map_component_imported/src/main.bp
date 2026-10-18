@@ -5,7 +5,8 @@
 pub mod cards;
 
 import {cards.Page};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print("built");
+    print("built");
 }

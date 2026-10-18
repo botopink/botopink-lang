@@ -22,7 +22,7 @@ const h = @import("helpers.zig");
 
 test "§1 R11 — return Result.Ok(...) inside @Result reds return-must-be-bare-R" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    return Result.Ok(42);
         \\}
     );
@@ -32,7 +32,7 @@ test "§1 R11 — return Result.Ok(...) inside @Result reds return-must-be-bare-
 
 test "§1 R12 — return Result.Error(...) inside @Result reds result-return-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    return Result.Error("boom");
         \\}
     );
@@ -42,7 +42,7 @@ test "§1 R12 — return Result.Error(...) inside @Result reds result-return-typ
 
 test "§1 R11-mirror — throw Result.Error(...) inside @Result reds throw-must-be-bare-E" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    throw Result.Error("boom");
         \\}
     );
@@ -52,7 +52,7 @@ test "§1 R11-mirror — throw Result.Error(...) inside @Result reds throw-must-
 
 test "§1 throw-mismatch — throw Result.Ok(...) inside @Result reds result-throw-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    throw Result.Ok(42);
         \\}
     );
@@ -66,7 +66,7 @@ test "§1 happy path — bare return + throw inside @Result type-checks" {
     // tail without firing any R11/R12.
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
@@ -76,7 +76,7 @@ test "§1 happy path — bare return + throw inside @Result type-checks" {
 test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
@@ -90,11 +90,11 @@ test "§1 happy path — `try` unwraps @Result<D, E> to D" {
 test "§1 happy path — nested `@Result` call propagates Error via `try`" {
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
-        \\fn double(n: i32) -> @Result<i32, AppError> {
+        \\fn double(n: i32) -> Result<i32, AppError> {
         \\    val v = try parse(n);
         \\    return v + v;
         \\}
@@ -111,13 +111,13 @@ test "a throw in a case arm of a @Result fn is the fn's error in every arm form 
     const n = try h.resultJumpLoweringCount(std.testing.allocator,
         \\type Value { Num(n: i32), Text(s: string) }
         \\fn g(n: i32) -> i32 { return n; }
-        \\fn returned(v: Value) -> @Result<i32, string> {
+        \\fn returned(v: Value) -> Result<i32, string> {
         \\    return case v {
         \\        Num(n) -> g(n);
         \\        _ -> throw "a";
         \\    };
         \\}
-        \\fn bound(v: Value) -> @Result<i32, string> {
+        \\fn bound(v: Value) -> Result<i32, string> {
         \\    val r = case v {
         \\        Num(n) -> g(n);
         \\        Text(s) {
@@ -126,13 +126,13 @@ test "a throw in a case arm of a @Result fn is the fn's error in every arm form 
         \\    };
         \\    return r;
         \\}
-        \\fn argument(v: Value) -> @Result<i32, string> {
+        \\fn argument(v: Value) -> Result<i32, string> {
         \\    return g(case v {
         \\        Num(n) -> n;
         \\        _ -> throw "c";
         \\    });
         \\}
-        \\fn argumentBlock(v: Value) -> @Result<i32, string> {
+        \\fn argumentBlock(v: Value) -> Result<i32, string> {
         \\    return g(case v {
         \\        Num(n) -> n;
         \\        _ {
@@ -140,10 +140,10 @@ test "a throw in a case arm of a @Result fn is the fn's error in every arm form 
         \\        }
         \\    });
         \\}
-        \\fn statement(v: Value) -> @Result<i32, string> {
+        \\fn statement(v: Value) -> Result<i32, string> {
         \\    case v {
         \\        Num(_) {
-        \\            @print("num");
+        \\            print("num");
         \\        }
         \\        _ {
         \\            throw "e";
@@ -151,13 +151,14 @@ test "a throw in a case arm of a @Result fn is the fn's error in every arm form 
         \\    }
         \\    return 0;
         \\}
-        \\fn statementExpression(v: Value) -> @Result<i32, string> {
+        \\fn statementExpression(v: Value) -> Result<i32, string> {
         \\    case v {
-        \\        Num(_) -> @print("num");
+        \\        Num(_) -> print("num");
         \\        _ -> throw "f";
         \\    }
         \\    return 0;
         \\}
+        \\import {io.terminal.print} from "std";
     , .wrap_error);
     try std.testing.expectEqual(@as(usize, 6), n);
 }

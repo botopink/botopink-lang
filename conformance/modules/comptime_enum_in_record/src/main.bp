@@ -3,6 +3,8 @@
 //// `comptime` writes it back as `Theme(mode: Mode.Dark, …)`; a generic
 //// record's field typed by its parameter (`Boxed<Mode>`) too.
 
+import {io.terminal.print} from "std";
+
 type Mode {
     Light,
     Dark,
@@ -32,7 +34,7 @@ fn name(m: Mode) -> string {
 }
 
 pub fn main() {
-    @print(name(t.mode));
-    @print(t.size);
-    @print(name(b.item));
+    print(name(t.mode));
+    print(t.size);
+    print(name(b.item));
 }

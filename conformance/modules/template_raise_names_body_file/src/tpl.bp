@@ -1,7 +1,7 @@
-import {compiler} from "std";
+import {compiler, failure.panic} from "std";
 
 pub fn shout(syntax t: string) -> string {
     val s = compiler.text(t);
-    @panic("boom " + s);
+    panic("boom " + s);
     return compiler.build("\"" + s + "\"");
 }

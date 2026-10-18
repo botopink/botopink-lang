@@ -1,6 +1,8 @@
+import {io.terminal.print} from "std";
+
 pub fn main() {
     for ([1, 2]) { x ->
         if (x == 1) continue :nope;
-        @print(x);
+        print(x);
     }
 }

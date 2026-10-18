@@ -6,9 +6,9 @@
 //// on commonJS and crash on erlang. A call of another name (`r.length()`) is
 //// refused the same way (`reject/result_unknown_method`).
 
-import {querystring} from "std";
+import {querystring, io.terminal.print} from "std";
 
 pub fn main() {
     val fields = querystring.parse("a=1").length;
-    @print(fields);
+    print(fields);
 }

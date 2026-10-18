@@ -1,8 +1,10 @@
+import {io.terminal.print} from "std";
+
 val result = comptime {
     val x = 10;
     x * 2
 };
 
 pub fn main() {
-    @print(result); // 20
+    print(result); // 20
 }

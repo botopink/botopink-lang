@@ -6,6 +6,7 @@ pub mod marks;
 pub mod registry;
 import {marks.module};
 import {registry.all};
+import {io.terminal.print} from "std";
 
 #[module("singleton")]
 pub fn home() -> string {
@@ -19,7 +20,7 @@ fn count() -> i32 {
 
 pub fn main() {
     for (all()) { m ->
-        @print(m.name + " " + m.make());
+        print(m.name + " " + m.make());
     }
-    @print(count());
+    print(count());
 }

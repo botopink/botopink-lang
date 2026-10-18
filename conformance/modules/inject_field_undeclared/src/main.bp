@@ -2,20 +2,20 @@
 //// declared, no default of its own — is refused at build, at the `inject`,
 //// naming the field.
 
-import {context.createContext, context.provide, context.context, context.inject} from "std";
+import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 type Clock(now: string)
 
 type Deps(clock: Clock)
 
-fn Page() -> @Component<View> {
+fn Page() -> Component<View> {
     val deps = use inject(Deps);
     return View(text: deps.clock.now);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val p = await Page();
-    @print(p.text);
+    print(p.text);
 }

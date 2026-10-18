@@ -3,19 +3,21 @@
 //// `fn(string) -> string`, or bound to a `val`. The parameter's type comes from its
 //// use (what the checker inferred), so `s + "x"` is a concatenation on every target.
 
+import {io.terminal.print} from "std";
+
 fn apply(f: fn(string) -> string, v: string) -> string {
     return f(v);
 }
 
 pub fn main() {
-    @print((fn(s) {
+    print((fn(s) {
         return s + "x";
     })("a"));
-    @print(apply(fn(s) {
+    print(apply(fn(s) {
         return s + "y";
     }, "b"));
     val g = fn(s) {
         return s + "z";
     };
-    @print(g("c"));
+    print(g("c"));
 }

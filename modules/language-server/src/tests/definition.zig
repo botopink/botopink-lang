@@ -711,9 +711,10 @@ test "definition: a member through the namespace a `mod` binds jumps into its mo
         \\pub mod config;
         \\mod text;
         \\pub fn main() {
-        \\    @print(config.label("x"));
-        \\    @print(text.split.splitPath("a/b"));
+        \\    print(config.label("x"));
+        \\    print(text.split.splitPath("a/b"));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const others = [_]engine.ModuleSource{
         .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\n" },

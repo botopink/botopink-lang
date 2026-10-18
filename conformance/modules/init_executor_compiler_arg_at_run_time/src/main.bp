@@ -3,12 +3,12 @@
 //// lambda the executor runs, exists only when the program runs, and is
 //// refused at the argument (`compiler-arg-at-run-time`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn registered(syntax decl: unknown) {
     compiler.init({ ->
         for (["a"]) { s ->
-            @print(compiler.text(s));
+            print(compiler.text(s));
         }
     });
 }

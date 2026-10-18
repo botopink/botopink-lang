@@ -3,10 +3,12 @@
 //// call of an ordinary function fills one (each backend called the function
 //// with one argument short), so there it is refused at the default.
 
+import {io.terminal.print} from "std";
+
 fn scale(x: i32, comptime n: i32 = 3) -> i32 {
     return x * n;
 }
 
 pub fn main() {
-    @print(scale(2));
+    print(scale(2));
 }

@@ -3,7 +3,7 @@
 //// the pattern names `string` is refused at the wrapper, in the decorator —
 //// before any function it annotates is wrapped.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn counted(syntax decl: fn(..) -> string) {
     compiler.wrapWith({ call -> 42 });
@@ -15,5 +15,5 @@ pub fn posts() -> string {
 }
 
 pub fn main() {
-    @print(posts());
+    print(posts());
 }

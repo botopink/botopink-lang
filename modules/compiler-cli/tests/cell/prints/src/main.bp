@@ -2,8 +2,9 @@
 
 pub mod text;
 import {text.label};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(label(55));
-    @print("done");
+    print(label(55));
+    print("done");
 }

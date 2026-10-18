@@ -149,8 +149,9 @@ test "diagnostics: type mismatch surfaces a located typeError" {
 test "diagnostics: a misused #[@external(…)] source surfaces a typeError diagnostic" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
-        \\#[@external(.Erlang())]
+        \\#[compiler.external(.Erlang())]
         \\pub declare fn length(s: string) -> i32;
+        \\import {compiler} from "std";
     );
     defer c.deinit(gpa);
 
@@ -178,8 +179,9 @@ test "diagnostics: a checker warning surfaces with severity Warning" {
     const source =
         \\pub fn main() {
         \\    var out = [];
-        \\    @print("x");
+        \\    print("x");
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     var result = try engine.diagnose(gpa, std.testing.io, h.TEST_URI, source, null, &.{});
     defer result.deinit(gpa);
@@ -201,8 +203,9 @@ test "diagnostics: from naming a module of this package is module-import-with-fr
         \\import {area} from "geometry";
         \\
         \\pub fn main() {
-        \\    @print(area(2));
+        \\    print(area(2));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const package = [_]engine.ModuleSource{
         .{ .uri = "file:///proj/src/geometry.bp", .source = "pub fn area(x: i32) -> i32 { return x * x; }" },
@@ -223,8 +226,9 @@ test "diagnostics: from naming an undeclared package is an unresolved import sou
         \\import {greet} from "core";
         \\
         \\pub fn main() {
-        \\    @print(start() + greet());
+        \\    print(start() + greet());
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &.{}, "/proj/src", &.{"starter"}, "");
     defer {
@@ -241,8 +245,9 @@ test "diagnostics: from naming this package itself is module-import-with-from" {
         \\import {area} from "shapes.geometry";
         \\
         \\pub fn main() {
-        \\    @print(area(2));
+        \\    print(area(2));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const package = [_]engine.ModuleSource{
         .{ .uri = "file:///proj/src/geometry.bp", .source = "pub fn area(x: i32) -> i32 { return x * x; }" },
@@ -267,9 +272,10 @@ test "diagnostics: the server names the package by its manifest for the 309 refu
         \\import {area} from "shapes.geometry";
         \\
         \\pub fn main() {
-        \\    @print(area(2));
+        \\    print(area(2));
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     ;
     const files = [_]struct { rel: []const u8, data: []const u8 }{
         .{ .rel = test_scratch.path(io, "lsp-own-package/shapes/botopink.json"), .data =

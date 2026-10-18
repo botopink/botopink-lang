@@ -5,6 +5,7 @@
 
 pub mod shapes;
 import {shapes.Box as ShapeBox, shapes.widthOf};
+import {io.terminal.print} from "std";
 
 pub type Box(v: i32) {
     fn describe(self: Self) -> string {
@@ -29,14 +30,14 @@ fn kind(x: unknown) -> string {
 pub fn main() {
     val own = Box(v: 1);
     val other = ShapeBox(w: 2);
-    @print(own);
-    @print(other);
-    @print(own.v);
-    @print(other.w);
-    @print(doubled(own));
-    @print(widened(other));
-    @print(own.describe());
-    @print(other.describe());
-    @print(kind(own));
-    @print(kind(other));
+    print(own);
+    print(other);
+    print(own.v);
+    print(other.w);
+    print(doubled(own));
+    print(widened(other));
+    print(own.describe());
+    print(other.describe());
+    print(kind(own));
+    print(kind(other));
 }

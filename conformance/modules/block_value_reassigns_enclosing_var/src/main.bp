@@ -4,6 +4,8 @@
 //// its end and after a loop. On erlang a block that was a fun could not
 //// rebind what it captured.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var acc = 1;
     var label = "a";
@@ -12,7 +14,7 @@ pub fn main() {
         label = label + "b";
         acc * 2
     };
-    @print(acc, label, r);
+    print(acc, label, r);
 
     val s = {
         if (acc > 5) {
@@ -23,7 +25,7 @@ pub fn main() {
             "small";
         }
     };
-    @print(acc, s);
+    print(acc, s);
 
     val t = {
         for ([1, 2]) { x ->
@@ -31,5 +33,5 @@ pub fn main() {
         }
         acc * 10
     };
-    @print(acc, t);
+    print(acc, t);
 }

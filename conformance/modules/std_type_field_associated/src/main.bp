@@ -2,7 +2,7 @@
 //// type `Type`, so `Type.Field<T>` (decision 308) is a type position after
 //// `import {types.Type} from "std";`, on all four targets.
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Recipe(title: string)
 
@@ -11,5 +11,5 @@ fn nameOf(f: ?Type.Field<Recipe>) -> string {
 }
 
 pub fn main() {
-    @print(nameOf(null));
+    print(nameOf(null));
 }

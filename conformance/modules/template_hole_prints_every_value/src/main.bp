@@ -3,6 +3,8 @@
 //// implementing `Display` writes its `display()`. Each hole is printed beside the `@print` of the
 //// same value, so the two lines say the same.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 type Tagged(label: string, at: Point)
@@ -24,31 +26,31 @@ fn show(p: Point) -> string {
 
 pub fn main() {
     val p = Point(x: 1, y: 2);
-    @print(p);
-    @print("${p}");
+    print(p);
+    print("${p}");
     val tagged = Tagged(label: "a", at: p);
-    @print(tagged);
-    @print("${tagged}");
+    print(tagged);
+    print("${tagged}");
     val xs = [1, 2, 3];
-    @print(xs);
-    @print("${xs}");
+    print(xs);
+    print("${xs}");
     val names = ["a", "b"];
-    @print(names);
-    @print("${names}");
+    print(names);
+    print("${names}");
     val pair = #(1, "a");
-    @print(pair);
-    @print("${pair}");
+    print(pair);
+    print("${pair}");
     val none: ?i32 = null;
-    @print(none);
-    @print("${none}");
+    print(none);
+    print("${none}");
     val some: ?i32 = 4;
-    @print("${some}");
+    print("${some}");
     val light = Light.Amber(level: 2);
-    @print("${light} ${Light.Red}");
+    print("${light} ${Light.Red}");
     val price = Money(cents: 250);
-    @print(price);
-    @print("${price}");
-    @print(show(Point(x: 7, y: 8)));
-    @print("text ${"plain"} ${3} ${true}");
-    @print("list of records ${[Point(x: 0, y: 0)]}");
+    print(price);
+    print("${price}");
+    print(show(Point(x: 7, y: 8)));
+    print("text ${"plain"} ${3} ${true}");
+    print("list of records ${[Point(x: 0, y: 0)]}");
 }

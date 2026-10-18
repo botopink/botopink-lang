@@ -6,81 +6,83 @@
 //// distinct, so a string printed as its heap address (what wasm answered for
 //// each of these shapes, pre-existing at `82e32e36`) is a wrong line at exit 0.
 
+import {io.terminal.print} from "std";
+
 type User(name: string, age: i32)
 
 type Failure(code: i32, reason: string)
 
 type Envelope(label: string, user: User)
 
-fn find(id: i32) -> @Result<User, Failure> {
+fn find(id: i32) -> Result<User, Failure> {
     if (id < 0) throw Failure(code: 404, reason: "no user " + id.toString());
     return User(name: "ana", age: id);
 }
 
-fn check(n: i32) -> @Result<i32, string> {
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
-fn wrap(id: i32) -> @Result<Envelope, string> {
+fn wrap(id: i32) -> Result<Envelope, string> {
     if (id < 0) throw "no envelope";
     return Envelope(label: "box", user: User(name: "bia", age: id));
 }
 
-fn names() -> @Result<string[], string> {
+fn names() -> Result<string[], string> {
     return ["x", "y"];
 }
 
-fn describe(r: @Result<i32, string>) -> string {
+fn describe(r: Result<i32, string>) -> string {
     return case r {
         Ok(v) -> "ok " + v.toString();
         Error(e) -> "error " + e;
     };
 }
 
-fn each(rs: @Result<i32, string>[]) {
+fn each(rs: Result<i32, string>[]) {
     for (rs) { x ->
         case x {
-            Ok(v) -> @print(v.toString());
-            Error(e) -> @print(e);
+            Ok(v) -> print(v.toString());
+            Error(e) -> print(e);
         }
     }
 }
 
 pub fn main() {
     case find(7) {
-        Ok(u) -> @print(u.name + " " + u.age.toString());
-        Error(f) -> @print(f.reason);
+        Ok(u) -> print(u.name + " " + u.age.toString());
+        Error(f) -> print(f.reason);
     }
     case find(-1) {
-        Ok(u) -> @print(u.name);
-        Error(f) -> @print(f.code.toString() + " " + f.reason);
+        Ok(u) -> print(u.name);
+        Error(f) -> print(f.code.toString() + " " + f.reason);
     }
     case wrap(3) {
-        Ok(env) -> @print(env.label + " " + env.user.name);
-        Error(e) -> @print(e);
+        Ok(env) -> print(env.label + " " + env.user.name);
+        Error(e) -> print(e);
     }
     case wrap(-3) {
-        Ok(env) -> @print(env.label);
-        Error(e) -> @print(e);
+        Ok(env) -> print(env.label);
+        Error(e) -> print(e);
     }
     case names() {
-        Ok(ns) -> @print(ns.join("+"));
-        Error(e) -> @print(e);
+        Ok(ns) -> print(ns.join("+"));
+        Error(e) -> print(e);
     }
-    val r: @Result<i32, string> = check(-5);
+    val r: Result<i32, string> = check(-5);
     case r {
-        Ok(v) -> @print(v.toString());
-        Error(e) -> @print(e);
+        Ok(v) -> print(v.toString());
+        Error(e) -> print(e);
     }
-    @print(describe(check(-6)));
+    print(describe(check(-6)));
     each([check(1), check(-7)]);
     jobs();
 }
 
-type Job(title: string, outcome: @Result<i32, string>)
+type Job(title: string, outcome: Result<i32, string>)
 
-fn attempt(j: Job) -> @Result<string, string> {
+fn attempt(j: Job) -> Result<string, string> {
     val n = try j.outcome;
     return j.title + " " + n.toString();
 }
@@ -89,19 +91,19 @@ fn jobs() {
     val done = Job(title: "build", outcome: check(2));
     val failed = Job(title: "test", outcome: check(-8));
     case done.outcome {
-        Ok(v) -> @print(done.title + " " + v.toString());
-        Error(e) -> @print(e);
+        Ok(v) -> print(done.title + " " + v.toString());
+        Error(e) -> print(e);
     }
     case failed.outcome {
-        Ok(v) -> @print(v.toString());
-        Error(e) -> @print(failed.title + ": " + e);
+        Ok(v) -> print(v.toString());
+        Error(e) -> print(failed.title + ": " + e);
     }
     case attempt(done) {
-        Ok(s) -> @print(s);
-        Error(e) -> @print(e);
+        Ok(s) -> print(s);
+        Error(e) -> print(e);
     }
     case attempt(failed) {
-        Ok(s) -> @print(s);
-        Error(e) -> @print("attempt: " + e);
+        Ok(s) -> print(s);
+        Error(e) -> print("attempt: " + e);
     }
 }

@@ -1,10 +1,10 @@
-pub type View(text: string) implement @Renderable
+pub type View(text: string) implement Renderable
 
-fn Card(n: i32) -> @Component<View> {
+fn Card(n: i32) -> Component<View> {
     return View(text: n.toString());
 }
 
-pub fn Page() -> @Component<View> {
+pub fn Page() -> Component<View> {
     val cards = [1, 2].map(Card);
     return View(text: 5.toString() + cards.length().toString());
 }

@@ -6,8 +6,9 @@
 pub mod `my-utils`;
 pub mod `report-pages`;
 import {`report-pages`.`not-found`.code};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(`my-utils`.triple(4));
-    @print(code());
+    print(`my-utils`.triple(4));
+    print(code());
 }

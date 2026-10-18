@@ -16,9 +16,10 @@ pub mod routes;
 import {app.page.title};
 import {routes.blogTitle};
 import {app.blog.page};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(title());
-    @print(blogTitle());
-    @print(page.title());
+    print(title());
+    print(blogTitle());
+    print(page.title());
 }

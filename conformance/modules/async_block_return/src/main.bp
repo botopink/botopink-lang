@@ -6,22 +6,24 @@
 //// backends (the block runs in place) and commonJS (an async IIFE) print the
 //// same order. Printed from inside `run`.
 
-type Holder(t: @Task<string>)
+import {io.terminal.print} from "std";
+
+type Holder(t: Task<string>)
 
 fn pick(n: i32) -> Holder {
     val t = async {
         if (n > 0) return "positive";
         return "not positive";
     };
-    @print("after the block");
+    print("after the block");
     return Holder(t: t);
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val a = pick(1);
-    @print(await a.t);
+    print(await a.t);
     val b = pick(0);
-    @print(await b.t);
+    print(await b.t);
 }
 
 pub fn main() {

@@ -1,4 +1,4 @@
 botopink-cell 1
 out 2147483647
 abort
-stderr integer overflow: += on i32 at src/main.bp:8:5
+stderr integer overflow: += on i32 at src/main.bp:10:5

@@ -4,7 +4,8 @@
 
 pub mod skin;
 import looks from "looks";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(looks @`page`);
+    print(looks @`page`);
 }

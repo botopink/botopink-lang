@@ -2,6 +2,8 @@
 //// reassignment is the program's, whichever branch ran, `else if` chains and
 //// an `if` without `else` included.
 
+import {io.terminal.print} from "std";
+
 fn pick(n: i32) -> i32 {
     var f = "a";
     val r = if (n == 0) {
@@ -14,8 +16,8 @@ fn pick(n: i32) -> i32 {
         f = "d";
         3;
     };
-    @print(f);
-    @print(r);
+    print(f);
+    print(r);
     return r;
 }
 
@@ -25,7 +27,7 @@ fn one(c: bool) -> i32 {
         f = "b";
         1;
     } else 0;
-    @print(f);
+    print(f);
     return r;
 }
 

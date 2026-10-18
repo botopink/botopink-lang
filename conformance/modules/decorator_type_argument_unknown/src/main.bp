@@ -2,7 +2,7 @@
 //// type in scope: a misspelt one is the unknown-type error at the argument
 //// (it used to surface only at boot, from the string).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
@@ -18,7 +18,7 @@ fn consoleMail() -> string {
 }
 
 pub fn main() {
-    @print(consoleMail());
+    print(consoleMail());
 }
 
 // What `#[conditionalOnMissingBean]` records.

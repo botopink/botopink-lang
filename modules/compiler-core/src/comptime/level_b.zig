@@ -833,9 +833,10 @@ test "level B: a package expanding a template that reads the catalogue is never 
         \\import {mid.shown} from "middle";
         \\
         \\pub fn main() {
-        \\    @print(shown());
+        \\    print(shown());
         \\}
         \\
+        \\import {io.terminal.print} from "std";
         },
     };
     var mem: MemoryStore = undefined;
@@ -878,10 +879,11 @@ test "level B: a package declaring a catalogue default is stored and read back w
         \\}
         \\
         \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
-        \\    @print(modules.length.toString());
+        \\    print(modules.length.toString());
         \\}
         \\
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
         },
         .{ .path = "main", .root = true, .source =
         \\import {boot, m as mark} from "frame";
@@ -950,9 +952,10 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
         },
         .{ .path = "main", .source =
         \\pub fn main() {
-        \\    @print("main");
+        \\    print("main");
         \\}
         \\
+        \\import {io.terminal.print} from "std";
         },
     };
     var mem: MemoryStore = undefined;

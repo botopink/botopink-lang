@@ -1,11 +1,13 @@
+import {io.terminal.print} from "std";
+
 type User(id: i32, name: string)
 
-fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
+fn fetchUser(id: i32) -> Task<Result<User, string>> {
     if (id <= 0) throw "no user";
     return User(id: id, name: "ana");
 }
 
-fn both() -> @Task<@Result<string, string>> {
+fn both() -> Task<Result<string, string>> {
     val first = async {
         return try await fetchUser(1);
     }; // @Task<@Result<User, string>>
@@ -17,7 +19,7 @@ fn both() -> @Task<@Result<string, string>> {
     return u.name + n.toString();
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val r = await both();
-    @print(r.unwrapOr("none")); // ana2
+    print(r.unwrapOr("none")); // ana2
 }

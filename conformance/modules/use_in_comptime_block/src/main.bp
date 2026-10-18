@@ -6,11 +6,11 @@ import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn Label() -> @Component<Element> {
+fn Label() -> Component<Element> {
     val mode = comptime {
         val t = use context(Theme);
         t.mode

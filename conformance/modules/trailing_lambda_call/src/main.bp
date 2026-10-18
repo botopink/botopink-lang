@@ -2,6 +2,8 @@
 //// a call, a method's or a plain function's; with no parameter it is written
 //// `{ -> … }`.
 
+import {io.terminal.print} from "std";
+
 type Box(base: i32) {
     fn run(self: Self, f: fn() -> i32) -> i32 {
         return self.base + f();
@@ -28,10 +30,10 @@ fn withBase(x: i32, f: fn() -> i32) -> i32 {
 
 pub fn main() {
     val b = Box(base: 1);
-    @print(b.run { -> 10 });
-    @print(b.through { m -> m + 5 });
-    @print(b.add(2) { -> 3 });
-    @print(twice { -> 4 });
-    @print(apply(3) { k -> k * 3 });
-    @print(withBase(5) { -> 6 });
+    print(b.run { -> 10 });
+    print(b.through { m -> m + 5 });
+    print(b.add(2) { -> 3 });
+    print(twice { -> 4 });
+    print(apply(3) { k -> k * 3 });
+    print(withBase(5) { -> 6 });
 }

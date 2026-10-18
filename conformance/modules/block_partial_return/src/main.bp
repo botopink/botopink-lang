@@ -2,6 +2,8 @@
 //// the enclosing function, and its tail is its value on the path that runs
 //// off its end. `@block` refused the same body as `block-tail-value`.
 
+import {io.terminal.print} from "std";
+
 fn pick(c: bool) -> i32 {
     val a = {
         if (c) return 3;
@@ -11,6 +13,6 @@ fn pick(c: bool) -> i32 {
 }
 
 pub fn main() {
-    @print(pick(true));
-    @print(pick(false));
+    print(pick(true));
+    print(pick(false));
 }

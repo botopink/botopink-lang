@@ -3,22 +3,24 @@
 //// name the deferred code reads is another binding, and the deferred code
 //// does not see it.
 
+import {io.terminal.print} from "std";
+
 val name = "global";
 
 fn work() {
-    defer @print("close " + name);
+    defer print("close " + name);
     val name = "local";
-    @print("work " + name);
+    print("work " + name);
 }
 
 fn viaBranch(c: bool) {
-    defer @print("close " + name);
+    defer print("close " + name);
     if (c) {
         val name = "branch";
-        @print("in " + name);
+        print("in " + name);
         return;
     }
-    @print("after");
+    print("after");
 }
 
 pub fn main() {

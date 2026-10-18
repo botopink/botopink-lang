@@ -7,11 +7,13 @@
 //// (`erlc` refused the module, and a library module holding one was skipped
 //// by the test runner's loader), beam an unresolved call, wasm a trap.
 
+import {io.terminal.print} from "std";
+
 fn shout(line: string) -> string {
     println(line);
     return line;
 }
 
 pub fn main() {
-    @print(shout("hi"));
+    print(shout("hi"));
 }

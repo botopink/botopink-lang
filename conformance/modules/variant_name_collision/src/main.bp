@@ -16,6 +16,8 @@
 //// one of the two and die with `{case_clause, variant_name_collision@main@@Shape__v__circle}`
 //// over a `Hole` value, while wasm answered correctly from the same source.
 
+import {io.terminal.print} from "std";
+
 pub type Shape {
     Circle,
     Square,
@@ -49,12 +51,12 @@ pub fn shapeOf(s: Shape) -> string {
 }
 
 pub fn main() {
-    @print(holeOf(Hole.Circle));
-    @print(shapeOf(Shape.Circle));
+    print(holeOf(Hole.Circle));
+    print(shapeOf(Shape.Circle));
     val h = Hole.Circle;
     val s = Shape.Circle;
-    @print(holeOf(h));
-    @print(shapeOf(s));
-    @print(holeOf(Hole.Slot));
-    @print(shapeOf(Shape.Square));
+    print(holeOf(h));
+    print(shapeOf(s));
+    print(holeOf(Hole.Slot));
+    print(shapeOf(Shape.Square));
 }

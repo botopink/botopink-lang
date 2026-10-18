@@ -3,7 +3,8 @@
 //// `shorthand-import`, `unresolved import`, at the item.
 
 import {splitPath};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(splitPath("a/b"));
+    print(splitPath("a/b"));
 }

@@ -404,7 +404,7 @@ test "format: assert pattern ---- with list and rest" {
 // compiling.
 test "format: val assert ---- the handler-less form keeps no `catch`" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(r: @Result<i32, string>) -> string {
+        \\fn f(r: Result<i32, string>) -> string {
         \\    val assert Error(e) = r;
         \\    return e;
         \\}

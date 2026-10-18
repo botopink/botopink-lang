@@ -2,7 +2,7 @@
 //// as a call's is. `label = value` is a located parse error at the label,
 //// naming the form to write.
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 fn check<T>(
     syntax decl: T,
@@ -16,7 +16,7 @@ fn check<T>(
 type Account(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }
 
 // What `#[check]` records.

@@ -2,7 +2,7 @@
 //// fields: one without an arm for `.servings` (and no `_`) is refused at the
 //// `case`, naming it.
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Recipe(title: string, description: ?string, servings: i32)
 
@@ -16,5 +16,5 @@ fn describe(r: Recipe, key: RecipeKey) -> string {
 }
 
 pub fn main() {
-    @print(describe(Recipe(title: "a", description: null, servings: 1), .title));
+    print(describe(Recipe(title: "a", description: null, servings: 1), .title));
 }

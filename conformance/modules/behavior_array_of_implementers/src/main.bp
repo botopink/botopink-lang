@@ -8,6 +8,8 @@
 //// On all four targets: wasm read every element as the first one's type and
 //// answered `a a b b` at exit 0; it now reads each value's header.
 
+import {io.terminal.print} from "std";
+
 behavior Plugin {
     fn name(self: Self) -> string;
 }
@@ -30,10 +32,10 @@ fn names(ps: Plugin[]) -> string {
 
 pub fn main() {
     val ps: Array<Plugin> = [A(n: 1), B(s: "x")];
-    ps.forEach({ p -> @print(p.name()) });
+    ps.forEach({ p -> print(p.name()) });
     val qs: Plugin[] = [B(s: "y"), A(n: 2)];
     for (qs) { q ->
-        @print(q.name());
+        print(q.name());
     }
-    @print(names([A(n: 3), B(s: "z")]));
+    print(names([A(n: 3), B(s: "z")]));
 }

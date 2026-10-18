@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: call-spread: `soma` constructs no record — a spread copies a record's fields into its constructor, and a function call takes none
-at src/main.bp:12:17
+at src/main.bp:14:16

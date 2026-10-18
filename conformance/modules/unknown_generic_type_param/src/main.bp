@@ -1,10 +1,12 @@
 //// B-110 — a generic application's head name goes through the same lookup as a
 //// bare name: `Bogus<i32, i32>` in a parameter is `unknown type`.
 
+import {io.terminal.print} from "std";
+
 fn size(m: Bogus<i32, i32>) -> i32 {
     return 0;
 }
 
 pub fn main() {
-    @print(1);
+    print(1);
 }

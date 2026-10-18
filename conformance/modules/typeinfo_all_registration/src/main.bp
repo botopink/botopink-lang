@@ -12,6 +12,7 @@ pub mod web;
 pub mod about;
 pub mod pages;
 import {web.route, web.component, web.unused, web.Route};
+import {io.terminal.print} from "std";
 
 #[component]
 pub type Local(id: i32)
@@ -20,11 +21,11 @@ pub fn main() {
     val routes = @TypeInfo.all(with: route);
     for (routes) { r ->
         val path = r.meta(Route)?.path ?? "";
-        @print(r.module + " " + r.name + " " + path);
+        print(r.module + " " + r.name + " " + path);
     }
     val parts = @TypeInfo.all(with: component, member: "describe");
     for (parts) { c ->
-        @print(c.module + " " + c.name);
+        print(c.module + " " + c.name);
     }
-    @print(@TypeInfo.all(with: unused).length);
+    print(@TypeInfo.all(with: unused).length);
 }

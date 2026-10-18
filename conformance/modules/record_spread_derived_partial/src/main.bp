@@ -3,7 +3,7 @@
 //// it is refused as a spread into the record, as a record of another type,
 //// at the `...` (question B-14-c as built).
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Pessoa(nome: string, idade: i32)
 
@@ -14,5 +14,5 @@ val SoNome = Type.pick(Patch, .nome);
 pub fn main() {
     val n = SoNome(nome: "Ana");
     val p = Pessoa(..n, idade: 3);
-    @print(p.idade);
+    print(p.idade);
 }

@@ -1,20 +1,20 @@
-import {json, hash, async, io.clock} from "std";
+import {json, hash, async, io.clock, io.terminal.print} from "std";
 import {json.Json, async.RetryPolicy} from "std";
 
 fn main() {
     val port = "8080".parseInt(); // Ok(8080)
     val ratio = "2.5e-1".parseFloat(); // Ok(0.25)
-    @print(port.isOk() && ratio.isOk());
+    print(port.isOk() && ratio.isOk());
     val doc = json
         .decode("{\"name\":\"ada\",\"tags\":[\"x\"]}")
         .unwrapOr(Json.Null);
     val name = doc.field("name");
-    @print(if (name != null) name.str() else doc.kindName()); // ada
-    @print(doc.members().length); // 2
-    @print(clock.parseDuration("30s").isOk()); // true — 30000 ms
-    @print(hash.pbkdf2Sha256("password", "salt", 1, 32));
+    print(if (name != null) name.str() else doc.kindName()); // ada
+    print(doc.members().length); // 2
+    print(clock.parseDuration("30s").isOk()); // true — 30000 ms
+    print(hash.pbkdf2Sha256("password", "salt", 1, 32));
     val policy = RetryPolicy(3, 100, 2.0, 1000);
-    @print(
+    print(
         async.nextDelay(policy, 4) == null,
     ); // true — 100, 200, 400, then none
 }

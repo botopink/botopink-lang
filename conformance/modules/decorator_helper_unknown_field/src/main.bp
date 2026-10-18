@@ -3,6 +3,8 @@
 //// checked too, its unknown field located in the helper (the parent binary:
 //// `{error,{badkey,nope}}` at the annotation).
 
+import {io.terminal.print} from "std";
+
 fn nameOf(decl: unknown) -> string {
     return decl.nope;
 }
@@ -17,5 +19,5 @@ fn work() -> i32 {
 }
 
 pub fn main() {
-    @print(work());
+    print(work());
 }

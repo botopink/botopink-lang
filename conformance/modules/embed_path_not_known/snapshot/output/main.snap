@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: comptime-arg-not-known: the path of `@embed` is not known at build
-at src/main.bp:5:19
+at src/main.bp:7:19

@@ -8,6 +8,8 @@
 //// a constructor called by label: `P(y: 2)` names the required field and
 //// omits the defaulted one after it (a default is trailing, decision 244).
 
+import {io.terminal.print} from "std";
+
 fn connect(host: string, port: i32 = 80) -> string {
     return host + ":" + port.toString();
 }
@@ -19,11 +21,11 @@ type P(y: i32, x: i32 = 0) {
 }
 
 pub fn main() {
-    @print(connect("h"));
-    @print(connect("h", 90));
+    print(connect("h"));
+    print(connect("h", 90));
     val p = P(y: 2);
-    @print(p.x);
-    @print(p.y);
-    @print(p.bump());
-    @print(p.bump(1));
+    print(p.x);
+    print(p.y);
+    print(p.bump());
+    print(p.bump(1));
 }

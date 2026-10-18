@@ -5,8 +5,10 @@
 //// fix-it `@Iterator<@Result<T, E>>`. The new form is
 //// `run/iterator_result_items.bp`.
 
-fn old(n: i32) -> @Iterator<i32, string> {
+import {io.terminal.print} from "std";
+
+fn old(n: i32) -> Iterator<i32, string> {
     yield n;
 }
 
-pub fn main() { for (old(1)) { x -> @print(x); } }
+pub fn main() { for (old(1)) { x -> print(x); } }

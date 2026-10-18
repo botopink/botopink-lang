@@ -1,6 +1,8 @@
 //// Decision 248 — `@typeinfo.all(…)` is refused where it is written, naming
 //// `@TypeInfo.all`.
 
+import {io.terminal.print} from "std";
+
 fn route(syntax decl: unknown) {}
 
 #[route]
@@ -8,5 +10,5 @@ pub fn home() -> string { return "home"; }
 
 pub fn main() {
     val all = @typeinfo.all(with: route);
-    @print(all.length);
+    print(all.length);
 }

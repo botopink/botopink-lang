@@ -2,6 +2,8 @@
 //// literal field and `..` answered `null` on commonJS. A pin: the row no
 //// longer reproduces, the cell guards it on every target.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 fn describe(p: Point) -> string {
@@ -13,7 +15,7 @@ fn describe(p: Point) -> string {
 }
 
 pub fn main() {
-    @print(describe(Point(x: 0, y: 5)));
-    @print(describe(Point(x: 4, y: 0)));
-    @print(describe(Point(x: 1, y: 1)));
+    print(describe(Point(x: 0, y: 5)));
+    print(describe(Point(x: 4, y: 0)));
+    print(describe(Point(x: 1, y: 1)));
 }

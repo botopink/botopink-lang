@@ -10,6 +10,8 @@
 //// array of records and the fn handed or bound as a value answered `false`
 //// (`01-compiler/05-wasm` step 2).
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T) {
     fn holds(self: Self<T>, other: T) -> bool {
         return self.value == other;
@@ -73,22 +75,22 @@ fn apply(f: fn(a: string, b: string) -> bool, x: string, y: string) -> bool {
 pub fn main() {
     val built = "a" + "b";
     val key = "x=ab".split("=").at(1) ?? "";
-    @print(same(built, "ab"));
-    @print(same(key, built));
-    @print(differ(key, "ab"));
-    @print(same(1, 1));
-    @print(contains(["zz", "ab"], key));
-    @print(Box(value: key).holds("ab"));
-    @print(Box(value: 3).holds(4));
-    @print(someIs(Maybe.Some(value: built), "ab"));
-    @print(same(firstOr(["x", "y"], ""), "x"));
-    @print(Pair(left: built, right: "ab").matched());
-    @print(Pair(left: built, right: "ba").matched());
-    @print(mk(built, key).matched());
-    @print([Pair(left: built, right: key)].map({ p -> p.matched() }));
-    @print(apply(same, built, "ab"));
-    @print(apply(differ, built, "ab"));
-    @print(eqPair(Pair(left: built, right: key)));
+    print(same(built, "ab"));
+    print(same(key, built));
+    print(differ(key, "ab"));
+    print(same(1, 1));
+    print(contains(["zz", "ab"], key));
+    print(Box(value: key).holds("ab"));
+    print(Box(value: 3).holds(4));
+    print(someIs(Maybe.Some(value: built), "ab"));
+    print(same(firstOr(["x", "y"], ""), "x"));
+    print(Pair(left: built, right: "ab").matched());
+    print(Pair(left: built, right: "ba").matched());
+    print(mk(built, key).matched());
+    print([Pair(left: built, right: key)].map({ p -> p.matched() }));
+    print(apply(same, built, "ab"));
+    print(apply(differ, built, "ab"));
+    print(eqPair(Pair(left: built, right: key)));
     val held: fn(a: string, b: string) -> bool = same;
-    @print(held(built, "ab"));
+    print(held(built, "ab"));
 }

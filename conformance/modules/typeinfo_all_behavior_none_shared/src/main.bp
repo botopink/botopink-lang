@@ -3,7 +3,7 @@
 //// `Declared<unknown>[]`, so binding it as `Declared<Bean>[]` is the
 //// ordinary mismatch.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior Bean {
     fn make() -> Self;
@@ -37,7 +37,7 @@ pub type Cleanup(days: i32) implement Job {
 
 pub fn main() {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, job]);
-    @print(all.length);
+    print(all.length);
 }
 
 // What `#[service]` and `#[job]` record.

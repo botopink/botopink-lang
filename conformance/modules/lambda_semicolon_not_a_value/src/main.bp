@@ -2,7 +2,9 @@
 //// nothing: where a function returning `i32` is expected it is refused, at the
 //// lambda (it answered `x + 1` before the rule).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val inc: fn(i32) -> i32 = { x -> x + 1; };
-    @print(inc(1));
+    print(inc(1));
 }

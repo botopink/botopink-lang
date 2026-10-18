@@ -2,6 +2,8 @@
 //// and a labelled call is taken in declaration order — the way a std
 //// module's fn is (`planQualifiedCall`).
 
+import {io.terminal.print} from "std";
+
 type Bag(items: string[]) {
     fn of(x: string, y: string = "d") -> Bag {
         return Bag(items: [x, y]);
@@ -9,7 +11,7 @@ type Bag(items: string[]) {
 }
 
 pub fn main() {
-    @print(Bag.of("p").items.join(","));
-    @print(Bag.of(y: "b", x: "a").items.join(","));
-    @print(Bag.of("x", "y").items.join(","));
+    print(Bag.of("p").items.join(","));
+    print(Bag.of(y: "b", x: "a").items.join(","));
+    print(Bag.of("x", "y").items.join(","));
 }

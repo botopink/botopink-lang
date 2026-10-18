@@ -9,6 +9,8 @@
 //// record, a `Vec(x: 0)` answered as the wrong arm. The section cases keep
 //// the other half honest: over `Token.Layout` the same spelling is the variant.
 
+import {io.terminal.print} from "std";
+
 type Block(size: i32)
 
 type Vec(x: i32)
@@ -49,11 +51,11 @@ fn shapeOf(t: Token.Shape) -> string {
 }
 
 pub fn main() {
-    @print(shapeName(Block(size: 2)));
-    @print(shapeName(Vec(x: 1)));
-    @print(shapeName(Vec(x: 0)));
-    @print(layoutName(.Block));
-    @print(layoutName(.Inline));
-    @print(shapeOf(.Vec(n: 1)));
-    @print(shapeOf(.Dot));
+    print(shapeName(Block(size: 2)));
+    print(shapeName(Vec(x: 1)));
+    print(shapeName(Vec(x: 0)));
+    print(layoutName(.Block));
+    print(layoutName(.Inline));
+    print(shapeOf(.Vec(n: 1)));
+    print(shapeOf(.Dot));
 }

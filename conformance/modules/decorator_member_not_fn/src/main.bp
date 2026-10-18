@@ -2,7 +2,7 @@
 //// expression written at the call: its body is where the decorator's
 //// parameters are spliced. A function named elsewhere is refused at it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
@@ -22,5 +22,5 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

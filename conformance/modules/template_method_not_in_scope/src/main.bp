@@ -6,8 +6,9 @@
 
 mod store;
 import {store.Memory};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val mem = Memory(prefix: "m:");
-    @print(mem.read @`a`);
+    print(mem.read @`a`);
 }

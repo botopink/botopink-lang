@@ -2,7 +2,7 @@
 //// against its `self: @Expr<R>` as an argument is: a value whose type neither
 //// is `R` nor implements it is refused at the receiver.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 behavior Named {
     fn name(self: Self) -> string;
@@ -20,5 +20,5 @@ fn tag(syntax self: Named, syntax q: string) -> string {
 
 pub fn main() {
     val r = Robot(serial: 7);
-    @print(r.tag @`vip`);
+    print(r.tag @`vip`);
 }

@@ -6,9 +6,11 @@
 //// program — `external_template_refused_on_beam.beam.expect`. erlang and beam
 //// only: the template names no other host.
 
-#[@external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
 declare fn moduleNamed() -> bool;
 
 pub fn main() {
-    @print(moduleNamed());
+    print(moduleNamed());
 }

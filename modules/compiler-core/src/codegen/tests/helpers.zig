@@ -1348,8 +1348,9 @@ pub const closure_plain = [_]Module{
     \\import {items.Queue, items.describe} from "shelf";
     \\
     \\pub fn main() {
-    \\    @print(describe(Queue(label: "plain", size: 1)));
+    \\    print(describe(Queue(label: "plain", size: 1)));
     \\}
+    \\import {io.terminal.print} from "std";
     },
 };
 pub const closure_crowded = [_]Module{
@@ -1364,8 +1365,9 @@ pub const closure_crowded = [_]Module{
     \\import {local};
     \\
     \\pub fn main() {
-    \\    @print(describe(Queue(label: "crowded", size: 2)));
-    \\    @print(area(Shape.Square(side: 2)).toString());
+    \\    print(describe(Queue(label: "crowded", size: 2)));
+    \\    print(area(Shape.Square(side: 2)).toString());
     \\}
+    \\import {io.terminal.print} from "std";
     },
 };

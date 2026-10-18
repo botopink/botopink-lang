@@ -18,8 +18,10 @@
 //// `A...B` arm in `wat.zig`): **wasm answers `1 1 1 0 0`** and its line is gone.
 //// erlang and beam are unchanged; their lines name `C-06 (<backend> half not landed)`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print(
+    print(
         case 5 {
             1...9 {
                 1
@@ -29,7 +31,7 @@ pub fn main() {
             }
         },
     );
-    @print(
+    print(
         case 1 {
             1...9 {
                 1
@@ -39,7 +41,7 @@ pub fn main() {
             }
         },
     );
-    @print(
+    print(
         case 9 {
             1...9 {
                 1
@@ -49,7 +51,7 @@ pub fn main() {
             }
         },
     );
-    @print(
+    print(
         case 0 {
             1...9 {
                 1
@@ -59,7 +61,7 @@ pub fn main() {
             }
         },
     );
-    @print(
+    print(
         case 10 {
             1...9 {
                 1

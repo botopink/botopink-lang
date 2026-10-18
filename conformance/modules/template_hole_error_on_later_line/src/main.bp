@@ -3,7 +3,7 @@
 //// line, at the hole's expression: `missing`, unbound, is refused there,
 //// never on the line of the opening `` @` ``.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn cssValue(v: string) -> string {
     return v;
@@ -35,7 +35,7 @@ fn css(syntax q: string) -> string {
 val color = "red";
 
 pub fn main() {
-    @print(css @`
+    print(css @`
         color: ${color};
         margin: ${missing};
     `);

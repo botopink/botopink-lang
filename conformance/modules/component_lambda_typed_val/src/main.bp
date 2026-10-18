@@ -7,29 +7,29 @@
 //// `suffix` it captures reach the body. The body answers its last
 //// expression.
 
-import {context.createContext, context.provide, context.context, context.RenderScope} from "std";
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn Shell() -> @Component<View> {
+fn Shell() -> Component<View> {
     use provide(createContext("#"));
     return View(text: "shell");
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val suffix = "!";
-    val Card: fn(name: string) -> @Component<View> = component { name ->
+    val Card: fn(name: string) -> Component<View> = component { name ->
         val p = use context(string);
-        @print("ran " + name);
+        print("ran " + name);
         View(text: p + name + suffix)
     };
     val c = Card("a");
-    @print("made");
+    print("made");
     val v = await c;
-    @print(v.text);
+    print(v.text);
     val r = await Shell().run(RenderScope.root());
     val m = await Card("b").run(r.scope);
-    @print(m.value.text);
+    print(m.value.text);
 }

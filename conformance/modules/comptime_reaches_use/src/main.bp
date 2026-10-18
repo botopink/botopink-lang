@@ -4,20 +4,20 @@
 //// `comptime`, naming the `use` and the function holding it; the run used
 //// to stop at whatever the provider's absence broke first.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn label() -> @Component<Element> {
+fn label() -> Component<Element> {
     val t = use context(Theme);
     return Element(text: t.mode);
 }
 
 pub fn main() {
     val pre = comptime label();
-    @print(pre.text);
+    print(pre.text);
 }

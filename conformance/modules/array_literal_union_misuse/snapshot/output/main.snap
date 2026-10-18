@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: cannot do arithmetic on a `i32 | string` — not every member of the union answers it (the array element at 7:18 made it one: the literal's elements disagree)
-at src/main.bp:8:30
+refused error: cannot do arithmetic on a `i32 | string` — not every member of the union answers it (the array element at 9:18 made it one: the literal's elements disagree)
+at src/main.bp:10:29

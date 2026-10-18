@@ -1,13 +1,15 @@
+import {io.terminal.print} from "std";
+
 fn grade(n: i32) {
     case n {
         i32 when (n > 100) {
-            @print("impossible");
+            print("impossible");
         }
         0 {
-            @print("zero");
+            print("zero");
         }
         _ {
-            @print("something else");
+            print("something else");
         }
     }
 }

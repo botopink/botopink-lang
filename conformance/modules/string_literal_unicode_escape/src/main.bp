@@ -6,10 +6,12 @@
 //// program sets its own `standard_io` to unicode (under `LANG=C` erlang wrote
 //// `é` as the latin1 byte `0xE9` and `\x{1F600}` as text).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print("\u{1F600}");
-    @print("ç");
-    @print("é", "\u{e9}");
-    @print("a\u{e7}b" == "açb");
-    @print(["\u{1F600}", "ç"]);
+    print("\u{1F600}");
+    print("ç");
+    print("é", "\u{e9}");
+    print("a\u{e7}b" == "açb");
+    print(["\u{1F600}", "ç"]);
 }

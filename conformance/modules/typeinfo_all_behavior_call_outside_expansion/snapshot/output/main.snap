@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `d.value.make()` calls `Module`'s `make` on a catalogue entry, which is legal only inside a function expanded at its call site
-at src/main.bp:30:24
+at src/main.bp:30:23

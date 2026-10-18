@@ -5,7 +5,7 @@
 //// new form is `run/task_await_result.bp`.
 
 #[@future]
-fn fetch(n: i32) -> @Task<@Result<i32, string>> {
+fn fetch(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     return n;
 }

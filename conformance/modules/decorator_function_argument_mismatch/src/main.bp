@@ -2,7 +2,7 @@
 //// bound by the page's own parameter: a function answering another type is
 //// refused at the argument.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type View(html: string)
 
@@ -30,7 +30,7 @@ fn blog(route: Route<BlogParams>) -> View {
 }
 
 pub fn main() {
-    @print(blog(Route(params: BlogParams(slug: "a"))).html);
+    print(blog(Route(params: BlogParams(slug: "a"))).html);
 }
 
 // What `#[page]` records.

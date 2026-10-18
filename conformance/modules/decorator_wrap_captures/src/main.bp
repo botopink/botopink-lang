@@ -4,7 +4,7 @@
 //// only while the program compiles: the wrapper reading it is refused at the
 //// read.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn labelled(syntax decl: fn(..) -> string) {
     val label = compiler.name(decl);
@@ -17,5 +17,5 @@ pub fn posts() -> string {
 }
 
 pub fn main() {
-    @print(posts());
+    print(posts());
 }

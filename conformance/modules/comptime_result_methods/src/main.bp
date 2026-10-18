@@ -3,12 +3,14 @@
 //// `flatMap`, under a `comptime` and in a function it reaches — whose own
 //// `return` / `throw` make its `@Result` — each compared with the run time.
 
-fn measure(text: string) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn measure(text: string) -> Result<i32, string> {
     if (text == "nope") throw "no text";
     return text.length();
 }
 
-fn half(n: i32) -> @Result<i32, string> {
+fn half(n: i32) -> Result<i32, string> {
     if (n % 2 != 0) throw "odd";
     return n / 2;
 }
@@ -27,12 +29,12 @@ fn summary(text: string) -> string {
 }
 
 pub fn main() {
-    @print(comptime "7".parseInt().unwrapOr(0l));
-    @print(comptime "x".parseInt().unwrapOr(0l));
+    print(comptime "7".parseInt().unwrapOr(0l));
+    print(comptime "x".parseInt().unwrapOr(0l));
     val a = comptime summary("abcd");
-    @print(a);
-    @print(a == summary("abcd"));
+    print(a);
+    print(a == summary("abcd"));
     val b = comptime summary("nope");
-    @print(b);
-    @print(b == summary("nope"));
+    print(b);
+    print(b == summary("nope"));
 }

@@ -4,7 +4,7 @@
 //// left out read as its default. A declaration with no such meta answers
 //// `null` / `[]`, and the template refuses it with `q.fail`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Size { Small, Large }
 
@@ -62,7 +62,7 @@ fn entity(syntax q: string) -> bool {
 }
 
 pub fn main() {
-    @print(sql @`User`);
-    @print(entity @`User`);
-    @print(entity @`Plain`);
+    print(sql @`User`);
+    print(entity @`User`);
+    print(entity @`Plain`);
 }

@@ -2,6 +2,8 @@
 //// against its declaration in `builtins.d.bp`: `Index<K, V>` requires `at`, and a type that
 //// names it without one is refused at the type.
 
+import {io.terminal.print} from "std";
+
 type Registry(names: string[]) implement Index<string, i32> {
     pub fn find(self: Self, key: string) -> i32 {
         return self.names.indexOf(key);
@@ -9,5 +11,5 @@ type Registry(names: string[]) implement Index<string, i32> {
 }
 
 pub fn main() {
-    @print(Registry(names: ["ana", "bo"]).find("bo"));
+    print(Registry(names: ["ana", "bo"]).find("bo"));
 }

@@ -4,6 +4,8 @@
 //// no code (README open point 2); line 1 is the code decision 105's annotated
 //// loop gets today (`reject/generator_loop_break_outer.bp`).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var n = 0;
     for :outer ([1, 2, 3]) { x ->
@@ -13,5 +15,5 @@ pub fn main() {
             yield n;
         };
     }
-    @print(n);
+    print(n);
 }

@@ -3,12 +3,14 @@
 //// position — and both thread the write out on every target. Any other
 //// lambda's write is refused at check time (01's refusal).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var total = 0;
     [1, 2, 3].forEach({ x ->
         total = total + x;
     });
-    @print(total);
+    print(total);
 
     var count = 0;
     val bump = { ->
@@ -16,5 +18,5 @@ pub fn main() {
     };
     bump();
     bump();
-    @print(count);
+    print(count);
 }

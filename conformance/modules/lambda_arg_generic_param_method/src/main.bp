@@ -4,6 +4,8 @@
 //// call is not refused as a parameter nothing types (rakun-service's
 //// `registerFilter`).
 
+import {io.terminal.print} from "std";
+
 pub type Chain(
     index: i32,
 ) {
@@ -17,6 +19,6 @@ pub fn register<Rq, Ch>(name: string, entry: fn(req: Rq, chain: Ch) -> string) -
 }
 
 pub fn main() {
-    @print(register("first", { req, chain -> chain.next(req) }));
-    @print(Chain(index: 2).next("direct"));
+    print(register("first", { req, chain -> chain.next(req) }));
+    print(Chain(index: 2).next("direct"));
 }

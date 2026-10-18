@@ -3,11 +3,11 @@
 //// a `@Component` function an `async { }` may not `use`. Refused at the `use`
 //// with the code a closure's `use` gets (`reject/use_in_closure.bp`).
 
-type Element(count: i32) implement @Renderable
+type Element(count: i32) implement Renderable
 
-fn state(initial: i32) -> @Component<i32> { return initial; }
+fn state(initial: i32) -> Component<i32> { return initial; }
 
-fn Widget() -> @Component<Element> {
+fn Widget() -> Component<Element> {
     val t = async { return use state(1); };
     return Element(count: 1);
 }

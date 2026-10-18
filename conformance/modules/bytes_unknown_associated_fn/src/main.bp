@@ -1,7 +1,9 @@
 //// Decision 346 — `Bytes`' one associated function is `Bytes.fromUtf8(s)`: any other name
 //// written through the type is refused at the call.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val b = Bytes.fromText("a");
-    @print(b.length());
+    print(b.length());
 }

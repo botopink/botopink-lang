@@ -5,6 +5,8 @@
 //// commonJS, erlang and beam (`Square is not defined`). The bare name stays
 //// a `case` pattern's (decision 8).
 
+import {io.terminal.print} from "std";
+
 pub type Shape {
     Circle(radius: i32),
     Square(side: i32),
@@ -12,5 +14,5 @@ pub type Shape {
 
 pub fn main() {
     val s = Square(2);
-    @print(0);
+    print(0);
 }

@@ -1,6 +1,8 @@
 //// B-110 — an unknown generic type name in a `val` annotation is `unknown type`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val m: Bogus<i32, i32> = 1;
-    @print(1);
+    print(1);
 }

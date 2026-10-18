@@ -3,6 +3,8 @@
 //// as the type parameter, an array of it (`items: Array<T>`, `kids: T[]`),
 //// in a record or a variant, built directly or by a generic function.
 
+import {io.terminal.print} from "std";
+
 type W(x: i32)
 
 type Q<T>(items: Array<T>)
@@ -19,21 +21,21 @@ fn wrap<T>(v: T) -> B<T> {
 }
 
 pub fn main() {
-    @print(Q(items: [7]));
-    @print(Q(items: ["a", "b"]));
-    @print(Q(items: [true]));
-    @print(Q(items: [1.5]));
-    @print(Q(items: [W(x: 1)]));
-    @print(B(v: "s"));
-    @print(B(v: 3));
-    @print(B(v: [1, 2]));
-    @print(B(v: false));
-    @print(B(v: W(x: 2)));
+    print(Q(items: [7]));
+    print(Q(items: ["a", "b"]));
+    print(Q(items: [true]));
+    print(Q(items: [1.5]));
+    print(Q(items: [W(x: 1)]));
+    print(B(v: "s"));
+    print(B(v: 3));
+    print(B(v: [1, 2]));
+    print(B(v: false));
+    print(B(v: W(x: 2)));
     val o: ?i32 = 4;
-    @print(B(v: o));
-    @print(Tree.Leaf(v: "x"));
-    @print(Tree.Node(kids: [1, 2]));
-    @print(wrap("w"));
-    @print(wrap(5));
-    @print([B(v: "e")]);
+    print(B(v: o));
+    print(Tree.Leaf(v: "x"));
+    print(Tree.Node(kids: [1, 2]));
+    print(wrap("w"));
+    print(wrap(5));
+    print([B(v: "e")]);
 }

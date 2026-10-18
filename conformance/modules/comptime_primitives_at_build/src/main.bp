@@ -6,6 +6,8 @@
 //// methods and integer division. Each family is computed under `comptime`
 //// and again at run time, and the two compared.
 
+import {io.terminal.print} from "std";
+
 fn ints() -> string {
     val a: i32 = 1000;
     val b: i64 = 9007199254740993;
@@ -85,19 +87,19 @@ fn divs() -> string {
 
 pub fn main() {
     val i = comptime ints();
-    @print(i);
-    @print(i == ints());
-    @print(comptime exact());
+    print(i);
+    print(i == ints());
+    print(comptime exact());
     val s = comptime strs();
-    @print(s);
-    @print(s == strs());
+    print(s);
+    print(s == strs());
     val f = comptime floats();
-    @print(f);
-    @print(f == floats());
+    print(f);
+    print(f == floats());
     val a = comptime arrs();
-    @print(a);
-    @print(a == arrs());
+    print(a);
+    print(a == arrs());
     val d = comptime divs();
-    @print(d);
-    @print(d == divs());
+    print(d);
+    print(d == divs());
 }

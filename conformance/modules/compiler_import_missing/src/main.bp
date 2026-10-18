@@ -2,6 +2,8 @@
 //// file that names it without `import {compiler} from "std";` gets the
 //// ordinary unbound-name error, at the name.
 
+import {io.terminal.print} from "std";
+
 fn mark(syntax decl: unknown) {
     compiler.fail("marked", at: decl);
 }
@@ -10,5 +12,5 @@ fn mark(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "a").name);
+    print(City(name: "a").name);
 }

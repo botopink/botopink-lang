@@ -2,7 +2,9 @@
 //// `@BeamMemroy.Ets` would otherwise leave the `var` in the default mode with
 //// nothing said.
 
+import {io.terminal.print} from "std";
+
 #[@BeamMemroy.Ets]
 var hits: i32 = 0;
 
-pub fn main() { @print(hits); }
+pub fn main() { print(hits); }

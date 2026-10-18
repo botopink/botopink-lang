@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 // Reads `decl.hooks`: each node as `fn(uses: […])`.
 fn graph(syntax decl: unknown) {
@@ -33,12 +33,12 @@ fn check(syntax decl: unknown) {
     );
 }
 
-fn user() -> @Component<string> {
+fn user() -> Component<string> {
     return "alice";
 }
 
 #[graph]
-pub fn Page() -> @Component<Element> {
+pub fn Page() -> Component<Element> {
     val u = use user();
     return Element(text: Account(name: u).validate());
 }

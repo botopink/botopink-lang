@@ -2,6 +2,8 @@
 //// the type (`Shape.Point`), so a name the body already gives a function is
 //// refused at the type's name: `Shape.Point` names one thing.
 
+import {io.terminal.print} from "std";
+
 pub type Shape {
     pub fn Point() -> i32 {
         return 1;
@@ -11,5 +13,5 @@ pub type Shape {
 }
 
 pub fn main() {
-    @print(Shape.Point());
+    print(Shape.Point());
 }

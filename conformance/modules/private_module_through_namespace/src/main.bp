@@ -2,8 +2,10 @@
 //// subtree: `geo/mod.bp` declares `mod plane;`, so `geo.plane` from `main`
 //// is refused at `plane` (`private-module`); `geo` itself reaches it.
 
+import {io.terminal.print} from "std";
+
 mod geo;
 
 pub fn main() {
-    @print(geo.plane.origin());
+    print(geo.plane.origin());
 }

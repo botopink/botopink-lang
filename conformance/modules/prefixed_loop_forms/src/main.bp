@@ -6,7 +6,9 @@
 //// `iter for` passed straight as an argument. A bare `break` in the prefixed
 //// loop ends the sequence.
 
-fn line(it: @Iterator<i32>) -> string {
+import {io.terminal.print} from "std";
+
+fn line(it: Iterator<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
@@ -14,7 +16,7 @@ fn line(it: @Iterator<i32>) -> string {
     return acc;
 }
 
-fn sum(it: @Iterator<i32>) -> i32 {
+fn sum(it: Iterator<i32>) -> i32 {
     var total = 0;
     for (it) { x ->
         total = total + x;
@@ -29,21 +31,21 @@ pub fn main() {
         if (n > 3) break;
         yield n * 2;
     };
-    @print(line(doubled));
+    print(line(doubled));
 
     var i = 3;
-    val countdown: @Iterator<i32> = iter while (i > 0) {
+    val countdown: Iterator<i32> = iter while (i > 0) {
         yield i;
         i = i - 1;
     };
-    @print(line(countdown));
+    print(line(countdown));
 
     val evens = iter for ([1, 2, 3, 4]) { x ->
         if (x % 2 == 0) yield x;
     };
-    @print(line(evens));
+    print(line(evens));
 
-    @print(
+    print(
         sum(
             iter for ([1, 2, 3]) { x ->
                 yield x * x;

@@ -6,12 +6,12 @@
 //// (its `Error` would be the outer failure) — `effect-return-ambiguous-nesting`,
 //// at the `return`.
 
-fn check(n: i32) -> @Result<i32, string> {
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) { throw "negative"; }
     return n;
 }
 
-fn nested(n: i32) -> @Result<@Result<i32, string>, string> {
+fn nested(n: i32) -> Result<Result<i32, string>, string> {
     val r = check(n);
     return r;
 }

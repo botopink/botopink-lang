@@ -10,7 +10,7 @@ fn double(n: i32) -> i32 {
     return n * 2;
 }
 
-fn failing() -> @Result<i32, string> {
+fn failing() -> Result<i32, string> {
     throw "went wrong";
 }
 

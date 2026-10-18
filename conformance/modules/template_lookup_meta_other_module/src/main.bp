@@ -7,7 +7,8 @@ mod orm;
 mod models;
 mod query;
 import {models.User, query.tableOf};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(tableOf @`User`);
+    print(tableOf @`User`);
 }

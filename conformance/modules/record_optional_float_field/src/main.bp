@@ -4,6 +4,8 @@
 //// `null` as the float `0.0` and read the field as a bare `f64`, which the
 //// module's validation refused.
 
+import {io.terminal.print} from "std";
+
 type F(x: ?f64, y: f64)
 
 fn mk(v: ?f64) -> F {
@@ -12,17 +14,17 @@ fn mk(v: ?f64) -> F {
 
 pub fn main() {
     val f = F(x: null, y: 1.5);
-    @print(f.x);
-    @print(f);
-    @print(f.x ?? 9.5);
+    print(f.x);
+    print(f);
+    print(f.x ?? 9.5);
     val g = F(x: 2.25, y: 0.5);
-    @print(g.x);
-    @print(g);
-    @print(g.x ?? 9.5);
-    @print(g.y + 1.0);
-    @print(mk(null));
-    @print(mk(7.5).x);
+    print(g.x);
+    print(g);
+    print(g.x ?? 9.5);
+    print(g.y + 1.0);
+    print(mk(null));
+    print(mk(7.5).x);
     val { x, y } = g;
-    @print(x);
-    @print(y);
+    print(x);
+    print(y);
 }

@@ -5,6 +5,8 @@
 //// died `case_clause` and the `val assert` panicked "assert pattern did not
 //// match".
 
+import {io.terminal.print} from "std";
+
 fn describe(xs: i32[]) -> string {
     return case xs {
         [..all] -> "all ${all.length()}";
@@ -12,8 +14,8 @@ fn describe(xs: i32[]) -> string {
 }
 
 pub fn main() {
-    @print(describe([1, 2, 3]));
-    @print(describe([]));
+    print(describe([1, 2, 3]));
+    print(describe([]));
     val assert [..every] = [4, 5];
-    @print(every);
+    print(every);
 }

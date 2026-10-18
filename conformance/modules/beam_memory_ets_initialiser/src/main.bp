@@ -3,12 +3,14 @@
 //// a literal or a `comptime` expression. Not purity, which the compiler cannot
 //// decide: `registry()` prints, and passes every other check.
 
+import {io.terminal.print} from "std";
+
 fn registry() -> i32 {
-    @print("side effect");
+    print("side effect");
     return 7;
 }
 
 #[@BeamMemory.Ets]
 var seeded: i32 = registry();
 
-pub fn main() { @print(seeded); }
+pub fn main() { print(seeded); }

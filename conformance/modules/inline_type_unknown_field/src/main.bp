@@ -2,10 +2,12 @@
 //// owner: a field the type does not declare is read off `the props of
 //// `link``.
 
+import {io.terminal.print} from "std";
+
 fn link(props: type(href: string)) -> string {
     return props.label;
 }
 
 pub fn main() {
-    @print(link(href: "/a"));
+    print(link(href: "/a"));
 }

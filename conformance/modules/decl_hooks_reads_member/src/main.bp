@@ -5,9 +5,10 @@
 pub mod pages;
 
 import {pages.Page, pages.Account, pages.Graph};
+import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    val pageNodes: string[] = @typeInfo(Page).meta(Graph)?.nodes ?? [];
-    @print(pageNodes.join(" "));
-    @print(Account(name: "bob").validate());
+    val pageNodes: string[] = comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? [];
+    print(pageNodes.join(" "));
+    print(Account(name: "bob").validate());
 }

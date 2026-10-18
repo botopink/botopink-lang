@@ -1,26 +1,28 @@
 //// A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` —
 //// at the top level and nested in an array or a record, on every target.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
-type Report(label: string, outcome: @Result<i32, string>)
+type Report(label: string, outcome: Result<i32, string>)
 
-fn check(n: i32) -> @Result<i32, string> {
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn locate(n: i32) -> @Result<Point, i32> {
+fn locate(n: i32) -> Result<Point, i32> {
     if (n < 0) throw n;
     return Point(x: n, y: n + 1);
 }
 
 pub fn main() {
-    @print(check(81));
-    @print(check(-1));
-    @print(locate(2));
-    @print(locate(-3));
-    @print([check(1), check(-2)]);
-    @print(Report(label: "a", outcome: check(5)));
-    @print(Report(label: "b", outcome: check(-5)));
+    print(check(81));
+    print(check(-1));
+    print(locate(2));
+    print(locate(-3));
+    print([check(1), check(-2)]);
+    print(Report(label: "a", outcome: check(5)));
+    print(Report(label: "b", outcome: check(-5)));
 }

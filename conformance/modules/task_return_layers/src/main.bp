@@ -10,31 +10,33 @@
 //// hands a plain caller a Promise, while erlang, beam and wasm run the Task
 //// eagerly; inside one body the order is the same everywhere.
 
-fn check(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn layerValue(n: i32) -> @Task<@Result<i32, string>> {
+fn layerValue(n: i32) -> Task<Result<i32, string>> {
     return n;
 }
 
-fn layerResult(r: @Result<i32, string>) -> @Task<@Result<i32, string>> {
+fn layerResult(r: Result<i32, string>) -> Task<Result<i32, string>> {
     return r;
 }
 
-fn layerTask(t: @Task<@Result<i32, string>>) -> @Task<@Result<i32, string>> {
+fn layerTask(t: Task<Result<i32, string>>) -> Task<Result<i32, string>> {
     return t;
 }
 
-fn show(label: string, r: @Result<i32, string>) {
+fn show(label: string, r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print(label + " ok " + v.toString());
-        Error(e) -> @print(label + " error " + e);
+        Ok(v) -> print(label + " ok " + v.toString());
+        Error(e) -> print(label + " error " + e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     show("value", await layerValue(1));
     show("result", await layerResult(check(2)));
     show("result", await layerResult(check(-1)));

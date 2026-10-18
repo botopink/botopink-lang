@@ -4,6 +4,8 @@
 //// and the fix-it on a loop is the prefix `iter`. The new form is
 //// `run/prefixed_loop_forms.bp`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var n = 0;
     val g = #[@generator] loop {
@@ -11,5 +13,5 @@ pub fn main() {
         if (n > 3) { break; }
         yield n;
     };
-    for (g) { x -> @print(x); }
+    for (g) { x -> print(x); }
 }

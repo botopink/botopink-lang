@@ -5,7 +5,7 @@
 //// makes the parents and is `Ok` on a directory that is there, and `stat` answers a file's size
 //// and a directory's kind.
 
-import {io.fs, encoding} from "std";
+import {io.fs, encoding, io.terminal.print} from "std";
 
 fn hex(path: string) -> string {
     return encoding.hexEncodeBytes(fs
@@ -15,39 +15,39 @@ fn hex(path: string) -> string {
 
 pub fn main() {
     fs.removeTree("shortcuts");
-    @print(fs.mkdirRecursive("shortcuts/a/b").isOk());
-    @print(fs.mkdirRecursive("shortcuts/a/b").isOk());
+    print(fs.mkdirRecursive("shortcuts/a/b").isOk());
+    print(fs.mkdirRecursive("shortcuts/a/b").isOk());
 
     val raw = encoding.hexDecodeBytes("00ff80c3").unwrapOr(Bytes.fromUtf8("?"));
-    @print(fs.writeBytes("shortcuts/raw.bin", raw).unwrapOr(-1));
-    @print(hex("shortcuts/raw.bin"));
+    print(fs.writeBytes("shortcuts/raw.bin", raw).unwrapOr(-1));
+    print(hex("shortcuts/raw.bin"));
 
     fs.writeText("shortcuts/note.txt", "first");
     fs.appendText("shortcuts/note.txt", " second");
     fs.appendText("shortcuts/made-by-append.txt", "new");
-    @print(fs.readText("shortcuts/note.txt").unwrapOr("?"));
-    @print(fs.readText("shortcuts/made-by-append.txt").unwrapOr("?"));
+    print(fs.readText("shortcuts/note.txt").unwrapOr("?"));
+    print(fs.readText("shortcuts/made-by-append.txt").unwrapOr("?"));
     fs.writeText("shortcuts/note.txt", "again");
-    @print(fs.readText("shortcuts/note.txt").unwrapOr("?"));
+    print(fs.readText("shortcuts/note.txt").unwrapOr("?"));
 
-    @print(fs.copy("shortcuts/note.txt", "shortcuts/a/copy.txt").isOk());
-    @print(fs.readText("shortcuts/a/copy.txt").unwrapOr("?"));
-    @print(fs.exists("shortcuts/note.txt"));
+    print(fs.copy("shortcuts/note.txt", "shortcuts/a/copy.txt").isOk());
+    print(fs.readText("shortcuts/a/copy.txt").unwrapOr("?"));
+    print(fs.exists("shortcuts/note.txt"));
 
     val info = fs
         .stat("shortcuts/note.txt")
         .unwrapOr(fs.FileStat(size: -1l, mtime: 0l, isDir: true));
-    @print(info.size);
-    @print(info.isDir);
-    @print(fs.stat("shortcuts/a").unwrapOr(info).isDir);
+    print(info.size);
+    print(info.isDir);
+    print(fs.stat("shortcuts/a").unwrapOr(info).isDir);
 
-    @print(fs.list("shortcuts/a").unwrapOr([]).length);
-    @print(fs.rm("shortcuts/a/copy.txt").isOk());
-    @print(fs.exists("shortcuts/a/copy.txt"));
-    @print(fs.walk("shortcuts").unwrapOr([]).join(","));
-    @print(fs.glob("*.txt", "shortcuts").unwrapOr([]).join(","));
+    print(fs.list("shortcuts/a").unwrapOr([]).length);
+    print(fs.rm("shortcuts/a/copy.txt").isOk());
+    print(fs.exists("shortcuts/a/copy.txt"));
+    print(fs.walk("shortcuts").unwrapOr([]).join(","));
+    print(fs.glob("*.txt", "shortcuts").unwrapOr([]).join(","));
 
-    @print(fs.removeTree("shortcuts").isOk());
-    @print(fs.exists("shortcuts"));
-    @print(fs.removeTree("shortcuts").isOk());
+    print(fs.removeTree("shortcuts").isOk());
+    print(fs.exists("shortcuts"));
+    print(fs.removeTree("shortcuts").isOk());
 }

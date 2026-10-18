@@ -4,7 +4,7 @@
 //// (a `Dict` of factories) is this shape. Both are called after the build
 //// wrote them.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 fn two() -> i32 {
     return 2;
@@ -26,7 +26,7 @@ pub fn main() {
         val f = fs[k];
         if (f) {
             g ->
-            @print(k + " " + g().toString());
+            print(k + " " + g().toString());
         }
     }
 }

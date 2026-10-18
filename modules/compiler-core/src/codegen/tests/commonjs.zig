@@ -28,11 +28,12 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
         \\}
         \\
         \\pub fn main() {
-        \\    @print("abc".twiceLength());
-        \\    @print("".twiceLength());
-        \\    @print("xy".firstChar());
-        \\    @print("".firstChar());
+        \\    print("abc".twiceLength());
+        \\    print("".twiceLength());
+        \\    print("xy".firstChar());
+        \\    print("".firstChar());
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\6
         \\0
@@ -50,24 +51,25 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
 test "js: primitive behavior default fn ---- return and throw build the @Result" {
     try h.assertJsRunLog(std.testing.allocator,
         \\behavior String {
-        \\    default fn nonEmpty(self: Self) -> @Result<string, string> {
+        \\    default fn nonEmpty(self: Self) -> Result<string, string> {
         \\        if (self == "") throw "empty";
         \\        return self;
         \\    }
         \\}
         \\
         \\pub fn main() {
-        \\    @print("ab".nonEmpty().isOk());
-        \\    @print("".nonEmpty().isError());
-        \\    @print(case "ab".nonEmpty() {
+        \\    print("ab".nonEmpty().isOk());
+        \\    print("".nonEmpty().isError());
+        \\    print(case "ab".nonEmpty() {
         \\        Ok(v) -> v;
         \\        Error(e) -> e;
         \\    });
-        \\    @print(case "".nonEmpty() {
+        \\    print(case "".nonEmpty() {
         \\        Ok(v) -> v;
         \\        Error(e) -> e;
         \\    });
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\true
         \\true
@@ -96,20 +98,21 @@ test "js: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\fn main() {
         \\    val z = zero();
         \\    val nan = z / z;
-        \\    @print(nan == nan);
-        \\    @print(nan != nan);
-        \\    @print(nan == 1.0);
-        \\    @print(nan < 1.0);
-        \\    @print(F(x: nan) == F(x: z / z));
+        \\    print(nan == nan);
+        \\    print(nan != nan);
+        \\    print(nan == 1.0);
+        \\    print(nan < 1.0);
+        \\    print(F(x: nan) == F(x: z / z));
         \\    val ta = #(nan, 1);
         \\    val tb = #(z / z, 1);
-        \\    @print(ta == tb);
+        \\    print(ta == tb);
         \\    val xs = [nan];
         \\    val ys = [z / z];
-        \\    @print(xs == ys);
-        \\    @print(V.W(x: nan) == V.W(x: z / z));
-        \\    @print(F(x: nan) == F(x: 1.0));
+        \\    print(xs == ys);
+        \\    print(V.W(x: nan) == V.W(x: z / z));
+        \\    print(F(x: nan) == F(x: 1.0));
         \\}
+        \\import {io.terminal.print} from "std";
     , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }
 
@@ -130,20 +133,21 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
     try h.assertJsRunLog(std.testing.allocator,
         \\pub fn main() {
         \\    val five = 5.0;
-        \\    @print("${5.0}");
-        \\    @print(5.0.toString());
-        \\    @print("x" + 2.0);
-        \\    @print("${1.0e21}");
-        \\    @print("${-3.0}");
-        \\    @print("${0.25}");
-        \\    @print("v=${five}");
-        \\    @print(five.toString());
-        \\    @print(1.0e-7);
-        \\    @print(7);
-        \\    @print("${7}");
-        \\    @print(1000.0, 1.0e20, 0.00001, 1200.0);
-        \\    @print("${9007199254740992.0}", 9007199254740991.0);
+        \\    print("${5.0}");
+        \\    print(5.0.toString());
+        \\    print("x" + 2.0);
+        \\    print("${1.0e21}");
+        \\    print("${-3.0}");
+        \\    print("${0.25}");
+        \\    print("v=${five}");
+        \\    print(five.toString());
+        \\    print(1.0e-7);
+        \\    print(7);
+        \\    print("${7}");
+        \\    print(1000.0, 1.0e20, 0.00001, 1200.0);
+        \\    print("${9007199254740992.0}", 9007199254740991.0);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\5.0
         \\5.0
@@ -175,9 +179,10 @@ test "js: template hole ---- a record, an array and a tuple are written as @prin
         \\    val xs = [1, 2, 3];
         \\    val t = #(1, "a");
         \\    val fs = [1.5, 2.0];
-        \\    @print("${p} ${xs} ${t} ${fs}");
-        \\    @print("p=" + p);
+        \\    print("${p} ${xs} ${t} ${fs}");
+        \\    print("p=" + p);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\Point(x: 1, y: 2) [1, 2, 3] #(1, "a") [1.5, 2.0]
         \\p=Point(x: 1, y: 2)
@@ -218,11 +223,12 @@ test "js: trim ---- std-wasm's whitespace set, a NBSP stays" {
     try h.assertJsRunLog(
         std.testing.allocator,
         \\pub fn main() {
-        \\    @print("[" + "\u{a0}x\u{a0} ".trim() + "]");
-        \\    @print("[" + " \t\n\r\u{b}\u{c}x\u{2003}\t ".trim() + "]");
-        \\    @print("[" + "\u{a0} x ".trimStart() + "]");
-        \\    @print("[" + " x \u{a0}".trimEnd() + "]");
+        \\    print("[" + "\u{a0}x\u{a0} ".trim() + "]");
+        \\    print("[" + " \t\n\r\u{b}\u{c}x\u{2003}\t ".trim() + "]");
+        \\    print("[" + "\u{a0} x ".trimStart() + "]");
+        \\    print("[" + " x \u{a0}".trimEnd() + "]");
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         "[\u{a0}x\u{a0}]\n[x\u{2003}]\n[\u{a0} x ]\n[ x \u{a0}]\n",
     );
@@ -293,9 +299,10 @@ test "js: f64 text ---- a record's and a variant's float field" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(Pt(x: 1.0, n: 3, ys: [2.0]));
-        \\    @print([Shape.Circle(r: 2.0), Shape.Dot]);
+        \\    print(Pt(x: 1.0, n: 3, ys: [2.0]));
+        \\    print([Shape.Circle(r: 2.0), Shape.Dot]);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\Pt(x: 1.0, n: 3, ys: [2.0])
         \\[Shape.Circle(r: 2.0), Shape.Dot]
@@ -308,13 +315,14 @@ test "js: f64 text ---- a record's and a variant's float field" {
 const bytes_src =
     \\pub fn main() {
     \\    val b = Bytes.fromUtf8("héllo");
-    \\    @print(b.length());
-    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
-    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    print(b.length());
+    \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    print(b.slice(1, 2).toUtf8().isError());
     \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
-    \\    @print(j[2..].toUtf8().unwrapOr("?"));
-    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j[2..].toUtf8().unwrapOr("?"));
+    \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
@@ -339,9 +347,10 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
         \\    return if (k == 1) Val.Text(s: "abc") else null;
         \\}
         \\pub fn main() {
-        \\    @print(find(1)?.str().length() ?? -1);
-        \\    @print(find(0)?.str().length() ?? -1);
+        \\    print(find(1)?.str().length() ?? -1);
+        \\    print(find(0)?.str().length() ?? -1);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\3
         \\-1
@@ -358,10 +367,11 @@ test "js: decision 521 ---- trim and toLower through ?. are std-wasm's, guarded"
         \\pub fn main() {
         \\    val o: ?string = "\u{a0}ΟΔΟΣ ";
         \\    val none: ?string = null;
-        \\    @print("[" + (o?.trim() ?? "-") + "]");
-        \\    @print("[" + (o?.trim().toLower() ?? "-") + "]");
-        \\    @print(none?.trim().toLower() ?? "absent");
+        \\    print("[" + (o?.trim() ?? "-") + "]");
+        \\    print("[" + (o?.trim().toLower() ?? "-") + "]");
+        \\    print(none?.trim().toLower() ?? "absent");
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         "[\u{a0}ΟΔΟΣ]\n[\u{a0}οδοσ]\nabsent\n",
     );
@@ -386,15 +396,16 @@ test "commonJS: a labelled break leaves the outer loop from a case arm of an inn
         \\}
         \\
         \\pub fn main() {
-        \\    @print(sumBeforeTwo([1, 2], [1, 2, 3]));
+        \\    print(sumBeforeTwo([1, 2], [1, 2, 3]));
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "1\n");
 }
 
 test "commonJS: a bare return in a yielding case arm ends the generator" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn items(n: i32) -> @Iterator<i32> {
+        \\fn items(n: i32) -> Iterator<i32> {
         \\    yield 0;
         \\    case n {
         \\        0 {
@@ -407,10 +418,11 @@ test "commonJS: a bare return in a yielding case arm ends the generator" {
         \\}
         \\
         \\pub fn main() {
-        \\    for (items(0)) { v -> @print(v); }
-        \\    for (items(1)) { v -> @print(v); }
+        \\    for (items(0)) { v -> print(v); }
+        \\    for (items(1)) { v -> print(v); }
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "0\n1\n0\n2\n9\n");
 }
 
@@ -432,8 +444,9 @@ test "commonJS: a labelled continue starts the outer loop's next round from a ca
         \\}
         \\
         \\pub fn main() {
-        \\    @print(run([1, 2], [1, 2, 3]));
+        \\    print(run([1, 2], [1, 2, 3]));
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "113\n");
 }

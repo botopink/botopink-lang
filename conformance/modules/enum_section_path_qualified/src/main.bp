@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Token {
     Color {
         Red {
@@ -19,6 +21,6 @@ type Border {
 fn main() {
     val a = Token.Color.Red.500; // Token
     val b = Border.Color.Red.500; // Border
-    @print(a == Token.Color.Red.500); // true
-    @print(b == Border.Color.Red.500); // true
+    print(a == Token.Color.Red.500); // true
+    print(b == Border.Color.Red.500); // true
 }

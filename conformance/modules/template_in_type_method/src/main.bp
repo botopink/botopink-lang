@@ -1,7 +1,7 @@
 //// Decision 425 — a template call expands wherever an expression may stand:
 //// in a type's method body, as in a function's.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn twice(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q) + compiler.text(q) + "\"");
@@ -14,5 +14,5 @@ type Filter(minAge: i32) {
 }
 
 pub fn main() {
-    @print(Filter(minAge: 7).names());
+    print(Filter(minAge: 7).names());
 }

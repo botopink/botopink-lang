@@ -4,11 +4,13 @@
 //// Integer elements: wasm reads a `string` element of a tuple through `??`
 //// as its address (`05-wasm`'s row).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val none: #(i32, i32)[] = [];
     val a = none.at(0) ?? #(0, 7);
-    @print(a._1);
+    print(a._1);
     val some: #(i32, i32)[] = [#(3, 4)];
     val b = some.at(0) ?? #(0, 7);
-    @print(b._1);
+    print(b._1);
 }

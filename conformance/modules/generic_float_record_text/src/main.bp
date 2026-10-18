@@ -3,6 +3,8 @@
 //// 521, 530): in a template hole and through `@print`, the field with its
 //// decimal part. commonJS wrote the hole as JavaScript's `[object Object]`.
 
+import {io.terminal.print} from "std";
+
 type Pt(x: f64)
 
 fn inRecord<T>(r: T) -> string {
@@ -10,10 +12,10 @@ fn inRecord<T>(r: T) -> string {
 }
 
 fn printRecord<T>(r: T) {
-    @print(r);
+    print(r);
 }
 
 pub fn main() {
-    @print(inRecord(Pt(x: 4.0)));
+    print(inRecord(Pt(x: 4.0)));
     printRecord(Pt(x: 2.5));
 }

@@ -4,7 +4,9 @@
 //// (decision 247's `refuseBeyondJsSafeInteger`), and printed
 //// `9007199254740992` before that.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val w = 9007199254740993l;
-    @print(w);
+    print(w);
 }

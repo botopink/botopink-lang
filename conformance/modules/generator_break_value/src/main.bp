@@ -12,7 +12,9 @@
 //// The checker types `break v` against the item type `T`; the generator scope
 //// of decision 105 lowers it (emit and end) — green on all four targets.
 
-fn upto(n: i32) -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn upto(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -21,20 +23,20 @@ fn upto(n: i32) -> @Iterator<i32> {
     break 7;
 }
 
-fn ends() -> @Iterator<i32> {
+fn ends() -> Iterator<i32> {
     yield 1;
     break;
     yield 2;
 }
 
 // The same rule on another iterator.
-fn last() -> @Iterator<i32> {
+fn last() -> Iterator<i32> {
     yield 5;
     break 6;
 }
 
 // A plain `fn` iterates a `@Iterator<T>`.
-fn plainDigits(g: @Iterator<i32>) -> string {
+fn plainDigits(g: Iterator<i32>) -> string {
     var acc = "";
     for (g) { x ->
         acc = acc + x.toString();
@@ -43,7 +45,7 @@ fn plainDigits(g: @Iterator<i32>) -> string {
 }
 
 pub fn main() {
-    @print(plainDigits(upto(3)));
-    @print(plainDigits(ends()));
-    @print(plainDigits(last()));
+    print(plainDigits(upto(3)));
+    print(plainDigits(ends()));
+    print(plainDigits(last()));
 }

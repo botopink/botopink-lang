@@ -1,10 +1,12 @@
 //// Decision 346 — `is` does not test `Bytes`: its type is static (an Erlang binary is a
 //// `string` too).
 
+import {io.terminal.print} from "std";
+
 fn check(v: string | Bytes) -> bool {
     return v is Bytes;
 }
 
 pub fn main() {
-    @print(check("a"));
+    print(check("a"));
 }

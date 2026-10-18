@@ -2,6 +2,8 @@
 //// and beam raise `badarith`, and commonJS — whose `7 / 0` is `Infinity` and
 //// `7 % 0` `NaN` — throws `integer division by zero`.
 
+import {io.terminal.print} from "std";
+
 fn rem(a: i32, b: i32) -> i32 {
     return a % b;
 }
@@ -11,8 +13,8 @@ fn div(a: i32, b: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(rem(7, 2));
-    @print(div(7, 2));
-    @print(div(7, 0));
-    @print("unreachable");
+    print(rem(7, 2));
+    print(div(7, 2));
+    print(div(7, 0));
+    print("unreachable");
 }

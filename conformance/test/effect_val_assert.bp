@@ -3,7 +3,7 @@
 //// after a `catch` the value is no longer a `@Result`
 //// (`reject/val_assert_after_catch.bp`).
 
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }

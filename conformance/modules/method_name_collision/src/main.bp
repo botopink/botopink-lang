@@ -25,6 +25,7 @@
 
 pub mod shapes;
 import {shapes.queryOf, shapes.groupOf};
+import {io.terminal.print} from "std";
 
 pub type Bag<T>(
     items: Array<T>,
@@ -48,7 +49,7 @@ pub fn bagOf<T>(xs: Array<T>) -> Bag<T> {
 }
 
 pub fn main() {
-    @print(queryOf([1, 2, 3]).toArray().length);
-    @print(groupOf("k", [1, 2]).toArray().length);
-    @print(bagOf([1, 2, 3, 4]).unwrap().length);
+    print(queryOf([1, 2, 3]).toArray().length);
+    print(groupOf("k", [1, 2]).toArray().length);
+    print(bagOf([1, 2, 3, 4]).unwrap().length);
 }

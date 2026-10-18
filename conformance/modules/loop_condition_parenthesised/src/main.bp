@@ -3,8 +3,10 @@
 //// condition half of the row: `loop (cond)` is `while (cond)`. The existing
 //// refusal holds (`reject/loop_parenthesised.bp` is the collection half).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var i = 0;
     loop (i < 3) { i = i + 1; }
-    @print(i);
+    print(i);
 }

@@ -1,4 +1,4 @@
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string, audited: bool)
 
@@ -19,7 +19,7 @@ fn index(syntax decl: unknown, comptime column: string) {
 type City(name: string, state: string)
 
 fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none"); // cities
-    @print(@typeInfo(City).metaAll(Index).length); // 2
-    @print(@typeInfo(City).metaAll(Entity).length); // 1
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none"); // cities
+    print(comptime compiler.typeInfo(City).metaAll(Index).length); // 2
+    print(comptime compiler.typeInfo(City).metaAll(Entity).length); // 1
 }

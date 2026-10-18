@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: 'Registry' does not implement 'at' required by behavior 'Index'
-at src/main.bp:5:6
+at src/main.bp:7:6

@@ -3,7 +3,8 @@
 //// inherits the workspace's dependency.
 
 import {greeting} from "greeter";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greeting() + " (second entry)");
+    print(greeting() + " (second entry)");
 }

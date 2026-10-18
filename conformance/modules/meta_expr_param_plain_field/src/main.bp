@@ -2,7 +2,7 @@
 //// no field modifier: a `syntax` parameter handed to a `string` field fills
 //// it with the tree of the annotation's argument, read as `"cities"`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
@@ -14,5 +14,5 @@ fn entity(syntax decl: unknown, syntax table: string) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

@@ -9,6 +9,8 @@
 //// of input` at exit 1, where erlang printed `3`. The emitter now spells a line
 //// comment `/* … */` wherever the rest of the line still has to survive.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var i = 0;
     if (i == 0) {
@@ -19,5 +21,5 @@ pub fn main() {
         // and one inside a condition loop's body
         i = i + 1;
     }
-    @print(i);
+    print(i);
 }

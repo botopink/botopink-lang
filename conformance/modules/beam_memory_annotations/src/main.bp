@@ -1,4 +1,4 @@
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 #[@BeamMemory.ProcessDict]
 var explicit: i32 = 0; // the default, said out loud
@@ -22,7 +22,7 @@ var counts: Dict<string, i32> = Dict.empty();
 
 pub fn main() {
     hits = hits + 1;
-    @print(hits); // 1
-    @print(buildVersion); // 101
-    @print(explicit); // 0
+    print(hits); // 1
+    print(buildVersion); // 101
+    print(explicit); // 0
 }

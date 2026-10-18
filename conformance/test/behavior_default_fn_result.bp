@@ -8,7 +8,7 @@
 behavior Shape {
     fn area(self: Self) -> i32;
 
-    default fn checked(self: Self) -> @Result<i32, string> {
+    default fn checked(self: Self) -> Result<i32, string> {
         val a = self.area();
         if (a > 10) throw "too big";
         return a;

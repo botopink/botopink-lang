@@ -54,8 +54,9 @@ test "infer: generic record Pair<A, B>" {
         \\val Pair = type <A, B>(first: A, second: B);
         \\val p = Pair(first: 42, second: "hello");
         \\fn main() {
-        \\    @print(p);
+        \\    print(p);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -162,8 +163,9 @@ test "infer: @Expr builtin type ---- declaration with bounded return typechecks"
         \\    return template;
         \\}
         \\fn main() {
-        \\    @print("ok");
+        \\    print("ok");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -236,11 +238,12 @@ test "infer: net-new ---- recursion through a generic data type" {
 // annotations are the only source — each call site instantiates fresh.
 test "infer: net-new ---- generic return inferred from usage context" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn make<T>() -> T { @todo(); }
+        \\fn make<T>() -> T { panic("not implemented"); }
         \\fn main() {
         \\    val n: i32 = make();
         \\    val s: string = make();
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -263,19 +266,19 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type() implement @Renderable
-        \\fn layer1(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn layer1(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn layer2() -> @Component<i32> {
+        \\fn layer2() -> Component<i32> {
         \\    val a = use layer1(0);
         \\    return a;
         \\}
-        \\fn layer3() -> @Component<i32> {
+        \\fn layer3() -> Component<i32> {
         \\    val b = use layer2();
         \\    return b;
         \\}
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> Component<Element> {
         \\    val c = use layer3();
         \\    return Element();
         \\}

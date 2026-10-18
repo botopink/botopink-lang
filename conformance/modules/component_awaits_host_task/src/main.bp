@@ -3,26 +3,26 @@
 //// render goes on once it settles. `Fast` awaits nothing and stays direct;
 //// `Page` composes both.
 
-import {async.delay} from "std";
+import {async.delay, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
-fn Slow(n: i32) -> @Component<View> {
+fn Slow(n: i32) -> Component<View> {
     val v = await delay(5, n * 2);
     return View(text: "slow " + v.toString());
 }
 
-fn Fast() -> @Component<View> {
+fn Fast() -> Component<View> {
     return View(text: "fast");
 }
 
-fn Page() -> @Component<View> {
+fn Page() -> Component<View> {
     val a = await Slow(1);
     val b = await Fast();
     return View(text: a.text + " " + b.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val p = await Page();
-    @print(p.text);
+    print(p.text);
 }

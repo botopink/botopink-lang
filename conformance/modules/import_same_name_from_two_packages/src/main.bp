@@ -7,8 +7,9 @@
 
 import {served} from "webapp";
 import {ok} from "ui";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(served());
-    @print(ok().html);
+    print(served());
+    print(ok().html);
 }

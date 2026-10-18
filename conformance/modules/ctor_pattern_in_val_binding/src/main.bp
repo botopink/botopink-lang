@@ -3,11 +3,13 @@
 //// because it cannot fail). beam bound nothing and aborted with
 //// `{unresolved_identifier, t}` (`03-beam` step 1).
 
+import {io.terminal.print} from "std";
+
 type Tag {
     Label(t: i32, w: i32),
 }
 
 pub fn main() {
     val Label(t, w) = Tag.Label(t: 2, w: 5);
-    @print(t + w);
+    print(t + w);
 }

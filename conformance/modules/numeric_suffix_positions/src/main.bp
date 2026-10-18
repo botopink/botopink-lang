@@ -7,9 +7,11 @@
 //// a `behavior` default fn, a `type` variant's method), a record field default
 //// and a `case` guard inside a method body.
 
+import {io.terminal.print} from "std";
+
 type Stamp(mtime: i64)
 
-fn stat(n: i64) -> @Result<Stamp, string> {
+fn stat(n: i64) -> Result<Stamp, string> {
     if (n < 0) throw "negative";
     return Stamp(mtime: n);
 }
@@ -73,34 +75,34 @@ type Level {
 pub fn main() {
     val stamp = stat(1577836900000l);
     case stamp {
-        Ok(s) if s.mtime > 1577836800000l -> @print("after");
-        Ok(_) -> @print("before");
-        Error(e) -> @print(e);
+        Ok(s) if s.mtime > 1577836800000l -> print("after");
+        Ok(_) -> print("before");
+        Error(e) -> print(e);
     }
     case 3u8 {
-        n if n > 2u8 -> @print("big");
-        _ -> @print("small");
+        n if n > 2u8 -> print("big");
+        _ -> print("small");
     }
     case 2l {
-        n if n == 2l && n < 9l -> @print("two");
-        _ -> @print("other");
+        n if n == 2l && n < 9l -> print("two");
+        _ -> print("other");
     }
     val grown = case 1l {
         1l -> 10l + 1l;
         _ -> 0l;
     };
-    @print(grown);
-    @print(offset());
-    @print(sum());
-    @print(narrow());
-    @print([1l, 2l].map({ v -> v + 5l }));
+    print(grown);
+    print(offset());
+    print(sum());
+    print(narrow());
+    print([1l, 2l].map({ v -> v + 5l }));
     val box = Box(label: "b");
-    @print(box.size);
-    @print(box.grow());
-    @print(Box.make());
-    @print(Scale.by(2l));
-    @print(Item(id: 1l).tag());
-    @print(Pick(n: 9u8).band());
-    @print(Level.Low.weight());
-    @print("sum=${3l + 4l}");
+    print(box.size);
+    print(box.grow());
+    print(Box.make());
+    print(Scale.by(2l));
+    print(Item(id: 1l).tag());
+    print(Pick(n: 9u8).band());
+    print(Level.Low.weight());
+    print("sum=${3l + 4l}");
 }

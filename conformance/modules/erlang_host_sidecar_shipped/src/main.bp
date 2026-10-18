@@ -11,9 +11,11 @@
 //// its `.S`: the build ships the same `.erl` into `out/beam/` and the entry's
 //// `'__bp_load_siblings'/0` compiles and loads it before `main` runs.
 
-#[@external(.Erlang("lt_greeter:hello($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("lt_greeter:hello($0)"))]
 declare fn hello(name: string) -> string;
 
 pub fn main() {
-    @print(hello("sidecar"));
+    print(hello("sidecar"));
 }

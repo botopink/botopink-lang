@@ -1,9 +1,11 @@
 //// An unmarked lambda whose tail expression is an `iter loop { … }` answers
 //// that generator, as a function whose last statement is the block does.
 
-fn walk(f: fn() -> @Iterator<i32>) {
+import {io.terminal.print} from "std";
+
+fn walk(f: fn() -> Iterator<i32>) {
     for (f()) { x ->
-        @print(x);
+        print(x);
     }
 }
 

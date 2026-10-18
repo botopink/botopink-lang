@@ -3,8 +3,10 @@
 //// here (`expected i32, got void`), which named the wrong type; the refusal
 //// names the method's answer.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val ts: Array<i32> = [1, 2];
     val x: i32 = ts[0];
-    @print(x);
+    print(x);
 }

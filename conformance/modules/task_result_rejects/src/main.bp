@@ -10,50 +10,52 @@
 //// generic code awaiting a `@Task<T>`, two tasks started before either is
 //// awaited, an `async { }` block that throws, and a `void` success.
 
+import {io.terminal.print} from "std";
+
 type Account(id: i32) {
-    fn load(self: Self, n: i32) -> @Task<@Result<i32, string>> {
+    fn load(self: Self, n: i32) -> Task<Result<i32, string>> {
         if (n < 0) throw "no account " + n.toString();
         return self.id + n;
     }
 
-    fn relayLoad(self: Self, n: i32) -> @Task<@Result<i32, string>> {
+    fn relayLoad(self: Self, n: i32) -> Task<Result<i32, string>> {
         return self.load(n);
     }
 }
 
-type Loader(load: fn(n: i32) -> @Task<@Result<i32, string>>)
+type Loader(load: fn(n: i32) -> Task<Result<i32, string>>)
 
-fn check(n: i32) -> @Task<@Result<i32, string>> {
+fn check(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) throw "negative " + n.toString();
     return n * 2;
 }
 
-fn relay(n: i32) -> @Task<@Result<i32, string>> {
+fn relay(n: i32) -> Task<Result<i32, string>> {
     return check(n);
 }
 
-fn propagate(n: i32) -> @Task<@Result<i32, string>> {
+fn propagate(n: i32) -> Task<Result<i32, string>> {
     val v = try await check(n);
     return v + 1;
 }
 
-fn wait<T>(t: @Task<T>) -> @Task<T> {
+fn wait<T>(t: Task<T>) -> Task<T> {
     return await t;
 }
 
-fn save(n: i32) -> @Task<@Result<void, string>> {
+fn save(n: i32) -> Task<Result<void, string>> {
     if (n < 0) throw "refused " + n.toString();
     return;
 }
 
-fn show(r: @Result<i32, string>) {
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("error", e);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     show(await check(1));
     show(await check(-1));
     show(await relay(2));
@@ -61,7 +63,7 @@ fn run() -> @Task<void> {
     show(await propagate(3));
     show(await propagate(-3));
     val handled = try await check(-4) catch 0;
-    @print("handled", handled);
+    print("handled", handled);
     show(await wait(check(-5)));
     val acc = Account(id: 10);
     show(await acc.load(6));
@@ -74,17 +76,17 @@ fn run() -> @Task<void> {
     val second = check(-8);
     show(await first);
     show(await second);
-    val blk: @Task<@Result<i32, string>> = async {
+    val blk: Task<Result<i32, string>> = async {
         if (handled == 0) throw "block";
         return 9;
     };
     show(await blk);
     val saved = await save(1);
-    @print("saved", saved.isOk());
+    print("saved", saved.isOk());
     val refused = await save(-1);
     case refused {
-        Ok(_v) -> @print("saved");
-        Error(e) -> @print("error", e);
+        Ok(_v) -> print("saved");
+        Error(e) -> print("error", e);
     }
 }
 

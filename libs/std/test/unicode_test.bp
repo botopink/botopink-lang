@@ -18,6 +18,7 @@
 import {unicode};
 import {unicode.NormalizationForm};
 import {io.fs};
+import {io.terminal.print} from "std";
 
 fn hexDigit(c: i32) -> i32 {
     if (c <= 57) return c - 48;
@@ -142,7 +143,7 @@ fn checkPart(part: string) -> #(i32, Array<string>) {
 }
 
 fn report(failures: Array<string>) -> i32 {
-    failures.take(10).forEach({ f -> @print(f) });
+    failures.take(10).forEach({ f -> print(f) });
     return failures.length;
 }
 

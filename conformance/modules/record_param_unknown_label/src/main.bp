@@ -1,6 +1,8 @@
 //// Decision 529 (2) — a call's label names a parameter of the function or a
 //// field of its record parameter's type; any other is refused at the label.
 
+import {io.terminal.print} from "std";
+
 type CardProps(title: string)
 
 fn Card(..props: CardProps, suffix: string) -> string {
@@ -8,5 +10,5 @@ fn Card(..props: CardProps, suffix: string) -> string {
 }
 
 pub fn main() {
-    @print(Card(title: "a", suffix: "!", color: "red"));
+    print(Card(title: "a", suffix: "!", color: "red"));
 }

@@ -4,29 +4,31 @@
 //// a parameter. The body answers its last expression, `await` included
 //// (decision 537), and a `return` in it leaves the lambda with its value.
 
-fn double(x: i32) -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn double(x: i32) -> Task<i32> {
     return x * 2;
 }
 
-fn apply(f: fn(x: i32) -> @Task<i32>, v: i32) -> @Task<i32> {
+fn apply(f: fn(x: i32) -> Task<i32>, v: i32) -> Task<i32> {
     return await f(v);
 }
 
-pub fn main() -> @Task<void> {
-    val g: fn(x: i32) -> @Task<i32> = async { x -> await double(x) + 1 };
-    @print(await g(4));
-    @print(await apply(async { x ->
+pub fn main() -> Task<void> {
+    val g: fn(x: i32) -> Task<i32> = async { x -> await double(x) + 1 };
+    print(await g(4));
+    print(await apply(async { x ->
         await double(x)
     }, 5));
-    val k: fn(x: i32) -> @Task<i32> = async { x ->
+    val k: fn(x: i32) -> Task<i32> = async { x ->
         if (x > 0) return x;
         await double(-x)
     };
-    @print(await k(3));
-    @print(await k(-2));
-    val h: fn(x: i32) -> @Task<i32> = async fn(x) {
+    print(await k(3));
+    print(await k(-2));
+    val h: fn(x: i32) -> Task<i32> = async fn(x) {
         val n = await double(x);
         n + 100
     };
-    @print(await h(1));
+    print(await h(1));
 }

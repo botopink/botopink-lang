@@ -20,14 +20,14 @@
 ////             key printed `0`), and `String.at` has its std-wasm's `text.at` lowering,
 ////             which `run/string_at.bp` pins on all four targets
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 pub fn main() {
     val d = Dict.empty().insert("a", 1);
-    @print(d.at("a"));
-    @print(d.at("zz"));
+    print(d.at("a"));
+    print(d.at("zz"));
 
     val s = "abc";
-    @print(s.at(1));
-    @print(s.at(7));
+    print(s.at(1));
+    print(s.at(7));
 }

@@ -3,6 +3,8 @@
 //// there — every argument is that value's, none of them taken as comptime —
 //// and the module function stays the name's everywhere else.
 
+import {io.terminal.print} from "std";
+
 fn scale(comptime n: i32, x: i32) -> i32 {
     return n * x;
 }
@@ -12,8 +14,8 @@ fn run(scale: fn(i32, i32) -> i32) -> i32 {
 }
 
 pub fn main() {
-    @print(scale(2, 5));
-    @print(run({ a, b -> a - b }));
+    print(scale(2, 5));
+    print(run({ a, b -> a - b }));
     val scale: fn(i32, i32) -> i32 = { a, b -> a + b };
-    @print(scale(2, 5));
+    print(scale(2, 5));
 }

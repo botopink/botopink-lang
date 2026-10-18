@@ -16,6 +16,8 @@
 //// not reach the checker. The cell is the statement of the decided form; it is
 //// listed against the row that makes it parse and type.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x: ?i32 = 5;
     val a = case x {
@@ -26,7 +28,7 @@ pub fn main() {
             "present " + v.toString()
         }
     };
-    @print(a);
+    print(a);
 
     val y: ?i32 = null;
     val b = case y {
@@ -37,5 +39,5 @@ pub fn main() {
             "present " + v.toString()
         }
     };
-    @print(b);
+    print(b);
 }

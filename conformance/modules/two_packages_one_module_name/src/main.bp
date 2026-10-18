@@ -12,9 +12,10 @@ pub mod theme;
 import {theme.make};
 import {describeA} from "a";
 import {describeB} from "b";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(describeA());
-    @print(describeB());
-    @print(make());
+    print(describeA());
+    print(describeB());
+    print(make());
 }

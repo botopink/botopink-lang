@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[marker-on-declaration]: a declaration without a body takes no marker
-at src/main.bp:7:5
+at src/main.bp:9:5
 label remove the marker

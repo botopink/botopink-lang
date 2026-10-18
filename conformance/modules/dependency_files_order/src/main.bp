@@ -10,8 +10,9 @@
 
 import {derived} from "dep/b";
 import {seven} from "dep/c";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(derived());
-    @print(seven());
+    print(derived());
+    print(seven());
 }

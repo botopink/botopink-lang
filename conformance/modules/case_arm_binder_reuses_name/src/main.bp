@@ -2,6 +2,8 @@
 //// already bound (here the parameter `s`) is `binding-redeclared` at the
 //// arm: the `n` inside a `case` gets another name.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(radius: i32),
     Square(side: i32),
@@ -15,5 +17,5 @@ fn area(s: Shape) -> i32 {
 }
 
 pub fn main() {
-    @print(area(Shape.Square(side: 3)));
+    print(area(Shape.Square(side: 3)));
 }

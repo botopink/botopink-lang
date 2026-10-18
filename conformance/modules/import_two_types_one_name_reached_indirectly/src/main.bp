@@ -9,6 +9,7 @@ pub mod a;
 pub mod b;
 import {a.p as pa, a.p.Policy as APolicy, a.p.quick, a.p.stamp};
 import {b.p as pb, b.p.Policy as BPolicy};
+import {io.terminal.print} from "std";
 
 fn twice(p: APolicy) -> i32 {
     return p.ms * 2;
@@ -24,9 +25,9 @@ type Job(id: i32)
 pub fn main() {
     val x: APolicy = pa.slow();
     val y: BPolicy = pb.named();
-    @print(pa.msOf(x));
-    @print(shout(y));
-    @print(pa.msOf(APolicy(ms: 3)));
-    @print(twice(quick @`x`));
-    @print(twice(Job(id: 1).policy()));
+    print(pa.msOf(x));
+    print(shout(y));
+    print(pa.msOf(APolicy(ms: 3)));
+    print(twice(quick @`x`));
+    print(twice(Job(id: 1).policy()));
 }

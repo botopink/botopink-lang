@@ -13,6 +13,7 @@ import {marks.registered};
 import {registry.names};
 import {alpha.first};
 import {beta.second};
+import {io.terminal.print} from "std";
 
 val before = names();
 
@@ -24,7 +25,7 @@ pub fn own() -> string {
 val seen = names();
 
 pub fn main() {
-    @print(before);
-    @print(seen);
-    @print(first() + " " + second() + " " + own());
+    print(before);
+    print(seen);
+    print(first() + " " + second() + " " + own());
 }

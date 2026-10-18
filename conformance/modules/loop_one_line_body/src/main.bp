@@ -7,6 +7,8 @@
 //// loop to `for`, which is the spelling here. A `;` AFTER the loop's `}` is
 //// accepted and removed by `botopink format` (C-13, decision 524).
 
+import {io.terminal.print} from "std";
+
 fn f(x: i32) -> i32 {
     return x + 1;
 }
@@ -18,5 +20,5 @@ pub fn main() {
         acc = acc + f(x);
     }
     val ys = xs.map { x -> f(x) };
-    @print(acc.toString() + ys.length.toString());
+    print(acc.toString() + ys.length.toString());
 }

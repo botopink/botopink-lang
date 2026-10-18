@@ -3,7 +3,7 @@
 //// `@TypeInfo.all(with: [service, repository])` answers
 //// `Declared<Bean>[]`, in the one order (decision 235).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior Bean {
     fn make() -> Self;
@@ -34,7 +34,7 @@ pub type Orders(table: string) implement Bean {
 pub fn main() {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, repository]);
     for (all) { d ->
-        @print(d.name
+        print(d.name
             + " "
             + d.metaAll(BeanRole).map({ m -> m.role }).join(","));
     }

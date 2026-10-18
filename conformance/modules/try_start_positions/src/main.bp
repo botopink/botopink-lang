@@ -5,17 +5,19 @@
 //// side of `x = …`, a `return` operand, and `try … catch` in an argument.
 //// The operand forms are the `reject/try_*` / `reject/await_*` cells.
 
-fn parse(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn items(n: i32) -> @Result<i32[], string> {
+fn items(n: i32) -> Result<i32[], string> {
     if (n < 0) throw "negative";
     return [n, n + 1];
 }
 
-fn positive(n: i32) -> @Result<bool, string> {
+fn positive(n: i32) -> Result<bool, string> {
     if (n < 0) throw "negative";
     return n > 0;
 }
@@ -24,7 +26,7 @@ fn twice(n: i32) -> i32 {
     return n * 2;
 }
 
-fn positions(n: i32) -> @Result<i32, string> {
+fn positions(n: i32) -> Result<i32, string> {
     val a = try parse(n);
     val b = twice(try parse(n));
     val xs = [try parse(n), 10];
@@ -39,7 +41,7 @@ fn positions(n: i32) -> @Result<i32, string> {
             "more"
         }
     };
-    @print(word);
+    print(word);
     for (try items(n)) { x ->
         total = total + x;
     }
@@ -52,8 +54,8 @@ fn fallback(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(positions(1).unwrapOr(-1));
-    @print(positions(-1).unwrapOr(-1));
-    @print(fallback(3));
-    @print(fallback(-3));
+    print(positions(1).unwrapOr(-1));
+    print(positions(-1).unwrapOr(-1));
+    print(fallback(3));
+    print(fallback(-3));
 }

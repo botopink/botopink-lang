@@ -3,8 +3,9 @@
 
 pub mod geo;
 import {geo.shapes};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(shapes.area(2));
+    print(shapes.area(2));
     val f = shapes;
 }

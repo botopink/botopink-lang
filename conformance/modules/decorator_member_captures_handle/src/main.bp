@@ -1,7 +1,7 @@
 //// Decision 370 (2) — the `@Decl` handle exists only while the program
 //// compiles: a member function reading it is refused at the read.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn named(syntax decl: unknown) {
     compiler.addMember("typeName", fn() -> string {
@@ -13,5 +13,5 @@ fn named(syntax decl: unknown) {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print(Signup.typeName());
+    print(Signup.typeName());
 }

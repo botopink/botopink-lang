@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `table` has no implementation for the wasm backend
-at src/orm/entity.bp:5:12
+at src/orm/entity.bp:7:12

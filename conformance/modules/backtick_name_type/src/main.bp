@@ -2,6 +2,8 @@
 //// enum with a unit and a payload variant named so too, constructed, matched
 //// and printed as written.
 
+import {io.terminal.print} from "std";
+
 type `my point`(x: i32, y: i32) {
     fn `sum of`(self: Self) -> i32 {
         return self.x + self.y;
@@ -22,9 +24,9 @@ fn area(s: `Shape kind`) -> i32 {
 
 pub fn main() {
     val p: `my point` = `my point`(x: 3, y: 4);
-    @print(p.`sum of`());
-    @print(p);
-    @print(area(`Shape kind`.`Round one`(radius: 2)));
-    @print(area(`Shape kind`.`no shape`));
-    @print(`Shape kind`.`Round one`(radius: 5));
+    print(p.`sum of`());
+    print(p);
+    print(area(`Shape kind`.`Round one`(radius: 2)));
+    print(area(`Shape kind`.`no shape`));
+    print(`Shape kind`.`Round one`(radius: 5));
 }

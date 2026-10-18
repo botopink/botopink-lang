@@ -9,10 +9,10 @@
 //// which". Both answers are here: the dependency's own three, and std's
 //// through its namespace.
 
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 import {report.report} from "kit";
 
 pub fn main() {
-    @print(report());
-    @print(collections.toInt(collections.lt()));
+    print(report());
+    print(collections.toInt(collections.lt()));
 }

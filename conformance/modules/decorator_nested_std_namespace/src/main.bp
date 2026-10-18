@@ -6,7 +6,7 @@
 //// located at the field — never the namespace read as unbound
 //// (`unbound variable '__bp_ns_io_random'`).
 
-import {io} from "std";
+import {io, io.terminal.print} from "std";
 
 fn tagged(syntax decl: unknown) {
     io.random.seed(7);
@@ -19,5 +19,5 @@ fn work() -> i32 {
 }
 
 pub fn main() {
-    @print(work());
+    print(work());
 }

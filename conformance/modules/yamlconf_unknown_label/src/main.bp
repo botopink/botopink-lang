@@ -5,11 +5,12 @@
 
 mod yamlconf;
 import {yamlconf.conf};
+import {io.terminal.print} from "std";
 
 val cfg = conf @`server:
   host: "0.0.0.0"
 debug: true`;
 
 fn main() {
-    @print(cfg.server.prot);
+    print(cfg.server.prot);
 }

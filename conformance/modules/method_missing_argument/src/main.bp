@@ -4,10 +4,12 @@
 //// module defines (`undef`), and commonJS read the missing argument as
 //// `undefined`. `run/method_default_argument.bp` is the call a default fills.
 
+import {io.terminal.print} from "std";
+
 type Jar(n: i32) {
     pub fn set(self: Self, name: string, value: string, attrs: string) -> string { return name + value + attrs; }
 }
 
 fn cookies() -> Jar { return Jar(n: 1); }
 
-pub fn main() { @print(cookies().set("s", "1")); }
+pub fn main() { print(cookies().set("s", "1")); }

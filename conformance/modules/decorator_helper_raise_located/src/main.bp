@@ -4,10 +4,10 @@
 //// raise leaves — not the helper's call in the body, not the annotation
 //// `#[short]` that ran the body.
 
-import {compiler} from "std";
+import {compiler, failure.panic, io.terminal.print} from "std";
 
 fn requireShort(name: string) -> string {
-    if (name.length() > 3) @panic("too long: " + name);
+    if (name.length() > 3) panic("too long: " + name);
     return name;
 }
 
@@ -20,5 +20,5 @@ fn short(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(tag());
+    print(tag());
 }

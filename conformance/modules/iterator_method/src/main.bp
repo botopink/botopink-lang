@@ -1,5 +1,7 @@
+import {io.terminal.print} from "std";
+
 type Grid(cells: i32[]) {
-    fn iter(self: Self) -> @Iterator<i32> {
+    fn iter(self: Self) -> Iterator<i32> {
         for (self.cells) { c ->
             yield c;
         }
@@ -9,6 +11,6 @@ type Grid(cells: i32[]) {
 fn main() {
     val g = Grid(cells: [1, 2, 3]);
     for (g.iter()) { c ->
-        @print(c);
+        print(c);
     }
 }

@@ -2,9 +2,11 @@
 //// declaration in `builtins.d.bp`: `Closeable` requires `close`, and a type that names it
 //// without one is refused at the type.
 
+import {io.terminal.print} from "std";
+
 type Door(name: string) implement Closeable {
     fn shut(self: Self) {
-        @print("shut " + self.name);
+        print("shut " + self.name);
     }
 }
 

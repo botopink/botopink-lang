@@ -32,7 +32,7 @@ test "surface R1: an array of a labeled tuple, and of an unlabeled one" {
 
 test "surface R1: an array of a builtin generic" {
     try assertParser(std.testing.allocator, @src(),
-        \\fn f(xs: @Result<i32, string>[]) -> i32 {
+        \\fn f(xs: Result<i32, string>[]) -> i32 {
         \\    return xs.length;
         \\}
     );
@@ -502,9 +502,10 @@ test "surface R10: a decided-against form renders its code, the replacement and 
         \\1 | fn f() -> i32 { return 1 << 2; }
         \\  |                          ^^ not an operator `<<`
         \\  |
-        \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@external(.<Target>(…))]` is the way to a bit operation.
+        \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[compiler.external(.<Target>(…))]` is the way to a bit operation.
         \\
         \\
+        \\import {compiler} from "std";
     ,
         \\fn f() -> i32 { return 1 << 2; }
     );
@@ -534,20 +535,22 @@ test "surface R11: a one-line trailing lambda body needs no `;`" {
         \\    val ys = xs.map { x -> x + 1 };
         \\    var acc = 0;
         \\    for (xs) { x -> acc = acc + x };
-        \\    xs.forEach { x -> @print(x.toString()) };
+        \\    xs.forEach { x -> print(x.toString()) };
         \\    val z = calcular(fator: 2) { a, b -> a + b };
         \\    val w = memo { -> 42 };
         \\    return acc;
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "surface R11: a trailing lambda body with several statements keeps its `;`" {
     try expectErrorAt(
         \\fn f(xs: i32[]) -> i32 {
-        \\    xs.forEach { x -> @print(x.toString()) @print(x.toString()); };
+        \\    xs.forEach { x -> print(x.toString()) print(x.toString()); };
         \\    return 1;
         \\}
+        \\import {io.terminal.print} from "std";
     , .unexpectedToken, 2, 44);
 }
 
@@ -574,12 +577,13 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\    while (n > 100) { n = n - 1; };
         \\    loop { break; };
         \\    case n {
-        \\        1 -> @print("one");
-        \\        _ -> @print("other");
+        \\        1 -> print("one");
+        \\        _ -> print("other");
         \\    };
         \\    if (c) n = 3 else { n = 4; n = 5; };
         \\    return n;
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\fn f(c: bool, xs: i32[]) -> i32 {
         \\    var n = 0;
@@ -594,12 +598,13 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\    while (n > 100) { n = n - 1; }
         \\    loop { break; }
         \\    case n {
-        \\        1 -> @print("one");
-        \\        _ -> @print("other");
+        \\        1 -> print("one");
+        \\        _ -> print("other");
         \\    }
         \\    if (c) n = 3 else { n = 4; n = 5; }
         \\    return n;
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 

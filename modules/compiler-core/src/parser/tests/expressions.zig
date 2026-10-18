@@ -246,9 +246,10 @@ test "parser: builtin ---- zero-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
         \\    default fn run() {
-        \\        @src();
+        \\        comptime compiler.src;
         \\    }
         \\}
+        \\import {compiler} from "std";
     );
 }
 
@@ -258,9 +259,10 @@ test "parser: builtin ---- single-arg call" {
         \\    default fn run() {
         \\        @sizeOf(Int);
         \\        @typeName(Bool);
-        \\        @panic("unreachable");
+        \\        panic("unreachable");
         \\    }
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -288,7 +290,8 @@ test "parser: builtin ---- as val initializer" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val size = @sizeOf(Float);
         \\val name = @typeName(String);
-        \\val src = @src();
+        \\val src = comptime compiler.src;
+        \\import {compiler} from "std";
     );
 }
 
@@ -547,7 +550,7 @@ test "parser: assert pattern ---- with list and rest" {
 
 test "parser: await ---- prefix expression" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn run() -> @Task<Int> {
+        \\fn run() -> Task<Int> {
         \\    val x = await fetch(url);
         \\    return x;
         \\}
@@ -556,7 +559,7 @@ test "parser: await ---- prefix expression" {
 
 test "parser: await ---- chained with try" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn run() -> @Task<Int> {
+        \\fn run() -> Task<Int> {
         \\    val x = try await fetch(url);
         \\    return x;
         \\}
@@ -565,7 +568,7 @@ test "parser: await ---- chained with try" {
 
 test "parser: loop await ---- async iteration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn consume(items: Int[]) -> @Task<Int> {
+        \\fn consume(items: Int[]) -> Task<Int> {
         \\    for await (items) { item ->
         \\        handle(item);
         \\    }

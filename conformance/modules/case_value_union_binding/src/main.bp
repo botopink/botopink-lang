@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(r: i32),
     Label(text: string),
@@ -19,6 +21,6 @@ fn describe(s: Shape) -> string {
 }
 
 pub fn main() {
-    @print(describe(Shape.Circle(r: 4)));
-    @print(describe(Shape.Label(text: "hi")));
+    print(describe(Shape.Circle(r: 4)));
+    print(describe(Shape.Label(text: "hi")));
 }

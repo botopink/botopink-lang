@@ -5,6 +5,7 @@
 pub mod atoms;
 import {atoms.Box, atoms.describe};
 import {atoms.describe as d};
+import {io.terminal.print} from "std";
 
 type User(name: string)
 
@@ -12,7 +13,7 @@ pub fn main() {
     val a: i32 = describe(Box(value: 2), 0);
     val b: User = describe(User, User(name: "bo"));
     val c: string = d(string, "s");
-    @print(a);
-    @print(b.name);
-    @print(c);
+    print(a);
+    print(b.name);
+    print(c);
 }

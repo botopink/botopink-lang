@@ -3,7 +3,7 @@
 //// (`template-lookup-decl-write`) — only a decorator wraps the function it
 //// annotates (decision 316).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn posts() -> string {
     return "posts";
@@ -16,5 +16,5 @@ fn wrapping(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(wrapping @`posts`);
+    print(wrapping @`posts`);
 }

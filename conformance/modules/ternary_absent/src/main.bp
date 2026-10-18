@@ -2,8 +2,10 @@
 //// operator; a conditional value is `if (c) { a } else { b }`. Refused by name
 //// at the `?`, once, at the exit of the postfix chain every spelling reaches.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val c = true;
     val x = c ? 1 : 2;
-    @print(x.toString());
+    print(x.toString());
 }

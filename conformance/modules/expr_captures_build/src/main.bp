@@ -2,7 +2,7 @@
 //// program runs; `compiler` exists only while it compiles, so a `compiler`
 //// read inside the member is refused there (`syntax-captures-build`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn named<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) {
     compiler.addMember("ruleText", fn(self: T) -> string {
@@ -18,5 +18,5 @@ fn always(a: Account) -> bool {
 pub type Account(balance: i32)
 
 pub fn main() {
-    @print(Account(balance: 1).ruleText());
+    print(Account(balance: 1).ruleText());
 }

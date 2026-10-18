@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Token {
     Text {
         Bold,
@@ -14,6 +16,6 @@ fn textToCss(t: Token.Text) -> string {
 }
 
 pub fn main() {
-    @print(textToCss(.Bold)); // font-weight:bold
-    @print(textToCss(.Italic)); // font-style:italic
+    print(textToCss(.Bold)); // font-weight:bold
+    print(textToCss(.Italic)); // font-style:italic
 }

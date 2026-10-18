@@ -4,6 +4,8 @@
 //// named as a value. The argument reaches it and its answer comes back
 //// unchanged, on every target.
 
+import {io.terminal.print} from "std";
+
 fn halver(present: bool) -> ?fn(f64) -> f64 {
     val f: fn(f64) -> f64 = { x -> x / 2.0 };
     return if (present) f else null;
@@ -27,16 +29,16 @@ pub fn main() {
     val h = halver(true);
     if (h) {
         g ->
-        @print(g(3.0));
+        print(g(3.0));
     }
-    @print(halver(true)?.(3.0) ?? 0.0);
-    @print(halver(false)?.(3.0) ?? -1.0);
-    @print(shower(true)?.(1.5) ?? "none");
-    @print(shower(false)?.(1.5) ?? "none");
+    print(halver(true)?.(3.0) ?? 0.0);
+    print(halver(false)?.(3.0) ?? -1.0);
+    print(shower(true)?.(1.5) ?? "none");
+    print(shower(false)?.(1.5) ?? "none");
     val q: fn(f64) -> f64 = quarter;
-    @print(q(2.0));
+    print(q(2.0));
     val local: fn(f64) -> f64 = { x -> x + 0.25 };
-    @print(local(1.0));
-    @print(wide(true)?.(5000000000l) ?? 0l);
-    @print(wide(false)?.(5l) ?? -1l);
+    print(local(1.0));
+    print(wide(true)?.(5000000000l) ?? 0l);
+    print(wide(false)?.(5l) ?? -1l);
 }

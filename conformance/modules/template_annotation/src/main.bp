@@ -11,7 +11,7 @@
 //// decorator, and its text may span lines. `decl.params` is a method's own
 //// parameter list.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Query(sql: string, params: string[])
 
@@ -110,11 +110,11 @@ fn logout(user: string) -> string {
 }
 
 pub fn main() {
-    val statements: string[] = @typeInfo(Users).meta(Repository)?.statements ?? [];
-    @print(statements.join(" | "));
-    val m = @typeInfo(logout).meta(Query);
-    @print(m!.sql + " <- " + m!.params.join(", "));
-    @print(logout("ana"));
+    val statements: string[] = comptime compiler.typeInfo(Users).meta(Repository)?.statements ?? [];
+    print(statements.join(" | "));
+    val m = comptime compiler.typeInfo(logout).meta(Query);
+    print(m!.sql + " <- " + m!.params.join(", "));
+    print(logout("ana"));
 }
 
 // What `#[repository]` records: one statement per method that carries a query.

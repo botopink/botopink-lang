@@ -7,18 +7,20 @@
 //// `Error` — and prints `done`. `test/yield_step_next.bp` reads the `Done` by
 //// hand.
 
-fn check(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
-fn checked(xs: i32[]) -> @Iterator<@Result<i32, string>> {
+fn checked(xs: i32[]) -> Iterator<Result<i32, string>> {
     for (xs) { x ->
         yield try check(x);
     }
 }
 
-fn upTo(limit: i32) -> @Iterator<@Result<i32, string>> {
+fn upTo(limit: i32) -> Iterator<Result<i32, string>> {
     var i = 0;
     loop {
         if (i == limit) throw "limit " + limit.toString();
@@ -27,20 +29,20 @@ fn upTo(limit: i32) -> @Iterator<@Result<i32, string>> {
     }
 }
 
-fn asIs() -> @Iterator<@Result<i32, string>> {
+fn asIs() -> Iterator<Result<i32, string>> {
     yield check(1);
     yield check(-2);
     yield 3;
 }
 
-fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
+fn walk(name: string, it: Iterator<Result<i32, string>>) {
     for (it) { r ->
         case r {
-            Ok(v) -> @print(name + " ok " + v.toString());
-            Error(e) -> @print(name + " error " + e);
+            Ok(v) -> print(name + " ok " + v.toString());
+            Error(e) -> print(name + " error " + e);
         }
     }
-    @print(name + " done");
+    print(name + " done");
 }
 
 pub fn main() {

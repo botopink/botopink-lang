@@ -3,7 +3,7 @@
 //// `Component`, as a behavior. In this module each name is its own behavior,
 //// in a decorator's `@Decl<Component>`, a parameter and an `implement` clause.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior Component {
     fn render(self: Self) -> string;
@@ -38,8 +38,8 @@ fn name(a: Any) -> string {
 
 pub fn main() {
     val card = Card(title: "hi");
-    @print(show(card));
-    @print(name(card));
+    print(show(card));
+    print(name(card));
 }
 
 // What `#[widget]` records.

@@ -1,4 +1,4 @@
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 
@@ -19,7 +19,7 @@ type Signup(password: string, confirm: string)
 
 fn main() {
     val s = Signup(password: "a", confirm: "b");
-    for (@typeInfo(Signup).metaAll(Check)) { c ->
-        if (!c.rule(s)) @print(c.message); // the passwords differ
+    for (comptime compiler.typeInfo(Signup).metaAll(Check)) { c ->
+        if (!c.rule(s)) print(c.message); // the passwords differ
     }
 }

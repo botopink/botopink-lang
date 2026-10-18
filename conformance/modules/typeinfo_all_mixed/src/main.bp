@@ -1,7 +1,7 @@
 //// Decision 216 (4) — one query answers one kind of value: a decorator
 //// carried by a function and by a type cannot be catalogued together.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn tagged(syntax decl: unknown) {
     compiler.setMeta(Tagged(tag: compiler.name(decl)));
@@ -16,7 +16,7 @@ pub fn job() -> string {
 pub type Box(n: i32)
 
 pub fn main() {
-    @print(@TypeInfo.all(with: tagged).length);
+    print(@TypeInfo.all(with: tagged).length);
 }
 
 // What `#[tagged]` records.

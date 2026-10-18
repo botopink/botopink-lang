@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: tag-annotation-output: `#[withType]` on the tag `div` calls `decl.addType`, and an annotation on a tag records typed meta only
-at src/main.bp:9:28
+at src/main.bp:10:27

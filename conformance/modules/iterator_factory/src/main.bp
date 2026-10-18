@@ -7,26 +7,28 @@
 //// iterator. Only the sequences are printed: whether a body runs at the call or
 //// on the first `next` differs by backend (the eager erlang / wasm lowerings).
 
-fn evens(xs: i32[]) -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn evens(xs: i32[]) -> Iterator<i32> {
     for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
 
-fn evensOf(xs: i32[]) -> @Iterator<i32> {
+fn evensOf(xs: i32[]) -> Iterator<i32> {
     return iter for (xs) { x ->
         if (x % 2 == 0) yield x;
     };
 }
 
-fn pick(up: bool, xs: i32[]) -> @Iterator<i32> {
+fn pick(up: bool, xs: i32[]) -> Iterator<i32> {
     if (up) return evens(xs);
     return iter for (xs) { x ->
         yield x * 10;
     };
 }
 
-fn line(it: @Iterator<i32>) -> string {
+fn line(it: Iterator<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
@@ -35,8 +37,8 @@ fn line(it: @Iterator<i32>) -> string {
 }
 
 pub fn main() {
-    @print(line(evens([1, 2, 3, 4, 5, 6])));
-    @print(line(evensOf([1, 2, 3, 4, 5, 6])));
-    @print(line(pick(true, [1, 2, 3, 4])));
-    @print(line(pick(false, [1, 2])));
+    print(line(evens([1, 2, 3, 4, 5, 6])));
+    print(line(evensOf([1, 2, 3, 4, 5, 6])));
+    print(line(pick(true, [1, 2, 3, 4])));
+    print(line(pick(false, [1, 2])));
 }

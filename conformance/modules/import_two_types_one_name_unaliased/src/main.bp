@@ -7,7 +7,8 @@ pub mod a;
 pub mod b;
 import {a.p.Policy};
 import {b.p.Policy};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Policy(ms: 5).ms);
+    print(Policy(ms: 5).ms);
 }

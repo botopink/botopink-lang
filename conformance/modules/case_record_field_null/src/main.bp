@@ -6,6 +6,8 @@
 //// arm answered for every value. Labelled, positional, beside a literal, on
 //// an `?i32` field and beside `true` / `false`.
 
+import {io.terminal.print} from "std";
+
 type Box(label: ?string, n: i32)
 
 type Count(hits: ?i32, name: string)
@@ -71,17 +73,17 @@ fn flag(f: Flag) -> string {
 }
 
 pub fn main() {
-    @print(describe(Box(label: null, n: 1)));
-    @print(describe(Box(label: "x", n: 2)));
-    @print(positional(Box(label: null, n: 1)));
-    @print(positional(Box(label: "y", n: 1)));
-    @print(literal(Box(label: "x", n: 2)));
-    @print(literal(Box(label: null, n: 0)));
-    @print(literal(Box(label: null, n: 3)));
-    @print(literal(Box(label: "y", n: 2)));
-    @print(hits(Count(hits: null, name: "a")));
-    @print(hits(Count(hits: 0, name: "b")));
-    @print(hits(Count(hits: 4, name: "c")));
-    @print(flag(Flag(on: true, n: 1)));
-    @print(flag(Flag(on: false, n: 2)));
+    print(describe(Box(label: null, n: 1)));
+    print(describe(Box(label: "x", n: 2)));
+    print(positional(Box(label: null, n: 1)));
+    print(positional(Box(label: "y", n: 1)));
+    print(literal(Box(label: "x", n: 2)));
+    print(literal(Box(label: null, n: 0)));
+    print(literal(Box(label: null, n: 3)));
+    print(literal(Box(label: "y", n: 2)));
+    print(hits(Count(hits: null, name: "a")));
+    print(hits(Count(hits: 0, name: "b")));
+    print(hits(Count(hits: 4, name: "c")));
+    print(flag(Flag(on: true, n: 1)));
+    print(flag(Flag(on: false, n: 2)));
 }

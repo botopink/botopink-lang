@@ -30,8 +30,9 @@ test "infer: narrow ---- if null check record field access" {
         \\    return "no user";
         \\}
         \\fn main() {
-        \\    @print(greet(User(name: "alice")));
+        \\    print(greet(User(name: "alice")));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -46,8 +47,9 @@ test "infer: narrow ---- if null check bool" {
         \\    return false;
         \\}
         \\fn main() {
-        \\    @print(and(true, true));
+        \\    print(and(true, true));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -64,9 +66,10 @@ test "infer: narrow ---- if null check chained" {
         \\    return 0;
         \\}
         \\fn main() {
-        \\    @print(getC(Outer(b: Inner(c: 7))));
-        \\    @print(getC(Outer(b: null)));
+        \\    print(getC(Outer(b: Inner(c: 7))));
+        \\    print(getC(Outer(b: null)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -74,7 +77,7 @@ test "infer: narrow ---- if null check chained" {
 
 test "infer: narrow ---- case result ok err" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<string, string> {
+        \\fn parse(n: i32) -> Result<string, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return "ok";
         \\}
@@ -86,8 +89,9 @@ test "infer: narrow ---- case result ok err" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(handle(5));
+        \\    print(handle(5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -95,20 +99,21 @@ test "infer: narrow ---- case result different payload types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type User(name: string)
         \\type AppError { NotFound, Timeout(msg: string) }
-        \\fn fetchUser(id: i32) -> @Result<User, AppError> {
+        \\fn fetchUser(id: i32) -> Result<User, AppError> {
         \\    if (id == 0) { throw AppError.NotFound; };
         \\    return User(name: "alice");
         \\}
         \\fn main() {
         \\    val r = fetchUser(1);
         \\    case r {
-        \\        Ok(u) -> @print(u.name);
-        \\        Err(e) -> @print(case e {
+        \\        Ok(u) -> print(u.name);
+        \\        Err(e) -> print(case e {
         \\            NotFound -> "404";
         \\            Timeout(msg) -> "timeout: " + msg;
         \\        });
         \\    };
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -129,8 +134,9 @@ test "infer: narrow ---- case enum variant field bindings" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(area(Shape.Circle(2.0)));
+        \\    print(area(Shape.Circle(2.0)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -145,8 +151,9 @@ test "infer: narrow ---- case enum nested variant access" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
+        \\    print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -180,8 +187,9 @@ test "infer: narrow ---- case guard bound identifier" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(describe(5));
+        \\    print(describe(5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -200,9 +208,10 @@ test "infer: narrow ---- case guard variant field" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(handle(Response.Data(200, "hi")));
-        \\    @print(handle(Response.Error(500)));
+        \\    print(handle(Response.Data(200, "hi")));
+        \\    print(handle(Response.Error(500)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -225,9 +234,10 @@ test "infer: narrow ---- early return guard clause" {
         \\    return "hello " + x;
         \\}
         \\fn main() {
-        \\    @print(greet("world"));
-        \\    @print(greet(null));
+        \\    print(greet("world"));
+        \\    print(greet(null));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -239,8 +249,9 @@ test "infer: narrow ---- type guard basic" {
         \\    return n > 0;
         \\}
         \\fn main() {
-        \\    @print(isPositive(5));
+        \\    print(isPositive(5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -251,9 +262,10 @@ test "infer: narrow ---- type guard narrowing in if" {
         \\    return false;
         \\}
         \\fn main() {
-        \\    @print(isString("hello"));
-        \\    @print(isString(null));
+        \\    print(isString("hello"));
+        \\    print(isString(null));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -275,8 +287,9 @@ test "infer: narrow ---- and condition field access" {
         \\    return "light or none";
         \\}
         \\fn main() {
-        \\    @print(describe(Box(weight: 20)));
+        \\    print(describe(Box(weight: 20)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -302,9 +315,10 @@ test "infer: narrow ---- else if chain with null checks" {
         \\    else { return "null"; }
         \\}
         \\fn main() {
-        \\    @print(classify(42));
-        \\    @print(classify(null));
+        \\    print(classify(42));
+        \\    print(classify(null));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -337,8 +351,9 @@ test "infer: narrow ---- a guard call is a bool" {
         \\}
         \\fn main() {
         \\    val b: bool = isPositive(5);
-        \\    @print(b);
+        \\    print(b);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -351,9 +366,10 @@ test "infer: narrow ---- a guard narrows the argument in the then-branch" {
         \\    val y: ?string = "a";
         \\    if (isStr(y)) {
         \\        val s: string = y;
-        \\        @print(s);
+        \\        print(s);
         \\    }
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -374,8 +390,9 @@ test "infer error: narrow ---- an unbound name in a pattern assert reds" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn main() {
         \\    val assert 42 = answer catch 0;
-        \\    @print("unreachable");
+        \\    print("unreachable");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -384,7 +401,8 @@ test "infer error: narrow ---- a pattern assert handler is checked too" {
         \\fn main() {
         \\    val answer = 42;
         \\    val assert 42 = answer catch fallback;
-        \\    @print(answer);
+        \\    print(answer);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }

@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 behavior Greeter {
     fn greet(self: Self) -> string;
 }
@@ -13,5 +15,5 @@ fn welcome(g: Greeter) -> string {
 }
 
 fn main() {
-    @print(welcome(Bob(name: "bob")));
+    print(welcome(Bob(name: "bob")));
 }

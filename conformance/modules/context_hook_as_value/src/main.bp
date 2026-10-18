@@ -2,15 +2,15 @@
 //// passed or returned it would escape the `use` that lowers it. Refused at
 //// the name.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 pub fn main() {
     val read = context;
-    @print("unreached");
+    print("unreached");
 }

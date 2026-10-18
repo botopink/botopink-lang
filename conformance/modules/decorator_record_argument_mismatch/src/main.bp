@@ -2,7 +2,7 @@
 //// function returns: a cache of another type is refused at the argument,
 //// read through the module `val` that holds it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Product(name: string)
 
@@ -25,7 +25,7 @@ fn byCategory(c: string) -> Product[] {
 }
 
 pub fn main() {
-    @print(byCategory("tea").length);
+    print(byCategory("tea").length);
 }
 
 // What `#[cacheable]` records.

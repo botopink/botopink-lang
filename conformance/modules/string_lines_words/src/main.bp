@@ -4,21 +4,23 @@
 //// bytes that are not ` `, `\t`, `\n` or `\r` — none for a blank string. wasm
 //// trapped on both (no lowering, `01-compiler/05-wasm` step 1).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val text = "one two\r\nthree\n\nfour\r";
     val ls = text.lines();
-    @print(ls);
-    @print(ls.length);
-    @print("".lines());
-    @print("x\n".lines());
-    @print("a\nb".lines().join("|"));
+    print(ls);
+    print(ls.length);
+    print("".lines());
+    print("x\n".lines());
+    print("a\nb".lines().join("|"));
     val ws = "  alpha\tbeta  gamma\n".words();
-    @print(ws);
-    @print(ws.at(1));
+    print(ws);
+    print(ws.at(1));
     for (ws) { w ->
-        @print(w.length());
+        print(w.length());
     }
-    @print("  ".words());
-    @print("".words().length);
-    @print("a b".words().map({ w -> w + "!" }));
+    print("  ".words());
+    print("".words().length);
+    print("a b".words().map({ w -> w + "!" }));
 }

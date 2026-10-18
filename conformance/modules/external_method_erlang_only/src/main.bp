@@ -5,11 +5,13 @@
 //// backend — the `.commonJS.expect` / `.wasm.expect` sidecars, the method twin
 //// of `run/external_erlang_only`.
 
+import {compiler, io.terminal.print} from "std";
+
 pub type Codes(list: i32[]) {
-    #[@external(.Erlang("""list_to_binary(element(2, $0))"""))]
+    #[compiler.external(.Erlang("""list_to_binary(element(2, $0))"""))]
     pub declare fn text(self: Self) -> string;
 }
 
 pub fn main() {
-    @print(Codes(list: [104, 105]).text());
+    print(Codes(list: [104, 105]).text());
 }

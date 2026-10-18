@@ -6,6 +6,7 @@ mod modes;
 
 import {modes.Mode};
 import {modes.Mode as AMode};
+import {io.terminal.print} from "std";
 
 type Shape {
     Dot,
@@ -13,14 +14,14 @@ type Shape {
 }
 
 pub fn main() {
-    @print(Shape.Circle(radius: 2));
+    print(Shape.Circle(radius: 2));
     val c = Shape.Circle(radius: 3);
-    @print(c);
-    @print(Mode.Slow(n: 2));
+    print(c);
+    print(Mode.Slow(n: 2));
     val m = Mode.Named(label: "x");
-    @print(m);
-    @print(AMode.Slow(2));
+    print(m);
+    print(AMode.Slow(2));
     val a = AMode.Slow(n: 5);
-    @print(a);
-    @print([AMode.Slow(4), Mode.Fast]);
+    print(a);
+    print([AMode.Slow(4), Mode.Fast]);
 }

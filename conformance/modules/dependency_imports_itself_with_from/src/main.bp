@@ -4,7 +4,8 @@
 //// the source string in `starter`'s module, with the brace form written.
 
 import {start} from "starter";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(start());
+    print(start());
 }

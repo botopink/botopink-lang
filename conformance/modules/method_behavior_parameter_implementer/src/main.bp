@@ -4,6 +4,8 @@
 //// expected Styleable, got Styled` (144 B-10, decision 430). An associated
 //// fn's parameter alike, on every target.
 
+import {io.terminal.print} from "std";
+
 behavior Styleable {
     fn css(self: Self) -> string;
 }
@@ -36,5 +38,5 @@ pub fn main() {
         .of(Prop(name: "gap", value: "1rem"))
         .add("c", s)
         .add("u", Prop(name: "m", value: "0"));
-    @print(sheet.items.join(" | "));
+    print(sheet.items.join(" | "));
 }

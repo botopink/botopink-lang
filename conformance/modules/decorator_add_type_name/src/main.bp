@@ -2,7 +2,7 @@
 //// identifier starting with an upper-case letter (`City.Columns`), refused
 //// at the annotation otherwise.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown) {
     compiler.addType("columns", compiler.buildType("(id: string)"));
@@ -12,5 +12,5 @@ fn entity(syntax decl: unknown) {
 type City(id: i32)
 
 pub fn main() {
-    @print(City(id: 1).id);
+    print(City(id: 1).id);
 }

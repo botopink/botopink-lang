@@ -6,6 +6,7 @@
 //// unbound variable.
 
 import {shapes} from "kit";
+import {io.terminal.print} from "std";
 
 fn moved(p: shapes.Pt) -> shapes.Pt {
     return shapes.shift(p, 1);
@@ -17,9 +18,9 @@ fn apply(p: shapes.Pt, f: fn(shapes.Pt, i32) -> shapes.Pt) -> shapes.Pt {
 
 pub fn main() {
     val o: shapes.Pt = shapes.origin();
-    @print(moved(o));
-    @print(shapes.Pt(x: 3, y: 4).x);
+    print(moved(o));
+    print(shapes.Pt(x: 3, y: 4).x);
     val f = shapes.shift;
-    @print(f(o, 2).y);
-    @print(apply(o, shapes.shift).x);
+    print(f(o, 2).y);
+    print(apply(o, shapes.shift).x);
 }

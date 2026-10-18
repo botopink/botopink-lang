@@ -6,7 +6,8 @@
 
 pub mod pattern;
 import {pattern.dotted};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(dotted());
+    print(dotted());
 }

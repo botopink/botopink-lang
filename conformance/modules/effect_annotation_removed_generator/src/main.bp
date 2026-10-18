@@ -3,10 +3,12 @@
 //// refused at the annotation over the new `@Iterator<T>` return, which is all
 //// an iterator needs. The new form is `run/iterator_fibonacci.bp`.
 
+import {io.terminal.print} from "std";
+
 #[@generator]
-fn nums(n: i32) -> @Iterator<i32> {
+fn nums(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; }
 }
 
-pub fn main() { for (nums(2)) { x -> @print(x); } }
+pub fn main() { for (nums(2)) { x -> print(x); } }

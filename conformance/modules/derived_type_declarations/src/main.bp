@@ -1,4 +1,4 @@
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Recipe(title: string, description: ?string, servings: i32 = 2)
 
@@ -23,5 +23,5 @@ fn titleOf(t: RecipeTitle) -> string {
 }
 
 pub fn main() {
-    @print(titleOf(RecipeTitle(title: "soup"))); // soup
+    print(titleOf(RecipeTitle(title: "soup"))); // soup
 }

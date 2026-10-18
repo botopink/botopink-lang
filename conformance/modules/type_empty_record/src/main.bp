@@ -2,6 +2,8 @@
 //// record with members `type Name() { … }` are constructed with `Name()` and
 //// answer their methods, on all four targets.
 
+import {io.terminal.print} from "std";
+
 pub type Marker()
 
 type MathOps() {
@@ -19,7 +21,7 @@ fn describe(m: Marker) -> string {
 
 pub fn main() {
     val ops = MathOps();
-    @print(ops.double(21));
-    @print(ops.name());
-    @print(describe(Marker()));
+    print(ops.double(21));
+    print(ops.name());
+    print(describe(Marker()));
 }

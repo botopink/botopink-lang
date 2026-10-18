@@ -3,12 +3,12 @@
 //// own rows is the read-modify-write two processes can interleave, refused
 //// with the recompose diagnostic, as `insert`'s is.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 #[@BeamMemory.Ets(keyed: true)]
 var counts: Dict<string, i32> = Dict.empty();
 
 pub fn main() {
     counts = counts.bump("a", counts.size());
-    @print(counts.at("a"));
+    print(counts.at("a"));
 }

@@ -3,6 +3,8 @@
 //// `comptime same(2000000)` compares two 2,000,000-deep chains and answers
 //// `true` on every target, with no stack-overflow trap.
 
+import {io.terminal.print} from "std";
+
 type Chain {
     End,
     Link(next: Chain),
@@ -29,5 +31,5 @@ fn same(n: i32) -> bool {
 
 pub fn main() {
     val atBuild = comptime same(2000000);
-    @print(atBuild);
+    print(atBuild);
 }

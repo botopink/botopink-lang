@@ -3,6 +3,8 @@
 //// inside it is refused at the call. The body used to be walked by no pass,
 //// so `return nothingHere(1) + true;` checked clean.
 
+import {io.terminal.print} from "std";
+
 behavior Shape {
     fn area(self: Self) -> i32;
 
@@ -18,5 +20,5 @@ type Sq(s: i32) implement Shape {
 }
 
 pub fn main() {
-    @print(Sq(s: 2).area());
+    print(Sq(s: 2).area());
 }

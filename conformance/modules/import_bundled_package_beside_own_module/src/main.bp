@@ -8,8 +8,9 @@
 pub mod log;
 import {log.levelName as ownLevelName};
 import {Level, levelName} from "log";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(ownLevelName(2));
-    @print(levelName(Level.Warn));
+    print(ownLevelName(2));
+    print(levelName(Level.Warn));
 }

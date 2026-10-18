@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[field-needs-name]: a field with no name
-at src/main.bp:11:21
+at src/main.bp:13:21
 label write `name: Type` here

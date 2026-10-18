@@ -1,7 +1,9 @@
 //// Decision 247 — the lexer keeps the letters glued to a number with it
 //// and the parser names the spelling: `42L` is refused at the suffix.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val n = 42L;
-    @print(n);
+    print(n);
 }

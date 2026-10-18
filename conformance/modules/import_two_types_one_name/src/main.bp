@@ -8,6 +8,7 @@ pub mod a;
 pub mod b;
 import {a.p.Policy as APolicy, a.p.defaultPolicy, a.p.msOf};
 import {b.p.Policy as BPolicy, b.p.nameOf};
+import {io.terminal.print} from "std";
 
 fn twice(p: APolicy) -> i32 {
     return p.ms * 2;
@@ -26,16 +27,16 @@ fn kind(v: unknown) -> string {
 pub fn main() {
     val x = APolicy(ms: 5);
     val y: BPolicy = BPolicy(name: "n");
-    @print(x);
-    @print(y);
-    @print(x.ms);
-    @print(y.name);
-    @print(twice(x));
-    @print(shout(y));
-    @print(x.describe());
-    @print(y.describe());
-    @print(kind(x));
-    @print(kind(y));
-    @print(msOf(defaultPolicy()));
-    @print(nameOf(y));
+    print(x);
+    print(y);
+    print(x.ms);
+    print(y.name);
+    print(twice(x));
+    print(shout(y));
+    print(x.describe());
+    print(y.describe());
+    print(kind(x));
+    print(kind(y));
+    print(msOf(defaultPolicy()));
+    print(nameOf(y));
 }

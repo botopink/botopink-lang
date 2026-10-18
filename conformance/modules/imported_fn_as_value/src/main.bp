@@ -6,6 +6,7 @@
 
 pub mod lib;
 import {lib.twice, lib.greet};
+import {io.terminal.print} from "std";
 
 fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
     return f(x);
@@ -13,8 +14,8 @@ fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
 
 pub fn main() {
     val f = twice;
-    @print(f(2));
-    @print(apply(twice, 3));
+    print(f(2));
+    print(apply(twice, 3));
     val g: fn(string) -> string = greet;
-    @print(g("bo"));
+    print(g("bo"));
 }

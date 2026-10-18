@@ -5,6 +5,8 @@
 //// binary reported it far away, at `greet`'s parameter. Refused at the
 //// declaration's name.
 
+import {io.terminal.print} from "std";
+
 pub fn string() -> i32 {
     return 1;
 }
@@ -14,5 +16,5 @@ fn greet(name: string) -> string {
 }
 
 pub fn main() {
-    @print(greet("x"));
+    print(greet("x"));
 }

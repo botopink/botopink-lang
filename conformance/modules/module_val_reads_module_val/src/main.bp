@@ -3,6 +3,8 @@
 //// the second reads it, so both print their values on every target (the erlang
 //// emission left `a` unbound in `b`'s initialiser, which OTP refuses).
 
+import {io.terminal.print} from "std";
+
 type Box(n: i32) {
     fn get(self: Self) -> i32 {
         return self.n;
@@ -22,8 +24,8 @@ val _c = Box(n: 5);
 val _d = double(_c.get());
 
 pub fn main() {
-    @print(_c.get());
-    @print(_d);
-    @print(a.get());
-    @print(b);
+    print(_c.get());
+    print(_d);
+    print(a.get());
+    print(b);
 }

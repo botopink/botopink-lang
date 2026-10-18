@@ -6,6 +6,8 @@
 //// declared `?Color` was unboxed on wasm, so `Color.Red` there was absent), an
 //// `if` value and a `var` after a write.
 
+import {io.terminal.print} from "std";
+
 type Color {
     Red,
     Green,
@@ -19,7 +21,7 @@ fn fav() -> Color {
 }
 
 fn show(c: Color) {
-    @print(c);
+    print(c);
 }
 
 fn firstOrNone(b: bool) -> ?Color {
@@ -29,29 +31,29 @@ fn firstOrNone(b: bool) -> ?Color {
 
 pub fn main() {
     val g = Color.Blue;
-    @print(g);
-    @print(fav());
-    @print(Color.Red);
-    @print([Color.Red, Color.Blue]);
+    print(g);
+    print(fav());
+    print(Color.Red);
+    print([Color.Red, Color.Blue]);
     val car = Car(name: "a", color: Color.Green);
-    @print(car);
-    @print(car.color);
+    print(car);
+    print(car.color);
     show(Color.Blue);
     val cs = [Color.Red, Color.Green];
-    @print(cs);
-    @print(cs.at(1));
-    @print(cs.at(5));
+    print(cs);
+    print(cs.at(1));
+    print(cs.at(5));
     var x = Color.Red;
     x = Color.Blue;
-    @print(x);
-    @print(if (g == Color.Blue) Color.Green else Color.Red);
+    print(x);
+    print(if (g == Color.Blue) Color.Green else Color.Red);
     val m: ?Color = Color.Red;
-    @print(m);
-    @print(m == null);
-    @print(m ?? Color.Blue);
-    @print(firstOrNone(true));
-    @print(firstOrNone(false));
-    @print(firstOrNone(true) == Color.Red);
+    print(m);
+    print(m == null);
+    print(m ?? Color.Blue);
+    print(firstOrNone(true));
+    print(firstOrNone(false));
+    print(firstOrNone(true) == Color.Red);
     val n: ?Color = null;
-    @print(n ?? Color.Blue);
+    print(n ?? Color.Blue);
 }

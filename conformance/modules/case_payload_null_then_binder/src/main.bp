@@ -3,6 +3,8 @@
 //// reachable (decision 8 §5.1). Coverage read `null` as a binder and refused
 //// the second arm "unreachable: variant 'Filled' is already covered".
 
+import {io.terminal.print} from "std";
+
 type Slot {
     Filled(item: ?string),
     Empty,
@@ -23,7 +25,7 @@ fn describe(s: Slot) -> string {
 }
 
 pub fn main() {
-    @print(describe(Slot.Filled(item: null)));
-    @print(describe(Slot.Filled(item: "a")));
-    @print(describe(Slot.Empty));
+    print(describe(Slot.Filled(item: null)));
+    print(describe(Slot.Filled(item: "a")));
+    print(describe(Slot.Empty));
 }

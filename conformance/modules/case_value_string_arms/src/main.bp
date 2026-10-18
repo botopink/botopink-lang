@@ -14,6 +14,8 @@
 //// covered by `run/case_values.bp`: a declared return type registers the
 //// shape on its own, so the arm never has to be asked.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x = 5;
 
@@ -25,13 +27,13 @@ pub fn main() {
             "other"
         }
     };
-    @print(braced);
+    print(braced);
 
     val arrowed = case x {
         5 -> "five";
         _ -> "other";
     };
-    @print(arrowed);
+    print(arrowed);
 
     val y = 7;
     val other = case y {
@@ -42,5 +44,5 @@ pub fn main() {
             "other"
         }
     };
-    @print(other);
+    print(other);
 }

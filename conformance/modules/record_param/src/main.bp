@@ -5,7 +5,7 @@
 //// passes as it always did. A spread (`Card(..p, featured: true)`) is legal
 //// into a record parameter, `p` of its type or one derived from it (359).
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type CardProps(title: string, featured: bool = false, size: i32 = 1)
 
@@ -22,17 +22,17 @@ fn Badge(count: i32, ..props: CardProps) -> string {
 
 pub fn main() {
     // The fields by label, a default left out, the other parameter by label.
-    @print(Card(title: "a", suffix: "!"));
-    @print(Card(title: "b", featured: true, size: 3, suffix: "?"));
+    print(Card(title: "a", suffix: "!"));
+    print(Card(title: "b", featured: true, size: 3, suffix: "?"));
     // The labels in any order; the other parameter by position.
-    @print(Badge(2, title: "c"));
-    @print(Badge(title: "d", count: 5));
+    print(Badge(2, title: "c"));
+    print(Badge(title: "d", count: 5));
     // A spread of the record's own type, a label after it winning.
     val base = CardProps(title: "e", size: 7);
-    @print(Card(..base, suffix: "."));
-    @print(Card(..base, featured: true, suffix: "."));
+    print(Card(..base, suffix: "."));
+    print(Card(..base, featured: true, suffix: "."));
     // A spread of a derived type.
     val brief = CardBrief(title: "f", size: 9);
-    @print(Card(..brief, suffix: ";"));
-    @print(Badge(1, ..base));
+    print(Card(..brief, suffix: ";"));
+    print(Badge(1, ..base));
 }

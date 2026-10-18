@@ -5,18 +5,20 @@
 //// points at the `try` (line 15, column 17) that made the block's value a
 //// `@Result`.
 
-fn parse(s: string) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") { throw "empty"; }
     return 1;
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val t = async {
         val n = try parse("7");
         return n + 1;
     };
     val v: i32 = await t;
-    @print(v);
+    print(v);
 }
 
 pub fn main() { run(); }

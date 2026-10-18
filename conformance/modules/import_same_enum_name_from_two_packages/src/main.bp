@@ -8,12 +8,13 @@
 
 import {stop, blink, describe} from "traffic";
 import {quiet, loud, level.level} from "audio";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(describe(stop()));
-    @print(describe(blink(3)));
-    @print(level(quiet()));
-    @print(level(loud(70)));
-    @print(stop());
-    @print(quiet());
+    print(describe(stop()));
+    print(describe(blink(3)));
+    print(level(quiet()));
+    print(level(loud(70)));
+    print(stop());
+    print(quiet());
 }

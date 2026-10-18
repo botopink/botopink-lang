@@ -2,8 +2,10 @@
 //// (and `compiler.bp`'s): a decorator is no exception, a marker is a decorator
 //// with an empty body. A bodyless one is refused at the declaration.
 
+import {io.terminal.print} from "std";
+
 declare fn registered(syntax decl: unknown);
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

@@ -4,29 +4,29 @@
 //// on the host and answers its value once the task settles; `load("")` takes
 //// the `catch` value and waits the same way — the `catch` never leaves early.
 
-import {async.delay} from "std";
+import {async.delay, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return 7;
 }
 
-fn load(s: string) -> @Component<string> {
+fn load(s: string) -> Component<string> {
     val n = try parse(s) catch 1;
     val v = await delay(5, n * 2);
     return "loaded " + v.toString();
 }
 
-fn Page(s: string) -> @Component<View> {
+fn Page(s: string) -> Component<View> {
     val r = use load(s);
     return View(text: r);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val a = await Page("x");
-    @print(a.text);
+    print(a.text);
     val b = await Page("");
-    @print(b.text);
+    print(b.text);
 }

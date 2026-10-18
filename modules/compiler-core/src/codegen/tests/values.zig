@@ -30,8 +30,9 @@ test "js: val ---- binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val sum = 1 + 2;
         \\fn main() {
-        \\    @print(sum);
+        \\    print(sum);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -42,8 +43,9 @@ test "js: fn ---- private function with return" {
         \\}
         \\val result = double(5);
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -57,8 +59,9 @@ test "js: fn ---- max via if comparison" {
         \\    }
         \\}
         \\fn main() {
-        \\    @print(max(3, 7));
+        \\    print(max(3, 7));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -69,8 +72,9 @@ test "js: fn ---- pub exported function" {
         \\}
         \\val result = add(3, 4);
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -82,8 +86,9 @@ test "js: fn ---- with local binding" {
         \\}
         \\val output = double(10);
         \\fn main() {
-        \\    @print(output);
+        \\    print(output);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -142,9 +147,10 @@ test "js: operators ---- comparison" {
         \\    return n > 0;
         \\}
         \\fn main() {
-        \\    @print(isPositive(5));
-        \\    @print(isPositive(-1));
+        \\    print(isPositive(5));
+        \\    print(isPositive(-1));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -154,9 +160,10 @@ test "js: operators ---- equality maps to ==" {
         \\    return n == 0;
         \\}
         \\fn main() {
-        \\    @print(isZero(0));
-        \\    @print(isZero(42));
+        \\    print(isZero(0));
+        \\    print(isZero(42));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -166,8 +173,9 @@ test "js: operators ---- logical and" {
         \\    return a && b;
         \\}
         \\fn main() {
-        \\    @print(both(true, false));
+        \\    print(both(true, false));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -177,8 +185,9 @@ test "js: operators ---- logical or" {
         \\    return a || b;
         \\}
         \\fn main() {
-        \\    @print(either(false, true));
+        \\    print(either(false, true));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -188,8 +197,9 @@ test "js: operators ---- logical not" {
         \\    return !v;
         \\}
         \\fn main() {
-        \\    @print(negate(true));
+        \\    print(negate(true));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -216,26 +226,28 @@ test "js: val ---- optional annotation with null" {
 test "js: call ---- trailing lambda block" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn run(f: fn(i32) -> string) {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\fn main() {
         \\    run { x ->
         \\        return "done";
         \\    };
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: call ---- trailing lambda with multiple params" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\fn main() {
         \\    val r = calc(2) { a, b ->
         \\        return 0;
         \\    };
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -299,8 +311,9 @@ test "js: assign ---- update var with plusEq" {
         \\fn main() {
         \\    var count = 0;
         \\    count += 1;
-        \\    @print(count);
+        \\    print(count);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -352,8 +365,9 @@ test "js: string ---- interpolation lowers to concat" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val name = "world";
-        \\    @print("hi ${name}!");
+        \\    print("hi ${name}!");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -407,23 +421,24 @@ test "js: tuple ---- equality is positional, and labels take no part" {
         \\    val a = #(1, "a");
         \\    val b = #(1, "a");
         \\    val c = #(1, "b");
-        \\    @print(a == b);
-        \\    @print(a != b);
-        \\    @print(a == c);
-        \\    @print(a != c);
+        \\    print(a == b);
+        \\    print(a != b);
+        \\    print(a == c);
+        \\    print(a != c);
         \\    val name = "SP";
         \\    val pop = 12;
         \\    val labeled = #(name, pop);
         \\    val plain = #("SP", 12);
-        \\    @print(labeled == plain);
+        \\    print(labeled == plain);
         \\    val n1 = #(#(1, 2), "x");
         \\    val n2 = #(#(1, 2), "x");
         \\    val n3 = #(#(1, 3), "x");
-        \\    @print(n1 == n2);
-        \\    @print(n1 == n3);
+        \\    print(n1 == n2);
+        \\    print(n1 == n3);
         \\    val wide = #(1, "a", 2);
-        \\    @print(a == wide);
+        \\    print(a == wide);
         \\}
+        \\import {io.terminal.print} from "std";
     , "true\nfalse\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\n");
 }
 
@@ -442,9 +457,10 @@ test "js: operators ---- plus on untyped operands and division of floats" {
         \\}
         \\fn main() {
         \\    val cat = { x, y -> x + y };
-        \\    @print(cat("ab", "cd"));
-        \\    @print(average([2.0, 4.0, 9.0]));
+        \\    print(cat("ab", "cd"));
+        \\    print(average([2.0, 4.0, 9.0]));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -456,8 +472,9 @@ test "js: operators ---- abs on an i32 receiver reaches Signed" {
         \\    return n.abs();
         \\}
         \\fn main() {
-        \\    @print(mag(-7));
+        \\    print(mag(-7));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 

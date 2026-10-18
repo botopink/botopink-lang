@@ -3,8 +3,10 @@
 //// is what the removed `expect` did: the present value, or the default when
 //// absent. Both branches, on every backend.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [10, 20, 30];
-    @print(xs.at(1) ?? 0);
-    @print(xs.at(9) ?? 0);
+    print(xs.at(1) ?? 0);
+    print(xs.at(9) ?? 0);
 }

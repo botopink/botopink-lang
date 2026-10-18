@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 fn describe(x: i32 | string) -> string {
     if (x is i32) return "an integer";
     return "a string";
@@ -9,8 +11,8 @@ fn read(raw: unknown) -> string {
 }
 
 pub fn main() {
-    @print(describe(1)); // an integer
-    @print(describe("a")); // a string
-    @print(read("text")); // text
-    @print(read(7)); // not a string
+    print(describe(1)); // an integer
+    print(describe("a")); // a string
+    print(read("text")); // text
+    print(read(7)); // not a string
 }

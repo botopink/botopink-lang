@@ -2,7 +2,9 @@
 //// that no position, annotation or call types cannot choose a method: the call
 //// on it is refused, located, on every target.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val describe = { n -> "n=" + n.toString() };
-    @print("never called");
+    print("never called");
 }

@@ -2,7 +2,7 @@
 //// `fn()`: what it answers is no value to drop. A lambda whose tail answers
 //// one is refused at the tail.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn count() -> i32 { 1 }
 
@@ -16,5 +16,5 @@ pub fn home() -> string {
 }
 
 pub fn main() {
-    @print(home());
+    print(home());
 }

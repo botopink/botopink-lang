@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: use-of-non-context-fn: `use` not allowed: function returns 'void', which is not a `@Component<R>`
-at src/main.bp:8:9
+at src/main.bp:10:9

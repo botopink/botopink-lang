@@ -5,7 +5,7 @@
 //// behavior has the methods it declares. `x.greet "…"` calls that method; on
 //// a type without one, the template method runs.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 behavior Greets {
     fn greet(self: Self, word: string) -> string;
@@ -46,8 +46,8 @@ fn wave(w: Waves) -> string {
 }
 
 pub fn main() {
-    @print(Greeter(who: "Ana").greet "hello");
-    @print(Waver(name: "Caio").greet "hello");
-    @print(wave(Waver(name: "Duda")));
-    @print(Visitor(who: "Bia").greet "hello");
+    print(Greeter(who: "Ana").greet "hello");
+    print(Waver(name: "Caio").greet "hello");
+    print(wave(Waver(name: "Duda")));
+    print(Visitor(who: "Bia").greet "hello");
 }

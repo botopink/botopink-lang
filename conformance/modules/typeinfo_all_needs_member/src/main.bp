@@ -1,7 +1,7 @@
 //// Decision 216 (4) — a type is no value: cataloguing types names the
 //// member each entry's `value` calls (`member: "describe"`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn component(syntax decl: unknown) {
     compiler.addMember("pub fn describe() -> string { return \"" + compiler.name(decl) + "\"; }");
@@ -11,5 +11,5 @@ fn component(syntax decl: unknown) {
 pub type Box(n: i32)
 
 pub fn main() {
-    @print(@TypeInfo.all(with: component).length);
+    print(@TypeInfo.all(with: component).length);
 }

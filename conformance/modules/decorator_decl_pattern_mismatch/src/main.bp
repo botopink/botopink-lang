@@ -2,7 +2,7 @@
 //// of the declaration `#[on]` annotates: a function with no parameter does
 //// not match it, refused at the annotation with both shapes spelled.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn on<E>(syntax decl: fn(e: E) -> unknown) {
     compiler.setMeta(EventHandler(event: compiler.name(decl)));
@@ -10,7 +10,7 @@ fn on<E>(syntax decl: fn(e: E) -> unknown) {
 
 #[on]
 fn wrong() {
-    @print("no event");
+    print("no event");
 }
 
 pub fn main() {

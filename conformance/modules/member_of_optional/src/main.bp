@@ -4,7 +4,9 @@
 //// because the label rewrite never fired on an optional receiver. Written
 //// `rs.at(0)?.b` it is the label it names (`test/tuple_labels.bp` §6 T4).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val rs: #(a: i32, b: string)[] = [#(1, "x")];
-    @print(rs.at(0).b);
+    print(rs.at(0).b);
 }

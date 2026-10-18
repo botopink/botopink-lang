@@ -9,7 +9,7 @@
 //// `run/effect_alias_passes_value.bp` is the legal half.
 
 pub type ParseError { Empty }
-pub type Parser<T> = @Result<T, ParseError>;
+pub type Parser<T> = Result<T, ParseError>;
 
 fn byAlias(s: string) -> Parser<i32> {
     if (s == "") { throw ParseError.Empty; }

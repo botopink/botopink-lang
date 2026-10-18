@@ -3,6 +3,8 @@
 //// module's `p`. Before the fix the local retyped `p` for every later
 //// declaration: `type mismatch: expected string, got Thing` at `p("x")`.
 
+import {io.terminal.print} from "std";
+
 pub fn p(label: string) -> string {
     return "p:" + label;
 }
@@ -19,6 +21,6 @@ fn second() -> string {
 }
 
 pub fn main() {
-    @print(first());
-    @print(second());
+    print(first());
+    print(second());
 }

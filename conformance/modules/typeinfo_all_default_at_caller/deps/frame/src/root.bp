@@ -3,7 +3,7 @@
 //// `@TypeInfo.all(with: m)`, `m` resolved here, in the declaring module, and
 //// the query answered for the program the call is compiled in.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub fn m(syntax decl: unknown) {
     compiler.setMeta(Role(role: compiler.name(decl)));
@@ -18,7 +18,7 @@ fn show(all: Declared<unknown>[]) {
     for (all) { d ->
         val run = d.value;
         val said = if (run is fn() -> string) run() else "?";
-        @print(
+        print(
             d.module + " " + d.name + " " + said,
         );
     }

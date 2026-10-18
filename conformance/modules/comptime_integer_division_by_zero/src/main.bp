@@ -3,11 +3,13 @@
 //// `comptime-badarith`, naming the expression and `(division by zero)`, the
 //// same on every target — never the raw `{error,badarith}` term.
 
+import {io.terminal.print} from "std";
+
 fn ratio(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
 pub fn main() {
     val atBuild = comptime 7 / 0;
-    @print(atBuild, ratio(6, 3));
+    print(atBuild, ratio(6, 3));
 }

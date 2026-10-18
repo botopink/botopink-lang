@@ -13,19 +13,19 @@
 //// wasm binding yet (`decisions-pending.md` 05w-j); `encoding` and `hash`
 //// build on wasm (`run/std_{encoding,hash}_on_every_target`).
 
-import {io} from "std";
+import {io, io.terminal.print} from "std";
 import {io.fs, io.os} from "std";
 import {encoding, hash, json, regex} from "std";
 
 pub fn main() {
-    @print(fs.exists("/"));
-    @print(io.fs.exists("/"));
-    @print(fs.exists("/no/such/path/for/c03"));
-    @print(fs.readText("/no/such/path/for/c03").isError());
-    @print(os.eol().length);
-    @print(io.process.platform().length > 0);
-    @print(encoding.hexEncode("hi"));
-    @print(hash.sha256("abc").length);
-    @print(json.quote("a"));
-    @print(regex.matches("a+", "caat"));
+    print(fs.exists("/"));
+    print(io.fs.exists("/"));
+    print(fs.exists("/no/such/path/for/c03"));
+    print(fs.readText("/no/such/path/for/c03").isError());
+    print(os.eol().length);
+    print(io.process.platform().length > 0);
+    print(encoding.hexEncode("hi"));
+    print(hash.sha256("abc").length);
+    print(json.quote("a"));
+    print(regex.matches("a+", "caat"));
 }

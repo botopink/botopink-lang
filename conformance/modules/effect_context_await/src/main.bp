@@ -12,42 +12,44 @@
 //// resume one turn in and `Widget` two, which is the order the eager targets
 //// print them in as well.
 
-type Element(count: i32) implement @Renderable
+import {io.terminal.print} from "std";
 
-fn state(initial: i32) -> @Component<i32> {
+type Element(count: i32) implement Renderable
+
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn answer(n: i32) -> @Task<i32> {
+fn answer(n: i32) -> Task<i32> {
     return n;
 }
 
 // The explicit wrapper: `await` two levels down the chain.
-fn page(n: i32) -> @Component<i32> {
+fn page(n: i32) -> Component<i32> {
     val v = await answer(n);
-    @print(v);
+    print(v);
     return v;
 }
 
 // The component shape — `use` and `await` in one body.
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> Component<Element> {
     val c = use state(1);
     val v = await answer(n);
-    @print(c + v);
+    print(c + v);
     return Element(count: c + v);
 }
 
 // A component with no `await` of its own: its `use` is the suspension on
 // commonJS (decision 104), so it prints from inside too.
-fn Plain(n: i32) -> @Component<Element> {
+fn Plain(n: i32) -> Component<Element> {
     val c = use state(1);
-    @print(c + n);
+    print(c + n);
     return Element(count: c + n);
 }
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     await Plain(40);
     await page(41);
     await Widget(41);

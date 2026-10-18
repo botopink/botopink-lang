@@ -2,7 +2,7 @@
 //// runtime: 120 `val`s per field of a three-field record, then their joined
 //// length, on every target (144 B-10, decision 430).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn wide(syntax decl: unknown) {
     var out: string[] = [];
@@ -260,5 +260,5 @@ fn wide(syntax decl: unknown) {
 type Doc(name: string, size: i32, note: string)
 
 pub fn main() {
-    @print(Doc.widths());
+    print(Doc.widths());
 }

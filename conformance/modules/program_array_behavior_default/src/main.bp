@@ -6,6 +6,8 @@
 //// it calls a copy of the default with `Self<T>` written as the receiver's
 //// array type and `T` as its element.
 
+import {io.terminal.print} from "std";
+
 type P(x: i32)
 
 behavior Array<T> {
@@ -36,16 +38,16 @@ behavior Array<T> {
 
 pub fn main() {
     val xs = [1, 2, 3, 4];
-    @print(xs.second());
-    @print(xs.doubled());
-    @print(xs.evens());
-    @print(["a", "b"].second());
-    @print(["a"].second());
-    @print(["a", "b"].lastOr("z"));
+    print(xs.second());
+    print(xs.doubled());
+    print(xs.evens());
+    print(["a", "b"].second());
+    print(["a"].second());
+    print(["a", "b"].lastOr("z"));
     val none: string[] = [];
-    @print(none.lastOr("z"));
-    @print([1, 2, 3].hasAll([3, 1]));
-    @print(["a"].hasAll(["b"]));
-    @print(["x", "y"].csv());
-    @print([P(x: 4), P(x: 5)].lastOr(P(x: 0)).x);
+    print(none.lastOr("z"));
+    print([1, 2, 3].hasAll([3, 1]));
+    print(["a"].hasAll(["b"]));
+    print(["x", "y"].csv());
+    print([P(x: 4), P(x: 5)].lastOr(P(x: 0)).x);
 }

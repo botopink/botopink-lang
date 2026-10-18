@@ -3,6 +3,8 @@
 //// captures: on the BEAM a closure gets a copy of what it captures, so the
 //// write would be lost. Refused at the write, on every target.
 
+import {io.terminal.print} from "std";
+
 fn run(f: fn() -> i32, x: i32) -> i32 {
     return f() + x;
 }
@@ -13,5 +15,5 @@ pub fn main() {
         n = n + 1;
         1
     }, 0);
-    @print(n);
+    print(n);
 }

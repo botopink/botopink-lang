@@ -2,8 +2,10 @@
 //// brace-only spelling `type Marker {}` is refused at the `{`, with the fix-it
 //// naming `type Marker()` (decision 67: one spelling).
 
+import {io.terminal.print} from "std";
+
 pub type Marker {}
 
 pub fn main() {
-    @print(1);
+    print(1);
 }

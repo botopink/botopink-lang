@@ -6,6 +6,8 @@
 //// `length(Items)`, so it called the METHOD on a list — `badarg` at
 //// `element/2`.
 
+import {io.terminal.print} from "std";
+
 type Rows(items: string[], title: string) {
     pub fn length(self: Self) -> i32 {
         return self.items.length;
@@ -20,9 +22,9 @@ type Rows(items: string[], title: string) {
 
 pub fn main() {
     val xs: i32[] = [1, 2, 3];
-    @print(xs.length);
+    print(xs.length);
     val r = Rows(items: ["a", "b"], title: "four");
-    @print(r.length());
-    @print(r.rowCount());
-    @print(r.titleLength());
+    print(r.length());
+    print(r.rowCount());
+    print(r.titleLength());
 }

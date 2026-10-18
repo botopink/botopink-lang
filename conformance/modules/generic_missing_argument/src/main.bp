@@ -1,7 +1,9 @@
 //// Decision 8 §1.1 — a written generic type carries all of its type arguments.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 fn get(b: Box) -> i32 { return 0; }
 
-pub fn main() { @print(get(Box(value: 1))); }
+pub fn main() { print(get(Box(value: 1))); }

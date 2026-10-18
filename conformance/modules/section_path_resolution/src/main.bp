@@ -12,6 +12,8 @@
 ////   * the qualified `Token.Text.Italic` is a `Token.Text` where the position
 ////     expects one.
 
+import {io.terminal.print} from "std";
+
 pub type Ns {
     Color,
     Space,
@@ -77,11 +79,11 @@ fn textOf(t: Token.Text) -> string {
 
 pub fn main() {
     val b: Token.Layout.Break = .Zeta;
-    @print(breakName(b));
+    print(breakName(b));
     val h: Token = .Color.Hex("#abc");
-    @print(colorOf(h));
-    @print(colorOf(Token.Color.Hex("#def")));
+    print(colorOf(h));
+    print(colorOf(Token.Color.Hex("#def")));
     val i: Token.Text = Token.Text.Italic;
-    @print(textOf(i));
-    @print(textOf(.Bold));
+    print(textOf(i));
+    print(textOf(.Bold));
 }

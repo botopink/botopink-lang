@@ -1,6 +1,6 @@
-import {compiler} from "std";
+import {compiler, failure.panic} from "std";
 
 pub fn check(syntax decl: unknown) {
     val n = compiler.name(decl);
-    @panic("boom " + n);
+    panic("boom " + n);
 }

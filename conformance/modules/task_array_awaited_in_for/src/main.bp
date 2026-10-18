@@ -3,15 +3,17 @@
 //// lambda parameter are all tasks, and `await` settles each with its value on
 //// every target.
 
-fn double(n: i32) -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn double(n: i32) -> Task<i32> {
     return n * 2;
 }
 
-fn pass(t: @Task<i32>) -> @Task<i32> {
+fn pass(t: Task<i32>) -> Task<i32> {
     return t;
 }
 
-fn total(ts: @Task<i32>[]) -> @Task<i32> {
+fn total(ts: Task<i32>[]) -> Task<i32> {
     var acc = 0;
     for (ts) { t ->
         val v = await t;
@@ -20,32 +22,32 @@ fn total(ts: @Task<i32>[]) -> @Task<i32> {
     return acc;
 }
 
-type Holder(job: @Task<i32>)
+type Holder(job: Task<i32>)
 
-fn settle(t: @Task<i32>) -> @Task<i32> {
+fn settle(t: Task<i32>) -> Task<i32> {
     val v = await t;
     return v + 1;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val tasks = [double(1), double(2), double(3)];
     var sum = 0;
     for (tasks) { t ->
         val v = await t;
-        @print(v);
+        print(v);
         sum = sum + v;
     }
-    @print(sum);
+    print(sum);
 
     val second = tasks[1] ?? double(0);
-    @print(await second);
+    print(await second);
 
     val h = Holder(job: double(7));
-    @print(await h.job);
+    print(await h.job);
 
-    @print(await settle(double(5)));
+    print(await settle(double(5)));
     val apply = pass;
-    @print(await apply(double(9)));
+    print(await apply(double(9)));
 
-    @print(await total([double(10), double(20)]));
+    print(await total([double(10), double(20)]));
 }

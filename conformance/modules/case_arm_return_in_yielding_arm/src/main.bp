@@ -2,7 +2,9 @@
 //// generator, so a `return` in it ends that generator: nothing after the
 //// `case` is emitted.
 
-fn items(n: i32) -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn items(n: i32) -> Iterator<i32> {
     yield 0;
     case n {
         0 {
@@ -18,10 +20,10 @@ fn items(n: i32) -> @Iterator<i32> {
 
 pub fn main() {
     for (items(0)) { v ->
-        @print(v);
+        print(v);
     }
-    @print("--");
+    print("--");
     for (items(1)) { v ->
-        @print(v);
+        print(v);
     }
 }

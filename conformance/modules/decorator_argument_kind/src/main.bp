@@ -2,11 +2,13 @@
 //// the argument: the parameter's type checks it as a call's argument is
 //// checked, and the caret sits on the value that does not fit.
 
+import {io.terminal.print} from "std";
+
 fn value(syntax decl: unknown, comptime key: string) {}
 
 #[value(42)]
 type A(x: i32)
 
 pub fn main() {
-    @print(A(x: 1).x);
+    print(A(x: 1).x);
 }

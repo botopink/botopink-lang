@@ -5,11 +5,13 @@
 //// file only (the `+` of an assignment carries no location of its own), so the
 //// `.expect` has no second line.
 
-fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+import {io.terminal.print} from "std";
+
+fn upTo(n: i32) -> Iterator<Result<i32, string>> {
     yield n;
 }
 
-fn total(n: i32) -> @Result<i32, string> {
+fn total(n: i32) -> Result<i32, string> {
     var acc = 0;
     for (upTo(n)) { r ->
         acc = acc + r;
@@ -17,4 +19,4 @@ fn total(n: i32) -> @Result<i32, string> {
     return acc;
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

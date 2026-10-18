@@ -9,8 +9,10 @@
 //// what they mean. The refusal is what makes "which shapes narrow" answerable
 //// — nothing here narrows by being merely truthy.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val ws = ["alpha"];
     val w = ws.at(0);
-    if (w) { @print("truthy"); }
+    if (w) { print("truthy"); }
 }

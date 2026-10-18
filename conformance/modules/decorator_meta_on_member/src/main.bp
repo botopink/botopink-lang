@@ -2,7 +2,7 @@
 //// decorator on a field (or a method) has no `@typeInfo` to answer through,
 //// and `decl.setMeta` from it is refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn column(syntax decl: unknown) {
     compiler.setMeta(Column(name: compiler.name(decl)));
@@ -11,7 +11,7 @@ fn column(syntax decl: unknown) {
 type City(#[column] name: string)
 
 pub fn main() {
-    @print(City(name: "x").name);
+    print(City(name: "x").name);
 }
 
 // What `#[column]` would record.

@@ -1,7 +1,9 @@
 //// Decision 332 — a `bigint` mixes with no other integer type, and an unsuffixed literal is
 //// never one (decision 247): `2n + 1` is refused at the `1`, naming `1n`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x = 2n + 1;
-    @print(x);
+    print(x);
 }

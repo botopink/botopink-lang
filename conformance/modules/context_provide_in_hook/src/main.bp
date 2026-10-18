@@ -7,11 +7,11 @@ import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themed() -> @Component<i32> {
+fn themed() -> Component<i32> {
     use provide(createContext(Theme(mode: "dark")));
     return 1;
 }

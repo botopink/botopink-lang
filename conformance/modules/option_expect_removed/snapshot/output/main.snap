@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: optional-has-no-methods: unknown method `expect` on `?i32` — an optional has no methods
-at src/main.bp:16:22
+at src/main.bp:18:22

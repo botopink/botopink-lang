@@ -3,6 +3,7 @@
 // and `select<U>` binds `U` from its lambda's answer — a record's string
 // field, a number — however the chain is written.
 import {of} from "seq";
+import {io.terminal.print} from "std";
 
 type City(name: string, pop: i32)
 
@@ -13,17 +14,17 @@ val cities = [
 ];
 
 pub fn main() {
-    @print(of(cities)
+    print(of(cities)
         .where({ c -> c.pop >= 5 })
         .select({ c -> c.name })
         .toArray()
         .join(", "));
     val names = of(cities).select({ c -> c.name }).toArray();
-    @print(names.join("/"));
-    @print(of([1, 2, 3, 4])
+    print(names.join("/"));
+    print(of([1, 2, 3, 4])
         .where({ n -> n % 2 == 0 })
         .select({ n -> n * n })
         .toArray()
         .join("-"));
-    @print(of(["a", "b"]).toArray().join("+"));
+    print(of(["a", "b"]).toArray().join("+"));
 }

@@ -2,8 +2,10 @@
 //// literal is its last element, `[1, 2, ..rest]`. Refused at the element after
 //// the spread; the kind existed before the front and nothing raised it.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val a = [1, 2];
     val b = [..a, 3];
-    @print(b.length.toString());
+    print(b.length.toString());
 }

@@ -14,6 +14,8 @@
 //// there; each binder takes the field it stands at, by label when one is
 //// written.
 
+import {io.terminal.print} from "std";
+
 type Person(name: string, age: i32)
 
 fn describe(p: Person | i32) -> string {
@@ -30,8 +32,8 @@ fn byLabel(p: Person | i32) -> string {
 }
 
 pub fn main() {
-    @print(describe(Person(name: "ann", age: 3)));
-    @print(describe(7));
-    @print(byLabel(Person(name: "bo", age: 9)));
-    @print(byLabel(1));
+    print(describe(Person(name: "ann", age: 3)));
+    print(describe(7));
+    print(byLabel(Person(name: "bo", age: 9)));
+    print(byLabel(1));
 }

@@ -3,13 +3,15 @@
 //// and a default is evaluated only when everything before it is absent, on
 //// every target.
 
+import {io.terminal.print} from "std";
+
 fn primary(present: bool) -> ?fn(i32) -> i32 {
     val f: fn(i32) -> i32 = { n -> n + 10 };
     return if (present) f else null;
 }
 
 fn backup(present: bool) -> ?fn(i32) -> i32 {
-    @print("backup");
+    print("backup");
     val f: fn(i32) -> i32 = { n -> n + 100 };
     return if (present) f else null;
 }
@@ -24,12 +26,12 @@ fn nickname(present: bool) -> ?string {
 }
 
 pub fn main() {
-    @print(primary(true)?.(1) ?? backup(true)?.(1) ?? -1);
-    @print(primary(false)?.(1) ?? backup(true)?.(1) ?? -1);
-    @print(primary(false)?.(1) ?? backup(false)?.(1) ?? -1);
-    @print(nickname(true) ?? greeter(true)?.("you") ?? "nobody");
-    @print(nickname(false) ?? greeter(true)?.("you") ?? "nobody");
-    @print(nickname(false) ?? greeter(false)?.("you") ?? "nobody");
+    print(primary(true)?.(1) ?? backup(true)?.(1) ?? -1);
+    print(primary(false)?.(1) ?? backup(true)?.(1) ?? -1);
+    print(primary(false)?.(1) ?? backup(false)?.(1) ?? -1);
+    print(nickname(true) ?? greeter(true)?.("you") ?? "nobody");
+    print(nickname(false) ?? greeter(true)?.("you") ?? "nobody");
+    print(nickname(false) ?? greeter(false)?.("you") ?? "nobody");
     val n = nickname(false) ?? greeter(true)?.("all") ?? "";
-    @print(n.length());
+    print(n.length());
 }

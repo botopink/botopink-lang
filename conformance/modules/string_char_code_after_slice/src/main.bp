@@ -18,11 +18,13 @@
 ////
 //// On all four targets: wasm and beam lower `charCodeAt` too.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val s = "hello";
-    @print(s.slice(1, 4));
-    @print(s.charCodeAt(0));
-    @print(s.charCodeAt(4));
-    @print(s.charCodeAt(9));
-    @print(s.charCodeAt(0 - 1));
+    print(s.slice(1, 4));
+    print(s.charCodeAt(0));
+    print(s.charCodeAt(4));
+    print(s.charCodeAt(9));
+    print(s.charCodeAt(0 - 1));
 }

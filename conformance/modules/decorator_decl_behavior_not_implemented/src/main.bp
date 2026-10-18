@@ -3,7 +3,7 @@
 //// `implement Module`, so the annotation is refused, naming the type and the
 //// behavior.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior Module {
     fn make() -> Self;
@@ -18,7 +18,7 @@ pub fn module(syntax decl: Module) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "Recife").name);
+    print(City(name: "Recife").name);
 }
 
 // What `#[module]` records.

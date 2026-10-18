@@ -2,7 +2,7 @@
 //// through `@Decl<T>`: `#[check]` without `rule` refuses a function that does
 //// not answer `bool`, at the annotation (`decl.fail`).
 
-import {types.Type, compiler.DeclKind, compiler} from "std";
+import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 pub type Code { Custom, Mismatch }
 
@@ -27,7 +27,7 @@ fn bad(a: Account) -> string {
 }
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }
 
 // What `#[check]` records.

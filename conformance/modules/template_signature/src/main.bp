@@ -3,12 +3,12 @@
 //// (`template-signature`); such a function is an ordinary function, or
 //// reads its input from the text.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn repeat(syntax q: string, times: i32) -> string {
     return compiler.text(q);
 }
 
 pub fn main() {
-    @print(repeat @`x`);
+    print(repeat @`x`);
 }

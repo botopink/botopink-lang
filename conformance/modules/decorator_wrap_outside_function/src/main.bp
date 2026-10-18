@@ -2,7 +2,7 @@
 //// method: from a decorator on a `type` it is refused at the annotation (a
 //// type has no call to wrap).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn traced(syntax decl: unknown) {
     compiler.wrapWith({ call -> call.run() });
@@ -12,5 +12,5 @@ fn traced(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "Recife").name);
+    print(City(name: "Recife").name);
 }

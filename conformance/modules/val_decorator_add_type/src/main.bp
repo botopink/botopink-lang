@@ -1,7 +1,7 @@
 //// Decision 356 — a `val` owns no type: `decl.addType` from a decorator on a
 //// `val` is refused at the annotation, as on a function.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn helper(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
@@ -11,5 +11,5 @@ fn helper(syntax decl: unknown) {
 pub val limit = 2;
 
 pub fn main() {
-    @print(limit);
+    print(limit);
 }

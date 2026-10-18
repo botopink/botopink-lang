@@ -4,7 +4,7 @@
 //// The body reads `message`; one it never reads may be any expression
 //// (`run/decorator_expr_unread_argument`).
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 pub type Code { Custom, Mismatch }
 
@@ -26,7 +26,7 @@ fn env(name: string) -> string {
 type Account(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }
 
 // What `#[check]` records.

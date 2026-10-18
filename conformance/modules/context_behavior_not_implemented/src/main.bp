@@ -2,7 +2,7 @@
 //// that implements it: `PlainText` does not implement `Repository`, refused
 //// at the argument.
 
-import {context.createContext} from "std";
+import {context.createContext, io.terminal.print} from "std";
 
 behavior Repository {
     fn find(self: Self, id: i32) -> string;
@@ -13,5 +13,5 @@ type PlainText(text: string)
 pub val repoContext = createContext(PlainText(text: "x"), Repository);
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

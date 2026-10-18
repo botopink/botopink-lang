@@ -5,6 +5,8 @@
 //// branch it does not take is not emitted. The parent binary panicked in the
 //// parser on `| type<T>`.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 type User(name: string)
@@ -19,13 +21,13 @@ fn orDefault<T>(comptime s: Box<T> | type<T>, fallback: T) -> T {
 }
 
 pub fn main() {
-    @print(pick(Box(value: 1)));
-    @print(pick(string));
-    @print(pick(User));
+    print(pick(Box(value: 1)));
+    print(pick(string));
+    print(pick(User));
     val n: i32 = orDefault(Box(value: 4), 9);
     val m: i32 = orDefault(i32, 9);
     val u: User = orDefault(User, User(name: "ana"));
-    @print(n);
-    @print(m);
-    @print(u.name);
+    print(n);
+    print(m);
+    print(u.name);
 }

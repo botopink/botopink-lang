@@ -10,12 +10,14 @@
 //// (`firstThree`). The stream's lines print from inside `run` (see
 //// `run/task_return_layers.bp`), after `main`'s own.
 
-fn two() -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn two() -> Iterator<i32> {
     yield 1;
     yield 2;
 }
 
-fn countdown(n: i32) -> @Stream<i32> {
+fn countdown(n: i32) -> Stream<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -31,7 +33,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     return t;
 }
 
-fn firstThree(it: @Iterator<i32>) -> string {
+fn firstThree(it: Iterator<i32>) -> string {
     var acc = "";
     var i = 0;
     while (i < 3) {
@@ -41,19 +43,19 @@ fn firstThree(it: @Iterator<i32>) -> string {
     return acc;
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val s = countdown(2);
-    @print(stepText(await s.next()));
-    @print(stepText(await s.next()));
-    @print(stepText(await s.next()));
+    print(stepText(await s.next()));
+    print(stepText(await s.next()));
+    print(stepText(await s.next()));
 }
 
 pub fn main() {
     val it = two();
-    @print(stepText(it.next()));
-    @print(stepText(it.next()));
-    @print(stepText(it.next()));
-    @print(stepText(it.next()));
-    @print(firstThree(two()));
+    print(stepText(it.next()));
+    print(stepText(it.next()));
+    print(stepText(it.next()));
+    print(stepText(it.next()));
+    print(firstThree(two()));
     run();
 }

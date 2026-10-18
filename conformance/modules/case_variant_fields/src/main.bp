@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(radius: f64),
     Square(side: f64),
@@ -11,5 +13,5 @@ fn area(shape: Shape) -> f64 {
 }
 
 pub fn main() {
-    @print(area(Shape.Square(side: 2.0))); // 4.0
+    print(area(Shape.Square(side: 2.0))); // 4.0
 }

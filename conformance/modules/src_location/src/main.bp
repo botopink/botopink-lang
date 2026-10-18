@@ -1,17 +1,19 @@
 // A builtin record every module sees:
 //   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
 
+import {compiler, io.terminal.print} from "std";
+
 fn where() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 
 pub fn main() {
     val loc = where();
-    @print(
+    print(
         loc.file,
         loc.line,
         loc.column,
         loc.fnName,
     ); // src/main.bp 5 12 where
-    @print(@src().fnName); // main
+    print(comptime compiler.src.fnName); // main
 }

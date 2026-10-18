@@ -8,12 +8,13 @@
 
 pub mod tok;
 import {tok.Tok, tok.defaultPad, tok.label};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(comptime label(defaultPad()));
-    @print(comptime label(Tok.Hover([.Pad.All.4, .Bold])));
+    print(comptime label(defaultPad()));
+    print(comptime label(Tok.Hover([.Pad.All.4, .Bold])));
     val t: Tok = comptime defaultPad();
-    @print(label(t));
+    print(label(t));
     val ts: Tok[] = comptime [.Pad.All.4, Tok.Hover([.Pad.All.8])];
-    @print(ts.map({ x -> label(x) }).join(" "));
+    print(ts.map({ x -> label(x) }).join(" "));
 }

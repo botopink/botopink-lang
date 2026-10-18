@@ -11,8 +11,10 @@
 //// which types a method it does not know permissively: without it this program
 //// would compile and fail at run time, which is worse than the alias was.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2, 3];
     val v = xs.at(9).expect(0);
-    @print(v);
+    print(v);
 }

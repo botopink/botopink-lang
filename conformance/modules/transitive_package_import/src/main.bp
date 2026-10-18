@@ -5,7 +5,8 @@
 //// `core` in this package's botopink.json is the fix.
 
 import {greet} from "core";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greet());
+    print(greet());
 }

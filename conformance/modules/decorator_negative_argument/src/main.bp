@@ -6,6 +6,8 @@
 //// argument, so the decorator receives the NUMBER `-20`: the emitted function
 //// answers it, and `-20 + 25` prints `5`.
 
+import {io.terminal.print} from "std";
+
 fn mark(syntax decl: unknown, comptime n: i32) {
     @emit("pub fn markedWith() -> i32 { return " + n.toString() + "; }");
 }
@@ -14,5 +16,5 @@ fn mark(syntax decl: unknown, comptime n: i32) {
 type Account(id: i32)
 
 pub fn main() {
-    @print((markedWith() + 25).toString());
+    print((markedWith() + 25).toString());
 }

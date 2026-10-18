@@ -33,6 +33,8 @@
 //// that is `run/optional_chain_method.bp`'s, a gap of its own and not the
 //// carrier's.
 
+import {io.terminal.print} from "std";
+
 type Entry(key: string)
 
 type Table(rows: Entry[])
@@ -41,31 +43,31 @@ pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];
 
     // The optional printed whole: present, it is the record's own text.
-    @print(es.at(0));
+    print(es.at(0));
 
     // `?.` on a field, and a primitive method on what `?.` answered.
-    @print(es.at(0)?.key);
-    @print(es.at(1)?.key.length());
+    print(es.at(0)?.key);
+    print(es.at(1)?.key.length());
 
     // The name a `!= null` test narrows: inside the branch it is the payload.
     val first = es.at(0);
     if (first != null) {
         val k: string = first.key;
-        @print(k);
-        @print(first.key.length());
+        print(k);
+        print(first.key.length());
     }
 
     // `??` with a record default — the result is a record, and its field is a
     // declared `string`.
-    @print((es.at(9) ?? Entry(key: "zz")).key);
+    print((es.at(9) ?? Entry(key: "zz")).key);
 
     // The same `.at()` through a record FIELD declared `Entry[]`.
     val t = Table(rows: es);
-    @print(t.rows.at(1)?.key);
-    @print(t.rows.first()?.key.length());
+    print(t.rows.at(1)?.key);
+    print(t.rows.first()?.key.length());
 
     // An element that is itself an array is a pointer for the same reason.
     val grid = [[1, 2, 3], [4]];
     val row = grid.at(0);
-    if (row != null) @print(row.length());
+    if (row != null) print(row.length());
 }

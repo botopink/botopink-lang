@@ -2,6 +2,8 @@
 //// (decision 264): commonJS names it `integer division by zero` where `BigInt` threw its own
 //// `RangeError`, erlang and beam raise `badarith`, wasm traps.
 
+import {io.terminal.print} from "std";
+
 fn rem(a: bigint, b: bigint) -> bigint {
     return a % b;
 }
@@ -11,8 +13,8 @@ fn div(a: bigint, b: bigint) -> bigint {
 }
 
 pub fn main() {
-    @print(rem(7n, 2n));
-    @print(div(7n, 2n));
-    @print(div(7n, 0n));
-    @print("unreachable");
+    print(rem(7n, 2n));
+    print(div(7n, 2n));
+    print(div(7n, 0n));
+    print("unreachable");
 }

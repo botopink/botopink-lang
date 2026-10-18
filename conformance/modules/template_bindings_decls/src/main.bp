@@ -6,7 +6,7 @@
 
 mod models;
 import {models.User as Person};
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type City(name: string)
 
@@ -26,5 +26,5 @@ fn named(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(named @`City helper Person Nobody`);
+    print(named @`City helper Person Nobody`);
 }

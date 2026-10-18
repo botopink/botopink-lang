@@ -2,9 +2,11 @@
 //// `await`: `@Iterator<T>` has no suspension to honour. For `await` in the
 //// body one writes `stream loop { … }`.
 
-fn fetch(n: i32) -> @Task<i32> { return n; }
+import {io.terminal.print} from "std";
 
-fn feed() -> @Task<i32> {
+fn fetch(n: i32) -> Task<i32> { return n; }
+
+fn feed() -> Task<i32> {
     val g = iter loop {
         val v = await fetch(1);
         break v;
@@ -12,4 +14,4 @@ fn feed() -> @Task<i32> {
     return 1;
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

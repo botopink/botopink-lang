@@ -6,6 +6,8 @@
 //// field after a field link (`p(true)?.inner.x`) and a method after the read
 //// (`p(true)?.me().name.length()`) continue it alike.
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, name: string, inner: Inner) {
     fn me(self: Self) -> Point {
         return self;
@@ -15,16 +17,16 @@ type Point(x: i32, name: string, inner: Inner) {
 type Inner(x: i32)
 
 fn p(present: bool) -> ?Point {
-    @print("p");
+    print("p");
     if (present) return Point(x: 7, name: "seven", inner: Inner(x: 3));
     return null;
 }
 
 pub fn main() {
-    @print(p(true)?.me().x ?? -1);
-    @print(p(false)?.me().x ?? -1);
-    @print(p(true)?.inner.x ?? -1);
-    @print(p(false)?.inner.x ?? -1);
-    @print(p(true)?.me().name.length() ?? -1);
-    @print(p(false)?.me().name ?? "none");
+    print(p(true)?.me().x ?? -1);
+    print(p(false)?.me().x ?? -1);
+    print(p(true)?.inner.x ?? -1);
+    print(p(false)?.inner.x ?? -1);
+    print(p(true)?.me().name.length() ?? -1);
+    print(p(false)?.me().name ?? "none");
 }

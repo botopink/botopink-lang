@@ -9,6 +9,8 @@
 //// On all four targets: wasm, which trapped at a method called through a
 //// behavior-typed value, reads the type from the value's header.
 
+import {io.terminal.print} from "std";
+
 behavior Lookup {
     fn find(self: Self, key: string) -> string;
 }
@@ -33,10 +35,10 @@ val shared: Lookup = memory();
 
 pub fn main() {
     val local: Lookup = memory();
-    @print(local.find("a"));
-    @print(shared.find("b"));
+    print(local.find("a"));
+    print(shared.find("b"));
     var current: Lookup = Disk(root: "/d");
-    @print(current.find("c"));
+    print(current.find("c"));
     current = memory();
-    @print(current.find("d"));
+    print(current.find("d"));
 }

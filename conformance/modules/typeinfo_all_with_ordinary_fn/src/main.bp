@@ -2,10 +2,12 @@
 //// decorator's name has type `Decorator`: an ordinary function is the
 //// ordinary argument mismatch, located at the argument.
 
+import {io.terminal.print} from "std";
+
 fn helper() -> i32 {
     return 1;
 }
 
 pub fn main() {
-    @print(@TypeInfo.all(with: helper).length);
+    print(@TypeInfo.all(with: helper).length);
 }

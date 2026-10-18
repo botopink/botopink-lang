@@ -5,12 +5,12 @@
 //// aliases the second import is `import-name-collision`
 //// (`import_same_name_twice_unaliased`).
 
-import {collections.lt as stdLt, collections.reverse as stdReverse, collections.toInt} from "std";
+import {collections.lt as stdLt, collections.reverse as stdReverse, collections.toInt, io.terminal.print} from "std";
 import {lt as kitLt, reverse as kitReverse} from "kit";
 
 pub fn main() {
-    @print(kitLt(1, 2));
-    @print(toInt(stdLt()));
-    @print(kitReverse(1, 2, 3));
-    @print(toInt(stdReverse(stdLt())));
+    print(kitLt(1, 2));
+    print(toInt(stdLt()));
+    print(kitReverse(1, 2, 3));
+    print(toInt(stdReverse(stdLt())));
 }

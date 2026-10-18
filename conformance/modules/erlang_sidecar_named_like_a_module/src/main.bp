@@ -13,10 +13,11 @@
 
 pub mod text;
 import {text.greet};
+import {compiler, io.terminal.print} from "std";
 
-#[@external(.Erlang("text:shout($0)"))]
+#[compiler.external(.Erlang("text:shout($0)"))]
 declare fn shout(s: string) -> string;
 
 pub fn main() {
-    @print(shout(greet("sidecar")));
+    print(shout(greet("sidecar")));
 }

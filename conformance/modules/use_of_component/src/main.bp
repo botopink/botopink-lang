@@ -4,13 +4,13 @@
 //// The guide gives the refusal no code (README open point 2); line 1 is
 //// today's message, at the `use`.
 
-type Element(count: i32) implement @Renderable
+type Element(count: i32) implement Renderable
 
-fn Counter() -> @Component<Element> {
+fn Counter() -> Component<Element> {
     return Element(count: 1);
 }
 
-fn Errado() -> @Component<Element> {
+fn Errado() -> Component<Element> {
     return use Counter();
 }
 

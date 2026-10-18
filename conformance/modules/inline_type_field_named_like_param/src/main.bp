@@ -2,10 +2,12 @@
 //// its function would give `col(n: …)` two readings: refused at the inline
 //// type.
 
+import {io.terminal.print} from "std";
+
 fn col(props: type(n: i32), n: i32) -> i32 {
     return props.n + n;
 }
 
 pub fn main() {
-    @print(0);
+    print(0);
 }

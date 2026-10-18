@@ -4,6 +4,8 @@
 //// string and printed the string's address (`388`) where the case was a
 //// `val`'s value.
 
+import {io.terminal.print} from "std";
+
 type D(name: string, age: i32)
 
 pub fn main() {
@@ -16,7 +18,7 @@ pub fn main() {
             "max " + n.toString()
         }
     };
-    @print(s);
+    print(s);
     val x = 3;
     val t = case x {
         3 {
@@ -26,8 +28,8 @@ pub fn main() {
             "max " + n.toString()
         }
     };
-    @print(t);
-    @print(case d.age {
+    print(t);
+    print(case d.age {
         3 {
             "three"
         }

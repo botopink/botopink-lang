@@ -4,6 +4,8 @@
 //// aborted the compiler); each hole is now its text, joined to the literal
 //// parts, on the comptime runtime.
 
+import {io.terminal.print} from "std";
+
 fn label(n: i32, b: bool, s: string) -> string {
     return "n=${n} b=${b} s=${s}";
 }
@@ -11,5 +13,5 @@ fn label(n: i32, b: bool, s: string) -> string {
 pub val built = comptime label(2, true, "x\"y");
 
 pub fn main() {
-    @print(built);
+    print(built);
 }

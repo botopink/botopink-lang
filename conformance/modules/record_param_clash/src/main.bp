@@ -2,6 +2,8 @@
 //// record parameter's type is refused at the declaration: a call passes both
 //// by label, so the name would stand for two.
 
+import {io.terminal.print} from "std";
+
 type CardProps(title: string, size: i32 = 1)
 
 fn Card(..props: CardProps, size: i32) -> string {
@@ -9,5 +11,5 @@ fn Card(..props: CardProps, size: i32) -> string {
 }
 
 pub fn main() {
-    @print(Card(title: "a", size: 2));
+    print(Card(title: "a", size: 2));
 }

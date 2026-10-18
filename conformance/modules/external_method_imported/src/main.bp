@@ -6,9 +6,10 @@
 
 pub mod meter;
 import {meter.Meter, meter.meter as newMeter};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val m = newMeter(40);
-    @print(m.plus(2));
-    @print(Meter(base: 7).tag("id"));
+    print(m.plus(2));
+    print(Meter(base: 7).tag("id"));
 }

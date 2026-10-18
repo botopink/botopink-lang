@@ -4,7 +4,7 @@
 //// Each entry names its function's declared return type (`returnTypeName`,
 //// decision 256), the key a catalogue of providers is built by.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn job(syntax decl: unknown) {
     compiler.setMeta(Job(kind: "job"));
@@ -23,7 +23,7 @@ pub fn greet(name: string) -> string {
 pub fn main() {
     val all: Declared<unknown>[] = @TypeInfo.all(with: job);
     for (all) { d ->
-        @print(d.name + " " + d.module + " " + d.returnTypeName);
+        print(d.name + " " + d.module + " " + d.returnTypeName);
     }
 }
 

@@ -3,7 +3,7 @@
 //// only inside a function expanded at its call site (decision 562): in
 //// `main`, which runs, it is refused at the call.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior Module {
     fn make() -> Self;
@@ -27,7 +27,7 @@ pub type Users(n: i32) implement Module {
 
 pub fn main() {
     for (@TypeInfo.all(with: module)) { d ->
-        @print(d.value.make().start());
+        print(d.value.make().start());
     }
 }
 

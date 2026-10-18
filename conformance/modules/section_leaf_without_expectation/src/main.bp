@@ -2,6 +2,8 @@
 //// position's type is that section. Here nothing says so, and the refusal
 //// names the section instead of reporting `unbound variable 'Zeta'`.
 
+import {io.terminal.print} from "std";
+
 pub type Token {
     Layout { Break { Zeta, Eta } },
     Text { Bold },
@@ -9,5 +11,5 @@ pub type Token {
 
 pub fn main() {
     val b = .Zeta;
-    @print(0);
+    print(0);
 }

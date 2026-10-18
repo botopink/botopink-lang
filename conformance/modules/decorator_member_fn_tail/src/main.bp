@@ -1,7 +1,7 @@
 //// Decisions 408, 409 — the typed member `decl.addMember(name, fn(self: T) ->
 //// R { … })` answers its tail like any function expression.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn sized<T>(syntax decl: T) {
     compiler.addMember("size", fn(self: T) -> i32 { self.name.length + 1 });
@@ -11,5 +11,5 @@ fn sized<T>(syntax decl: T) {
 pub type Account(name: string)
 
 pub fn main() {
-    @print(Account(name: "abc").size());
+    print(Account(name: "abc").size());
 }

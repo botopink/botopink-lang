@@ -5,7 +5,7 @@
 //// calling it through `is fn() -> T` is front 130's. A type's entry has no
 //// return type: `returnTypeName` is `""` (decision 256).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn service(syntax decl: unknown) {
     compiler.setMeta(Service(role: "service"));
@@ -44,10 +44,10 @@ pub fn main() {
         for (d.metaAll(Store)) { m ->
             meta.push("store=" + m.store);
         }
-        @print(d.name + " " + meta.join(","));
+        print(d.name + " " + meta.join(","));
     }
     for (@TypeInfo.all(with: [service, audited], member: "make")) { d ->
-        @print(
+        print(
             d.name
                 + " "
                 + (d.metaAll(Service).length

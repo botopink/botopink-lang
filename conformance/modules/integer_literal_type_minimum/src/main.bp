@@ -5,6 +5,8 @@
 //// a negated one included, from the other operand of a comparison
 //// (`value >= -9007199254740991` over an `i64`).
 
+import {io.terminal.print} from "std";
+
 fn safe(value: i64) -> bool {
     return value <= 9007199254740991 && value >= -9007199254740991;
 }
@@ -16,8 +18,8 @@ pub fn main() {
     val d = -9223372036854775808l;
     val e: i64 = 3000000000;
     val f: u32 = 4294967295;
-    @print(a, b, c);
-    @print(d);
-    @print(e, f);
-    @print(safe(0l), safe(-9007199254740992l));
+    print(a, b, c);
+    print(d);
+    print(e, f);
+    print(safe(0l), safe(-9007199254740992l));
 }

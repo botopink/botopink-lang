@@ -1,5 +1,6 @@
 mod sql;
 import {sql.query, sql.repository, sql.Query, sql.Repository};
+import {compiler, io.terminal.print} from "std";
 
 #[repository]
 behavior Users {
@@ -13,7 +14,7 @@ fn logout(u: string) -> string {
 }
 
 pub fn main() {
-    val statements: string[] = @typeInfo(Users).meta(Repository)?.statements ?? [];
-    @print(statements.join(" | "));
-    @print(@typeInfo(logout).meta(Query)!.sql);
+    val statements: string[] = comptime compiler.typeInfo(Users).meta(Repository)?.statements ?? [];
+    print(statements.join(" | "));
+    print(comptime compiler.typeInfo(logout).meta(Query)!.sql);
 }

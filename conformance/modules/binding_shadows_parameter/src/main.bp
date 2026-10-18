@@ -2,11 +2,13 @@
 //// the body: `val x = 2;` in `fn f(x: i32)` is `binding-redeclared` at the
 //// `val`.
 
+import {io.terminal.print} from "std";
+
 fn f(x: i32) -> i32 {
     val x = 2;
     return x;
 }
 
 pub fn main() {
-    @print(f(1));
+    print(f(1));
 }

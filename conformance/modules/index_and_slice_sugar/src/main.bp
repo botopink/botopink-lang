@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [10, 20, 30];
     val first: ?i32 = xs[0]; // xs.at(0)
@@ -9,12 +11,12 @@ pub fn main() {
     val s = "hello";
     val c: ?string = s[1]; // "e"
     val o: ?string = s.at(-1); // "o"
-    @print(first); // 10
-    @print(none); // null
-    @print(last); // 30
-    @print(gone); // null
-    @print(tail); // [20, 30]
-    @print(head); // [10, 20]
-    @print(c); // e
-    @print(o); // o
+    print(first); // 10
+    print(none); // null
+    print(last); // 30
+    print(gone); // null
+    print(tail); // [20, 30]
+    print(head); // [10, 20]
+    print(c); // e
+    print(o); // o
 }

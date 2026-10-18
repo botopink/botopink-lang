@@ -1,5 +1,7 @@
 //// Runner smoke test: proves the `run/` path compares stdout byte for byte.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print("smoke");
+    print("smoke");
 }

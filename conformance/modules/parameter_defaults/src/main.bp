@@ -1,8 +1,10 @@
+import {io.terminal.print} from "std";
+
 fn greet(name: string, greeting: string = "hello") -> string {
     return greeting + ", " + name + "!";
 }
 
 fn main() {
-    @print(greet("world")); // hello, world!  — `greeting` takes its default
-    @print(greet("world", "hi")); // hi, world!
+    print(greet("world")); // hello, world!  — `greeting` takes its default
+    print(greet("world", "hi")); // hi, world!
 }

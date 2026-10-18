@@ -2,7 +2,7 @@
 //// type, as it follows the name in a declaration (`(id: string)`,
 //// `{ A, B }`): anything else is refused at the annotation, the source quoted.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string) fn extra() {}"));
@@ -12,5 +12,5 @@ fn entity(syntax decl: unknown) {
 type City(id: i32)
 
 pub fn main() {
-    @print(City(id: 1).id);
+    print(City(id: 1).id);
 }

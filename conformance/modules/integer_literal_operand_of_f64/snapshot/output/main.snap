@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: the integer literal `2` is not an `f64` — write `2d` or `2.0`
-at src/main.bp:6:16
+at src/main.bp:8:16

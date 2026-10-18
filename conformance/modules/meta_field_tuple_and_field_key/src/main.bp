@@ -3,7 +3,7 @@
 //// written (`#(1, 9)`) and the field key as its `.name` against the read's
 //// type (decision 308). Read back here on every target (144 B-19).
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 type Span(range: #(i32, i32), label: string)
 
@@ -22,11 +22,11 @@ fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) {
 type Book(title: string, pages: i32)
 
 pub fn main() {
-    val s = @typeInfo(Book).meta(Span);
-    @print(s?.label ?? "none");
+    val s = comptime compiler.typeInfo(Book).meta(Span);
+    print(s?.label ?? "none");
     val r = s?.range ?? #(0, 0);
-    @print(r.0 + r.1);
-    val o = @typeInfo(Book).meta(Sort);
-    @print(o?.by?.name ?? "none");
-    @print(o?.keys?.length ?? 0);
+    print(r.0 + r.1);
+    val o = comptime compiler.typeInfo(Book).meta(Sort);
+    print(o?.by?.name ?? "none");
+    print(o?.keys?.length ?? 0);
 }

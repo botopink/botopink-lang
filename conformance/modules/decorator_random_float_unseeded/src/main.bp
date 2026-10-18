@@ -5,7 +5,7 @@
 //// `comptime-host-cell-unavailable`, never the nested namespace `io.random`
 //// read as unbound (144 B-46).
 
-import {io, compiler} from "std";
+import {io, compiler, io.terminal.print} from "std";
 
 fn drawn(syntax decl: unknown) {
     val x = io.random.float();
@@ -18,5 +18,5 @@ fn drawn(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(label());
+    print(label());
 }

@@ -1,10 +1,12 @@
 //// Decision 330 (4) — `??` beside `&&` / `||` without parentheses is
 //// refused, as in TypeScript: `(a ?? false) && b` says which reads first.
 
+import {io.terminal.print} from "std";
+
 fn flag(present: bool) -> ?bool {
     return if (present) true else null;
 }
 
 pub fn main() {
-    @print(flag(true) ?? false && true);
+    print(flag(true) ?? false && true);
 }

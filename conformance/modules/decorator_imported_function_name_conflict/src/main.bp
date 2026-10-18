@@ -5,7 +5,7 @@
 
 pub mod text;
 import {text.shout};
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn wrap(s: string) -> string {
     return "[" + s + "]";
@@ -25,5 +25,5 @@ fn tick() -> i32 {
 }
 
 pub fn main() {
-    @print(tagged());
+    print(tagged());
 }

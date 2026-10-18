@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: looks: no #[theme] declaration — declare one: `#[theme] pub fn brand() -> string`
-at src/main.bp:8:18
+at src/main.bp:9:17

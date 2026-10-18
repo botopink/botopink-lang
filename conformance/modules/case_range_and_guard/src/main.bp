@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 fn bucket(n: i32) -> string {
     return case n {
         1...9 {
@@ -13,7 +15,7 @@ fn bucket(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(bucket(5)); // digit
-    @print(bucket(-1)); // negative
-    @print(bucket(42)); // other
+    print(bucket(5)); // digit
+    print(bucket(-1)); // negative
+    print(bucket(42)); // other
 }

@@ -2,9 +2,11 @@
 //// `throw` in a `#[@generator]` body is refused, naming the generator that
 //// has one (`@Iterator<@Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
 
-fn counted(n: i32) -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn counted(n: i32) -> Iterator<i32> {
     yield n;
     throw "stop";
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

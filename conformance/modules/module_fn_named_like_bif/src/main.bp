@@ -5,6 +5,8 @@
 //// Erlang read `p.y` as `element(3, P)` — the module's `element/2` — and
 //// answered `{error, badarg}` at run time (language-gaps T13).
 
+import {io.terminal.print} from "std";
+
 pub type Point(x: i32, y: i32)
 
 fn element(name: string, value: string) -> string {
@@ -25,16 +27,16 @@ fn hd(xs: i32[]) -> i32 {
 
 pub fn main() {
     val p = Point(x: 3, y: 4);
-    @print(p.y);
-    @print(element("k", "v"));
-    @print(apply({ n -> n * 2 }, p.x));
+    print(p.y);
+    print(element("k", "v"));
+    print(apply({ n -> n * 2 }, p.x));
     val twice = { n -> n * 2 };
-    @print(twice(p.y));
-    @print(length("abc"));
-    @print("abcd".length());
-    @print([5, 6, 7].length());
-    @print(hd([9, 8]));
-    @print([9, 8].at(0) ?? 0);
-    @print([9, 8].at(5) ?? 0);
-    @print(p);
+    print(twice(p.y));
+    print(length("abc"));
+    print("abcd".length());
+    print([5, 6, 7].length());
+    print(hd([9, 8]));
+    print([9, 8].at(0) ?? 0);
+    print([9, 8].at(5) ?? 0);
+    print(p);
 }

@@ -6,6 +6,7 @@
 
 pub mod text;
 import {jwt} from "sec";
+import {io.terminal.print} from "std";
 
 fn sign(s: string) -> string {
     return "local " + s;
@@ -13,8 +14,8 @@ fn sign(s: string) -> string {
 
 pub fn main() {
     val token = jwt.sign("a");
-    @print(token);
-    @print(jwt.verify(token));
-    @print(text.shout("hi"));
-    @print(sign("b"));
+    print(token);
+    print(jwt.verify(token));
+    print(text.shout("hi"));
+    print(sign("b"));
 }

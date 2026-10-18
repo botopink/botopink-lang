@@ -8,8 +8,10 @@
 //// erlang, wasm and beam. The message goes to stderr on every backend, which is
 //// why the cell does not read it.
 
+import {io.terminal.print, failure.panic} from "std";
+
 pub fn main() {
-    @print("before");
-    @panic("boom");
-    @print("after");
+    print("before");
+    panic("boom");
+    print("after");
 }

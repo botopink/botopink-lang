@@ -1,6 +1,8 @@
 //// Decision 541 (2) — a labelled `break :outer` in a `case` arm's block, or
 //// in a plain block, reaches the named outer loop: the block is no closure.
 
+import {io.terminal.print} from "std";
+
 fn firstPair(xs: i32[], ys: i32[]) -> i32 {
     var found = 0;
     for :outer (xs) { x ->
@@ -29,6 +31,6 @@ fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
 }
 
 pub fn main() {
-    @print(firstPair([1, 2, 3], [1, 2, 3]));
-    @print(sumBeforeTwo([1, 2], [1, 2, 3]));
+    print(firstPair([1, 2, 3], [1, 2, 3]));
+    print(sumBeforeTwo([1, 2], [1, 2, 3]));
 }

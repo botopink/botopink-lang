@@ -1,7 +1,7 @@
 //// A method called on the list of an optional chain: `meta(Tags)?.list` is
 //// `string[]?` and `.join(",")` is looked up on the list, not on the optional.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Tags(list: string[])
 
@@ -13,5 +13,5 @@ fn tag<T>(syntax decl: T) {
 pub type Item(id: i32)
 
 pub fn main() {
-    @print(@typeInfo(Item).meta(Tags)?.list.join(",") ?? "none");
+    print(comptime compiler.typeInfo(Item).meta(Tags)?.list.join(",") ?? "none");
 }

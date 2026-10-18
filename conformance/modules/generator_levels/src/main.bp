@@ -6,13 +6,15 @@
 //// `try r`, so it returns `@Result`; `total` iterates an `@Iterator<i32>` in a
 //// plain `fn`, with no level at all.
 
-fn parse(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
 // The item is a `@Result`: `try` and `yield` in one body.
-fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
+fn upto(n: i32) -> Iterator<Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) {
@@ -22,7 +24,7 @@ fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
 }
 
 // The iterating body reads each `@Result`; `try r` propagates.
-fn digits(n: i32) -> @Result<string, string> {
+fn digits(n: i32) -> Result<string, string> {
     var acc = "";
     for (upto(n)) { r ->
         val v = try r;
@@ -31,7 +33,7 @@ fn digits(n: i32) -> @Result<string, string> {
     return acc;
 }
 
-fn nums(n: i32) -> @Iterator<i32> {
+fn nums(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -49,7 +51,7 @@ fn total(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(try digits(4) catch "error");
-    @print(try digits(-1) catch "error");
-    @print(total(4));
+    print(try digits(4) catch "error");
+    print(try digits(-1) catch "error");
+    print(total(4));
 }

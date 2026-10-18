@@ -1,8 +1,10 @@
+import {io.terminal.print} from "std";
+
 pub fn main() {
     for ([1, 2]) { i ->
         defer {
             continue;
         }
-        @print(i);
+        print(i);
     }
 }

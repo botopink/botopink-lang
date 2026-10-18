@@ -2,6 +2,8 @@
 //// its declared type: `op.run(5)` is an `i32`, so `.toString()` is the
 //// integer's.
 
+import {io.terminal.print} from "std";
+
 type Op(name: string, run: fn(x: i32) -> i32)
 
 pub fn main() {
@@ -10,6 +12,6 @@ pub fn main() {
         Op(name: "dbl", run: { x -> x * 2 }),
     ];
     for (ops) { op ->
-        @print(op.name + "=" + op.run(5).toString());
+        print(op.name + "=" + op.run(5).toString());
     }
 }

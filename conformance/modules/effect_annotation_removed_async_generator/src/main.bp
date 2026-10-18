@@ -6,7 +6,7 @@
 //// as a choice). The new form is `run/stream_pages.bp`.
 
 #[@asyncGenerator]
-fn ticks(n: i32) -> @Stream<@Result<i32, string>> {
+fn ticks(n: i32) -> Stream<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     var i = 0;
     while (i < n) { yield i; i = i + 1; }

@@ -7,6 +7,7 @@
 pub mod recipes;
 
 import {recipes.Recipe, recipes.RecipeKey, recipes.describe};
+import {io.terminal.print} from "std";
 
 fn isText(key: RecipeKey) -> bool {
     return case key {
@@ -19,24 +20,24 @@ pub fn main() {
     val r = Recipe(title: "Feijoada", description: null, servings: 6);
     // Stored and passed.
     var key: RecipeKey = .title;
-    @print(describe(r, key));
+    print(describe(r, key));
     key = .servings;
-    @print(describe(r, key));
-    @print(describe(r, .description));
+    print(describe(r, key));
+    print(describe(r, .description));
     val keys: RecipeKey[] = [.servings, .title];
-    @print(keys.map({ k -> k.name }).join(","));
+    print(keys.map({ k -> k.name }).join(","));
     // Compared.
-    @print(key == .servings);
-    @print(key == .title);
-    @print(keys[1] == RecipeKey.all()[0]);
-    @print(isText(.description));
-    @print(isText(key));
+    print(key == .servings);
+    print(key == .title);
+    print(keys[1] == RecipeKey.all()[0]);
+    print(isText(.description));
+    print(isText(key));
     // Read from outside by its name.
     val found = RecipeKey.of("description") ?? .title;
-    @print(found.name);
-    @print(RecipeKey.of("nope") == null);
-    @print((RecipeKey.of("servings") ?? .title) == .servings);
+    print(found.name);
+    print(RecipeKey.of("nope") == null);
+    print((RecipeKey.of("servings") ?? .title) == .servings);
     // Every key, in declaration order.
-    @print(RecipeKey.all().map({ k -> k.name }).join(","));
-    @print(RecipeKey.all().map({ k -> describe(r, k) }).join(" | "));
+    print(RecipeKey.all().map({ k -> k.name }).join(","));
+    print(RecipeKey.all().map({ k -> describe(r, k) }).join(" | "));
 }

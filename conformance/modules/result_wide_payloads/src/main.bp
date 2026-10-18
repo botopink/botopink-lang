@@ -1,12 +1,14 @@
 //// 144 B-22 — a `@Result` whose `Ok` is an `f64` or an `i64` keeps the whole value through every
 //// reader, on every target: `unwrapOr`, a `case` arm's binder, `try`, `try … catch` and `map`.
 
-fn half(n: f64) -> @Result<f64, string> {
+import {io.terminal.print} from "std";
+
+fn half(n: f64) -> Result<f64, string> {
     if (n < 0.0) throw "negative";
     return n / 2.0;
 }
 
-fn triple(n: i64) -> @Result<i64, string> {
+fn triple(n: i64) -> Result<i64, string> {
     if (n < 0l) throw "negative";
     return n * 3l;
 }
@@ -25,7 +27,7 @@ fn described(n: i64) -> string {
     };
 }
 
-fn quarter(n: f64) -> @Result<f64, string> {
+fn quarter(n: f64) -> Result<f64, string> {
     val h = try half(n);
     return h / 2.0;
 }
@@ -35,16 +37,16 @@ fn tripleOrZero(n: i64) -> i64 {
 }
 
 pub fn main() {
-    @print(half(3.0).unwrapOr(0.0));
-    @print(half(-3.0).unwrapOr(0.5));
-    @print(halfOr(5.0));
-    @print(halfOr(-5.0));
-    @print(described(3002399751580331l));
-    @print(described(-1l));
-    @print(triple(3002399751580331l).unwrapOr(0l));
-    @print(quarter(10.0).unwrapOr(0.0));
-    @print(quarter(-10.0).isError());
-    @print(tripleOrZero(7l));
-    @print(tripleOrZero(-7l));
-    @print(half(8.0).map({ v -> v + 0.25 }).unwrapOr(0.0));
+    print(half(3.0).unwrapOr(0.0));
+    print(half(-3.0).unwrapOr(0.5));
+    print(halfOr(5.0));
+    print(halfOr(-5.0));
+    print(described(3002399751580331l));
+    print(described(-1l));
+    print(triple(3002399751580331l).unwrapOr(0l));
+    print(quarter(10.0).unwrapOr(0.0));
+    print(quarter(-10.0).isError());
+    print(tripleOrZero(7l));
+    print(tripleOrZero(-7l));
+    print(half(8.0).map({ v -> v + 0.25 }).unwrapOr(0.0));
 }

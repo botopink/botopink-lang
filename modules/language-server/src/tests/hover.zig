@@ -160,14 +160,14 @@ fn hoverSnap(slug: []const u8, source: []const u8, line: u32, col: u32) !void {
 
 test "hover: @Iterator fn shows its for item type" {
     try hoverSnap("hover_effect_iterator",
-        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
+        \\fn counter() -> Iterator<i32> :gen { yield 1; }
     , 0, 3);
 }
 
 test "hover: @Task<@Result<T, E>> fn shows the whole Result as the await value" {
     try hoverSnap("hover_effect_task_result",
         \\pub type User(id: i32, name: string);
-        \\fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
+        \\fn fetchUser(id: i32) -> Task<Result<User, string>> {
         \\    if (id < 0) { throw "negative"; };
         \\    return User(id: id, name: "ana");
         \\}
@@ -176,8 +176,8 @@ test "hover: @Task<@Result<T, E>> fn shows the whole Result as the await value" 
 
 test "hover: @Component<T> fn shows T, not the context base" {
     try hoverSnap("hover_effect_component",
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
     , 1, 3);
@@ -185,7 +185,7 @@ test "hover: @Component<T> fn shows T, not the context base" {
 
 test "hover: @Stream fn shows its for await item type" {
     try hoverSnap("hover_effect_stream",
-        \\fn pulses() -> @Stream<@Result<i32, string>> {
+        \\fn pulses() -> Stream<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -194,14 +194,14 @@ test "hover: @Stream fn shows its for await item type" {
 
 test "hover: @Iterator factory (no yield) still shows its item type" {
     try hoverSnap("hover_effect_iterator_factory",
-        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
-        \\fn fresh() -> @Iterator<i32> { return counter(); }
+        \\fn counter() -> Iterator<i32> :gen { yield 1; }
+        \\fn fresh() -> Iterator<i32> { return counter(); }
     , 1, 3);
 }
 
 test "hover: @Result fn has no element footer" {
     try hoverSnap("hover_effect_result",
-        \\fn parse(x: i32) -> @Result<i32, string> {
+        \\fn parse(x: i32) -> Result<i32, string> {
         \\    if (x < 0) { throw "negative"; };
         \\    return x;
         \\}

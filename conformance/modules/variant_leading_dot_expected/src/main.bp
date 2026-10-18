@@ -7,6 +7,8 @@
 //// annotation reds `expected Shape, got Hole` and `Shape.Round(r: 3)`'s
 //// sibling `Shape.Circle` typed as `Hole`.
 
+import {io.terminal.print} from "std";
+
 pub type Shape {
     Circle,
     Round(r: i32),
@@ -40,9 +42,9 @@ pub fn shapeOf(s: Shape) -> string {
 }
 
 pub fn main() {
-    @print(holeOf(.Circle));
+    print(holeOf(.Circle));
     val s: Shape = .Circle;
-    @print(shapeOf(s));
-    @print(shapeOf(Shape.Round(r: 3)));
-    @print(holeOf(Hole.Round(r: 4)));
+    print(shapeOf(s));
+    print(shapeOf(Shape.Round(r: 3)));
+    print(holeOf(Hole.Round(r: 4)));
 }

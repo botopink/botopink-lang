@@ -2,7 +2,7 @@
 //// (recorded with `decl.addMeta`) is read with `metaAll(T)`, and `meta(T)` is
 //// refused at the read.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Index(column: string)
 
@@ -15,5 +15,5 @@ fn index(syntax decl: unknown, comptime column: string) {
 type City(name: string, state: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Index)?.column ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Index)?.column ?? "none");
 }

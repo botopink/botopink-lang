@@ -12,10 +12,11 @@ pub mod one;
 pub mod two;
 import {one.parse, one.viaOne};
 import {two.parse as parse2, two.viaTwo};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(parse("abc"));
-    @print(parse2("x", 1));
-    @print(viaOne("ab"));
-    @print(viaTwo("y"));
+    print(parse("abc"));
+    print(parse2("x", 1));
+    print(viaOne("ab"));
+    print(viaTwo("y"));
 }

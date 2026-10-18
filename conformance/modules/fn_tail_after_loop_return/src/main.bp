@@ -2,6 +2,8 @@
 //// the function; the body's last expression written without `;` is its value
 //// on every other path: after a `for`, a statement `case` and a `while`.
 
+import {io.terminal.print} from "std";
+
 fn firstNegative(xs: i32[]) -> i32 {
     for (xs) { x ->
         if (x < 0) return x;
@@ -29,10 +31,10 @@ fn countdown(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(firstNegative([3, -4, -5]));
-    @print(firstNegative([1, 2]));
-    @print(describe(0));
-    @print(describe(7));
-    @print(countdown(5));
-    @print(countdown(1));
+    print(firstNegative([3, -4, -5]));
+    print(firstNegative([1, 2]));
+    print(describe(0));
+    print(describe(7));
+    print(countdown(5));
+    print(countdown(1));
 }

@@ -4,6 +4,8 @@
 //// and refused it, "a record declares it a float or an `i64`" (`std/json`'s
 //// reader).
 
+import {io.terminal.print} from "std";
+
 type Kind {
     Null,
     Num(value: f64),
@@ -14,7 +16,7 @@ type Parsed(value: Kind, next: i32)
 
 type Conv(value: f64, ok: bool)
 
-fn scan(i: i32) -> @Result<Parsed, string> {
+fn scan(i: i32) -> Result<Parsed, string> {
     if (i < 0) throw "negative";
     return Parsed(value: Kind.Str(value: "x"), next: i + 1);
 }
@@ -32,7 +34,7 @@ fn run(start: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(run(3));
-    @print(run(-1));
-    @print(Conv(value: 1.5, ok: true).value);
+    print(run(3));
+    print(run(-1));
+    print(Conv(value: 1.5, ok: true).value);
 }

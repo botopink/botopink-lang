@@ -6,6 +6,8 @@
 //// `var` is assigned its declared type (`x = x.next`, a `?Node`), and the
 //// assignment ends the narrowing.
 
+import {io.terminal.print} from "std";
+
 type Node(v: i32, next: ?Node)
 
 fn positive(x: ?Node) -> bool {
@@ -33,11 +35,11 @@ fn sum(head: ?Node) -> i32 {
 
 pub fn main() {
     val list = Node(v: 1, next: Node(v: 2, next: Node(v: 300, next: null)));
-    @print(positive(list));
-    @print(positive(null));
-    @print(absentOrPositive(null));
-    @print(absentOrPositive(Node(v: -1, next: null)));
-    @print(headIfPositive(list));
-    @print(headIfPositive(Node(v: -4, next: null)));
-    @print(sum(list));
+    print(positive(list));
+    print(positive(null));
+    print(absentOrPositive(null));
+    print(absentOrPositive(Node(v: -1, next: null)));
+    print(headIfPositive(list));
+    print(headIfPositive(Node(v: -4, next: null)));
+    print(sum(list));
 }

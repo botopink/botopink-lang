@@ -4,9 +4,11 @@
 //// floats: erlang and beam raise `badarith` on the division, before a value
 //// exists, and abort.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val zero = 0.0;
-    @print(1.0 / zero);
-    @print(0.0 - 1.0 / zero);
-    @print(zero / zero);
+    print(1.0 / zero);
+    print(0.0 - 1.0 / zero);
+    print(zero / zero);
 }

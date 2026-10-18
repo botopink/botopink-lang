@@ -2,6 +2,8 @@
 //// `@Task<T>`. `total` writes `i32`, so the marker is refused where it is
 //// written, `marker-type-mismatch`.
 
+import {io.terminal.print} from "std";
+
 async fn total(xs: i32[]) -> i32 {
     var acc = 0;
     for (xs) { x ->
@@ -11,5 +13,5 @@ async fn total(xs: i32[]) -> i32 {
 }
 
 pub fn main() {
-    @print(total([1, 2]));
+    print(total([1, 2]));
 }

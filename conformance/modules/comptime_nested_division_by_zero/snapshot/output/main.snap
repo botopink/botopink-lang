@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `1 + 6 / (3 - 3) * 2` (division by zero)
-at src/main.bp:6:34
-from src/main.bp:6:19
+at src/main.bp:8:34
+from src/main.bp:8:19

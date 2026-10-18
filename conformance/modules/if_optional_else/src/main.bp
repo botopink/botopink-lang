@@ -1,7 +1,9 @@
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x: ?i32 = 5;
     if (x) {
         _ ->
-        @print("present");
-    } else @print("absent");
+        print("present");
+    } else print("absent");
 }

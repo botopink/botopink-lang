@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `f` declares `-> i32` and its body can reach its end without a `return`
-at src/main.bp:6:11
+at src/main.bp:8:11

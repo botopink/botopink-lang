@@ -3,6 +3,8 @@
 //// function it runs, and a function handed where `?unknown` is expected is a
 //// value like any other.
 
+import {io.terminal.print} from "std";
+
 pub type Hook { Run(body: ?unknown = null, note: string = "") }
 
 fn reverseBody(xs: i32[]) -> i32[] {
@@ -16,6 +18,6 @@ fn has(h: Hook) -> bool {
 }
 
 pub fn main() {
-    @print(has(Hook.Run(body: reverseBody)));
-    @print(has(Hook.Run(note: "none")));
+    print(has(Hook.Run(body: reverseBody)));
+    print(has(Hook.Run(note: "none")));
 }

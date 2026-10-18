@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: use-not-top-level: `use` after the statement on line 9, which may return early — this `use` would not run on every call (decision 357)
-at src/main.bp:10:13
+refused error: use-not-top-level: `use` after the statement on line 11, which may return early — this `use` would not run on every call (decision 357)
+at src/main.bp:12:13

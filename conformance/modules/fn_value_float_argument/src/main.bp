@@ -3,11 +3,13 @@
 //// once called a function value through one `i32` word per argument and
 //// result and truncated the float (`00 · gate-wasm-wrong-answers`), included.
 
+import {io.terminal.print} from "std";
+
 fn halve(x: f64) -> f64 {
     return x / 2.0;
 }
 
 pub fn main() {
     val half = halve;
-    @print(half(3.5));
+    print(half(3.5));
 }

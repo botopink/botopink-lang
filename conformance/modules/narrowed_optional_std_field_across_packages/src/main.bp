@@ -9,6 +9,7 @@
 //// the same read.
 
 import {find} from "routes";
+import {io.terminal.print} from "std";
 
 fn lookup(path: string) -> string {
     val found = find(path);
@@ -17,11 +18,11 @@ fn lookup(path: string) -> string {
 }
 
 pub fn main() {
-    @print(lookup("/users"));
-    @print(lookup("/nope"));
+    print(lookup("/users"));
+    print(lookup("/nope"));
     if (find("/users")) {
         f ->
-        @print(f.params.size());
-        @print(f.name.length);
+        print(f.params.size());
+        print(f.name.length);
     }
 }

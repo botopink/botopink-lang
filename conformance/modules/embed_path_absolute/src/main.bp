@@ -1,7 +1,9 @@
 //// Decision 519 — a path of `@embed` is relative to the `botopink.json` of the package that
 //// writes it: an absolute path is refused at the argument.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val a = @embed("/etc/hostname");
-    @print(a.size);
+    print(a.size);
 }

@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `.Wasm(wasi: .RandomF64)`: the adapter `.RandomF64` takes no parameter and answers f64; the declaration's signature differs (on `draw`)
-at src/main.bp:7:3
+at src/main.bp:9:3

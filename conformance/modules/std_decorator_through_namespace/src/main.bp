@@ -8,7 +8,7 @@
 //// `testing.mocks` has no wasm binding: wasm refuses the import (STD-001,
 //// `.wasm.expect`).
 
-import {testing.mocks} from "std";
+import {testing.mocks, io.terminal.print} from "std";
 
 #[mocks.mock]
 pub behavior Repo {
@@ -20,7 +20,7 @@ pub fn main() {
     val r = Repo.mock();
     val _s = mocks.when(r.find(mocks.eq(7))).thenReturn("ana");
     val _t = mocks.when(r.all()).thenReturn(["a", "b"]);
-    @print(r.find(7));
-    @print(r.find(8) == "");
-    @print(r.all().join(","));
+    print(r.find(7));
+    print(r.find(8) == "");
+    print(r.all().join(","));
 }

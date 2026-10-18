@@ -3,13 +3,15 @@
 //// mismatch is located at the handler — the `try … catch` path used to red
 //// with no location at all.
 
+import {io.terminal.print} from "std";
+
 pub type Post(title: string)
 
-fn loadPost(id: i32) -> @Task<@Result<Post, string>> {
+fn loadPost(id: i32) -> Task<Result<Post, string>> {
     return async { throw "missing"; };
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val post: Post = try await loadPost(1) catch 7;
-    @print(post.title);
+    print(post.title);
 }

@@ -3,13 +3,15 @@
 //// beam answered `2147483648` and only wasm trapped. What was printed before
 //// stays printed; the abort names the operator, the type and the place.
 
+import {io.terminal.print} from "std";
+
 fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
 
 pub fn main() {
-    @print(add(2147483646, 1));
-    @print(add(-2147483647, -1));
-    @print(add(2147483647, 1));
-    @print("unreachable");
+    print(add(2147483646, 1));
+    print(add(-2147483647, -1));
+    print(add(2147483647, 1));
+    print("unreachable");
 }

@@ -1,6 +1,8 @@
 //// Decision 247 — a number pattern matches a subject of its own type: `1.5`
 //// is an `f64` and the subject a `u8`, so the arm is refused at its pattern.
 
+import {io.terminal.print} from "std";
+
 fn kind(n: u8) -> string {
     return case n {
         1.5 -> "half";
@@ -9,5 +11,5 @@ fn kind(n: u8) -> string {
 }
 
 pub fn main() {
-    @print(kind(1u8));
+    print(kind(1u8));
 }

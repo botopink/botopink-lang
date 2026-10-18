@@ -4,9 +4,9 @@
 //// is the record with its defaults. The cell builds the requests and reads the errors; the
 //// `fetch` call type-checks in `probe` and is never run (a cell has no network).
 
-import {io.http} from "std";
+import {io.http, io.terminal.print} from "std";
 
-fn probe(url: string) -> @Task<@Result<i32, http.HttpError>> {
+fn probe(url: string) -> Task<Result<i32, http.HttpError>> {
     val resp = try await http.fetch(http.Request(method: .Get, url: url));
     return resp.status;
 }
@@ -21,9 +21,9 @@ fn describe(e: http.HttpError) -> string {
 
 pub fn main() {
     val get = http.Request(method: .Get, url: "https://example.com/a");
-    @print(get.method.verb() + " " + get.url);
-    @print(get.headers.length.toString());
-    @print(get.body == null);
+    print(get.method.verb() + " " + get.url);
+    print(get.headers.length.toString());
+    print(get.body == null);
 
     val post = http.Request(
         method: .Post,
@@ -31,11 +31,11 @@ pub fn main() {
         headers: [http.Header(name: "content-type", value: "text/plain")],
         body: Bytes.fromUtf8("hi"),
     );
-    @print(post.method.verb() + " " + post.url);
-    @print(post.headers.length.toString());
-    @print(post.body != null);
+    print(post.method.verb() + " " + post.url);
+    print(post.headers.length.toString());
+    print(post.body != null);
 
-    @print(describe(http.HttpError.NotAllowedOnHost));
-    @print(describe(http.HttpError.Network(message: "refused")));
-    @print(describe(http.HttpError.Timeout));
+    print(describe(http.HttpError.NotAllowedOnHost));
+    print(describe(http.HttpError.Network(message: "refused")));
+    print(describe(http.HttpError.Timeout));
 }

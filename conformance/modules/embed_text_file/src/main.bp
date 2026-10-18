@@ -5,15 +5,17 @@
 //// computed at build. The artifact carries the bytes; nothing reads the file at run time.
 //// The parent binary knew no `@embed`.
 
+import {io.terminal.print} from "std";
+
 val greeting = @embed("assets/greeting.txt");
 
 pub fn main() {
-    @print(greeting.path);
-    @print(greeting.size);
-    @print(greeting.bytes.length());
-    @print(greeting.hash);
-    @print(greeting.text());
+    print(greeting.path);
+    print(greeting.size);
+    print(greeting.bytes.length());
+    print(greeting.hash);
+    print(greeting.text());
     val again = comptime @embed("assets/greeting.txt");
-    @print(again.hash == greeting.hash);
-    @print(again.text().length());
+    print(again.hash == greeting.hash);
+    print(again.text().length());
 }

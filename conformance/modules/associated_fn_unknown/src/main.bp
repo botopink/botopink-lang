@@ -1,5 +1,7 @@
+import {io.terminal.print} from "std";
+
 type City(name: string)
 
 fn main() {
-    @print(City.table());
+    print(City.table());
 }

@@ -1,10 +1,12 @@
 //// Decision 575 (6) — a type's static `declare fn` no annotation implements
 //// is refused at the declaration.
 
+import {io.terminal.print} from "std";
+
 pub type Clock() {
     pub declare fn ticks() -> i32;
 }
 
 pub fn main() {
-    @print(Clock.ticks());
+    print(Clock.ticks());
 }

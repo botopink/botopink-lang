@@ -2,7 +2,9 @@
 //// artifact carries it as a build constant (an Erlang binary, a `Uint8Array` on commonJS, a
 //// wasm data segment).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val b = comptime Bytes.fromUtf8("a");
-    @print(b.length());
+    print(b.length());
 }

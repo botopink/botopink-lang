@@ -2,7 +2,8 @@
 //// they are a syntax error, not a silent activation of the namespace.
 
 import {collections* : {Dict}} from "std";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(1);
+    print(1);
 }

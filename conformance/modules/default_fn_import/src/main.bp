@@ -2,8 +2,9 @@
 pub mod m;
 import {m.double};
 import {m.tree as Tree};
+import {io.terminal.print} from "std";
 
 fn main() {
-    @print(double(4)); // 8
-    @print(Tree(1)); // node(leaf)
+    print(double(4)); // 8
+    print(Tree(1)); // node(leaf)
 }

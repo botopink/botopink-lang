@@ -5,6 +5,7 @@
 
 import {Node, makeNode} from "labelled";
 import {Token, makeToken} from "unlabelled";
+import {io.terminal.print} from "std";
 
 fn nodeText(n: Node) -> string {
     return case n {
@@ -21,6 +22,6 @@ fn tokenCount(t: Token) -> i32 {
 }
 
 pub fn main() {
-    @print(nodeText(makeNode("hello")));
-    @print(tokenCount(makeToken(7)));
+    print(nodeText(makeNode("hello")));
+    print(tokenCount(makeToken(7)));
 }

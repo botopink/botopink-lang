@@ -5,6 +5,8 @@
 //// slot"); its slot now holds the value's 8-byte cell, as a record field
 //// does.
 
+import {io.terminal.print} from "std";
+
 fn swap(t: #(i64, u32)) -> #(u32, i64) {
     val #(a, b) = t;
     return #(b, a);
@@ -24,29 +26,29 @@ pub fn main() {
     val neg: i64 = -9007199254740991;
     val wide: u32 = 4000000000;
     val t: #(u64, bool) = #(top, false);
-    @print(t);
-    @print(t.0);
+    print(t);
+    print(t.0);
     val #(n, flag) = t;
-    @print(n, flag);
+    print(n, flag);
     val loose = #(top, "x");
-    @print(loose.0.toString());
+    print(loose.0.toString());
     val s = swap(#(neg, wide));
-    @print(s);
-    @print(s.0 + 1);
-    @print(s.1 - 1);
-    @print(first(#(top, "q")));
+    print(s);
+    print(s.0 + 1);
+    print(s.1 - 1);
+    print(first(#(top, "q")));
     val rows: Array<#(u64, string)> = [#(top, "a"), #(three, "b")];
-    @print(rows);
+    print(rows);
     for (rows) { r ->
-        @print(r.1, r.0);
+        print(r.1, r.0);
     }
-    @print(rows.map({ r -> r.0.toString() }));
+    print(rows.map({ r -> r.0.toString() }));
     case #(three, "c") {
-        #(k, name) -> @print(name, k);
+        #(k, name) -> print(name, k);
     }
-    @print(#(#(top, three), "nested"));
-    @print(pair(top) == #(top, true));
-    @print(pair(5) == #(5, true));
-    @print(pair(5) != #(6, true));
-    @print(s == #(wide, neg));
+    print(#(#(top, three), "nested"));
+    print(pair(top) == #(top, true));
+    print(pair(5) == #(5, true));
+    print(pair(5) != #(6, true));
+    print(s == #(wide, neg));
 }

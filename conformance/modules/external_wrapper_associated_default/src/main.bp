@@ -6,7 +6,9 @@
 //// not). wasm used to lower an associated `default fn` only when a call
 //// reached it, so this program built there and printed `up`.
 
-#[@external(.Erlang("erlang:system_info(otp_release)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("erlang:system_info(otp_release)"))]
 declare fn otpRelease() -> string;
 
 behavior Probe {
@@ -16,5 +18,5 @@ behavior Probe {
 }
 
 pub fn main() {
-    @print("up");
+    print("up");
 }

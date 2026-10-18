@@ -5,10 +5,11 @@
 
 pub mod orm;
 import {orm.entity, orm.Entity};
+import {io.terminal.print, compiler} from "std";
 
 #[entity("cities")]
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

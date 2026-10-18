@@ -3,7 +3,9 @@
 //// the hint "missing `->`?". A trailing lambda with no parameter is written
 //// `f(x) { -> … }`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2];
-    xs.forEach { @print("each") };
+    xs.forEach { print("each") };
 }

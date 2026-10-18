@@ -3,12 +3,14 @@
 //// `case` was a statement, so the succeeding task answered no value: erlang
 //// raised `case_clause`, commonJS printed `null`, wasm `0` and beam `-1`.
 
-fn load(n: i32) -> @Task<@Result<i32, string>> {
+import {io.terminal.print} from "std";
+
+fn load(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val bad = async {
         case await load(-7) {
             Error(e) -> throw "wrapped: " + e;
@@ -16,7 +18,7 @@ fn run() -> @Task<void> {
         }
     };
     val b = try await bad catch -1;
-    @print(b);
+    print(b);
     val good = async {
         case await load(970) {
             Error(e) -> throw "wrapped: " + e;
@@ -24,7 +26,7 @@ fn run() -> @Task<void> {
         }
     };
     val g = try await good catch -1;
-    @print(g);
+    print(g);
 }
 
 pub fn main() {

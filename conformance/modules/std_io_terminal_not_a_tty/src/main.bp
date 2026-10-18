@@ -5,7 +5,7 @@
 //// need a TTY a check cannot have: `parseKey` is what decodes them, and it is tested by std's own
 //// tests (`libs/std/src/io/terminal.bp`).
 
-import {io.terminal} from "std";
+import {io.terminal, io.terminal.print} from "std";
 
 fn sizeText() -> string {
     return case terminal.size() {
@@ -24,16 +24,16 @@ fn rawText(on: bool) -> string {
     };
 }
 
-fn scenario() -> @Task<void> {
-    @print("stdoutIsTTY " + terminal.stdoutIsTTY().toString());
-    @print(sizeText());
-    @print(rawText(true));
-    @print(rawText(false));
+fn scenario() -> Task<void> {
+    print("stdoutIsTTY " + terminal.stdoutIsTTY().toString());
+    print(sizeText());
+    print(rawText(true));
+    print(rawText(false));
     var seen = 0;
     for await (terminal.keys()) { k ->
         seen = seen + 1;
     }
-    @print("keys " + seen.toString());
+    print("keys " + seen.toString());
 }
 
 pub fn main() {

@@ -2,7 +2,7 @@
 //// where it is written: a misspelt name is the ordinary unbound-name error at
 //// the argument, not a string the body meets later.
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 pub type Code { Custom, Mismatch }
 
@@ -26,7 +26,7 @@ fn passwordsMatch(a: Account) -> bool {
 type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }
 
 // What `#[check]` records.

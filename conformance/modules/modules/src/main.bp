@@ -6,12 +6,13 @@
 
 import {geometry.area};
 import {shapes.describe, shapes.lucky};
+import {io.terminal.print} from "std";
 
 pub mod geometry; // resolves geometry.bp (a sibling leaf module)
 pub mod shapes; // resolves shapes/mod.bp (a folder index)
 
 fn main() {
-    @print(area(3, 4)); // 12   — from module `geometry`
-    @print(describe()); // circle — from module `shapes` (via shapes.circle)
-    @print(lucky()); // 7    — from the private module `shapes.helpers`
+    print(area(3, 4)); // 12   — from module `geometry`
+    print(describe()); // circle — from module `shapes` (via shapes.circle)
+    print(lucky()); // 7    — from the private module `shapes.helpers`
 }

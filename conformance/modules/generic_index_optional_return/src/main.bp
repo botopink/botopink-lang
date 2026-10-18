@@ -2,6 +2,8 @@
 //// (decision 63): `xs[0]` and `xs.at(1)` over a `T[]` are `?T`, defaulted at
 //// the call.
 
+import {io.terminal.print} from "std";
+
 fn first<T>(xs: T[]) -> ?T {
     return xs[0];
 }
@@ -11,7 +13,7 @@ fn second<T>(xs: T[]) -> ?T {
 }
 
 pub fn main() {
-    @print(first([4, 5]) ?? 0);
-    @print(second(["a", "b"]) ?? "");
-    @print(first([]) ?? 9);
+    print(first([4, 5]) ?? 0);
+    print(second(["a", "b"]) ?? "");
+    print(first([]) ?? 9);
 }

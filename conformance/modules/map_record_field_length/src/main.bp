@@ -8,10 +8,12 @@
 //// taken for the array/string PROPERTY rename and called. That half was
 //// `00 · 04-js`'s, and it passes there now.
 
+import {io.terminal.print} from "std";
+
 type Entry(key: string)
 
 pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];
     val ks = es.map({ e -> e.key });
-    @print(ks.at(0)?.length());
+    print(ks.at(0)?.length());
 }

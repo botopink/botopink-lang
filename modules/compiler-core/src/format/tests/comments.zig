@@ -18,8 +18,9 @@ test "format: todo ---- simple" {
 test "format: todo ---- with message" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    @todo("todo with a label");
+        \\    panic("todo with a label");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -224,8 +225,9 @@ test "format: comments ---- multiline inside case block" {
 test "format: todo ---- with message and comment" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    @todo("wibble");
+        \\    panic("wibble");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 

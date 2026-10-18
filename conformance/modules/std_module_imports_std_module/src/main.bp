@@ -10,12 +10,12 @@
 //// (`01-compiler/05-wasm` step 5), and `pairs.at(1).unwrapOr(#("", ""))._1`
 //// keeps the tuple's shape there — it printed the string's address at exit 0.
 
-import {querystring} from "std";
+import {querystring, io.terminal.print} from "std";
 
 pub fn main() {
     val pairs = querystring.parse("?n=caf%C3%A9&x=a%20b").unwrapOr([]);
-    @print(pairs.length);
-    @print((pairs.at(1) ?? #("", ""))._1);
-    @print(querystring.stringify([#("a b", "c+d")]).unwrapOr("?"));
-    @print(querystring.parse("a=%ZZ").isError());
+    print(pairs.length);
+    print((pairs.at(1) ?? #("", ""))._1);
+    print(querystring.stringify([#("a b", "c+d")]).unwrapOr("?"));
+    print(querystring.parse("a=%ZZ").isError());
 }

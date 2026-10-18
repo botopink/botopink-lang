@@ -9,6 +9,8 @@
 //// was discarded, and the function ran on past the `return` — `pick(5)`
 //// printed `small` at exit 0.
 
+import {io.terminal.print} from "std";
+
 fn pick(n: i32) -> string {
     if (n > 0) {
         val m: i32 = n * 2;
@@ -21,9 +23,9 @@ fn deep(n: i32) -> string {
     if (n > 0) {
         if (n > 1) {
             if (n > 2) return "three";
-            @print("not three");
+            print("not three");
         }
-        @print("not two");
+        print("not two");
     }
     return "low";
 }
@@ -38,18 +40,18 @@ type Scale(limit: i32) {
     }
 }
 
-fn check(n: i32) -> @Result<i32, string> {
+fn check(n: i32) -> Result<i32, string> {
     if (n > 0) if (n > 10) throw "too big";
     return n;
 }
 
 pub fn main() {
-    @print(pick(5));
-    @print(pick(1));
-    @print(deep(3));
-    @print(deep(2));
-    @print(Scale(limit: 4).grade(3));
-    @print(Scale(limit: 4).grade(1));
-    @print(check(20).isError());
-    @print(check(5).isError());
+    print(pick(5));
+    print(pick(1));
+    print(deep(3));
+    print(deep(2));
+    print(Scale(limit: 4).grade(3));
+    print(Scale(limit: 4).grade(1));
+    print(check(20).isError());
+    print(check(5).isError());
 }

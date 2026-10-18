@@ -3,7 +3,7 @@
 //// refused at the call (`template-lookup-decl-write`). A decorator on that
 //// declaration records what it carries.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Note(text: string)
 
@@ -16,5 +16,5 @@ fn stamp(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(stamp @`User`);
+    print(stamp @`User`);
 }

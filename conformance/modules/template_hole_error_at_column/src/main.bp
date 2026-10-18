@@ -3,7 +3,7 @@
 //// caller's text: the text starts after the two-byte opening `` @` ``, and
 //// `missing`, unbound, is refused at its first byte.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn cssValue(v: string) -> string {
     return v;
@@ -33,5 +33,5 @@ fn css(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(css @`color: ${missing};`);
+    print(css @`color: ${missing};`);
 }

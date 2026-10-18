@@ -1,7 +1,7 @@
 //// A member a decorator wrote is type-checked like a hand-written method: a body
 //// returning the wrong type is refused, located at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn maker(syntax decl: unknown) {
     compiler.addMember("pub fn code(self: Self) -> i32 { return \"nope\"; }");
@@ -11,5 +11,5 @@ fn maker(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "a").code());
+    print(City(name: "a").code());
 }

@@ -2,7 +2,9 @@
 //// in a trailing comma one per line, the comma kept; the file is committed in
 //// that layout and `botopink format` leaves it as it is.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .Erlang("lists:reverse($0)"),
     .JavaScript("[...$0].reverse()"),
     .Wasm(body: reverseBody),
@@ -14,5 +16,5 @@ fn reverseBody(xs: i32[]) -> i32[] {
 }
 
 pub fn main() {
-    @print(backwards([1, 2, 3]));
+    print(backwards([1, 2, 3]));
 }

@@ -7,12 +7,13 @@
 
 pub mod boxes;
 import {boxes.box};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val names = box(["a", "b"]);
     val flag = box(true);
     val list: string[] = names.value;
-    @print(list.length);
-    @print(flag.value == true);
-    @print(names.tag);
+    print(list.length);
+    print(flag.value == true);
+    print(names.tag);
 }

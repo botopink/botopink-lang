@@ -1,7 +1,9 @@
 //// Decision 346 — `Bytes` does not widen to `unknown`: erlang and beam hold it and a `string`
 //// alike, so no run-time test could tell them apart. `@print` takes `unknown`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val b = Bytes.fromUtf8("a");
-    @print(b);
+    print(b);
 }

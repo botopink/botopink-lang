@@ -1,4 +1,4 @@
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn serverOnly(syntax decl: unknown) {
     val _n = compiler.name(decl);
@@ -22,5 +22,5 @@ fn Widget() -> string {
 }
 
 pub fn main() {
-    @print(Widget()); // w
+    print(Widget()); // w
 }

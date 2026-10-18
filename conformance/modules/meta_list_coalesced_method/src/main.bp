@@ -1,7 +1,7 @@
 //// A method called on a coalesced list: `(opt ?? []).join(",")` keeps the
 //// list's element type across `??`, so the elements are joined as strings.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Tags(list: string[])
 
@@ -13,5 +13,5 @@ fn tag<T>(syntax decl: T) {
 pub type Item(id: i32)
 
 pub fn main() {
-    @print((@typeInfo(Item).meta(Tags)?.list ?? []).join(","));
+    print((comptime compiler.typeInfo(Item).meta(Tags)?.list ?? []).join(","));
 }

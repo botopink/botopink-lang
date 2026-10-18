@@ -3,7 +3,7 @@
 //// (`reject/decorator_value_not_comptime`): `#[audit]` never reads `message`,
 //// so `label("x")` is accepted and the body runs.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn label(key: string) -> string {
     return key + "!";
@@ -19,8 +19,8 @@ fn signup() -> i32 {
 }
 
 pub fn main() {
-    @print(@typeInfo(signup).meta(Audit)?.audited ?? "none");
-    @print(signup());
+    print(comptime compiler.typeInfo(signup).meta(Audit)?.audited ?? "none");
+    print(signup());
 }
 
 // What `#[audit]` records.

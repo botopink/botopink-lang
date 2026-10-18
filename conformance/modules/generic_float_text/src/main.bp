@@ -6,6 +6,8 @@
 //// generic body one JavaScript function, so the call hands that body the
 //// shape of the type it binds; before it, `show(4.0)` answered `4` there.
 
+import {io.terminal.print} from "std";
+
 type Pt(x: f64)
 
 fn show<T>(x: T) -> string {
@@ -13,7 +15,7 @@ fn show<T>(x: T) -> string {
 }
 
 fn printIt<T>(x: T) {
-    @print(x);
+    print(x);
 }
 
 fn plus<T>(x: T) -> string {
@@ -26,7 +28,7 @@ fn describe<T>(x: T) -> string {
 
 fn twice<T>(x: T) -> string {
     val xs: T[] = [x, x];
-    @print(xs);
+    print(xs);
     return "${xs}";
 }
 
@@ -35,14 +37,14 @@ fn handOn<T>(x: T) -> string {
 }
 
 pub fn main() {
-    @print(show(4.0));
+    print(show(4.0));
     printIt(4.0);
-    @print(plus(4.0));
-    @print(describe(4.0));
-    @print(twice(4.0));
+    print(plus(4.0));
+    print(describe(4.0));
+    print(twice(4.0));
     val p = Pt(x: 1.0);
-    @print(show(p.x));
-    @print(handOn(4.0));
-    @print(show(4));
-    @print(plus("s"));
+    print(show(p.x));
+    print(handOn(4.0));
+    print(show(4));
+    print(plus("s"));
 }

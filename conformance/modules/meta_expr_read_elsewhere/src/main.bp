@@ -10,6 +10,7 @@ import {signup.Signup};
 import {signup.Check};
 import {signup.Note};
 import {signup.note};
+import {compiler, io.terminal.print} from "std";
 
 fn passwordsMatch(a: Signup) -> bool {
     return true;
@@ -21,18 +22,18 @@ fn hint() -> string {
 
 pub fn main() {
     val s = Signup(password: "a", confirm: "b");
-    val checks = @typeInfo(Signup).metaAll(Check);
-    @print(checks.length);
+    val checks = comptime compiler.typeInfo(Signup).metaAll(Check);
+    print(checks.length);
     for (checks) { c ->
-        @print(c.rule(s));
-        @print(c.message);
+        print(c.rule(s));
+        print(c.message);
     }
-    @print(@typeInfo(Signup).meta(Note)?.text ?? "none");
+    print(comptime compiler.typeInfo(Signup).meta(Note)?.text ?? "none");
     for (@TypeInfo.all(with: note)) { d ->
         for (d.metaAll(Note)) { n ->
-            @print(d.name + ": " + n.text);
+            print(d.name + ": " + n.text);
         }
     }
-    @print(passwordsMatch(s));
-    @print(hint());
+    print(passwordsMatch(s));
+    print(hint());
 }

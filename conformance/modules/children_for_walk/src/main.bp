@@ -3,6 +3,8 @@
 //// every target, the element recursing as the record it is. wasm refused the
 //// walk, "nothing shows this iterable is one".
 
+import {io.terminal.print} from "std";
+
 pub type El(tag: string, children: Children)
 
 pub fn render(e: El) -> string {
@@ -14,5 +16,5 @@ pub fn render(e: El) -> string {
 }
 
 pub fn main() {
-    @print(render(El(tag: "a", children: [El(tag: "b", children: []), El(tag: "c", children: [])])));
+    print(render(El(tag: "a", children: [El(tag: "b", children: []), El(tag: "c", children: [])])));
 }

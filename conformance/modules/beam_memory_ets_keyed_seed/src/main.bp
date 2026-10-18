@@ -3,11 +3,11 @@
 //// `Dict.ofEntries([…])` of literal entries. A chain of `insert`s is a value
 //// computed at run time, refused naming the accepted forms.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 #[@BeamMemory.Ets(keyed: true)]
 var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
 
 pub fn main() {
-    @print(counts.at("a"));
+    print(counts.at("a"));
 }

@@ -9,6 +9,7 @@ mod counts;
 
 import {tags.Tag};
 import {counts.Count};
+import {io.terminal.print} from "std";
 
 fn tagText(t: Tag) -> string {
     return case t {
@@ -25,7 +26,7 @@ fn countOf(c: Count) -> i32 {
 }
 
 pub fn main() {
-    @print(tagText(Tag.Item("first")));
-    @print(countOf(Count.Item(7)));
-    @print(countOf(Count.Zero) + 1);
+    print(tagText(Tag.Item("first")));
+    print(countOf(Count.Item(7)));
+    print(countOf(Count.Zero) + 1);
 }

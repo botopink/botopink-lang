@@ -5,8 +5,9 @@
 mod util;
 
 import {util.sum};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(sum(1, 2, 3));
-    @print(sum());
+    print(sum(1, 2, 3));
+    print(sum());
 }

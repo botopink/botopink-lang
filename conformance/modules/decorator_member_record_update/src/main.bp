@@ -3,7 +3,7 @@
 //// `Point(..v, z: z)` — copies every field it does not name, on
 //// every target (144 B-10, decision 430).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn flatten(syntax decl: unknown) {
     compiler.addMember(
@@ -28,6 +28,6 @@ fn flatten(syntax decl: unknown) {
 type Point(x: i32, y: i32, z: i32)
 
 pub fn main() {
-    @print(Point(x: 1, y: 2, z: 3).flat());
-    @print(Point.rebuilt(Point(x: 1, y: 2, z: 3), 9));
+    print(Point(x: 1, y: 2, z: 3).flat());
+    print(Point.rebuilt(Point(x: 1, y: 2, z: 3), 9));
 }

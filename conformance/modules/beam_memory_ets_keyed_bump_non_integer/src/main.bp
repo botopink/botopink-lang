@@ -3,12 +3,12 @@
 //// `f64` rows `counts = counts.bump(k, n)` is refused at the write, naming the
 //// rows' type.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 #[@BeamMemory.Ets(keyed: true)]
 var totals: Dict<string, f64> = Dict.empty();
 
 pub fn main() {
     totals = totals.bump("a", 1.5);
-    @print(totals.at("a"));
+    print(totals.at("a"));
 }

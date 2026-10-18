@@ -18,10 +18,11 @@ test "decision 539: `defer` marks the statement, a block is a block expression" 
     defer arena.deinit();
     const program = try parse(arena.allocator(),
         \\fn f() {
-        \\    defer @print("a");
-        \\    defer { @print("b"); }
-        \\    @print("c");
+        \\    defer print("a");
+        \\    defer { print("b"); }
+        \\    print("c");
         \\}
+        \\import {io.terminal.print} from "std";
     );
     const body = program.decls[0].@"fn".body;
     try std.testing.expectEqual(@as(usize, 3), body.len);
@@ -35,8 +36,9 @@ test "decision 539: a deferred statement at the end answers no tail" {
     defer arena.deinit();
     const program = try parse(arena.allocator(),
         \\fn f() {
-        \\    defer @print("a")
+        \\    defer print("a")
         \\}
+        \\import {io.terminal.print} from "std";
     );
     const body = program.decls[0].@"fn".body;
     try std.testing.expect(body[0].deferred);

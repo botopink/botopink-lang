@@ -4,9 +4,10 @@
 
 pub mod card;
 import {card.Card, card.CardProps};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Card(title: "a", suffix: "!"));
+    print(Card(title: "a", suffix: "!"));
     val p = CardProps(title: "z");
-    @print(Card(..p, size: 4, suffix: "?"));
+    print(Card(..p, size: 4, suffix: "?"));
 }

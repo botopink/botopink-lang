@@ -3,6 +3,8 @@
 //// this module each name is its own behavior: a call on a parameter typed by
 //// it dispatches to the implementing type's method.
 
+import {io.terminal.print} from "std";
+
 pub behavior Field {
     fn column(self: Self) -> string;
 }
@@ -31,6 +33,6 @@ fn scoreOf(r: Result) -> i32 {
 
 pub fn main() {
     val a = Age(years: 21);
-    @print(columnOf(a));
-    @print(scoreOf(a));
+    print(columnOf(a));
+    print(scoreOf(a));
 }

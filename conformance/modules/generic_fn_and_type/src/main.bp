@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 fn identity<T>(x: T) -> T {
     return x;
 }
@@ -8,6 +10,6 @@ type Tree<T> {
 }
 
 pub fn main() {
-    @print(identity(3)); // 3
-    @print(Tree.Leaf(value: "a")); // Tree.Leaf(value: "a")
+    print(identity(3)); // 3
+    print(Tree.Leaf(value: "a")); // Tree.Leaf(value: "a")
 }

@@ -2,7 +2,7 @@
 //// text, the one way a type is built: `compiler.addType(name, compiler.buildType(…))`
 //// gives the annotated type an associated type, read `City.Columns`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn columns(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(code: string, size: i32)"));
@@ -13,5 +13,5 @@ pub type City(name: string)
 
 pub fn main() {
     val c = City.Columns(code: "x", size: 3);
-    @print(c.code + " " + c.size.toString());
+    print(c.code + " " + c.size.toString());
 }

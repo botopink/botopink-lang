@@ -3,9 +3,11 @@
 //// carries failure, and `i32` is not one. `throw` is refused at the `throw`.
 //// Line 1 is the code's shared tail (see `reject/task_throw_without_result.bp`).
 
-fn g() -> @Iterator<i32> {
+import {io.terminal.print} from "std";
+
+fn g() -> Iterator<i32> {
     yield 1;
     throw "x";
 }
 
-pub fn main() { for (g()) { x -> @print(x); } }
+pub fn main() { for (g()) { x -> print(x); } }

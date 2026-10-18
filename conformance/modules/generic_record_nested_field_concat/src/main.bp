@@ -3,6 +3,8 @@
 //// generic field `data: D` as an untyped slot, so `route.data.title`
 //// concatenated the string's address: `<h1>332</h1>` at exit 0.
 
+import {io.terminal.print} from "std";
+
 type Route<P, D>(params: P, data: D)
 
 type Post(title: string, views: i32)
@@ -17,8 +19,8 @@ fn views(route: Route<string, Post>) -> string {
 
 pub fn main() {
     val r = Route(params: "x", data: Post(title: "A", views: 3));
-    @print(show(r));
-    @print(views(r));
-    @print(r.data.title + "!");
-    @print(r.data);
+    print(show(r));
+    print(views(r));
+    print(r.data.title + "!");
+    print(r.data);
 }

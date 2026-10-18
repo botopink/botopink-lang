@@ -2,7 +2,7 @@
 //// record type's constructor written at the call, read where the decorator is
 //// declared. A value built elsewhere is refused at the argument.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
@@ -18,5 +18,5 @@ fn entity(syntax decl: unknown, comptime table: string) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

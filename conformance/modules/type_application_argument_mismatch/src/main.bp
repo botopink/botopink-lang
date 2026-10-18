@@ -2,6 +2,8 @@
 //// type's parameter in the static fn's signature, so a `string` argument
 //// is the mismatch at the argument.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T) {
     pub fn make(v: T) -> Box<T> {
         return Box(value: v);
@@ -10,5 +12,5 @@ type Box<T>(value: T) {
 
 pub fn main() {
     val b = Box<i32>.make("x");
-    @print(b.value);
+    print(b.value);
 }

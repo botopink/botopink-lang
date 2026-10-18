@@ -6,6 +6,8 @@
 //// `toUpper` / `toString` and trapped. A mismatch against the declared type is
 //// now a type error where it passed.
 
+import {io.terminal.print} from "std";
+
 behavior Named {
     fn name(self: Self) -> string;
     fn size(self: Self) -> i32;
@@ -22,10 +24,10 @@ type Dog(n: string) implement Named {
 }
 
 fn show(x: Named) {
-    @print(x.name().length());
-    @print(x.name().toUpper());
-    @print(x.size().toString());
-    @print(x.size() + 1);
+    print(x.name().length());
+    print(x.name().toUpper());
+    print(x.size().toString());
+    print(x.size() + 1);
 }
 
 pub fn main() {

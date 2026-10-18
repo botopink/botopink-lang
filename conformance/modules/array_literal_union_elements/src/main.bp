@@ -5,6 +5,8 @@
 //// whether the union is inferred (`[3, "abcd"]`) or written
 //// (`(i32 | string)[]`). wasm stored the elements as bare words: `[3, 256]`.
 
+import {io.terminal.print} from "std";
+
 fn size(v: i32 | string) -> i32 {
     return case v {
         i32 { n ->
@@ -22,23 +24,23 @@ fn mixed() -> (i32 | string)[] {
 
 pub fn main() {
     val xs = [3, "abcd"];
-    @print(xs);
-    @print(xs[0]);
-    @print(xs[1]);
-    @print(xs.at(1));
-    @print(xs.at(7));
+    print(xs);
+    print(xs[0]);
+    print(xs[1]);
+    print(xs.at(1));
+    print(xs.at(7));
     var sum = 0;
     for (xs) { x ->
-        @print(x);
+        print(x);
         sum = sum + size(x);
     }
-    @print(sum);
+    print(sum);
     val ys: (i32 | string)[] = [2, "b", 3];
     for (ys) { y ->
-        @print(y);
+        print(y);
     }
-    @print(ys);
+    print(ys);
     val bs = [true, "t"];
-    @print(bs);
-    @print(mixed());
+    print(bs);
+    print(mixed());
 }

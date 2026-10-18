@@ -6,26 +6,26 @@
 pub mod clock;
 
 import {clock.Clock};
-import {context.createContext, context.provide, context.inject} from "std";
+import {context.createContext, context.provide, context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 type Deps(clock: Clock)
 
-fn Page() -> @Component<View> {
+fn Page() -> Component<View> {
     val deps = use inject(Deps);
     return View(text: deps.clock.now);
 }
 
-fn Root() -> @Component<View> {
+fn Root() -> Component<View> {
     use provide(createContext(Clock(now: "noon")));
     val p = Page();
     return View(text: p.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val outside = await Page();
-    @print(outside.text);
+    print(outside.text);
     val inside = await Root();
-    @print(inside.text);
+    print(inside.text);
 }

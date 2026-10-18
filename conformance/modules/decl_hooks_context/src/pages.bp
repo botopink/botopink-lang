@@ -8,7 +8,7 @@ import {context.createContext, context.provide, context.context, compiler} from 
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
@@ -28,13 +28,13 @@ fn contexts(syntax decl: unknown) {
     compiler.setMeta(ContextUses(uses: out));
 }
 
-fn Label() -> @Component<Element> {
+fn Label() -> Component<Element> {
     val t = use context(Theme);
     return Element(text: t.mode);
 }
 
 #[contexts]
-pub fn App() -> @Component<Element> {
+pub fn App() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
     val l = Label();
     return Element(text: l.text);

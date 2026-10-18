@@ -2,6 +2,8 @@
 //// no decorator, so `with: 42` is the ordinary argument mismatch, located at
 //// the argument.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print(@TypeInfo.all(with: 42).length);
+    print(@TypeInfo.all(with: 42).length);
 }

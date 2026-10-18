@@ -3,7 +3,7 @@
 //// later, and its own recursive call each run the wrapper; the original body
 //// is reached only through `call.run()`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 var hits: i32 = 0;
 
@@ -34,12 +34,12 @@ fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(twice(2));
-    @print(hits);
+    print(twice(2));
+    print(hits);
     val f = twice;
-    @print(f(5));
-    @print(apply(twice, 7));
-    @print(hits);
-    @print(sumTo(3));
-    @print(hits);
+    print(f(5));
+    print(apply(twice, 7));
+    print(hits);
+    print(sumTo(3));
+    print(hits);
 }

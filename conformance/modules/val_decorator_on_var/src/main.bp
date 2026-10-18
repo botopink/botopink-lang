@@ -2,7 +2,7 @@
 //// it is refused at the annotation (question `116-c` open). The parent binary
 //// dropped the decorator silently and printed `1`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn mark(syntax decl: unknown) {
     compiler.setMeta(Mark(seen: true));
@@ -12,7 +12,7 @@ fn mark(syntax decl: unknown) {
 var count = 1;
 
 pub fn main() {
-    @print(count);
+    print(count);
 }
 
 // What `#[mark]` records.

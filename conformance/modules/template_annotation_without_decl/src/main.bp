@@ -3,7 +3,7 @@
 //// (`syntax decl: unknown`); a template that takes none has nowhere to put
 //// what it builds and is refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn shout(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q).toUpper() + "\"");
@@ -15,5 +15,5 @@ fn one() -> i32 {
 }
 
 pub fn main() {
-    @print(one().toString());
+    print(one().toString());
 }

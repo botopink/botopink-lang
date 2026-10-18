@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[loop-binds-nothing]: `while` and `loop` bind nothing — only `for` takes `{ x -> … }`
-at src/main.bp:6:21
+at src/main.bp:8:21
 label remove the binder

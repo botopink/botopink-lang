@@ -3,14 +3,16 @@
 //// all see the same receiver. On commonJS the block was a plain `function`
 //// and `this` was lost (`Cannot read properties of undefined`).
 
+import {io.terminal.print} from "std";
+
 type Worker(id: i32) {
-    fn start(self: Self) -> @Task<i32> {
+    fn start(self: Self) -> Task<i32> {
         return async {
             return self.id + 1;
         };
     }
 
-    fn nestedStart(self: Self) -> @Task<i32> {
+    fn nestedStart(self: Self) -> Task<i32> {
         return async {
             val inner = async {
                 return self.id + 2;
@@ -19,7 +21,7 @@ type Worker(id: i32) {
         };
     }
 
-    fn lazyStart(self: Self) -> fn(n: i32) -> @Task<i32> {
+    fn lazyStart(self: Self) -> fn(n: i32) -> Task<i32> {
         return { n ->
             async {
                 return self.id + n;
@@ -28,12 +30,12 @@ type Worker(id: i32) {
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val w = Worker(id: 10);
-    @print(await w.start());
-    @print(await w.nestedStart());
+    print(await w.start());
+    print(await w.nestedStart());
     val later = w.lazyStart();
-    @print(await later(5));
+    print(await later(5));
 }
 
 pub fn main() {

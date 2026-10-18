@@ -13,35 +13,37 @@
 //// its caller reads a promise there and the value elsewhere: `Widget` prints
 //// its own count from inside the body, after `main`'s two lines.
 
-type Element(count: i32) implement @Renderable
+import {io.terminal.print} from "std";
 
-fn state(initial: i32) -> @Component<i32> {
+type Element(count: i32) implement Renderable
+
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
 // `-> @Result` — it answers `try`.
-fn doubled(n: i32) -> @Result<i32, string> {
+fn doubled(n: i32) -> Result<i32, string> {
     val v = try parse(n);
     return v * 2;
 }
 
 // `-> @Component<@Result<…>>` — `use`, and `try` because its value is a `@Result`.
-fn widget(n: i32) -> @Component<@Result<i32, string>> {
+fn widget(n: i32) -> Component<Result<i32, string>> {
     val c = use state(1);
     val v = try parse(n);
-    @print(c + v);
+    print(c + v);
     return c + v;
 }
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> @Task<void> {
-    @print(try doubled(21) catch 0);
-    @print(try doubled(0 - 1) catch 7);
+pub fn main() -> Task<void> {
+    print(try doubled(21) catch 0);
+    print(try doubled(0 - 1) catch 7);
     await widget(41);
 }

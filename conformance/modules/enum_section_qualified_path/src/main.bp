@@ -4,6 +4,8 @@
 //// where the position cannot say what it wants, and the checker used to reject
 //// it with "unknown field 'Red' on type 'Token'".
 
+import {io.terminal.print} from "std";
+
 type Token {
     Color {
         Red {
@@ -40,7 +42,7 @@ pub fn main() {
     val t = Token.Color.Red.500;
     val b = Border.Color.Red.100;
 
-    @print(tokenName(t));
-    @print(borderName(b));
-    @print(tokenName(Token.Color.Red.100));
+    print(tokenName(t));
+    print(borderName(b));
+    print(tokenName(Token.Color.Red.100));
 }

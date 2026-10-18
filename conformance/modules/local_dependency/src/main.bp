@@ -15,10 +15,11 @@
 ////     half is a `CustomNode` tree for the tooling and changes nothing at run time.
 
 import shapesdsl, {area, Rect} from "shapesdsl";
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val r = Rect(w: 2, h: 3);
-    @print(area(r.w, r.h));
+    print(area(r.w, r.h));
     val fromDsl = shapesdsl @`area(4, 5)`;
-    @print(fromDsl);
+    print(fromDsl);
 }

@@ -4,6 +4,8 @@
 //// erlang's `erlc` refused `variable 'V' is unbound`. Refused at the use, naming
 //// the function the binding belongs to.
 
+import {io.terminal.print} from "std";
+
 fn holder() -> string {
     val v = "inner";
     return v;
@@ -14,6 +16,6 @@ fn later() -> string {
 }
 
 pub fn main() {
-    @print(holder());
-    @print(later());
+    print(holder());
+    print(later());
 }

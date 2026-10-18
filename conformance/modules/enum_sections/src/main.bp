@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Token {
     Color {
         Red {
@@ -14,7 +16,7 @@ type Token {
 
 fn main() {
     val t: Token = .Color.Red.500;
-    @print(
+    print(
         case t {
             Color(_inner) -> "a colour";
             Bold -> "bold";

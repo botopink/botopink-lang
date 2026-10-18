@@ -5,6 +5,8 @@
 //// (`instanceof Token.Text`, a factory with no prototype), erlang answered
 //// `false` for every variant at exit 0, wasm answered and then trapped.
 
+import {io.terminal.print} from "std";
+
 pub type Token { Text(v: string), Num(n: i32), Eof }
 
 fn check(t: Token) -> bool {
@@ -15,12 +17,12 @@ pub fn main() {
     val x: Token = Token.Text(v: "hi");
     val y: Token = Token.Eof;
     val z = Token.Num(n: 3);
-    @print(x is Token.Text);
-    @print(x is Token.Num);
-    @print(y is Token.Eof);
-    @print(y is Token.Text);
-    @print(x is Token.Eof);
-    @print(check(z));
-    @print(check(x));
-    @print(z is Token.Num);
+    print(x is Token.Text);
+    print(x is Token.Num);
+    print(y is Token.Eof);
+    print(y is Token.Text);
+    print(x is Token.Eof);
+    print(check(z));
+    print(check(x));
+    print(z is Token.Num);
 }

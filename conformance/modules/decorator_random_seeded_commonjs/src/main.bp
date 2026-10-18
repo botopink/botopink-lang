@@ -4,7 +4,7 @@
 //// dependency of the project), never refused as an owner with no package
 //// directory. The decorator draws at build, the seed fixing the draws.
 
-import {io, compiler} from "std";
+import {io, compiler, io.terminal.print} from "std";
 
 fn drawn(syntax decl: unknown) {
     io.random.seed(42);
@@ -18,5 +18,5 @@ fn drawn(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(label());
+    print(label());
 }

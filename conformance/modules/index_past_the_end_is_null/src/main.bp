@@ -18,9 +18,11 @@
 //// an empty optional — C-18's row, not this one's: the cell was red on each
 //// target until that row landed.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [10, 20, 30];
-    @print(xs[0]);
-    @print(xs[9]);
-    @print("after");
+    print(xs[0]);
+    print(xs[9]);
+    print("after");
 }

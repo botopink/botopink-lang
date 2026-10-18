@@ -2,11 +2,13 @@
 //// `map`, `flatMap`, `unwrapOr`, `isOk` and `isError` are its methods
 //// (`r.isOk()`), and `result` is an unbound name.
 
-fn parse(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
 pub fn main() {
-    @print(result.isOk(parse(1)));
+    print(result.isOk(parse(1)));
 }

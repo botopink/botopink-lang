@@ -5,7 +5,7 @@
 //// point (`reject/typeinfo_all_duplicate_at_entry`). It used to be `unbound
 //// variable 'seen'` at the `var`'s read.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 var seen = 0;
 
@@ -24,5 +24,5 @@ fn counted(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(summary());
+    print(summary());
 }

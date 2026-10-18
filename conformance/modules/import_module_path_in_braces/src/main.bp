@@ -7,14 +7,15 @@ pub mod components;
 pub mod reliability;
 import {components.card.Card};
 import {reliability.policy.nextDelay as policyDelay, reliability.policy.maxAttempts};
+import {io.terminal.print} from "std";
 
 fn nextDelay(attempt: i32) -> i32 {
     return attempt;
 }
 
 pub fn main() {
-    @print(Card(title: "card").heading());
-    @print(policyDelay(2));
-    @print(nextDelay(2));
-    @print(maxAttempts());
+    print(Card(title: "card").heading());
+    print(policyDelay(2));
+    print(nextDelay(2));
+    print(maxAttempts());
 }

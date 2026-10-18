@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `.Wasm("std:hash.contentHash")` on `contentHash`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(std: "hash.contentHash")`
-at src/main.bp:4:11
+at src/main.bp:6:11

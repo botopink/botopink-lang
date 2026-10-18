@@ -4,31 +4,31 @@
 //// and the hooks `rate` and `total` render an `f64` and an `i64` that `Label`
 //// reads with `use` — each one the number it was, on every target.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 pub val rateContext = comptime createContext(0.0);
 
 pub val totalContext = createContext(0l);
 
-fn rate() -> @Component<f64> {
+fn rate() -> Component<f64> {
     val r = use context(f64);
     return r * 2.0;
 }
 
-fn total() -> @Component<i64> {
+fn total() -> Component<i64> {
     val t = use context(i64);
     return t + 1;
 }
 
-fn Label() -> @Component<View> {
+fn Label() -> Component<View> {
     val r = use rate();
     val t = use total();
     return View(text: r.toString() + " " + t.toString());
 }
 
-fn Root() -> @Component<View> {
+fn Root() -> Component<View> {
     val big: i64 = 9000000000;
     use provide(createContext(1.25));
     use provide(createContext(big));
@@ -36,7 +36,7 @@ fn Root() -> @Component<View> {
     return View(text: l.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val v = await Root();
-    @print(v.text);
+    print(v.text);
 }

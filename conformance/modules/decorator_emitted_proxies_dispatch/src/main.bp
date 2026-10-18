@@ -9,7 +9,7 @@
 //// or the other type's answer). A security proxy could call the wrong type's
 //// code. The same two proxies written by hand were always right.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn guard(label: string) -> i32 {
     return label.length();
@@ -56,6 +56,6 @@ type Runbook(id: i32) {
 }
 
 pub fn main() {
-    @print(LedgerSec(inner: Ledger(id: 1)).status());
-    @print(RunbookSec(inner: Runbook(id: 2)).read());
+    print(LedgerSec(inner: Ledger(id: 1)).status());
+    print(RunbookSec(inner: Runbook(id: 2)).read());
 }

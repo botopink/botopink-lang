@@ -2,23 +2,25 @@
 //// function is its own, so an `await` in a `pat { … }` arm is accepted in a function that
 //// returns `@Task`, as it is in an expression arm.
 
-fn make(n: i32) -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn make(n: i32) -> Task<i32> {
     return n * 10;
 }
 
-fn statement(k: i32) -> @Task<void> {
+fn statement(k: i32) -> Task<void> {
     case k {
         1 {
             val t = await make(2);
-            @print(t);
+            print(t);
         }
         _ {
-            @print(0);
+            print(0);
         }
     }
 }
 
-fn value(k: i32) -> @Task<void> {
+fn value(k: i32) -> Task<void> {
     val v = case k {
         1 {
             val t = await make(3);
@@ -28,10 +30,10 @@ fn value(k: i32) -> @Task<void> {
             0
         }
     };
-    @print(v);
+    print(v);
 }
 
-fn returned(k: i32) -> @Task<i32> {
+fn returned(k: i32) -> Task<i32> {
     case k {
         1 {
             val v = await make(4);
@@ -43,10 +45,10 @@ fn returned(k: i32) -> @Task<i32> {
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     statement(1);
     value(1);
-    @print(await returned(1));
+    print(await returned(1));
 }
 
 pub fn main() {

@@ -2,7 +2,9 @@
 //// BEAM; on a `val` there is nothing to place, so the annotation is refused
 //// and the hint spells the `var` form.
 
+import {io.terminal.print} from "std";
+
 #[@BeamMemory.Ets]
 val hits: i32 = 0;
 
-pub fn main() { @print(hits); }
+pub fn main() { print(hits); }

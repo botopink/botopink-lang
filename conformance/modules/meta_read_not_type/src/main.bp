@@ -2,7 +2,7 @@
 //// that is no record type of the module or its imports is refused at the
 //// argument.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
@@ -18,5 +18,5 @@ fn table() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(City).metaAll(table).length);
+    print(comptime compiler.typeInfo(City).metaAll(table).length);
 }

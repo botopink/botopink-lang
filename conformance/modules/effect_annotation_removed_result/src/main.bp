@@ -4,10 +4,12 @@
 //// parsed only to be refused, located at the annotation, with the fix-it "remove
 //// the annotation". The new form is `test/effect_return_result.bp`.
 
+import {io.terminal.print} from "std";
+
 #[@result]
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) { throw "negative"; }
     return n;
 }
 
-pub fn main() { @print(try parse(1) catch 0); }
+pub fn main() { print(try parse(1) catch 0); }

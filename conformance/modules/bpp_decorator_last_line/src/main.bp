@@ -5,7 +5,8 @@
 
 pub mod components;
 import {components.Card};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Card());
+    print(Card());
 }

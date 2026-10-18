@@ -2,9 +2,10 @@
 //// answer resolves like it does on any other value.
 
 import shelf from "shelf";
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val built = shelf @`built`;
-    @print(built.text);
-    @print(built.size.toString());
+    print(built.text);
+    print(built.size.toString());
 }

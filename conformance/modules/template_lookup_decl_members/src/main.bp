@@ -3,7 +3,7 @@
 //// `methods` (each with its parameters and return — here a method with no
 //// `self`) and a function's `params`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Color {
     Red,
@@ -44,7 +44,7 @@ fn shape(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(shape @`Color`);
-    @print(shape @`Counter`);
-    @print(shape @`scale`);
+    print(shape @`Color`);
+    print(shape @`Counter`);
+    print(shape @`scale`);
 }

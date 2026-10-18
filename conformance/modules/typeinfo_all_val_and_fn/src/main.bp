@@ -2,7 +2,7 @@
 //// answers one kind of value, so a decorator carried by a `val` and by a
 //// function is refused at the query, naming both.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn tag(syntax decl: unknown) {
     compiler.setMeta(Tag(seen: true));
@@ -17,7 +17,7 @@ pub fn twice() -> i32 {
 }
 
 pub fn main() {
-    @print(@TypeInfo.all(with: tag).length);
+    print(@TypeInfo.all(with: tag).length);
 }
 
 // What `#[tag]` records.

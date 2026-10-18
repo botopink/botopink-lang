@@ -8,7 +8,7 @@
 //// `@Expr` of a function, which has no `.value` — the function form is told
 //// apart by the declaration's kind (question `s35-b`).
 
-import {types.Type, compiler.DeclKind, compiler} from "std";
+import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 pub type Code { Custom, Required, TooShort, Mismatch }
 
@@ -48,14 +48,14 @@ fn passwordNotHandle(a: Account) -> bool {
 }
 
 pub fn main() {
-    for (@typeInfo(Account).metaAll(Check)) { c ->
-        @print(c.message + " (" + c.kind + ")");
+    for (comptime compiler.typeInfo(Account).metaAll(Check)) { c ->
+        print(c.message + " (" + c.kind + ")");
     }
-    @print(@typeInfo(passwordNotHandle).meta(Check)?.message ?? "none");
+    print(comptime compiler.typeInfo(passwordNotHandle).meta(Check)?.message ?? "none");
     val a = Account(handle: "ana", password: "abc", confirm: "abd");
-    @print(passwordsMatch(a));
-    @print(handleFree(a));
-    @print(passwordNotHandle(a));
+    print(passwordsMatch(a));
+    print(handleFree(a));
+    print(passwordNotHandle(a));
 }
 
 // What `#[check]` records, once per annotation: the field it is `at` (`"type"`

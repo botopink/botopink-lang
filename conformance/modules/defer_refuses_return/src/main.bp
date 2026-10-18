@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 pub fn f() -> i32 {
     defer {
         return 1;
@@ -6,5 +8,5 @@ pub fn f() -> i32 {
 }
 
 pub fn main() {
-    @print(f());
+    print(f());
 }

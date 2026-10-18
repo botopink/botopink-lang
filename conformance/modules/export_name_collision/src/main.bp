@@ -26,7 +26,8 @@
 pub mod one;
 pub mod two;
 import {one.parse};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(parse("x"));
+    print(parse("x"));
 }

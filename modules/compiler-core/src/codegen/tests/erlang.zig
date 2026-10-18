@@ -30,15 +30,17 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
     try src.appendSlice(alloc,
         \\pub fn main() {
         \\    val s = " ab ";
-        \\    @print([1, 1, 2].unique());
+        \\    print([1, 1, 2].unique());
         \\
+        \\import {io.terminal.print} from "std";
     );
     for (4..line) |_| try src.appendSlice(alloc, "    //\n");
     try src.appendNTimes(alloc, ' ', dot - 8);
     try src.appendSlice(alloc,
-        \\@print(s.trim());
+        \\print(s.trim());
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     );
     try h.assertErlangRunLog(alloc, src.items, "[1, 2]\nab\n", &.{"'__bp_prim_append'(Out, [X])"});
 }
@@ -66,12 +68,13 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\}
         \\
         \\pub fn main() {
-        \\    @print("a+b".tailShout());
-        \\    @print("ab".tailShout());
-        \\    @print([1, 2].firstOr(9));
+        \\    print("a+b".tailShout());
+        \\    print("ab".tailShout());
+        \\    print([1, 2].firstOr(9));
         \\    val none: i32[] = [];
-        \\    @print(none.firstOr(9));
+        \\    print(none.firstOr(9));
         \\}
+        \\import {io.terminal.print} from "std";
     , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)" });
 }
 
@@ -81,11 +84,12 @@ test "erlang: Array.unique keeps each value's first occurrence" {
     // a consecutive one.
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub fn main() {
-        \\    @print([1, 2, 1, 3, 2].unique());
-        \\    @print([4].unique());
+        \\    print([1, 2, 1, 3, 2].unique());
+        \\    print([4].unique());
         \\    val none: i32[] = [];
-        \\    @print(none.unique());
+        \\    print(none.unique());
         \\}
+        \\import {io.terminal.print} from "std";
     , "[1, 2, 3]\n[4]\n[]\n", &.{});
 }
 
@@ -97,8 +101,9 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
     // with `LANG=C` is the measurement; this harness has the host's locale).
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub fn main() {
-        \\    @print("é", "\u{1F600}");
+        \\    print("é", "\u{1F600}");
         \\}
+        \\import {io.terminal.print} from "std";
     , "é 😀\n", &.{"'_botopink_main'() ->\n    io:setopts(standard_io, [{encoding, unicode}]),\n    main()."});
 }
 
@@ -121,11 +126,12 @@ test "erlang: true and false inside a tuple pattern are matched, not bound" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(tag(#(false, 1)));
-        \\    @print(tag(#(true, 2)));
-        \\    @print(first(#(false, 7, 8)));
-        \\    @print(first(#(true, 7, 8)));
+        \\    print(tag(#(false, 1)));
+        \\    print(tag(#(true, 2)));
+        \\    print(first(#(false, 7, 8)));
+        \\    print(first(#(true, 7, 8)));
         \\}
+        \\import {io.terminal.print} from "std";
     , "no 1\nyes 2\n0\n7\n", &.{ "{true, N} ->", "{false, N@1} ->", "=:= false" });
 }
 
@@ -152,12 +158,13 @@ test "erlang: a record's constructor pattern carries the record's own tag" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(f(Point(x: 0, y: 5)));
-        \\    @print(f(Point(x: 3, y: 0)));
-        \\    @print(onAxis(Point(x: 0, y: 5)));
-        \\    @print(onAxis(Point(x: 3, y: 0)));
-        \\    @print(onAxis(Point(x: 3, y: 4)));
+        \\    print(f(Point(x: 0, y: 5)));
+        \\    print(f(Point(x: 3, y: 0)));
+        \\    print(onAxis(Point(x: 0, y: 5)));
+        \\    print(onAxis(Point(x: 3, y: 0)));
+        \\    print(onAxis(Point(x: 3, y: 4)));
         \\}
+        \\import {io.terminal.print} from "std";
     , "5\n3\non y\non x\noff\n", &.{"{test@main@@Point, 0, _} ->"});
 }
 
@@ -167,7 +174,7 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
     // came back as `{ok, {error, …}}` and the block arm's throw escaped as an
     // uncaught erlang `throw`. The arms that do not leave carry the `{ok, …}`.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    return case n {
         \\        0 -> throw "zero",
         \\        1 { throw "one"; }
@@ -176,10 +183,11 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(parse(0).unwrapOr(-1));
-        \\    @print(parse(1).unwrapOr(-2));
-        \\    @print(parse(2).unwrapOr(-3));
+        \\    print(parse(0).unwrapOr(-1));
+        \\    print(parse(1).unwrapOr(-2));
+        \\    print(parse(2).unwrapOr(-3));
         \\}
+        \\import {io.terminal.print} from "std";
     , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, '__bp_int'((N * 2), -2147483648, 2147483647, <<\"integer overflow: * on i32 at main.bp:5:16\">>)}" });
 }
 
@@ -197,10 +205,11 @@ test "erlang: a fn in a generic record's field is applied when called through th
         \\
         \\pub fn main() {
         \\    val h = Box(value: shout);
-        \\    @print(h.value("b"));
+        \\    print(h.value("b"));
         \\    val lam = Box(value: { s -> s + "?" });
-        \\    @print(lam.value("e"));
+        \\    print(lam.value("e"));
         \\}
+        \\import {io.terminal.print} from "std";
     , "b!\ne?\n", &.{ "(erlang:element(2, H))(<<\"b\">>)", "(erlang:element(2, Lam))(<<\"e\">>)" });
 }
 
@@ -216,11 +225,12 @@ test "erlang: a list pattern that is a spread alone binds the whole list" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(describe([1, 2, 3]));
-        \\    @print(describe([]));
+        \\    print(describe([1, 2, 3]));
+        \\    print(describe([]));
         \\    val assert [..every] = [4, 5];
-        \\    @print(every);
+        \\    print(every);
         \\}
+        \\import {io.terminal.print} from "std";
     , "all 3\nall 0\n[4, 5]\n", &.{"Every = case"});
 }
 
@@ -252,9 +262,10 @@ test "erlang: a block reassigning an enclosing `var` answers it beside its value
         \\}
         \\
         \\pub fn main() {
-        \\    @print(firstOver([1, 7, 3], 5));
-        \\    @print(firstOver([1, 2], 5));
+        \\    print(firstOver([1, 7, 3], 5));
+        \\    print(firstOver([1, 2], 5));
         \\}
+        \\import {io.terminal.print} from "std";
     , "703\n-80\n", &.{"erlang:element(1, {_, "});
 }
 
@@ -287,9 +298,10 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\import {items.Queue, items.describe};
         \\
         \\pub fn main() {
-        \\    @print(describe(Queue(label: "crowded", size: 2)));
-        \\    @print(collections.toInt(collections.lt()));
+        \\    print(describe(Queue(label: "crowded", size: 2)));
+        \\    print(collections.toInt(collections.lt()));
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, "main", "crowded:2\n-1\n", &.{"{test@items@@Queue, <<\"crowded\">>, 2}"});
     try h.assertErlangRunLogModules(std.testing.allocator, &.{
@@ -299,9 +311,10 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\import {collections} from "std";
         \\
         \\pub fn main() {
-        \\    @print(describe(Queue(label: "after", size: 3)));
-        \\    @print(collections.toInt(collections.gt()));
+        \\    print(describe(Queue(label: "after", size: 3)));
+        \\    print(collections.toInt(collections.gt()));
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, "main", "after:3\n1\n", &.{"{test@items@@Queue, <<\"after\">>, 3}"});
 }
@@ -325,8 +338,9 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
         \\val _d = double(_c.get());
         \\
         \\pub fn main() {
-        \\    @print(_d);
+        \\    print(_d);
         \\}
+        \\import {io.terminal.print} from "std";
     , "10\n", &.{"'_c'() ->"});
 }
 
@@ -335,13 +349,14 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
 const bytes_src =
     \\pub fn main() {
     \\    val b = Bytes.fromUtf8("héllo");
-    \\    @print(b.length());
-    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
-    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    print(b.length());
+    \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    print(b.slice(1, 2).toUtf8().isError());
     \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
-    \\    @print(j[2..].toUtf8().unwrapOr("?"));
-    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j[2..].toUtf8().unwrapOr("?"));
+    \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
@@ -357,12 +372,12 @@ test "erlang: a defer reads a var a value case's arm reassigns before it panics"
         \\import {failure, failure.Failure} from "std";
         \\
         \\fn boom() -> i32 {
-        \\    @panic("boom");
+        \\    panic("boom");
         \\}
         \\
         \\fn work(n: i32) -> i32 {
         \\    var f = "a";
-        \\    defer @print("close " + f);
+        \\    defer print("close " + f);
         \\    val r = case n {
         \\        0 { f = "e"; boom() }
         \\        _ { f = "g"; 3 }
@@ -372,9 +387,10 @@ test "erlang: a defer reads a var a value case's arm reassigns before it panics"
         \\
         \\pub fn main() {
         \\    val r = failure.attempt({ -> work(0) });
-        \\    @print("done");
+        \\    print("done");
         \\}
         \\
+        \\import {io.terminal.print, failure.panic} from "std";
     , "close e\ndone\n", &.{"erlang:put(__BpDeferRef1, {F@"});
 }
 
@@ -391,15 +407,16 @@ test "erlang: a defer body that rebinds a var leaves its group unbound" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(f());
+        \\    print(f());
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "1\n", &.{"    after\n        case true of"});
 }
 
 test "erlang: a bare return in a yielding case arm ends the generator" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn items(n: i32) -> @Iterator<i32> {
+        \\fn items(n: i32) -> Iterator<i32> {
         \\    yield 0;
         \\    case n {
         \\        0 {
@@ -412,10 +429,11 @@ test "erlang: a bare return in a yielding case arm ends the generator" {
         \\}
         \\
         \\pub fn main() {
-        \\    for (items(0)) { v -> @print(v); }
-        \\    for (items(1)) { v -> @print(v); }
+        \\    for (items(0)) { v -> print(v); }
+        \\    for (items(1)) { v -> print(v); }
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "0\n1\n0\n2\n9\n", &.{"'__bp_gen_stop'"});
 }
 
@@ -436,9 +454,10 @@ test "erlang: a labelled break leaves the outer loop from an inner one" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(sumBeforeTwo([1, 2], [1, 2, 3]));
+        \\    print(sumBeforeTwo([1, 2], [1, 2, 3]));
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "1\n", &.{"'__bp_label_break'"});
 }
 
@@ -460,8 +479,9 @@ test "erlang: a labelled continue starts the outer loop's next round from a case
         \\}
         \\
         \\pub fn main() {
-        \\    @print(run([1, 2], [1, 2, 3]));
+        \\    print(run([1, 2], [1, 2, 3]));
         \\}
         \\
+        \\import {io.terminal.print} from "std";
     , "113\n", &.{"__bp_label_continue"});
 }

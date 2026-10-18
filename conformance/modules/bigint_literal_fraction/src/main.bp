@@ -1,6 +1,8 @@
 //// Decision 332 — `n` is an integer suffix: a literal with a fraction takes `f` or `d` only.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x = 1.5n;
-    @print(x);
+    print(x);
 }

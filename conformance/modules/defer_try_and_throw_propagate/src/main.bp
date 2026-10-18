@@ -1,25 +1,27 @@
-fn fails() -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn fails() -> Result<i32, string> {
     throw "boom";
 }
 
-fn viaTry() -> @Result<i32, string> {
-    defer @print("cleanup");
+fn viaTry() -> Result<i32, string> {
+    defer print("cleanup");
     val v = try fails();
     return v + 1;
 }
 
-fn viaThrow() -> @Result<i32, string> {
-    defer @print("cleanup2");
+fn viaThrow() -> Result<i32, string> {
+    defer print("cleanup2");
     throw "bad";
 }
 
 pub fn main() {
     case viaTry() {
-        Ok(v) -> @print("ok " + v.toString());
-        Error(e) -> @print(e);
+        Ok(v) -> print("ok " + v.toString());
+        Error(e) -> print(e);
     }
     case viaThrow() {
-        Ok(v) -> @print("ok " + v.toString());
-        Error(e) -> @print(e);
+        Ok(v) -> print("ok " + v.toString());
+        Error(e) -> print(e);
     }
 }

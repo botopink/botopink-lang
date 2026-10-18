@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: decorator-meta-twice: `#[hydrate]` records a second `Hydrate` on the tag `div`, which holds one
-at src/main.bp:9:42
+at src/main.bp:10:41

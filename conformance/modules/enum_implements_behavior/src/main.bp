@@ -5,6 +5,8 @@
 //// variant value — commonJS emitted the enum's methods `static`, erlang and
 //// beam asked the variant's tag (`…@@Msg__v__get`) for a module.
 
+import {io.terminal.print} from "std";
+
 behavior Req {
     fn path(self: Self) -> string;
 }
@@ -27,7 +29,7 @@ fn show(r: Req) -> string {
 
 pub fn main() {
     val m = Msg.Get(url: "/a");
-    @print(m.path());
-    @print(show(m));
-    @print(show(Msg.Post(url: "/b", body: "x")));
+    print(m.path());
+    print(show(m));
+    print(show(Msg.Post(url: "/b", body: "x")));
 }

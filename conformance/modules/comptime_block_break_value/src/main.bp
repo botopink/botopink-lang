@@ -3,11 +3,13 @@
 //// refused at the `break`. `botopink format` writes `break v;` back as the
 //// tail `v`.
 
+import {io.terminal.print} from "std";
+
 val result = comptime {
     val x = 10;
     break x * 2;
 };
 
 pub fn main() {
-    @print(result);
+    print(result);
 }

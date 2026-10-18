@@ -5,19 +5,21 @@
 //// unannotated and passed where `@Iterator<@Result<i32, string>>` is expected.
 //// A failing `try` or a `throw` emits `Error(e)` and ends the sequence.
 
-fn check(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
-fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
+fn walk(name: string, it: Iterator<Result<i32, string>>) {
     for (it) { r ->
         case r {
-            Ok(v) -> @print(name + " ok " + v.toString());
-            Error(e) -> @print(name + " error " + e);
+            Ok(v) -> print(name + " ok " + v.toString());
+            Error(e) -> print(name + " error " + e);
         }
     }
-    @print(name + " done");
+    print(name + " done");
 }
 
 pub fn main() {

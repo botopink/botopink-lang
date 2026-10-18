@@ -7,12 +7,12 @@
 
 pub mod shapes;
 import {shapes.circle.name as circleName, shapes.helpers.seven};
-import {collections.Dict, collections.gt, collections.reverse, collections.toInt as rank} from "std";
+import {collections.Dict, collections.gt, collections.reverse, collections.toInt as rank, io.terminal.print} from "std";
 
 pub fn main() {
-    @print(circleName());
-    @print(seven());
+    print(circleName());
+    print(seven());
     val d: Dict<string, i32> = Dict.empty();
-    @print(d.insert("a", 1).size());
-    @print(rank(reverse(gt())));
+    print(d.insert("a", 1).size());
+    print(rank(reverse(gt())));
 }

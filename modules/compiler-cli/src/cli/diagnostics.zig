@@ -509,7 +509,7 @@ test "a raise at build prints its called-from lines under the excerpt, after the
         \\error: boom
         \\ --> src/deco.bp:2:3
         \\  |
-        \\2 |   @panic("x")
+        \\2 |   panic("x")
         \\  |   ^
         \\  |
         \\  = hint: the body raised
@@ -517,6 +517,7 @@ test "a raise at build prints its called-from lines under the excerpt, after the
         \\  = called from src/main.bp:12:1
         \\
         \\
+        \\import {failure.panic} from "std";
     , aw.written());
     // no hint: the gutter bar, then the calls
     var bare: std.Io.Writer.Allocating = .init(std.testing.allocator);

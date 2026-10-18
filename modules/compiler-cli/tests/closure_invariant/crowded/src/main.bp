@@ -6,7 +6,7 @@
 
 pub mod local;
 
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 import shelf from "shelf";
 import {items.Queue, items.Shape, items.Meter, items.describe, items.area, items.readMeter} from "shelf";
 import {tools.pick, tools.tagged, tools.total} from "shelf";
@@ -20,16 +20,16 @@ fn marked() -> i32 {
 
 pub fn main() {
     val q = Queue(label: "crowded", size: 2);
-    @print(describe(q));
-    @print(area(Shape.Circle(radius: 2)).toString());
-    @print(pick(1, 2, true).toString());
-    @print(pick("a", "b", false));
+    print(describe(q));
+    print(area(Shape.Circle(radius: 2)).toString());
+    print(pick(1, 2, true).toString());
+    print(pick("a", "b", false));
     val built = shelf @`built`;
-    @print(built.text);
-    @print(total(q, Shape.Dot).toString());
-    @print(readMeter(Meter(n: 3)).toString());
-    @print(Gauge(n: 4).reading().toString());
-    @print(markedTag());
-    @print(Pair(label: "p", size: 9).label);
-    @print(collections.toInt(collections.lt()));
+    print(built.text);
+    print(total(q, Shape.Dot).toString());
+    print(readMeter(Meter(n: 3)).toString());
+    print(Gauge(n: 4).reading().toString());
+    print(markedTag());
+    print(Pair(label: "p", size: 9).label);
+    print(collections.toInt(collections.lt()));
 }

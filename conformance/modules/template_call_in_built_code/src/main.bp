@@ -4,7 +4,7 @@
 //// written as any template call is, its name before a template text
 //// (decision 577 (3)).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn inner(syntax q: string) -> string {
     return compiler.build("\"inner " + compiler.text(q) + "\"");
@@ -21,7 +21,7 @@ fn outermost(syntax q: string) -> string {
 val atModule = outer @`module`;
 
 pub fn main() {
-    @print(atModule);
-    @print(outer @`body`);
-    @print(outermost @`chain`);
+    print(atModule);
+    print(outer @`body`);
+    print(outermost @`chain`);
 }

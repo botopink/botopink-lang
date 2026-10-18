@@ -2,6 +2,8 @@
 //// per function: `pub default fn render` already is the module's default, so
 //// `pub default render;` is `default-twice` at the name.
 
+import {io.terminal.print} from "std";
+
 pub default fn render() -> string {
     return "x";
 }
@@ -9,5 +11,5 @@ pub default fn render() -> string {
 pub default render;
 
 pub fn main() {
-    @print(render());
+    print(render());
 }

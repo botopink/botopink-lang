@@ -1,16 +1,16 @@
 //// Decision 539 (3) — a panic `attempt` catches runs the defers of the
 //// block or `case` arm it happens in, before the panic leaves it.
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, io.terminal.print, failure.panic} from "std";
 
 fn viaArm(n: i32) -> i32 {
     case n {
         0 {
-            defer @print("arm released");
-            @panic("in arm");
+            defer print("arm released");
+            panic("in arm");
         }
         _ {
-            defer @print("other released");
+            defer print("other released");
         }
     }
     return 1;
@@ -18,16 +18,16 @@ fn viaArm(n: i32) -> i32 {
 
 fn viaIfBranch(c: bool) -> i32 {
     if (c) {
-        defer @print("branch released");
-        @panic("in branch");
+        defer print("branch released");
+        panic("in branch");
     }
     return 2;
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 

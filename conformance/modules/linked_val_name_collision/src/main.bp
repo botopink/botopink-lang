@@ -13,17 +13,18 @@ pub mod one;
 pub mod two;
 import {one.limit, one.viaOne, one.doubled, one.hitOne};
 import {two.limit as label, two.viaTwo, two.shout, two.shadow, two.hitTwo};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(limit);
-    @print(label);
-    @print(viaOne());
-    @print(viaTwo());
-    @print(doubled);
-    @print(shout);
-    @print(shadow("param"));
-    @print(hitOne());
-    @print(hitTwo());
-    @print(hitOne());
-    @print(hitTwo());
+    print(limit);
+    print(label);
+    print(viaOne());
+    print(viaTwo());
+    print(doubled);
+    print(shout);
+    print(shadow("param"));
+    print(hitOne());
+    print(hitTwo());
+    print(hitOne());
+    print(hitTwo());
 }

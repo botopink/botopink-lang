@@ -2,7 +2,7 @@
 //// the annotation on the declaration that added it, not past the file's last
 //// line; the `called from` line names the decorator's `decl.addMember` call.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn maker<T>(syntax decl: T) {
     compiler.addMember("code", fn(self: T) -> i32 {
@@ -14,5 +14,5 @@ fn maker<T>(syntax decl: T) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "a").code());
+    print(City(name: "a").code());
 }

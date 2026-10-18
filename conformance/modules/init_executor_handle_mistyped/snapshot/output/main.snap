@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error: type mismatch: expected string, got i32
-at src/main.bp:15:3
+at src/main.bp:16:3
 from src/marks.bp:9:14

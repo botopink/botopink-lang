@@ -6,8 +6,9 @@
 //// dependency's module, on every target.
 
 import {counter} from "tally";
+import {io.terminal.print} from "std";
 
 pub fn main() {
     counter.bump();
-    @print(counter.bump());
+    print(counter.bump());
 }

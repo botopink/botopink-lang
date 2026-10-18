@@ -2,7 +2,7 @@
 //// argument, not at the annotation: the upper bound below the lower one is
 //// refused at the `1`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn sizeBetween(syntax decl: unknown, comptime min: i32, comptime max: i32) {
     if (min > max) compiler.fail("the upper bound is below the lower one", at: max);
@@ -13,5 +13,5 @@ type Form(
 )
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

@@ -6,6 +6,8 @@
 //// and a union-valued `case` or `if` has no static type at all, so the wasm backend
 //// boxed neither and refused the program).
 
+import {io.terminal.print} from "std";
+
 type Maybe<T> {
     Some(value: T),
     None,
@@ -62,15 +64,15 @@ pub fn main() {
     val s: unknown = Maybe.Some(value: "abc");
     val n: unknown = Maybe.Some(value: 5);
     val x: unknown = 1;
-    @print(innerLength(s));
-    @print(innerLength(n));
-    @print(innerLength(x));
-    @print(innerSize(Maybe.Some(value: "abc")));
-    @print(innerSize(Maybe.Some(value: 2)));
-    @print(innerSize(Maybe.None));
-    @print(orNone(Maybe.Some(value: 7)) == 7);
-    @print(orNone(Maybe.None) == "none");
+    print(innerLength(s));
+    print(innerLength(n));
+    print(innerLength(x));
+    print(innerSize(Maybe.Some(value: "abc")));
+    print(innerSize(Maybe.Some(value: 2)));
+    print(innerSize(Maybe.None));
+    print(orNone(Maybe.Some(value: 7)) == 7);
+    print(orNone(Maybe.None) == "none");
     val flag = true;
     val v = if (flag) 2 else "two";
-    @print(size(v));
+    print(size(v));
 }

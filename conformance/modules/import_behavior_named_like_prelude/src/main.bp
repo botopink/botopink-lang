@@ -5,6 +5,7 @@
 mod ui;
 
 import {ui.Component, ui.Field, ui.widget};
+import {io.terminal.print} from "std";
 
 #[widget]
 pub type Card(title: string) implement Component, Field {
@@ -27,6 +28,6 @@ fn columnOf(f: Field) -> string {
 
 pub fn main() {
     val card = Card(title: "hi");
-    @print(show(card));
-    @print(columnOf(card));
+    print(show(card));
+    print(columnOf(card));
 }

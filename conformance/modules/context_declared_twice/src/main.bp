@@ -2,7 +2,7 @@
 //// a second `createContext(…)` of `Theme` is refused at it, naming the
 //// first.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -11,5 +11,5 @@ pub val themeContext = comptime createContext(Theme(mode: "light"));
 pub val otherTheme = comptime createContext(Theme(mode: "dark"));
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

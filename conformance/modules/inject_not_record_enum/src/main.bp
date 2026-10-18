@@ -2,21 +2,21 @@
 //// record is refused at the argument: `inject(Mode)`, `Mode` an enum, is
 //// `inject-not-record`, as a behavior is.
 
-import {context.inject} from "std";
+import {context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
 type Mode {
     Light,
     Dark,
 }
 
-fn Page() -> @Component<View> {
+fn Page() -> Component<View> {
     val m = use inject(Mode);
     return View(text: "x");
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val p = await Page();
-    @print(p.text);
+    print(p.text);
 }

@@ -2,7 +2,7 @@
 //// method's own signature: a method of a type with type parameters is not
 //// wrapped (question B-11-b, as built) and is refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn counted(syntax decl: fn(..) -> i32) {
     compiler.wrapWith({ call -> call.run() });
@@ -16,5 +16,5 @@ type Box<T>(items: T[]) {
 }
 
 pub fn main() {
-    @print(Box(items: [1, 2]).size());
+    print(Box(items: [1, 2]).size());
 }

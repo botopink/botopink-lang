@@ -12,10 +12,11 @@
 
 pub mod text;
 import {text.label};
+import {compiler, io.terminal.print} from "std";
 
-#[@external(.Erlang("erlang:abs($0)"))]
+#[compiler.external(.Erlang("erlang:abs($0)"))]
 declare fn magnitude(n: i32) -> i32;
 
 pub fn main() {
-    @print(label(magnitude(0 - 7)));
+    print(label(magnitude(0 - 7)));
 }

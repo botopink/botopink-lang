@@ -3,7 +3,7 @@
 //// function's parameter. A function of that shape is accepted whatever it
 //// returns; the catalogue (`@TypeInfo.all(with: on)`) lists the listeners.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type OrderPlaced(id: string, total: i64)
 
@@ -20,12 +20,12 @@ pub fn sendReceipt(e: OrderPlaced) -> string {
 
 #[on]
 pub fn refund(e: OrderCancelled) {
-    @print("refund " + e.id);
+    print("refund " + e.id);
 }
 
 pub fn main() {
-    @print(@TypeInfo.all(with: on).map({ d -> d.name }).join(","));
-    @print(sendReceipt(OrderPlaced(id: "o1", total: 10)));
+    print(@TypeInfo.all(with: on).map({ d -> d.name }).join(","));
+    print(sendReceipt(OrderPlaced(id: "o1", total: 10)));
     refund(OrderCancelled(id: "o2"));
 }
 

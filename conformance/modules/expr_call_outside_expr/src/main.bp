@@ -3,7 +3,7 @@
 //// with parentheses, or `#[shout(…)]` is refused at the call
 //// (`syntax-call-outside-syntax`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn shout(syntax q: string) -> string {
     val loud = compiler.text(q).toUpper();
@@ -11,5 +11,5 @@ fn shout(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(shout "hi");
+    print(shout "hi");
 }

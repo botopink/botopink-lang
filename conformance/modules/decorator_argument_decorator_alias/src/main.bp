@@ -6,6 +6,7 @@
 
 pub mod markers;
 import {markers.each, markers.all, markers.lowercased as lower};
+import {io.terminal.print} from "std";
 
 type Invite(
     #[each(markers.email)] guests: Array<string>,
@@ -13,7 +14,7 @@ type Invite(
 )
 
 pub fn main() {
-    @print(Invite.guestsEach());
-    @print(Invite.hostsEach());
-    @print(Invite.hostsAll());
+    print(Invite.guestsEach());
+    print(Invite.hostsEach());
+    print(Invite.hostsAll());
 }

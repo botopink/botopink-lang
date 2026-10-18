@@ -6,7 +6,7 @@
 
 mod models;
 import {models.User as Person};
-import {compiler.DeclKind, compiler} from "std";
+import {compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 type City(name: string, size: i32)
 
@@ -35,9 +35,9 @@ fn describe(syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(describe @`City`);
-    @print(describe @`Person`);
-    @print(describe @`Named`);
-    @print(describe @`helper`);
-    @print(describe @`Nobody`);
+    print(describe @`City`);
+    print(describe @`Person`);
+    print(describe @`Named`);
+    print(describe @`helper`);
+    print(describe @`Nobody`);
 }

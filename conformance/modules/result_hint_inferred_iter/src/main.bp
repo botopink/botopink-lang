@@ -4,6 +4,8 @@
 //// `for`-item hint (`try r`) AND the location of the `throw` that made the
 //// items `@Result`s. Located at the file only, like `reject/result_hint_for_item.bp`.
 
+import {io.terminal.print} from "std";
+
 fn count(xs: string[]) -> i32 {
     val items = iter for (xs) { x ->
         if (x == "stop") { throw "stopped"; }
@@ -14,4 +16,4 @@ fn count(xs: string[]) -> i32 {
     return acc;
 }
 
-pub fn main() { @print(count(["a"])); }
+pub fn main() { print(count(["a"])); }

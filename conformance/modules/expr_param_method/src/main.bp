@@ -3,10 +3,12 @@
 //// method called on it, `message.text()`, is refused at the call
 //// (`expr-param-method`).
 
+import {io.terminal.print} from "std";
+
 fn shout(syntax message: string) -> string {
     return message.text();
 }
 
 pub fn main() {
-    @print(shout @`x`);
+    print(shout @`x`);
 }

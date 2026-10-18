@@ -120,14 +120,15 @@ test "types: assert pattern ---- with number literal" {
 
 test "types: assert pattern ---- with enum variant" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn parse() -> @Result<i32, string> {
+        \\fn parse() -> Result<i32, string> {
         \\    return 42;
         \\}
         \\fn main() {
         \\    val result = parse();
         \\    val assert Ok(value) = result;
-        \\    @print(value);
+        \\    print(value);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -275,7 +276,7 @@ test "types: generator loop ---- worth the annotation's wrapper, its break v an 
 
 test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn doubles(arr: i32[]) -> @Iterator<i32> {
+        \\fn doubles(arr: i32[]) -> Iterator<i32> {
         \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };
@@ -302,8 +303,9 @@ test "types: self ---- field access in method" {
         \\    }
         \\}
         \\fn main() {
-        \\    @print(Point(x: 1, y: 2).sum());
+        \\    print(Point(x: 1, y: 2).sum());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 

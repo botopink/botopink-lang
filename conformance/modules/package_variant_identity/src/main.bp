@@ -21,12 +21,13 @@
 //// a unique name and a repeated one, through the same dispatcher.
 
 import {Token, styleOf} from "tokenlib";
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val unique: Token = .Text.Size.X3xl;
     val repeated: Token = .Text.Size.Lg;
-    @print(styleOf(unique));
-    @print(styleOf(repeated));
-    @print(styleOf(.Text.Bold));
-    @print(styleOf(.Bg.Lg));
+    print(styleOf(unique));
+    print(styleOf(repeated));
+    print(styleOf(.Text.Bold));
+    print(styleOf(.Bg.Lg));
 }

@@ -6,17 +6,18 @@ pub mod pages;
 pub mod ui;
 
 import {pages.usaPad, pages.usaAgora, pages.usaLabel, pages.Staged};
+import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    show(@typeInfo(usaPad).meta(Staged));
-    show(@typeInfo(usaAgora).meta(Staged));
-    show(@typeInfo(usaLabel).meta(Staged));
-    @print(usaPad());
+    show(comptime compiler.typeInfo(usaPad).meta(Staged));
+    show(comptime compiler.typeInfo(usaAgora).meta(Staged));
+    show(comptime compiler.typeInfo(usaLabel).meta(Staged));
+    print(usaPad());
 }
 
 fn show(staged: ?Staged) {
     if (staged) {
         s ->
-        @print(s.name + ": " + s.stages.join(" "));
+        print(s.name + ": " + s.stages.join(" "));
     }
 }

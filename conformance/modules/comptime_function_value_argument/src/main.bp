@@ -2,7 +2,9 @@
 //// argument (`r.flatMap(half)`, `xs.map(double)`, `apply(double, 4)`) runs at
 //// build as it does when the program runs, in a function a `comptime` reaches.
 
-fn half(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn half(n: i32) -> Result<i32, string> {
     if (n % 2 != 0) throw "odd";
     return n / 2;
 }
@@ -15,7 +17,7 @@ fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
     return f(n);
 }
 
-fn measure(text: string) -> @Result<i32, string> {
+fn measure(text: string) -> Result<i32, string> {
     if (text == "nope") throw "no text";
     return text.length();
 }
@@ -35,9 +37,9 @@ fn summary(text: string) -> string {
 
 pub fn main() {
     val a = comptime summary("abcd");
-    @print(a);
-    @print(a == summary("abcd"));
+    print(a);
+    print(a == summary("abcd"));
     val b = comptime summary("abc");
-    @print(b);
-    @print(b == summary("abc"));
+    print(b);
+    print(b == summary("abc"));
 }

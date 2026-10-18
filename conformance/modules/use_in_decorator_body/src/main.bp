@@ -6,7 +6,7 @@ import {context.createContext, context.provide, context.context} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
@@ -15,7 +15,7 @@ fn themed(syntax decl: unknown) {
 }
 
 #[themed]
-fn Label() -> @Component<Element> {
+fn Label() -> Component<Element> {
     return Element(text: "");
 }
 

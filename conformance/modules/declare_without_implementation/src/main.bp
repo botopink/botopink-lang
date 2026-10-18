@@ -1,8 +1,10 @@
 //// Decision 575 (6) — a bodyless `declare fn` no annotation implements has
 //// no code on any target: refused at the declaration, before any call.
 
+import {io.terminal.print} from "std";
+
 declare fn now() -> i32;
 
 pub fn main() {
-    @print(now());
+    print(now());
 }

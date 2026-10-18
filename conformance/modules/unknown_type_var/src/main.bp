@@ -1,6 +1,8 @@
 //// B-111 — an unknown bare type name in a `var` annotation is `unknown type`, at the name.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var m: Bogus = 1;
-    @print(1);
+    print(1);
 }

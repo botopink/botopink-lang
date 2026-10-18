@@ -6,9 +6,10 @@
 
 pub mod components;
 import {components.Banner, components.Bare, components.page as Page};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Banner());
-    @print(Bare());
-    @print(Page());
+    print(Banner());
+    print(Bare());
+    print(Page());
 }

@@ -5,7 +5,7 @@
 //// declared type as `returnTypeName`. On the parent binary the decorator was
 //// dropped silently (`DeclKind.Val` did not exist).
 
-import {compiler.DeclKind, compiler} from "std";
+import {compiler.DeclKind, compiler, io.terminal.print} from "std";
 
 fn setting(syntax decl: unknown, comptime key: string) {
     if (compiler.kind(decl) != DeclKind.Val)
@@ -20,13 +20,13 @@ pub val port: i32 = 8080;
 pub val host = "localhost";
 
 pub fn main() {
-    @print(@typeInfo(port).meta(Setting)?.key ?? "none");
-    @print(@typeInfo(port).meta(Setting)?.declared ?? "none");
-    @print("[" + (@typeInfo(host).meta(Setting)?.declared ?? "none") + "]");
+    print(comptime compiler.typeInfo(port).meta(Setting)?.key ?? "none");
+    print(comptime compiler.typeInfo(port).meta(Setting)?.declared ?? "none");
+    print("[" + (comptime compiler.typeInfo(host).meta(Setting)?.declared ?? "none") + "]");
     val all = @TypeInfo.all(with: setting);
-    @print(all.length);
-    all.forEach({ d -> @print(d.name + " " + d.returnTypeName) });
-    @print(port + 1);
+    print(all.length);
+    all.forEach({ d -> print(d.name + " " + d.returnTypeName) });
+    print(port + 1);
 }
 
 // What `#[setting]` records: its key and the `val`'s declared type.

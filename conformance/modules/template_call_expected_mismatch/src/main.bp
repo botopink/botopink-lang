@@ -2,7 +2,7 @@
 //// stands as any expression does: the call's type is the built code's
 //// (`string[]`), and `val n: i32 = …` is the ordinary mismatch at the call.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn names(syntax q: string) -> unknown[] {
     return compiler.build("[\"" + compiler.text(q) + "\"]");
@@ -10,5 +10,5 @@ fn names(syntax q: string) -> unknown[] {
 
 pub fn main() {
     val n: i32 = names @`cities`;
-    @print(n.toString());
+    print(n.toString());
 }

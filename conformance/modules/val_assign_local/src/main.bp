@@ -3,8 +3,10 @@
 //// the other three targets ran. The rule moved to compile time; the hint
 //// names `var`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x: i32 = 0;
     x = 1;
-    @print(x);
+    print(x);
 }

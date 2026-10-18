@@ -6,11 +6,12 @@
 pub mod rules;
 pub mod models;
 import {models.Signup};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val vs = Signup(password: "a", confirm: "b").validate();
-    @print(vs.length);
+    print(vs.length);
     for (vs) { v ->
-        @print(v.field + ": " + v.message);
+        print(v.field + ": " + v.message);
     }
 }

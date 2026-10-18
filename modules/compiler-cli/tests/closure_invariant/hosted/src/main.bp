@@ -3,10 +3,11 @@
 //// change for it.
 
 import {items.Queue, items.describe} from "shelf";
+import {compiler, io.terminal.print} from "std";
 
-#[@external(.Erlang("hosted_greeter:hello($0)"))]
+#[compiler.external(.Erlang("hosted_greeter:hello($0)"))]
 declare fn hello(name: string) -> string;
 
 pub fn main() {
-    @print(hello(describe(Queue(label: "hosted", size: 1))));
+    print(hello(describe(Queue(label: "hosted", size: 1))));
 }

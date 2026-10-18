@@ -2,7 +2,7 @@
 //// build into a constant, so the build-only call under it and the clock
 //// read beside it are legal together: `cabecalho` is `Run`.
 
-import {io.clock} from "std";
+import {io.clock, io.terminal.print} from "std";
 
 fn campos(comptime names: string) -> string {
     return "[" + names + "]";
@@ -25,6 +25,6 @@ fn campos2() -> string {
 }
 
 pub fn main() {
-    @print(cabecalho());
-    @print(campos2());
+    print(cabecalho());
+    print(campos2());
 }

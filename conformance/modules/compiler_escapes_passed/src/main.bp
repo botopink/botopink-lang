@@ -2,7 +2,7 @@
 //// through its members: passed as an argument it is refused at the name
 //// (`compiler-escapes`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn report(at: unknown) {}
 
@@ -14,5 +14,5 @@ fn mark(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    @print(City(name: "a").name);
+    print(City(name: "a").name);
 }

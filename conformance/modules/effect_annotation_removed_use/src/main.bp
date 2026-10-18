@@ -5,7 +5,7 @@
 //// new form is `run/component_hook_and_component.bp`.
 
 #[@use]
-fn state(initial: i32) -> @Component<i32> {
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 

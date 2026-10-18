@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[variadic-not-last]: a variadic parameter must be the last parameter
-at src/main.bp:4:10
+at src/main.bp:6:10
 label variadic before another parameter

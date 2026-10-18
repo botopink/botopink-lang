@@ -3,7 +3,7 @@
 //// (decision 40, rule 5(b)), and `counts = counts.bump(k, n)` is the one
 //// atomic per-row increment.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 #[@BeamMemory.Ets(keyed: true)]
 var counts: Dict<string, i32> = Dict.empty();
@@ -14,5 +14,5 @@ fn add(k: string, n: i32) {
 
 pub fn main() {
     add("a", 1);
-    @print(counts.at("a"));
+    print(counts.at("a"));
 }

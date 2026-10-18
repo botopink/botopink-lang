@@ -8,7 +8,7 @@
 //// `effect-throw-without-fallible-channel` — whether the two merge is the
 //// README's open point 2, and this cell holds either answer.
 
-fn answer(n: i32) -> @Task<i32> {
+fn answer(n: i32) -> Task<i32> {
     if (n < 0) { throw "negative"; }
     return n;
 }

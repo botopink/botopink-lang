@@ -6,43 +6,43 @@
 //// received. `App` itself does not see its own provide — `Root` provides the
 //// one `App` reads.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themeName() -> @Component<string> {
+fn themeName() -> Component<string> {
     val t = use context(Theme);
     return t.mode;
 }
 
-fn Label(prefix: string) -> @Component<Element> {
+fn Label(prefix: string) -> Component<Element> {
     val name = use themeName();
     return Element(text: prefix + name);
 }
 
-fn Page() -> @Component<Element> {
+fn Page() -> Component<Element> {
     val l = Label("label:");
     return Element(text: "page[" + l.text + "]");
 }
 
-fn App() -> @Component<Element> {
+fn App() -> Component<Element> {
     val outer = use context(Theme);
     use provide(createContext(Theme(mode: "dark")));
     val p = Page();
     return Element(text: outer.mode + " " + p.text);
 }
 
-fn Root() -> @Component<Element> {
+fn Root() -> Component<Element> {
     use provide(createContext(Theme(mode: "light")));
     val a = App();
     return Element(text: a.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val r = await Root();
-    @print(r.text);
+    print(r.text);
 }

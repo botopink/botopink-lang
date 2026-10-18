@@ -2,6 +2,8 @@
 //// FAILED, which is where `x` is `null`: nothing narrows it, and the read is
 //// the optional-member error.
 
+import {io.terminal.print} from "std";
+
 type Node(v: i32)
 
 fn f(x: ?Node) -> bool {
@@ -9,5 +11,5 @@ fn f(x: ?Node) -> bool {
 }
 
 pub fn main() {
-    @print(f(null));
+    print(f(null));
 }

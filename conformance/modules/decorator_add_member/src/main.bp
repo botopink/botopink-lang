@@ -5,7 +5,7 @@
 //// members stay beside them. A field's decorator adds to the type that owns
 //// the field (`#[label]` below).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown) {
     var names: string[] = [];
@@ -38,7 +38,7 @@ type City(#[label] name: string, size: i32) {
 }
 
 pub fn main() {
-    @print(City.columns());
-    @print(City(name: "Recife", size: 3).bigger(2).describe());
-    @print(City.nameLabel());
+    print(City.columns());
+    print(City(name: "Recife", size: 3).bigger(2).describe());
+    print(City.nameLabel());
 }

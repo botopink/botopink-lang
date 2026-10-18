@@ -20,8 +20,9 @@ test "js: narrow ---- if null check with print" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val x: ?i32 = 42;
-        \\    if (x) { n -> @print(n); };
+        \\    if (x) { n -> print(n); };
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -37,9 +38,10 @@ test "js: narrow ---- case enum area with print" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(area(Shape.Circle(2.0)));
-        \\    @print(area(Shape.Square(3.0)));
+        \\    print(area(Shape.Circle(2.0)));
+        \\    print(area(Shape.Square(3.0)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -47,18 +49,19 @@ test "js: narrow ---- case enum area with print" {
 
 test "js: narrow ---- case result ok err with print" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(ok: bool) -> @Result<string, string> {
+        \\fn fetch(ok: bool) -> Result<string, string> {
         \\    if (ok) { return "data"; };
         \\    throw "fail";
         \\}
         \\fn main() {
         \\    val r1 = fetch(true);
         \\    val msg1 = case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-        \\    @print(msg1);
+        \\    print(msg1);
         \\    val r2 = fetch(false);
         \\    val msg2 = case r2 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-        \\    @print(msg2);
+        \\    print(msg2);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -71,9 +74,10 @@ test "js: narrow ---- early return with print" {
         \\    return "hello " + x;
         \\}
         \\fn main() {
-        \\    @print(greet("world"));
-        \\    @print(greet(null));
+        \\    print(greet("world"));
+        \\    print(greet(null));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -94,9 +98,10 @@ test "js: narrow ---- type guard basic codegen" {
         \\    return n > 0;
         \\}
         \\fn main() {
-        \\    @print(isPositive(5));
-        \\    @print(isPositive(-5));
+        \\    print(isPositive(5));
+        \\    print(isPositive(-5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -107,8 +112,9 @@ test "js: narrow ---- type guard if codegen" {
         \\    return false;
         \\}
         \\fn main() {
-        \\    @print(isString("hello"));
+        \\    print(isString("hello"));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -134,25 +140,26 @@ test "js: narrow ---- `is` tests the value, and a named type by its prototype" {
         \\type Shape { Circle(radius: i32), Dot }
         \\fn main() {
         \\    val p = Person(name: "a");
-        \\    @print(p is Person);
-        \\    @print(p is Shape);
+        \\    print(p is Person);
+        \\    print(p is Shape);
         \\    val c = Shape.Circle(radius: 5);
-        \\    @print(c is Shape);
+        \\    print(c is Shape);
         \\    val d = Shape.Dot;
-        \\    @print(d is Shape);
+        \\    print(d is Shape);
         \\    val n = 2;
-        \\    @print(n is i32);
-        \\    @print(n is f64);
-        \\    @print(n is string);
+        \\    print(n is i32);
+        \\    print(n is f64);
+        \\    print(n is string);
         \\    val s = "hi";
-        \\    @print(s is string);
-        \\    @print(s is bool);
+        \\    print(s is string);
+        \\    print(s is bool);
         \\    val t = #(1, "a");
-        \\    @print(t is #(i32, string));
-        \\    @print(t is #(string, i32));
+        \\    print(t is #(i32, string));
+        \\    print(t is #(string, i32));
         \\    val xs = [1, 2];
-        \\    @print(xs is i32[]);
+        \\    print(xs is i32[]);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\true
         \\false
@@ -182,9 +189,10 @@ test "js: narrow ---- case option some none" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(describe(Opt.Some(value: 42)));
-        \\    @print(describe(Opt.None));
+        \\    print(describe(Opt.Some(value: 42)));
+        \\    print(describe(Opt.None));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -205,8 +213,9 @@ test "js: narrow ---- and condition field access" {
         \\    return "light or none";
         \\}
         \\fn main() {
-        \\    @print(describe(Box(weight: 20)));
+        \\    print(describe(Box(weight: 20)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -221,8 +230,9 @@ test "js: narrow ---- optional chaining field access" {
         \\}
         \\fn main() {
         \\    val o = Outer(inner: Inner(value: 42));
-        \\    @print(getValue(o));
+        \\    print(getValue(o));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -236,9 +246,10 @@ test "js: narrow ---- else if chain with null checks" {
         \\    else { return "null"; }
         \\}
         \\fn main() {
-        \\    @print(classify(42));
-        \\    @print(classify(0));
+        \\    print(classify(42));
+        \\    print(classify(0));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -263,14 +274,15 @@ test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none"
         \\    return null;
         \\}
         \\fn main() {
-        \\    @print(find(-1) ?? 7);
-        \\    @print(find(5) ?? 7);
-        \\    @print(find(0) ?? 7);
+        \\    print(find(-1) ?? 7);
+        \\    print(find(5) ?? 7);
+        \\    print(find(0) ?? 7);
         \\    val o = Outer(inner: null);
-        \\    @print(o.inner?.v ?? 9);
+        \\    print(o.inner?.v ?? 9);
         \\    val p = Outer(inner: Inner(v: 4));
-        \\    @print(p.inner?.v ?? 9);
+        \\    print(p.inner?.v ?? 9);
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsNotContains(std.testing.allocator, src, &.{"!== null"});
     try h.assertJsRunLog(std.testing.allocator, src,
@@ -312,15 +324,16 @@ test "codegen: is ---- a named type is tested by the tag the value carries" {
         \\
         \\fn main() {
         \\    val u: unknown = Vec(name: "Ana", age: 30);
-        \\    @print(u is Vec);
-        \\    @print(u is Person);
+        \\    print(u is Vec);
+        \\    print(u is Person);
         \\    val s: unknown = Shape.Circle(radius: 4);
-        \\    @print(s is Shape);
+        \\    print(s is Shape);
         \\    val d: unknown = Shape.Dot;
-        \\    @print(d is Shape);
-        \\    @print(nameOf(Person(name: "Ana", age: 30)));
-        \\    @print(nameOf(Vec(name: "Ana", age: 30)));
+        \\    print(d is Shape);
+        \\    print(nameOf(Person(name: "Ana", age: 30)));
+        \\    print(nameOf(Vec(name: "Ana", age: 30)));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -336,12 +349,13 @@ test "js: is ---- an enum variant path is tested by the enum's class and its tag
         \\
         \\pub fn main() {
         \\    val x: Token = Token.Text(v: "hi");
-        \\    @print(x is Token.Text);
-        \\    @print(x is Token.Num);
+        \\    print(x is Token.Text);
+        \\    print(x is Token.Num);
         \\    val e: Token = Token.Eof;
-        \\    @print(e is Token.Eof);
-        \\    @print(e is Token.Text);
+        \\    print(e is Token.Eof);
+        \\    print(e is Token.Text);
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\true
         \\false

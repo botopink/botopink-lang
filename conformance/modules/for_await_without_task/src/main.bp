@@ -4,7 +4,9 @@
 //// `await-without-async`, at the `for` (where the `for-over-*` refusals
 //// of decision 103 are located).
 
-fn numbers() -> @Stream<i32> {
+import {io.terminal.print} from "std";
+
+fn numbers() -> Stream<i32> {
     yield 1;
     yield 2;
 }
@@ -15,4 +17,4 @@ fn total() -> i32 {
     return n;
 }
 
-pub fn main() { @print(total()); }
+pub fn main() { print(total()); }

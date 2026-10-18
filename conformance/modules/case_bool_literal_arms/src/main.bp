@@ -4,6 +4,8 @@
 //// false {…} }` took its first arm for both values (`yes` twice on commonJS
 //// and wasm, and erlang warned that the `False` clause could never match).
 
+import {io.terminal.print} from "std";
+
 fn braces(b: bool) -> string {
     return case b {
         true {
@@ -37,11 +39,11 @@ fn guarded(b: bool, n: i32) -> string {
 }
 
 pub fn main() {
-    @print(braces(true));
-    @print(braces(false));
-    @print(arrows(true));
-    @print(arrows(false));
-    @print(guarded(true, 5));
-    @print(guarded(true, 1));
-    @print(guarded(false, 5));
+    print(braces(true));
+    print(braces(false));
+    print(arrows(true));
+    print(arrows(false));
+    print(guarded(true, 5));
+    print(guarded(true, 1));
+    print(guarded(false, 5));
 }

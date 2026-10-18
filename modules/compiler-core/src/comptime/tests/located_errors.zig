@@ -148,10 +148,11 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\type Point(x: i32, y: i32)
             \\
             \\pub fn main() {
-            \\    @print(label());
+            \\    print(label());
             \\}
             \\
             \\import {compiler} from "std";
+            \\import {io.terminal.print} from "std";
             ,
             .line = 4,
             .col = 13,
@@ -163,9 +164,10 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\
             \\pub fn main() {
             \\    val atBuild = comptime io.random.float();
-            \\    @print(atBuild);
+            \\    print(atBuild);
             \\}
             \\
+            \\import {io.terminal.print} from "std";
             ,
             .line = 4,
             .col = 28,
@@ -178,7 +180,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             .src =
             \\fn checked(n: i32) -> i32 {
             \\    if (n > 1) {
-            \\        @panic("too big");
+            \\        panic("too big");
             \\    }
             \\    return n;
             \\}
@@ -192,10 +194,11 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\type Point(x: i32, y: i32)
             \\
             \\pub fn main() {
-            \\    @print(label());
+            \\    print(label());
             \\}
             \\
             \\import {compiler} from "std";
+            \\import {io.terminal.print, failure.panic} from "std";
             ,
             .line = 3,
             .col = 9,
@@ -205,16 +208,17 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             .src =
             \\fn checked(n: i32) -> i32 {
             \\    if (n > 1) {
-            \\        @panic("too big");
+            \\        panic("too big");
             \\    }
             \\    return n;
             \\}
             \\
             \\pub fn main() {
             \\    val atBuild = comptime checked(3);
-            \\    @print(atBuild);
+            \\    print(atBuild);
             \\}
             \\
+            \\import {io.terminal.print, failure.panic} from "std";
             ,
             .line = 3,
             .col = 9,
@@ -266,10 +270,11 @@ test "a raise inside a decorator is located in its own build when an earlier bui
         \\type Point(x: i32, y: i32)
         \\
         \\pub fn main() {
-        \\    @print(moved());
+        \\    print(moved());
         \\}
         \\
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     ;
     const cases = [_]struct { src: []const u8, line: u32 }{
         .{ .src = "\n\n\n" ++ decorated, .line = 7 },

@@ -4,7 +4,7 @@
 //// `d.metaAll(Check)` is refused at the argument (question `130-s8-d`);
 //// `@typeInfo(X).metaAll(Check)` reads it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Check<T>(note: string)
 
@@ -25,6 +25,6 @@ pub fn home() -> string {
 
 pub fn main() {
     for (@TypeInfo.all(with: mark)) { d ->
-        @print(d.metaAll(Check).length);
+        print(d.metaAll(Check).length);
     }
 }

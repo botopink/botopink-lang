@@ -5,19 +5,19 @@
 //// `use provide` made — so every item reads `List`'s `>`. The `mark` the
 //// lambda captures reaches its body, and a `return` leaves it with its value.
 
-import {context.createContext, context.provide, context.context, context.RenderScope} from "std";
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
 
-type View(text: string, kids: @Component<View>[]) implement @Renderable
+type View(text: string, kids: Component<View>[]) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn List(names: string[], item: fn(name: string) -> @Component<View>) -> @Component<View> {
+fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
     use provide(createContext(">"));
     return View(text: "list", kids: names.map(item));
 }
 
 // Run `c` with `scope`, then each child with the scope `c`'s run answered.
-fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
+fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
     val r = await c.run(scope);
     var out = r.value.text;
     for (r.value.kids) { k ->
@@ -27,12 +27,12 @@ fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
     return out;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val mark = "*";
     val page = List(["a", "", "b"], component { name ->
         val p = use context(string);
         if (name == "") return View(text: p + "empty", kids: []);
         View(text: p + name + mark, kids: [])
     });
-    @print(await render(page, RenderScope.root()));
+    print(await render(page, RenderScope.root()));
 }

@@ -2,7 +2,9 @@
 //// positional, `#(1, 2)`; the label belongs to the tuple TYPE. Refused by name
 //// at the label (the labeled construction is `01-checker`'s §6).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val t = #(x: 1, y: 2);
-    @print(t.x.toString());
+    print(t.x.toString());
 }

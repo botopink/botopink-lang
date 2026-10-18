@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: for-over-condition: `for` iterates a collection, a range or an iterator — a condition is a `while`
-at src/main.bp:6:5
+at src/main.bp:8:5

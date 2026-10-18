@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `magnitude` has no implementation for the wasm backend
-at src/main.bp:8:12
+at src/main.bp:10:11

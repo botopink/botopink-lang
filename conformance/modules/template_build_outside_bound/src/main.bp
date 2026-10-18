@@ -2,12 +2,12 @@
 //// code it builds fits: code of another type is refused in the template, at
 //// its `build` (`template-build-outside-bound`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn count(syntax q: string) -> i32 {
     return compiler.build("\"" + compiler.text(q) + "\"");
 }
 
 pub fn main() {
-    @print(count @`seven`);
+    print(count @`seven`);
 }

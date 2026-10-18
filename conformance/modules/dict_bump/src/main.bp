@@ -3,13 +3,13 @@
 //// one adds `by`, the dict it was called on is unchanged, and a negative `by`
 //// counts down.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 pub fn main() {
     val empty: Dict<string, i32> = Dict.empty();
     val once = empty.bump("a", 2);
     val twice = once.bump("a", 3).bump("b", -4);
-    @print(once.at("a"), once.at("b"));
-    @print(twice.at("a"), twice.at("b"), twice.size());
-    @print(empty.size());
+    print(once.at("a"), once.at("b"));
+    print(twice.at("a"), twice.at("b"), twice.size());
+    print(empty.size());
 }

@@ -4,11 +4,13 @@
 //// (`reject/array_literal_union_misuse`); an expected union takes the
 //// elements as its members.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, "a"];
-    @print(xs.length);
+    print(xs.length);
     val ys: (i32 | string)[] = [2, "b", 3];
-    @print(ys.length);
+    print(ys.length);
     val zs = ["c", 4, "d", 5];
-    @print(zs.length);
+    print(zs.length);
 }

@@ -3,7 +3,9 @@
 //// refused at the literal, naming `1d` and `1.0`. (It was
 //// `run/integer_literal_fits_f64`.)
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x: f64 = 1;
-    @print(x);
+    print(x);
 }

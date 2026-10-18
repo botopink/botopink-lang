@@ -2,8 +2,10 @@
 //// return type, so `n.toString()` inside it resolves — as it does in a lambda
 //// bound inside a function.
 
+import {io.terminal.print} from "std";
+
 type Worker(id: i32) {
-    fn lazyStart(self: Self) -> fn(n: i32) -> @Task<@Result<i32, string>> {
+    fn lazyStart(self: Self) -> fn(n: i32) -> Task<Result<i32, string>> {
         return { n ->
             async {
                 if (n < 0) throw "negative " + n.toString();
@@ -13,14 +15,14 @@ type Worker(id: i32) {
     }
 }
 
-fn show(r: @Result<i32, string>) {
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("error", e);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val w = Worker(id: 10);
     val later = w.lazyStart();
     show(await later(2));

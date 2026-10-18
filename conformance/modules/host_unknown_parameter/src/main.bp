@@ -4,10 +4,10 @@
 //// What a host call answers is `unknown`, tested with `is` before use.
 //// Erlang and beam only (`.targets`): `std/erlang` has no other target.
 
-import {erlang} from "std";
+import {erlang, io.terminal.print} from "std";
 
 pub fn main() {
     val first = erlang.element(1, #(7, "x"));
-    if (first is i32) @print(first + 1);
-    @print(erlang.abs(-3));
+    if (first is i32) print(first + 1);
+    print(erlang.abs(-3));
 }

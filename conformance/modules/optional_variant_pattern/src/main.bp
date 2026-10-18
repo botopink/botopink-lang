@@ -7,8 +7,10 @@
 //// `no case clause matching 5` on erlang — four different wrong answers to a
 //// program that decision 54 says must not compile.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x: ?i32 = 5;
     val a = case x { .Some(v) { "present" } .None { "absent" } };
-    @print(a);
+    print(a);
 }

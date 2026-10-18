@@ -1,6 +1,8 @@
 //// Decisions 359 and 267 — a spread copies a record's fields into its
 //// constructor; a plain function call takes no spread. Refused at the `...`.
 
+import {io.terminal.print} from "std";
+
 type Par(a: i32, b: i32)
 
 fn soma(a: i32, b: i32) -> i32 {
@@ -9,5 +11,5 @@ fn soma(a: i32, b: i32) -> i32 {
 
 pub fn main() {
     val par = Par(a: 1, b: 2);
-    @print(soma(..par));
+    print(soma(..par));
 }

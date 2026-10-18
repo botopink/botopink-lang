@@ -2,7 +2,7 @@
 //// `T`: here `T` is already `i32` from the declaration pattern `fn() -> T`,
 //// so the type argument `string` is refused where it is written.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Provides(name: string)
 
@@ -16,5 +16,5 @@ fn count() -> i32 {
 }
 
 pub fn main() {
-    @print(count());
+    print(count());
 }

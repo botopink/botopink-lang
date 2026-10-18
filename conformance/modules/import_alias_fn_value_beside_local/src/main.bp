@@ -8,6 +8,7 @@
 pub mod lib;
 
 import {lib.pick as other};
+import {io.terminal.print} from "std";
 
 fn pick(n: i32) -> i32 {
     return n + 1;
@@ -18,10 +19,10 @@ fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(other(1));
-    @print(pick(1));
+    print(other(1));
+    print(pick(1));
     val f = other;
-    @print(f(2));
-    @print(apply(other, 3));
-    @print(apply(pick, 3));
+    print(f(2));
+    print(apply(other, 3));
+    print(apply(pick, 3));
 }

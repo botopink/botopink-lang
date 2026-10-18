@@ -4,6 +4,8 @@
 //// `list.length` printed `2` at exit 0. It is the literal's elements followed
 //// by the spread value's now, on every target.
 
+import {io.terminal.print} from "std";
+
 fn tail() -> i32[] {
     return [30, 40];
 }
@@ -11,14 +13,14 @@ fn tail() -> i32[] {
 pub fn main() {
     val rest = [3, 4];
     val list = [1, 2, ..rest];
-    @print(list.length);
-    @print(list[0]);
-    @print(list[3]);
+    print(list.length);
+    print(list[0]);
+    print(list[3]);
     val t = tail();
     val fromCall = [10, ..t];
-    @print(fromCall.length);
-    @print(fromCall[2]);
+    print(fromCall.length);
+    print(fromCall[2]);
     val empty: i32[] = [];
     val onlySpread = [..empty];
-    @print(onlySpread.length);
+    print(onlySpread.length);
 }

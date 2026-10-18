@@ -2,6 +2,8 @@
 //// `comptime`'s was: the arm's value is its tail. Refused at the `break`
 //// (`botopink format` writes `break v;` back as the tail `v`).
 
+import {io.terminal.print} from "std";
+
 fn arm(n: i32) -> i32 {
     val v = case n {
         0 {
@@ -13,5 +15,5 @@ fn arm(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(arm(0));
+    print(arm(0));
 }

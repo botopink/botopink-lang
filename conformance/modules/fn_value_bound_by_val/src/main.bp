@@ -4,6 +4,8 @@
 //// address (`256`) at exit 0; it now types the local by the declaration, as a
 //// written `fn(…) -> T` annotation does.
 
+import {io.terminal.print} from "std";
+
 fn greet() -> string {
     return "hi";
 }
@@ -18,12 +20,12 @@ fn yes() -> bool {
 
 pub fn main() {
     val g = greet;
-    @print(g());
+    print(g());
     val again = g;
-    @print(again());
+    print(again());
     val h = shout;
-    @print(h("hey"));
+    print(h("hey"));
     val y = yes;
-    @print(y());
-    @print(g() + "?");
+    print(y());
+    print(g() + "?");
 }

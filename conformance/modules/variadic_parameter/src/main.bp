@@ -7,6 +7,8 @@
 //// commonJS lowers it as a rest parameter, erlang and beam as one list
 //// argument, wasm as one array.
 
+import {io.terminal.print} from "std";
+
 fn total(label: string, ..values: i32[]) -> string {
     var sum = 0;
     for (values) { v ->
@@ -30,15 +32,15 @@ pub type Bag(sep: string) {
 }
 
 pub fn main() {
-    @print(total("none"));
-    @print(total("one", 4));
-    @print(total("three", 1, 2, 3));
-    @print(count("a", "b"));
-    @print(count<bool>());
+    print(total("none"));
+    print(total("one", 4));
+    print(total("three", 1, 2, 3));
+    print(count("a", "b"));
+    print(count<bool>());
     val b = Bag(sep: "+");
-    @print(b.join());
-    @print(b.join("x"));
-    @print(b.join("x", "y", "z"));
-    @print(Bag.of("p", "q"));
-    @print("two", 3);
+    print(b.join());
+    print(b.join("x"));
+    print(b.join("x", "y", "z"));
+    print(Bag.of("p", "q"));
+    print("two", 3);
 }

@@ -3,6 +3,8 @@
 //// the function's answer otherwise — a present `0` included — whatever the
 //// answer's type (an integer, a string, a bool, a record).
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 fn counter(present: bool) -> ?fn(i32) -> i32 {
@@ -26,15 +28,15 @@ fn maker(present: bool) -> ?fn(i32) -> Point {
 }
 
 pub fn main() {
-    @print(counter(true)?.(6) ?? -1);
-    @print(counter(true)?.(5) ?? -1);
-    @print(counter(false)?.(5) ?? -1);
-    @print(counter(true)?.(5));
-    @print(counter(false)?.(5));
-    @print(greeter(true)?.("bo") ?? "nobody");
-    @print(greeter(false)?.("bo") ?? "nobody");
-    @print(checker(true)?.(0) ?? false);
-    @print(checker(false)?.(0) ?? true);
-    @print(maker(true)?.(4)?.y ?? -1);
-    @print(maker(false)?.(4)?.y ?? -1);
+    print(counter(true)?.(6) ?? -1);
+    print(counter(true)?.(5) ?? -1);
+    print(counter(false)?.(5) ?? -1);
+    print(counter(true)?.(5));
+    print(counter(false)?.(5));
+    print(greeter(true)?.("bo") ?? "nobody");
+    print(greeter(false)?.("bo") ?? "nobody");
+    print(checker(true)?.(0) ?? false);
+    print(checker(false)?.(0) ?? true);
+    print(maker(true)?.(4)?.y ?? -1);
+    print(maker(false)?.(4)?.y ?? -1);
 }

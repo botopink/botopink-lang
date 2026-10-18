@@ -4,7 +4,8 @@
 
 pub mod tags;
 import {tags.markup, tags.shout};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(markup @`<div #[shout]>hi</div>`);
+    print(markup @`<div #[shout]>hi</div>`);
 }

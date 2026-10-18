@@ -3,6 +3,8 @@
 //// own binding, never the earlier one — on every target, whether the earlier
 //// optional was present or absent.
 
+import {io.terminal.print} from "std";
+
 fn joined(first: ?string, parts: string[], sep: ?string) -> string {
     var out = "";
     if (first) {
@@ -20,7 +22,7 @@ fn joined(first: ?string, parts: string[], sep: ?string) -> string {
 }
 
 pub fn main() {
-    @print(joined("<", ["a", "b"], "|"));
-    @print(joined(null, ["a", "b"], "-"));
-    @print(joined("<", ["a", "b"], null));
+    print(joined("<", ["a", "b"], "|"));
+    print(joined(null, ["a", "b"], "-"));
+    print(joined("<", ["a", "b"], null));
 }

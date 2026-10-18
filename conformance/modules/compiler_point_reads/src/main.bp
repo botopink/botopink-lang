@@ -3,7 +3,7 @@
 //// module and package (the root package's is `""`), `compiler.isStd` whether
 //// it is std's.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Where(pkg: string, std: bool, module: string)
 
@@ -15,6 +15,6 @@ fn where(syntax decl: unknown) {
 pub type City(name: string)
 
 pub fn main() {
-    val w = @typeInfo(City).meta(Where)!;
-    @print("[" + w.pkg + "] " + w.std.toString() + " " + w.module);
+    val w = comptime compiler.typeInfo(City).meta(Where)!;
+    print("[" + w.pkg + "] " + w.std.toString() + " " + w.module);
 }

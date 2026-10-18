@@ -1,6 +1,8 @@
 //// Decision 255 (1) — `Opt<i32>.Some(…)` is the variant of `Opt<i32>`, so
 //// its payload is an `i32` and a `string` is refused at the argument.
 
+import {io.terminal.print} from "std";
+
 type Opt<T> {
     Some(value: T),
     None,
@@ -8,5 +10,5 @@ type Opt<T> {
 
 pub fn main() {
     val s = Opt<i32>.Some("a");
-    @print(s == Opt<i32>.None);
+    print(s == Opt<i32>.None);
 }

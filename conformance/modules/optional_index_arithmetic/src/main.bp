@@ -5,7 +5,9 @@
 //// number on every target alike (erlang raises, commonJS reads `null` as `0`),
 //// so wasm refuses the operation at the operand, located.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2];
-    @print(xs[0] + 1);
+    print(xs[0] + 1);
 }

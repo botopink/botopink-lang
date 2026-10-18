@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Clock(zone: string)
 
 fn build(factory: unknown) -> string {
@@ -6,6 +8,6 @@ fn build(factory: unknown) -> string {
 }
 
 pub fn main() {
-    @print(build({ -> Clock(zone: "UTC") }));
-    @print(build(42));
+    print(build({ -> Clock(zone: "UTC") }));
+    print(build(42));
 }

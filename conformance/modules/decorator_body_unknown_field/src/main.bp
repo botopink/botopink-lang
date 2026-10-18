@@ -4,6 +4,8 @@
 //// at the annotation. The body is checked: an unknown field of `Decl`, located
 //// at the field.
 
+import {io.terminal.print} from "std";
+
 fn tagged(syntax decl: unknown) {
     val n = decl.nope;
 }
@@ -14,5 +16,5 @@ fn work() -> i32 {
 }
 
 pub fn main() {
-    @print(work());
+    print(work());
 }

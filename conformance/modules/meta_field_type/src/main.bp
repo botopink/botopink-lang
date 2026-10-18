@@ -3,7 +3,7 @@
 //// optional of those) or an `@Expr<T>`: a function field is refused at the
 //// call, naming the field.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Hook(run: fn() -> i32)
 
@@ -19,5 +19,5 @@ fn hooked(syntax decl: unknown) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeInfo(City).metaAll(Hook).length);
+    print(comptime compiler.typeInfo(City).metaAll(Hook).length);
 }

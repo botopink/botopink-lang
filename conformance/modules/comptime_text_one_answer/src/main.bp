@@ -10,23 +10,25 @@
 //// the wat runtime, which refused the non-ASCII case mapping (`string case
 //// mapping of a non-ASCII character`), and erlang's and beam's on the BEAM.
 
+import {io.terminal.print} from "std";
+
 fn id(x: f64) -> f64 {
     return x;
 }
 
 pub fn main() {
     val five = comptime "${5.0}";
-    @print(five);
+    print(five);
     val fiveText = comptime 5.0.toString();
-    @print(fiveText);
+    print(fiveText);
     val big = comptime "${id(1.0e21)}";
-    @print(big);
+    print(big);
     val small = comptime id(1.0e-7).toString();
-    @print(small);
+    print(small);
     val trimmed = comptime "\u{00A0}a ".trim();
-    @print("[" + trimmed + "]");
-    @print(comptime "é".toUpper());
-    @print(comptime "straße".toUpper());
-    @print(comptime "ΟΔΟΣ".toLower());
-    @print(comptime "ÉCOLE".toLower());
+    print("[" + trimmed + "]");
+    print(comptime "é".toUpper());
+    print(comptime "straße".toUpper());
+    print(comptime "ΟΔΟΣ".toLower());
+    print(comptime "ÉCOLE".toLower());
 }

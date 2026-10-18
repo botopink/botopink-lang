@@ -3,7 +3,7 @@
 //// a primitive is accepted; a misspelt name and a string are refused
 //// (`reject/decorator_type_argument_{unknown,string}`).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
@@ -30,9 +30,9 @@ fn greeting() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(consoleMail).meta(MissingBean)?.bean ?? "none");
-    @print(consoleMail().send("ana"));
-    @print(greeting());
+    print(comptime compiler.typeInfo(consoleMail).meta(MissingBean)?.bean ?? "none");
+    print(consoleMail().send("ana"));
+    print(greeting());
 }
 
 // What `#[conditionalOnMissingBean]` records.

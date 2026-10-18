@@ -4,17 +4,19 @@
 //// commonJS holds a value past 2^53 as a `BigInt` (it refused the literal
 //// before).
 
+import {io.terminal.print} from "std";
+
 fn add(a: u64, b: u64) -> u64 {
     return a + b;
 }
 
 pub fn main() {
     val top = 18446744073709551615ul;
-    @print(top);
-    @print(top - 18446744073709551614ul);
-    @print(add(18446744073709551614ul, 1ul));
-    @print(10000000000000000000ul % 3000000000000000000ul);
-    @print(10000000000000000000ul / 3ul);
-    @print(add(top, 1ul));
-    @print("unreachable");
+    print(top);
+    print(top - 18446744073709551614ul);
+    print(add(18446744073709551614ul, 1ul));
+    print(10000000000000000000ul % 3000000000000000000ul);
+    print(10000000000000000000ul / 3ul);
+    print(add(top, 1ul));
+    print("unreachable");
 }

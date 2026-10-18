@@ -5,9 +5,11 @@
 //// activates nothing and is legal (`effect-wrapper-behind-alias` is the refusal
 //// for a body that does). Nothing of an alias reaches the emitted program.
 
+import {io.terminal.print} from "std";
+
 type ParseError { Empty }
 
-pub type Parser<T> = @Result<T, ParseError>;
+pub type Parser<T> = Result<T, ParseError>;
 
 type Id = i32;
 
@@ -15,7 +17,7 @@ type Pair<A, B> = #(A, B);
 
 type Ids = Id[];
 
-fn parsePort(s: string) -> @Result<i32, ParseError> {
+fn parsePort(s: string) -> Result<i32, ParseError> {
     if (s == "") throw ParseError.Empty;
     return 8080;
 }
@@ -34,12 +36,12 @@ fn swap(p: Pair<i32, string>) -> Pair<string, i32> {
 
 pub fn main() {
     val n: Id = double(21);
-    @print(n);
+    print(n);
     val ids: Ids = [1, 2, 3];
-    @print(ids.length);
+    print(ids.length);
     val s = swap(#(1, "a"));
-    @print(s.0);
-    @print(s.1);
-    @print(try port("x") catch 0);
-    @print(try port("") catch 7);
+    print(s.0);
+    print(s.1);
+    print(try port("x") catch 0);
+    print(try port("") catch 7);
 }

@@ -6,6 +6,8 @@
 //// `ProcessDict` var meant one value per process only on the BEAM. On erlang
 //// and beam the var is written through a `fn` and read back.
 
+import {io.terminal.print} from "std";
+
 #[@BeamMemory.ProcessDict]
 var hits: i32 = 0;
 
@@ -16,5 +18,5 @@ fn bump() {
 pub fn main() {
     bump();
     bump();
-    @print(hits);
+    print(hits);
 }

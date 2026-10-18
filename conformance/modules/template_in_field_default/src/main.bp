@@ -2,7 +2,7 @@
 //// as a record field's default and a parameter's default, for every call that
 //// leaves it out.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn twice(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q) + compiler.text(q) + "\"");
@@ -15,7 +15,7 @@ fn greet(name: string = twice @`na`) -> string {
 }
 
 pub fn main() {
-    @print(Conf().label);
-    @print(Conf(size: 2).label + Conf(label: "own").label);
-    @print(greet());
+    print(Conf().label);
+    print(Conf(size: 2).label + Conf(label: "own").label);
+    print(greet());
 }

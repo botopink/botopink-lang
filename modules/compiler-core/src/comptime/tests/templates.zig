@@ -1020,7 +1020,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn Page1() -> Element { return Element(); }
         \\fn Page2() -> Element { return Element(); }
@@ -1188,10 +1188,11 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\}
         \\pub fn main() {
         \\    val g = Greeter(who: "Ana");
-        \\    @print(g.greet("hello"));
-        \\    @print(g.greet @`hello`);
+        \\    print(g.greet("hello"));
+        \\    print(g.greet @`hello`);
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1216,10 +1217,11 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\    return w.greet @`hi`;
         \\}
         \\pub fn main() {
-        \\    @print(Waver(name: "Ana").greet "hello");
-        \\    @print(wave(Waver(name: "Bia")));
+        \\    print(Waver(name: "Ana").greet "hello");
+        \\    print(wave(Waver(name: "Bia")));
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1232,7 +1234,8 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     const src =
         \\fn shout(syntax q: string) -> string { return q; }
         \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
-        \\pub fn main() { @print(shout @`a`); @print(run({ s -> s })); }
+        \\pub fn main() { print(shout @`a`); print(run({ s -> s })); }
+        \\import {io.terminal.print} from "std";
     ;
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(alloc));
@@ -1262,16 +1265,18 @@ test "templates: a raise in another module's template body names the body's file
     const tpl =
         \\pub fn shout(syntax t: string) -> string {
         \\    val s = compiler.text(t);
-        \\    @panic("boom " + s);
+        \\    panic("boom " + s);
         \\    return compiler.build("\"" + s + "\"");
         \\}
         \\import {compiler} from "std";
+        \\import {failure.panic} from "std";
     ;
     const src =
         \\import {tpl.shout};
         \\pub fn main() {
-        \\    @print(shout @`hi`);
+        \\    print(shout @`hi`);
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());

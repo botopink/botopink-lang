@@ -7,7 +7,7 @@
 //// trapped, `1.5` came back `1`, a string came back as its address, and two
 //// equal strings were two different words.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 behavior Seq<A> {
     default fn firstOr(xs: Array<A>, d: A) -> A {
@@ -32,20 +32,20 @@ fn same<T>(a: T, b: T) -> bool {
 }
 
 pub fn main() {
-    @print(Seq.firstOr([3, 4], 0));
-    @print(Seq.firstOr(["x"], "none"));
-    @print(describe(5));
-    @print(describe("s"));
-    @print(describe(true));
-    @print(ident(1.5));
-    @print(ident(2.5) + 1.0);
-    @print(pair("a", "b"));
-    @print(pair(1, 2));
+    print(Seq.firstOr([3, 4], 0));
+    print(Seq.firstOr(["x"], "none"));
+    print(describe(5));
+    print(describe("s"));
+    print(describe(true));
+    print(ident(1.5));
+    print(ident(2.5) + 1.0);
+    print(pair("a", "b"));
+    print(pair(1, 2));
     val built = "k=v".split("=").at(0) ?? "";
-    @print(same(built, "k"));
-    @print(same(3, 4));
+    print(same(built, "k"));
+    print(same(3, 4));
     var d: Dict<string, string> = Dict.empty();
     d = d.insert(built, "found");
-    @print(d.at("k") ?? "none");
-    @print(d.at("z") ?? "none");
+    print(d.at("k") ?? "none");
+    print(d.at("z") ?? "none");
 }

@@ -5,7 +5,8 @@
 pub mod marks;
 pub mod jobs;
 import {marks.tagged};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(@TypeInfo.all(with: tagged).length);
+    print(@TypeInfo.all(with: tagged).length);
 }

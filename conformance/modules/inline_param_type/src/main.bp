@@ -5,6 +5,8 @@
 //// a defaulted field left out); a value already of the type is passed as the
 //// parameter itself; another parameter of the function stays an ordinary one.
 
+import {io.terminal.print} from "std";
+
 pub fn link(
     props: type(href: string, label: string, external: bool = false),
 ) -> string {
@@ -23,9 +25,9 @@ fn scaled(props: type(n: i32, unit: string = "px"), times: i32) -> string {
 }
 
 pub fn main() {
-    @print(link(href: "/a", label: "A"));
-    @print(link(label: "B", href: "/b", external: true));
-    @print(again(href: "/c", label: "C", external: true));
-    @print(scaled(n: 4, times: 3));
-    @print(scaled(times: 2, n: 5, unit: "em"));
+    print(link(href: "/a", label: "A"));
+    print(link(label: "B", href: "/b", external: true));
+    print(again(href: "/c", label: "C", external: true));
+    print(scaled(n: 4, times: 3));
+    print(scaled(times: 2, n: 5, unit: "em"));
 }

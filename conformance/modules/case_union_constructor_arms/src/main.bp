@@ -4,6 +4,8 @@
 //// §5.1). The arms were read as covering nothing and the case was refused
 //// "not exhaustive: missing member(s) Dog, Cat".
 
+import {io.terminal.print} from "std";
+
 type Dog(name: string, breed: string)
 
 type Cat(name: string, lives: i32)
@@ -20,6 +22,6 @@ fn describe(p: Dog | Cat) -> string {
 }
 
 pub fn main() {
-    @print(describe(Dog(name: "rex", breed: "lab")));
-    @print(describe(Cat(name: "tom", lives: 9)));
+    print(describe(Dog(name: "rex", breed: "lab")));
+    print(describe(Cat(name: "tom", lives: 9)));
 }

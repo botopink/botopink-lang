@@ -2,8 +2,10 @@
 //// `..`, not JavaScript's `...` (which is the inclusive pattern range,
 //// decision 36). Refused by name at the `...`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val a = [1, 2];
     val b = [...a, 3];
-    @print(b.length.toString());
+    print(b.length.toString());
 }

@@ -13,16 +13,17 @@
 pub mod shapes;
 
 import {shapes.Target, shapes.Place, shapes.Anchor};
+import {io.terminal.print} from "std";
 
 type Pin(n: i32, at: Target = .Bottom)
 
 pub fn main() {
     val a = Anchor(href: "/x");
-    @print(a);
-    @print(a.target);
-    @print(a.place);
-    @print(a.fallback ?? Target.Top);
-    @print(
+    print(a);
+    print(a.target);
+    print(a.place);
+    print(a.fallback ?? Target.Top);
+    print(
         Anchor(
             href: "/y",
             target: .Bottom,
@@ -31,7 +32,7 @@ pub fn main() {
         ),
     );
     val p: Place = Place.There(name: "w");
-    @print(p);
-    @print(Pin(n: 1));
-    @print(Pin(n: 2).at);
+    print(p);
+    print(Pin(n: 1));
+    print(Pin(n: 2).at);
 }

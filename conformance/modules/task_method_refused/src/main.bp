@@ -3,12 +3,14 @@
 //// error. A task's value is read by `await`; every composition of a task is an
 //// `async { … }` block (`task_compose_by_async_block`).
 
-fn load() -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn load() -> Task<i32> {
     return 4;
 }
 
 pub fn main() {
     val t = load();
     val doubled = t.map({ n -> n * 2 });
-    @print(doubled);
+    print(doubled);
 }

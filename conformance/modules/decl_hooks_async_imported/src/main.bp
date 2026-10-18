@@ -6,10 +6,11 @@ pub mod pages;
 pub mod ui;
 
 import {pages.Page, pages.Wall, pages.Graph};
+import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    val pageNodes: string[] = @typeInfo(Page).meta(Graph)?.nodes ?? [];
-    @print(pageNodes.join(", "));
-    val wallNodes: string[] = @typeInfo(Wall).meta(Graph)?.nodes ?? [];
-    @print(wallNodes.join(", "));
+    val pageNodes: string[] = comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? [];
+    print(pageNodes.join(", "));
+    val wallNodes: string[] = comptime compiler.typeInfo(Wall).meta(Graph)?.nodes ?? [];
+    print(wallNodes.join(", "));
 }

@@ -2,21 +2,21 @@
 //// out (`return`) inside an enclosing region, runs once, and the panic it
 //// raises is the one `attempt` answers.
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, io.terminal.print, failure.panic} from "std";
 
 fn inner() -> i32 {
-    defer @print("outer");
+    defer print("outer");
     defer {
-        @print("inner");
-        @panic("from defer");
+        print("inner");
+        panic("from defer");
     }
     return 1;
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 

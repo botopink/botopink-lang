@@ -4,6 +4,8 @@
 //// expected (rakun's `rkResolve<T>` is this shape). The first entry
 //// resolves and prints; the second aborts the program.
 
+import {failure.panic, io.terminal.print} from "std";
+
 type Clock(zone: string)
 
 fn makeClock() -> Clock {
@@ -16,11 +18,11 @@ fn twice(n: i32) -> i32 {
 
 fn resolve(name: string, entry: unknown) -> Clock {
     if (entry is fn() -> Clock) return entry();
-    @panic("entry '" + name + "' is not a fn() -> Clock");
+    panic("entry '" + name + "' is not a fn() -> Clock");
 }
 
 pub fn main() {
-    @print(resolve("clock", makeClock).zone);
-    @print(resolve("twice", twice).zone);
-    @print("unreachable");
+    print(resolve("clock", makeClock).zone);
+    print(resolve("twice", twice).zone);
+    print("unreachable");
 }

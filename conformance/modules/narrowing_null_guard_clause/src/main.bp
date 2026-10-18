@@ -41,6 +41,8 @@
 ////         Either one alone compiles and runs on beam; together they are
 ////         `UnknownFunction`.
 
+import {io.terminal.print} from "std";
+
 type Entry(key: string)
 
 fn firstKeyLength(es: Entry[]) -> i32 {
@@ -66,10 +68,10 @@ type Row(cells: string[]) {
 
 pub fn main() {
     val none: Entry[] = [];
-    @print(firstKeyLength([Entry(key: "abc")]).toString());
-    @print(firstKeyLength(none).toString());
-    @print(pair([Entry(key: "abc")], ["hi"]));
-    @print(pair(none, ["hi"]));
-    @print(Row(cells: ["hello"]).widest().toString());
-    @print(Row(cells: []).widest().toString());
+    print(firstKeyLength([Entry(key: "abc")]).toString());
+    print(firstKeyLength(none).toString());
+    print(pair([Entry(key: "abc")], ["hi"]));
+    print(pair(none, ["hi"]));
+    print(Row(cells: ["hello"]).widest().toString());
+    print(Row(cells: []).widest().toString());
 }

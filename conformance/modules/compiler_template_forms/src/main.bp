@@ -3,7 +3,7 @@
 //// (its `syntax self: R` receiver first), and the annotation `` #[name @`…`] ``,
 //// whose second `syntax` parameter is the annotated declaration.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Query(sql: string)
 
@@ -28,8 +28,8 @@ fn plus(syntax self: Num, syntax q: string) -> anyvalue {
 }
 
 pub fn main() {
-    @print(@typeInfo(find).meta(Query)?.sql ?? "none");
+    print(comptime compiler.typeInfo(find).meta(Query)?.sql ?? "none");
     val a = Num(n: 1);
     val b = a.plus @`41`;
-    @print(b.n);
+    print(b.n);
 }

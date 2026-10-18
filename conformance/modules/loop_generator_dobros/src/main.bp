@@ -2,6 +2,8 @@
 //// emits and continues, `break v` emits and ends. Prints `2 4 … 18 20`,
 //// the last item the `break`'s, and the counter is the generator's state.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var contador = 0;
     val dobros = iter loop {
@@ -10,7 +12,7 @@ pub fn main() {
         yield contador * 2;
     };
     for (dobros) { d ->
-        @print(d);
+        print(d);
     }
-    @print(contador);
+    print(contador);
 }

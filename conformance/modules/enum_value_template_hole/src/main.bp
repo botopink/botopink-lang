@@ -7,6 +7,7 @@
 mod modes;
 
 import {modes.Mode};
+import {io.terminal.print} from "std";
 
 type Target {
     Top,
@@ -30,16 +31,16 @@ fn describe(t: Target, s: Shape) -> string {
 
 pub fn main() {
     val t = Target.Top;
-    @print("${t}");
-    @print("at ${Target.Bottom}!");
+    print("${t}");
+    print("at ${Target.Bottom}!");
     val c = Shape.Circle(radius: 2);
-    @print("${c}");
-    @print("shape ${Shape.Named(label: "é")} and ${Shape.Dot}");
-    @print(describe(Target.Bottom, Shape.Named(label: "x")));
-    @print("picked ${pick(true)}");
+    print("${c}");
+    print("shape ${Shape.Named(label: "é")} and ${Shape.Dot}");
+    print(describe(Target.Bottom, Shape.Named(label: "x")));
+    print("picked ${pick(true)}");
     val m = Mode.Slow(n: 3);
-    @print("mode ${m} ${Mode.Fast}");
-    @print("plus " + t + " " + c);
+    print("mode ${m} ${Mode.Fast}");
+    print("plus " + t + " " + c);
     val s: string = "${c}";
-    @print(s.length());
+    print(s.length());
 }

@@ -2,10 +2,12 @@
 //// argument is a `T`, the body reads a `T[]`. `..value: i32` is refused at the
 //// type.
 
+import {io.terminal.print} from "std";
+
 fn one(..value: i32) -> i32 {
     return value;
 }
 
 pub fn main() {
-    @print(one(1));
+    print(one(1));
 }

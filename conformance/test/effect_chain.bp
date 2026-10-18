@@ -8,24 +8,24 @@
 //// What each pins is that the body type-checks with BOTH capabilities in it and
 //// that the value it produces is the one the chain implies.
 
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn fetch(n: i32) -> @Task<i32> {
+fn fetch(n: i32) -> Task<i32> {
     return n * 2;
 }
 
 // `@Task<@Result<…>>`: `try` and `await` in one body.
-fn load(n: i32) -> @Task<@Result<i32, string>> {
+fn load(n: i32) -> Task<Result<i32, string>> {
     val v = try parse(n);
     val w = await fetch(v);
     return w + 1;
 }
 
 // `@Iterator<@Result<…>>`: `try` and `yield` in one body.
-fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+fn upTo(n: i32) -> Iterator<Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) {

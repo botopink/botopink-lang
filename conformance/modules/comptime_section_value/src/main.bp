@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Tok {
     Pad {
         All {
@@ -16,5 +18,5 @@ fn main() {
     val t: Tok = comptime first(
         [.Pad.All.8, .Bold],
     ); // written as Tok.Pad.All.8
-    @print(t == Tok.Pad.All.8); // true
+    print(t == Tok.Pad.All.8); // true
 }

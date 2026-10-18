@@ -20,13 +20,14 @@ test "js: record implement ---- fields round-trip at runtime" {
     // runtime instead of `undefined`. Runs on every backend (node + erlang
     // parity captured in each RUN LOG).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val E = type(tag: string, n: i32) implement @Renderable
+        \\val E = type(tag: string, n: i32) implement Renderable
         \\fn mk() -> E {
         \\    return E(tag: "x", n: 5);
         \\}
         \\fn main() {
-        \\    @print(mk().n);
+        \\    print(mk().n);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -70,9 +71,10 @@ test "js: record ---- method with todo placeholder" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Unimplemented(id: i32) {
         \\    fn process(self: Self) -> string {
-        \\        return @todo();
+        \\        return panic("not implemented");
         \\    }
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -148,8 +150,9 @@ test "js: tuple ---- a labeled element of function type is called like a method"
         \\}
         \\fn main() {
         \\    val c = mk();
-        \\    @print(c.set(9));
+        \\    print(c.set(9));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -207,8 +210,9 @@ test "js: record ---- a method named print is called on the record" {
         \\
         \\fn main() {
         \\    val d = Doc(title: "hi");
-        \\    @print(d.print());
+        \\    print(d.print());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -219,11 +223,12 @@ test "js: tuple ---- chained positional access and a method on an element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val t = #(#(1, 2), "x");
-        \\    @print(t.0.1);
-        \\    @print(t.1);
+        \\    print(t.0.1);
+        \\    print(t.1);
         \\    val p = #(7, "x");
-        \\    @print(p.0.toString());
+        \\    print(p.0.toString());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -239,9 +244,10 @@ test "js: tuple ---- a bare digit index and optional chaining over a found pair"
         \\
         \\fn main() {
         \\    val pairs = [#("a", 1), #("b", 2)];
-        \\    @print(lookup(pairs, "b"));
-        \\    @print(lookup(pairs, "z") == null);
+        \\    print(lookup(pairs, "b"));
+        \\    print(lookup(pairs, "z") == null);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -274,8 +280,9 @@ test "js: interface literal ---- basic" {
         \\    val Fn = "Fn";
         \\    val kinds = #(Type, Fn);
         \\    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
-        \\    @print(decl.name);
+        \\    print(decl.name);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -286,8 +293,9 @@ test "js: interface literal ---- with fields" {
         \\    val Fn = "main";
         \\    val names = #(File, Fn);
         \\    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
-        \\    @print(at.line);
+        \\    print(at.line);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -310,17 +318,18 @@ test "js: tuple ---- labels resolve to positions on every backend" {
         \\
         \\fn main() {
         \\    val row = load();
-        \\    @print(row.name);
-        \\    @print(row.pop + 1);
+        \\    print(row.name);
+        \\    print(row.pop + 1);
         \\    val a = "RJ";
         \\    val b = 7;
         \\    val local = #(a, b);
-        \\    @print(local.a);
-        \\    @print(show(#("BH", 3)));
-        \\    @print(show(row));
+        \\    print(local.a);
+        \\    print(show(#("BH", 3)));
+        \\    print(show(row));
         \\    val typed: #(x: i32, y: i32) = #(1, 2);
-        \\    @print(typed.y);
+        \\    print(typed.y);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -349,9 +358,10 @@ test "js: surface ---- type and behavior compile like record, enum and interface
         \\
         \\fn main() {
         \\    val sq = Square(side: 3);
-        \\    @print(sq.area());
-        \\    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+        \\    print(sq.area());
+        \\    print(weight(Size.Large(n: 5)) + weight(Size.Small));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -379,13 +389,14 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  val xs = [10, 20, 30];
-        \\  @print(xs[0]);
-        \\  @print(xs[2]);
+        \\  print(xs[0]);
+        \\  print(xs[2]);
         \\  val s = "abcd";
-        \\  @print(s[1]);
+        \\  print(s[1]);
         \\  val t = #(1, "a");
-        \\  @print(t[0]);
+        \\  print(t[0]);
         \\}
+        \\import {io.terminal.print} from "std";
     , "10\n30\nb\n1\n", &.{ "lists:nth(__J + 1, __L)", "element(1, T)" });
 }
 
@@ -395,7 +406,8 @@ test "erlang: index ---- out of range answers null, not an error" {
     // 47's `null` (the print prelude's `'__bp_show'(undefined, _)` clause; it
     // printed the atom `undefined` before 00 · 02-erlang).
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() { val xs = [10, 20]; @print(xs[5]); }
+        \\fn main() { val xs = [10, 20]; print(xs[5]); }
+        \\import {io.terminal.print} from "std";
     , "null\n", &.{});
 }
 
@@ -407,11 +419,12 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  val xs = [10, 20, 30];
-        \\  @print(xs[0..2]);
-        \\  @print(xs[1..]);
+        \\  print(xs[0..2]);
+        \\  print(xs[1..]);
         \\  val s = "abcd";
-        \\  @print(s[1..3]);
+        \\  print(s[1..3]);
         \\}
+        \\import {io.terminal.print} from "std";
     , "[10, 20]\n[20, 30]\nbc\n", &.{ "array_slice(Xs, 0, 2)", "array_slice(Xs, 1, undefined)" });
 }
 
@@ -433,18 +446,19 @@ test "js: index ---- element, slice, open slice, string and tuple" {
     const src =
         \\fn main() {
         \\    val xs = [10, 20, 30];
-        \\    @print(xs[0]);
-        \\    @print(xs[0..2]);
-        \\    @print(xs[1..]);
+        \\    print(xs[0]);
+        \\    print(xs[0..2]);
+        \\    print(xs[1..]);
         \\    val s = "abcd";
-        \\    @print(s[1]);
-        \\    @print(s[1..3]);
+        \\    print(s[1]);
+        \\    print(s[1..3]);
         \\    val t = #(1, "a");
-        \\    @print(t[0]);
+        \\    print(t[0]);
         \\    val i = 1;
-        \\    @print(xs[i + 1]);
-        \\    @print([[1, 2], [3, 4]][1]?.[0] ?? 0);
+        \\    print(xs[i + 1]);
+        \\    print([[1, 2], [3, 4]][1]?.[0] ?? 0);
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
         "__bp_print(__bp_array_at(xs, 0));",
@@ -488,14 +502,15 @@ test "js: destructure ---- a constructor in binding position is a plain destruct
         \\type Tag { Label(text: string, weight: i32) }
         \\fn main() {
         \\    val P(nm, k) = P(name: "x", n: 2);
-        \\    @print(nm);
-        \\    @print(k);
+        \\    print(nm);
+        \\    print(k);
         \\    val P(_, only) = P(name: "y", n: 5);
-        \\    @print(only);
+        \\    print(only);
         \\    val Label(t, w) = Tag.Label(text: "hi", weight: 7);
-        \\    @print(t + "!");
-        \\    @print(w);
+        \\    print(t + "!");
+        \\    print(w);
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
         "const { name: nm, n: k } = new P(\"x\", 2);",
@@ -530,12 +545,13 @@ test "wasm: destructure ---- a nested constructor in binding position binds off 
         \\type Boxed(s: Shape, k: string)
         \\fn main() {
         \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
-        \\    @print(r);
-        \\    @print(n);
+        \\    print(r);
+        \\    print(n);
         \\    val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: "x");
-        \\    @print(q);
-        \\    @print(k + "!");
+        \\    print(q);
+        \\    print(k + "!");
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src,
         \\3
@@ -559,11 +575,12 @@ test "js: call ---- the result of a call is called (curried)" {
         \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
         \\fn greeter(p: string) -> fn(x: string) -> string { return { x -> p + x }; }
         \\fn main() {
-        \\    @print(adder(3)(4));
-        \\    @print(greeter("a")("b"));
+        \\    print(adder(3)(4));
+        \\    print(greeter("a")("b"));
         \\    val g = greeter("c");
-        \\    @print(g("d") + "!");
+        \\    print(g("d") + "!");
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"__bp_print(adder(3)(4));"});
     const log =
@@ -589,8 +606,9 @@ test "js: behavior literal ---- a method taking self is called on the literal" {
         \\behavior Greeter { fn greet(self: Self, who: string) -> string; }
         \\fn main() {
         \\    val g = @Greeter(greet: { self, who -> "hi " + who });
-        \\    @print(g.greet("bo"));
+        \\    print(g.greet("bo"));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"greet(who) {"});
     try h.assertJsRunLog(std.testing.allocator, src, "hi bo\n");
@@ -609,11 +627,12 @@ test "wasm: a string in a generic declaration's type-parameter field prints as t
         \\}
         \\type Box<T>(value: T, n: i32)
         \\fn main() {
-        \\    @print(Tree.Leaf(value: "a"));
-        \\    @print(Tree.Leaf(value: 7));
-        \\    @print(Box(value: "b", n: 2));
-        \\    @print(Box(value: 3, n: 4));
+        \\    print(Tree.Leaf(value: "a"));
+        \\    print(Tree.Leaf(value: 7));
+        \\    print(Box(value: "b", n: 2));
+        \\    print(Box(value: 3, n: 4));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src, "Tree.Leaf(value: \"a\")\nTree.Leaf(value: 7)\nBox(value: \"b\", n: 2)\nBox(value: 3, n: 4)\n");
 }
@@ -623,26 +642,27 @@ test "wasm: a record out of try await keeps its string field a string" {
     // so `u.name` was a word and `"H" + u.name` concatenated its address.
     const src =
         \\type User(id: i32, name: string)
-        \\fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
+        \\fn fetchUser(id: i32) -> Task<Result<User, string>> {
         \\    if (id <= 0) throw "no user";
         \\    return User(id: id, name: "ana");
         \\}
-        \\fn viaCatch(id: i32) -> @Task<string> {
+        \\fn viaCatch(id: i32) -> Task<string> {
         \\    val u = try await fetchUser(id) catch User(id: 0, name: "guest");
         \\    return "H" + u.name;
         \\}
-        \\fn viaBlock() -> @Task<@Result<string, string>> {
+        \\fn viaBlock() -> Task<Result<string, string>> {
         \\    val first = async {
         \\        return try await fetchUser(1);
         \\    };
         \\    val u = try await first;
         \\    return "B" + u.name;
         \\}
-        \\pub fn main() -> @Task<void> {
-        \\    @print(await viaCatch(0));
+        \\pub fn main() -> Task<void> {
+        \\    print(await viaCatch(0));
         \\    val r = await viaBlock();
-        \\    @print(r.unwrapOr("none"));
+        \\    print(r.unwrapOr("none"));
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src, "Hguest\nBana\n");
 }
@@ -653,23 +673,24 @@ test "wasm: a record out of try await keeps its string field a string" {
 // pair's address).
 const print_result_src =
     \\type Point(x: i32, y: i32)
-    \\type Report(label: string, outcome: @Result<i32, string>)
-    \\fn check(n: i32) -> @Result<i32, string> {
+    \\type Report(label: string, outcome: Result<i32, string>)
+    \\fn check(n: i32) -> Result<i32, string> {
     \\    if (n < 0) throw "negative";
     \\    return n;
     \\}
-    \\fn locate(n: i32) -> @Result<Point, i32> {
+    \\fn locate(n: i32) -> Result<Point, i32> {
     \\    if (n < 0) throw n;
     \\    return Point(x: n, y: n + 1);
     \\}
     \\pub fn main() {
-    \\    @print(check(81));
-    \\    @print(check(-1));
-    \\    @print(locate(2));
-    \\    @print(locate(-3));
-    \\    @print([check(1), check(-2)]);
-    \\    @print(Report(label: "a", outcome: check(5)));
+    \\    print(check(81));
+    \\    print(check(-1));
+    \\    print(locate(2));
+    \\    print(locate(-3));
+    \\    print([check(1), check(-2)]);
+    \\    print(Report(label: "a", outcome: check(5)));
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 const print_result_log =
     \\Ok(81)

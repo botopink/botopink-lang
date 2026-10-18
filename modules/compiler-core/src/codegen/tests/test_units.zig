@@ -20,12 +20,13 @@ const main_src =
     \\}
     \\
     \\fn main() {
-    \\    @print(twice(secret));
+    \\    print(twice(secret));
     \\}
     \\
     \\test "reads a private fn and a private val" {
     \\    assert helper(secret) == 42;
     \\}
+    \\import {io.terminal.print} from "std";
 ;
 
 const dep_src =

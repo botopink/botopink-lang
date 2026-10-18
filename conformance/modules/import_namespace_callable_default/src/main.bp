@@ -5,14 +5,15 @@
 pub mod components;
 import {components.card};
 import {components.badge as Badge};
+import {io.terminal.print} from "std";
 
 pub fn main() {
     val p = card.Props(title: "hi");
-    @print(card(p));
-    @print(card.render(p));
+    print(card(p));
+    print(card.render(p));
     val f = card;
-    @print(f(card.Props(title: "bound")));
+    print(f(card.Props(title: "bound")));
     val ps = [card.Props(title: "a"), card.Props(title: "b")];
-    @print(ps.map(card).join(","));
-    @print(Badge(3));
+    print(ps.map(card).join(","));
+    print(Badge(3));
 }

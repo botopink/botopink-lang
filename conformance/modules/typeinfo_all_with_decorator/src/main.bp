@@ -1,4 +1,4 @@
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn route(syntax decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
@@ -12,7 +12,7 @@ pub fn about() -> string {
 fn main() {
     for (@TypeInfo.all(with: route)) { r ->
         for (r.metaAll(Route)) { m ->
-            @print(r.name + " " + m.path); // about /about
+            print(r.name + " " + m.path); // about /about
         }
     }
 }

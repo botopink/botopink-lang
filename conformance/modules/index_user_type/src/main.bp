@@ -27,6 +27,8 @@
 //// methods BY NAME answers the same, byte for byte: the index expression only
 //// reaches them.
 
+import {io.terminal.print} from "std";
+
 type Matrix(rows: i32[][]) implement Index<i32, i32[]>, Slice<Matrix> {
     pub fn at(self: Self, key: i32) -> ?i32[] {
         return self.rows.at(key);
@@ -47,10 +49,10 @@ type Registry(names: string[]) implement Index<string, i32> {
 
 pub fn main() {
     val m = Matrix(rows: [[1, 2], [3, 4], [5, 6]]);
-    @print(m[1]);
-    @print(m[0..2].rows.length);
+    print(m[1]);
+    print(m[0..2].rows.length);
 
     val r = Registry(names: ["ana", "bo"]);
-    @print(r["bo"]);
-    @print(r["zz"]);
+    print(r["bo"]);
+    print(r["zz"]);
 }

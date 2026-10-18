@@ -3,10 +3,10 @@
 //// `forwardSignals`, sends itself `SIGTERM` (the parent no longer ends on it) and waits for the child:
 //// the child's line is in the output and `wait()` answers 7. The same on commonJS, erlang and beam.
 
-import {io.process} from "std";
+import {io.process, io.terminal.print} from "std";
 
 // The child installs its trap within a few milliseconds of starting: half a second is the margin.
-fn scenario() -> @Task<void> {
+fn scenario() -> Task<void> {
     val child = process.spawn("sh", [
         "-c",
         "trap 'echo the child got SIGTERM; exit 7' TERM; while true; do sleep 0.05; done",
@@ -14,13 +14,13 @@ fn scenario() -> @Task<void> {
     case child {
         Ok(c) {
             c.forwardSignals();
-            @print("forwarding");
+            print("forwarding");
             process.run("sleep", ["0.5"]);
             process.run("kill", ["-TERM", process.pid().toString()]);
             val code = await c.wait();
-            @print("the child exited with " + code.toString());
+            print("the child exited with " + code.toString());
         }
-        Error(e) -> @print("not started");
+        Error(e) -> print("not started");
     }
 }
 

@@ -5,6 +5,8 @@
 //// run time (std's `Json`: `doc.field("src")?.str()`). An absent `x` is
 //// `modules/optional_enum_method_absent_receiver`.
 
+import {io.terminal.print} from "std";
+
 type Val {
     Num(n: i32),
     Text(s: string),
@@ -25,7 +27,7 @@ type Val {
 }
 
 fn find(kind: i32) -> ?Val {
-    @print("find");
+    print("find");
     if (kind == 1) return Val.Text(s: "a");
     if (kind == 2) return Val.Num(n: 40);
     return null;
@@ -33,6 +35,6 @@ fn find(kind: i32) -> ?Val {
 
 pub fn main() {
     val b = find(1);
-    @print(b?.str() ?? "none");
-    @print(find(2)?.plus(2) ?? 0);
+    print(b?.str() ?? "none");
+    print(find(2)?.plus(2) ?? 0);
 }

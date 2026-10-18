@@ -1,7 +1,7 @@
 //// Decision 311 — `#[f "…"]` names a template function; a decorator (or
 //// any other function) there is refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn mark(syntax decl: unknown) {
     compiler.setMeta(Mark(marked: true));
@@ -13,7 +13,7 @@ fn one() -> i32 {
 }
 
 pub fn main() {
-    @print(one().toString());
+    print(one().toString());
 }
 
 // What `#[mark]` records.

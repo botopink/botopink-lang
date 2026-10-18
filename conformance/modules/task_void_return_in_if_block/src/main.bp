@@ -5,31 +5,33 @@
 //// The erlang gap this pins (`00 · 02-erlang`): the statements after the
 //// block still ran, so `early(true)` printed `after`.
 
-fn early(stop: bool) -> @Task<void> {
+import {io.terminal.print} from "std";
+
+fn early(stop: bool) -> Task<void> {
     if (stop) return;
-    @print("after");
+    print("after");
 }
 
-fn deeper(a: bool, b: bool) -> @Task<void> {
+fn deeper(a: bool, b: bool) -> Task<void> {
     if (a) {
         if (b) return;
-        @print("a, not b");
+        print("a, not b");
     } else {
-        @print("not a");
+        print("not a");
         return;
     }
-    @print("end of deeper");
+    print("end of deeper");
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     await early(true);
-    @print("--");
+    print("--");
     await early(false);
-    @print("--");
+    print("--");
     await deeper(true, true);
-    @print("--");
+    print("--");
     await deeper(true, false);
-    @print("--");
+    print("--");
     await deeper(false, true);
 }
 

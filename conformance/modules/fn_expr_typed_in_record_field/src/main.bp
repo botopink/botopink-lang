@@ -3,6 +3,8 @@
 //// its tail (409) or its `return` is its answer, and a lambda beside it in the
 //// array takes its types from the element type.
 
+import {io.terminal.print} from "std";
+
 type Op(name: string, run: fn(x: i32) -> i32)
 
 fn apply(op: Op, v: i32) -> i32 { op.run(v) }
@@ -12,9 +14,9 @@ pub fn main() {
     val dbl = Op(name: "dbl", run: fn(x: i32) -> i32 {
         return x * 2;
     });
-    @print(inc.name);
-    @print(apply(inc, 5));
-    @print(apply(dbl, 5));
+    print(inc.name);
+    print(apply(inc, 5));
+    print(apply(dbl, 5));
     val fs = [fn(x: i32) -> i32 { x - 1 }, { x -> x * 10 }];
-    @print(fs.map({ f -> f(3) }));
+    print(fs.map({ f -> f(3) }));
 }

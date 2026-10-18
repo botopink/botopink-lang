@@ -12,18 +12,19 @@ pub mod wraps;
 pub mod shop;
 import {wraps.countedHits};
 import {shop.post, shop.postLoads, shop.greet, shop.title, shop.Shelf};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greet("ana"));
-    @print(greet("bia"));
-    @print(countedHits());
-    @print(Shelf(label: "books").describe(3));
-    @print(countedHits());
+    print(greet("ana"));
+    print(greet("bia"));
+    print(countedHits());
+    print(Shelf(label: "books").describe(3));
+    print(countedHits());
 
-    @print(post(1));
-    @print(post(2));
-    @print(post(1));
-    @print(postLoads());
+    print(post(1));
+    print(post(2));
+    print(post(1));
+    print(postLoads());
 
-    @print(title());
+    print(title());
 }

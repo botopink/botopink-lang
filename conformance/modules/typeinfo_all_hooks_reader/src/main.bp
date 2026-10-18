@@ -4,22 +4,22 @@
 //// query is refused at the decorator's name (the parent binary answered it
 //// with the meta; a run after the bodies would have answered without it).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(count: compiler.hooks(decl).length));
 }
 
 #[graph]
-pub fn Page() -> @Component<Element> {
+pub fn Page() -> Component<Element> {
     return Element(text: "x");
 }
 
 pub fn main() {
     val all = @TypeInfo.all(with: graph);
-    all.forEach({ d -> @print(d.name) });
+    all.forEach({ d -> print(d.name) });
 }
 
 // What `#[graph]` records: how many nodes `decl.hooks` lists.

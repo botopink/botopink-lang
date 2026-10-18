@@ -6,6 +6,7 @@
 
 pub mod rules;
 import {rules.check};
+import {io.terminal.print} from "std";
 
 pub type Violation(code: i32)
 
@@ -17,6 +18,6 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print(Signup(password: "a", confirm: "b").validate().length);
-    @print(Violation(code: 7).code);
+    print(Signup(password: "a", confirm: "b").validate().length);
+    print(Violation(code: 7).code);
 }

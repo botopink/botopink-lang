@@ -7,7 +7,7 @@
 //// call to undefined function fieldSummary/1` and a library repeated the
 //// logic inline in the body.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn plural(n: i32, word: string) -> string {
     return if (n == 1) "1 " + word else n.toString() + " " + word + "s";
@@ -31,6 +31,6 @@ fn sized(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(summary());
-    @print(plural(1, "run"));
+    print(summary());
+    print(plural(1, "run"));
 }

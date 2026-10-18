@@ -567,19 +567,19 @@ fn wrapperReceiver(slug: []const u8, comptime decls: []const u8, comptime call: 
 
 test "completion: @Iterator receiver offers next" {
     try wrapperReceiver("completion_receiver_iterator",
-        \\fn gen() -> @Iterator<i32> { yield 1; }
+        \\fn gen() -> Iterator<i32> { yield 1; }
     , "gen()");
 }
 
 test "completion: @Stream receiver offers next, map and then" {
     try wrapperReceiver("completion_receiver_stream",
-        \\fn pulses() -> @Stream<i32> { yield 1; }
+        \\fn pulses() -> Stream<i32> { yield 1; }
     , "pulses()");
 }
 
 test "completion: @Task receiver offers map and then" {
     try wrapperReceiver("completion_receiver_task",
-        \\fn load() -> @Task<i32> { return 1; }
+        \\fn load() -> Task<i32> { return 1; }
     , "load()");
 }
 

@@ -3,6 +3,8 @@
 //// with `;` answers nothing, refused at the arm beside arms that answer a
 //// value (it answered `10` before).
 
+import {io.terminal.print} from "std";
+
 fn arm(n: i32) -> i32 {
     val v = case n {
         0 { 10; }
@@ -12,5 +14,5 @@ fn arm(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(arm(0));
+    print(arm(0));
 }

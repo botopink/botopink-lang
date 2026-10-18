@@ -2,6 +2,8 @@
 //// `builtins.d.bp`: `@panic` declares one parameter, so a second argument is
 //// refused at the call, naming the declaration.
 
+import {failure.panic} from "std";
+
 pub fn main() {
-    @panic("first", "second");
+    panic("first", "second");
 }

@@ -1,6 +1,8 @@
 //// A statement `case` arm whose block ends in a `for` runs that arm only — on
 //// commonJS it fell into the next arm, running both (front 121's gap).
 
+import {io.terminal.print} from "std";
+
 type Node {
     Many(vs: i32[]),
     One(v: i32),
@@ -46,8 +48,8 @@ fn tagged(n: i32) -> string[] {
 }
 
 pub fn main() {
-    @print(flatten([Node.Many(vs: [1, 2]), Node.One(v: 5), Node.Many(vs: [])]));
-    @print(tagged(1));
-    @print(tagged(2));
-    @print(tagged(3));
+    print(flatten([Node.Many(vs: [1, 2]), Node.One(v: 5), Node.Many(vs: [])]));
+    print(tagged(1));
+    print(tagged(2));
+    print(tagged(3));
 }

@@ -11,8 +11,9 @@ pub mod leaf;
 
 import {leaf.Twig};
 import {seven} from "tree/api";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Twig(n: 3).n);
-    @print(seven());
+    print(Twig(n: 3).n);
+    print(seven());
 }

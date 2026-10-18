@@ -95,14 +95,15 @@ test "js: assert pattern ---- with number literal" {
 
 test "js: assert pattern ---- with enum variant" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parse() -> @Result<i32, string> {
+        \\fn parse() -> Result<i32, string> {
         \\    return 42;
         \\}
         \\fn main() {
         \\    val result = parse();
         \\    val assert Ok(value) = result;
-        \\    @print(value);
+        \\    print(value);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -136,16 +137,18 @@ test "js: assert pattern ---- with list and rest" {
 test "js: builtin ---- @todo with message" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn notImplemented() {
-        \\    @todo("implement this function");
+        \\    panic("implement this function");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: builtin ---- @panic with message" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn fail() {
-        \\    @panic("something went wrong");
+        \\    panic("something went wrong");
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -155,13 +158,14 @@ test "js: builtin ---- @panic with message" {
 test "wat: builtin ---- @panic message reaches stderr before the trap" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn refuse(name: string) {
-        \\    @panic("lib: '" + name + "' is in no known namespace — a prefix");
+        \\    panic("lib: '" + name + "' is in no known namespace — a prefix");
         \\}
         \\fn main() {
-        \\    @print("before");
+        \\    print("before");
         \\    refuse("--gutter");
-        \\    @print("after");
+        \\    print("after");
         \\}
+        \\import {io.terminal.print, failure.panic} from "std";
     ,
         \\before
         \\panic: lib: '--gutter' is in no known namespace — a prefix
@@ -177,13 +181,14 @@ test "wat: builtin ---- @panic message reaches stderr before the trap" {
 test "every backend: builtin ---- @panic message reaches stderr unchanged" {
     try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn refuse(name: string) {
-        \\    @panic("lib: '" + name + "' is in no known namespace — a prefix");
+        \\    panic("lib: '" + name + "' is in no known namespace — a prefix");
         \\}
         \\fn main() {
-        \\    @print("before");
+        \\    print("before");
         \\    refuse("--gutter");
-        \\    @print("after");
+        \\    print("after");
         \\}
+        \\import {io.terminal.print, failure.panic} from "std";
     , "lib: '--gutter' is in no known namespace — a prefix\n");
 }
 
@@ -192,17 +197,19 @@ test "every backend: builtin ---- @panic message reaches stderr unchanged" {
 test "every backend: builtin ---- an uncaught @panic writes panic: <message>" {
     try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn main() {
-        \\    @print("before");
-        \\    @panic("boom — 2");
+        \\    print("before");
+        \\    panic("boom — 2");
         \\}
+        \\import {io.terminal.print, failure.panic} from "std";
     , "panic: boom — 2\n");
 }
 
 test "every backend: builtin ---- an uncaught @todo writes panic: <message>" {
     try h.assertAbortWritesEveryBackend(std.testing.allocator,
         \\fn main() {
-        \\    @todo("later");
+        \\    panic("later");
         \\}
+        \\import {failure.panic} from "std";
     , "panic: later\n");
 }
 
@@ -212,8 +219,9 @@ test "every backend but wasm: builtin ---- an uncaught integer division by zero 
         \\    return a / b;
         \\}
         \\fn main() {
-        \\    @print(div(1, 0));
+        \\    print(div(1, 0));
         \\}
+        \\import {io.terminal.print} from "std";
     , "panic: integer division by zero: / on i32 at ");
 }
 
@@ -228,16 +236,18 @@ test "every backend: builtin ---- an uncaught failed assert writes panic: <messa
 test "js: builtin ---- @print single argument" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("Hello, World!");
+        \\    print("Hello, World!");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "js: builtin ---- @print multiple arguments" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("Hello", 42, true);
+        \\    print("Hello", 42, true);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -245,8 +255,9 @@ test "js: builtin ---- @print expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val x = 10;
-        \\    @print(x * 2);
+        \\    print(x * 2);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -262,74 +273,81 @@ test "js: builtin ---- user fns named like type-manipulation builtins call their
         \\fn mergeRecords(a: i32, b: i32) -> i32 { return a + b; }
         \\fn mapFields(n: i32) -> i32 { return n * 2; }
         \\fn main() {
-        \\    @print(pick(1));
-        \\    @print(omit(1));
-        \\    @print(partial(1));
-        \\    @print(mergeRecords(2, 3));
-        \\    @print(mapFields(3));
+        \\    print(pick(1));
+        \\    print(omit(1));
+        \\    print(partial(1));
+        \\    print(mergeRecords(2, 3));
+        \\    print(mapFields(3));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "js: stdlib ---- Result.map transforms Ok, propagates Error intact" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+        \\fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
         \\fn main() {
         \\    val r = parseAge("42").map({ n -> n + 1 });
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: stdlib ---- Result.flatMap chains and flattens" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-        \\fn validate(n: i32) -> @Result<i32, string> { @todo(); }
+        \\fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
+        \\fn validate(n: i32) -> Result<i32, string> { panic("not implemented"); }
         \\fn main() {
         \\    val r = parseAge("42").flatMap({ n -> validate(n) });
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: stdlib ---- Result.unwrapOr returns data on Ok, default on Error" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+        \\fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
         \\fn main() {
         \\    val n = parseAge("42").unwrapOr(0);
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: stdlib ---- Result.isOk and isError predicates" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+        \\fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
         \\fn main() {
         \\    val r = parseAge("42");
         \\    val ok = r.isOk();
         \\    val bad = r.isError();
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: stdlib ---- an optional is read by its operators, not by methods (decision 330)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Person(name: string)
-        \\fn find(p: Person) -> ?Person { @todo(); }
+        \\fn find(p: Person) -> ?Person { panic("not implemented"); }
         \\fn greet(p: Person) -> string {
         \\    return find(p)?.name ?? "Hello stranger";
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
 test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-        \\fn validate(n: i32) -> @Result<i32, string> { @todo(); }
+        \\fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
+        \\fn validate(n: i32) -> Result<i32, string> { panic("not implemented"); }
         \\fn main() {
         \\    val r = parseAge("42")
         \\        .map({ n -> n + 1 })
         \\        .flatMap({ n -> validate(n) })
         \\        .unwrapOr(0);
         \\}
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -337,15 +355,16 @@ test "js: builtin ---- @print in if branch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn check(x: i32) {
         \\    if (x > 0) {
-        \\        @print("positive");
+        \\        print("positive");
         \\    } else {
-        \\        @print("non-positive");
+        \\        print("non-positive");
         \\    }
         \\}
         \\fn main() {
         \\    check(1);
         \\    check(-1);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -353,8 +372,9 @@ test "js: builtin ---- @print with variable" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val name = "world";
-        \\    @print("Hello, " + name);
+        \\    print("Hello, " + name);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -362,25 +382,27 @@ test "js: builtin ---- @print in loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countdown(n: i32) {
         \\    for (0..n) { i ->
-        \\        @print(n - i);
+        \\        print(n - i);
         \\    };
         \\}
         \\fn main() {
         \\    countdown(3);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "js: builtin ---- @print return value void" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn log(msg: string) {
-        \\    @print(msg);
+        \\    print(msg);
         \\}
         \\fn main() {
         \\    log("started");
         \\    val x = 42;
         \\    log("done");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -412,8 +434,9 @@ test "codegen: test runner excluded from normal build" {
         \\}
         \\
         \\fn main() {
-        \\    @print("hello");
+        \\    print("hello");
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"function add"});
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "__bp_test", "__bp_assert", "__bp_run_tests" });
@@ -426,8 +449,9 @@ test "js: assert ---- holding assertion lets main continue" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    assert 1 + 1 == 2, "arithmetic";
-        \\    @print("after");
+        \\    print("after");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -440,10 +464,11 @@ test "js: assert ---- holding assertion lets main continue" {
 test "js: assert ---- failing assertion outside test mode is fatal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("before");
+        \\    print("before");
         \\    assert 1 == 2, "boom";
-        \\    @print("after");
+        \\    print("after");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -453,8 +478,9 @@ test "js: builtin ---- @print mixes strings and terms as text" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val name = "ana";
-        \\    @print("hi", name, 42, [1, 2]);
+        \\    print("hi", name, 42, [1, 2]);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -465,9 +491,10 @@ test "js: builtin ---- @print quotes the strings of an array" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val words = ["plain", "say \"hi\"", "back\\slash", "two\nlines"];
-        \\    @print(words);
-        \\    @print("top", words);
+        \\    print(words);
+        \\    print("top", words);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -480,15 +507,16 @@ test "js: builtin ---- @print writes tuples as #(a,b)" {
         \\    return #(a, b);
         \\}
         \\fn show(p: #(i32, string)) {
-        \\    @print(p);
+        \\    print(p);
         \\}
         \\fn main() {
-        \\    @print(#(true, 1));
-        \\    @print(#(#(1, 2), "x"));
-        \\    @print([#(1, 2), #(17, 1)]);
-        \\    @print(pairOf(7, "s"));
+        \\    print(#(true, 1));
+        \\    print(#(#(1, 2), "x"));
+        \\    print([#(1, 2), #(17, 1)]);
+        \\    print(pairOf(7, "s"));
         \\    show(#(3, "z"));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -506,24 +534,26 @@ test "js: src ---- in a test" {
     try h.assertJsTestMode(std.testing.allocator, @src(),
         \\fn helper() -> i32 { return 1; }
         \\test "src: in a test" {
-        \\    val loc = @src();
-        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\    val loc = comptime compiler.src;
+        \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
         \\test {
-        \\    @print(@src().fnName);
+        \\    print(comptime compiler.src.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
 test "js: src ---- in a fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn locate() -> SourceLocation {
-        \\    return @src();
+        \\    return comptime compiler.src;
         \\}
         \\fn main() {
         \\    val loc = locate();
-        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -532,24 +562,26 @@ test "js: src ---- in a method" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Stub(n: i32) {
         \\    fn where(self: Self) -> SourceLocation {
-        \\        return @src();
+        \\        return comptime compiler.src;
         \\    }
         \\}
         \\fn main() {
         \\    val loc = Stub(n: 1).where();
-        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
 test "js: src ---- at module level" {
     // `fnName` is `""` outside any declaration.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val top = @src();
+        \\val top = comptime compiler.src;
         \\fn main() {
-        \\    @print(top.file, top.line, top.column);
-        \\    @print(top.fnName == "");
+        \\    print(top.file, top.line, top.column);
+        \\    print(top.fnName == "");
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -559,19 +591,21 @@ test "js: src ---- equals a hand-written constructor" {
     // Their generated JS is the same text — the rewrite is the constructor.
     const with_builtin =
         \\fn locate() -> SourceLocation {
-        \\    return @src();
+        \\    return comptime compiler.src;
         \\}
         \\fn main() {
-        \\    @print(locate().fnName);
+        \\    print(locate().fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     ;
     const hand_written =
         \\fn locate() -> SourceLocation {
         \\    return SourceLocation(file: "main.bp", line: 2, column: 12, fnName: "locate");
         \\}
         \\fn main() {
-        \\    @print(locate().fnName);
+        \\    print(locate().fnName);
         \\}
+        \\import {io.terminal.print} from "std";
     ;
     const a = try h.generateJs(std.testing.allocator, with_builtin);
     defer std.testing.allocator.free(a);
@@ -586,18 +620,20 @@ test "js: src ---- run log" {
     // literal line of the `@`.
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print(@src().line);
-        \\    @print(@src().column, @src().fnName);
+        \\    print(comptime compiler.src.line);
+        \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     , "2\n12 main\n");
 }
 
 test "erlang: src ---- run log" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print(@src().line);
-        \\    @print(@src().column, @src().fnName);
+        \\    print(comptime compiler.src.line);
+        \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     , "2\n12 main\n", &.{ ", 2, 12, <<\"main\">>}", ", 3, 12, <<\"main\">>}", ", 3, 27, <<\"main\">>}" });
 }
 
@@ -647,24 +683,25 @@ test "js: test body ---- try on an Error fails the test" {
     // (its expected `fn() -> @Result<…>` is the channel, decision 147).
     // The RUN LOG is the runner's own output: one FAIL, two ok.
     try h.assertJsTestMode(std.testing.allocator, @src(),
-        \\fn failing() -> @Result<void, string> {
+        \\fn failing() -> Result<void, string> {
         \\    throw "boom";
         \\}
-        \\fn passing() -> @Result<void, string> {
+        \\fn passing() -> Result<void, string> {
         \\    return;
         \\}
         \\test "t: fails" {
         \\    try failing();
-        \\    @print("not reached");
+        \\    print("not reached");
         \\}
         \\test "t: passes" {
         \\    try passing();
-        \\    @print("reached");
+        \\    print("reached");
         \\}
         \\test "t: a lambda's try is its own" {
-        \\    val f: fn() -> @Result<i32, string> = { -> try failing(); return 0; };
-        \\    @print("still here");
+        \\    val f: fn() -> Result<i32, string> = { -> try failing(); return 0; };
+        \\    print("still here");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -676,12 +713,13 @@ test "js: src ---- in a test run log" {
     // evidence; the commonJS one agrees with `src_in_a_test.snap.md`.)
     try h.assertTestModeRunLog(std.testing.allocator,
         \\test "src: in a test" {
-        \\    val loc = @src();
-        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\    val loc = comptime compiler.src;
+        \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
         \\test {
-        \\    @print(@src().fnName);
+        \\    print(comptime compiler.src.fnName);
         \\}
+        \\import {io.terminal.print, compiler} from "std";
     ,
         \\TEST main.bp:1 src: in a test
         \\----- RUN LOG -----
@@ -707,20 +745,21 @@ test "js: test body ---- try on an Error prints the FAIL line" {
     // after the `try` never runs; `t: passes` reaches its print through the
     // empty `return;` of a `-> @Result<void, string>`. The runner exits 1.
     try h.assertTestModeRunLog(std.testing.allocator,
-        \\fn failing() -> @Result<void, string> {
+        \\fn failing() -> Result<void, string> {
         \\    throw "boom";
         \\}
-        \\fn passing() -> @Result<void, string> {
+        \\fn passing() -> Result<void, string> {
         \\    return;
         \\}
         \\test "t: fails" {
         \\    try failing();
-        \\    @print("not reached");
+        \\    print("not reached");
         \\}
         \\test "t: passes" {
         \\    try passing();
-        \\    @print("reached");
+        \\    print("reached");
         \\}
+        \\import {io.terminal.print} from "std";
     ,
         \\TEST main.bp:7 t: fails
         \\----- RUN LOG -----

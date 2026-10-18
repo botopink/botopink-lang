@@ -6,21 +6,23 @@
 //// invents a scope for it, and none leaks one out of it. 01-compiler/04-js
 //// step 4: commonJS writes one `const` per block.
 
+import {io.terminal.print} from "std";
+
 fn pick(flag: bool) -> i32 {
     if (flag) {
         val n = 1;
-        @print(n);
+        print(n);
     } else {
         val n = 2;
-        @print(n);
+        print(n);
     }
     if (flag) {
         val m = 10;
-        @print(m);
+        print(m);
     }
     if (!flag) {
         val m = 20;
-        @print(m);
+        print(m);
     }
     return 0;
 }
@@ -53,18 +55,18 @@ fn arms(s: Shape) -> i32 {
 fn after(flag: bool) -> i32 {
     if (flag) {
         val n = 1;
-        @print(n);
+        print(n);
     }
     val n = 2;
     return n;
 }
 
 pub fn main() {
-    @print(pick(true));
-    @print(pick(false));
-    @print(loops());
-    @print(arms(Shape.Circle(radius: 2)));
-    @print(arms(Shape.Square(side: 5)));
-    @print(after(true));
-    @print(after(false));
+    print(pick(true));
+    print(pick(false));
+    print(loops());
+    print(arms(Shape.Circle(radius: 2)));
+    print(arms(Shape.Square(side: 5)));
+    print(after(true));
+    print(after(false));
 }

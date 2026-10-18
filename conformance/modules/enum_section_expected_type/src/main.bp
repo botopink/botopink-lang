@@ -13,6 +13,8 @@
 //// index: `P(y: .Color.Red.500)` writes the second parameter from its first
 //// argument, and the first parameter takes its declared default.
 
+import {io.terminal.print} from "std";
+
 type Token {
     Color {
         Red {
@@ -57,12 +59,12 @@ pub fn main() {
     val ts: Array<Token> = [.Color.Red.100];
     val boxed = Boxed(tone: .Color.Red.100);
 
-    @print(tokenName(t));
-    @print(borderName(b));
-    @print(borderName(pickBorder()));
-    @print(tokenName(.Color.Red.100));
-    @print(borderName(.Color.Red.500));
-    @print(ts.length());
-    @print(tokenName(boxed.tone));
-    @print(boxed.weight);
+    print(tokenName(t));
+    print(borderName(b));
+    print(borderName(pickBorder()));
+    print(tokenName(.Color.Red.100));
+    print(borderName(.Color.Red.500));
+    print(ts.length());
+    print(tokenName(boxed.tone));
+    print(boxed.weight);
 }

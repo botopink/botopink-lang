@@ -3,7 +3,8 @@
 //// parseJson}` is the remedy (`modules/import_tree` binds aliases that way).
 
 import {url.parse, json: {parse}} from "std";
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(parse("http://a").isOk());
+    print(parse("http://a").isOk());
 }

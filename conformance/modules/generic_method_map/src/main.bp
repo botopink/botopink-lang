@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T) {
     pub fn get(self: Self<T>) -> T {
         return self.value;
@@ -9,5 +11,5 @@ type Box<T>(value: T) {
 
 fn main() {
     val b: Box<string> = Box(value: 1).map({ x -> "one" });
-    @print(b.get());
+    print(b.get());
 }

@@ -4,11 +4,12 @@
 
 pub mod shapes;
 import {shapes.`area of`, shapes.`area of` as area, shapes.perimeter as `around it`, shapes.`Unit square`};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(`area of`(3));
-    @print(area(4));
-    @print(`around it`(5));
+    print(`area of`(3));
+    print(area(4));
+    print(`around it`(5));
     val u = `Unit square`(side: 2);
-    @print(u.side);
+    print(u.side);
 }

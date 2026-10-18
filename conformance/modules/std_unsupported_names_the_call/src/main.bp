@@ -5,8 +5,8 @@
 //// to a function they did not call. erlang and beam run it: a node that is
 //// not distributed knows no other node.
 
-import {erlang} from "std";
+import {erlang, io.terminal.print} from "std";
 
 pub fn main() {
-    @print(erlang.nodes());
+    print(erlang.nodes());
 }

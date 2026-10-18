@@ -4,10 +4,10 @@
 //// (decision 264) too. The cell claims the kind alone; the message of each is
 //// its abort's text.
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
 
 fn notReady() -> i32 {
-    @todo("not ready");
+    panic("not ready");
 }
 
 fn bump(a: i32) -> i32 {
@@ -18,10 +18,10 @@ fn find(key: string) -> ?i32 {
     return if (key == "a") 1 else null;
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind);
     }
 }
 
@@ -31,5 +31,5 @@ pub fn main() {
     show(failure.attempt({ -> find("b")! }));
     show(failure.attempt({ -> bump(2147483647) }));
     show(failure.attempt({ -> bump(1) }));
-    @print("after");
+    print("after");
 }

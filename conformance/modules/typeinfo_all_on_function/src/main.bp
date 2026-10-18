@@ -2,6 +2,8 @@
 //// builtin type `TypeInfo`: `@typeInfo.all(…)` is refused where it is
 //// written, naming `@TypeInfo.all`.
 
+import {io.terminal.print} from "std";
+
 fn route(syntax decl: unknown) {}
 
 #[route]
@@ -9,5 +11,5 @@ pub fn home() -> string { return "home"; }
 
 pub fn main() {
     val all = @typeInfo.all(with: route);
-    @print(all.length);
+    print(all.length);
 }

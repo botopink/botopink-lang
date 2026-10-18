@@ -6,12 +6,14 @@
 //// erlang's emitter crashed), and a short one was `'greet' expects 3
 //// argument(s), got 1`.
 
+import {io.terminal.print} from "std";
+
 fn greet(name: string, greeting: string = "hi", mark: string = "!") -> string {
     return greeting + " " + name + mark;
 }
 
 fn log(s: string, prefix: string = "> ") {
-    @print(prefix + s);
+    print(prefix + s);
 }
 
 fn full(name: string, greeting: string, mark: string) -> string {
@@ -19,10 +21,10 @@ fn full(name: string, greeting: string, mark: string) -> string {
 }
 
 pub fn main() {
-    @print("w" |> full("yo", "."));
-    @print("w" |> greet);
-    @print("w" |> greet("yo"));
-    @print("w" |> greet(mark: "?"));
+    print("w" |> full("yo", "."));
+    print("w" |> greet);
+    print("w" |> greet("yo"));
+    print("w" |> greet(mark: "?"));
     "x" |> log;
     "y" |> log(prefix: "# ");
 }

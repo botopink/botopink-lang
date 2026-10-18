@@ -2,10 +2,12 @@
 //// and an integer literal is not one: `v / 2` is refused at the `2` (decision
 //// 209 re-spelt it `2.0`).
 
+import {io.terminal.print} from "std";
+
 fn half(v: f64) -> f64 {
     return v / 2;
 }
 
 pub fn main() {
-    @print(half(5.0));
+    print(half(5.0));
 }

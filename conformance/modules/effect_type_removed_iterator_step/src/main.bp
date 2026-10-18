@@ -5,6 +5,8 @@
 //// cell asks for `effect-type-removed` with the fix-it `YieldStep<T>`
 //// (reported as a choice).
 
+import {io.terminal.print} from "std";
+
 fn first(step: @IteratorStep<i32>) -> i32 { return 0; }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

@@ -2,12 +2,14 @@
 //// `@panic`, naming the expression and where it is written. What was printed
 //// before it stays printed.
 
+import {io.terminal.print} from "std";
+
 fn find(key: string) -> ?string {
     return if (key == "a") "found" else null;
 }
 
 pub fn main() {
-    @print(find("a")!);
-    @print(find("b")!);
-    @print("unreachable");
+    print(find("a")!);
+    print(find("b")!);
+    print("unreachable");
 }

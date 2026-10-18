@@ -6,6 +6,8 @@
 //// i64, got i32` on every target, whichever order the labels came in (rakun
 //// front 05: "an `i64` field cannot be given a value at all").
 
+import {io.terminal.print} from "std";
+
 type Event(name: string, ts: i64)
 
 type Span(until: i64, from0: i64)
@@ -16,8 +18,8 @@ fn width(lo: i32, hi: i64) -> i64 {
 
 pub fn main() {
     val e = Event(name: "a", ts: 0);
-    @print(e.ts);
+    print(e.ts);
     val s = Span(from0: 5, until: 9);
-    @print(s.until - s.from0);
-    @print(width(hi: 4000, lo: 1));
+    print(s.until - s.from0);
+    print(width(hi: 4000, lo: 1));
 }

@@ -1,6 +1,8 @@
 //// Decision 604 — a marker is a decorator with an empty body: it annotates
 //// two functions, and the catalogue reads them back by their marking.
 
+import {io.terminal.print} from "std";
+
 fn registered(syntax decl: unknown) {}
 
 #[registered]
@@ -14,6 +16,6 @@ pub fn second() -> i32 {
 }
 
 pub fn main() {
-    @print(@TypeInfo.all(with: registered).map({ d -> d.name }).join(","));
-    @print(first() + second());
+    print(@TypeInfo.all(with: registered).map({ d -> d.name }).join(","));
+    print(first() + second());
 }

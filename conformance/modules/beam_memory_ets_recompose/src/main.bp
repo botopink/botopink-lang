@@ -3,10 +3,12 @@
 //// (`hits += n`, `hits = hits + n`) is the one exception, because it lowers to
 //// the host's atomic counter; `hits * 2 + 1` is not an increment.
 
+import {io.terminal.print} from "std";
+
 #[@BeamMemory.Ets]
 var hits: i32 = 1;
 
 pub fn main() {
     hits = hits * 2 + 1;
-    @print(hits);
+    print(hits);
 }

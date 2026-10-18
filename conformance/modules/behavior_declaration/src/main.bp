@@ -1,10 +1,12 @@
+import {io.terminal.print} from "std";
+
 behavior Printable {
     fn print(self: Self);
 }
 
 type Person(name: string) implement Printable {
     fn print(self: Self) {
-        @print(self.name);
+        print(self.name);
     }
 }
 

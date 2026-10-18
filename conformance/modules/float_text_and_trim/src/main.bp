@@ -1,5 +1,7 @@
+import {io.terminal.print} from "std";
+
 fn main() {
-    @print("${5.0} ${1e21}");
-    @print("[" + " a\t".trim() + "]");
+    print("${5.0} ${1e21}");
+    print("[" + " a\t".trim() + "]");
     // every target: 5.0 1.0e21, then [a]
 }

@@ -2,7 +2,7 @@
 //// second `Columns` (from this decorator or another) is refused at the
 //// annotation that adds it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
@@ -17,5 +17,5 @@ fn table(syntax decl: unknown) {
 type City(id: i32)
 
 pub fn main() {
-    @print(City(id: 1).id);
+    print(City(id: 1).id);
 }

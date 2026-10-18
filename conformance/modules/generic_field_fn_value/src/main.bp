@@ -9,6 +9,8 @@
 //// wasm printed the string result's heap address (front 130's row), and a
 //// lambda's string parameter as an integer (`300?`).
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 fn shout(s: string) -> string {
@@ -39,29 +41,29 @@ fn make() -> Box<fn(s: string) -> string> {
 pub fn main() {
     val h = Box(value: shout);
     val k = h.value;
-    @print(k("a"));
-    @print(h.value("b"));
+    print(k("a"));
+    print(h.value("b"));
     val p = Box(value: isBig);
     val q = p.value;
-    @print(q(11));
-    @print(q(3));
+    print(q(11));
+    print(q(3));
     val c = Box(value: inc);
     val g = c.value;
-    @print(g(5));
+    print(g(5));
     val w = wrap(shout);
     val z = w.value;
-    @print(z("c"));
+    print(z("c"));
     val lam = Box(value: { s -> s + "?" });
     val lf = lam.value;
-    @print(lf("d"));
-    @print(lam.value("e"));
+    print(lf("d"));
+    print(lam.value("e"));
     val num = Box(value: { x -> x * 2 });
     val nf = num.value;
-    @print(nf(21));
+    print(nf(21));
     val typed: Box<fn(s: string) -> string> = Box(value: { s -> s + "~" });
     val tf = typed.value;
-    @print(tf("t"));
-    @print(run(Box(value: { s -> s + "!" })));
+    print(tf("t"));
+    print(run(Box(value: { s -> s + "!" })));
     val mf = make().value;
-    @print(mf("m"));
+    print(mf("m"));
 }

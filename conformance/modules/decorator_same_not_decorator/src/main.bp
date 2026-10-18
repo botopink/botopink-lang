@@ -3,7 +3,7 @@
 //// decorator — the comparison is by declaration, never by the name — and is
 //// refused at the argument.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn serverOnly(syntax decl: unknown) {
     val _n = compiler.name(decl);
@@ -25,5 +25,5 @@ fn Page() -> string {
 }
 
 pub fn main() {
-    @print(Page());
+    print(Page());
 }

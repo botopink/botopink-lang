@@ -4,15 +4,17 @@
 //// (`case_clause` where the caller read `Ok(_)`) and commonJS `undefined`.
 //// Refused at the return type, as `-> i32` is.
 
-fn check(n: i32) -> @Task<@Result<void, string>> {
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Task<Result<void, string>> {
     if (n < 0) { throw "negative"; }
     val _seen = n;
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val r = await check(1);
     case r {
-        Ok(_) -> @print("ok");
-        Error(e) -> @print(e);
+        Ok(_) -> print("ok");
+        Error(e) -> print(e);
     }
 }

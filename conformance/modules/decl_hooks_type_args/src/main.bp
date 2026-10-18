@@ -5,8 +5,9 @@
 pub mod pages;
 
 import {pages.Post, pages.HookArgs};
+import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    val uses: string[] = @typeInfo(Post).meta(HookArgs)?.uses ?? [];
-    @print(uses.join(" "));
+    val uses: string[] = comptime compiler.typeInfo(Post).meta(HookArgs)?.uses ?? [];
+    print(uses.join(" "));
 }

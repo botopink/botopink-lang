@@ -6,18 +6,20 @@
 //// stored in a field of that type, so its inferred type is what is checked.
 //// `make` is a plain function. Printed from inside `run`.
 
-type Holder(t: @Task<i32>, r: @Task<@Result<i32, string>>, s: @Task<@Result<i32, string>>)
+import {io.terminal.print} from "std";
 
-fn check(n: i32) -> @Result<i32, string> {
+type Holder(t: Task<i32>, r: Task<Result<i32, string>>, s: Task<Result<i32, string>>)
+
+fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
 fn make(n: i32) -> Holder {
-    val t: @Task<i32> = async {
+    val t: Task<i32> = async {
         return n + 1;
     };
-    val r: @Task<@Result<i32, string>> = async {
+    val r: Task<Result<i32, string>> = async {
         val v = try check(n);
         return v * 10;
     };
@@ -28,20 +30,20 @@ fn make(n: i32) -> Holder {
     return Holder(t: t, r: r, s: s);
 }
 
-fn show(r: @Result<i32, string>) {
+fn show(r: Result<i32, string>) {
     case r {
-        Ok(v) -> @print("ok " + v.toString());
-        Error(e) -> @print("error " + e);
+        Ok(v) -> print("ok " + v.toString());
+        Error(e) -> print("error " + e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val h = make(3);
-    @print(await h.t);
+    print(await h.t);
     show(await h.r);
     show(await h.s);
     val k = make(-2);
-    @print(await k.t);
+    print(await k.t);
     show(await k.r);
     show(await k.s);
 }

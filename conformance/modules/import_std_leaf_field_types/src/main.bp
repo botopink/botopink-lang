@@ -3,7 +3,7 @@
 //// is a `HostErrorName`, written `.Error` where one is expected and matched
 //// by its variants, with `failure`'s module never imported whole.
 
-import {failure.HostError} from "std";
+import {failure.HostError, io.terminal.print} from "std";
 
 fn describe(e: HostError) -> string {
     case e.name {
@@ -13,20 +13,20 @@ fn describe(e: HostError) -> string {
     }
 }
 
-fn half(n: i32) -> @Result<i32, HostError> {
+fn half(n: i32) -> Result<i32, HostError> {
     if (n % 2 != 0)
         throw HostError(message: "odd", kind: "host", name: .Throw, detail: null);
     return n / 2;
 }
 
 pub fn main() {
-    @print(describe(HostError(message: "ENOENT", kind: "host", name: .Error, detail: null)));
+    print(describe(HostError(message: "ENOENT", kind: "host", name: .Error, detail: null)));
     case half(3) {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print(describe(e));
+        Ok(v) -> print("ok", v);
+        Error(e) -> print(describe(e));
     }
     case half(4) {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print(describe(e));
+        Ok(v) -> print("ok", v);
+        Error(e) -> print(describe(e));
     }
 }

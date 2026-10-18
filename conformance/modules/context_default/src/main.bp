@@ -3,37 +3,37 @@
 //// by `main`, outside every provider, reads `Theme`'s default; rendered by
 //// `Dark`, it reads the provided one. `context-unbound` is gone.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "light"));
 
-fn Label() -> @Component<Element> {
+fn Label() -> Component<Element> {
     val t = use context(Theme);
     return Element(text: t.mode);
 }
 
-fn Dark() -> @Component<Element> {
+fn Dark() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
     val l = Label();
     return Element(text: l.text);
 }
 
-fn Again() -> @Component<Element> {
+fn Again() -> Component<Element> {
     use provide(themeContext);
     val l = Label();
     return Element(text: l.text);
 }
 
-pub fn main() -> @Task<void> {
-    @print("before");
+pub fn main() -> Task<void> {
+    print("before");
     val l = await Label();
-    @print(l.text);
+    print(l.text);
     val d = await Dark();
-    @print(d.text);
+    print(d.text);
     val a = await Again();
-    @print(a.text);
+    print(a.text);
 }

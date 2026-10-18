@@ -16,10 +16,10 @@ const h = @import("helpers.zig");
 
 test "js: star fn ---- async function with await" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> @Task<i32> {
+        \\fn fetch(x: i32) -> Task<i32> {
         \\    return x;
         \\}
-        \\fn loadTwice(x: i32) -> @Task<i32> {
+        \\fn loadTwice(x: i32) -> Task<i32> {
         \\    val a = await fetch(x);
         \\    return a + a;
         \\}
@@ -28,7 +28,7 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn counter() -> @Iterator<i32> {
+        \\fn counter() -> Iterator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -38,7 +38,7 @@ test "js: star fn ---- generator with yield" {
 
 test "js: star fn ---- future generator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn stream() -> @Stream<@Result<i32, string>> {
+        \\fn stream() -> Stream<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -47,13 +47,13 @@ test "js: star fn ---- future generator" {
 
 test "js: star fn ---- pub typedefs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn loadOne(x: i32) -> @Task<i32> {
+        \\pub fn loadOne(x: i32) -> Task<i32> {
         \\    return x;
         \\}
-        \\pub fn count() -> @Iterator<i32> {
+        \\pub fn count() -> Iterator<i32> {
         \\    yield 1;
         \\}
-        \\pub fn pulses() -> @Stream<@Result<i32, string>> {
+        \\pub fn pulses() -> Stream<Result<i32, string>> {
         \\    yield 1;
         \\}
     );
@@ -63,17 +63,17 @@ test "js: star fn ---- pub typedefs" {
 
 test "js: effect annotation ---- future/iterator/futureGenerator/result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> @Task<i32> {
+        \\fn fetch(x: i32) -> Task<i32> {
         \\    return x;
         \\}
-        \\fn counter() -> @Iterator<i32> {
+        \\fn counter() -> Iterator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
-        \\fn stream() -> @Stream<@Result<i32, string>> {
+        \\fn stream() -> Stream<Result<i32, string>> {
         \\    yield 1;
         \\}
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;
         \\}
@@ -82,7 +82,7 @@ test "js: effect annotation ---- future/iterator/futureGenerator/result" {
 
 test "js: effect annotation ---- generator lowers to function*" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn range(a: i32, b: i32) -> @Iterator<i32> {
+        \\fn range(a: i32, b: i32) -> Iterator<i32> {
         \\    yield a;
         \\    yield b;
         \\}
@@ -95,7 +95,7 @@ test "js: effect annotation ---- generator lowers to function*" {
 // head and rebind the receiver to the rest.
 test "js: effect annotation ---- next by hand steps an iterator with YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn two() -> @Iterator<i32> {
+        \\fn two() -> Iterator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -108,16 +108,17 @@ test "js: effect annotation ---- next by hand steps an iterator with YieldStep" 
         \\}
         \\pub fn main() {
         \\    val it = two();
-        \\    @print(stepText(it.next()));
-        \\    @print(stepText(it.next()));
-        \\    @print(stepText(it.next()));
+        \\    print(stepText(it.next()));
+        \\    print(stepText(it.next()));
+        \\    print(stepText(it.next()));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "js: effect annotation ---- next by hand on a stream answers a Task of YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn countdown(n: i32) -> @Stream<i32> {
+        \\fn countdown(n: i32) -> Stream<i32> {
         \\    var i = n;
         \\    while (i > 0) {
         \\        yield i;
@@ -131,14 +132,15 @@ test "js: effect annotation ---- next by hand on a stream answers a Task of Yiel
         \\    };
         \\    return t;
         \\}
-        \\fn run() -> @Task<void> {
+        \\fn run() -> Task<void> {
         \\    val s = countdown(1);
-        \\    @print(stepText(await s.next()));
-        \\    @print(stepText(await s.next()));
+        \\    print(stepText(await s.next()));
+        \\    print(stepText(await s.next()));
         \\}
         \\pub fn main() {
         \\    run();
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -243,11 +245,11 @@ test "js: import ---- named imports" {
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    return Element();
         \\}
@@ -259,12 +261,12 @@ test "codegen ---- use object destructure is a plain call" {
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
+        \\val Element = type() implement Renderable
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> @Component<Element> {
+        \\fn LikeWidget() -> Component<Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    return Element();
@@ -274,14 +276,14 @@ test "codegen ---- use tuple destructure is a plain call" {
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
-        \\fn state(initial: i32) -> @Component<i32> {
+        \\val Element = type() implement Renderable
+        \\fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn memo(f: fn() -> i32) -> @Component<i32> {
+        \\fn memo(f: fn() -> i32) -> Component<i32> {
         \\    return 0;
         \\}
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    return Element();
@@ -291,14 +293,14 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 
 test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect(f: fn()) -> @Component<i32> {
+        \\fn effect(f: fn()) -> Component<i32> {
         \\    return 0;
         \\}
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> Component<Element> {
         \\    use effect { -> cleanup(); };
         \\    return Element();
         \\}
@@ -307,7 +309,7 @@ test "codegen ---- use effect void hook is a plain call" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Renderable
+        \\val Element = type() implement Renderable
         \\fn render() -> Element {
         \\    return Element();
         \\}
@@ -319,12 +321,13 @@ test "js: destructure ---- record val binding" {
         \\type Point(x: i32, y: i32)
         \\fn describe(p: Point) -> i32 {
         \\    val { x, y } = p;
-        \\    @print(x, y);
+        \\    print(x, y);
         \\    return x;
         \\}
         \\fn main() {
         \\    describe(Point(x: 3, y: 4));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -342,12 +345,13 @@ test "js: destructure ---- record parameter in fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Person(name: string, age: i32)
         \\fn greet({ name, .. }: Person) -> string {
-        \\    @print(name);
+        \\    print(name);
         \\    return name;
         \\}
         \\fn main() {
         \\    greet(Person(name: "Ana", age: 30));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -355,8 +359,9 @@ test "js: destructure ---- tuple val binding" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val #(a, b) = #(12, "hello");
-        \\    @print(a, b);
+        \\    print(a, b);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -390,7 +395,7 @@ test "js: destructure ---- tuple with long names" {
 test "js: destructure ---- tuple with try-catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Error(msg: string)
-        \\fn fetch() -> @Result<#(i32, i32), Error> {
+        \\fn fetch() -> Result<#(i32, i32), Error> {
         \\    throw Error(msg: "boom");
         \\}
         \\fn f() {
@@ -448,9 +453,10 @@ test "js: import ---- two modules whose files share a basename" {
         \\import {services.user.tag};
         \\
         \\fn main() {
-        \\    @print(label());
-        \\    @print(tag());
+        \\    print(label());
+        \\    print(tag());
         \\}
+        \\import {io.terminal.print} from "std";
         },
     });
 }
@@ -488,11 +494,12 @@ test "js: import ---- a dotted path and a group bind their leaves across a modul
         \\import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
         \\
         \\fn main() {
-        \\    @print(circleName());
-        \\    @print(seven());
-        \\    @print(label());
-        \\    @print(circleLabel());
+        \\    print(circleName());
+        \\    print(seven());
+        \\    print(label());
+        \\    print(circleLabel());
         \\}
+        \\import {io.terminal.print} from "std";
         },
     });
 }
@@ -517,8 +524,9 @@ test "js: import ---- a group activates an extension on its leaf" {
         \\import {pond: {Pato, PatoNada*}};
         \\fn main() {
         \\    val donald = Pato(2);
-        \\    @print(donald.swim());
+        \\    print(donald.swim());
         \\}
+        \\import {io.terminal.print} from "std";
         },
     });
 }
@@ -563,10 +571,11 @@ test "js: import ---- cross-module record construct and assoc fn" {
         \\
         \\fn main() {
         \\    val r = Response.ok("hi");
-        \\    @print(r.body);
+        \\    print(r.body);
         \\    val a = App(8080, "/");
-        \\    @print(a.port);
+        \\    print(a.port);
         \\}
+        \\import {io.terminal.print} from "std";
         },
     });
 }
@@ -595,8 +604,9 @@ test "js: import ---- disk-lib module named like the lib binds its namespace, no
         \\fn main() {
         \\    val a = make(1);
         \\    val b = qlib.make(5);
-        \\    @print(a + b);
+        \\    print(a + b);
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, &.{
         "const { make, make: __bp_ns_qlib__make } = require(\"./qlib/qlib.js\");",
@@ -629,8 +639,9 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\import {mlib} from "mlib";
         \\
         \\fn main() {
-        \\    @print(mlib.make(1) + mlib.twice(3));
+        \\    print(mlib.make(1) + mlib.twice(3));
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, &.{
         "const mlib = Object.assign({}, require(\"./mlib/core.js\"), require(\"./mlib/extra.js\"));",
@@ -652,8 +663,9 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\pub mod leaf;
         \\import { leaf.Leaf };
         \\fn main() {
-        \\    @print(Leaf(v: 7).v);
+        \\    print(Leaf(v: 7).v);
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
     try h.assertModuleJs(std.testing.allocator, &.{
@@ -667,8 +679,9 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         .{ .path = "", .source =
         \\import {tree.api.seven};
         \\fn main() {
-        \\    @print(seven());
+        \\    print(seven());
         \\}
+        \\import {io.terminal.print} from "std";
         },
     }, "tree/api", &.{"const { Leaf } = require(\"../tree/leaf.js\");"});
 }
@@ -681,8 +694,9 @@ test "js: pipeline ---- simple chain" {
         \\    val result = 1
         \\        |> double
         \\        |> inc;
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -694,8 +708,9 @@ test "js: pipeline ---- with labeled args" {
         \\    val result = 1
         \\        |> double
         \\        |> inc;
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -729,8 +744,9 @@ test "js: negation ---- simple unary minus" {
         \\    return -x;
         \\}
         \\fn main() {
-        \\    @print(negate(42));
+        \\    print(negate(42));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -740,8 +756,9 @@ test "js: negation ---- in expression" {
         \\    return x + -y;
         \\}
         \\fn main() {
-        \\    @print(diff(10, 3));
+        \\    print(diff(10, 3));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -792,8 +809,9 @@ test "js: enum ---- an associated fn on an enum is a call, not a variant" {
         \\
         \\fn main() {
         \\    val s: Shape = Shape.unit();
-        \\    @print(s.area());
+        \\    print(s.area());
         \\}
+        \\import {io.terminal.print} from "std";
         },
     });
 }
@@ -818,9 +836,10 @@ test "js: enum ---- a method is called on a variant value" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(Shape.Square(side: 4).area());
-        \\    @print(Shape.Circle(radius: 2).area());
+        \\    print(Shape.Square(side: 4).area());
+        \\    print(Shape.Circle(radius: 2).area());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -847,8 +866,9 @@ test "js: lambda ---- standalone with params" {
         \\};
         \\val result = add(10, 20);
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -914,8 +934,9 @@ test "js: optional chaining ---- member access short-circuits null" {
         \\
         \\fn main() {
         \\    val u: ?User = User(name: "ana");
-        \\    @print(u?.name);
+        \\    print(u?.name);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -935,8 +956,9 @@ test "js: reserved word identifiers" {
         \\}
         \\
         \\fn main() {
-        \\    @print(delete("a", "b"));
+        \\    print(delete("a", "b"));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -947,13 +969,13 @@ test "js: iterator fromList yields array items" {
     // by RI1 (§1I). A `@Iterator<T>` is infallible, so a plain fn iterates it
     // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
+        \\fn fromList<T>(xs: Array<T>) -> Iterator<T> {
         \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+        \\fn toList<T>(iter: Iterator<T>) -> Array<T> {
         \\    var out = [];
         \\    for (iter) { item ->
         \\        out.push(item);
@@ -962,8 +984,9 @@ test "js: iterator fromList yields array items" {
         \\}
         \\
         \\fn main() {
-        \\    @print(toList(fromList([1, 2, 3])).join(","));
+        \\    print(toList(fromList([1, 2, 3])).join(","));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -982,10 +1005,11 @@ test "js: a tuple element's optional read by the nullish default" {
         \\fn main() {
         \\    val result = firstAndRest([1, 2, 3]);
         \\    val head = result._1;
-        \\    @print(head ?? -1);
+        \\    print(head ?? -1);
         \\    val empty = firstAndRest([]);
-        \\    @print(empty._1 == null);
+        \\    print(empty._1 == null);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -999,8 +1023,9 @@ test "js: array slice 2-arg lowers byte-identically across backends" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3, 4, 5];
-        \\    @print(xs.slice(1, 4));
+        \\    print(xs.slice(1, 4));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1014,8 +1039,9 @@ test "js: array join lowers byte-identically across backends" {
     // `prim-op-annotation` template form.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print([10, 20, 30].join(", "));
+        \\    print([10, 20, 30].join(", "));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1027,9 +1053,10 @@ test "js: array indexOf lowers byte-identically across backends" {
     // `xs.indexOf(item)`; erlang lowers via the prim-op annotation.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print([1, 2, 3, 4].indexOf(3));
-        \\    @print([1, 2, 3].indexOf(99));
+        \\    print([1, 2, 3, 4].indexOf(3));
+        \\    print([1, 2, 3].indexOf(99));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1043,9 +1070,10 @@ test "js: array at lowers byte-identically across backends" {
     // erlang backend's `@Option` none representation.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print([10, 20].at(0));
-        \\    @print([10].at(5));
+        \\    print([10, 20].at(0));
+        \\    print([10].at(5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1064,8 +1092,9 @@ test "js: interface associated fn namespace" {
         \\
         \\fn main() {
         \\    val p = Pairish.of(1, "one");
-        \\    @print(Pairish.first(p));
+        \\    print(Pairish.first(p));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1076,11 +1105,12 @@ test "js: stdlib associated fn namespace injected" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val p = Pair.of(1, "one");
-        \\    @print(Pair.first(p));
-        \\    @print(Function.identity(42));
+        \\    print(Pair.first(p));
+        \\    print(Function.identity(42));
         \\    val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
-        \\    @print(inc(10));
+        \\    print(inc(10));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1091,11 +1121,12 @@ test "js: array instance default-fn methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3];
-        \\    @print(xs.prepend(0).join(","));
-        \\    @print(xs.fold(0, { a, x -> a + x }));
-        \\    @print(xs.isEmpty());
-        \\    @print(xs.all({ x -> x > 0 }));
+        \\    print(xs.prepend(0).join(","));
+        \\    print(xs.fold(0, { a, x -> a + x }));
+        \\    print(xs.isEmpty());
+        \\    print(xs.all({ x -> x > 0 }));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1117,8 +1148,9 @@ test "js: array zip via @External.Node template" {
         \\fn main() {
         \\    val xs = [1, 2, 3];
         \\    val ys = ["a", "b", "c"];
-        \\    @print(xs.zip(ys));
+        \\    print(xs.zip(ys));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1128,11 +1160,12 @@ test "js: bool instance default-fn methods" {
     // `this.valueOf()` (`const self = this.valueOf()`).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print(true.negate());
-        \\    @print(false.nor(false));
-        \\    @print(true.nand(true));
-        \\    @print(true.exclusiveOr(false));
+        \\    print(true.negate());
+        \\    print(false.nor(false));
+        \\    print(true.nand(true));
+        \\    print(true.exclusiveOr(false));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1143,13 +1176,14 @@ test "js: numeric instance methods (external + default-fn)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val n = -5;
-        \\    @print(n.abs());
-        \\    @print(n.min(3));
-        \\    @print(n.max(10));
-        \\    @print(n.clamp(0, 5));
+        \\    print(n.abs());
+        \\    print(n.min(3));
+        \\    print(n.max(10));
+        \\    print(n.clamp(0, 5));
         \\    val x = 7;
-        \\    @print(x.isEven());
+        \\    print(x.isEven());
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1178,10 +1212,11 @@ test "js: `at` on an array default fn and on a string do not share a rename" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val xs = [3, 4];
-        \\    @print(xs.first() ?? 0);
-        \\    @print(xs.at(1) ?? 0);
-        \\    @print("abc".at(1) ?? "?");
+        \\    print(xs.first() ?? 0);
+        \\    print(xs.at(1) ?? 0);
+        \\    print("abc".at(1) ?? "?");
         \\}
+        \\import {io.terminal.print} from "std";
     , "3\n4\nb\n");
 }
 
@@ -1192,12 +1227,13 @@ test "js: `at` on an array default fn and on a string do not share a rename" {
 test "js: a typed array `at` beside a String default fn in use keeps its name" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print("abcd".slice(1, 3));
+        \\    print("abcd".slice(1, 3));
         \\    val ys: i32[] = [7, 8];
-        \\    @print(ys.at(1) ?? 0);
+        \\    print(ys.at(1) ?? 0);
         \\    val parts = "a=1".split("=");
-        \\    @print(parts.at(0) ?? "");
+        \\    print(parts.at(0) ?? "");
         \\}
+        \\import {io.terminal.print} from "std";
     , "bc\n8\na\n");
 }
 
@@ -1207,11 +1243,12 @@ test "js: string at out of range is null, a negative index counts from the end" 
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "ab";
-        \\    @print(s.at(1));
-        \\    @print(s.at(2));
-        \\    @print(s.at(-1));
-        \\    @print(s.at(-3));
+        \\    print(s.at(1));
+        \\    print(s.at(2));
+        \\    print(s.at(-1));
+        \\    print(s.at(-3));
         \\}
+        \\import {io.terminal.print} from "std";
     , "b\nnull\nb\nnull\n");
 }
 
@@ -1222,11 +1259,12 @@ test "js: string methods map to native JS names" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "Hello,World";
-        \\    @print(s.toUpper());
-        \\    @print(s.toLower());
-        \\    @print(s.split(",").join("|"));
-        \\    @print(s.slice(0, 5));
+        \\    print(s.toUpper());
+        \\    print(s.toLower());
+        \\    print(s.split(",").join("|"));
+        \\    print(s.slice(0, 5));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1238,8 +1276,9 @@ test "beam template path: endsWith lowers via its @External.Erlang template" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "foobar";
-        \\    @print(s.endsWith("bar"));
+        \\    print(s.endsWith("bar"));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1319,10 +1358,11 @@ const imported_section_modules = [_]Module{
     \\import {lib.blue};
     \\pub fn main() {
     \\    val t: Token = .Color.Red;
-    \\    @print(t);
-    \\    @print(red());
-    \\    @print(blue());
+    \\    print(t);
+    \\    print(red());
+    \\    print(blue());
     \\}
+    \\import {io.terminal.print} from "std";
     },
 };
 
@@ -1376,9 +1416,10 @@ test "js: comptime primitives ---- template body calls string and array methods"
         \\val s = shout @` hello big world `;
         \\
         \\fn main() {
-        \\    @print(s);
+        \\    print(s);
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1400,9 +1441,10 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\type User(name: string, secret: string, age: i32)
         \\
         \\fn main() {
-        \\    @print(describeUser());
+        \\    print(describeUser());
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1451,10 +1493,11 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\}
         \\
         \\fn main() {
-        \\    @print(wireService());
-        \\    @print(collect([1, 2, 3]).join(","));
+        \\    print(wireService());
+        \\    print(collect([1, 2, 3]).join(","));
         \\}
         \\import {compiler} from "std";
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1505,8 +1548,9 @@ test "js: print ---- an f64 answered by a module-handle call keeps its .0" {
         \\import {math} from "std";
         \\
         \\fn main() {
-        \\    @print(math.abs(0.0 - 1.0));
+        \\    print(math.abs(0.0 - 1.0));
         \\}
+        \\import {io.terminal.print} from "std";
     , &.{"__bp_print_as([\"f\"], math.abs("});
 }
 
@@ -1521,12 +1565,13 @@ test "js: print ---- an f64 out of a case payload binding keeps its .0" {
         \\
         \\fn main() {
         \\    val s = Shape.Circle(radius: 2.0);
-        \\    @print(
+        \\    print(
         \\        case s {
         \\            Circle(r) -> r;
         \\            Square(side) -> side;
         \\        },
         \\    );
         \\}
+        \\import {io.terminal.print} from "std";
     , &.{"__bp_print_as([\"f\"], "});
 }

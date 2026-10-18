@@ -4,6 +4,8 @@
 //// argument is the arity refusal the checker already gives; the new form is
 //// `test/yield_step_next.bp`.
 
+import {io.terminal.print} from "std";
+
 fn first(step: YieldStep<i32, string>) -> i32 { return 0; }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

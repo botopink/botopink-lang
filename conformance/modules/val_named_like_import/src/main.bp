@@ -1,9 +1,9 @@
 //// The same for a module-level `val`: one name, one binding.
 
-import {path.extname} from "std";
+import {path.extname, io.terminal.print} from "std";
 
 val extname = ".txt";
 
 pub fn main() {
-    @print(extname);
+    print(extname);
 }

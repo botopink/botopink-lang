@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[effect-type-removed]: `@Future` was removed — the wrapper is `@Task<T>`, which never fails (decision 120)
-at src/main.bp:9:12
+at src/main.bp:11:12
 label write `@Task<@Result<T, E>>` (or `@Task<T>` when it cannot fail)

@@ -3,7 +3,9 @@
 //// to answer `2.0 == 2` with `false`) and the literal's widening to `f64`
 //// (decision 209) would read it two ways. Write the float.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val x = 2.0;
-    @print(x == 2);
+    print(x == 2);
 }

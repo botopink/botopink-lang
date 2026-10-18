@@ -2,9 +2,9 @@
 //// context is read by its type with `use context(T)` under a `use provide(…)`.
 //// The builtin is unknown, located at the `@`, naming the hook to write.
 
-type Element(total: i32) implement @Renderable
+type Element(total: i32) implement Renderable
 
-fn total() -> @Component<i32> {
+fn total() -> Component<i32> {
     val ctx = use @getContext(Element);
     return ctx.total;
 }

@@ -3,7 +3,7 @@
 //// `decl.addMember`. `City.revisions()` is refused where it is written: the
 //// decorator added `fromName` only.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown) {
     compiler.addMember(
@@ -19,6 +19,6 @@ fn entity(syntax decl: unknown) {
 type City(name: string)
 
 pub fn main() {
-    @print(City.fromName("Recife").name);
-    @print(City.revisions().length);
+    print(City.fromName("Recife").name);
+    print(City.revisions().length);
 }

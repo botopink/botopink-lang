@@ -6,6 +6,7 @@ pub mod marks;
 pub mod catalog;
 import {catalog.names};
 import {marks.tagged};
+import {io.terminal.print} from "std";
 
 #[tagged]
 pub fn job() -> i32 {
@@ -13,5 +14,5 @@ pub fn job() -> i32 {
 }
 
 pub fn main() {
-    @print(names());
+    print(names());
 }

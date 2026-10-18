@@ -4,15 +4,17 @@
 //// (the inner value leaked out of the block) and beam (`unassigned`) each
 //// miscompiled the shadow.
 
+import {io.terminal.print} from "std";
+
 fn f(x: i32) -> i32 {
     val y = x + 1;
     if (y > 1) {
         val y = 10;
-        @print(y);
+        print(y);
     }
     return y;
 }
 
 pub fn main() {
-    @print(f(1));
+    print(f(1));
 }

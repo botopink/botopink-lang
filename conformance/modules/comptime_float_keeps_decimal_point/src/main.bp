@@ -2,9 +2,11 @@
 //// `comptime 2.0 * 3.0` is the literal `6.0`, not `6` — which erlang and
 //// beam read back as the integer and printed `6` before (`eval.zig`).
 
+import {io.terminal.print} from "std";
+
 val c = comptime 2.0 * 3.0;
 
 pub fn main() {
     val e: f64 = c;
-    @print(e);
+    print(e);
 }

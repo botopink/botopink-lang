@@ -5,22 +5,22 @@
 //// `unexpected ','` before (the list was read as a comparison after a
 //// namespace).
 
-import {collections} from "std";
+import {collections, io.terminal.print} from "std";
 
 pub mod shapes;
 
 pub fn main() {
     val d = collections.Dict<string, unknown>.empty();
-    @print(d.size());
+    print(d.size());
     val e = collections.Dict<string, i32>.empty().insert("a", 1).insert("b", 2);
-    @print(e.size());
-    @print(shapes.Box<i32>.make(7).get());
+    print(e.size());
+    print(shapes.Box<i32>.make(7).get());
     val none = shapes.Opt<string>.None;
-    @print(none == shapes.Opt<string>.None);
+    print(none == shapes.Opt<string>.None);
     val some = shapes.Opt<i32>.Some(3);
     val n = case some {
         Some(v) -> v;
         None -> 0;
     };
-    @print(n);
+    print(n);
 }

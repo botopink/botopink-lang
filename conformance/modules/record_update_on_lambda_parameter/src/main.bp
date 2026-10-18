@@ -4,6 +4,8 @@
 //// lambda's last statement is its value, and the walk that completes the
 //// update never reached a call at statement position.
 
+import {io.terminal.print} from "std";
+
 type Brk(id: i32, label: string, active: bool, image: bool)
 
 fn show(b: Brk) -> string {
@@ -19,21 +21,21 @@ pub fn main() {
     ];
     val ys = xs.map({ b -> Brk(..b, active: false) });
     for (ys) { b ->
-        @print(show(b));
+        print(show(b));
     }
     val zs = xs.map({ b -> if (b.image) b else Brk(..b, label: "z") });
     for (zs) { b ->
-        @print(show(b));
+        print(show(b));
     }
     val twice = xs.map({ b -> Brk(..b, id: b.id * 10, active: false) });
     for (twice) { b ->
-        @print(show(b));
+        print(show(b));
     }
     val blocks = xs.map({ b ->
         val n = b.id + 100;
         Brk(..b, id: n)
     });
     for (blocks) { b ->
-        @print(show(b));
+        print(show(b));
     }
 }

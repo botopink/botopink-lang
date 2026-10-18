@@ -5,6 +5,7 @@
 pub mod skin;
 import looks from "looks";
 import {theme} from "looks";
+import {io.terminal.print} from "std";
 
 #[theme]
 pub fn house() -> string {
@@ -12,5 +13,5 @@ pub fn house() -> string {
 }
 
 pub fn main() {
-    @print(looks @`page`);
+    print(looks @`page`);
 }

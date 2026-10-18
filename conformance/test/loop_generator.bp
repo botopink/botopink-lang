@@ -1,6 +1,6 @@
 //// Decision 8 §10 — `for (gen) { x -> … }` over an `#[@resultGenerator]` generator.
 
-fn upToThree() -> @Iterator<i32> {
+fn upToThree() -> Iterator<i32> {
     yield 1;
     yield 2;
     yield 3;

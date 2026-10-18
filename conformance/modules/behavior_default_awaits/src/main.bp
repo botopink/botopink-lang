@@ -3,14 +3,16 @@
 //// type: called on a typed value and awaited. commonJS emitted the adopted body as a
 //// plain function, which Node refuses ("await is only valid in async functions").
 
-fn fetch(n: i32) -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+fn fetch(n: i32) -> Task<i32> {
     return n * 10;
 }
 
 behavior Loader {
     fn base(self: Self) -> i32;
 
-    default fn load(self: Self) -> @Task<i32> {
+    default fn load(self: Self) -> Task<i32> {
         val v = await fetch(self.base());
         return v + 1;
     }
@@ -22,7 +24,7 @@ type Box(n: i32) implement Loader {
     }
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val r = await Box(n: 4).load();
-    @print(r); // 41
+    print(r); // 41
 }

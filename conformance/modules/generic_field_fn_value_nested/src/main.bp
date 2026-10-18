@@ -6,6 +6,8 @@
 //// parameters (`Pair<A, B>`). wasm printed the array's and the string's
 //// address.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 type Pair<A, B>(left: A, right: B)
@@ -36,25 +38,25 @@ fn hi() -> string {
 pub fn main() {
     val b = Box(value: mk);
     val fb = b.value;
-    @print(fb(4));
+    print(fb(4));
     val c = Box(value: arr);
     val fc = c.value;
-    @print(fc(5));
+    print(fc(5));
     val w = Box(value: words);
     val fw = w.value;
-    @print(fw("a"));
+    print(fw("a"));
     val d = Box(value: opt);
     val fd = d.value;
-    @print(fd(1) ?? "n");
-    @print(fd(0) ?? "n");
+    print(fd(1) ?? "n");
+    print(fd(0) ?? "n");
     val p = Pair(left: hi, right: mk);
     val fl = p.left;
     val fr = p.right;
-    @print(fl());
-    @print(fr(1));
+    print(fl());
+    print(fr(1));
     val bb = Box(value: Box(value: hi));
     val inner = bb.value;
     val fi = inner.value;
-    @print(fi());
-    @print(bb.value.value());
+    print(fi());
+    print(bb.value.value());
 }

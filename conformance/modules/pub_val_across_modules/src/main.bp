@@ -7,6 +7,7 @@
 pub mod base;
 pub mod config;
 import {config.Globals, config.Mode, config.globals, config.mode, config.sizes, config.limit as maxItems, config.scaled, config.name, config.twice, config.counted};
+import {io.terminal.print} from "std";
 
 type Box(n: i32) {
     pub fn fill(self: Self) -> string {
@@ -22,19 +23,19 @@ fn modeName() -> string {
 }
 
 pub fn main() {
-    @print("main starts");
-    @print(globals.payload);
-    @print(globals.count + globals.count);
-    @print(globals.label());
-    @print(Box(n: 1).fill());
-    @print(modeName());
-    @print(sizes.length);
+    print("main starts");
+    print(globals.payload);
+    print(globals.count + globals.count);
+    print(globals.label());
+    print(Box(n: 1).fill());
+    print(modeName());
+    print(sizes.length);
     for (sizes) { s ->
-        @print(s);
+        print(s);
     }
-    @print(maxItems);
-    @print(scaled);
-    @print(name);
-    @print(twice(21));
-    @print(counted + counted);
+    print(maxItems);
+    print(scaled);
+    print(name);
+    print(twice(21));
+    print(counted + counted);
 }

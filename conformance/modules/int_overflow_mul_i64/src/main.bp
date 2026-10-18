@@ -3,12 +3,14 @@
 //// computes a product past 2^53 in `BigInt` (decision 319) and aborts at the
 //// same bound as the others.
 
+import {io.terminal.print} from "std";
+
 fn mul(a: i64, b: i64) -> i64 {
     return a * b;
 }
 
 pub fn main() {
-    @print(mul(4194304, 2147483647));
-    @print(mul(4294967296, 4294967296));
-    @print("unreachable");
+    print(mul(4194304, 2147483647));
+    print(mul(4294967296, 4294967296));
+    print("unreachable");
 }

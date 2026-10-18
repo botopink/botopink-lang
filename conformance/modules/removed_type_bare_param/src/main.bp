@@ -1,10 +1,12 @@
 //// Decision 575 (5) — the type of a type is written `type<T>`; the spelling
 //// `type T` is gone and refused at the name (`removed-type-bare-param`).
 
+import {io.terminal.print} from "std";
+
 fn keep<T>(comptime t: type T, value: T) -> T {
     return value;
 }
 
 pub fn main() {
-    @print(keep(i32, 1));
+    print(keep(i32, 1));
 }

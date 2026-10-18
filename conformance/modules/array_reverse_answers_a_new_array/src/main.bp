@@ -12,11 +12,13 @@
 //// The cell reads the receiver AFTER the call, which is the only way to see
 //// it: the reversed answer was right on every target the whole time.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2, 3];
     val rev = xs.reverse();
-    @print(rev.join(","));
-    @print(xs.join(","));
-    @print(xs.reverse().join(","));
-    @print(xs.join(","));
+    print(rev.join(","));
+    print(xs.join(","));
+    print(xs.reverse().join(","));
+    print(xs.join(","));
 }

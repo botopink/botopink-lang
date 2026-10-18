@@ -7,6 +7,7 @@
 pub mod local;
 
 import {serverOnly as srv, check.check, Check} from "web";
+import {compiler, io.terminal.print} from "std";
 
 #[check]
 #[srv]
@@ -21,8 +22,8 @@ fn SameName() -> string {
 }
 
 pub fn main() {
-    val aliased: string[] = @typeInfo(Aliased).meta(Check)?.ids ?? [];
-    @print(aliased.join(" "));
-    val sameName: string[] = @typeInfo(SameName).meta(Check)?.ids ?? [];
-    @print(sameName.join(" "));
+    val aliased: string[] = comptime compiler.typeInfo(Aliased).meta(Check)?.ids ?? [];
+    print(aliased.join(" "));
+    val sameName: string[] = comptime compiler.typeInfo(SameName).meta(Check)?.ids ?? [];
+    print(sameName.join(" "));
 }

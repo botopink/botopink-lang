@@ -9,10 +9,12 @@
 //// (`comptime/tests/narrowing.zig` ×2, `codegen/tests/narrowing.zig` ×1),
 //// each promising the form would land. They are gone; this cell replaces them.
 
+import {io.terminal.print} from "std";
+
 type Status { Ready, Busy(count: i32), Down }
 
 pub fn main() {
     val s: Status = Status.Busy(count: 3);
     assert s is Status.Busy(count: n);
-    @print(n.toString());
+    print(n.toString());
 }

@@ -7,6 +7,7 @@ pub mod a;
 pub mod b;
 import {a.e.Signal as Light, a.e.stop};
 import {b.e.Signal as Sound, b.e.quiet};
+import {io.terminal.print} from "std";
 
 fn light(s: Light) -> i32 {
     return case s {
@@ -29,12 +30,12 @@ fn kind(v: unknown) -> string {
 }
 
 pub fn main() {
-    @print(light(Light.Blink(times: 3)));
-    @print(light(stop()));
-    @print(sound(Sound.High(db: 70)));
-    @print(sound(quiet()));
-    @print(Light.Red);
-    @print(Sound.High(db: 2));
-    @print(kind(Light.Red));
-    @print(kind(Sound.Low));
+    print(light(Light.Blink(times: 3)));
+    print(light(stop()));
+    print(sound(Sound.High(db: 70)));
+    print(sound(quiet()));
+    print(Light.Red);
+    print(Sound.High(db: 2));
+    print(kind(Light.Red));
+    print(kind(Sound.Low));
 }

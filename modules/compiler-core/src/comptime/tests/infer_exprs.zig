@@ -23,8 +23,9 @@ test "infer: integer and float literals" {
         \\val x = 42;
         \\val y = 3.14;
         \\fn main() {
-        \\    @print(x, y);
+        \\    print(x, y);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -32,8 +33,9 @@ test "infer: string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val greeting = "hello";
         \\fn main() {
-        \\    @print(greeting);
+        \\    print(greeting);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -43,8 +45,9 @@ test "infer: binary operators" {
         \\val product = 3.0 * 2.0;
         \\val joined = "a" + "b";
         \\fn main() {
-        \\    @print(sum, product, joined);
+        \\    print(sum, product, joined);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -78,8 +81,9 @@ test "infer: case on integer with wildcard" {
         \\    _ -> "nonzero";
         \\};
         \\fn main() {
-        \\    @print(desc);
+        \\    print(desc);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -90,8 +94,9 @@ test "infer: case with OR patterns" {
         \\    _ -> "odd";
         \\};
         \\fn main() {
-        \\    @print(parity);
+        \\    print(parity);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -247,27 +252,29 @@ test "infer: try expression ---- result type unified with return" {
     // out of `process`, which therefore carries the channel it propagates into
     // (decision 95 — a plain `fn -> i32` is refused here).
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
-        \\    @todo();
+        \\fn fetch() -> Result<i32, string> {
+        \\    panic("not implemented");
         \\}
-        \\fn process() -> @Result<i32, string> {
+        \\fn process() -> Result<i32, string> {
         \\    val r = try fetch();
         \\    return r;
         \\}
         \\val x = process();
+        \\import {failure.panic} from "std";
     );
 }
 
 test "infer: try-catch ---- handler provides fallback" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn fetch() -> @Result<i32, string> {
-        \\    @todo();
+        \\fn fetch() -> Result<i32, string> {
+        \\    panic("not implemented");
         \\}
         \\fn safe() -> i32 {
         \\    val r = try fetch() catch 0;
         \\    return r;
         \\}
         \\val x = safe();
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -324,11 +331,12 @@ test "infer: src types as SourceLocation" {
     // call, so the typed AST carries the record type and the four literals.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn locate() -> SourceLocation {
-        \\    return @src();
+        \\    return comptime compiler.src;
         \\}
-        \\val loc = @src();
+        \\val loc = comptime compiler.src;
         \\test "src: in a test" {
-        \\    val here = @src();
+        \\    val here = comptime compiler.src;
         \\}
+        \\import {compiler} from "std";
     );
 }

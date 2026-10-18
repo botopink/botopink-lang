@@ -2,10 +2,12 @@
 //// has the path, and no type is expected. The refusal names both, sorted,
 //// instead of whichever the type table's walk met first.
 
+import {io.terminal.print} from "std";
+
 type Token  { Color { Red { 100, 500 } } }
 type Border { Color { Blue { 100 } } }
 
 pub fn main() {
     val a = .Color.Green.100;
-    @print(0);
+    print(0);
 }

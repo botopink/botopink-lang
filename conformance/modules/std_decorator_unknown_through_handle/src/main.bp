@@ -2,7 +2,7 @@
 //// `from "std"` namespace import, a name that is not one of the module's
 //// decorators is refused at the annotation. It used to do nothing, silently.
 
-import {testing.mocks} from "std";
+import {testing.mocks, io.terminal.print} from "std";
 
 #[mocks.mokc]
 pub behavior Repo {
@@ -10,5 +10,5 @@ pub behavior Repo {
 }
 
 pub fn main() {
-    @print(0);
+    print(0);
 }

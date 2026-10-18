@@ -2,7 +2,7 @@
 //// field, `@Decl<T>` binds `T` to the field's type, so `fn(self: T)` takes a
 //// `string` while the member joins `Signup`: refused at the annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn trimmed<T>(syntax decl: T) {
     compiler.addMember("trimmedLength", fn(self: T) -> i32 {
@@ -13,5 +13,5 @@ fn trimmed<T>(syntax decl: T) {
 pub type Signup(#[trimmed] name: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }

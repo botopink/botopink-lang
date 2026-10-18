@@ -2,13 +2,15 @@
 //// function's last statement, runs the implementer's method and answers nothing — on wasm too,
 //// whose dispatcher by value answered nothing while the calling function promised a value.
 
+import {io.terminal.print} from "std";
+
 behavior Shuttable {
     fn shut(self: Self);
 }
 
 type Door(name: string) implement Shuttable {
     fn shut(self: Self) {
-        @print("shut " + self.name);
+        print("shut " + self.name);
     }
 }
 

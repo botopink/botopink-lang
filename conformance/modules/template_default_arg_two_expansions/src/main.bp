@@ -3,7 +3,7 @@
 // (`greeting`), the second calls a function of one parameter — the shape of
 // jhonstart's `<GreetingHeadline name="Partner" />` and `<Footer />`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub val partner = "Partner";
 
@@ -23,6 +23,6 @@ pub fn code<T>(syntax q: string) -> T {
 pub fn main() {
     val top = code @`headline(partner)`;
     val bottom = code @`footer(partner)`;
-    @print(top);
-    @print(bottom);
+    print(top);
+    print(bottom);
 }

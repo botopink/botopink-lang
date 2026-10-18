@@ -6,6 +6,8 @@
 //// module did not compile. The array half and a string template in a
 //// branch are the same walk.
 
+import {io.terminal.print} from "std";
+
 fn page(s: string) -> string {
     return if (s == "/") "index.html" else s.slice(1) + "/index.html";
 }
@@ -19,10 +21,10 @@ fn label(n: i32) -> string {
 }
 
 pub fn main() {
-    @print(page("/"));
-    @print(page("/about"));
-    @print(rest([1, 2, 3], true));
-    @print(rest([1, 2, 3], false));
-    @print(label(3));
-    @print(label(1));
+    print(page("/"));
+    print(page("/about"));
+    print(rest([1, 2, 3], true));
+    print(rest([1, 2, 3], false));
+    print(label(3));
+    print(label(1));
 }

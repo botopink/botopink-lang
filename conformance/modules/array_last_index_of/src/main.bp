@@ -4,14 +4,16 @@
 //// checker then refused it on every target (`unknown-primitive-method`).
 //// Integers, strings and an empty array, on all four targets.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val xs = [1, 2, 3, 2, 1];
-    @print(xs.lastIndexOf(2));
-    @print(xs.lastIndexOf(1));
-    @print(xs.lastIndexOf(9));
-    @print(xs.indexOf(2));
+    print(xs.lastIndexOf(2));
+    print(xs.lastIndexOf(1));
+    print(xs.lastIndexOf(9));
+    print(xs.indexOf(2));
     val ss = ["a", "b", "a"];
-    @print(ss.lastIndexOf("a"));
+    print(ss.lastIndexOf("a"));
     val empty: Array<i32> = [];
-    @print(empty.lastIndexOf(1));
+    print(empty.lastIndexOf(1));
 }

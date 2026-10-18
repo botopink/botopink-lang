@@ -9,6 +9,8 @@
 //// is the same constructor. wasm bound a destructured string field as a
 //// number (`class + "!"` printed an address plus `!`).
 
+import {io.terminal.print} from "std";
+
 type Tag(class: string, id: i32)
 
 type Node {
@@ -43,14 +45,14 @@ fn leafClass(n: Node) -> string {
 
 pub fn main() {
     val t = Tag(class: "btn", id: 1);
-    @print(t.class);
-    @print(spread(t));
-    @print(positional(t));
-    @print(t);
-    @print(make("card").class);
+    print(t.class);
+    print(spread(t));
+    print(positional(t));
+    print(t);
+    print(make("card").class);
     val u = Tag(..t, class: "link");
-    @print(u.class);
-    @print(Node.Leaf(class: "leaf"));
-    @print(leafClass(.Leaf(class: "x")));
-    @print(leafClass(.Empty));
+    print(u.class);
+    print(Node.Leaf(class: "leaf"));
+    print(leafClass(.Leaf(class: "x")));
+    print(leafClass(.Empty));
 }

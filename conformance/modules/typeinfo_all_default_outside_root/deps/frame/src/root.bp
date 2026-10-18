@@ -2,14 +2,14 @@
 //// (decision 551): its `comptime` parameter defaults to
 //// `@TypeInfo.all(with: m)`.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub fn m(syntax decl: unknown) {
     compiler.setMeta(Role(role: compiler.name(decl)));
 }
 
 pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
-    @print(modules.length.toString());
+    print(modules.length.toString());
 }
 
 // What `#[m]` records.

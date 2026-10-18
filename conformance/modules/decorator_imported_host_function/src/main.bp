@@ -9,7 +9,7 @@ pub mod text;
 pub mod sched;
 import {text.shout};
 import {sched.stamped};
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn tag(syntax decl: unknown) {
     @emit("pub fn tagged() -> string { return \""
@@ -28,8 +28,8 @@ fn tick() -> i32 {
 }
 
 pub fn main() {
-    @print(tagged());
-    @print(stamp());
-    @print(comptime shout("build"));
-    @print(shout("build"));
+    print(tagged());
+    print(stamp());
+    print(comptime shout("build"));
+    print(shout("build"));
 }

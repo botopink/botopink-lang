@@ -9,8 +9,9 @@ pub mod cards;
 pub mod skin;
 import looks from "looks";
 import {cards.card};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(card());
-    @print(looks @`page`);
+    print(card());
+    print(looks @`page`);
 }

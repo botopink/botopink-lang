@@ -6,6 +6,8 @@
 //// stripped before any backend sees the literal. Each line was refused by the
 //// parent binary (`1.5f` was the number `1.5` and the identifier `f`).
 
+import {io.terminal.print} from "std";
+
 fn small(v: f32) -> f32 {
     return v;
 }
@@ -24,23 +26,23 @@ fn kind(n: u8) -> string {
 
 pub fn main() {
     val x: f64 = 1d;
-    @print(x);
-    @print(small(1.5f));
-    @print(wide(42l));
+    print(x);
+    print(small(1.5f));
+    print(wide(42l));
     val k: i64 = 1;
-    @print(k);
-    @print(42u);
-    @print(42ul);
-    @print(7u8);
-    @print(7i8);
-    @print(7u16);
-    @print(7i16);
-    @print(7isize);
-    @print(7usize);
-    @print(kind(0u8));
-    @print(kind(1u8));
-    @print(kind(9u8));
-    @print(255ul);
-    @print(1_000l);
-    @print(2.5e1d);
+    print(k);
+    print(42u);
+    print(42ul);
+    print(7u8);
+    print(7i8);
+    print(7u16);
+    print(7i16);
+    print(7isize);
+    print(7usize);
+    print(kind(0u8));
+    print(kind(1u8));
+    print(kind(9u8));
+    print(255ul);
+    print(1_000l);
+    print(2.5e1d);
 }

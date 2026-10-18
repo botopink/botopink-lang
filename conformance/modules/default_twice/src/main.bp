@@ -2,6 +2,8 @@
 //// function: an anonymous `pub default fn (…)` and `pub default other;` are
 //// two, refused as `default-twice` at the second.
 
+import {io.terminal.print} from "std";
+
 pub default fn (x: i32) -> i32 {
     return x;
 }
@@ -13,5 +15,5 @@ fn other(x: i32) -> i32 {
 pub default other;
 
 pub fn main() {
-    @print(other(1));
+    print(other(1));
 }

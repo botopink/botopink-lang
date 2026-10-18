@@ -3,6 +3,8 @@
 //// link after a `.` never read the `<…>`, so `ctx.resolve<Repo>()` was read as
 //// `ctx.resolve < Repo > ()` and refused as an unknown field.
 
+import {io.terminal.print} from "std";
+
 type Ctx(n: i32) {
     fn resolve<T>(self: Self, x: T) -> T {
         return x;
@@ -22,12 +24,12 @@ type Box<V>(value: V) {
 pub fn main() {
     val c = Ctx(n: 1);
     val s: string = c.resolve("a");
-    @print(s);
+    print(s);
     val nothing = c.none();
-    @print(nothing == null);
+    print(nothing == null);
     val p = Box(value: 2).pair(true);
     val flag: bool = p._1;
-    @print(flag);
+    print(flag);
     val a = 1;
-    @print(c.n < a);
+    print(c.n < a);
 }

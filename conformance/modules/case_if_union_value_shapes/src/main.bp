@@ -5,6 +5,8 @@
 //// value goes (a `val`, a `return` from a function answering the union, an
 //// argument of a parameter of it): each value read back is the member it is.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(r: i32),
     Label(text: string),
@@ -117,13 +119,13 @@ fn ifArgument(b: bool) -> string {
     return show(if (b) 9 else "nine");
 }
 
-fn later(n: i32) -> @Task<i32> {
+fn later(n: i32) -> Task<i32> {
     return async {
         return n;
     };
 }
 
-fn machine(s: Shape) -> @Task<string> {
+fn machine(s: Shape) -> Task<string> {
     return async {
         val k = await later(10);
         val v = case s {
@@ -141,9 +143,9 @@ fn machine(s: Shape) -> @Task<string> {
     };
 }
 
-fn run() -> @Task<void> {
-    @print(await machine(Shape.Circle(r: 1)));
-    @print(await machine(Shape.Label(text: "m")));
+fn run() -> Task<void> {
+    print(await machine(Shape.Circle(r: 1)));
+    print(await machine(Shape.Label(text: "m")));
 }
 
 fn pickBlock(s: Shape) -> i32 | string {
@@ -190,31 +192,31 @@ fn ifPlainValue(b: bool) -> string {
 }
 
 pub fn main() {
-    @print(blockArms(Shape.Circle(r: 1)));
-    @print(blockArms(Shape.Label(text: "b")));
-    @print(lambdaArms(1));
-    @print(lambdaArms("l"));
-    @print(unknownSubject(1));
-    @print(unknownSubject("u"));
-    @print(show(pick(Shape.Circle(r: 1))));
-    @print(show(pick(Shape.Label(text: "p"))));
-    @print(argument(Shape.Circle(r: 1)));
-    @print(argument(Shape.Label(text: "a")));
-    @print(ifValue(true));
-    @print(ifValue(false));
-    @print(show(ifReturn(true)));
-    @print(show(ifReturn(false)));
-    @print(ifArgument(true));
-    @print(ifArgument(false));
-    @print(show(pickBlock(Shape.Circle(r: 1))));
-    @print(show(pickBlock(Shape.Label(text: "pb"))));
-    @print(argumentBlock(Shape.Circle(r: 1)));
-    @print(argumentBlock(Shape.Label(text: "ab")));
-    @print(show(ifReturnBlock(true)));
-    @print(show(ifReturnBlock(false)));
-    @print(ifArgumentBlock(true));
-    @print(ifArgumentBlock(false));
-    @print(ifPlainValue(true));
-    @print(ifPlainValue(false));
+    print(blockArms(Shape.Circle(r: 1)));
+    print(blockArms(Shape.Label(text: "b")));
+    print(lambdaArms(1));
+    print(lambdaArms("l"));
+    print(unknownSubject(1));
+    print(unknownSubject("u"));
+    print(show(pick(Shape.Circle(r: 1))));
+    print(show(pick(Shape.Label(text: "p"))));
+    print(argument(Shape.Circle(r: 1)));
+    print(argument(Shape.Label(text: "a")));
+    print(ifValue(true));
+    print(ifValue(false));
+    print(show(ifReturn(true)));
+    print(show(ifReturn(false)));
+    print(ifArgument(true));
+    print(ifArgument(false));
+    print(show(pickBlock(Shape.Circle(r: 1))));
+    print(show(pickBlock(Shape.Label(text: "pb"))));
+    print(argumentBlock(Shape.Circle(r: 1)));
+    print(argumentBlock(Shape.Label(text: "ab")));
+    print(show(ifReturnBlock(true)));
+    print(show(ifReturnBlock(false)));
+    print(ifArgumentBlock(true));
+    print(ifArgumentBlock(false));
+    print(ifPlainValue(true));
+    print(ifPlainValue(false));
     run();
 }

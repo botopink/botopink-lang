@@ -5,6 +5,8 @@
 //// `??`'s answer as a bare `i64`: `18446744073709551615` came out
 //// `-1` at exit 0.
 
+import {io.terminal.print} from "std";
+
 fn find(found: bool) -> ?u64 {
     if (found) return 18446744073709551615;
     return null;
@@ -12,20 +14,20 @@ fn find(found: bool) -> ?u64 {
 
 pub fn main() {
     val o = find(true);
-    @print(o);
-    @print(find(false));
-    @print(o ?? 0);
-    @print((o ?? 0).toString());
-    @print("o=" + (o ?? 1));
+    print(o);
+    print(find(false));
+    print(o ?? 0);
+    print((o ?? 0).toString());
+    print("o=" + (o ?? 1));
     if (o) {
         v ->
-        @print(v.toString());
+        print(v.toString());
     }
     if (o != null) {
-        @print(o.toString());
-        @print(o);
+        print(o.toString());
+        print(o);
     }
     val t = #(o, find(false), 7);
-    @print(t);
-    @print(t.0 ?? 0);
+    print(t);
+    print(t.0 ?? 0);
 }

@@ -5,7 +5,7 @@
 //// meets the parameter it names, and an integer literal takes the integer
 //// type its parameter asks for.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Level { Low, High }
 
@@ -34,17 +34,17 @@ type A(x: i32)
 type B(x: i32)
 
 pub fn main() {
-    show(@typeInfo(A).meta(Mark));
-    show(@typeInfo(B).meta(Mark));
+    show(comptime compiler.typeInfo(A).meta(Mark));
+    show(comptime compiler.typeInfo(B).meta(Mark));
 }
 
 fn show(mark: ?Mark) {
     if (mark) {
         m ->
-        @print(m.count.toString() + "/" + m.sizes.join("+"));
-        @print(m.big.toString());
-        @print(m.level);
-        @print(m.tags.join(","));
+        print(m.count.toString() + "/" + m.sizes.join("+"));
+        print(m.big.toString());
+        print(m.level);
+        print(m.tags.join(","));
     }
 }
 

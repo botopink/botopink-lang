@@ -2,8 +2,10 @@
 //// line ends before its closing backtick is refused at the lexer, at its
 //// opening backtick.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val `two
     lines` = 1;
-    @print(1);
+    print(1);
 }

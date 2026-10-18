@@ -4,13 +4,15 @@
 //// field `h.f(2)` still check (`modules/call_of_imported_record_value` is the
 //// same through an import).
 
+import {io.terminal.print} from "std";
+
 type G(a: string)
 
 type H(f: fn(x: i32) -> i32)
 
 pub fn main() {
     val h = H(f: { x -> x + 1 });
-    @print(h.f(2));
+    print(h.f(2));
     val g = G(a: "x");
-    @print(g().a);
+    print(g().a);
 }

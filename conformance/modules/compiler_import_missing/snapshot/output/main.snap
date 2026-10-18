@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: unbound variable 'compiler'
-at src/main.bp:6:5
+at src/main.bp:8:5

@@ -3,7 +3,7 @@
 //// as written code, where `userId` is the ordinary unbound-name error, at the
 //// annotation and from the `compiler.addMember` that wrote it.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Query(sql: string)
 
@@ -26,5 +26,5 @@ type Users(n: i32) {
 }
 
 pub fn main() {
-    @print(Users(n: 1).find(2).toString());
+    print(Users(n: 1).find(2).toString());
 }

@@ -2,6 +2,8 @@
 //// `s` is a type and has no value: reading it there is `type-arg-read`, at
 //// the read.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 fn peek<T>(comptime s: Box<T> | type<T>) -> string {
@@ -12,5 +14,5 @@ fn peek<T>(comptime s: Box<T> | type<T>) -> string {
 }
 
 pub fn main() {
-    @print(peek(Box(value: "x")));
+    print(peek(Box(value: "x")));
 }

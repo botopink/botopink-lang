@@ -4,6 +4,8 @@
 //// tail is checked against `-> R`, generic or not (`first`); every `return
 //// x;` stays valid (`old`).
 
+import {io.terminal.print} from "std";
+
 fn inc(x: i32) -> i32 { x + 1 }
 
 fn sign(n: i32) -> i32 {
@@ -25,12 +27,12 @@ fn old(x: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(inc(1));
-    @print(sign(-5));
-    @print(sign(5));
-    @print(max(3, 9));
-    @print(first([7, 8], 0));
-    @print(first([], "none"));
-    @print(greet("ana"));
-    @print(old(4));
+    print(inc(1));
+    print(sign(-5));
+    print(sign(5));
+    print(max(3, 9));
+    print(first([7, 8], 0));
+    print(first([], "none"));
+    print(greet("ana"));
+    print(old(4));
 }

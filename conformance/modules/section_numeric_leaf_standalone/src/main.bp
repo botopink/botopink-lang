@@ -5,6 +5,8 @@
 //// type the leaf is refused naming its section
 //// (`reject/section_numeric_leaf_without_expectation`).
 
+import {io.terminal.print} from "std";
+
 type Tok {
     Percent {
         50,
@@ -30,8 +32,8 @@ fn describe(t: Tok) -> string {
 
 pub fn main() {
     val n: Tok.Percent = .50;
-    @print(isHalf(n));
-    @print(isHalf(.100));
-    @print(describe(Tok.Size(percent: .100, label: "w")));
-    @print(describe(Tok.Size(percent: .50, label: "h")));
+    print(isHalf(n));
+    print(isHalf(.100));
+    print(describe(Tok.Size(percent: .100, label: "w")));
+    print(describe(Tok.Size(percent: .50, label: "h")));
 }

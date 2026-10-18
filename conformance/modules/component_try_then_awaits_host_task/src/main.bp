@@ -3,22 +3,22 @@
 //// `try`: `load("x")` parses, waits on the host, and answers its value once
 //// the task settles; `load("")` leaves early with the error before it waits.
 
-import {async.delay} from "std";
+import {async.delay, io.terminal.print} from "std";
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return 7;
 }
 
-fn load(s: string) -> @Component<@Result<string, string>> {
+fn load(s: string) -> Component<Result<string, string>> {
     val n = try parse(s);
     val v = await delay(5, n * 2);
     return "loaded " + v.toString();
 }
 
-fn Page(s: string) -> @Component<View> {
+fn Page(s: string) -> Component<View> {
     val r = use load(s);
     val text = case r {
         Ok(v) -> v;
@@ -27,9 +27,9 @@ fn Page(s: string) -> @Component<View> {
     return View(text: text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val a = await Page("x");
-    @print(a.text);
+    print(a.text);
     val b = await Page("");
-    @print(b.text);
+    print(b.text);
 }

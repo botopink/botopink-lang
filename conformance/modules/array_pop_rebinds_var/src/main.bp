@@ -2,11 +2,13 @@
 //// shrunk array: a `val` that read the array before keeps the array of its
 //// moment, on every target.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     var ys = [1, 2];
     val snap = ys;
     val last = ys.pop();
-    @print(snap);
-    @print(last);
-    @print(ys);
+    print(snap);
+    print(last);
+    print(ys);
 }

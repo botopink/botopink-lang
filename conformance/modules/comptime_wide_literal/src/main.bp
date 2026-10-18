@@ -4,7 +4,7 @@
 //// the build runs), and the `i64` the `comptime` answers is lifted into the
 //// program by its digits.
 
-import {context.createContext} from "std";
+import {context.createContext, io.terminal.print} from "std";
 
 fn wide(n: i64) -> i64 {
     return n * 2l;
@@ -15,6 +15,6 @@ pub val big = comptime wide(4500000000l);
 pub val totalContext = comptime createContext(7l);
 
 pub fn main() {
-    @print(big);
-    @print(comptime wide(3l) + 1l);
+    print(big);
+    print(comptime wide(3l) + 1l);
 }

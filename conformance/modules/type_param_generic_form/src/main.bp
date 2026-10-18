@@ -3,7 +3,7 @@
 //// argument binds `T` for the rest of the signature — here the decorator's
 //// declaration pattern `fn() -> T`, and in `orDefault` the fallback.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Box<T>(value: T)
 
@@ -24,8 +24,8 @@ fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
 }
 
 pub fn main() {
-    @print(@typeInfo(greeting).meta(Provides)?.name ?? "none");
-    @print(greeting());
-    @print(orDefault(i32, 3));
-    @print(orDefault(Box(value: 9), 3));
+    print(comptime compiler.typeInfo(greeting).meta(Provides)?.name ?? "none");
+    print(greeting());
+    print(orDefault(i32, 3));
+    print(orDefault(Box(value: 9), 3));
 }

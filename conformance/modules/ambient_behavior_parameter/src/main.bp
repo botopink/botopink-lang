@@ -2,9 +2,11 @@
 //// program names them as a parameter's type with no import, and a call on such a value
 //// dispatches to the implementer's method.
 
+import {io.terminal.print} from "std";
+
 type Door(name: string) implement Closeable {
     fn close(self: Self) {
-        @print("closed " + self.name);
+        print("closed " + self.name);
     }
 }
 
@@ -28,5 +30,5 @@ pub fn main() {
     for (doors) { d ->
         shut(d);
     }
-    @print(show(Money(cents: 7)));
+    print(show(Money(cents: 7)));
 }

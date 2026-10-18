@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[reserved-word-as-name]: a reserved word cannot be a name
-at src/main.bp:6:27
+at src/main.bp:8:27
 label reserved word `from`

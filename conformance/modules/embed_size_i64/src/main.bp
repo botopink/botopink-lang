@@ -2,11 +2,13 @@
 //// binds to an `i64` without a conversion and sums past the `i32` range. `hash` is the
 //// SHA-256 of the bytes in lowercase hex.
 
+import {io.terminal.print} from "std";
+
 val hello = @embed("assets/hello.txt");
 
 pub fn main() {
     val n: i64 = hello.size;
-    @print(n);
-    @print(n + 3000000000);
-    @print(hello.hash);
+    print(n);
+    print(n + 3000000000);
+    print(hello.hash);
 }

@@ -1,4 +1,4 @@
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn entity(syntax decl: unknown, comptime table: string) {
     var cols: string[] = [];
@@ -20,10 +20,10 @@ fn header(c: City.Columns) -> string {
 }
 
 fn main() {
-    @print(City.table()); // cities
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none"); // cities
-    @print(@typeInfo(City).name); // City
-    @print(header(City.Columns(name: "n", people: "p"))); // n|p
+    print(City.table()); // cities
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none"); // cities
+    print(comptime compiler.typeInfo(City).name); // City
+    print(header(City.Columns(name: "n", people: "p"))); // n|p
 }
 
 // What `#[entity]` records.

@@ -3,8 +3,10 @@
 //// name · write `name: Type` here", pointing at the name the author had
 //// written (rakun front 72's `Edge(from, to)`). Refused naming the word.
 
+import {io.terminal.print} from "std";
+
 pub type Edge(from: string, to: string)
 
 pub fn main() {
-    @print(Edge(from: "a", to: "b"));
+    print(Edge(from: "a", to: "b"));
 }

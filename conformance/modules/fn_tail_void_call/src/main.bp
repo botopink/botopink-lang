@@ -2,17 +2,19 @@
 //// of type `void` is accepted: a call answering nothing, written without `;`,
 //// in a function, a method and a lambda.
 
-fn say(s: string) { @print(s) }
+import {io.terminal.print} from "std";
+
+fn say(s: string) { print(s) }
 
 fn shout(s: string) -> void { say(s + "!") }
 
 type Logger(prefix: string) {
-    fn log(self: Self, s: string) { @print(self.prefix + s) }
+    fn log(self: Self, s: string) { print(self.prefix + s) }
 }
 
 pub fn main() {
     say("hi");
     shout("hey");
     Logger(prefix: "> ").log("done");
-    [1, 2].forEach({ n -> @print(n) });
+    [1, 2].forEach({ n -> print(n) });
 }

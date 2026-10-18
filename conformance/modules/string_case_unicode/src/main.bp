@@ -7,15 +7,17 @@
 //// `Σ` to `ς`, OTP and wasm to `σ`), is not printed here: it is pinned on
 //// wasm by `codegen/tests/wat.zig`.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print("é".toUpper());
-    @print("straße".toUpper());
-    @print("ÉCOLE".toLower());
-    @print("ΣΑ".toLower());
-    @print("σας".toUpper());
-    @print("ǆ".toUpper());
-    @print("ﬁ".toUpper());
-    @print("İ".toLower().length);
-    @print("привет".toUpper());
-    @print("ŉ".toUpper());
+    print("é".toUpper());
+    print("straße".toUpper());
+    print("ÉCOLE".toLower());
+    print("ΣΑ".toLower());
+    print("σας".toUpper());
+    print("ǆ".toUpper());
+    print("ﬁ".toUpper());
+    print("İ".toLower().length);
+    print("привет".toUpper());
+    print("ŉ".toUpper());
 }

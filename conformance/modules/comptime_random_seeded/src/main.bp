@@ -3,7 +3,7 @@
 //// stream), on every target (decision 434 (5)): one seed, the same draws on
 //// every build. The draws are lifted into the program as text.
 
-import {io} from "std";
+import {io, io.terminal.print} from "std";
 
 fn draws(s: i32) -> string {
     io.random.seed(s);
@@ -16,7 +16,7 @@ fn draws(s: i32) -> string {
 
 pub fn main() {
     val atBuild = comptime draws(42);
-    @print(atBuild);
+    print(atBuild);
     val other = comptime draws(0 - 7);
-    @print(other);
+    print(other);
 }

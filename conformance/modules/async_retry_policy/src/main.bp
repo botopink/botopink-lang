@@ -3,24 +3,24 @@
 //// failed attempts, and answers the last `Error` when every one fails. On
 //// every target: wasm converts the pause with `toI32()` (decision 319).
 
-import {async} from "std";
+import {async, io.terminal.print} from "std";
 
-fn ok(value: string) -> @Task<@Result<string, string>> {
+fn ok(value: string) -> Task<Result<string, string>> {
     return value;
 }
 
-fn failing(why: string) -> @Task<@Result<string, string>> {
+fn failing(why: string) -> Task<Result<string, string>> {
     throw why;
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val policy = async.RetryPolicy(3, 1, 2.0, 4);
     val first = await async.retry(policy, { -> ok("answered") });
-    @print("first " + first.unwrapOr("-"));
+    print("first " + first.unwrapOr("-"));
     val last = await async.retry(policy, { -> failing("down") });
     case last {
-        Ok(v) -> @print("ok " + v);
-        Error(e) -> @print("error " + e);
+        Ok(v) -> print("ok " + v);
+        Error(e) -> print("error " + e);
     }
 }
 

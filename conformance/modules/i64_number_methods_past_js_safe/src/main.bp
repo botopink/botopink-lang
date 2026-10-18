@@ -4,6 +4,8 @@
 //// and the methods were patched on `Number.prototype` alone over `Math.*` and a number `%`: the
 //// parent threw `big.isEven is not a function` (and `Math.min` would throw on a `BigInt`).
 
+import {io.terminal.print} from "std";
+
 fn grow(a: i64, b: i64) -> i64 {
     return a + b;
 }
@@ -12,24 +14,24 @@ pub fn main() {
     val safe = 9007199254740991l;
     val big = grow(safe, 2l);
     val neg = grow(-safe, -4l);
-    @print(big.isEven());
-    @print(big.isOdd());
-    @print(grow(big, 1l).isEven());
-    @print(neg.isOdd());
-    @print(big.min(5l));
-    @print(big.max(5l));
-    @print(neg.min(big));
-    @print(big.max(neg));
-    @print(safe.max(big));
-    @print(neg.abs());
-    @print(big.abs());
-    @print(big.clamp(0l, safe));
-    @print(neg.clamp(neg, big));
-    @print(7l.clamp(neg, big));
-    @print(neg.abs().isEven());
+    print(big.isEven());
+    print(big.isOdd());
+    print(grow(big, 1l).isEven());
+    print(neg.isOdd());
+    print(big.min(5l));
+    print(big.max(5l));
+    print(neg.min(big));
+    print(big.max(neg));
+    print(safe.max(big));
+    print(neg.abs());
+    print(big.abs());
+    print(big.clamp(0l, safe));
+    print(neg.clamp(neg, big));
+    print(7l.clamp(neg, big));
+    print(neg.abs().isEven());
     val top = 18446744073709551615ul;
-    @print(top.isOdd());
-    @print(top.min(9007199254740993ul));
-    @print(top.max(1ul));
-    @print(top.clamp(0ul, 9007199254740992ul));
+    print(top.isOdd());
+    print(top.min(9007199254740993ul));
+    print(top.max(1ul));
+    print(top.clamp(0ul, 9007199254740992ul));
 }

@@ -3,20 +3,20 @@
 //// takes: `createContext(value, Repository)`, a value of a type that
 //// implements it — a behavior has no constructor to call.
 
-import {context.createContext, context.provide, context.context} from "std";
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 behavior Repository {
     fn find(self: Self, id: i32) -> string;
 }
 
-type View(text: string) implement @Renderable
+type View(text: string) implement Renderable
 
-fn Page() -> @Component<View> {
+fn Page() -> Component<View> {
     val r = use context(Repository);
     return View(text: r.find(1));
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val p = await Page();
-    @print(p.text);
+    print(p.text);
 }

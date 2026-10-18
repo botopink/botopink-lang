@@ -8,7 +8,7 @@
 pub mod local;
 import {local.pin};
 import {mark} from "marks";
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn note(
     syntax decl: unknown,
@@ -47,10 +47,10 @@ fn fourth() -> i32 {
 }
 
 pub fn main() {
-    @print(firstMark());
-    @print(secondMark());
-    @print(thirdMark());
-    @print(fourthNote());
-    @print(fourthPin());
-    @print(first() + second() + third() + fourth());
+    print(firstMark());
+    print(secondMark());
+    print(thirdMark());
+    print(fourthNote());
+    print(fourthPin());
+    print(first() + second() + third() + fourth());
 }

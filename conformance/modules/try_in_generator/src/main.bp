@@ -4,11 +4,13 @@
 //// `@Iterator<@Result<T, E>>`, the generator that has a channel. Its sibling
 //// `throw` is refused the same way (`reject/throw_in_generator.bp`).
 
-fn parse(n: i32) -> @Result<i32, string> { return n; }
+import {io.terminal.print} from "std";
 
-fn counted(n: i32) -> @Iterator<i32> {
+fn parse(n: i32) -> Result<i32, string> { return n; }
+
+fn counted(n: i32) -> Iterator<i32> {
     val v = try parse(n);
     yield v;
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

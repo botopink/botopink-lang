@@ -2,7 +2,7 @@
 //// `T` the annotated type: a function over another type is refused at the
 //// argument, both types spelled.
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 pub type Code { Custom, Mismatch }
 
@@ -26,7 +26,7 @@ fn orderTotal(o: Order) -> bool {
 type Account(password: string, confirm: string)
 
 pub fn main() {
-    @print("unreached");
+    print("unreached");
 }
 
 // What `#[check]` records.

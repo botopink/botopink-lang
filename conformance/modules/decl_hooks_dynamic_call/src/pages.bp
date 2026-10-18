@@ -9,10 +9,10 @@
 
 import {compiler} from "std";
 
-pub type View(text: string) implement @Renderable
+pub type View(text: string) implement Renderable
 
 pub type Menu(title: string) {
-    fn view(self: Self) -> @Component<View> {
+    fn view(self: Self) -> Component<View> {
         return View(text: self.title);
     }
 }
@@ -43,12 +43,12 @@ fn first<T>(xs: T[]) -> T {
     return xs[0]!;
 }
 
-pub fn Card(n: i32) -> @Component<View> {
+pub fn Card(n: i32) -> Component<View> {
     return View(text: n.toString());
 }
 
 #[graph]
-pub fn Page(render: fn() -> @Component<View>, menu: Menu) -> @Component<View> {
+pub fn Page(render: fn() -> Component<View>, menu: Menu) -> Component<View> {
     val a = render();
     val m = menu.view();
     val cards = [1, 2].map(Card);

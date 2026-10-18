@@ -4,8 +4,10 @@
 //// with no reader that knows the element is an `i64`, wasm refuses the
 //// element at its source (`00 · gate-wasm-wrong-answers`).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val a: i64 = 3000000000;
     val ys = [a, 1];
-    @print(ys);
+    print(ys);
 }

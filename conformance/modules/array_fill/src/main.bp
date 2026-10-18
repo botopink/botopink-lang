@@ -3,14 +3,16 @@
 //// a float, and nothing for an empty receiver. wasm trapped
 //// (`01-compiler/05-wasm` step 1).
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
-    @print([1, 2].fill(0));
-    @print([1, 2, 3].fill("z"));
-    @print(["a"].fill(true));
-    @print([1, 2].fill(2.5));
+    print([1, 2].fill(0));
+    print([1, 2, 3].fill("z"));
+    print(["a"].fill(true));
+    print([1, 2].fill(2.5));
     val f = [7, 8, 9].fill(1);
-    @print(f.at(2));
-    @print(f.length);
+    print(f.at(2));
+    print(f.length);
     val none: i32[] = [];
-    @print(none.fill(4));
+    print(none.fill(4));
 }

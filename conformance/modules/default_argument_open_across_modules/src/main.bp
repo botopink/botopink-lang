@@ -6,7 +6,8 @@
 
 pub mod greet;
 import {greet.greet as greetFrom};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(greetFrom("hello"));
+    print(greetFrom("hello"));
 }

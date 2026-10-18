@@ -4,10 +4,12 @@
 //// the next one (`999` → `101`, measured). Refused at the assignment, on every
 //// target — the annotation's contract does not depend on where it runs.
 
+import {io.terminal.print} from "std";
+
 #[@BeamMemory.PersistentTerm]
 var version: i32 = 101;
 
 pub fn main() {
     version = 102;
-    @print(version);
+    print(version);
 }

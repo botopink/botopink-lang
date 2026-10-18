@@ -1,10 +1,12 @@
 //// Decision 575 (6) — a type's bodyless `declare fn` method no annotation
 //// implements is refused at the declaration, as a top-level one is.
 
+import {io.terminal.print} from "std";
+
 pub type Repo() {
     pub declare fn find(self: Self) -> i32;
 }
 
 pub fn main() {
-    @print(Repo().find());
+    print(Repo().find());
 }

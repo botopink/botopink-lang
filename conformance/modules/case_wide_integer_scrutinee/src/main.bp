@@ -1,6 +1,8 @@
 //// A `case` over an integer compares it as its own width: an `i64` or a `u64` scrutinee takes literal
 //// patterns and guards the way an `i32` or a `u8` does.
 
+import {io.terminal.print} from "std";
+
 fn pickI64(x: i64) -> string {
     case x {
         5l -> return "five";
@@ -106,48 +108,48 @@ fn pairMixed(a: f64, n: i32, c: i64) -> string {
 }
 
 pub fn main() {
-    @print(bandU64(4ul));
-    @print(bandU64(9000000000ul));
-    @print(bandU64(9223372036854775808ul));
-    @print(bandU64(6000000000000000000ul));
-    @print(bandU64(18446744073709551615ul));
-    @print(bandU32(4u));
-    @print(bandU32(3000000000u));
-    @print(bandU32(4294967295u));
-    @print(pairI64(1l, 2l));
-    @print(pairI64(5000000000l, 0l));
-    @print(pairI64(0l, 6000000000l));
-    @print(pairI64(0l, 0l));
-    @print(pairU64(3ul, 4ul));
-    @print(pairU64(18446744073709551615ul, 4ul));
-    @print(pairU64(4ul, 18446744073709551615ul));
-    @print(pairU64(100ul, 100ul));
-    @print(pairMixed(1.5d, 2, 3l));
-    @print(pairMixed(1.5d, 9, 3l));
-    @print(pairMixed(0.5d, 9, 7000000000l));
-    @print(pairMixed(0.5d, 9, 1l));
-    @print(band(4l));
-    @print(band(9000000000l));
-    @print(band(20l));
-    @print(pickF64(1.5d));
-    @print(pickF64(2d));
-    @print(pickI64(5l));
-    @print(pickI64(7l));
-    @print(pickI64(8l));
-    @print(pickI64(5000000000l));
-    @print(pickGuard(1000l));
-    @print(pickGuard(-3l));
-    @print(pickGuard(4l));
-    @print(pickU64(1ul));
-    @print(pickU64(2ul));
-    @print(pickI32(3));
-    @print(pickU32(4u));
-    @print(pickU8(9u8));
-    @print(pickU8(1u8));
+    print(bandU64(4ul));
+    print(bandU64(9000000000ul));
+    print(bandU64(9223372036854775808ul));
+    print(bandU64(6000000000000000000ul));
+    print(bandU64(18446744073709551615ul));
+    print(bandU32(4u));
+    print(bandU32(3000000000u));
+    print(bandU32(4294967295u));
+    print(pairI64(1l, 2l));
+    print(pairI64(5000000000l, 0l));
+    print(pairI64(0l, 6000000000l));
+    print(pairI64(0l, 0l));
+    print(pairU64(3ul, 4ul));
+    print(pairU64(18446744073709551615ul, 4ul));
+    print(pairU64(4ul, 18446744073709551615ul));
+    print(pairU64(100ul, 100ul));
+    print(pairMixed(1.5d, 2, 3l));
+    print(pairMixed(1.5d, 9, 3l));
+    print(pairMixed(0.5d, 9, 7000000000l));
+    print(pairMixed(0.5d, 9, 1l));
+    print(band(4l));
+    print(band(9000000000l));
+    print(band(20l));
+    print(pickF64(1.5d));
+    print(pickF64(2d));
+    print(pickI64(5l));
+    print(pickI64(7l));
+    print(pickI64(8l));
+    print(pickI64(5000000000l));
+    print(pickGuard(1000l));
+    print(pickGuard(-3l));
+    print(pickGuard(4l));
+    print(pickU64(1ul));
+    print(pickU64(2ul));
+    print(pickI32(3));
+    print(pickU32(4u));
+    print(pickU8(9u8));
+    print(pickU8(1u8));
     val big = 5000000000l;
     val label = case big {
         5000000000l -> "huge";
         _ -> "no";
     };
-    @print(label);
+    print(label);
 }

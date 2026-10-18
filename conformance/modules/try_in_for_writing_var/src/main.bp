@@ -5,12 +5,14 @@
 //// (and sums) the elements it passed, and a `throw` from the callee leaves the
 //// function before the `var` is read.
 
-fn check(x: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn check(x: i32) -> Result<i32, string> {
     if (x < 0) throw "negative";
     return x;
 }
 
-fn count(xs: i32[]) -> @Result<i32, string> {
+fn count(xs: i32[]) -> Result<i32, string> {
     var i = 0;
     for (xs) { x ->
         try check(x);
@@ -19,7 +21,7 @@ fn count(xs: i32[]) -> @Result<i32, string> {
     return i;
 }
 
-fn total(xs: i32[]) -> @Result<i32, string> {
+fn total(xs: i32[]) -> Result<i32, string> {
     var sum = 0;
     for (xs) { x ->
         val v = try check(x);
@@ -29,9 +31,9 @@ fn total(xs: i32[]) -> @Result<i32, string> {
 }
 
 pub fn main() {
-    @print(try count([4, 5, 6]) catch 0);
-    @print(try count([]) catch 0);
-    @print(try count([1, 0 - 1, 3]) catch 99);
-    @print(try total([4, 5, 6]) catch 0);
-    @print(try total([1, 0 - 1, 3]) catch 99);
+    print(try count([4, 5, 6]) catch 0);
+    print(try count([]) catch 0);
+    print(try count([1, 0 - 1, 3]) catch 99);
+    print(try total([4, 5, 6]) catch 0);
+    print(try total([1, 0 - 1, 3]) catch 99);
 }

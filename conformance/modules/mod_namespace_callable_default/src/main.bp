@@ -2,11 +2,13 @@
 //// `import {double};` binds elsewhere (decision 337), so written as a value it is
 //// the module's `pub default` too (decision 582).
 
+import {io.terminal.print} from "std";
+
 mod double;
 
 pub fn main() {
-    @print(double(4));
+    print(double(4));
     val f = double;
-    @print(f(5));
-    @print(double.twice(3));
+    print(f(5));
+    print(double.twice(3));
 }

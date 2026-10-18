@@ -1,4 +1,6 @@
-pub fn f() -> @Task<i32> {
+import {io.terminal.print} from "std";
+
+pub fn f() -> Task<i32> {
     defer {
         await (async { 1 });
     }
@@ -6,5 +8,5 @@ pub fn f() -> @Task<i32> {
 }
 
 pub fn main() {
-    @print("unreachable");
+    print("unreachable");
 }

@@ -6,7 +6,7 @@
 //// tried only after a type's name, and only when its `>` is followed by `.`
 //// or `(`). The first two lines were `unexpected ','` before the decision.
 
-import {collections.Dict} from "std";
+import {collections.Dict, io.terminal.print} from "std";
 
 type Box<T>(value: T) {
     pub fn make(v: T) -> Box<T> {
@@ -29,25 +29,25 @@ fn both(p: bool, q: bool) -> bool {
 
 pub fn main() {
     val d = Dict<string, unknown>.empty();
-    @print(d.size());
+    print(d.size());
     val e = Dict<string, i32>.empty().insert("a", 1).insert("b", 2);
-    @print(e.size());
-    @print(Box<i32>.make(7).get());
+    print(e.size());
+    print(Box<i32>.make(7).get());
     val none = Opt<string>.None;
-    @print(none == Opt<string>.None);
+    print(none == Opt<string>.None);
     val some = Opt<i32>.Some(3);
     val n = case some {
         Some(v) -> v;
         None -> 0;
     };
-    @print(n);
+    print(n);
     val a = 1;
     val b = 2;
     val x = 3;
     val y = 4;
     val z = 5;
     val w = 1;
-    @print(a < b);
-    @print(x < y && z > w);
-    @print(both(a < b, y > x));
+    print(a < b);
+    print(x < y && z > w);
+    print(both(a < b, y > x));
 }

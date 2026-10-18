@@ -1,3 +1,5 @@
+import {io.terminal.print} from "std";
+
 type Color { Red, Green, Blue }
 
 type Shape {
@@ -8,13 +10,13 @@ type Shape {
 fn main() {
     val c = Color.Red;
     val s = Shape.Circle(radius: 2.0);
-    @print(
+    print(
         case c {
             Red -> "red";
             _ -> "other";
         },
     );
-    @print(
+    print(
         case s {
             Circle(r) -> r;
             Square(side) -> side;

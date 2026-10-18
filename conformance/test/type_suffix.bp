@@ -17,7 +17,7 @@ fn boxes() -> Box<i32>[] {
     return [Box(v: 1), Box(v: 2), Box(v: 3)];
 }
 
-fn attempts() -> @Result<i32, string>[] {
+fn attempts() -> Result<i32, string>[] {
     return [];
 }
 

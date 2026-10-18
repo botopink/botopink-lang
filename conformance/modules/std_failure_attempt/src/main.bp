@@ -8,21 +8,21 @@
 //// is `modules/std_failure_attempt_host`'s, on the targets whose host raises
 //// (decision 527 (0)).
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
 
 fn explode() -> i32 {
-    @panic("the body exploded");
+    panic("the body exploded");
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
 pub fn main() {
     show(failure.attempt({ -> explode() }));
     show(failure.attempt({ -> 6 * 7 }));
-    @print("after");
+    print("after");
 }

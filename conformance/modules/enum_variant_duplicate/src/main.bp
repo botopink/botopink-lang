@@ -2,8 +2,10 @@
 //// second; it used to check, and the second declaration was the one a bare
 //// name reached.
 
+import {io.terminal.print} from "std";
+
 type Color { Red, Green, Red }
 
 pub fn main() {
-    @print(Color.Red);
+    print(Color.Red);
 }

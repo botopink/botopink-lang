@@ -5,9 +5,11 @@
 //// for `Box(value: 1.5).value` at exit 0 (`00 · gate-wasm-wrong-answers`).
 //// Until a reader knows the cell, wasm refuses the value where it enters.
 
+import {io.terminal.print} from "std";
+
 type Box<T>(value: T)
 
 pub fn main() {
     val b = Box(value: 1.5);
-    @print(b.value);
+    print(b.value);
 }

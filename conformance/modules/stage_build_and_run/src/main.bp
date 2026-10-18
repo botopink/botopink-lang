@@ -4,7 +4,7 @@
 //// run-time parameter `open` keeps it from being expanded at its call site,
 //// decision 562) and then reads std's clock (`Run`).
 
-import {io.clock} from "std";
+import {io.clock, io.terminal.print} from "std";
 
 fn campos(comptime names: string, open: string) -> string {
     return open + names + "]";
@@ -16,5 +16,5 @@ fn mixed() -> string {
 }
 
 pub fn main() {
-    @print(mixed());
+    print(mixed());
 }

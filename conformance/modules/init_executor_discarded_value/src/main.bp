@@ -2,10 +2,10 @@
 //// statement written with `;`: its value is discarded, and the executor
 //// answers nothing, as `fn()` asks.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn reg(name: string) -> i32 {
-    @print(name);
+    print(name);
     return 0;
 }
 
@@ -20,5 +20,5 @@ pub fn home() -> string {
 }
 
 pub fn main() {
-    @print(home());
+    print(home());
 }

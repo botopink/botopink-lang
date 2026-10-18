@@ -1,6 +1,8 @@
 //// Decision 216 (2) — `@typeInfo` reflects a declaration of the program: a
 //// name nothing declares or imports is refused at the name.
 
+import {io.terminal.print, compiler} from "std";
+
 pub fn main() {
-    @print(@typeInfo(Nowhere).name);
+    print(comptime compiler.typeInfo(Nowhere).name);
 }

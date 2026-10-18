@@ -8,6 +8,8 @@
 //// erlang tail, `test/is_truth_table`'s `run/` twin). wasm refused the program
 //// (`cannot box this value as unknown`, then no run-time test for a tuple type).
 
+import {io.terminal.print} from "std";
+
 type Point(x: i32, y: i32)
 
 type Box<T>(item: T)
@@ -38,26 +40,26 @@ fn marks(holds: bool[]) -> string {
 }
 
 pub fn main() {
-    @print(marks(values().map({ v -> v is i32 })));
-    @print(marks(values().map({ v -> v is i8 })));
-    @print(marks(values().map({ v -> v is u8 })));
-    @print(marks(values().map({ v -> v is f64 })));
-    @print(marks(values().map({ v -> v is string })));
-    @print(marks(values().map({ v -> v is bool })));
-    @print(marks(values().map({ v -> v is Point })));
-    @print(marks(values().map({ v -> v is Shape })));
-    @print(marks(values().map({ v -> v is Box<unknown> })));
-    @print(marks(values().map({ v -> v is #(i32, string) })));
+    print(marks(values().map({ v -> v is i32 })));
+    print(marks(values().map({ v -> v is i8 })));
+    print(marks(values().map({ v -> v is u8 })));
+    print(marks(values().map({ v -> v is f64 })));
+    print(marks(values().map({ v -> v is string })));
+    print(marks(values().map({ v -> v is bool })));
+    print(marks(values().map({ v -> v is Point })));
+    print(marks(values().map({ v -> v is Shape })));
+    print(marks(values().map({ v -> v is Box<unknown> })));
+    print(marks(values().map({ v -> v is #(i32, string) })));
     val wrong: unknown = #(1, 2);
     val longer: unknown = #(1, "a", 2);
     val floaty: unknown = #(2.0, "a");
     val nested: unknown = #(Point(x: 1, y: 2), true);
-    @print(
+    print(
         wrong is #(i32, string),
         longer is #(i32, string),
         floaty is #(i32, string),
     );
-    @print(
+    print(
         nested is #(Point, bool),
         nested is #(Shape, bool),
         floaty is #(f64, unknown),
@@ -65,5 +67,5 @@ pub fn main() {
     val a: unknown = 2.0;
     var got = 0;
     if (a is i32) got = a + 1;
-    @print(got);
+    print(got);
 }

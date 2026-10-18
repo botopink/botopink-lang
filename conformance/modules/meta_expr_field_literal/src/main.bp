@@ -2,7 +2,7 @@
 //// holds a tree when a `syntax` fills it, and a value otherwise. A literal
 //// written in the decorator's body fills a `string` field as any value does.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 pub type Check(message: string)
 
@@ -14,5 +14,5 @@ fn check(syntax decl: unknown) {
 type Signup(handle: string)
 
 pub fn main() {
-    @print(@typeInfo(Signup).metaAll(Check).length);
+    print(comptime compiler.typeInfo(Signup).metaAll(Check).length);
 }

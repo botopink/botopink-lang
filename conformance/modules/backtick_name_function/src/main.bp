@@ -2,6 +2,8 @@
 //// (`` `if` ``): declared, called, called recursively and passed as a value;
 //// `` `double` `` is the function `double`.
 
+import {io.terminal.print} from "std";
+
 fn `add one`(n: i32) -> i32 {
     return n + 1;
 }
@@ -23,9 +25,9 @@ fn apply(f: fn(i32) -> i32, n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(`add one`(41));
-    @print(`if`(true));
-    @print(`count-down`(3));
-    @print(double(4));
-    @print(apply(`add one`, 9));
+    print(`add one`(41));
+    print(`if`(true));
+    print(`count-down`(3));
+    print(double(4));
+    print(apply(`add one`, 9));
 }

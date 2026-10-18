@@ -276,9 +276,10 @@ test "pattern: non-empty list pattern" {
         \\    };
         \\};
         \\fn main() {
-        \\    @print(first_or_default([1, 2], 0));
-        \\    @print(first_or_default([], 0));
+        \\    print(first_or_default([1, 2], 0));
+        \\    print(first_or_default([], 0));
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -342,16 +343,18 @@ test "variant inference: pattern matching on generic enum" {
 test "@print: single string argument infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("hello");
+        \\    print("hello");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "@print: multiple arguments infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("x =", 42, true);
+        \\    print("x =", 42, true);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -359,8 +362,9 @@ test "@print: expression argument infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val x = 10;
-        \\    @print(x + 5);
+        \\    print(x + 5);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -368,23 +372,25 @@ test "@print: in if branch infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn check(x: i32) {
         \\    if (x > 0) {
-        \\        @print("positive");
+        \\        print("positive");
         \\    } else {
-        \\        @print("non-positive");
+        \\        print("non-positive");
         \\    }
         \\}
         \\fn main() {
         \\    check(1);
         \\    check(-1);
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "@print: string interpolation argument" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn greet(name: string) {
-        \\    @print("Hello, " + name + "!");
+        \\    print("Hello, " + name + "!");
         \\}
+        \\import {io.terminal.print} from "std";
     );
 }
 

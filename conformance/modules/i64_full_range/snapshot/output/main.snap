@@ -16,4 +16,4 @@ out 9007199254740995
 out top=9223372036854775807
 out 9223372036854775807
 abort
-stderr integer overflow: + on i64 at src/main.bp:10:14
+stderr integer overflow: + on i64 at src/main.bp:12:14

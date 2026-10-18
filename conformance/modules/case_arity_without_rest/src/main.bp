@@ -1,5 +1,7 @@
 //// Decision 8 §5.1 P7 — without `..` a pattern must name every field.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(radius: i32),
     Rect(width: i32, height: i32),
@@ -11,5 +13,5 @@ pub fn main() {
         .Rect(width: w) { w }
         .Circle(r) { r }
     };
-    @print(y);
+    print(y);
 }

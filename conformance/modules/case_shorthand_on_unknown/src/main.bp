@@ -1,5 +1,7 @@
 //// Decision 8 §5.1 P8 — `.Variant` needs the matched value's type; on unknown write the full name.
 
+import {io.terminal.print} from "std";
+
 type Maybe<T> {
     Some(value: T),
     None,
@@ -11,5 +13,5 @@ pub fn main() {
         .Some(v) { "some" }
         _ { "other" }
     };
-    @print(y);
+    print(y);
 }

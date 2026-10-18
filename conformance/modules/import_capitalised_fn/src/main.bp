@@ -4,9 +4,10 @@
 
 pub mod util;
 import {util.Make, util.Scale};
+import {io.terminal.print} from "std";
 
 pub fn main() {
-    @print(Make(n: 4));
-    @print(Make(5));
-    @print(Scale(x: 2, by: 10));
+    print(Make(n: 4));
+    print(Make(5));
+    print(Scale(x: 2, by: 10));
 }

@@ -5,8 +5,10 @@
 //// context, so this program was accepted and the `yield` emitted into a
 //// function that is not a generator.
 
-fn bad(n: i32) -> @Result<i32, string> {
+import {io.terminal.print} from "std";
+
+fn bad(n: i32) -> Result<i32, string> {
     yield n;
 }
 
-pub fn main() { @print(1); }
+pub fn main() { print(1); }

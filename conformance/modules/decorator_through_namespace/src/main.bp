@@ -5,7 +5,7 @@
 //// value — `same(markers.serverOnly)` is true for `#[markers.serverOnly]`.
 
 import {markers} from "web";
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Found(names: string)
 
@@ -37,9 +37,9 @@ fn NotMarked() -> string {
 }
 
 pub fn main() {
-    @print(@typeInfo(Tagged).meta(markers.Tag)?.label ?? "none");
-    @print(@typeInfo(Marked).meta(Found)?.names ?? "none");
-    @print(@typeInfo(NotMarked).meta(Found)?.names ?? "none");
-    @print(@typeInfo(NotMarked).meta(markers.Tag)?.label ?? "none");
-    @print(Tagged() + Marked() + NotMarked());
+    print(comptime compiler.typeInfo(Tagged).meta(markers.Tag)?.label ?? "none");
+    print(comptime compiler.typeInfo(Marked).meta(Found)?.names ?? "none");
+    print(comptime compiler.typeInfo(NotMarked).meta(Found)?.names ?? "none");
+    print(comptime compiler.typeInfo(NotMarked).meta(markers.Tag)?.label ?? "none");
+    print(Tagged() + Marked() + NotMarked());
 }

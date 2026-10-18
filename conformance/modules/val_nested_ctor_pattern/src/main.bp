@@ -4,6 +4,8 @@
 //// `val Pair(Circle(r), n) = p;` binds `r` off the inner record and `n` off the outer
 //// one, at any depth, beside a wildcard and inside a record's own constructor.
 
+import {io.terminal.print} from "std";
+
 type Shape {
     Circle(r: i32),
 }
@@ -34,14 +36,14 @@ fn radiusPlusCount(p: Pair) -> i32 {
 pub fn main() {
     val p = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
     val Pair(Circle(r), n) = p;
-    @print(r);
-    @print(n);
-    @print(radiusPlusCount(p));
+    print(r);
+    print(n);
+    print(radiusPlusCount(p));
     val Out(In(a, b), c) = Outer.Out(x: Inner.In(a: 7, b: "x"), c: 9);
-    @print("${a} ${b} ${c}");
+    print("${a} ${b} ${c}");
     val D(Out(In(_, w), z)) = Deep.D(o: Outer.Out(x: Inner.In(a: 1, b: "deep"), c: 2));
-    @print(w);
-    @print(z);
+    print(w);
+    print(z);
     val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: 6);
-    @print(q * k);
+    print(q * k);
 }

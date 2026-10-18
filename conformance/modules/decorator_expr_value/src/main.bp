@@ -4,7 +4,7 @@
 //// key, an array. The same `.value` reads an ordinary function's `comptime`
 //// parameter (the call specialised) and a template's literal without holes.
 
-import {types.Type, compiler} from "std";
+import {types.Type, compiler, io.terminal.print} from "std";
 
 pub type Level { Low, High }
 
@@ -48,10 +48,10 @@ fn shout(syntax q: string) -> string {
 }
 
 pub fn main() {
-    val mark = @typeInfo(City).meta(Mark);
+    val mark = comptime compiler.typeInfo(City).meta(Mark);
     if (mark) {
         m ->
-        @print(
+        print(
             m.shown
                 + " "
                 + m.weight.toString()
@@ -67,9 +67,9 @@ pub fn main() {
                 + m.tags.join("+"),
         );
     }
-    @print(scale(3, 7));
-    @print(scale(5, 2));
-    @print(shout @`hello`);
+    print(scale(3, 7));
+    print(scale(5, 2));
+    print(shout @`hello`);
 }
 
 // What `#[mark]` records: each argument's value as the body read it.

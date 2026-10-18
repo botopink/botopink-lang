@@ -5,6 +5,7 @@
 
 pub mod shapes;
 import {shapes.Tag};
+import {io.terminal.print} from "std";
 
 type Box(n: i32) {
     fn wrap(n: i32) -> Box {
@@ -41,9 +42,9 @@ fn applyTag(s: string, f: fn(string) -> Tag) -> Tag {
 }
 
 pub fn main() {
-    @print(apply(1, Box.wrap).n);
+    print(apply(1, Box.wrap).n);
     val w = Box.wrap;
-    @print(w(10).n);
-    @print(applyTag("x", Tag.of).label);
-    @print(sizeOf(12, Size.of));
+    print(w(10).n);
+    print(applyTag("x", Tag.of).label);
+    print(sizeOf(12, Size.of));
 }

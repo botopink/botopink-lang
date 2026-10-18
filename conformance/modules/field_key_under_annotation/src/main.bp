@@ -3,7 +3,7 @@
 //// position's written type as by the call's own type arguments:
 //// `val t: Sort<Book> = Sort(by: .title)` is `Sort<Book>(by: .title)`.
 
-import {types.Type} from "std";
+import {types.Type, io.terminal.print} from "std";
 
 type Book(title: string, pages: i32)
 
@@ -16,7 +16,7 @@ fn keyOf(s: Sort<Book>) -> string {
 pub fn main() {
     val written: Sort<Book> = Sort(by: .title);
     val applied = Sort<Book>(by: .pages);
-    @print(written.by.name);
-    @print(applied.by.name);
-    @print(keyOf(written));
+    print(written.by.name);
+    print(applied.by.name);
+    print(keyOf(written));
 }

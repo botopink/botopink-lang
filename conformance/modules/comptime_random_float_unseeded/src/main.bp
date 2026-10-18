@@ -3,9 +3,9 @@
 //// (the `comptime` expression is the frame that ran it), with the seeded
 //// stream's message — never `comptime-host-cell-unavailable`.
 
-import {io} from "std";
+import {io, io.terminal.print} from "std";
 
 pub fn main() {
     val atBuild = comptime io.random.float();
-    @print(atBuild);
+    print(atBuild);
 }

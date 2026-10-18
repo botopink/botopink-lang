@@ -2,12 +2,14 @@
 //// commonJS reaches the bound through `BigInt` (decision 264 aborted it at
 //// −(2^53 − 1) there).
 
+import {io.terminal.print} from "std";
+
 fn sub(a: i64, b: i64) -> i64 {
     return a - b;
 }
 
 pub fn main() {
-    @print(sub(-9223372036854775807l, 1l));
-    @print(sub(-9223372036854775807l, 2l));
-    @print("unreachable");
+    print(sub(-9223372036854775807l, 1l));
+    print(sub(-9223372036854775807l, 2l));
+    print("unreachable");
 }

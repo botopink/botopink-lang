@@ -5,6 +5,8 @@
 //// two types adopt (a flat namespace's rule, before each type had a module of
 //// its own) and `erlc` refused the module: `function twice/1 undefined`.
 
+import {io.terminal.print} from "std";
+
 behavior Shape {
     fn area(self: Self) -> i32;
 
@@ -36,10 +38,10 @@ fn show(x: Shape) -> i32 {
 }
 
 pub fn main() {
-    @print(Sq(s: 3).twice());
-    @print(Sq(s: 3).label());
-    @print(Rect(w: 2, h: 5).twice());
-    @print(Rect(w: 2, h: 5).label());
-    @print(show(Sq(s: 1)));
-    @print(show(Rect(w: 1, h: 7)));
+    print(Sq(s: 3).twice());
+    print(Sq(s: 3).label());
+    print(Rect(w: 2, h: 5).twice());
+    print(Rect(w: 2, h: 5).label());
+    print(show(Sq(s: 1)));
+    print(show(Rect(w: 1, h: 7)));
 }

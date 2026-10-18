@@ -3,7 +3,7 @@
 //// type's. `g.greet "…"` with `greet` a method of `Greeter` calls the method;
 //// on a type without one, the template method runs.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 type Greeter(who: string) {
     pub fn greet(self: Self, word: string) -> string {
@@ -22,6 +22,6 @@ fn greet(syntax self: Visitor, syntax q: string) -> string {
 }
 
 pub fn main() {
-    @print(Greeter(who: "Ana").greet "hello");
-    @print(Visitor(who: "Bia").greet "hello");
+    print(Greeter(who: "Ana").greet "hello");
+    print(Visitor(who: "Bia").greet "hello");
 }

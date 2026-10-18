@@ -4,7 +4,7 @@
 //// the whole `${…}`, and the mistyped hole `${flag}` is refused at `flag` in
 //// the caller's text, not at its offset in the built code.
 
-import {compiler.CustomNode, compiler.Span, compiler} from "std";
+import {compiler.CustomNode, compiler.Span, compiler, io.terminal.print} from "std";
 
 fn cssValue(v: string) -> string {
     return v;
@@ -54,5 +54,5 @@ fn css(syntax q: string) -> string {
 val flag = true;
 
 pub fn main() {
-    @print(css @`margin: ${flag};`);
+    print(css @`margin: ${flag};`);
 }

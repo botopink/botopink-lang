@@ -2,10 +2,12 @@
 //// field, but it is an argument like any other: typed against its field,
 //// so a value of another type is refused at the value.
 
+import {io.terminal.print} from "std";
+
 type Pessoa(nome: string, idade: i32)
 
 pub fn main() {
     val ana = Pessoa(nome: "Ana", idade: 3);
     val p = Pessoa(nome: 5, ..ana);
-    @print(p.nome);
+    print(p.nome);
 }

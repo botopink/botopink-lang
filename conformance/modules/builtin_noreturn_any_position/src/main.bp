@@ -4,13 +4,15 @@
 //// an `if` branch, a call argument. The branches that would reach them are
 //// never taken here, so the program prints and exits 0.
 
+import {failure.panic, io.terminal.print} from "std";
+
 fn stub(n: i32) -> i32 {
-    if (n > 100) return @todo();
+    if (n > 100) return panic("not implemented");
     return n + 1;
 }
 
 fn name(n: i32) -> string {
-    if (n < 0) return @panic("negative");
+    if (n < 0) return panic("negative");
     return "n";
 }
 
@@ -21,10 +23,10 @@ fn twice(x: i32) -> i32 {
 pub fn main() {
     val a: i32 = stub(1);
     val b: string = name(2);
-    val c: i32 = if (a > 0) a else @todo();
-    val d: i32 = if (a < 0) twice(@panic("unreachable")) else 7;
-    @print(a);
-    @print(b);
-    @print(c);
-    @print(d);
+    val c: i32 = if (a > 0) a else panic("not implemented");
+    val d: i32 = if (a < 0) twice(panic("unreachable")) else 7;
+    print(a);
+    print(b);
+    print(c);
+    print(d);
 }

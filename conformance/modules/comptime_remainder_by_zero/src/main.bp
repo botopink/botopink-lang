@@ -2,7 +2,9 @@
 //// `(division by zero)`, located at the `%` that divides, the same on every
 //// target.
 
+import {io.terminal.print} from "std";
+
 pub fn main() {
     val atBuild = comptime 7 % 0;
-    @print(atBuild);
+    print(atBuild);
 }

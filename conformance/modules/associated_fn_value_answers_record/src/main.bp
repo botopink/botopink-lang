@@ -4,7 +4,7 @@
 //// `val` and by a parameter typed `fn(string) -> Town` — each call's record
 //// read by its field, on every target (144 B-19).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn maker(syntax decl: unknown) {
     compiler.addMember(
@@ -34,10 +34,10 @@ fn first(f: fn(string) -> Town) -> string {
 }
 
 pub fn main() {
-    @print(apply("x", City.make).name);
+    print(apply("x", City.make).name);
     val m = City.make;
-    @print(m("y").name);
+    print(m("y").name);
     val t = Town.of;
-    @print(t("z").name);
-    @print(first(Town.of));
+    print(t("z").name);
+    print(first(Town.of));
 }

@@ -3,9 +3,9 @@
 //// and the call that reaches it is refused, located at the call and naming
 //// the function. `erlang.node` binds erlang and beam alone.
 
-import {erlang.node} from "std";
+import {erlang.node, io.terminal.print} from "std";
 
 pub fn main() {
-    @print("imported");
-    @print(node());
+    print("imported");
+    print(node());
 }
