@@ -1,0 +1,19 @@
+//// A fixture library: a run-time registry and the decorator that compiles
+//// a registration into the program's init list.
+
+import {compiler} from "std";
+
+var entries: string[] = [];
+
+pub fn register(entry: string) {
+    entries.push(entry);
+}
+
+pub fn names() -> string[] {
+    return entries;
+}
+
+pub fn registered(syntax decl: unknown) {
+    val name = compiler.name(decl);
+    compiler.init({ -> register(name) });
+}

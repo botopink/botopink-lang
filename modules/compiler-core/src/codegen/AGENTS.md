@@ -1832,6 +1832,16 @@ codegen/
   runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
   `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
   before its own, which is the order `require` gives commonJS.
+  **Decision 660** puts every module of every declared dependency first,
+  imported or not (`crossModule.dependencyClosure`, over `dependencyModules`:
+  package by package in `Packages.deps` order — the CLI's level order —, each
+  package's modules in compile order, each after what it imports); the
+  entry's own `importClosure` follows. The root package's `Scopes` scope
+  holds every package of `Packages.deps` for it. commonJS `require`s those
+  modules with a body at the top of a program entry (a `main/0`, or `test`
+  blocks; `emitProgramOptsX`'s `dep_inits`), and wasm links them into the
+  entry (`programEntry`; `Linked.declared`, whose refusal says the module is
+  a declared dependency's rather than "this import").
   The body is lowered BEFORE the runtime helpers are chosen (and written after
   them): a helper only a module-level initialiser reaches — a dependency whose
   one print is `val _x = @print("boot")` — was never defined, and the init

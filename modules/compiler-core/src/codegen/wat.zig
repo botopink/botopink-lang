@@ -30,6 +30,7 @@ const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const crossModule = @import("./crossModule.zig");
+const erlangBackend = @import("./erlang.zig");
 const hostMethods = @import("./hostMethods.zig");
 const envMod = @import("../comptime/env.zig");
 const wat = @import("./wat/wat_ast.zig");
@@ -141,6 +142,17 @@ fn fnArityNoSelf(f: ast.FnDecl) usize {
         if (!std.mem.eql(u8, p.name, "self")) n += 1;
     }
     return n;
+}
+
+/// Where a program entry starts — its `main/0`, or under `botopink test`
+/// its first `test` block —, or null for a module that is no entry.
+fn programEntry(program: ast.Program, test_mode: bool) ?ast.Loc {
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (isMain0(f)) return f.nameLoc,
+        .@"test" => |t| if (test_mode) return t.loc,
+        else => {},
+    };
+    return null;
 }
 
 fn isMain0(f: ast.FnDecl) bool {
@@ -378,6 +390,28 @@ pub fn codegenEmit(
                 defer visited.deinit();
                 try visited.put(ct.name, {});
                 const scope = try scopes.forModule(ct.name);
+                // Decision 660 — a program entry links every module of every
+                // declared dependency that has a body first, imported or not,
+                // each after what it imports.
+                if (programEntry(ok.transformed, config.test_mode)) |entry| {
+                    var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
+                    defer dep_mods.deinit(alloc);
+                    try crossModule.dependencyModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
+                    for (dep_mods.items) |o| {
+                        const dok = &o.outcome.ok;
+                        if (visited.contains(o.name) or !erlangBackend.moduleHasInit(dok.transformed)) continue;
+                        try visited.put(o.name, {});
+                        try collectLinks(alloc, scope.outputs, &scope.cross, dok.transformed, &visited, &linked, entry);
+                        try linked.append(alloc, .{
+                            .name = o.name,
+                            .program = dok.transformed,
+                            .rewrites = dok.dispatch_rewrites,
+                            .instance_lowerings = dok.instance_lowerings,
+                            .via = entry,
+                            .declared = true,
+                        });
+                    }
+                }
                 try collectLinks(alloc, scope.outputs, &scope.cross, ok.transformed, &visited, &linked, null);
                 // 06 C13 — a host-backed fn with no `wasm` target reaches the
                 // driver as a located diagnostic naming the function, not as
@@ -396,7 +430,7 @@ pub fn codegenEmit(
                         return err;
                     try refusals.put(na, ct.name, try na.dupe(u8, diagnostic.type.message));
                     const links = try na.alloc(LinkVia, linked.items.len);
-                    for (linked.items, links) |l, *lv| lv.* = .{ .name = l.name, .via = l.via };
+                    for (linked.items, links) |l, *lv| lv.* = .{ .name = l.name, .via = l.via, .declared = l.declared };
                     try refused_links.append(na, .{ .result = results.items.len, .links = links });
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -522,7 +556,9 @@ fn testProgram(arena: std.mem.Allocator, program: ast.Program, src_file: []const
 
 /// A module one refused module links, and the import item of that module
 /// that reaches it (`Linked.via`).
-const LinkVia = struct { name: []const u8, via: ast.Loc };
+/// `declared`: linked because its package is a declared dependency
+/// (decision 660), `via` the program's entry rather than an import.
+const LinkVia = struct { name: []const u8, via: ast.Loc, declared: bool = false };
 
 /// A refused module's entry in the results, and what it links.
 const RefusedLinks = struct { result: usize, links: []const LinkVia };
@@ -543,7 +579,10 @@ fn relocateLinkedRefusals(
     for (refused_links) |rl| for (rl.links) |l| {
         const why = refusals.get(l.name) orelse continue;
         const d = &(results[rl.result].result.diagnostic orelse break);
-        const message = try std.fmt.allocPrint(alloc, "{s} — in `{s}`, which this import links", .{ why, l.name });
+        const message = if (l.declared)
+            try std.fmt.allocPrint(alloc, "{s} — in `{s}`, a module of a declared dependency, which the program links (decision 660)", .{ why, l.name })
+        else
+            try std.fmt.allocPrint(alloc, "{s} — in `{s}`, which this import links", .{ why, l.name });
         alloc.free(d.type.message);
         d.* = .{ .type = .{ .message = message, .loc = l.via } };
         break;
@@ -565,6 +604,9 @@ const Linked = struct {
     /// import, or the one whose module imports this one in turn. Where the
     /// consumer reports a refusal of this module (`relocateLinkedRefusals`).
     via: ast.Loc,
+    /// Linked because its package is a declared dependency (decision 660):
+    /// `via` is then the program's entry, no import of it.
+    declared: bool = false,
 };
 
 /// Every module `program` imports from, transitively, dependencies first. An

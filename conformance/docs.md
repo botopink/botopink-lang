@@ -4125,13 +4125,28 @@ resolve where the decorator wrote it — a private helper of the decorator's
 module included, a library's too —, each `syntax` parameter spliced as the
 expression written, each `comptime` parameter and each `val` of the body
 spliced as the literal of its value. A library module's executors run in the
-program that imports it, before the program's own.
+program that declares its package, imported or not, before the program's own.
 
 <!-- example: modules/init_executor_before_main -->
 
 <!-- example: modules/init_order_modules -->
 
 <!-- example: modules/init_executor_from_library -->
+
+A declared dependency is part of the program (decision 660): every module of
+every package `botopink.json` declares — and of every package those declare —
+joins the build, and its executors join the init list whether or not
+anything imports it; `import` brings names into scope and nothing else. The
+init list runs package by package in dependency order: a package that
+depends on nothing first, a package after every package it depends on, the
+ones with the most levels of dependencies last; two packages of one level in
+the order their dependant's `botopink.json` lists them; inside a package,
+modules in dependency order and declarations in source order. Every
+dependency's executors run before the program's own.
+
+<!-- example: modules/dependency_init_without_import -->
+
+<!-- example: modules/init_order_packages -->
 
 An executor is a statement of its module's body at the annotated
 declaration's position (decision 580): a module's `val`s, `var`s, `_`

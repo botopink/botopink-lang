@@ -377,6 +377,7 @@ fn loadClosure(
     // directory by one of them is refused, not silently shadowed.
     for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
     for (deps) |dep| try closure.visit(project, dep.name);
+    try closure.orderByLevel();
     try refuseNameTwice(arena, io, project, project_dir, workspace, closure.order.items);
     // One OTP release across the closure (decision 228): every package that
     // pins `"otp"` pins the project's — or the first pin's — release.
@@ -509,7 +510,8 @@ const DepClosure = struct {
     tiers: []const []const manifest.Entry,
     /// Every package resolved so far, by import name.
     packages: std.StringArrayHashMapUnmanaged(Package) = .empty,
-    /// Dependencies before dependents.
+    /// Dependencies before dependents; level by level once `orderByLevel`
+    /// ran (decision 660).
     order: std.ArrayListUnmanaged(Package) = .empty,
 
     const Package = struct {
@@ -581,6 +583,39 @@ const DepClosure = struct {
         const done = self.packages.getPtr(name).?;
         done.state = .placed;
         try self.order.append(self.arena, done.*);
+    }
+
+    /// Decision 660 — the order of the program's init list, which is the
+    /// order the packages compile in: a package that depends on nothing
+    /// first, a package after every package it depends on, the ones with the
+    /// most levels of dependencies last. A package's level is 0 with no
+    /// dependency of the closure, else one more than its deepest
+    /// dependency's. Packages of one level keep the depth-first order
+    /// `visit` placed them in, which is the order their dependant's
+    /// `botopink.json` lists them.
+    fn orderByLevel(self: *DepClosure) !void {
+        const items = self.order.items;
+        const levels = try self.arena.alloc(usize, items.len);
+        // `order` is dependencies first, so each dependency's level is known
+        // when its dependant's is computed.
+        for (items, 0..) |pkg, i| {
+            var level: usize = 0;
+            for (pkg.manifest.dependencies) |d| {
+                for (items[0..i], 0..) |dep, j| {
+                    if (std.mem.eql(u8, dep.name, d.name)) level = @max(level, levels[j] + 1);
+                }
+            }
+            levels[i] = level;
+        }
+        const Keyed = struct { level: usize, pkg: Package };
+        const keyed = try self.arena.alloc(Keyed, items.len);
+        for (items, levels, keyed) |pkg, level, *k| k.* = .{ .level = level, .pkg = pkg };
+        std.sort.insertion(Keyed, keyed, {}, struct {
+            fn lt(_: void, a: Keyed, b: Keyed) bool {
+                return a.level < b.level;
+            }
+        }.lt);
+        for (keyed, items) |k, *slot| slot.* = k.pkg;
     }
 };
 
@@ -2449,6 +2484,29 @@ test "loadDependencies: a dependency's own dependencies load too, each before th
     try std.testing.expectEqualStrings("kit-core/core kit-link/link kit-forms/forms", try closureOf(arena, io, "closure",
         \\{ "name": "app", "dependencies": { "kit-forms": { "git": "https://example.invalid/kit" },
         \\  "kit-link": { "git": "https://example.invalid/kit" }, "kit-core": { "git": "https://example.invalid/kit" } } }
+    ));
+}
+
+test "loadDependencies: packages compile and init by level — the most levels of dependencies last, ties as listed (decision 660)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure-level");
+    defer test_scratch.remove(io, "closure-level");
+    try writeKitWorkspace(io, "closure-level");
+    try writeFileP(io, test_scratch.path(io, "closure-level/ws/repository/solo/botopink.json"), "{ \"name\": \"solo\", \"files\": [\"solo.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "closure-level/ws/repository/solo/src/solo.bp"), "pub fn solo() {}");
+
+    // `kit-forms` is listed first and depends on two levels of packages:
+    // it goes last, after `solo`, which depends on nothing — depth first,
+    // `solo` came after `kit-forms`.
+    try std.testing.expectEqualStrings("kit-core/core solo/solo kit-link/link kit-forms/forms", try closureOf(arena, io, "closure-level",
+        \\{ "name": "app", "dependencies": { "kit-forms": { "git": "https://example.invalid/kit" }, "solo": { "git": "https://example.invalid/solo" } } }
+    ));
+    // Two packages of one level keep the order their dependant lists them.
+    try std.testing.expectEqualStrings("solo/solo kit-core/core kit-link/link", try closureOf(arena, io, "closure-level",
+        \\{ "name": "app", "dependencies": { "solo": { "git": "https://example.invalid/solo" }, "kit-core": { "git": "https://example.invalid/kit" }, "kit-link": { "git": "https://example.invalid/kit" } } }
     ));
 }
 

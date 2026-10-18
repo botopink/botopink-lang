@@ -2089,7 +2089,7 @@ fn emitBeamAsm(
         try em.reserveFn(LOAD_SIBLING, 1);
     }
     // Decision 140 — a module runs its body when a program that imports it
-    // starts: `'_botopink_init'/0`, called by the entry; a test unit's runner
+    // (or declares its package, 660) starts: `'_botopink_init'/0`, called by the entry; a test unit's runner
     // calls it too (decision 513), so a module with `main/0` carries it as well.
     const emit_init = em.entry_stmts.items.len > 0;
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
@@ -2101,6 +2101,9 @@ fn emitBeamAsm(
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         defer seen.deinit(alloc);
         try seen.put(alloc, module_name, {});
+        // Decision 660 — every module of every declared dependency first,
+        // imported or not, each after what it imports.
+        try crossModule.dependencyClosure(alloc, all_outputs, xc, xc.packages, module_name, &seen, &closure);
         try crossModule.importClosure(alloc, all_outputs, xc, program, &seen, &closure);
         for (closure.items) |dep| for (all_outputs) |*o| {
             if (!std.mem.eql(u8, o.name, dep)) continue;
@@ -6058,7 +6061,8 @@ const Emitter = struct {
 
     /// `'_botopink_init'/0` of a module without `main/0`: its body — the `_`
     /// statements and the effectful named `val`s' readers, in source order —
-    /// run once by the entry of a program that imports it (decision 140).
+    /// run once by the entry of a program that imports it (decision 140) or
+    /// declares its package (660).
     fn emitInitFunction(self: *Emitter) !void {
         const labels = try self.fnLabelsFor("'_botopink_init'", 0);
         try beamEmitter.writeBlankLine(self.out);

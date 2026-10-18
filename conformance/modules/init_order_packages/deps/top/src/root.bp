@@ -1,0 +1,9 @@
+//// A fixture package with one annotated declaration.
+
+pub mod marks;
+import {marks.mark};
+
+#[mark]
+pub fn topEntry() -> string {
+    return "top";
+}

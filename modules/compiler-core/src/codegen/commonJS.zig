@@ -6,6 +6,7 @@ const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const hostFnBinding = @import("./hostFnBinding.zig");
 const crossModule = @import("./crossModule.zig");
+const erlangBackend = @import("./erlang.zig");
 const patternFacts = @import("./patterns.zig");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const hostMethods = @import("./hostMethods.zig");
@@ -127,7 +128,15 @@ pub fn codegenEmit(
                 const scope = try scopes.forModule(ct.name);
                 // Decision 546 — a binding declared outside std marks its raise `host`.
                 const marks_host = !std.mem.eql(u8, config.packages.idOf(ct.name).package, crossModule.EMBEDDED_PACKAGE);
-                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }, marks_host) catch |err| {
+                // Decision 660 — the dependency modules with a body, which a
+                // program entry `require`s before anything of its own.
+                var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
+                defer dep_mods.deinit(alloc);
+                try crossModule.dependencyModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
+                var dep_inits: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer dep_inits.deinit(alloc);
+                for (dep_mods.items) |o| if (erlangBackend.moduleHasInit(o.outcome.ok.transformed)) try dep_inits.append(alloc, o.name);
+                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }, marks_host, dep_inits.items) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -186,8 +195,10 @@ fn emitJs(
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
     marks_host: bool,
+    /// Decision 660 — the dependency modules a program entry runs first.
+    dep_inits: []const []const u8,
 ) !Emitted {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host, dep_inits);
 }
 
 /// One module's commonJS: the production module and, under `botopink test`
@@ -367,7 +378,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{}, false);
+    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{}, false, &.{});
     if (emitted.test_unit) |u| {
         alloc.free(u.atom);
         alloc.free(u.code);
@@ -480,6 +491,10 @@ fn emitProgramOptsX(
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
     marks_host: bool,
+    /// Decision 660 — the modules of the declared dependencies with a body,
+    /// in init order: a program entry (a `main/0`, or `test` blocks) loads
+    /// each before anything of its own, imported or not.
+    dep_inits: []const []const u8,
 ) !Emitted {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -638,6 +653,16 @@ fn emitProgramOptsX(
     // test unit destructures. Not enumerable, so no `Object.assign` of the
     // module's exports copies it.
     try items.insertSlice(arena_alloc, 0, try em.reachedEnumRequires());
+    if (has_main_0 or tests.items.len > 0) {
+        // Every `require` target is a path from the output root; node
+        // resolves it from the requiring file (`buildUse`'s prefix).
+        const depth = std.mem.count(u8, module_name, "/");
+        var prefix: std.ArrayListUnmanaged(u8) = .empty;
+        if (depth == 0) try prefix.appendSlice(arena_alloc, "./") else for (0..depth) |_| try prefix.appendSlice(arena_alloc, "../");
+        for (dep_inits, 0..) |dep, i| try items.insert(arena_alloc, i, .{ .stmt = .{
+            .expr = try em.requireCall(try std.fmt.allocPrint(arena_alloc, "{s}{s}.js", .{ prefix.items, dep })),
+        } });
+    }
     const bound = try boundNames(arena_alloc, items.items);
     if (try privExportSource(arena_alloc, bound)) |line| try items.append(arena_alloc, .{ .runtime = line });
 

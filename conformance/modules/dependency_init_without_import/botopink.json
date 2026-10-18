@@ -1,0 +1,1 @@
+{ "name": "dependency_init_without_import", "dependencies": { "registry": { "path": "deps/registry" }, "alpha": { "path": "deps/alpha" } } }

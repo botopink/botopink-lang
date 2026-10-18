@@ -1331,7 +1331,16 @@ pub const Scopes = struct {
         if (self.isStd(path)) {
             try members.put(self.alloc, path, {});
             try work.append(self.alloc, path);
-        } else try self.addPackage(key, &members, &work);
+        } else {
+            try self.addPackage(key, &members, &work);
+            // Decision 660 — every declared dependency is part of the
+            // program, imported or not: the root package's scope holds every
+            // package of the build, whose bodies its entries run first
+            // (`dependencyModules`).
+            if (std.mem.eql(u8, key, self.packages.root)) for (self.packages.deps) |d| {
+                if (!std.mem.eql(u8, d, EMBEDDED_PACKAGE)) try self.addPackage(d, &members, &work);
+            };
+        }
 
         var scratch = std.heap.ArenaAllocator.init(self.alloc);
         defer scratch.deinit();
@@ -2002,6 +2011,58 @@ test "build: two types whose atoms differ raise no fault, and the module's own a
     defer xc.deinit();
     try testing.expect(xc.atomFault("app/models") == null);
     try testing.expectEqualStrings("test@app@models", xc.atomFor("app/models"));
+}
+
+/// Decision 660 — the modules of every declared dependency, in the order the
+/// program's init list runs them: package by package as `packages.deps` lists
+/// them (the CLI places a package after every package it depends on, the ones
+/// with the most levels of dependencies last, ties as their dependant's
+/// `botopink.json` lists them), each package's modules in the order they
+/// compile (580: dependency order). Being declared is what runs a package's
+/// registrations — an `import` brings names and nothing else —, so a program
+/// entry runs these bodies first, whether or not anything imports them. Only
+/// the modules that compiled; each backend keeps the ones with a body. Empty
+/// for a module of a dependency: only the root package's entries run them.
+pub fn dependencyModules(
+    alloc: std.mem.Allocator,
+    outputs: []const ComptimeOutput,
+    packages: Packages,
+    module_name: []const u8,
+    out: *std.ArrayListUnmanaged(*const ComptimeOutput),
+) !void {
+    if (packages.idOf(module_name).package_in_path) return;
+    for (packages.deps) |dep| {
+        if (std.mem.eql(u8, dep, EMBEDDED_PACKAGE)) continue;
+        for (outputs) |*o| {
+            const id = packages.idOf(o.name);
+            if (!id.package_in_path or !std.mem.eql(u8, id.package, dep)) continue;
+            if (o.outcome != .ok) continue;
+            try out.append(alloc, o);
+        }
+    }
+}
+
+/// `importClosure`'s list, seeded with decision 660's: each module of
+/// `dependencyModules` once, after the modules it imports (a std module with
+/// a body among them). A root-package module's own `importClosure` follows.
+pub fn dependencyClosure(
+    alloc: std.mem.Allocator,
+    outputs: []const ComptimeOutput,
+    cross: *const CrossModule,
+    packages: Packages,
+    module_name: []const u8,
+    visited: *std.StringHashMapUnmanaged(void),
+    out: *std.ArrayListUnmanaged([]const u8),
+) !void {
+    var mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
+    defer mods.deinit(alloc);
+    try dependencyModules(alloc, outputs, packages, module_name, &mods);
+    for (mods.items) |o| {
+        if (visited.contains(o.name)) continue;
+        try visited.put(alloc, o.name, {});
+        try importClosure(alloc, outputs, cross, o.outcome.ok.transformed, visited, out);
+        try out.append(alloc, o.name);
+    }
 }
 
 /// The modules `program` imports from, transitively, dependencies first —

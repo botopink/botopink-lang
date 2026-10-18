@@ -719,6 +719,9 @@ pub fn codegenEmit(
                 defer seen.deinit(alloc);
                 try seen.put(alloc, ct.name, {});
                 const scope = try scopes.forModule(ct.name);
+                // Decision 660 — every module of every declared dependency
+                // first, imported or not, each after what it imports.
+                try crossModule.dependencyClosure(alloc, scope.outputs, &scope.cross, config.packages, ct.name, &seen, &closure);
                 try crossModule.importClosure(alloc, scope.outputs, &scope.cross, ok.transformed, &seen, &closure);
                 var import_inits: std.ArrayListUnmanaged([]const u8) = .empty;
                 defer import_inits.deinit(alloc);

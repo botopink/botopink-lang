@@ -14,4 +14,4 @@ The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 > module included, a library's too —, each `syntax` parameter spliced as the
 > expression written, each `comptime` parameter and each `val` of the body
 > spliced as the literal of its value. A library module's executors run in the
-> program that imports it, before the program's own.
+> program that declares its package, imported or not, before the program's own.

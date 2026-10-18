@@ -1,0 +1,8 @@
+//// An annotated declaration: its executor registers `web`.
+
+import {registered} from "registry";
+
+#[registered]
+pub fn web() -> string {
+    return "web";
+}
