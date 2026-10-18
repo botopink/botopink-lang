@@ -24,7 +24,7 @@ A first program:
 | *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, blocks, `if`, `case`, loops, `assert`, `use` |
 | *Functions* | recursion, inline parameter types, defaults, variadics, record parameters, effects, results, tasks, iterators and streams |
 | *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
-| *Builtins* | the builtins, what `print` writes, a value's own type, `@src()` |
+| *Builtins* | the builtins, what `print` writes, a value's own type, `comptime compiler.src` |
 | *Tests* | `test` blocks, mocks |
 | *Backends*, *Project manifest*, *The manifest schema* | the four targets; `botopink.json`, every field and every refusal |
 | *Migrating from the effect annotations*, *Decided, not yet implemented* | the 1.0.10-beta move; what is decided and not built |
@@ -5101,20 +5101,10 @@ decorator or template body runs, never at run time):
 |---|---|---|
 | `print` (`io/terminal.bp`, imported) | `print(..values: unknown[])` — any number of arguments (§ A variadic parameter) | the declaration |
 | `panic` (`failure.bp`, imported) | `panic(message: string = "panic") -> noreturn` | the declaration |
-| `@trap` | `trap() -> noreturn` | the declaration |
-| `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
-| `@embed` | `embed(comptime path: string) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
-| `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
-| `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
-| `@typeInfo` | `typeInfo<T>(comptime t: type<T>) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
-| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `syntax decl: B` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
-| `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
-| `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
-| `@RecordKeys` | `RecordKeys(comptime _: type<T>) -> string[]` — COMPTIME-ONLY | the declaration |
-| `@comptimeError` | `comptimeError(comptime message: string) -> noreturn` — COMPTIME-ONLY | its own rule (the message it raises) |
-| `@emit` | `emit(source: string)` — COMPTIME-ONLY, a decorator body | the declaration |
-| `@compilerError` | `compilerError(message: string) -> noreturn` — COMPTIME-ONLY, a decorator or template body | the declaration |
-| `@code` | `code<T>(text: string)` — COMPTIME-ONLY, a template body, answering the code `text` parses | the declaration |
+| `@embed` (until 607's box removes it) | `embed(comptime path: string) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
+| `@TypeInfo.all` (until B-137's `compiler.find` removes it) | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `syntax decl: B` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
+| `@emit` (until 605's box removes it) | `emit(source: string)` — COMPTIME-ONLY, a decorator body | the declaration |
+| `@code` (until 605's box removes it) | `code<T>(text: string)` — COMPTIME-ONLY, a template body, answering the code `text` parses | the declaration |
 
 A call the declaration refuses — more arguments than it declares, a parameter
 without a default left out, a label naming no parameter — is
@@ -5150,11 +5140,10 @@ declaration's identity:
 
 <!-- example: modules/decorator_argument_decorator_alias -->
 
-`panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
-bottom type, so a call to one stands wherever a value of any type is expected —
-`val x: i32 = @todo();`, `return panic("…");`, one branch of an `if` whose other
-branch has the value. `@module()` is declared but no target lowers it, so it is
-`error[builtin-not-lowered]`.
+`panic` never returns: it is declared `-> noreturn`, the bottom type, so a call to
+it stands wherever a value of any type is expected — `val x: i32 = panic("not
+implemented");`, `return panic("…");`, one branch of an `if` whose other branch has
+the value.
 
 A `panic(message)` aborts the program with a non-zero status, and its message —
 the text it was given, quotes and non-ASCII characters included — reaches stderr
@@ -5237,25 +5226,26 @@ not by the annotation it arrived under:
 
 <!-- example: test/type_identity_case.bp -->
 
-### `@src()` and `SourceLocation`
+### `comptime compiler.src` and `SourceLocation`
 
 <!-- example: modules/src_location -->
 
-`@src()` is the place it is written, evaluated at compile time: the four
-fields are literals at the call site and the expression costs nothing at run
-time — every backend emits the same code it emits for the constructor call
-`SourceLocation(file: "…", line: N, column: C, fnName: "…")`.
+`compiler.src` is the place it is written (decision 606 (2): `src` is a member of `compiler`,
+written under `comptime` in a body that runs when the program runs, with `import {compiler}
+from "std"`), evaluated at compile time: the four fields are literals at the call site and the
+expression costs nothing at run time — every backend emits the same code it emits for the
+constructor call `SourceLocation(file: "…", line: N, column: C, fnName: "…")`.
 
 | Field | Value |
 |---|---|
 | `file` | the source file relative to the root of its package, forward slashes, with extension (`src/emilia.bp`, `test/color_test.bp`) |
-| `line`, `column` | 1-based position of the `@` — the numbers a diagnostic prints |
+| `line`, `column` | the 1-based position of `compiler` — the numbers a diagnostic prints |
 | `fnName` | the enclosing `fn`'s name; `Type.method` inside a method; the test name inside `test "…" { }` (`test_<idx>` for an anonymous block); `""` at module level. A lambda does not change it |
 
-`@src()` takes no arguments and no trailing lambda (`@src(1)` is
-`error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
-reads a field in place. Its consumer is the test contract — `std/testing/asserts`
-messages and the `snap` library's paths are computed from the caller's `@src()`.
+`compiler.src` is read, not called (`compiler.src()` is refused as a member that is read). It
+is a value like any other: `comptime compiler.src.line` reads a field in place. Its consumer
+is the test contract — `std/testing/asserts` messages and the `snap` library's paths are
+computed from the caller's `comptime compiler.src`.
 
 ### `@embed` and `Asset`
 
