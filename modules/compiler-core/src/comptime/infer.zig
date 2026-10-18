@@ -6111,8 +6111,8 @@ fn wrapKindWord(kind: []const u8) []const u8 {
 /// (`Env.hygieneImports`). The parameters, the member's own locals and the
 /// decorator's type parameters are left alone, as is a name the decorator's
 /// module neither declares nor imports (a builtin, a prelude name). A type
-/// this module already holds under the same name from elsewhere is refused at
-/// the annotation (`import-name-collision`, decision 310's gap).
+/// this module already holds under the same name from elsewhere is two types
+/// (decisions 310, 603): the member names the hygiene alias, never the name.
 fn memberRenames(
     env: *Env,
     a: ast.Annotation,
@@ -6122,6 +6122,8 @@ fn memberRenames(
     splices: []const memberFn.Splice,
     typeArgs: []const memberFn.TypeArg,
 ) InferError![]const memberFn.Rename {
+    _ = a;
+    _ = c;
     const r = env.reflection orelse return &.{};
     const owner = env.comptimeOwnerOf(dfn);
     var out: std.ArrayListUnmanaged(memberFn.Rename) = .empty;
@@ -6141,10 +6143,6 @@ fn memberRenames(
             try out.append(env.arena, .{ .from = n, .to = al });
             continue;
         };
-        if (w.isType and writtenNames.typeNameTaken(env, w.module, w.name)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` names `{s}`'s type `{s}`, and this module holds another type declared `{s}`; a type is told apart by its declared name, so one module holds one type of a name", .{ diagnostics.import_name_collision, a.name, c.name, w.module, w.name, w.name });
-            return decoratorError(env, a, msg, "Rename this module's own type, or annotate the type from a module that holds no other type of that name (decision 310's gap).");
-        }
         const alias = if (w.isType) try writtenNames.typeAliasOf(env.arena, w.module, w.name) else try envMod.templateAlias(env.arena, w.module, w.name);
         try out.append(env.arena, .{ .from = n, .to = alias });
         try env.hygieneImports.append(env.arena, .{ .alias = alias, .module = w.module, .name = w.name, .isType = w.isType });

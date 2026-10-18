@@ -1075,8 +1075,8 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   helper travels as a template's does (`sharesPrivates`). A name the
   decorator's module neither declares nor imports keeps resolving in the
   annotated module; a type the annotated module holds under the same name
-  from elsewhere is `import-name-collision` at the annotation (decision 310's
-  gap, `modules/decorator_member_type_same_name`). In an expression the
+  from elsewhere is a second type (decision 603): the member names the hygiene
+  alias, the re-analysis holds the import under it (`modules/decorator_member_type_same_name`). In an expression the
   member's type parameter is spelled as the annotated type
   (`@typeInfo(T)` → `@typeInfo(Conta)`, decision 395). The names a typed
   function expression reads are no support of the decorator

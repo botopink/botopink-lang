@@ -1,9 +1,8 @@
 //// Decision 384 — the member's `Violation` resolves in `rules`, never as
 //// this module's own `Violation`: the member is not captured. This module
-//// would then hold its own `Violation` beside `rules`'s under an alias —
-//// a type of this module beside another module's same-named type, which
-//// question B-23-a decides: refused at the annotation until it is answered;
-//// as an accept cell it prints `1` and `7`.
+//// holds its own `Violation` beside `rules`'s, which the member names under
+//// a hygiene alias — two types (decision 603): `validate()` answers `rules`'s,
+//// the module's own prints `7`.
 
 pub mod rules;
 import {rules.check};

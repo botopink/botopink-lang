@@ -1231,8 +1231,8 @@ Decisions 384 and 395 add, on the four targets, `modules/member_reads_own_meta` 
 member reads `for (comptime @typeInfo(T).metaAll(Check))`, typed `Check<T>[]` in the decorator's
 body and answered with `Conta`'s two `#[check]`s where the member is rendered; the rules and messages
 run with the program) and `modules/decorator_member_type_same_name` (a member naming its module's
-`Violation` where the annotated module declares one: `import-name-collision` at the annotation — a
-type of this module beside another module's same-named type, question B-23-a), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
+`Violation` where the annotated module declares one: two types, the member's under its hygiene alias
+— refused at the annotation, question B-23-a, until decision 603), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
 Decision 311 (`01-checker` step 29 — the template annotation `` #[f @`…`] ``) adds, on the four targets,
 `modules/template_annotation`: a template `query(expr q: string, expr decl: unknown)`
 written on a behavior's methods (`` @`…` ``, beside a decorator) and on a function, each
