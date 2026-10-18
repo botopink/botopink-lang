@@ -39,7 +39,6 @@ pub fn isSourceAnnotation(a: ast.Annotation) bool {
 pub const variant_fields = [_]struct { target: ast.Implementation.Target, fields: []const []const u8 }{
     .{ .target = .erlang, .fields = &.{ "template", "body", "inline", "result" } },
     .{ .target = .javascript, .fields = &.{ "template", "body", "result" } },
-    .{ .target = .typescript, .fields = &.{ "template", "result" } },
     .{ .target = .wasm, .fields = &.{ "template", "op", "std", "wasi", "body", "host", "needs", "result" } },
 };
 

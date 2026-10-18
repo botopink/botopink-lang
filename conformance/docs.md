@@ -4442,9 +4442,11 @@ A bodyless `declare fn` — top-level or a type's, static included — names the
 code each target runs in its place with `#[@external(…)]` (decision 575 (6)):
 one std function, `external(syntax decl: unknown, comptime ..sources:
 Implementation[])`, whose sources are values of std's enum `Implementation` —
-`Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`,
-`Typescript(template, result)` and `Wasm(template | op | std | wasi | body,
-host, needs, result)`:
+`Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`
+and `Wasm(template | op | std | wasi | body, host, needs, result)` (decisions
+618, 619). A source names the code a target **runs**, in the language its
+template is written in; a `.d.ts` typing of the commonJS output is derived
+from the declaration and is no source (§ The manifest schema, `"typings"`):
 
 ```
 #[@external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"), .Wasm(op: "f64.floor"))]
@@ -4588,7 +4590,7 @@ binding of one cell refuses:
 `inline: true` on `.Erlang` opts the declaration out of the dispatch
 table so the backend's hand-coded shape keeps emitting. That variant alone
 declares it, because the erlang and beam emitters, which both read
-`.Erlang`, alone read it. Written on `Node`, `Wasm` or `Typescript`, or
+`.Erlang`, alone read it. Written on `JavaScript` or `Wasm`, or
 with a value that is not a bool, it would be a switch nothing reads, so it is
 refused at the argument (`` `Implementation.JavaScript` has no parameter named `inline` ``).
 
@@ -5467,6 +5469,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
 | `wasm` | object | `{ "host": "wasi" }` | `botopink build/run --target wasm` (`compiler-cli/src/cli/config.zig`) | The runtime a wasm build binds to (decision 334 of 1.0.12-beta), its one field `host`: `"wasi"` — wasmtime and the runtimes that follow WASI preview 2 (`wasi:http`, `wasi:clocks`, `wasi:io/poll`), the default — or `"browser"` — JS imports (`fetch`, `setTimeout`, `Promise` through JSPI), which node runs too. Absent means `"wasi"`; an object without `host`, another field, or a host that is neither is refused. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "jhonstart"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "jhonstart"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
+| `typings` | bool | `false` | `botopink build` (`compiler-cli/src/cli/build.zig`) | `true`: a commonJS build writes a `.d.ts` beside each `.js` (decisions 619, 620), each typing derived from the botopink declaration — no source of `Implementation` is a typing. `botopink build --typescript` turns the same emission on for one build; either one turns it on, and neither turns it off (there is no `"typings": false` the flag overrides, and no `--no-typescript`). A value that is not `true` / `false` is refused at the key. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `botopink`, `requires` | string · object | — | `bpmp` only | `botopink`: the compiler-version constraint. `requires`: the per-dependency version constraint `bpmp install <name>@<spec>` records. The compiler passes both through unread. |
 
 Unknown fields are preserved by `bpmp` (it rewrites the file) and not read by

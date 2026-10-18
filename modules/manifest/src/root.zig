@@ -416,6 +416,11 @@ pub const Manifest = struct {
     /// onto. Null when the manifest has no key. Read on the project being
     /// built only (`compiler-cli` `bpp.zig`).
     bpp: ?[]const u8 = null,
+    /// `"typings": true` (decisions 619, 620): a commonJS build of this
+    /// package writes a `.d.ts` beside each `.js`, as `botopink build
+    /// --typescript` does; either turns the emission on. Read on the project
+    /// being built only.
+    typings: bool = false,
 
     pub fn isWorkspace(self: Manifest) bool {
         return self.kind == .workspace;
@@ -577,7 +582,7 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         m.workspaces = globs;
         // A workspace is not a package: nothing compiles from it and nothing
         // imports it, so the package fields have no meaning here.
-        for ([_][]const u8{ "src", "files", "entry", "wasm", "bpp" }) |field| {
+        for ([_][]const u8{ "src", "files", "entry", "wasm", "bpp", "typings" }) |field| {
             if (obj.get(field) != null) {
                 out_err.* = located(text, path, locateKey(text, field), try std.fmt.allocPrint(
                     arena,
@@ -607,6 +612,7 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
     }
 
     if (obj.get("wasm")) |v| m.wasm_host = try parseWasm(arena, v, text, path, out_err);
+    m.typings = try optionalBool(arena, obj, "typings", text, path, out_err);
     if (obj.get("dependencies")) |deps_val| {
         m.dependencies = try parseDependencies(arena, deps_val, text, path, out_err);
     }
@@ -775,6 +781,16 @@ fn optionalString(arena: std.mem.Allocator, obj: std.json.ObjectMap, key: []cons
             return error.Invalid;
         },
     }
+}
+
+/// `"<key>": true | false`, false when absent (`"typings"`).
+fn optionalBool(arena: std.mem.Allocator, obj: std.json.ObjectMap, key: []const u8, text: []const u8, path: []const u8, out_err: *?Located) Error!bool {
+    const v = obj.get(key) orelse return false;
+    if (v != .bool) {
+        out_err.* = located(text, path, locateKey(text, key), try std.fmt.allocPrint(arena, "\"{s}\" must be true or false", .{key}));
+        return error.Invalid;
+    }
+    return v.bool;
 }
 
 fn optionalStringArray(arena: std.mem.Allocator, obj: std.json.ObjectMap, key: []const u8, text: []const u8, path: []const u8, out_err: *?Located) Error!?[]const []const u8 {
@@ -2427,6 +2443,29 @@ test "parse: \"wasm\" names the host a wasm build binds to, absent meaning wasi 
     try testing.expectEqual(WasmHost.browser, (try parseText(a,
         \\{ "name": "app", "target": "wasm", "wasm": { "host": "browser" } }
     )).wasm_host);
+}
+
+test "parse: \"typings\" turns the .d.ts emission on, absent meaning off (decisions 619, 620)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expect(!(try parseText(a,
+        \\{ "name": "app" }
+    )).typings);
+    try testing.expect((try parseText(a,
+        \\{ "name": "app", "typings": true }
+    )).typings);
+    try testing.expectEqualStrings(
+        \\error: "typings" must be true or false
+        \\ --> botopink.json:1:18
+        \\  |
+        \\1 | { "name": "app", "typings": "yes" }
+        \\  |                  ^^^^^^^^^
+        \\
+        \\
+    , try refuse(a,
+        \\{ "name": "app", "typings": "yes" }
+    ));
 }
 
 test "parse: a \"wasm\" that names no known host, or anything beside it, is a located error (decision 334)" {

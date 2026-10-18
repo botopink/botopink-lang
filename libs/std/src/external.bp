@@ -85,7 +85,6 @@ pub type WasiAdapter {
 pub type Implementation {
     Erlang(template: ?string = null, body: ?unknown = null, inline: bool = false, result: bool = false),
     JavaScript(template: ?string = null, body: ?unknown = null, result: bool = false),
-    Typescript(template: string, result: bool = false),
     Wasm(template: ?string = null, op: ?string = null, std: ?string = null, wasi: ?WasiAdapter = null, body: ?unknown = null, host: ?WasmHost = null, needs: WasmNeed[] = [], result: bool = false),
 }
 

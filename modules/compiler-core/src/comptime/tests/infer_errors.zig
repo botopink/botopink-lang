@@ -476,7 +476,7 @@ test "infer error: external ---- inline on a variant that does not declare it" {
 // bare positional bool names no flag, refused at the argument.
 test "infer error: external ---- a bare positional bool is refused" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Typescript("Math.max($args)", true))]
+        \\#[@external(.JavaScript("Math.max($args)", true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }

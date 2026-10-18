@@ -65,7 +65,7 @@ const HELP =
     \\Options for `build`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --out <dir>                  Output directory (default: out)
-    \\  --typescript                 Emit TypeScript .d.ts definitions
+    \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled
     \\
     \\Options for `run`:

@@ -107,6 +107,30 @@ run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
+# ── the .d.ts: "typings": true or --typescript, either one (decisions 619, 620)
+echo "==> \"typings\": true writes the .d.ts without --typescript; neither writes none"
+P="$(project typings)"
+printf 'pub fn greet(name: string) -> string {\n    return "hi " + name;\n}\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build
+expect_code 0 "build without typings"
+[[ ! -e "$P/out/main.d.ts" ]] && ok "no .d.ts without \"typings\" or --typescript" || fail "out/main.d.ts written with neither"
+run "$P" build --typescript
+expect_code 0 "build --typescript"
+[[ -e "$P/out/main.d.ts" ]] && ok "--typescript writes out/main.d.ts" || fail "--typescript wrote no out/main.d.ts"
+rm -rf "$P/out"
+printf '{ "name": "typings", "version": "0.1.0", "target": "commonJS", "typings": true }\n' >"$P/botopink.json"
+run "$P" build
+expect_code 0 "build with \"typings\": true"
+if [[ -e "$P/out/main.d.ts" ]]; then
+  ok "\"typings\": true writes out/main.d.ts"
+  expect_file_out "$P/out/main.d.ts" "greet(name: string): string" "the .d.ts types greet"
+else
+  fail "\"typings\": true wrote no out/main.d.ts"
+fi
+run "$P" build --typescript
+expect_code 0 "build with both"
+[[ -e "$P/out/main.d.ts" ]] && ok "both together write out/main.d.ts" || fail "both together wrote no out/main.d.ts"
+
 # ── checker warnings reach build and test (decision 57, front 26 step 4) ─────
 # `check` prints `OkData.warnings`; `build` and `test` read the compiler's
 # output after the comptime session is freed, and printed none of them.

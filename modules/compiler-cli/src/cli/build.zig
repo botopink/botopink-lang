@@ -18,6 +18,9 @@ const Module = bp.Module;
 pub const Options = struct {
     target: ?config.Target = null, // null → use project config
     out_dir: []const u8 = "out",
+    /// `--typescript`: write a `.d.ts` beside each `.js` for this build. The
+    /// package's `"typings": true` turns it on too (decisions 619, 620):
+    /// either one says so, and neither turns it off.
     typescript: bool = false,
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5), `code_cache.zig`).
@@ -105,7 +108,7 @@ pub fn run(
     // module atom (decision 109).
     const cfg = bp.codegen.Config{
         .targetSource = targetSource(target),
-        .typeDefLanguage = if (opts.typescript) .typescript else null,
+        .typeDefLanguage = if (opts.typescript or proj.manifest.typings) .typescript else null,
         .build_root = ".botopinkbuild",
         .packages = try libs.packagesOf(arena, proj, dep_modules),
         .wasm_host = proj.wasmHost(),

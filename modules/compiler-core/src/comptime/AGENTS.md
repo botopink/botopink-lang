@@ -134,7 +134,7 @@ checker never read that declaration, so `#[@external(.JavaScript("…", inline: 
 as a switch that did nothing. `external_variants` restates the four variants with their
 `declares_inline` and `declares_result` bits (`comptime/tests/infer_decls.zig` reads `builtins.d.bp`
 through `std_prelude` and fails in both directions when they drift), and `refuseUnreadInline` reds at
-the annotation for the two unread shapes: the flag on `Node` / `Wasm` / `Typescript`, and a value
+the annotation for the two unread shapes: the flag on `JavaScript` / `Wasm`, and a value
 that is not `true` / `false`. It runs from `validateExternalAnnotation` for a `declare fn` and from
 `validateExternalInline` — a program walk beside `validateEffectAnnotations` — for a behavior's and
 a type's methods, which the two emitters read the same way.

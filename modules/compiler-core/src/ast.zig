@@ -2374,7 +2374,6 @@ pub const Implementation = struct {
     pub const Target = enum {
         erlang,
         javascript,
-        typescript,
         wasm,
 
         /// The variant's name in std's enum (`Erlang`).
@@ -2382,7 +2381,6 @@ pub const Implementation = struct {
             return switch (self) {
                 .erlang => "Erlang",
                 .javascript => "JavaScript",
-                .typescript => "Typescript",
                 .wasm => "Wasm",
             };
         }
@@ -2391,7 +2389,6 @@ pub const Implementation = struct {
         pub fn ofVariant(name: []const u8) ?Target {
             if (std.mem.eql(u8, name, "Erlang")) return .erlang;
             if (std.mem.eql(u8, name, "JavaScript")) return .javascript;
-            if (std.mem.eql(u8, name, "Typescript")) return .typescript;
             if (std.mem.eql(u8, name, "Wasm")) return .wasm;
             return null;
         }
@@ -2402,7 +2399,6 @@ pub const Implementation = struct {
         pub fn ofMember(member: []const u8) ?Target {
             if (std.ascii.eqlIgnoreCase(member, "erlang") or std.ascii.eqlIgnoreCase(member, "beam")) return .erlang;
             if (std.ascii.eqlIgnoreCase(member, "node") or std.ascii.eqlIgnoreCase(member, "javascript")) return .javascript;
-            if (std.ascii.eqlIgnoreCase(member, "typescript")) return .typescript;
             if (std.ascii.eqlIgnoreCase(member, "wasm")) return .wasm;
             return null;
         }
@@ -2451,7 +2447,7 @@ pub const Implementation = struct {
     };
 
     /// True when it serves the lookup `target` names (`node`, `erlang`,
-    /// `typescript`, `wasm`, `wasm.browser`; `beam` reads `Erlang`, decision
+    /// `wasm`, `wasm.browser`; `beam` reads `Erlang`, decision
     /// 437): the target's variant, and on wasm a binding of the build's host
     /// or of every host.
     pub fn serves(self: Implementation, target: []const u8) bool {
