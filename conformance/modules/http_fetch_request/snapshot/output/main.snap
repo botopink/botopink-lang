@@ -1,0 +1,10 @@
+botopink-cell 1
+out GET https://example.com/a
+out 0
+out true
+out POST https://example.com/b
+out 1
+out true
+out NotAllowedOnHost
+out Network refused
+out Timeout

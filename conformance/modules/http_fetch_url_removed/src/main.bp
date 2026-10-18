@@ -1,0 +1,13 @@
+//// Decision 623 — `fetch(url)` is removed: `io.http.fetch` takes one `Request`, and a call with a
+//// `string` is refused as an unknown overload.
+
+import {io.http} from "std";
+
+fn probe(url: string) -> @Task<@Result<i32, http.HttpError>> {
+    val resp = try await http.fetch(url);
+    return resp.status;
+}
+
+pub fn main() {
+    probe("https://example.com");
+}

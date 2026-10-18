@@ -8,26 +8,30 @@
 ////              (`httpc:request/4`; requires `inets:start()` and,
 ////               for https URLs, `ssl:start()`).
 ////
-//// `fetch(url) -> @Task<@Result<Response, string>>` is the single GET
-//// surface (decision 432: the task that fails with the message — `await`
-//// answers the `@Result`, so the caller writes `try await http.fetch(url)`
-//// to propagate it). It maps the host binding
-//// `fetchHost` (`result: true`, decisions 431, 490) to the message of its
-//// `HostError` (decision 486): the node template's rejected `fetch` is
-//// `Error(HostError(…))` and a fulfilled one `Ok({ status, body })`; the
-//// erlang template ensures `inets`/`ssl` are
-//// started (`application:ensure_all_started/1`, idempotent) and lowers to a synchronous `httpc:request/4`, whose
-//// `{error, R}` becomes `Error(HostError(<R formatted>, …))`. Erlang is eager: `@Task<T>` is
-//// `T` there, so the caller's `await` is identity on that backend. An HTTP
-//// error status (404, 500) is a RESPONSE, not a failure: it is `Ok` with its
-//// `status`.
+//// `fetch(req: Request) -> @Task<@Result<Response, HttpError>>` is the one
+//// surface (decision 623; `fetch(url)` is gone): `Request(method, url,
+//// headers = [], body = null)` — a short GET is
+//// `fetch(Request(method: .Get, url: u))` — and a failure is a variant of
+//// `HttpError` (`NotAllowedOnHost`, `Network(message)`, `Timeout`), matched
+//// by variant. Decision 432: the task that fails with the error — `await`
+//// answers the `@Result`, so the caller writes `try await http.fetch(req)`
+//// to propagate it. It maps the host binding `fetchHost` (`result: true`,
+//// decisions 431, 490) to the `HttpError` of its `HostError` (decision 486):
+//// the node template's rejected `fetch` is `Error(HostError(…))` and a
+//// fulfilled one `Ok({ status, body })`; the erlang template ensures
+//// `inets`/`ssl` are started (`application:ensure_all_started/1`,
+//// idempotent) and lowers to a synchronous `httpc:request/4`, whose
+//// `{error, R}` becomes `Error(HostError(<R formatted>, …))`. A host text
+//// that names a timeout is `Timeout`, any other is `Network(message)`;
+//// `NotAllowedOnHost` is what a host that does not allow the request answers
+//// (the wasm `wasi:http` adapter, decisions 334, 393). Erlang is eager:
+//// `@Task<T>` is `T` there, so the caller's `await` is identity on that
+//// backend. An HTTP error status (404, 500) is a RESPONSE, not a failure: it
+//// is `Ok` with its `status`.
 ////
-//// Out of scope: methods other than GET, request headers/body,
-//// streaming responses. Richer shapes can land as separate `declare`s
-//// (`get`/`post`/`request`) on top of the same
-//// `@Task<@Result<Response, string>>` contract.
+//// Out of scope: streaming responses.
 ////
-//// BEAM and wasm targets are out of scope: `wat3` has no host fetch
+//// BEAM and wasm targets are out of scope here: `wat3` has no host fetch
 //// surface; BEAM follows the erlang template once an `httpc`-equivalent
 //// shim is ported. Either backend's caller will fail with a missing-
 //// external diagnostic at codegen time, matching the spec wave's
@@ -40,33 +44,90 @@ pub type Response(
     body: string,
 )
 
-// The GET as the host answers it, under `result: true` (decisions 431, 490):
-// the response, or every way the host fails as `Error(HostError(…))`.
+pub type Header(name: string, value: string)
+
+// The request method; `.Get` is the short GET.
+pub type Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+
+    // The method's name on the wire.
+    pub fn verb(self: Self) -> string {
+        return case self {
+            Get -> "GET";
+            Post -> "POST";
+            Put -> "PUT";
+            Delete -> "DELETE";
+            Patch -> "PATCH";
+            Head -> "HEAD";
+            Options -> "OPTIONS";
+        };
+    }
+}
+
+// What `fetch` sends (decision 623). A `body` rides `Post`, `Put` and `Patch`.
+pub type Request(
+    method: Method,
+    url: string,
+    headers: Header[] = [],
+    body: ?Bytes = null,
+)
+
+// Every way a `fetch` fails (decision 623).
+pub type HttpError {
+    NotAllowedOnHost,
+    Network(message: string),
+    Timeout,
+}
+
+// The request as the host takes it, under `result: true` (decisions 431, 490):
+// the response, or every way the host fails as `Error(HostError(…))`. The
+// headers cross as two lists, names and values in the same order; `hasBody`
+// says whether `body` is sent.
 //
-// Node: `globalThis.fetch($0)` chained with `.text()` flattens the
-// `Response → Promise<text>` shape into one `{ status, body }`; a rejection
-// anywhere in the chain is `Error(HostError(<message>, …))`
-// (`codegen/commonJS.zig` `wrapResult`).
+// Node: `globalThis.fetch(url, { method, headers, body })` chained with
+// `.text()` flattens the `Response → Promise<text>` shape into one
+// `{ status, body }`; a rejection anywhere in the chain is
+// `Error(HostError(<message>, …))` (`codegen/commonJS.zig` `wrapResult`).
+// `fetch` takes no body on `GET` / `HEAD`.
 //
 // Erlang: idempotently start `inets` + `ssl` (`application:ensure_all_started/1`,
 // so a second `fetch` call doesn't bomb on `{already_started, _}`), then call
-// `httpc:request/4`.
+// `httpc:request/4`; a body rides `post` / `put` / `patch` with the request's
+// `content-type` header (else `application/octet-stream`).
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
 // `{error, Reason}`, whose message is the reason formatted (decision 490).
 #[external(
-    .Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""", result: true),
-    .Erlang("""(fun(__U) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Node("""((__m, __u, __n, __v, __hb, __b) => globalThis.fetch(__u, { method: __m, headers: Object.fromEntries(__n.map((__k, __i) => [__k, __v[__i]])), body: (__hb && __m !== "GET" && __m !== "HEAD") ? __b : undefined }).then(__r => __r.text().then(__t => ({ status: __r.status, body: __t }))))($0, $1, $2, $3, $4, $5)""", result: true),
+    .Erlang("""(fun(__M, __U, __Ns, __Vs, __Hb, __B) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), __Hs = lists:zipwith(fun(__N, __V) -> {binary_to_list(__N), binary_to_list(__V)} end, __Ns, __Vs), __A = list_to_atom(string:lowercase(binary_to_list(__M))), __Rq = case __Hb andalso lists:member(__A, [post, put, patch]) of true -> __Ct = case [__C || {__K, __C} <- __Hs, string:lowercase(__K) =:= "content-type"] of [__C1 | _] -> __C1; [] -> "application/octet-stream" end, {binary_to_list(__U), __Hs, __Ct, __B}; false -> {binary_to_list(__U), __Hs} end, case httpc:request(__A, __Rq, [], []) of {ok, {{_, __Code, _}, _, __Rb}} -> {ok, #{status => __Code, body => iolist_to_binary(__Rb)}}; {error, __R} -> {error, __R} end end)($0, $1, $2, $3, $4, $5)""", result: true),
 )]
-declare fn fetchHost(url: string) -> @Task<@Result<Response, HostError>>;
+declare fn fetchHost(method: string, url: string, names: string[], values: string[], hasBody: bool, body: Bytes) -> @Task<@Result<Response, HostError>>;
 
-// Issue a GET request and resolve with the response, or fail with the
-// transport failure's message (`await` answers `Error(message)`, decision 432):
-// `fetchHost`'s `HostError` mapped to its message (decision 486).
-pub fn fetch(url: string) -> @Task<@Result<Response, string>> {
-    val r = await fetchHost(url);
+// A host text that names a timeout is `Timeout`, any other `Network`.
+fn hostFailure(e: HostError) -> HttpError {
+    val text = e.message.toLower();
+    if (text.contains("timeout") || text.contains("timed out"))
+        return HttpError.Timeout
+    else
+        return HttpError.Network(message: e.message);
+}
+
+// Issue the request and resolve with the response, or fail with the
+// `HttpError` (`await` answers `Error(httpError)`, decision 432):
+// `fetchHost`'s `HostError` mapped to a variant (decision 486).
+pub fn fetch(req: Request) -> @Task<@Result<Response, HttpError>> {
+    val names = req.headers.map({ h -> h.name });
+    val values = req.headers.map({ h -> h.value });
+    val r = await fetchHost(req.method.verb(), req.url, names, values, req.body
+        != null, req.body ?? Bytes.fromUtf8(""));
     return case r {
         Ok(resp) -> resp;
-        Error(e) -> throw e.message;
+        Error(e) -> throw hostFailure(e);
     };
 }
 
@@ -75,15 +136,15 @@ pub fn fetch(url: string) -> @Task<@Result<Response, string>> {
 // per-backend lib-test runners do not provide. The surface is exercised
 // indirectly through the parser §A3 + infer §A3 acceptance gates
 // (`modules/compiler-core/src/parser/tests/effect_rejections.zig`)
-// which pin `declare fn` with `#[@External.<Target>(…)]` as accepted.
+// which pin `declare fn` with `#[external(.<Target>(…))]` as accepted.
 //
 // A compile-only smoke fixture lives below to ensure callers can
-// `try await fetch(url)` from a `-> @Task<@Result<…>>` body without the type
+// `try await fetch(req)` from a `-> @Task<@Result<…>>` body without the type
 // checker tripping on the eager `Response` payload. The body is not executed
 // at test time (its `await` would issue a network call), but the fixture
 // type-checks at compile time.
 
-pub fn fetchStatus(url: string) -> @Task<@Result<i32, string>> {
-    val resp = try await fetch(url);
+pub fn fetchStatus(url: string) -> @Task<@Result<i32, HttpError>> {
+    val resp = try await fetch(Request(method: .Get, url: url));
     return resp.status;
 }

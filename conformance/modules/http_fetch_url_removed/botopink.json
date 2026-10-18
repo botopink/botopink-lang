@@ -1,0 +1,1 @@
+{ "name": "http_fetch_url_removed", "targets": ["commonJS", "erlang", "beam"] }

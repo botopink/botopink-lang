@@ -596,6 +596,24 @@ The `io.fs` functions have a host binding on commonJS, erlang and beam; the `was
 of wasm are not written yet (a build for wasm refuses a program that calls them, naming the host cell
 that has no binding).
 
+### The HTTP client, `io.http`
+
+`io.http.fetch` has one typed surface (decision 623): `fetch(req: Request) -> @Task<@Result<Response,
+HttpError>>`. `Request(method, url, headers = [], body = null)` holds the `Method` (`.Get`, `.Post`, `.Put`,
+`.Delete`, `.Patch`, `.Head`, `.Options`), the URL, the `Header`s (`name`, `value`) and an optional `Bytes`
+body; a short GET is the record with its defaults, never a second signature. A failure is a variant of
+`HttpError` — `NotAllowedOnHost`, `Network(message)` or `Timeout` — matched by variant, and an HTTP error
+status (404, 500) is an `Ok` response with its `status`.
+
+<!-- example: modules/http_fetch_request -->
+
+`fetch(url)` with a `string` is gone: the call is a type mismatch against `Request`.
+
+<!-- example: modules/http_fetch_url_removed -->
+
+`io.http` has a host binding on commonJS and erlang; the `wasi:http` binding of wasm is not
+written yet (a build for wasm refuses a program that calls `fetch`, naming the host cell that has no binding).
+
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
