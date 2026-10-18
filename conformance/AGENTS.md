@@ -1173,7 +1173,8 @@ function, a type with two annotations and a `val`, two calls per body, one named
 each run before `main`, four targets), `init_order_modules` (dependency order across two modules and
 `main`, an executor writing a registry `var`), `init_executor_from_library` (a library's decorator whose
 executor calls a private helper of its module, and a library module's own executor run in the program) and the
-refusals `init_executor_captures_build` (`compiler` inside an executor, `syntax-captures-build`) and
+refusals `init_executor_captures_build` (`compiler` inside an executor, `syntax-captures-build`; decision 614 made it
+`init_executor_reads_compiler`, the read evaluated at build, `out home`) and
 `init_output_outside_decorator` (`compiler-output-outside-decorator`) — each red on the parent binary, where
 `compile` was no member of `Compiler`. Decision 615 renamed the member `compiler.init` and these cells, and their
 siblings, from `compile_executor_*` / `compile_init_order_modules` / `compile_output_outside_decorator` to

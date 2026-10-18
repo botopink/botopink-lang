@@ -25,6 +25,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const diagnostics = @import("../comptime/diagnostics.zig");
+const memberFn = @import("../comptime/member_fn.zig");
 
 /// The builtin a refusal of this pass is written as: `@<name>("<code>",
 /// "<message>", "<hint>")`. No source can spell it (`@` takes a name).
@@ -140,6 +141,13 @@ const Ctx = struct {
     changed: bool = false,
     /// A `-> expr T` template that attaches a reference tree.
     custom: bool = false,
+    /// Decision 614 — the `val`s an executor's `compiler.*` reads became,
+    /// waiting for `walkStmts` to put them before the statement.
+    hoisted: std.ArrayListUnmanaged(ast.Stmt) = .empty,
+    /// How many such `val`s the body holds (their names, `__bp_build_<k>`).
+    hoistCount: usize = 0,
+    /// Inside an executor (`compiler.init(f)`'s `f`).
+    inExecutor: bool = false,
 };
 
 /// Read the program's new surface onto the machinery (see the file comment).
@@ -155,14 +163,14 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
     defer arena.deinit();
     const P = Pass{ .alloc = alloc, .scratch = arena.allocator() };
     for (program.decls) |*d| switch (d.*) {
-        .@"fn" => |*f| try expandFn(P, f.name, f.params, &f.returnType, &f.genericParams, f.body),
+        .@"fn" => |*f| try expandFn(P, f.name, f.params, &f.returnType, &f.genericParams, &f.body),
         .type_ => |*t| try expandType(P, t),
-        .behavior => |*b| for (b.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body),
-        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, &none, null, m.body),
-        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, &none, null, m.body),
+        .behavior => |*b| for (b.methods) |*m| if (m.body) |*body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body),
+        .implement => |*i| for (i.methods) |*m| try expandFn(P, m.name, m.params, &none, null, &m.body),
+        .extend => |*e| for (e.methods) |*m| try expandFn(P, m.name, m.params, &none, null, &m.body),
         .@"test" => |*t| {
             var ctx: Ctx = .{ .alloc = alloc, .scratch = P.scratch, .runTime = true };
-            try walkStmts(&ctx, t.body);
+            try walkStmts(&ctx, &t.body);
         },
         .val => |*v| {
             var ctx: Ctx = .{ .alloc = alloc, .scratch = P.scratch };
@@ -210,11 +218,12 @@ var none: ?ast.TypeRef = null;
 const custom_tree_name = "__bp_customTree";
 
 fn expandType(P: Pass, t: *ast.TypeDecl) error{OutOfMemory}!void {
-    for (t.methods) |*m| if (m.body) |body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body);
+    for (t.methods) |*m| if (m.body) |*body| try expandFn(P, m.name, m.params, &m.returnType, &m.genericParams, body);
     for (t.assocTypes) |*inner| try expandType(P, inner);
 }
 
-fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, gps: ?*[]ast.GenericParam, body: []ast.Stmt) error{OutOfMemory}!void {
+fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, gps: ?*[]ast.GenericParam, bodyRef: *[]ast.Stmt) error{OutOfMemory}!void {
+    const body = bodyRef.*;
     // Decision 578 (1) — a template by its text parameter answers its return
     // (`T`, or `anyvalue`: the type the built code has at each call) as the
     // tree the machinery knows; its returns are lifted as `-> expr T`'s were.
@@ -283,13 +292,28 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
         st.expr = .{ .binding = .{ .loc = st.expr.getLoc(), .kind = .{ .localBind = .{ .name = custom_tree_name, .value = c.args[0].value, .mutable = false } } } };
         ctx.custom = true;
     };
-    try walkStmts(&ctx, body);
-    if (keyword) try liftReturns(&ctx, body);
+    try walkStmts(&ctx, bodyRef);
+    if (keyword) try liftReturns(&ctx, bodyRef.*);
     if (ctx.custom) returnRef.*.?.generic.name = ast.expr_custom_type_name;
 }
 
-fn walkStmts(ctx: *Ctx, body: []ast.Stmt) error{OutOfMemory}!void {
-    for (body) |*s| try walkExpr(ctx, &s.expr);
+/// Each statement walked in place; the `val`s a statement's executor hoists
+/// (decision 614, `hoistBuildReads`) are put right before it.
+fn walkStmts(ctx: *Ctx, body: *[]ast.Stmt) error{OutOfMemory}!void {
+    var i: usize = 0;
+    while (i < body.len) : (i += 1) {
+        const mark = ctx.hoisted.items.len;
+        try walkExpr(ctx, &body.*[i].expr);
+        const added = ctx.hoisted.items.len - mark;
+        if (added == 0) continue;
+        const grown = try ctx.alloc.alloc(ast.Stmt, body.len + added);
+        @memcpy(grown[0..i], body.*[0..i]);
+        @memcpy(grown[i .. i + added], ctx.hoisted.items[mark..]);
+        @memcpy(grown[i + added ..], body.*[i..]);
+        body.* = grown;
+        i += added;
+        ctx.hoisted.shrinkRetainingCapacity(mark);
+    }
 }
 
 fn isIdent(e: ast.Expr, name: []const u8) bool {
@@ -510,6 +534,97 @@ fn treeRefusal(ctx: *Ctx, loc: ast.Loc) error{OutOfMemory}!ast.Expr {
     return refusal(ctx, loc, diagnostics.syntax_captures_build, "a tree holds the code the program runs, and `compiler` exists only while it compiles", "Read the compiler in the decorator's body and hand the tree a `comptime` value or a `syntax` (decision 575 (4), the tree rule).");
 }
 
+/// Decision 614 — every `compiler.*` read the executor `f` writes is
+/// evaluated at build: replaced by the name of a `val` that holds it
+/// (`__bp_build_<k>`, queued on `ctx.hoisted` for `walkStmts` to put before
+/// the `compiler.init` statement), so the executor reads it as the literal
+/// of its value, exactly as a `val` the body wrote before it. A read whose
+/// argument names a value of the executor — a parameter of a lambda in it, a
+/// value it binds — is refused at that argument (`compiler-arg-at-run-time`):
+/// the value exists only when the program runs.
+fn hoistBuildReads(ctx: *Ctx, f: *ast.Expr) error{OutOfMemory}!void {
+    const set = memberFn.boundNames(ctx.scratch, &.{}, &[_]ast.Stmt{.{ .expr = f.* }}) catch return error.OutOfMemory;
+    var bound: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = set.keyIterator();
+    while (it.next()) |k| try bound.append(ctx.scratch, k.*);
+    try hoistIn(ctx, f, bound.items);
+}
+
+fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory}!void {
+    const e = p.*;
+    // `compiler.name(d)!` is hoisted whole: the `!` reads the build's answer.
+    var read = false;
+    if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
+        if (compilerCall(e.call.kind.call.args[0].value.*) != null) read = true;
+    }
+    if (!read and compilerCall(e) != null) read = true;
+    if (!read and e == .identifier and e.identifier.kind == .identAccess and isCompiler(e.identifier.kind.identAccess.receiver.*)) read = true;
+    if (read) {
+        if (try runTimeArgument(ctx, e, bound)) |at| {
+            p.* = try refusal(ctx, at.loc, diagnostics.compiler_arg_at_run_time, try std.fmt.allocPrint(ctx.alloc, "`{s}` is a value of the executor, which exists only when the program runs, and `compiler` reads only what the build knows", .{at.name}), "A `compiler.*` read inside an executor is evaluated at build: hand it a parameter of the decorator or a `val` of its body, never a value the executor computes (decision 614).");
+            return;
+        }
+        const name = try std.fmt.allocPrint(ctx.alloc, "__bp_build_{d}", .{ctx.hoistCount});
+        ctx.hoistCount += 1;
+        const loc = e.getLoc();
+        const value = try box(ctx, e);
+        // The read itself, mapped as any read of the body is.
+        try walkExpr(ctx, value);
+        try ctx.hoisted.append(ctx.scratch, .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = value, .mutable = false } } } } });
+        p.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
+        return;
+    }
+    switch (p.*) {
+        inline else => |*inner| try hoistAny(ctx, inner, bound),
+    }
+}
+
+fn hoistAny(ctx: *Ctx, v: anytype, bound: []const []const u8) error{OutOfMemory}!void {
+    const T = @TypeOf(v.*);
+    if (T == ast.Expr) return hoistIn(ctx, v, bound);
+    if (T == ast.TypeRef or T == ast.Pattern) return;
+    switch (@typeInfo(T)) {
+        .pointer => |ptr| switch (ptr.size) {
+            .one => return hoistAny(ctx, @constCast(v.*), bound),
+            .slice => {
+                if (ptr.child == u8 or ptr.child == []const u8) return;
+                for (@constCast(v.*)) |*item| try hoistAny(ctx, item, bound);
+            },
+            else => {},
+        },
+        .optional => if (v.*) |_| try hoistAny(ctx, &(v.*.?), bound),
+        .@"struct" => |st| inline for (st.fields) |fl| {
+            if (fl.is_comptime) continue;
+            try hoistAny(ctx, &@field(v.*, fl.name), bound);
+        },
+        .@"union" => |u| if (u.tag_type != null) switch (v.*) {
+            inline else => |*inner| try hoistAny(ctx, inner, bound),
+        },
+        else => {},
+    }
+}
+
+const RunTimeArg = struct { name: []const u8, loc: ast.Loc };
+
+/// The first name a read's arguments write that the executor binds.
+fn runTimeArgument(ctx: *Ctx, read: ast.Expr, bound: []const []const u8) error{OutOfMemory}!?RunTimeArg {
+    if (bound.len == 0) return null;
+    const c = blk: {
+        if (compilerCall(read)) |c| break :blk c;
+        if (read == .call and read.call.kind == .call and read.call.kind.call.args.len == 1) if (compilerCall(read.call.kind.call.args[0].value.*)) |c| break :blk c;
+        return null;
+    };
+    for (c.args) |a| {
+        const body = try ctx.scratch.alloc(ast.Stmt, 1);
+        body[0] = .{ .expr = a.value.* };
+        const lambda: ast.FunctionExpr = .{ .loc = a.value.getLoc(), .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } };
+        for (memberFn.freeNames(ctx.scratch, lambda) catch return error.OutOfMemory) |n| {
+            if (contains(bound, n.name)) return .{ .name = n.name, .loc = n.loc };
+        }
+    }
+    return null;
+}
+
 fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     const e = p.*;
     const loc = e.getLoc();
@@ -574,6 +689,11 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         // parameter): the executor is `{ -> e() }`, a tree like any other.
         if (std.mem.eql(u8, c.callee, "init") and c.args.len == 1 and c.args[0].value.* != .function)
             c.args[0].value = try executorOf(ctx, c.args[0].value);
+        // Decision 614 — a `compiler.*` read inside the executor is
+        // evaluated at build: hoisted into a `val` of the body before the
+        // call, the executor reading it as a literal (575 (4)'s tree rule).
+        const executor = std.mem.eql(u8, c.callee, "init") and c.args.len == 1 and c.args[0].value.* == .function;
+        if (executor) try hoistBuildReads(ctx, c.args[0].value);
         // The arguments first: a member, a wrapper and an executor are trees.
         const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "init");
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;
@@ -588,8 +708,11 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             if (about and a.value.* == .identifier and a.value.identifier.kind == .ident) continue;
             const fnArg = a.value.* == .function;
             const saved = ctx.inTree;
+            const savedExecutor = ctx.inExecutor;
             if (tree and fnArg) ctx.inTree = true;
+            if (executor and fnArg) ctx.inExecutor = true;
             defer ctx.inTree = saved;
+            defer ctx.inExecutor = savedExecutor;
             if (tree and fnArg) try walkTree(ctx, a.value) else try walkExpr(ctx, a.value);
         }
         for (c.trailing) |*t| try walkAny(ctx, t);
@@ -599,7 +722,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     if (e == .identifier) switch (e.identifier.kind) {
         .ident => |n| {
             if (compiler_name != null and std.mem.eql(u8, n, compiler_name.?)) {
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else if (ctx.inTree) try treeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else if (ctx.inTree and !ctx.inExecutor) try treeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
                 return;
             }
             if (!ctx.inTree and contains(ctx.values, n) and !contains(ctx.shadow.items, n)) {
@@ -646,6 +769,7 @@ fn walkTree(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
 fn walkAny(ctx: *Ctx, v: anytype) error{OutOfMemory}!void {
     const T = @TypeOf(v.*);
     if (T == ast.Expr) return walkExpr(ctx, v);
+    if (T == []ast.Stmt) return walkStmts(ctx, v);
     if (T == ast.TypeRef or T == ast.Pattern) return;
     switch (@typeInfo(T)) {
         .pointer => |ptr| switch (ptr.size) {

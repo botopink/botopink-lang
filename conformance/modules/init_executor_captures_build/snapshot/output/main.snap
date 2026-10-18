@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: syntax-captures-build: a tree holds the code the program runs, and `compiler` exists only while it compiles
-at src/main.bp:9:34

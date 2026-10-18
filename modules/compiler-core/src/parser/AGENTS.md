@@ -962,10 +962,12 @@ each parameter's arrival — `syntax`, `comptime`, plain — for each, decision 
 template keeps the tree in a local, makes the template the custom carrier (the internal `__ExprCustom<T>`) and each
 return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
-`compiler-output-outside-decorator`, `syntax-captures-build` inside a member, a wrapper or an executor
-(`compiler.init(f)`; one named, `compiler.init(f)` with `f` no function written there, is the tree
-`{ -> f() }`, the call its tail, decision 409),
-`compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
+`compiler-output-outside-decorator`, `syntax-captures-build` inside a member or a wrapper,
+`compiler-member-unknown`). An executor (`compiler.init(f)`; one named, `compiler.init(f)` with `f` no function
+written there, is the tree `{ -> f() }`, the call its tail, decision 409) reads `compiler` at build (decision 614,
+`hoistBuildReads`): each `compiler.*` read in it becomes a `val __bp_build_<k>` of the body put right before the
+`compiler.init` statement (`walkStmts`), which the executor reads as a literal; a read whose argument names a value the
+executor binds is `compiler-arg-at-run-time` there, and a bare `compiler` in it `compiler-escapes`, which the checker reports there (`infer.zig` `refuseSurface`).
 
 A typed meta record's field is written `f: T`; one a decorator fills from a `syntax` parameter holds the
 tree (575 (4), the checker's `treeFed`). The parameter modifier is `syntax` (decision 616 renamed 575 (4)'s

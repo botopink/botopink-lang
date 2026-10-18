@@ -3585,7 +3585,8 @@ name there — a local, a field, a parameter.
 
 Its rules are read off the binding, not the spelling: in a body that runs when
 the program runs it is `compiler-at-run-time`, an output outside a decorator
-`compiler-output-outside-decorator`, a read inside a tree `syntax-captures-build`;
+`compiler-output-outside-decorator`, a read inside a member or a wrapper a decorator
+writes `syntax-captures-build` (inside an executor it is evaluated at build, decision 614);
 it is read only through its members, and passed as an argument or stored it is
 `compiler-escapes`, at the name.
 
@@ -3901,11 +3902,19 @@ type does not fit is refused at its annotation, the decorator's
 
 <!-- example: modules/init_executor_handle_mistyped -->
 
-`compiler` inside the executor is `syntax-captures-build`, at the keyword, and
-`compiler.init` in a function that is no decorator
-`compiler-output-outside-decorator`, at the member.
+A `compiler.*` call inside the executor is evaluated at build and enters the
+executor as a literal, exactly as a `val` read before it does (decision 614):
+`compiler.init({ -> register(compiler.name(decl)) })` and `val name =
+compiler.name(decl); compiler.init({ -> register(name) })` compile to the same
+init statement. A `compiler.*` argument that is a run-time value of the
+executor — a parameter of a lambda in it, a value it binds — is
+`compiler-arg-at-run-time`, at the argument, naming the value. `compiler.init`
+in a function that is no decorator is `compiler-output-outside-decorator`, at
+the member.
 
-<!-- example: modules/init_executor_captures_build -->
+<!-- example: modules/init_executor_reads_compiler -->
+
+<!-- example: modules/init_executor_compiler_arg_at_run_time -->
 
 <!-- example: modules/init_executor_answers -->
 

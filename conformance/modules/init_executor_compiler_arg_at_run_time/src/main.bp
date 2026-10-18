@@ -1,0 +1,21 @@
+//// Decision 614 — a `compiler.*` read inside an executor is evaluated at
+//// build, so its argument is what the build knows: `s`, a parameter of a
+//// lambda the executor runs, exists only when the program runs, and is
+//// refused at the argument (`compiler-arg-at-run-time`).
+
+import {compiler} from "std";
+
+fn registered(syntax decl: unknown) {
+    compiler.init({ ->
+        for (["a"]) { s ->
+            @print(compiler.text(s));
+        }
+    });
+}
+
+#[registered]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() {}
