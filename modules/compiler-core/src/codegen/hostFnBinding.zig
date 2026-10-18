@@ -1,7 +1,7 @@
 //! Decision 238's `body:` cell on every backend (decisions 259, 263, 575 (6)):
 //! a `declare fn` whose implementation for the build's target is `body:
 //! <name>` runs `<name>`, a private bodied `fn` of the same module with the
-//! same signature — `#[@external(.Erlang(body: tanBody), .Node(body: powBody),
+//! same signature — `#[@external(.Erlang(body: tanBody), .JavaScript(body: powBody),
 //! .Wasm(body: tanBody))]`, read as the binding text `fn:<name>`
 //! (`ast.Implementation.text`). The arguments are the declared parameters in
 //! order.
@@ -202,7 +202,7 @@ pub const Lowering = struct {
 /// The implementation `f` carries for `target`, with its variant's name.
 fn bindingFor(f: ast.FnDecl, target: Target) ?struct { []const u8, ast.Implementation } {
     return switch (target) {
-        .node => if (f.externalFor("node")) |r| .{ "Node", r } else null,
+        .node => if (f.externalFor("node")) |r| .{ "JavaScript", r } else null,
         .erlang => if (f.externalFor("erlang")) |r| .{ "Erlang", r } else null,
         .beam => if (f.externalFor("erlang")) |r| .{ "Erlang", r } else null,
     };

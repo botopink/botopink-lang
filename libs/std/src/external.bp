@@ -3,7 +3,7 @@
 //// A bodyless `declare fn` — top-level or a type's, static included — names
 //// the code each target runs in its place with `external`, one std function:
 ////
-////     #[external(.Erlang("lists:member($1, $0)"), .Node("$0.includes($1)"))]
+////     #[external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"))]
 ////     declare fn contains(self: Self<T>, x: T) -> bool;
 ////
 //// Outside std the annotation is written `#[@external(…)]`. Each source is an
@@ -63,12 +63,13 @@ pub type WasiAdapter {
     Attempt,
 }
 
-// One target's code for a `declare fn`.
+// One target's code for a `declare fn`: the variant names the language the
+// template is written in (decision 618), `JavaScript` the one commonJS runs.
 //
 // - `template`: the host's code. With `$0`, `$1`, … it is a template over the
 //   declared parameters — on a method `$0` is `self` (decision 5); `$args` is
 //   every parameter. Without a marker it is a bare host symbol (`"mod:sym"`
-//   on erlang, `"propertyName"` on a method on node).
+//   on erlang, `"propertyName"` on a method in JavaScript).
 // - `body`: a private bodied `fn` of the same module, with the declaration's
 //   parameter and return types — the algorithm written in botopink
 //   (decisions 238, 305).
@@ -83,7 +84,7 @@ pub type WasiAdapter {
 //   `template` —, beside `host:` and `needs:`.
 pub type Implementation {
     Erlang(template: ?string = null, body: ?unknown = null, inline: bool = false, result: bool = false),
-    Node(template: ?string = null, body: ?unknown = null, result: bool = false),
+    JavaScript(template: ?string = null, body: ?unknown = null, result: bool = false),
     Typescript(template: string, result: bool = false),
     Wasm(template: ?string = null, op: ?string = null, std: ?string = null, wasi: ?WasiAdapter = null, body: ?unknown = null, host: ?WasmHost = null, needs: WasmNeed[] = [], result: bool = false),
 }

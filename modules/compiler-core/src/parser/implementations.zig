@@ -5,7 +5,7 @@
 //! ..sources: Implementation[])` (`libs/std/src/external.bp`), whose body hands
 //! each source to `compiler.implement`. Its sources are values of the enum
 //! `Implementation`, written as its constructor — `.Erlang("lists:member($1,
-//! $0)")`, `.Wasm(op: "f64.floor")`, `Implementation.Node("…", result:
+//! $0)")`, `.Wasm(op: "f64.floor")`, `Implementation.JavaScript("…", result:
 //! true)` —, so what the body implements is what the annotation writes: this
 //! pass reads each source where the parser stands (one per parse, the prelude's
 //! included, so every backend reads `implementations` alone) and the checker
@@ -38,7 +38,7 @@ pub fn isSourceAnnotation(a: ast.Annotation) bool {
 /// kept in step by the test below): a positional argument fills the next one.
 pub const variant_fields = [_]struct { target: ast.Implementation.Target, fields: []const []const u8 }{
     .{ .target = .erlang, .fields = &.{ "template", "body", "inline", "result" } },
-    .{ .target = .node, .fields = &.{ "template", "body", "result" } },
+    .{ .target = .javascript, .fields = &.{ "template", "body", "result" } },
     .{ .target = .typescript, .fields = &.{ "template", "result" } },
     .{ .target = .wasm, .fields = &.{ "template", "op", "std", "wasi", "body", "host", "needs", "result" } },
 };

@@ -2261,7 +2261,7 @@ pub const Annotation = struct {
         trailingComma: bool = false,
         /// True when the argument list is written with a comma before its
         /// `)` — it prints one argument per line (decision 166's rule:
-        /// `#[@external(\n    .Erlang(…),\n    .Node(…),\n)]`).
+        /// `#[@external(\n    .Erlang(…),\n    .JavaScript(…),\n)]`).
         argsTrailingComma: bool = false,
         /// Comments between the previous block and this block's `#[`
         /// (only on the annotation that opens a block).
@@ -2373,7 +2373,7 @@ pub const Implementation = struct {
 
     pub const Target = enum {
         erlang,
-        node,
+        javascript,
         typescript,
         wasm,
 
@@ -2381,7 +2381,7 @@ pub const Implementation = struct {
         pub fn variant(self: Target) []const u8 {
             return switch (self) {
                 .erlang => "Erlang",
-                .node => "Node",
+                .javascript => "JavaScript",
                 .typescript => "Typescript",
                 .wasm => "Wasm",
             };
@@ -2390,17 +2390,18 @@ pub const Implementation = struct {
         /// The target a variant name (`Erlang`) names, or null.
         pub fn ofVariant(name: []const u8) ?Target {
             if (std.mem.eql(u8, name, "Erlang")) return .erlang;
-            if (std.mem.eql(u8, name, "Node")) return .node;
+            if (std.mem.eql(u8, name, "JavaScript")) return .javascript;
             if (std.mem.eql(u8, name, "Typescript")) return .typescript;
             if (std.mem.eql(u8, name, "Wasm")) return .wasm;
             return null;
         }
 
-        /// The target a lookup member (`erlang`, `beam`, `node`,
-        /// `typescript`, `wasm`) reads, compared without case, or null.
+        /// The target a lookup member (`erlang`, `beam`, `node` — the
+        /// commonJS backend's lookup —, `javascript`, `wasm`) reads, compared
+        /// without case, or null.
         pub fn ofMember(member: []const u8) ?Target {
             if (std.ascii.eqlIgnoreCase(member, "erlang") or std.ascii.eqlIgnoreCase(member, "beam")) return .erlang;
-            if (std.ascii.eqlIgnoreCase(member, "node")) return .node;
+            if (std.ascii.eqlIgnoreCase(member, "node") or std.ascii.eqlIgnoreCase(member, "javascript")) return .javascript;
             if (std.ascii.eqlIgnoreCase(member, "typescript")) return .typescript;
             if (std.ascii.eqlIgnoreCase(member, "wasm")) return .wasm;
             return null;
