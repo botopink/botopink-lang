@@ -1166,6 +1166,8 @@ fn orderReaders(
     var other_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
     var reader_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
     var other_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
+    // Indexes into `readers` of the dependencies' readers (decision 551).
+    var dependency_readers: std.ArrayListUnmanaged(usize) = .empty;
     for (modules) |m| {
         // A module read back from the code cache's level B is no reader (a
         // reader's package is never stored) and imports none: not parsed.
@@ -1189,11 +1191,33 @@ fn orderReaders(
             try reader_programs.append(scratch, program);
             try reader_tokens.append(scratch, tokens);
             try reflection.readers.put(arena, m.path, {});
+            // Decision 551 — a dependency's reader answers for that
+            // dependency alone, so it is analysed after the other modules of
+            // its own package and before the packages that import it.
+            if (m.package.len > 0) {
+                try dependency_readers.append(scratch, readers.items.len - 1);
+                continue;
+            }
         } else {
             try others.append(arena, m);
             try other_programs.append(scratch, program);
             try other_tokens.append(scratch, tokens);
         }
+    }
+    // Each dependency reader joins `others` right after the last module of its
+    // package (before the first module of the root package when it has none).
+    for (dependency_readers.items) |ri| {
+        const r = readers.items[ri];
+        var at: usize = others.items.len;
+        var last: ?usize = null;
+        for (others.items, 0..) |o, k| {
+            if (std.mem.eql(u8, o.package, r.package)) last = k;
+            if (at == others.items.len and o.package.len == 0) at = k;
+        }
+        if (last) |k| at = k + 1;
+        try others.insert(arena, at, r);
+        try other_programs.insert(scratch, at, reader_programs.items[ri]);
+        try other_tokens.insert(scratch, at, reader_tokens.items[ri]);
     }
     // Decision 551 — a module whose call had a catalogue default answered in
     // the first session is analysed after every other module but the
@@ -1218,9 +1242,12 @@ fn orderReaders(
         try others.appendSlice(arena, late.items);
     };
     if (readers.items.len == 0 and late.items.len == 0) return modules;
-    try others.appendSlice(arena, readers.items);
-    try other_programs.appendSlice(scratch, reader_programs.items);
-    try other_tokens.appendSlice(scratch, reader_tokens.items);
+    for (readers.items, reader_programs.items, reader_tokens.items, 0..) |r, rp, rt, ri| {
+        if (std.mem.indexOfScalar(usize, dependency_readers.items, ri) != null) continue;
+        try others.append(arena, r);
+        try other_programs.append(scratch, rp);
+        try other_tokens.append(scratch, rt);
+    }
     for (others.items, other_programs.items, other_tokens.items, 0..) |m, maybe_program, tokens, idx| {
         const program = maybe_program orelse continue;
         scan: for (program.decls) |d| switch (d) {
@@ -1261,12 +1288,13 @@ fn orderReaders(
                         // A `.key` is one module: the package plus the path.
                         .key => |key| for (readers.items) |r| {
                             if (std.mem.eql(u8, r.path, m.path) or !std.mem.eql(u8, key, r.path)) continue;
+                            if (answersForItsPackage(r, m)) continue;
                             const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
                             try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
                             break :scan;
                         },
                         .module => |path| for (readers.items) |r| {
-                            if (std.mem.eql(u8, r.path, m.path)) continue;
+                            if (std.mem.eql(u8, r.path, m.path) or answersForItsPackage(r, m)) continue;
                             if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
                             const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
                             try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
@@ -1280,6 +1308,13 @@ fn orderReaders(
         };
     }
     return others.items;
+}
+
+/// Decision 551 — a dependency's reader answers for that dependency alone, so
+/// a module of another package imports it freely (`orderReaders` analyses it
+/// after its own package's modules, before the packages that import it).
+fn answersForItsPackage(reader: Module, importer: Module) bool {
+    return reader.package.len > 0 and !std.mem.eql(u8, reader.package, importer.package);
 }
 
 /// Where `import <handle>` writes its handle: the identifier after an

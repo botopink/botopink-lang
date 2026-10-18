@@ -1,0 +1,14 @@
+//// Decision 551 — a catalogue read in a dependency's decorator body answers
+//// for that dependency alone, so this program imports the module of the
+//// decorator and uses it: the reading module is no reader of the program.
+
+import {marks.counted} from "lib";
+
+#[counted]
+pub fn job() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(job());
+}
