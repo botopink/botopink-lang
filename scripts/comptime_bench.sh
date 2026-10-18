@@ -131,18 +131,16 @@ gen_project() {
 EOF
     {
         cat <<'BP'
-pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val t = q.text();
-    val host = "0.0.0.0";
-    val port = 8000 + t.length;
-    val server = #(host, port);
-    val debug = true;
-    return @expr(#(server, debug));
+import {compiler} from "std";
+
+pub fn conf(expr q: string) -> #(#(string, i32), bool) {
+    val port = 8000 + compiler.text(q).length;
+    return compiler.build("#(#(\"0.0.0.0\", " + port.toString() + "), true)");
 }
 
 BP
         for ((i = 0; i < n; i++)); do
-            printf 'val c%d = conf "cfg-%d";\n' "$i" "$i"
+            printf 'val c%d = conf @`cfg-%d`;\n' "$i" "$i"
         done
         printf '\nfn main() {\n'
         [ "$n" -gt 0 ] && printf '    @println(c0);\n'

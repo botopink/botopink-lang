@@ -235,7 +235,7 @@ expect_out "and \`erl\` on PATH is OTP 29" "test names the refused release"
 # release check (decision 228), before anything is compiled.
 echo "==> the OTP release: comptime spawns no erl on any target; an erlang build is refused by its release check"
 P="$(project otp-comptime)"
-printf '%s\n' 'pub fn twice(comptime q: @Expr<string>) -> @Expr<i32> {' '    val n = q.text().length;' '    return @expr(n * 2);' '}' '' 'pub fn main() {' '    @print(twice "abcd");' '}' >"$P/src/main.bp"
+printf '%s\n' 'import {compiler} from "std";' '' 'pub fn twice(expr q: string) -> i32 {' '    return compiler.build((compiler.text(q).length * 2).toString());' '}' '' 'pub fn main() {' '    @print(twice @`abcd`);' '}' >"$P/src/main.bp"
 mkdir -p "$WORK/otp29rec"; : >"$WORK/otp29rec.log"
 printf '#!/bin/sh\necho "erl $*" >>"%s"\nprintf 29\n' "$WORK/otp29rec.log" >"$WORK/otp29rec/erl"
 chmod +x "$WORK/otp29rec/erl"
