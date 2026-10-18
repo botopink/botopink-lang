@@ -15133,6 +15133,12 @@ const Emitter = struct {
             try self.refuseWideTaskValues(cc);
             if (self.mode == .gc and std.mem.eql(u8, hb.binding.wasi.name, "spawn_all")) try self.gcSpawnAllAnswers(cc);
         };
+        // 144 B-150 — `e.make()` where `make` is a function-typed field of the
+        // receiver's record is the field's value, even when the module also
+        // declares a top-level `fn make`: the field is the receiver's own.
+        if (cc.receiver) |recv| if (cc.calleeExpr == null and !cc.is_builtin) if (self.recordTypeOfExpr(recv.*)) |rty| {
+            if (self.fieldOffsetIn(rty, cc.callee) != null) if (try self.lowerValueCall(cc)) return;
+        };
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is

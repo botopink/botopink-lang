@@ -1876,6 +1876,12 @@ any function expression does:
 
 <!-- example: modules/fn_expr_typed_field_mismatch -->
 
+A type's method named as a value, `Users.make`, is the type's method wherever it is written —
+bound to a `val` or handed as a record constructor's argument — never the module's own `fn make`
+declared beside the type:
+
+<!-- example: modules/static_method_as_record_field_argument -->
+
 A lambda passed for a function's parameter reads its parameters as the
 parameter's function type says: `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa`
 reads `Pessoa`'s `nome` though another record declares a field of the name,
@@ -3931,6 +3937,8 @@ is the checker's own refusal at the annotation, the `compiler.init` call its
 <!-- example: modules/init_executor_handle_on_method -->
 
 <!-- example: modules/init_executor_handle_on_type_as_value -->
+
+<!-- example: modules/init_executor_handle_not_module_name -->
 
 A `compiler.*` call inside the executor is evaluated at build and enters the
 executor as a literal, exactly as a `val` read before it does (decision 614):
