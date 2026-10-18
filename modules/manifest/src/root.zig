@@ -103,6 +103,9 @@ test "source extensions: one list, .bpp a module, .d.bp a module named x.d" {
 /// text (for the caret line) and a 1-based line/column plus span in bytes.
 pub const Located = struct {
     message: []const u8,
+    /// The refusal's code, when it has one (`dependency-target-missing`,
+    /// decision 676): rendered `error[<code>]: <message>`.
+    code: ?[]const u8 = null,
     file: []const u8,
     source: []const u8,
     line: usize,
@@ -119,7 +122,7 @@ pub const Located = struct {
     ///
     pub fn render(self: Located, w: *std.Io.Writer) !void {
         const line_w = digitWidth(self.line);
-        try w.print("error: {s}\n", .{self.message});
+        if (self.code) |c| try w.print("error[{s}]: {s}\n", .{ c, self.message }) else try w.print("error: {s}\n", .{self.message});
         try w.splatByteAll(' ', line_w);
         try w.print("--> {s}:{d}:{d}\n", .{ self.file, self.line, self.col });
         try w.splatByteAll(' ', line_w + 1);

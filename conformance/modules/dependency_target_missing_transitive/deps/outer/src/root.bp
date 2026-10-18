@@ -1,0 +1,7 @@
+//// A fixture library that declares every target and depends on `inner`.
+
+import {core} from "inner";
+
+pub fn wrap() -> string {
+    return "[" + core() + "]";
+}

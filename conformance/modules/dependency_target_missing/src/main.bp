@@ -1,0 +1,12 @@
+//// Decision 676 — a declared dependency's `"targets"` hold every target of
+//// the package that declares it: `kit` declares `commonJS` alone and this
+//// program declares every target, so its manifest is refused at the
+//// dependency's line, naming each missing target — on every build target,
+//// `commonJS` included.
+
+import {greet} from "kit";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print(greet());
+}

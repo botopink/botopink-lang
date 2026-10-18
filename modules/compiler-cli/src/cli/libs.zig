@@ -377,6 +377,7 @@ fn loadClosure(
     // directory by one of them is refused, not silently shadowed.
     for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
     for (deps) |dep| try closure.visit(project, dep.name);
+    try closure.refuseMissingTargets(project, deps);
     try closure.orderByLevel();
     try refuseNameTwice(arena, io, project, project_dir, workspace, closure.order.items);
     // One OTP release across the closure (decision 228): every package that
@@ -583,6 +584,49 @@ const DepClosure = struct {
         const done = self.packages.getPtr(name).?;
         done.state = .placed;
         try self.order.append(self.arena, done.*);
+    }
+
+    /// The targets a manifest declares: its `"targets"`, every target when
+    /// it writes none.
+    fn declaredTargets(m: manifest.Manifest) []const []const u8 {
+        return m.targets orelse &.{ "commonJS", "erlang", "beam", "wasm" };
+    }
+
+    /// Decision 676 — a declared dependency's `"targets"` hold every target
+    /// of the package that declares it, whatever target this build is for:
+    /// the project's dependencies against the project's targets, and each
+    /// package's own against its own, so the whole graph builds for every
+    /// target of the root. Refused at the dependant's manifest, on the
+    /// dependency's line, naming the package and each missing target.
+    fn refuseMissingTargets(self: *DepClosure, project: manifest.Manifest, deps: []const manifest.DepEntry) !void {
+        try self.checkTargets(project, deps);
+        for (self.order.items) |pkg| try self.checkTargets(pkg.manifest, pkg.manifest.dependencies);
+    }
+
+    fn checkTargets(self: *DepClosure, by: manifest.Manifest, deps: []const manifest.DepEntry) !void {
+        const wanted = declaredTargets(by);
+        for (deps) |dep| {
+            const pkg = self.packages.get(dep.name) orelse continue;
+            var missing: std.ArrayListUnmanaged(u8) = .empty;
+            var count: usize = 0;
+            for (wanted) |t| {
+                if (pkg.manifest.supportsTarget(t)) continue;
+                if (count > 0) try missing.appendSlice(self.arena, ", ");
+                try missing.appendSlice(self.arena, t);
+                count += 1;
+            }
+            if (count == 0) continue;
+            const msg = try std.fmt.allocPrint(self.arena, "{s} declares no {s} target{s} — a dependency's \"targets\" hold every target of the package that declares it", .{ dep.name, missing.items, if (count > 1) "s" else "" });
+            var loc = by.locateEntryAt("dependencies", dep.name, msg);
+            loc.code = "dependency-target-missing";
+            // Located relative to the working directory, as `resolve` locates.
+            var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const cwd = cwd_buf[0..try std.process.currentPath(self.io, &cwd_buf)];
+            if (std.fs.path.isAbsolute(loc.file) and std.mem.startsWith(u8, loc.file, cwd))
+                loc.file = try std.fs.path.relative(self.arena, cwd, null, cwd, loc.file);
+            loc.print();
+            return error.LibManifestInvalid;
+        }
     }
 
     /// Decision 660 — the order of the program's init list, which is the

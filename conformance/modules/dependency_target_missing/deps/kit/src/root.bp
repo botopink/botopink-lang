@@ -1,0 +1,5 @@
+//// A fixture library that declares one target.
+
+pub fn greet() -> string {
+    return "hello";
+}

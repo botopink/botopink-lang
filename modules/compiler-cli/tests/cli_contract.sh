@@ -1273,7 +1273,9 @@ mkdir -p "$TWS/modules/mid/src"
 printf '{ "name": "mid", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"],\n  "dependencies": { "side": { "workspace": true } } }\n' >"$TWS/modules/mid/botopink.json"
 printf 'import { mark } from "side";\n\npub fn midMark() -> string {\n    return mark();\n}\n' >"$TWS/modules/mid/src/root.bp"
 TAPP="$WORK/transapp"; rm -rf "$TAPP"; mkdir -p "$TAPP/src"
-printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",\n  "dependencies": { "mid": { "path": "%s" } } }\n' "$TWS/modules/mid" >"$TAPP/botopink.json"
+# Decision 676: `mid` inherits its workspace's `commonJS` alone, so the app
+# that declares it declares no other target.
+printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "targets": ["commonJS"], "entry": "main.bp",\n  "dependencies": { "mid": { "path": "%s" } } }\n' "$TWS/modules/mid" >"$TAPP/botopink.json"
 printf 'import {io.terminal.print} from "std";\nimport { midMark } from "mid";\n\npub fn main() {\n    print(midMark());\n}\n' >"$TAPP/src/main.bp"
 run "$TAPP" build
 expect_code 0 "build with a sidecar two dependencies away"

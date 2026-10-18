@@ -1,0 +1,5 @@
+//// A fixture library that declares two targets.
+
+pub fn core() -> string {
+    return "core";
+}
