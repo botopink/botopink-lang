@@ -1,0 +1,14 @@
+//// An annotation `#[name]` whose `name` resolves to a value, not a decorator,
+//// used to be dropped without a word. `limit` is a `val`: the annotation is
+//// refused where it is written, naming that it is a value.
+
+val limit = 3;
+
+#[limit]
+pub fn run() -> i32 {
+    return limit;
+}
+
+pub fn main() {
+    @print(run());
+}

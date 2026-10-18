@@ -434,6 +434,10 @@ pub fn component(syntax decl: unknown) {
     @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
 }
 
+val port = "port";
+
+fn value(expr decl: unknown, comptime key: string) { }
+
 #[component]
 type Service(
     #[value(port)]
@@ -1622,6 +1626,8 @@ function __bp_print() {
 
 function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
 
+const port = "port";
+
 class Service {
     constructor(port, name) {
         this.port = port;
@@ -1634,7 +1640,7 @@ function collect(xs) {
     let out = [];
     out = out.concat(["start"]);
     xs.forEach((x) => {
-    const doubled = __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:27:25");
+    const doubled = __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:31:25");
     return out.push(("v" + doubled.toString()));
 });
     return out;
@@ -1657,11 +1663,15 @@ function _botopink_main() {
 }
 if (require.main === module) _botopink_main();
 
-Object.defineProperty(exports, "__bp_priv__", { value: { Service, collect, main, compiler, wireService } });
+Object.defineProperty(exports, "__bp_priv__", { value: { port, Service, collect, main, compiler, wireService } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
+
+
+
+
 
 
 

@@ -1429,6 +1429,10 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\    @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
         \\}
         \\
+        \\val port = "port";
+        \\
+        \\fn value(expr decl: unknown, comptime key: string) { }
+        \\
         \\#[component]
         \\type Service(
         \\    #[value(port)]

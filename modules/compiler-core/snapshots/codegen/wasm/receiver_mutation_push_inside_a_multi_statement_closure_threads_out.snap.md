@@ -229,6 +229,10 @@ pub fn component(syntax decl: unknown) {
     @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
 }
 
+val port = "port";
+
+fn value(expr decl: unknown, comptime key: string) { }
+
 #[component]
 type Service(
     #[value(port)]
@@ -1366,7 +1370,9 @@ import {compiler} from "std";
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
+  (start $__init_strs)
   (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $port (mut (ref null $str)) (ref.null $str))
   (func $collect (param $xs (ref null $arr_i32)) (result (ref null $arr_any))
     (local $__mem0 i32)
     (local $out (ref null $arr_any))
@@ -1439,6 +1445,10 @@ import {compiler} from "std";
   (func $wireService (export "wireService") (result (ref null $str))
     global.get $__s4
     return
+  )
+  (func $__init_globals
+    global.get $__s5
+    global.set $port
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -2166,7 +2176,7 @@ import {compiler} from "std";
   )
   (data $__d0 "start")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: * on i32 at main.bp:27:25")
+  (data $__d1 "integer overflow: * on i32 at main.bp:31:25")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (data $__d2 "v")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
@@ -2174,7 +2184,8 @@ import {compiler} from "std";
   (global $__s3 (mut (ref null $str)) (ref.null $str))
   (data $__d4 "Service(port: prop(port), name: makestring())")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (start $__init_strs)
+  (data $__d5 "port")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
   (func $__init_strs
     i32.const 0
     i32.const 5
@@ -2196,6 +2207,11 @@ import {compiler} from "std";
     i32.const 45
     array.new_data $str $__d4
     global.set $__s4
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d5
+    global.set $__s5
+    call $__init_globals
   )
   (@custom "botopink.needs" "gc\0a")
 )

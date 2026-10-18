@@ -5320,6 +5320,13 @@ A name through the handle that is not one of the module's decorators is
 (`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
 it adds would have no handle to name the runtime by.
 
+An annotation `#[name]` whose `name` resolves to no decorator (and no annotation
+type, no template function) is `error[annotation-not-a-decorator]`, located at the
+annotation and naming what `name` is: nothing (`#[nope]`), a namespace (`#[check]`
+where `check` is a module), or a value (`#[limit]` where `limit` is a `val` or a
+function that is no decorator). It used to be dropped without a word and the
+program built (`modules/annotation_not_decorator_{unbound,namespace,value}`).
+
 <!-- example: test/mocks_decorator_double -->
 
 Two more limits carried over from the old library: a matched `thenThrow` is a

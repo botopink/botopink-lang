@@ -360,6 +360,10 @@ pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
 /// (`#[@TotallyMadeUp.Nonsense(whatever: 42)]`). It used to parse, check and
 /// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
 pub const unknown_annotation: []const u8 = "unknown-annotation";
+/// A bare `#[name]` whose `name` resolves to no decorator: nothing at all, a
+/// namespace (a module), or a value. It used to be dropped without a word and
+/// the program built (B-145).
+pub const annotation_not_a_decorator: []const u8 = "annotation-not-a-decorator";
 
 /// Decision 575 (6) — a bodyless `declare fn` (top-level, a type's, static
 /// included) no annotation gave an implementation (`compiler.implement`).

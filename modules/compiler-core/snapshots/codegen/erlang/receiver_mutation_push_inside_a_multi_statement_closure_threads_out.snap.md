@@ -270,6 +270,10 @@ pub fn component(syntax decl: unknown) {
     @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
 }
 
+val port = "port";
+
+fn value(expr decl: unknown, comptime key: string) { }
+
 #[component]
 type Service(
     #[value(port)]
@@ -1401,7 +1405,10 @@ import {compiler} from "std";
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export([wireService/0, '__bp_priv__collect'/1, '__bp_priv__main'/0]).
+-export([wireService/0, '__bp_priv__port'/0, '__bp_priv__collect'/1, '__bp_priv__main'/0]).
+
+port() ->
+    <<"port">>.
 
 %% type Service: port, name
 
@@ -1409,7 +1416,7 @@ collect(Xs) ->
     Out = [],
     Out@1 = (Out ++ [<<"start">>]),
     Out@4 = lists:foldl(fun(X, Out@2) ->
-        Doubled = '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:27:25">>),
+        Doubled = '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:31:25">>),
         Out@3 = (Out@2 ++ [<<"v", ('__bp_text'(erlang:integer_to_binary(Doubled)))/binary>>]),
         Out@3
     end, Out@1, Xs),
@@ -1459,6 +1466,8 @@ wireService() ->
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_priv__port'() -> port().
 
 '__bp_priv__collect'(A0) -> collect(A0).
 

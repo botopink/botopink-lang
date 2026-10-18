@@ -1076,7 +1076,7 @@ written, on every target by its snapshot; it was `import_ambiguous_use`, the use
 its sibling `import_ambiguous_unused` — the import unread compiled — is gone with the shorthand),
 `modules/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
 gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `snapshot/targets/wasm/`),
-`modules/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
+`modules/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`), `modules/annotation_not_decorator_{unbound,namespace,value}` (a bare `#[name]` naming no decorator is `annotation-not-a-decorator`),
 `modules/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
 `modules/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
 defaults and labels, at expression and statement position) and `modules/case_bool_literal_arms` (`true` /

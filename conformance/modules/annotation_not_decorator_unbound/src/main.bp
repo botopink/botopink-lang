@@ -1,0 +1,12 @@
+//// An annotation `#[name]` whose `name` resolves to no decorator used to be
+//// dropped without a word, and the program built. `nope` is declared nowhere:
+//// the annotation is refused where it is written, naming that it is nothing.
+
+#[nope]
+pub fn run() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(run());
+}

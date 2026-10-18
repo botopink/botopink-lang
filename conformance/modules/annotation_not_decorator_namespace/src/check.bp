@@ -1,0 +1,5 @@
+//// A module whose name an annotation uses as if it were a decorator.
+
+pub fn ok() -> bool {
+    return true;
+}

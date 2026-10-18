@@ -4766,29 +4766,70 @@ const builtin_annotation_families = [_][]const u8{ "BeamMemory", "Stage" };
 /// `@Host` name what replaced them (decision 575 (6)).
 fn refuseUnknownAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try refuseUnknownAnnotationList(env, f.annotations),
-        .val => |v| try refuseUnknownAnnotationList(env, v.annotations),
+        .@"fn" => |f| try refuseUnknownAnnotationList(env, program, f.annotations),
+        .val => |v| try refuseUnknownAnnotationList(env, program, v.annotations),
         .type_ => |tdecl| {
-            try refuseUnknownAnnotationList(env, tdecl.annotations);
-            if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| try refuseUnknownAnnotationList(env, fld.annotations);
-            for (tdecl.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
+            try refuseUnknownAnnotationList(env, program, tdecl.annotations);
+            if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| try refuseUnknownAnnotationList(env, program, fld.annotations);
+            for (tdecl.methods) |m| try refuseUnknownAnnotationList(env, program, m.annotations);
         },
         .behavior => |i| {
-            try refuseUnknownAnnotationList(env, i.annotations);
-            for (i.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
+            try refuseUnknownAnnotationList(env, program, i.annotations);
+            for (i.methods) |m| try refuseUnknownAnnotationList(env, program, m.annotations);
         },
         else => {},
     };
 }
 
-fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferError!void {
+/// B-145 — a bare `#[name]` that names no decorator, no annotation type and
+/// no template function is refused at the annotation, naming what `name` is:
+/// nothing, a namespace (a module of the package or an imported one), or a
+/// value (a `val`, a function that is no decorator).
+fn refuseAnnotationNotDecorator(env: *Env, program: ast.Program, a: ast.Annotation) InferError!void {
+    // A template annotation is judged by `checkTemplateAnnotations`.
+    if (a.template != null or templateFnNamed(env, a.name) != null) return;
+    const head = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
+    var namespace = env.namespaces.modules.contains(head) or env.namespaces.paths.contains(head);
+    var value = false;
+    for (program.decls) |d| switch (d) {
+        .mod => |m| if (std.mem.eql(u8, m.name, head)) {
+            namespace = true;
+        },
+        .val => |v| if (std.mem.eql(u8, v.name, a.name)) {
+            value = true;
+        },
+        .@"fn" => |f| if (std.mem.eql(u8, f.name, a.name)) {
+            value = true;
+        },
+        else => {},
+    };
+    const what: []const u8 = if (namespace)
+        "a namespace"
+    else if (value or env.lookup(a.name) != null)
+        "a value"
+    else
+        "nothing";
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` names {s}, not a decorator", .{ diagnostics.annotation_not_a_decorator, a.name, what });
+    var err = TypeError.custom(msg, "An annotation names a decorator — a `pub fn` whose first parameter is `comptime decl` of the declaration handle type — or an annotation type of your own; declare it, or delete the annotation.");
+    if (a.loc) |l| err = err.withLoc(l);
+    env.lastError = err;
+    return error.TypeError;
+}
+
+fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const ast.Annotation) InferError!void {
     for (anns) |a| {
         if (!a.is_builtin) {
             // `#[mocks.mokc]` through a std module handle names a decorator
             // of that module or nothing: it used to do nothing, silently.
-            const dot = std.mem.indexOfScalar(u8, a.name, '.') orelse continue;
-            const mod = env.stdDecoratorHandles.get(a.name[0..dot]) orelse continue;
             if (env.decorators.contains(a.name)) continue;
+            const dot = std.mem.indexOfScalar(u8, a.name, '.') orelse {
+                try refuseAnnotationNotDecorator(env, program, a);
+                continue;
+            };
+            const mod = env.stdDecoratorHandles.get(a.name[0..dot]) orelse {
+                try refuseAnnotationNotDecorator(env, program, a);
+                continue;
+            };
             const msg = try std.fmt.allocPrint(env.arena, "{s}: std module `{s}` has no decorator `{s}`", .{ diagnostics.unknown_annotation, mod, a.name[dot + 1 ..] });
             var err = TypeError.custom(msg, "A std module's decorators are its `pub fn`s whose first parameter is `comptime decl: @Decl`.");
             if (a.loc) |l| err = err.withLoc(l);

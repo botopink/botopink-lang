@@ -143,10 +143,10 @@ test "decorator: applies on struct, enum and fn sites" {
     );
 }
 
-test "decorator: an unknown marker is left untouched (no decorator loaded)" {
-    // `unknownMarker` is not a recognized decorator (no `comptime _: @Decl` fn),
-    // so the core stays lenient — a lib that defines it may simply be absent.
-    try h.assertInfersOk(std.testing.allocator,
+test "decorator: an annotation naming no decorator is refused" {
+    // `unknownMarker` is declared nowhere: not a decorator (`comptime _: @Decl`
+    // fn), not an annotation type — B-145, it used to be dropped silently.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[unknownMarker("anything", 1, 2, 3)]
         \\type A(x: i32)
     );
