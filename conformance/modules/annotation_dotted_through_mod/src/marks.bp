@@ -2,6 +2,6 @@
 
 import {compiler} from "std";
 
-pub fn tagged(expr decl: unknown) {
+pub fn tagged(syntax decl: unknown) {
     val _n = compiler.name(decl)!;
 }

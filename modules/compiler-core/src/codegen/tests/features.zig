@@ -1431,7 +1431,7 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\
         \\val port = "port";
         \\
-        \\fn value(expr decl: unknown, comptime key: string) { }
+        \\fn value(syntax decl: unknown, comptime key: string) { }
         \\
         \\#[component]
         \\type Service(

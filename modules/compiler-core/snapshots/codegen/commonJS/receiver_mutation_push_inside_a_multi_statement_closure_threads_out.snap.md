@@ -436,7 +436,7 @@ pub fn component(syntax decl: unknown) {
 
 val port = "port";
 
-fn value(expr decl: unknown, comptime key: string) { }
+fn value(syntax decl: unknown, comptime key: string) { }
 
 #[component]
 type Service(
