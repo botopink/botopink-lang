@@ -1530,6 +1530,24 @@ fn findType(env: *Env, name: []const u8) ?FoundType {
     return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
 }
 
+/// The type `name` the scope of `owner`, a module other than the one this
+/// analysis runs for, gives it: one it declares or imports (`Reflection.scopes`).
+/// Null for this module, for a name `owner`'s scope does not hold, and for
+/// anything but a type.
+fn ownerType(env: *Env, owner: []const u8, name: []const u8) ?FoundType {
+    if (owner.len == 0 or std.mem.eql(u8, owner, env.modulePath)) return null;
+    const r = env.reflection orelse return null;
+    const w = (r.written(env.arena, owner, name) catch return null) orelse return null;
+    if (!w.isType or w.namespace != .none) return null;
+    const registry = env.typeDeclRegistry orelse return null;
+    const d = (registry.get(w.module) orelse return null).get(w.name) orelse return null;
+    if (d != .type_) return null;
+    var decl = d.type_;
+    // Carried under the name the functions write.
+    decl.name = name;
+    return .{ .decl = withSectionWrappers(env.arena, decl) catch return null, .helpers = &.{} };
+}
+
 /// The type `name` of std's `external.bp` prelude, parsed from it, or null.
 fn externalPreludeType(arena: std.mem.Allocator, name: []const u8) ?ast.TypeDecl {
     const names = [_][]const u8{ "Implementation", "WasiAdapter", "WasmHost", "WasmNeed" };
@@ -2732,7 +2750,12 @@ test "a block's tail becomes the value function's return; a loop's break stays" 
 /// the declaration, `Segment(…)` lowered as a call of an undefined
 /// `Segment/3` and the module did not compile on either runtime. `skip` names
 /// the types the evaluator injects itself (`DeclKind`, `Span`, …).
-pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8) Error!Support {
+///
+/// `owner` is the module that declares the decorator: a name its functions
+/// write is the type that module's own scope gives it (decisions 310, 603 — a
+/// type is its module plus its name), never a same-named type of the module
+/// it runs for. Empty for none.
+pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8, owner: []const u8) Error!Support {
     const arena = env.arena;
     var names: std.StringHashMapUnmanaged(void) = .empty;
     var methods: std.StringHashMapUnmanaged(void) = .empty;
@@ -2753,7 +2776,7 @@ pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8
         while (it.next()) |n| try pending.append(arena, n.*);
         for (pending.items) |n| {
             if (fn_seen.contains(n) or types.contains(n)) continue;
-            const found = findType(env, n) orelse continue;
+            const found = ownerType(env, owner, n) orelse findType(env, n) orelse continue;
             try types.put(arena, n, .{ .decl = found.decl, .helpers = found.helpers, .kept = .empty });
             try readTypeShape(arena, &names, found.decl);
             changed = true;

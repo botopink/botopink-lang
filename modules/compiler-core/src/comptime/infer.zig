@@ -5862,7 +5862,7 @@ fn runDeclDecorators(
         var hosts = try hostCells.Writer.init(env, program.decls);
         const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, found.fns, builtFns.items });
-        const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
+        const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name }, if (tfn != null) "" else owner);
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         // Decision 364 — the body reads `x.value`; the module holds the value
         // in `x` (`syntax_param.zig`), and `x.fail(m)` names its argument.
@@ -6214,7 +6214,7 @@ fn memberFnSource(
     const captured = try memberFn.capturedLocals(env.arena, dfn, func);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
     const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
-    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
@@ -6258,7 +6258,7 @@ fn wrapperSource(
     const captured = try memberFn.capturedBuildReads(env.arena, dfn, func);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
     const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
-    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
@@ -6303,7 +6303,7 @@ fn executorSource(
     const captured = try memberFn.capturedLocals(env.arena, dfn, func);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
     const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len + 1);
-    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
     splices[values.len + captured.len] = .{ .param = declName, .lexeme = annotated };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
@@ -6325,6 +6325,33 @@ fn executorSource(
     const rendered = memberFn.render(env.arena, name, asFn, splices, typeArgs, "", renames) catch return error.OutOfMemory;
     const text = if (std.mem.startsWith(u8, rendered, "pub ")) rendered["pub ".len..] else rendered;
     return std.fmt.allocPrint(env.arena, "{s}\nval _bp_init_{d} = {s}();", .{ text, k, name });
+}
+
+/// Decisions 310, 603 — an argument of a decorator declared in another module,
+/// spliced into this module: a variant written by its leading dot (`.Manual`,
+/// or a default `.Eager`) against an enum parameter is a variant of the enum the
+/// decorator's module names, never of a same-named type this module declares
+/// or another module holds. It is spelled through the alias that names that
+/// enum here (`Env.hygieneImports`), as a member's own type names are
+/// (`memberRenames`).
+fn splicedArgLexeme(env: *Env, dfn: ast.FnDecl, p: ast.Param, lexeme: []const u8, local: bool) InferError![]const u8 {
+    if (local) return lexeme;
+    const written = std.mem.trim(u8, lexeme, " ");
+    if (written.len < 2 or written[0] != '.' or !(std.ascii.isAlphabetic(written[1]) or written[1] == '_')) return lexeme;
+    const ref: ast.TypeRef = switch (p.typeRef) {
+        .optional => |o| o.*,
+        else => p.typeRef,
+    };
+    if (ref != .named) return lexeme;
+    const r = env.reflection orelse return lexeme;
+    const w = (try r.written(env.arena, env.comptimeOwnerOf(dfn), ref.named)) orelse return lexeme;
+    if (!w.isType or w.namespace != .none) return lexeme;
+    const td = typeDeclAt(env, &.{}, w.module, w.name) orelse return lexeme;
+    if (td.shape != .enum_) return lexeme;
+    if (writtenNames.renamedAliasOf(env, w.module, w.name)) |al| return std.mem.concat(env.arena, u8, &.{ al, written }) catch error.OutOfMemory;
+    const alias = try writtenNames.typeAliasOf(env.arena, w.module, w.name);
+    try env.hygieneImports.append(env.arena, .{ .alias = alias, .module = w.module, .name = w.name, .isType = true });
+    return std.mem.concat(env.arena, u8, &.{ alias, written }) catch error.OutOfMemory;
 }
 
 /// What a declaration a decorator cannot wrap is called in a refusal.
@@ -9966,7 +9993,7 @@ fn expandTemplateCallViaRuntime(
     // answers build.
     const answered = try answerTemplateQueries(env, owner, carried[0], loc);
     carried[0] = answered.decl;
-    const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names);
+    const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names, "");
     // The host functions and std functions the run reaches (decision 341); an
     // imported template's travelled with its export.
     const own_template = owner.len == 0 or std.mem.eql(u8, owner, env.modulePath);
@@ -10259,7 +10286,7 @@ fn runTagAnnotation(
         .{ .fns = sig.support, .conflict = sig.conflict };
     if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
     const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
-    const reached = try blockEval.typesReached(env, carried, &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
+    const reached = try blockEval.typesReached(env, carried, &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name }, owner);
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
     var hosts = try hostCells.Writer.init(env, program.decls);
     const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;

@@ -3822,6 +3822,14 @@ module declares never supplies its variants.
 
 <!-- example: modules/annotation_argument_dot_variant_same_name -->
 
+The value is that enum's variant wherever it goes (decisions 310, 603: a type
+is its module plus its name): the body reads `Manual` at build, and an executor
+the body hands to `compiler.init` passes `Manual` to the program at run time,
+though the annotating module, or another package, declares a `Lifecycle` of
+its own.
+
+<!-- example: modules/annotation_argument_enum_identity -->
+
 A function or a type argument is checked at the argument and never run at
 build (decision 364 (3)). The body hands a `syntax` on to the program through a
 typed member (decision 370 (2)) — `compiler.addMember(name, fn…)` with the
