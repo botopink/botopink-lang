@@ -84,6 +84,11 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         if (this.check(.rightBrace)) break;
 
         const patTok = this.peek();
+        // The first token of each subject's pattern, so a refusal lands on the
+        // offending one (decision 602: `m` in `Shape.Square(side), m`).
+        var subjectToks: std.ArrayList(Token) = .empty;
+        defer subjectToks.deinit(alloc);
+        try subjectToks.append(alloc, patTok);
         const firstPat = try this.parsePattern(alloc);
         const pattern: ast.Pattern = if (this.match(.comma)) blk: {
             var pats: std.ArrayList(ast.Pattern) = .empty;
@@ -93,6 +98,7 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
             }
             try pats.append(alloc, firstPat);
             while (true) {
+                try subjectToks.append(alloc, this.peek());
                 try pats.append(alloc, try this.parsePattern(alloc));
                 if (!this.match(.comma)) break;
             }
@@ -118,7 +124,10 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         // shape the pre-decision-8 block arm already produced. An arm body with
         // one parameter can only come from this form.
         const body = if (this.check(.leftBrace)) blk: {
-            try rejectNonPatternArm(this, pattern, patTok, sawNullArm, .braced);
+            rejectArm(this, pattern, patTok, subjectToks.items, sawNullArm, .braced) catch |e| {
+                @constCast(&pattern).deinit(alloc);
+                return e;
+            };
             _ = this.advance(); // `{`
             break :blk Expr{ .function = try this.parseLambdaBody(alloc) };
         } else blk: {
@@ -126,10 +135,13 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
             // lower-case name alone (`k -> k + 1`) is no pattern — accepted,
             // commonJS bound nothing and failed `k is not defined`. A guarded
             // one (`x if x > 3 -> 1`) is the pre-decision-8 binder every
-            // backend binds, and stays; so does a name among a multi-subject
-            // arm's patterns (`Shape.Square(side), m -> …`,
-            // `conformance/modules/case_multi_subject_patterns`).
-            if (guard == null and pattern == .ident and this.check(.rightArrow)) try rejectNonPatternArm(this, pattern, patTok, sawNullArm, .arrow);
+            // backend binds, and stays. A multi-subject arm is refused its bare
+            // names, guarded or not (decision 602: `Shape.Square(side), m -> …`
+            // is `case-bare-name-arm` at `m`; `_, _ if a > b -> …`).
+            if (this.check(.rightArrow) and ((guard == null and pattern == .ident) or pattern == .multi)) rejectArm(this, pattern, patTok, subjectToks.items, sawNullArm, .arrow) catch |e| {
+                @constCast(&pattern).deinit(alloc);
+                return e;
+            };
             _ = try this.consume(.rightArrow);
             // A lambda literal is the arm's VALUE (`A(x) -> { item -> f(item) }`,
             // row 28): a `{` whose head is `->` or `a, b ->` is the lambda
@@ -497,6 +509,17 @@ fn checkWhenGuard(this: *This) bool {
         this.peekAt(1).kind == .leftParenthesis;
 }
 
+const ArmForm = enum { braced, arrow };
+
+/// `rejectNonPatternArm` over an arm: a multi-subject arm is judged subject by
+/// subject, each refusal located at its own pattern (decision 602).
+fn rejectArm(this: *This, pat: Pattern, tok: Token, subjectToks: []const Token, afterNullArm: bool, form: ArmForm) ParseError!void {
+    switch (pat) {
+        .multi => |pats| for (pats, 0..) |p, i| try rejectNonPatternArm(this, p, if (i < subjectToks.len) subjectToks[i] else tok, afterNullArm, form),
+        else => try rejectNonPatternArm(this, pat, tok, afterNullArm, form),
+    }
+}
+
 /// Decision 8 §5.2 — what a name means in an arm (`Pattern { body }` or
 /// `pattern -> value`). A name alone is a type (`i32`), a variant (`Red`, `.Some`, a dotted
 /// path) or `true`/`false`; a lower-case name is a variable and a constant is a
@@ -505,7 +528,7 @@ fn checkWhenGuard(this: *This) bool {
 /// Both arm forms are judged, the braced `Pattern { body }` and the
 /// `pattern -> value` one; a constant only in the braced form, where a bare
 /// upper-case variant is never written.
-fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool, form: enum { braced, arrow }) ParseError!void {
+fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool, form: ArmForm) ParseError!void {
     switch (pat) {
         .multi, .@"or" => |pats| {
             for (pats) |p| try rejectNonPatternArm(this, p, tok, afterNullArm, form);

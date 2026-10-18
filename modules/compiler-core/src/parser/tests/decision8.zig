@@ -352,3 +352,64 @@ test "decision 8 N22: the rest comes last" {
         \\}
     );
 }
+
+test "decision 602: a name alone is not a multi-subject arrow arm" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> <test>:4:29
+        \\  |
+        \\4 |         Shape.Square(side), m -> side * m;
+        \\  |                             ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.
+        \\
+        \\
+    ,
+        \\fn f(s: Shape, k: i32) -> i32 {
+        \\    return case s, k {
+        \\        Shape.Circle(r), 1 -> r;
+        \\        Shape.Square(side), m -> side * m;
+        \\    };
+        \\}
+    );
+}
+
+test "decision 602: a name alone is not a multi-subject braced arm" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> <test>:3:12
+        \\  |
+        \\3 |         _, m { m }
+        \\  |            ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.
+        \\
+        \\
+    ,
+        \\fn f(a: i32, k: i32) -> i32 {
+        \\    return case a, k {
+        \\        _, m { m }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 602: a name is not a guarded multi-subject arm's pattern" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> <test>:3:12
+        \\  |
+        \\3 |         _, y if y > 1 -> y;
+        \\  |            ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.
+        \\
+        \\
+    ,
+        \\fn f(a: i32, k: i32) -> i32 {
+        \\    return case a, k {
+        \\        _, y if y > 1 -> y;
+        \\    };
+        \\}
+    );
+}

@@ -553,10 +553,12 @@ Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
 is a constant; any other lower-case name is a variable. `isPrimitiveTypeName`
 mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
 `isPrimitiveType` does; keep the three in step. The `pattern -> value` arm is
-judged for `case-bare-name-arm` alone, and only an unguarded single pattern
-(`k -> k + 1`): a guarded name (`x if x > 3 -> 1`) and a name among a
-multi-subject arm's patterns (`Square(side), m -> …`) still bind, and an
-upper-case name there is a variant written bare (`NFKC -> true`), never a
+judged for `case-bare-name-arm` alone: an unguarded single pattern
+(`k -> k + 1`), and every subject of a multi-subject arm, guarded or not
+(decision 602: `Square(side), m -> …` is refused at `m`, `rejectArm` locating
+each refusal at its own subject's first token; `conformance/modules/case_multi_subject_bare_name`).
+A guarded single name (`x if x > 3 -> 1`) still binds, and an
+upper-case name in the arrow form is a variant written bare (`NFKC -> true`), never a
 constant (`conformance/modules/case_bare_name_arrow_arm`).
 
 ### Decision 54 — an optional is matched by `null` and a binder

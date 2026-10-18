@@ -1087,7 +1087,7 @@ its argument's shape, `unwrapOr` its default's — wasm printed a string's addre
 `modules/unit_enum_print_by_name` (an all-unit enum's value by name, a field, an array, a `?Color` whose
 present first variant is not absent — wasm printed the ordinal or trapped),
 `modules/case_multi_subject_patterns` (a multi-subject `case` over literals, strings, type arms, variant
-binders and guards — wasm answered the first arm, beam matched a string or a type arm on anything,
+payloads and guards over the subjects (a bare name is refused, `modules/case_multi_subject_bare_name`, decision 602) — wasm answered the first arm, beam matched a string or a type arm on anything,
 commonJS never bound a variant's payload), `modules/case_or_pattern_alternatives` (an or-pattern
 over unit variants, numbers, strings, payload variants with a wildcard, a literal or a label and
 `..`, a guarded arm, tuples, a range and a block arm — beam tested a number alternative alone, so

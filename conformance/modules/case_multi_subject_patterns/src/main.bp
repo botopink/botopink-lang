@@ -1,6 +1,6 @@
 //// A multi-subject `case a, n { … }` matches every subject against its own
 //// pattern: a literal, a string, a primitive type over a union, a variant that
-//// binds its payload, a binder a guard reads, `true` / `false`. wasm lowered
+//// binds its payload, a guard reading the subjects, `true` / `false`. wasm lowered
 //// the first subject alone and tested no `.multi` pattern, so the first arm
 //// answered every call; beam tested the numbers alone, so a string pattern and
 //// a type arm matched every value (`i32, 0` took `"s"`); commonJS tested a
@@ -32,7 +32,7 @@ fn kind(v: i32 | string, n: i32) -> string {
 fn area(s: Shape, k: i32) -> i32 {
     return case s, k {
         Shape.Circle(r), 1 -> r * 100;
-        Shape.Square(side), m -> side * m;
+        Shape.Square(side), _ -> side * k;
         Shape.Empty, _ -> -1;
         _, _ -> 0;
     };
@@ -40,9 +40,9 @@ fn area(s: Shape, k: i32) -> i32 {
 
 fn guarded(a: i32, b: i32) -> string {
     return case a, b {
-        x, y if x > y -> "gt " + x.toString();
-        x, y if x == y -> "eq " + y.toString();
-        _, y -> "lt " + y.toString();
+        _, _ if a > b -> "gt " + a.toString();
+        _, _ if a == b -> "eq " + b.toString();
+        _, _ -> "lt " + b.toString();
     };
 }
 

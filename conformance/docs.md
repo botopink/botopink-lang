@@ -2156,6 +2156,14 @@ as `k { … }` is.
 
 <!-- example: modules/case_bare_name_arrow_arm -->
 
+A multi-subject arm is judged the same way, in the arrow and the braced form
+(decision 602): `Shape.Square(side), m -> …` is `case-bare-name-arm` at `m`, a
+guarded arm included. A variant pattern binds its payload (`side`); a subject
+already in scope is not named a second time — write `_`
+(`Shape.Square(side), _ -> side * k`, `_, _ if a > b -> …`):
+
+<!-- example: modules/case_multi_subject_bare_name -->
+
 The binder of a catch-all arm over a record is that record: its fields read as
 declared, a generic record's too, wherever the `case` stands:
 
