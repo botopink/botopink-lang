@@ -939,24 +939,32 @@ const int_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_int", .clauses
 } } };
 
 /// Decision 527 (3) — `'__bp_nz'(B, What)`: an integer `/` or `%`'s divisor,
-/// or, when it is `0`, the panic `{panic, What}` (`integer division by zero:
-/// <op> on <type> at <file:line:col>`, commonJS's text) — never the bare
+/// or, when it is `0` (or a float `0.0`, decision 675), the panic `{panic, What}`
+/// (`integer division by zero: <op> on <type> at <file:line:col>`, commonJS's
+/// text; `division by zero: <op> on f64 at …` for a float) — never the bare
 /// `badarith` erlang's `div` / `rem` raise, which `attempt` would not read as
 /// the program's own abort.
 const nz_inline_form: Ast.Form = .{ .inline_fns = &.{.{ .name = "__bp_nz", .arity = 2 }} };
 
-const nz_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_nz", .clauses = &.{
-    .{
-        .patterns = &.{ .{ .number = "0" }, Ast.Expr.v("What") },
-        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{.{ .tuple = &.{ Ast.Expr.a("panic"), Ast.Expr.v("What") } }} } } }}),
-        .layout = .inline_,
+const nz_helper_form: Ast.Form = .{
+    .function = .{
+        .name = "__bp_nz",
+        .clauses = &.{
+            .{
+                .patterns = &.{ Ast.Expr.v("B"), Ast.Expr.v("What") },
+                // `==`, not a `0` pattern: it holds for `0.0` and `-0.0` too (decision 675).
+                .guards = &.{.{ .binop = .{ .op = "==", .lhs = &Ast.Expr.v("B"), .rhs = &Ast.Expr{ .number = "0" }, .parens = false } }},
+                .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{.{ .tuple = &.{ Ast.Expr.a("panic"), Ast.Expr.v("What") } }} } } }}),
+                .layout = .inline_,
+            },
+            .{
+                .patterns = &.{ Ast.Expr.v("B"), Ast.Expr.v("_") },
+                .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("B") }}),
+                .layout = .inline_,
+            },
+        },
     },
-    .{
-        .patterns = &.{ Ast.Expr.v("B"), Ast.Expr.v("_") },
-        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("B") }}),
-        .layout = .inline_,
-    },
-} } };
+};
 
 /// Decision 533 — `'__bp_cdz'(B)`: a comptime module's divisor, or, when it is
 /// `0` (integer or float), the build-time refusal `{bp_wat_runtime,
@@ -4898,13 +4906,18 @@ const Emitter = struct {
         // A comptime module's divisor goes through `'__bp_cdz'/1` (decision 533).
         if (this.untyped) return b.call("__bp_cdz", &.{node});
         const k = this.divisionKind(loc) orelse return node;
-        if (!k.isInt()) return node;
         if (divisor == .literal and divisor.literal.kind == .numberLit) {
-            const n = std.fmt.parseInt(i128, divisor.literal.kind.numberLit, 0) catch null;
-            if (n) |v| if (v != 0) return node;
+            if (k.isInt()) {
+                const n = std.fmt.parseInt(i128, divisor.literal.kind.numberLit, 0) catch null;
+                if (n) |v| if (v != 0) return node;
+            } else {
+                const n = std.fmt.parseFloat(f64, divisor.literal.kind.numberLit) catch null;
+                if (n) |v| if (v != 0) return node;
+            }
         }
         this.needs_nz_helper = true;
-        const what = try std.fmt.allocPrint(b.arena, "integer division by zero: {s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), try this.srcFile(b.arena), loc.line, loc.col });
+        // Decision 675 — a float `/` or `%` by zero is the same panic, the type `f64`.
+        const what = try std.fmt.allocPrint(b.arena, "{s}division by zero: {s} on {s} at {s}:{d}:{d}", .{ if (k.isInt()) "integer " else "", op, if (k.isInt()) @tagName(k) else "f64", try this.srcFile(b.arena), loc.line, loc.col });
         return b.call("__bp_nz", &.{ node, .{ .lexeme_binary = what } });
     }
 

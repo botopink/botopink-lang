@@ -146,12 +146,12 @@ expect_out "$WARN" "check prints the warning"
 run "$P" build
 expect_code 0 "build with a warning"
 expect_out "$WARN" "build prints the warning"
-expect_out "src/main.bp:2:" "build locates the warning"
+expect_out "src/main.bp:3:" "build locates the warning"
 if have node; then
   run "$P" test
   expect_code 0 "test with a warning"
   expect_out "$WARN" "test prints the warning"
-  expect_out "src/main.bp:2:" "test locates the warning"
+  expect_out "src/main.bp:3:" "test locates the warning"
 else
   skip "test prints the warning (node not on PATH)"
 fi
@@ -1536,7 +1536,7 @@ if have node && have erl && have erlc && have wasmtime; then
   mkdir -p "$CELLS/labelled/src" "$CELLS/labelled/snapshot/output"
   printf '{ "name": "labelled", "version": "0.0.1", "src": "src/" }\n' >"$CELLS/labelled/botopink.json"
   printf 'import {io.terminal.print} from "std";\npub fn main() {\n    val x = 3;\n    val y = case x {\n        0 { "zero" }\n        n { "other" }\n    };\n    print(y);\n}\n' >"$CELLS/labelled/src/main.bp"
-  LABELLED='botopink-cell 1\nrefused error[case-bare-name-arm]: a name alone is not a pattern\nat src/main.bp:5:9\n'
+  LABELLED='botopink-cell 1\nrefused error[case-bare-name-arm]: a name alone is not a pattern\nat src/main.bp:6:9\n'
   printf "${LABELLED}label use _ { n -> … } to bind the matched value\n" >"$CELLS/labelled/snapshot/output/main.snap"
   run "$CELLS" cell check labelled
   expect_code 0 "a refusal whose label is claimed passes"

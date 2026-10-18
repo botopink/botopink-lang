@@ -7220,20 +7220,25 @@ const Emitter = struct {
     /// divisor emit nothing.
     fn emitDivisorCheck(self: *Emitter, divisor: Op, divisor_expr: ast.Expr, loc: ast.Loc, op: []const u8) !void {
         const k = self.divisionKind(loc) orelse return;
-        if (!k.isInt()) return;
         if (divisor_expr == .literal and divisor_expr.literal.kind == .numberLit) {
-            const n = std.fmt.parseInt(i128, divisor_expr.literal.kind.numberLit, 0) catch null;
-            if (n) |v| if (v != 0) return;
+            if (k.isInt()) {
+                const n = std.fmt.parseInt(i128, divisor_expr.literal.kind.numberLit, 0) catch null;
+                if (n) |v| if (v != 0) return;
+            } else {
+                const n = std.fmt.parseFloat(f64, divisor_expr.literal.kind.numberLit) catch null;
+                if (n) |v| if (v != 0) return;
+            }
         }
         const fail_l = self.allocLabel();
         const ok_l = self.allocLabel();
-        try beamEmitter.writeTest(self.out, .is_ne_exact, fail_l, &.{ divisor, Op.num("0") });
+        // A float divisor compares by value (`0.0 == 0`, and `-0.0`), an integer exactly (decision 675).
+        try beamEmitter.writeTest(self.out, if (k.isInt()) .is_ne_exact else .is_ne, fail_l, &.{ divisor, Op.num("0") });
         try beamEmitter.writeJump(self.out, ok_l);
         try beamEmitter.writeLabel(self.out, fail_l);
         var what_buf: [640]u8 = undefined;
         const file = if (self.src_path.len > 0) self.src_path else self.module_name;
-        const what = std.fmt.bufPrint(&what_buf, "integer division by zero: {s} on {s} at {s}{s}:{d}:{d}", .{
-            op, @tagName(k), file, if (self.src_path.len > 0) "" else ".bp", loc.line, loc.col,
+        const what = std.fmt.bufPrint(&what_buf, "{s}division by zero: {s} on {s} at {s}{s}:{d}:{d}", .{
+            if (k.isInt()) "integer " else "", op, if (k.isInt()) @tagName(k) else "f64", file, if (self.src_path.len > 0) "" else ".bp", loc.line, loc.col,
         }) catch "integer division by zero";
         try beamEmitter.writeMove(self.out, Term.tupleOf(&[_]Term{ Term.atomOf("panic"), Term.str(what) }), 0);
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);

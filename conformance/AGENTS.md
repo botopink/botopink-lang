@@ -1799,11 +1799,11 @@ answers): `modules/float_text_at_run_time` (`"${5.0}"`, `1.0e21`, `1.0e-7` print
 `modules/string_trim_keeps_nbsp` (`trim` keeps a NBSP on every target, commonJS through its helper),
 `modules/string_lower_final_sigma` (`ΟΔΟΣ` lowers to `οδοσ` on every target, commonJS through its helper) and
 `modules/float_nan_infinity_words` (`Infinity`, `-Infinity`, `NaN` on commonJS and wasm; erlang and
-beam abort, `stderr badarith`). The fifth row, an unseeded `random.float()` reached from a decorator
+beam abort, `stderr panic: division by zero: / on f64 at <file>:<l>:<c>`, decision 675; `modules/float_division_by_zero_panic`). The fifth row, an unseeded `random.float()` reached from a decorator
 body, is `modules/decorator_random_float_unseeded` since 144 B-46 made a decorator body reach a nested
 std namespace: refused at build on every target with decision 451's message (434 (5): one comptime, one
 answer — no departure). Each departure is the language's, never a defect recorded (458): erlang's and
-beam's `badarith` is their arithmetic by decision 444. commonJS keeps no departure of text: decision 521
+beam's abort on a float division by zero is their arithmetic by decision 444, worded as the integer one's `panic` (675). commonJS keeps no departure of text: decision 521
 gives it std-wasm's float text, `trim` and case mapping (144 B-78), a string method reached through `?.`
 included (`modules/optional_chain_string_text`).
 
@@ -2422,7 +2422,7 @@ ordering. erlang and BEAM already separate the zeros (`=:=`); commonJS lowers a
 float `==` to `Object.is` and wasm to `$__f64_eq` / `$__f32_eq` (NaN canonicalised,
 then the bits). `modules/f64_equality_total_order` pins the zeros on all four
 targets, with `-0.0` built at run time as `zero() * -1.0`. **The NaN rows are not a
-cell**: erlang and BEAM never produce a NaN (`z / z` raises `badarith` at run
+cell**: erlang and BEAM never produce a NaN (`z / z` aborts with the division `panic` at run
 time), and § Narrowing a cell lets a cell leave a target out only when the build
 refuses it on a host binding, which a division is not — a `"targets"` `commonJS wasm`
 would fail the audit. Each backend that has NaN pins that half in a RUN LOG fixture of

@@ -1658,7 +1658,7 @@ runtime's stack, so two 2,000,000-deep chains answer `true`), and an arithmetic 
 (division by zero)``, the same on every target. Every division and remainder by zero reads so — `/` and `%`,
 integer and float, alone, inside a larger expression, or in a function the `comptime` calls — and is located at
 the operator that divides, never at the whole expression. At run time each target keeps its own answer
-(commonJS and wasm `Infinity`, erlang and beam `badarith`). An integer division by zero at build is the same
+(commonJS and wasm `Infinity`, erlang and beam the `panic` `division by zero: / on f64`, 675). An integer division by zero at build is the same
 refusal, naming `7 / 0`:
 
 <!-- example: modules/comptime_deep_structure_equality -->
@@ -1673,9 +1673,11 @@ calls are the same refusal, at the `%` or the `/` that divides:
 <!-- example: modules/comptime_division_by_zero_in_helper -->
 
 At run time a float division by zero prints the float's word on commonJS and
-wasm, and erlang and beam abort with `badarith`:
+wasm, and erlang and beam abort with the integer division's `panic`, `panic: division by zero: / on f64 at
+<file>:<line>:<col>` (decision 675), the float `/` checked as the integer `/` is:
 
 <!-- example: modules/float_nan_infinity_words -->
+<!-- example: modules/float_division_by_zero_panic -->
 
 ### Optionals
 

@@ -32,7 +32,7 @@ average(Xs) ->
         N@2 = (N@1 + 1.0),
         {Total@2, N@2}
     end, {Total, N}, Xs),
-    (Total@3 / N@3).
+    (Total@3 / '__bp_nz'(N@3, <<"division by zero: / on f64 at main.bp:8:18">>)).
 
 main() ->
     Cat = fun(X, Y) ->
@@ -43,6 +43,10 @@ main() ->
 
 '__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.
+
+-compile({inline,['__bp_nz'/2]}).
+'__bp_nz'(B, What) when B == 0 -> erlang:error({panic, What});
+'__bp_nz'(B, _) -> B.
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
