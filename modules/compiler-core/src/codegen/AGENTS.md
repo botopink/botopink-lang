@@ -804,7 +804,8 @@ codegen/
 - **A statement `v.push(x)` on a `var` Array** (a module-level `var` — `module_vars` — or a mutable local —
   `local_vars`; not a parameter, a `val` or a field access) lowers to the rebinding `v = v.concat([x])`
   (`pushRebind`), as erlang's `receiverMutation` does (decisions 447 (2), 448 (2), 547); JavaScript's in-place
-  `push` grew the array every binding held (`modules/array_push_rebinds_var`). `pop` is still in place (B-143 Outside).
+  `push` grew the array every binding held (`modules/array_push_rebinds_var`). A `v.pop()` on such a `var` (`popRebind`) answers `[v.at(-1), v = v.slice(0, -1)][0]` in an expression and
+  `v = v.slice(0, -1)` as a statement, as erlang's `popStep` does (`modules/array_pop_rebinds_var`).
 
 
 ### erlang

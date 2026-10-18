@@ -1561,6 +1561,11 @@ of its moment:
 
 <!-- example: modules/array_push_rebinds_var -->
 
+A `v.pop()` on a `var` answers the last item and rebinds the `var` to the shrunk
+array in the same way:
+
+<!-- example: modules/array_pop_rebinds_var -->
+
 `Array.range(start, stop)` is the integers of `[start, stop)`, empty when
 `stop <= start`; `Array.repeat(value, times)` is `times` copies of `value`, empty
 when `times <= 0`. A result costs its own length in memory, a long one too, and so

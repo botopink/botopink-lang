@@ -4260,6 +4260,7 @@ const Emitter = struct {
             else => {
                 if (classifyTry(e)) |form| return self.buildTryStmt(form, .discard);
                 if (try self.pushRebind(e)) |st| return st;
+                if (try self.popRebind(e, false)) |x| return .{ .expr = x };
                 return .{ .expr = try self.buildExpr(e) };
             },
         }
@@ -4272,10 +4273,39 @@ const Emitter = struct {
     /// receiver that is no `var` (a parameter, a `val`, a field access) keeps
     /// the plain call. `[x]` wraps the item so an array item stays one element.
     fn pushRebind(self: *Emitter, e: ast.Expr) anyerror!?js.Stmt {
+        const cc = (try self.varArrayCall(e, "push", 1)) orelse return null;
+        const name = cc.receiver.?.identifier.kind.ident;
+        const item = try self.buildExpr(cc.args[0].value.*);
+        const grown = try self.b.call(try self.b.member(.{ .ident = name }, "concat"), &.{try self.b.array(&.{item})});
+        return .{ .expr = try self.b.assign(.{ .ident = name }, "=", grown) };
+    }
+
+    /// `v.pop()` on a `var` Array, in a statement or in an expression whose
+    /// value is used: answers the last item and rebinds the `var` to the
+    /// shrunk array, `[v.at(-1), v = v.slice(0, -1)][0]` (the array literal
+    /// reads the old array first), as erlang's `popStep` does; JavaScript's
+    /// in-place `pop` shrank the array every binding held. A statement drops
+    /// the value: `v = v.slice(0, -1)`. A receiver that is no `var` keeps the
+    /// plain call.
+    fn popRebind(self: *Emitter, e: ast.Expr, used: bool) anyerror!?js.Expr {
+        const cc = (try self.varArrayCall(e, "pop", 0)) orelse return null;
+        const name = cc.receiver.?.identifier.kind.ident;
+        const minus1 = try self.b.unary("-", .{ .number = "1" }, false);
+        const shrunk = try self.b.call(try self.b.member(.{ .ident = name }, "slice"), &.{ .{ .number = "0" }, minus1 });
+        const rebind = try self.b.assign(.{ .ident = name }, "=", shrunk);
+        if (!used) return rebind;
+        const last = try self.b.call(try self.b.member(.{ .ident = name }, "at"), &.{minus1});
+        return try self.b.index(try self.b.array(&.{ last, rebind }), .{ .number = "0" }, false);
+    }
+
+    /// The call `e` when it is `v.<method>(…)` with `nargs` plain arguments,
+    /// `v` a `var` (a module-level `var` or a mutable local) and the call
+    /// lowered on an Array; null otherwise.
+    fn varArrayCall(self: *Emitter, e: ast.Expr, method: []const u8, nargs: usize) anyerror!?@TypeOf(e.call.kind.call) {
         if (e != .call or e.call.kind != .call) return null;
         const cc = e.call.kind.call;
-        if (cc.is_builtin or cc.optional or !std.mem.eql(u8, cc.callee, "push")) return null;
-        if (cc.args.len != 1 or cc.trailing.len != 0) return null;
+        if (cc.is_builtin or cc.optional or !std.mem.eql(u8, cc.callee, method)) return null;
+        if (cc.args.len != nargs or cc.trailing.len != 0) return null;
         const recv = cc.receiver orelse return null;
         if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
         const name = recv.identifier.kind.ident;
@@ -4284,9 +4314,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const il = lw.get(e.call.loc) orelse return null;
         if (il != .prim or il.prim != .array) return null;
-        const item = try self.buildExpr(cc.args[0].value.*);
-        const grown = try self.b.call(try self.b.member(.{ .ident = name }, "concat"), &.{try self.b.array(&.{item})});
-        return .{ .expr = try self.b.assign(.{ .ident = name }, "=", grown) };
+        return cc;
     }
 
     /// A trailing/inline lambda body: the tail value expression is its result,
@@ -5011,7 +5039,10 @@ const Emitter = struct {
             .useHook => |uh| return self.useHookExpr(uh),
 
             .call => |c| switch (c.kind) {
-                .call => |cc| return self.buildCall(c.loc, cc),
+                .call => |cc| {
+                    if (try self.popRebind(e, true)) |x| return x;
+                    return self.buildCall(c.loc, cc);
+                },
                 .pipeline => |p| {
                     // Flatten the pipeline chain.
                     var items: std.ArrayList(ast.Expr) = .empty;
