@@ -1391,9 +1391,9 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\    val names = compiler.fields(decl).map({ f -> f.name });
         \\    val upper = names.map({ n -> n.toUpper() }).join("_");
         \\    val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
-        \\    val short = compiler.name(decl)!.slice(0, 3);
-        \\    val size = if (compiler.name(decl)!.length() == 4) { "four"; } else { "other"; };
-        \\    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+        \\    val short = compiler.name(decl).slice(0, 3);
+        \\    val size = if (compiler.name(decl).length() == 4) { "four"; } else { "other"; };
+        \\    @emit("pub fn describe" + compiler.name(decl) + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
         \\}
         \\
         \\#[describe]
@@ -1426,7 +1426,7 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\        };
         \\        args.push(f.name + ": " + expr);
         \\    });
-        \\    @emit("pub fn wire" + compiler.name(decl)! + "() -> string { return \"" + compiler.name(decl)! + "(" + args.join(", ") + ")\"; }");
+        \\    @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
         \\}
         \\
         \\#[component]

@@ -1,7 +1,7 @@
 import {compiler} from "std";
 
 fn serverOnly(syntax decl: unknown) {
-    val _n = compiler.name(decl)!;
+    val _n = compiler.name(decl);
 }
 
 // Refuses a function marked `serverOnly`, however the mark is spelled.
@@ -11,7 +11,7 @@ fn clientOnly(syntax decl: unknown) {
         .forEach({ a ->
             if (a.decorator.same(serverOnly))
                 compiler.fail("`"
-                    + compiler.name(decl)!
+                    + compiler.name(decl)
                     + "` runs on the server", at: decl)
         });
 }

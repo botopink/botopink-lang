@@ -14,7 +14,7 @@ fn wrap(s: string) -> string {
 fn tag(syntax decl: unknown) {
     @emit(
         "pub fn tagged() -> string { return \""
-            + wrap(shout(compiler.name(decl)!))
+            + wrap(shout(compiler.name(decl)))
             + "\"; }",
     );
 }

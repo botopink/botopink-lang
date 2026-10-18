@@ -11,7 +11,7 @@ fn describe(expr: string) -> string {
 pub fn scheduled(syntax decl: unknown, comptime cron: string) {
     @emit(
         "pub fn schedule() -> string { return \""
-            + shout(compiler.name(decl)!)
+            + shout(compiler.name(decl))
             + " runs "
             + describe(cron)
             + "\"; }",

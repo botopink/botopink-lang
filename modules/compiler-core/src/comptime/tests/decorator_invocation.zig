@@ -102,7 +102,7 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
     // checker's unknown method, located at the call in the body.
     try assertRejectsAt(@src(),
         \\fn check(syntax decl: unknown) {
-        \\    val n = compiler.name(decl)!;
+        \\    val n = compiler.name(decl);
         \\    val x = n.frobnicate(1, 2);
         \\}
         \\
@@ -119,7 +119,7 @@ test "decorator invocation: a raise in another module's decorator body names the
     // line 3, column 5 —, and the annotation is the `called from` line.
     const deco =
         \\pub fn check(syntax decl: unknown) {
-        \\    val n = compiler.name(decl)!;
+        \\    val n = compiler.name(decl);
         \\    @panic("boom " + n);
         \\}
         \\import {compiler} from "std";
@@ -163,7 +163,7 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
     const src =
         \\fn column(syntax decl: unknown, comptime name: string) { }
         \\fn describe(syntax decl: unknown, comptime label: string) {
-        \\    var out = compiler.name(decl)! + "[" + label + "]";
+        \\    var out = compiler.name(decl) + "[" + label + "]";
         \\    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
         \\    for (compiler.fields(decl)) { f ->
         \\        out = out + " field " + f.name + ":" + f.typeName;
@@ -175,7 +175,7 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
         \\        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         \\        out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
         \\    };
-        \\    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+        \\    @emit("pub fn describe" + compiler.name(decl) + "() -> string { return \"\"\"" + out + "\"\"\"; }");
         \\}
         \\#[describe("record")]
         \\type Point(#[column("px")] x: i32, y: ?i32) {
@@ -243,7 +243,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
     const src =
         \\fn smile(syntax decl: unknown, comptime mark: string) {
         \\    val s = "<\u{263A}\u{e7}\u{1F600}>";
-        \\    @emit("pub val smiled" + compiler.name(decl)! + " = \"" + s + mark + "\";");
+        \\    @emit("pub val smiled" + compiler.name(decl) + " = \"" + s + mark + "\";");
         \\}
         \\#[smile("[\u{2028}\u{263A}]")]
         \\type Face(x: i32)
@@ -290,7 +290,7 @@ test "decorator invocation: method decorator rejects a record" {
 test "decorator invocation: body reads the reflected name" {
     try assertRejects(@src(),
         \\fn named(syntax decl: unknown) {
-        \\    if (compiler.name(decl)! == "Bad") { compiler.fail("the name Bad is reserved", at: decl); }
+        \\    if (compiler.name(decl) == "Bad") { compiler.fail("the name Bad is reserved", at: decl); }
         \\}
         \\#[named]
         \\type Bad()
@@ -445,8 +445,8 @@ test "decorator invocation: mock-style synthesis from an interface compiles" {
         \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "  fn " + m.name + "(self: Self) -> i32 { return 0; }\n";
         \\    });
-        \\    @emit("type Mock" + compiler.name(decl)! + "(\n  tag: string,\n) implement " + compiler.name(decl)! + " {\n" + methods + "}");
-        \\    @emit("pub fn mock" + compiler.name(decl)! + "() -> " + compiler.name(decl)! + " { return Mock" + compiler.name(decl)! + "(tag: \"\"); }");
+        \\    @emit("type Mock" + compiler.name(decl) + "(\n  tag: string,\n) implement " + compiler.name(decl) + " {\n" + methods + "}");
+        \\    @emit("pub fn mock" + compiler.name(decl) + "() -> " + compiler.name(decl) + " { return Mock" + compiler.name(decl) + "(tag: \"\"); }");
         \\}
         \\#[mock]
         \\behavior Counter { fn value(self: Self) -> i32; }
@@ -476,8 +476,8 @@ test "decorator invocation: a helper of another module builds that module's reco
     const src =
         \\import {seg.parseSeg};
         \\fn page(syntax decl: unknown) {
-        \\    val s = parseSeg(compiler.name(decl)!);
-        \\    @emit("pub fn seen" + compiler.name(decl)! + "() -> string { return \"" + s.shout() + s.size.toString() + "\"; }");
+        \\    val s = parseSeg(compiler.name(decl));
+        \\    @emit("pub fn seen" + compiler.name(decl) + "() -> string { return \"" + s.shout() + s.size.toString() + "\"; }");
         \\}
         \\#[page]
         \\type Home(x: i32)
@@ -511,7 +511,7 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
         \\    return value + "!";
         \\}
         \\fn labelled(syntax decl: unknown) {
-        \\    @emit("pub fn label() -> string { return \"" + bang(compiler.name(decl)!) + hash.contentHash(compiler.name(decl)!) + "\"; }");
+        \\    @emit("pub fn label() -> string { return \"" + bang(compiler.name(decl)) + hash.contentHash(compiler.name(decl)) + "\"; }");
         \\}
         \\#[labelled]
         \\type Point(x: i32, y: i32)
@@ -542,7 +542,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     defer body.deinit(alloc);
     try body.appendSlice(alloc, "import {compiler} from \"std\";\nfn big(syntax decl: unknown) {\n");
     var k: usize = 0;
-    while (k < 250) : (k += 1) try body.print(alloc, "    if (compiler.name(decl)! == \"never{d}\") {{ compiler.fail(\"message {d}\", at: decl); }}\n", .{ k, k });
+    while (k < 250) : (k += 1) try body.print(alloc, "    if (compiler.name(decl) == \"never{d}\") {{ compiler.fail(\"message {d}\", at: decl); }}\n", .{ k, k });
     try body.appendSlice(alloc, "}\n");
     // One call first: the runtime's one-time state (its linked bytes, the
     // engine, the prelude) is the process's, not a call's.

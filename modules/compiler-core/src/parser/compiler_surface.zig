@@ -462,9 +462,13 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     const first = args[0].value;
     const rest = args[1..];
     if (handleField(name)) |field| {
-        if (std.mem.eql(u8, name, "name") and !isHandle(ctx, first.*)) {
-            // The name an `expr` argument is written as.
-            return methodCall(ctx, loc, first, "text", rest, c.trailing, null);
+        if (std.mem.eql(u8, name, "name")) {
+            // Decision 612 — an expression written right there that has no
+            // name is refused at it.
+            if (namelessKind(first.*)) |kind| return refusal(ctx, first.getLoc(), diagnostics.syntax_has_no_name, try std.fmt.allocPrint(ctx.alloc, "this argument is {s}: it has no name", .{kind}), "`compiler.name(e)` answers the name a declaration, a named function or a type is written as (decision 612); read the text with `compiler.text(e)`.");
+            // The name a `syntax` argument is written as: in a decorator,
+            // refused at the annotation's argument when it has none.
+            if (!isHandle(ctx, first.*)) return methodCall(ctx, loc, first, if (ctx.decl != null) "name" else "text", rest, c.trailing, null);
         }
         return fieldRead(ctx, loc, first, field);
     }
@@ -477,6 +481,19 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
         return methodCall(ctx, loc, first, name, one, c.trailing, null);
     }
     return methodCall(ctx, loc, first, name, rest, c.trailing, c.typeArgs);
+}
+
+/// Decision 612 — what `e`, written as `compiler.name`'s argument, is when
+/// it has no name; null for a name or a path.
+fn namelessKind(e: ast.Expr) ?[]const u8 {
+    return switch (e) {
+        .function => "a lambda",
+        .literal => "a literal",
+        .collection => "an array",
+        .call => "a call",
+        .binaryOp, .unaryOp => "an operator expression",
+        else => null,
+    };
 }
 
 /// Whether `e` names a declaration handle rather than an `expr` parameter:
@@ -552,7 +569,7 @@ fn hoistBuildReads(ctx: *Ctx, f: *ast.Expr) error{OutOfMemory}!void {
 
 fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory}!void {
     const e = p.*;
-    // `compiler.name(d)!` is hoisted whole: the `!` reads the build's answer.
+    // `compiler.name(d)` is hoisted whole: the `!` reads the build's answer.
     var read = false;
     if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
         if (compilerCall(e.call.kind.call.args[0].value.*) != null) read = true;
@@ -628,7 +645,7 @@ fn runTimeArgument(ctx: *Ctx, read: ast.Expr, bound: []const []const u8) error{O
 fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     const e = p.*;
     const loc = e.getLoc();
-    // `compiler.name(d)!` — the handle's name is a `string` to the machinery.
+    // `compiler.name(d)` — the handle's name is a `string` to the machinery.
     if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
         if (compilerCall(e.call.kind.call.args[0].value.*)) |inner| if (std.mem.eql(u8, inner.callee, "name") and inner.args.len == 1 and isHandle(ctx, inner.args[0].value.*)) {
             p.* = e.call.kind.call.args[0].value.*;

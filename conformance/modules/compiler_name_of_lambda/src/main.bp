@@ -1,0 +1,20 @@
+//// Decision 612 — `compiler.name(e)` answers a `string`: the name the
+//// expression is written as. A lambda has none, so naming the annotation's
+//// argument `{ x -> x }` is refused at that argument (`syntax-has-no-name`),
+//// naming its kind.
+
+import {compiler} from "std";
+
+fn named(syntax decl: unknown, syntax rule: fn(x: i32) -> i32) {
+    val n = compiler.name(rule);
+    compiler.init({ -> @print(n) });
+}
+
+#[named({ x -> x })]
+pub fn home() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(home());
+}

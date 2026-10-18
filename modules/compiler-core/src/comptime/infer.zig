@@ -18592,7 +18592,8 @@ fn inferTemplateMethod(
         }
         // Decision 576 (2) — in a decorator, `compiler.text(x)` reads the
         // argument as the annotation wrote it.
-        if (!(env.inDecoratorFn and (std.mem.eql(u8, callee, "fail") or (std.mem.eql(u8, callee, "text") and typedArgs.len == 0)))) {
+        // Decision 612 — `compiler.name(x)` reads the name it is written as.
+        if (!(env.inDecoratorFn and (std.mem.eql(u8, callee, "fail") or ((std.mem.eql(u8, callee, "text") or std.mem.eql(u8, callee, "name")) and typedArgs.len == 0)))) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `comptime` parameter, whose `@Expr` answers `.value`{s} — not `.{s}(…)`", .{ diagnostics.expr_param_method, p.name, if (env.inDecoratorFn) " and `.fail(…)`" else "", callee });
             env.lastError = TypeError.custom(msg, "Read the argument's value at build with `x.value` (decision 364); a template function's capture is the one `@Expr` with the template methods.").withLoc(loc);
             return error.TypeError;
@@ -18604,7 +18605,7 @@ fn inferTemplateMethod(
             // The expression's value type slot — what the code evaluates to.
             op = .value;
             retType = if (named.args.len >= 1) named.args[0] else try env.freshVar();
-        } else if (std.mem.eql(u8, callee, "text")) {
+        } else if (std.mem.eql(u8, callee, "text") or (std.mem.eql(u8, callee, "name") and typedArgs.len == 0 and env.inDecoratorFn)) {
             op = .text;
             retType = try env.namedType("string");
         } else if (std.mem.eql(u8, callee, "source")) {

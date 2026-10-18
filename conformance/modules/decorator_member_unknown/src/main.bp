@@ -8,9 +8,9 @@ import {compiler} from "std";
 fn entity(syntax decl: unknown) {
     compiler.addMember(
         "pub fn fromName(n: string) -> "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + " { return "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "(name: n); }",
     );
 }

@@ -3594,6 +3594,13 @@ it is read only through its members, and passed as an argument or stored it is
 <!-- example: modules/compiler_escapes_passed -->
 <!-- example: modules/compiler_escapes_stored -->
 
+`compiler.name(e)` answers a `string` (decision 612): the name a declaration,
+a named function or a type is written as. An expression that has no name — a
+lambda, a literal, a call, an operator expression — is `syntax-has-no-name` at
+it, naming its kind (`` `{ x -> x }` is a lambda: it has no name ``).
+
+<!-- example: modules/compiler_name_of_lambda -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `syntax` (decisions 575 (4),
@@ -3601,7 +3608,7 @@ A decorator is a function whose first parameter is `syntax` (decisions 575 (4),
 unknown` when the declaration has no pattern; `#[name(args)]` runs it at
 compile time over the declaration it annotates, the annotation's arguments after
 that parameter. `decl` is an opaque handle, read through `compiler`
-(§ `compiler`): `compiler.kind(decl)`, `compiler.name(decl)!`,
+(§ `compiler`): `compiler.kind(decl)`, `compiler.name(decl)`,
 `compiler.fields(decl)`, `compiler.variants(decl)`, `compiler.methods(decl)`,
 `compiler.returnType(decl)`, `compiler.annotations(decl)`,
 `compiler.owner(decl)`, a function's or a method's own `compiler.params(decl)`,
@@ -3663,8 +3670,8 @@ A member's handle names its owner (decision 526): `compiler.owner(decl)` is
 the handle of the type or behavior that holds the annotated method or field —
 `compiler.name(owner)`, `compiler.moduleOf(owner)` — and `null` for a
 module-level declaration. A registration a member's decorator compiles is named
-through it (`compiler.name(compiler.owner(decl)!)! + "_" +
-compiler.name(decl)!`), so two same-named members of two types never collide.
+through it (`compiler.name(compiler.owner(decl)!) + "_" +
+compiler.name(decl)`), so two same-named members of two types never collide.
 
 <!-- example: modules/decl_member_owner -->
 

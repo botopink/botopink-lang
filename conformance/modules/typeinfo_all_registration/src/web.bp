@@ -12,7 +12,7 @@ pub fn route(syntax decl: unknown, comptime path: string) {
 pub fn component(syntax decl: unknown) {
     compiler.addMember(
         "pub fn describe() -> string { return \"component "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "\"; }",
     );
 }

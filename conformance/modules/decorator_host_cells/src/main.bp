@@ -24,7 +24,7 @@ fn tagged(name: string) -> string {
 fn labelled(syntax decl: unknown) {
     @emit(
         "pub fn label() -> string { return \""
-            + tagged(compiler.name(decl)!)
+            + tagged(compiler.name(decl))
             + " "
             + digest("héllo €")
             + "\"; }",

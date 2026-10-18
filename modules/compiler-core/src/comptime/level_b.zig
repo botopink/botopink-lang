@@ -811,7 +811,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
         .{ .path = "looks/root", .package = "looks", .source = "pub default mod looks;\n" },
         .{ .path = "looks/looks", .package = "looks", .source =
         \\pub fn theme(syntax decl: unknown) {
-        \\    decl.setMeta("named", compiler.name(decl)!);
+        \\    decl.setMeta("named", compiler.name(decl));
         \\}
         \\
         \\pub default fn looks(syntax e: string) -> string {
@@ -869,7 +869,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
     const modules = [_]Module{
         .{ .path = "frame/root", .package = "frame", .source =
         \\pub fn m(syntax decl: unknown) {
-        \\    decl.setMeta("role", compiler.name(decl)!);
+        \\    decl.setMeta("role", compiler.name(decl));
         \\}
         \\
         \\#[m]
@@ -934,7 +934,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     const modules = [_]Module{
         .{ .path = "cat/cat", .package = "cat", .source =
         \\pub fn listed(syntax decl: unknown) {
-        \\    decl.setMeta("named", compiler.name(decl)!);
+        \\    decl.setMeta("named", compiler.name(decl));
         \\}
         \\
         \\#[listed]

@@ -1,7 +1,7 @@
 import {compiler} from "std";
 
 pub fn tagged(syntax decl: unknown) {
-    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
+    compiler.setMeta(Tagged(tag: compiler.name(decl)));
 }
 
 // What `#[tagged]` records.

@@ -6,7 +6,7 @@
 import {compiler} from "std";
 
 fn serverOnly(syntax decl: unknown) {
-    val _n = compiler.name(decl)!;
+    val _n = compiler.name(decl);
 }
 
 fn check(syntax decl: unknown) {

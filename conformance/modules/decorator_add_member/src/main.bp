@@ -15,7 +15,7 @@ fn entity(syntax decl: unknown) {
     );
     compiler.addMember(
         "pub fn describe(self: Self) -> string { return \""
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "(\" + self.name + \", \" + self.size.toString() + \")\"; }",
     );
 }
@@ -23,9 +23,9 @@ fn entity(syntax decl: unknown) {
 fn label(syntax decl: unknown) {
     compiler.addMember(
         "pub fn "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "Label() -> string { return \"the "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "\"; }",
     );
 }

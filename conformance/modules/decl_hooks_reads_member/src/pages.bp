@@ -28,7 +28,7 @@ fn graph(syntax decl: unknown) {
 fn check(syntax decl: unknown) {
     compiler.addMember(
         "pub fn validate(self: Self) -> string { return \""
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + " \" + self.name + \" ok\"; }",
     );
 }

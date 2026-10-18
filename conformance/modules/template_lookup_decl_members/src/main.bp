@@ -24,7 +24,7 @@ fn shape(syntax q: string) -> string {
     val d = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);
-    var text = compiler.name(d)!;
+    var text = compiler.name(d);
     for (compiler.variants(d)) { v ->
         text = text + " " + v;
     }

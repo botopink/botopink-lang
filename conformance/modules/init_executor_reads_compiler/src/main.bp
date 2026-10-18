@@ -6,7 +6,7 @@
 import {compiler} from "std";
 
 fn registered(syntax decl: unknown) {
-    compiler.init({ -> @print(compiler.name(decl)!) });
+    compiler.init({ -> @print(compiler.name(decl)) });
 }
 
 #[registered]

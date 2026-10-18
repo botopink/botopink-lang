@@ -78,9 +78,10 @@ pub behavior Compiler {
     // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
     fn text(self: Self, syntax e: unknown) -> string;
-    // The name the expression is written as, or the declaration's name;
-    // `null` for a lambda or `a + b`.
-    fn name(self: Self, syntax e: unknown) -> ?string;
+    // The name the expression is written as, or the declaration's name; an
+    // expression that has none — a lambda, a literal, a call, `a + b` — is
+    // `syntax-has-no-name` at it (decision 612).
+    fn name(self: Self, syntax e: unknown) -> string;
     // A template text's source and the context it stands in.
     fn source(self: Self, syntax e: unknown) -> Source;
     fn context(self: Self, syntax e: unknown) -> ExprContext;

@@ -388,11 +388,69 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     return b.arena.dupe(Ast.Form, &forms);
 }
 
+/// Decision 612 — the name an argument is written as, for
+/// `compiler.name(x)` (`'__bp_argName'/1`): a name or a dotted path answers
+/// its last name; a lambda, a function, a literal, an array, a call or an
+/// operator expression has none — `{nameless, Message}`, raised at the
+/// argument as `syntax-has-no-name`, naming the expression's kind.
+fn argNameTerm(arena: std.mem.Allocator, written: []const u8) error{OutOfMemory}!Term {
+    const src = std.mem.trim(u8, written, " \t\r\n");
+    if (nameOfPath(src)) |n| return Term.str(n);
+    const kind = expressionKind(src);
+    const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` is {s}: it has no name", .{ diagnostics.syntax_has_no_name, src, kind });
+    return Term.tupleOf(try arena.dupe(Term, &.{ .{ .atom = "nameless" }, Term.str(msg) }));
+}
+
+/// The last name of `a.b.c`, null when `src` is no dotted path of names.
+fn nameOfPath(src: []const u8) ?[]const u8 {
+    if (src.len == 0) return null;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= src.len) : (i += 1) {
+        if (i == src.len or src[i] == '.') {
+            const seg = src[start..i];
+            if (seg.len == 0 or !(std.ascii.isAlphabetic(seg[0]) or seg[0] == '_')) return null;
+            for (seg) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return null;
+            if (i == src.len) return if (isLiteralWord(seg) and start == 0) null else seg;
+            start = i + 1;
+        }
+    }
+    return null;
+}
+
+fn isLiteralWord(w: []const u8) bool {
+    return std.mem.eql(u8, w, "true") or std.mem.eql(u8, w, "false") or std.mem.eql(u8, w, "null");
+}
+
+/// What a nameless argument is, in a refusal's words.
+fn expressionKind(src: []const u8) []const u8 {
+    if (src.len == 0) return "an expression";
+    const c = src[0];
+    if (c == '{') return "a lambda";
+    if (std.mem.startsWith(u8, src, "fn") and src.len > 2 and (src[2] == '(' or src[2] == ' ')) return "a function expression";
+    if (std.ascii.isDigit(c) or c == '"' or c == '\'' or isLiteralWord(src)) return "a literal";
+    if (c == '[') return "an array";
+    // `f(…)` / `a.b(…)`: a path of names, then one parenthesised list.
+    var i: usize = 0;
+    while (i < src.len and (std.ascii.isAlphanumeric(src[i]) or src[i] == '_' or src[i] == '.')) i += 1;
+    if (i > 0 and i < src.len and src[i] == '(' and src[src.len - 1] == ')') {
+        var depth: usize = 0;
+        for (src[i..], i..) |ch, k| {
+            if (ch == '(') depth += 1;
+            if (ch == ')') {
+                depth -= 1;
+                if (depth == 0) return if (k == src.len - 1) "a call" else "an operator expression";
+            }
+        }
+    }
+    return "an operator expression";
+}
+
 /// Whether the (erased) decorator `dfn` reads an argument's text
 /// (`'__bp_argText'/1`, decision 576 (2)).
 fn readsArgText(arena: std.mem.Allocator, dfn: ast.FnDecl) !bool {
     const body: ast.FunctionExpr = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .syntax = .lambda, .params = &.{}, .body = dfn.body } };
-    for (try memberFnMod.freeNames(arena, body)) |n| if (std.mem.eql(u8, n.name, preludeMod.arg_text_fn)) return true;
+    for (try memberFnMod.freeNames(arena, body)) |n| if (std.mem.eql(u8, n.name, preludeMod.arg_text_fn) or std.mem.eql(u8, n.name, preludeMod.arg_name_fn)) return true;
     return false;
 }
 
@@ -463,7 +521,10 @@ fn buildModule(
     const plain_argument = try templateEval.argumentTerm(arena, plans);
     const argument = if (texts) blk: {
         const items = try arena.alloc(Term, @max(dfn.params.len, 1) - 1);
-        for (items, 0..) |*t, i| t.* = Term.str(if (i < plainArgs.len) plainArgs[i].source else "");
+        for (items, 0..) |*t, i| {
+            const src = if (i < plainArgs.len) plainArgs[i].source else "";
+            t.* = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(src), try argNameTerm(arena, src) }));
+        }
         break :blk Term.tupleOf(try arena.dupe(Term, &.{ plain_argument, Term.listOf(items) }));
     } else plain_argument;
     // Emitted once per decorator and plan, not once per annotated declaration

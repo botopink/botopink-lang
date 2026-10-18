@@ -9,7 +9,7 @@ pub behavior MailSender {
 }
 
 fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) {
-    compiler.setMeta(MissingBean(bean: compiler.name(decl)!));
+    compiler.setMeta(MissingBean(bean: compiler.name(decl)));
 }
 
 #[conditionalOnMissingBean(MailSendr)]

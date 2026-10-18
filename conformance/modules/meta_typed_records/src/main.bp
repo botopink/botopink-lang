@@ -5,7 +5,7 @@ type Entity(table: string, audited: bool)
 type Index(column: string)
 
 fn entity(syntax decl: unknown, comptime table: string) {
-    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)!
+    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)
         == "City"));
 }
 

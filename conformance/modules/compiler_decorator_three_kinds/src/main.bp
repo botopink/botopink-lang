@@ -20,7 +20,7 @@ fn check<T>(syntax decl: T, comptime label: string, syntax rule: fn(v: T) -> boo
     });
     compiler.setMeta(Mark(text: label.toUpper()
         + " "
-        + compiler.name(decl)!
+        + compiler.name(decl)
         + " "
         + compiler.text(rule)));
 }

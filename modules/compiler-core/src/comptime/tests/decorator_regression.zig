@@ -173,8 +173,8 @@ test "decorator regression: conditional in body accepts three fields" {
 const concat_decorator =
     \\fn nameCheck(syntax decl: unknown) {
     \\    var msg = "invalid name: ";
-    \\    msg = msg + compiler.name(decl)!;
-    \\    if (compiler.name(decl)! == "Forbidden") { compiler.fail(msg, at: decl); }
+    \\    msg = msg + compiler.name(decl);
+    \\    if (compiler.name(decl) == "Forbidden") { compiler.fail(msg, at: decl); }
     \\}
     \\import {compiler} from "std";
 ;
@@ -204,7 +204,7 @@ test "decorator regression: string concat in body accepts another name through '
 test "decorator regression: @emit in body" {
     try assertAcceptsWithReply(@src(),
         \\fn addHelper(syntax decl: unknown) {
-        \\    @emit("pub fn helper_" + compiler.name(decl)! + "() -> i32 { return 42; }");
+        \\    @emit("pub fn helper_" + compiler.name(decl) + "() -> i32 { return 42; }");
         \\}
         \\#[addHelper]
         \\type Service(x: i32)

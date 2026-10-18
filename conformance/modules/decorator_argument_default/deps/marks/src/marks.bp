@@ -12,7 +12,7 @@ pub fn mark(
     val shown = if (loud) label.toUpper() else label;
     @emit(
         "pub fn "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "Mark() -> string { return \""
             + shown
             + ":"

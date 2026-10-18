@@ -10,7 +10,7 @@ fn drawn(syntax decl: unknown) {
     io.random.seed(42);
     val x = io.random.seededFloat();
     @emit("pub fn label() -> string { return \""
-        + compiler.name(decl)!
+        + compiler.name(decl)
         + " ${x}\"; }");
 }
 

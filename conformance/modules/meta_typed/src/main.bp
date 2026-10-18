@@ -25,7 +25,7 @@ fn entity(syntax decl: unknown, comptime table: string) {
             table: table,
             columns: names,
             weight: 1.5,
-            audited: compiler.name(decl)! == "City",
+            audited: compiler.name(decl) == "City",
             level: Level.High,
             alias: null,
         ),

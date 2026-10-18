@@ -10,7 +10,7 @@ pub type Box<T>(value: T)
 pub type Provides(name: string)
 
 fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) {
-    compiler.setMeta(Provides(name: compiler.name(decl)!));
+    compiler.setMeta(Provides(name: compiler.name(decl)));
 }
 
 #[provides(string)]

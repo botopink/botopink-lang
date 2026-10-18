@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: syntax-has-no-name: `{ x -> x }` is a lambda: it has no name
+at src/main.bp:13:9

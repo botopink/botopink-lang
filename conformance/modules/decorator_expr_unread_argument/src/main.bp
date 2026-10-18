@@ -10,7 +10,7 @@ fn label(key: string) -> string {
 }
 
 fn audit(syntax decl: unknown, comptime message: string) {
-    compiler.setMeta(Audit(audited: compiler.name(decl)!));
+    compiler.setMeta(Audit(audited: compiler.name(decl)));
 }
 
 #[audit(label("signup.mismatch"))]

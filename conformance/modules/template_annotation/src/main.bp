@@ -41,7 +41,7 @@ fn query(syntax q: string, syntax decl: unknown) -> string {
     if (params.length == 0)
         compiler.fail(
             "a query of `"
-                + compiler.name(decl)!
+                + compiler.name(decl)
                 + "("
                 + declared
                 + ")` binds no parameter",

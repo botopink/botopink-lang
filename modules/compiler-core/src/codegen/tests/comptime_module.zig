@@ -56,7 +56,7 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
     const out = try lower(arena_state.allocator(),
         \\fn check(syntax decl: unknown) {
         \\    var msg = "invalid name: ";
-        \\    msg = msg + compiler.name(decl)!;
+        \\    msg = msg + compiler.name(decl);
         \\    if (compiler.fields(decl).len > 5) { compiler.fail(msg, at: decl); }
         \\}
         \\import {compiler} from "std";
@@ -80,7 +80,7 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
         \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "fn " + m.name;
         \\    });
-        \\    @emit("type Mock" + compiler.name(decl)! + " {" + methods + "}");
+        \\    @emit("type Mock" + compiler.name(decl) + " {" + methods + "}");
         \\}
         \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"} });
@@ -146,7 +146,7 @@ test "comptime module: a condition loop threads the variables its body reassigns
         \\    var i = 0;
         \\    var names = "";
         \\    while (i < 3) {
-        \\        names = names + compiler.name(decl)!;
+        \\        names = names + compiler.name(decl);
         \\        i = i + 1;
         \\    };
         \\    @emit(names);
@@ -204,7 +204,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
     // A parameter is not rebound: the push keeps its plain lowering.
     const param = try lower(arena_state.allocator(),
         \\fn tag(syntax decl: unknown, names: Array<string>) {
-        \\    names.push(compiler.name(decl)!);
+        \\    names.push(compiler.name(decl));
         \\    @emit(names.join(", "));
         \\}
         \\import {compiler} from "std";
@@ -292,7 +292,7 @@ test "comptime module: decorator body primitive methods dispatch through shims" 
     const out = try lower(arena_state.allocator(),
         \\fn mock(syntax decl: unknown) {
         \\    val names = compiler.fields(decl).map({ f -> f.name });
-        \\    if (compiler.name(decl)!.startsWith("_")) { compiler.fail("private: " + names.join(", "), at: decl); }
+        \\    if (compiler.name(decl).startsWith("_")) { compiler.fail("private: " + names.join(", "), at: decl); }
         \\}
         \\import {compiler} from "std";
     , .{ .host_enums = &.{"DeclKind"}, .forms = &.{hostFn("fail", 2)} });
@@ -307,7 +307,7 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
         \\fn sizes(syntax decl: unknown) {
-        \\    val a = compiler.name(decl)!.length();
+        \\    val a = compiler.name(decl).length();
         \\    val b = compiler.fields(decl).length();
         \\    val c = compiler.fields(decl).size;
         \\    val d = a.abs() + b.round() + c.floor() + a.ceil();
@@ -336,7 +336,7 @@ test "comptime module: a method nothing answers is a located error, not an undef
     var unsupported: erlang.UnsupportedMethod = .{};
     const result = lower(arena_state.allocator(),
         \\fn check(syntax decl: unknown) {
-        \\    val n = compiler.name(decl)!;
+        \\    val n = compiler.name(decl);
         \\    val x = n.frobnicate(1, 2);
         \\}
         \\import {compiler} from "std";

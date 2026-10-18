@@ -297,16 +297,16 @@ pub fn mock(syntax decl: unknown) {
     compiler.addType(
         "Mock",
         compiler.buildType("(__id: string) implement "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + " {\n"
             + methods
             + "}"),
     );
     compiler.addMember(
         "default fn mock() -> "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + " { return "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + ".Mock(__id: "
             + q
             + "newMock()); }",

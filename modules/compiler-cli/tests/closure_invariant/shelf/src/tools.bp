@@ -12,9 +12,9 @@ pub fn pick<T>(a: T, b: T, first: bool) -> T {
 pub fn tagged(syntax decl: unknown) {
     @emit(
         "pub fn "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "Tag() -> string { return \""
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "\"; }",
     );
 }

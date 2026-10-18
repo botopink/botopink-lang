@@ -15,6 +15,6 @@ pub fn routes() -> string[] {
 }
 
 pub fn route(syntax decl: unknown, comptime path: string) {
-    val name = compiler.name(decl)!;
+    val name = compiler.name(decl);
     compiler.init({ -> remember(path, name) });
 }

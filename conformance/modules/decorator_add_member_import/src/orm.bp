@@ -7,7 +7,7 @@ pub fn entity(syntax decl: unknown, comptime table: string) {
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.addMember(
         "pub fn fromRow(row: string[]) -> Self { return "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "(name: row.join(\"-\"), size: row.length); }",
     );
     compiler.addMember(

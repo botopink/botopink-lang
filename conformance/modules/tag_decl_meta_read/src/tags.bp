@@ -22,5 +22,5 @@ pub fn markup(syntax q: string) -> string {
         + 2, end: text.indexOf("]>"), line: 1));
     val h = compiler.meta<Hydrate>(d);
     if (h == null) return "none";
-    return compiler.name(d)! + " " + h.level.toString() + " " + h.note;
+    return compiler.name(d) + " " + h.level.toString() + " " + h.note;
 }

@@ -24,7 +24,7 @@
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
@@ -70,8 +70,8 @@ pub behavior Compiler {
     fn wrapWith<F>(self: Self, syntax wrapper: F);
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
-    // declarations in source order, calls in order (decision 575 (3)).
-    fn compile(self: Self, syntax executor: fn());
+    // declarations in source order, calls in order (decisions 575 (3), 615).
+    fn init(self: Self, syntax executor: fn());
     // A host source of the annotated `declare fn` (decision 575 (6)): one per
     // target (`implementation-twice`), never on a declaration with a body
     // (`implement-with-body`).
@@ -80,9 +80,10 @@ pub behavior Compiler {
     // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
     fn text(self: Self, syntax e: unknown) -> string;
-    // The name the expression is written as, or the declaration's name;
-    // `null` for a lambda or `a + b`.
-    fn name(self: Self, syntax e: unknown) -> ?string;
+    // The name the expression is written as, or the declaration's name; an
+    // expression that has none — a lambda, a literal, a call, `a + b` — is
+    // `syntax-has-no-name` at it (decision 612).
+    fn name(self: Self, syntax e: unknown) -> string;
     // A template text's source and the context it stands in.
     fn source(self: Self, syntax e: unknown) -> Source;
     fn context(self: Self, syntax e: unknown) -> ExprContext;
@@ -206,7 +207,7 @@ pub type HookNode = __HookNode;
 
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
 
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
 
 ////   `implement`.
 
@@ -244,7 +245,7 @@ pub type HookNode = __HookNode;
 //   fn addMember(...)
 //   fn addType(...)
 //   fn wrapWith(...)
-//   fn compile(...)
+//   fn init(...)
 //   fn implement(...)
 //   fn text(...)
 //   fn name(...)
@@ -299,10 +300,10 @@ export declare interface Compiler {
     addMember<F>(name: string, member: F): void;
     addType(name: string, source: string): void;
     wrapWith<F>(wrapper: F): void;
-    compile(executor: () => void): void;
+    init(executor: () => void): void;
     implement(source: Implementation): void;
     text(e: unknown): string;
-    name(e: unknown): string | null;
+    name(e: unknown): string;
     source(e: unknown): __Source;
     context(e: unknown): __ExprContext;
     lookup(e: unknown, name: string): unknown;
@@ -429,7 +430,7 @@ pub fn component(syntax decl: unknown) {
         };
         args.push(f.name + ": " + expr);
     });
-    @emit("pub fn wire" + compiler.name(decl)! + "() -> string { return \"" + compiler.name(decl)! + "(" + args.join(", ") + ")\"; }");
+    @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
 }
 
 #[component]
@@ -603,7 +604,7 @@ import {compiler} from "std";
   call $rt_bin
   i64.const 13
   call $rt_int
-  i64.const 108
+  i64.const 106
   call $rt_int
   local.get $s3
   call $bp_comptime_decorator:__bp_push/4

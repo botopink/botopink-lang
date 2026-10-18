@@ -12,7 +12,7 @@ type User(id: i32)
 fn stamp(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`" + compiler.text(q) + "` is not in scope", at: q);
     compiler.setMeta(Note(text: "seen"));
-    return compiler.build("\"" + compiler.name(decl)! + "\"");
+    return compiler.build("\"" + compiler.name(decl) + "\"");
 }
 
 pub fn main() {

@@ -3,5 +3,5 @@
 import {compiler} from "std";
 
 pub fn serverOnly(syntax decl: unknown) {
-    val _n = compiler.name(decl)!;
+    val _n = compiler.name(decl);
 }

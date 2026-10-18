@@ -24,7 +24,7 @@
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
@@ -70,8 +70,8 @@ pub behavior Compiler {
     fn wrapWith<F>(self: Self, syntax wrapper: F);
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
-    // declarations in source order, calls in order (decision 575 (3)).
-    fn compile(self: Self, syntax executor: fn());
+    // declarations in source order, calls in order (decisions 575 (3), 615).
+    fn init(self: Self, syntax executor: fn());
     // A host source of the annotated `declare fn` (decision 575 (6)): one per
     // target (`implementation-twice`), never on a declaration with a body
     // (`implement-with-body`).
@@ -80,9 +80,10 @@ pub behavior Compiler {
     // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
     fn text(self: Self, syntax e: unknown) -> string;
-    // The name the expression is written as, or the declaration's name;
-    // `null` for a lambda or `a + b`.
-    fn name(self: Self, syntax e: unknown) -> ?string;
+    // The name the expression is written as, or the declaration's name; an
+    // expression that has none — a lambda, a literal, a call, `a + b` — is
+    // `syntax-has-no-name` at it (decision 612).
+    fn name(self: Self, syntax e: unknown) -> string;
     // A template text's source and the context it stands in.
     fn source(self: Self, syntax e: unknown) -> Source;
     fn context(self: Self, syntax e: unknown) -> ExprContext;
@@ -303,7 +304,7 @@ pub type HookNode = __HookNode;
           "return_type": "void"
         },
         {
-          "name": "compile",
+          "name": "init",
           "params": [
             {
               "name": "self",
@@ -360,7 +361,7 @@ pub type HookNode = __HookNode;
               "is_comptime": true
             }
           ],
-          "return_type": "?string"
+          "return_type": "string"
         },
         {
           "name": "source",
@@ -809,7 +810,7 @@ pub type HookNode = __HookNode;
 ```botopink
 fn column(syntax decl: unknown, comptime name: string) { }
 fn describe(syntax decl: unknown, comptime label: string) {
-    var out = compiler.name(decl)! + "[" + label + "]";
+    var out = compiler.name(decl) + "[" + label + "]";
     for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     for (compiler.fields(decl)) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
@@ -821,7 +822,7 @@ fn describe(syntax decl: unknown, comptime label: string) {
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
-    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+    @emit("pub fn describe" + compiler.name(decl) + "() -> string { return \"\"\"" + out + "\"\"\"; }");
 }
 #[describe("record")]
 type Point(#[column("px")] x: i32, y: ?i32) {
@@ -918,7 +919,7 @@ pub fn describeMode() -> string {
       "return_type": "void",
       "body": [
         {
-          "source": "var out = compiler.name(decl)! + \"[\" + label + \"]\";"
+          "source": "var out = compiler.name(decl) + \"[\" + label + \"]\";"
         },
         {
           "source": "for (compiler.annotations(decl)) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
@@ -933,7 +934,7 @@ pub fn describeMode() -> string {
           "source": "for (compiler.methods(decl)) { m ->"
         },
         {
-          "source": "@emit(\"pub fn describe\" + compiler.name(decl)! + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
+          "source": "@emit(\"pub fn describe\" + compiler.name(decl) + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
         }
       ]
     },

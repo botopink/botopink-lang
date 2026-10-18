@@ -17,9 +17,9 @@ fn wrapBody(value: string) -> string {
 pub fn stamped(syntax decl: unknown) {
     @emit(
         "pub fn stamp() -> string { return \""
-            + wrap(compiler.name(decl)!)
+            + wrap(compiler.name(decl))
             + " "
-            + contentHash(compiler.name(decl)!)
+            + contentHash(compiler.name(decl))
             + "\"; }",
     );
 }

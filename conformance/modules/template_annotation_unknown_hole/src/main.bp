@@ -10,7 +10,7 @@ type Query(sql: string)
 fn sql(syntax q: string, syntax decl: unknown) -> string {
     compiler.addMember(
         "pub fn "
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "Text() -> string { return \""
             + compiler.text(q)
             + "\"; }",

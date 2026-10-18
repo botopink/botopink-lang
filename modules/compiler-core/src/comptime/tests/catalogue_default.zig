@@ -10,7 +10,7 @@ const h = @import("helpers.zig");
 
 const frame =
     \\pub fn m(syntax decl: unknown) {
-    \\    decl.setMeta("role", compiler.name(decl)!);
+    \\    decl.setMeta("role", compiler.name(decl));
     \\}
     \\
     \\#[m]

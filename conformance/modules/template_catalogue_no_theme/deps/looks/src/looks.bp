@@ -5,7 +5,7 @@
 import {compiler} from "std";
 
 pub fn theme(syntax decl: unknown) {
-    compiler.setMeta(Theme(named: compiler.name(decl)!));
+    compiler.setMeta(Theme(named: compiler.name(decl)));
 }
 
 pub default fn looks(syntax e: string) -> string {

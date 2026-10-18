@@ -22,7 +22,7 @@ fn shape(syntax decl: unknown) {
         .join("\n");
     @emit(
         "pub fn shapeOf"
-            + compiler.name(decl)!
+            + compiler.name(decl)
             + "() -> string { return \""
             + fields
             + "\n"

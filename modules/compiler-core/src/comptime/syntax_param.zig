@@ -327,14 +327,16 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         // `x.text()` → `__bp_argText(j)` in a decorator body (576 (2)).
         if (ctx.failArg and v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
-            if (c.receiver) |r| if (std.mem.eql(u8, c.callee, "text") and c.args.len == 0) if (indexOf(ctx, r.*)) |k| {
+            // Decision 612 — `x.name()` (`compiler.name(x)`) → `__bp_argName(j)`.
+            const readsName = std.mem.eql(u8, c.callee, "name");
+            if (c.receiver) |r| if ((readsName or std.mem.eql(u8, c.callee, "text")) and c.args.len == 0) if (indexOf(ctx, r.*)) |k| {
                 var out = v;
                 const args = try ctx.arena.alloc(ast.CallArg, 1);
                 const idx = try ctx.arena.create(ast.Expr);
                 idx.* = .{ .literal = .{ .loc = v.call.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.indices[k]}) } } };
                 args[0] = .{ .label = null, .value = idx };
                 out.call.kind.call.receiver = null;
-                out.call.kind.call.callee = preludeMod.arg_text_fn;
+                out.call.kind.call.callee = if (readsName) preludeMod.arg_name_fn else preludeMod.arg_text_fn;
                 out.call.kind.call.args = args;
                 return out;
             };
@@ -579,7 +581,7 @@ test "a body's use of a parameter: read, `.value`, `.fail` only" {
     var lx = lexer.Lexer.init(
         \\fn d(syntax decl: unknown, comptime a: string, syntax b: string, comptime c: string) {
         \\    decl.setMeta("a", a);
-        \\    if (compiler.name(decl)! == "") compiler.fail("no", at: b);
+        \\    if (compiler.name(decl) == "") compiler.fail("no", at: b);
         \\}
         \\import {compiler} from "std";
     );
