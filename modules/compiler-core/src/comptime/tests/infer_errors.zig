@@ -452,8 +452,8 @@ test "infer error: external ---- builtin typechecks args" {
 }
 
 test "infer error: external ---- wrong arity" {
-    // Two strings where `.Erlang` takes one template: the second fills
-    // `body:`, which names a private fn by its identifier (decision 575 (6)).
+    // Two strings where `.Erlang` takes one template: the second is an
+    // unlabelled argument, refused naming the labels (decision 621).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@external(.Erlang("string", "length"))]
         \\pub declare fn str_length(s: string) -> i32;

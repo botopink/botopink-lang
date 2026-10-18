@@ -3992,11 +3992,12 @@ fn refuseUnlabelledField(env: *Env, src: implementationsParse.Source) InferError
         if (arg.field) |f| if (std.mem.eql(u8, f, "template")) continue;
         const value = try tokensText(env, arg.tokens);
         const fix: []const u8 = blk: {
-            if (implementationsParse.identOf(arg.tokens)) |name| break :blk try std.fmt.allocPrint(env.arena, "write `body: {s}`", .{name});
+            // A `bool` literal lexes as a name too: test it before `body:`.
             if (implementationsParse.boolOf(arg.tokens) != null) break :blk if (target == .erlang)
                 try std.fmt.allocPrint(env.arena, "write `inline: {s}` or `result: {s}`", .{ value, value })
             else
                 try std.fmt.allocPrint(env.arena, "write `result: {s}`", .{value});
+            if (implementationsParse.identOf(arg.tokens)) |name| break :blk try std.fmt.allocPrint(env.arena, "write `body: {s}`", .{name});
             if (target == .wasm) {
                 if (implementationsParse.stringOf(arg.tokens) != null) break :blk try std.fmt.allocPrint(env.arena, "write `op: {s}` or `std: {s}`", .{ value, value });
                 if (implementationsParse.enumValueOf(arg.tokens)) |name| {

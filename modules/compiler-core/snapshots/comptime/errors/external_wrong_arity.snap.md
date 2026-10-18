@@ -3,10 +3,10 @@
 pub declare fn str_length(s: string) -> i32;
 
 ----- ERROR
-error: `.Erlang` on `str_length` writes a second cell, `body:` — a binding is one cell (decision 481)
+error: external-field-unlabelled: a cell's field is written by its label — write it by one of `.Erlang`'s labels: `body:`, `inline:`, `result:`
   ┌─ main.bp:1:31
   │
 1 │ #[@external(.Erlang("string", "length"))]
   │                               ^
 
-  hint: A binding is one labelled cell: `body: <private fn of this module>` or a template on every target; on wasm also `op: "<opcode>"`, `wasi: .<Adapter>` or `std: "<module>.<function>"` (std's alone).
+  hint: Only the template is written by position (`.Erlang("lists:reverse($0)")`); every other field by its label, in any order: `body:`, `inline:`, `result:`, and on `.Wasm` `op:`, `std:`, `wasi:`, `host:`, `needs:` (decision 621).
