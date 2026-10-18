@@ -810,6 +810,9 @@ pub const DecoratorSig = struct {
     /// resolves it: set for an imported decorator whose `B` is a `behavior` of
     /// that module (the importer need not name `B`).
     declBehavior: ?[]const u8 = null,
+    /// The module that declares an imported decorator: its parameter types
+    /// are read there, through that module's own declarations.
+    module: []const u8 = "",
 };
 
 /// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside

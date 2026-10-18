@@ -1,0 +1,18 @@
+//// The variant an annotation argument names belongs to the enum the
+//// decorator's parameter declares, not to an enum of the same name this
+//// module declares: `Lifecycle` here has `Slow`, the decorator's has not.
+
+import {kit} from "lib";
+
+type Lifecycle {
+    Slow,
+}
+
+#[kit.m(lifecycle: .Slow)]
+pub fn first() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(first());
+}

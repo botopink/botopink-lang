@@ -3786,6 +3786,15 @@ where they are written, as a call's are:
 
 <!-- example: modules/decorator_arguments_meta -->
 
+The enum is the one the decorator's own module declares, though the annotating
+module imports none: a decorator another package declares takes
+`#[kit.m(lifecycle: .Manual)]`, and an enum of the same name the annotating
+module declares never supplies its variants.
+
+<!-- example: modules/annotation_argument_dot_variant -->
+
+<!-- example: modules/annotation_argument_dot_variant_same_name -->
+
 A function or a type argument is checked at the argument and never run at
 build (decision 364 (3)). The body hands a `syntax` on to the program through a
 typed member (decision 370 (2)) — `compiler.addMember(name, fn…)` with the

@@ -1722,6 +1722,7 @@ pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDec
     if (env.decorators.getPtr(name)) |sig| {
         sig.support = support;
         sig.conflict = conflict;
+        sig.module = owner;
     }
     try env.noteComptimeOwner(fn_decl, owner);
 }
@@ -5444,6 +5445,12 @@ fn checkDotNameArg(env: *Env, a: ast.Annotation, name: []const u8, p: ast.Param,
         env.lastError = TypeError.unknownField(t.named.name, name).withLoc(loc);
         return error.TypeError;
     }
+    if (w.* == .named) if (declaringModuleEnum(env, a, w.named.name)) |td| {
+        for (td.shape.enum_.variants) |v| if (std.mem.eql(u8, v.name, name)) return;
+        const msg = try std.fmt.allocPrint(env.arena, "`.{s}` names no variant of `{s}`", .{ name, w.named.name });
+        env.lastError = TypeError.custom(msg, "A variant is written exactly as declared, case included (decision 280 (4)).").withLoc(loc);
+        return error.TypeError;
+    };
     if (w.* == .named) if (env.lookupTypeDef(w.named.name)) |td| if (td == .enum_) {
         for (td.enum_.variants) |v| if (std.mem.eql(u8, v.name, name)) return;
         const msg = try std.fmt.allocPrint(env.arena, "`.{s}` names no variant of `{s}`", .{ name, w.named.name });
@@ -5453,6 +5460,18 @@ fn checkDotNameArg(env: *Env, a: ast.Annotation, name: []const u8, p: ast.Param,
     const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `#[{s}]`'s `{s}` is `{s}`, and `.{s}` names a field or a variant", .{ a.name, p.name, try decoratorSpelling(env, want, 0), name });
     env.lastError = TypeError.custom(msg, "`.name` is a field of `T` against `Type.Field<T>`, or a variant against an enum.").withLoc(loc);
     return error.TypeError;
+}
+
+/// The enum `name` an imported decorator's module declares: the type its
+/// parameter names, read where the decorator is declared (never an enum of
+/// the same name this module or another one holds).
+fn declaringModuleEnum(env: *const Env, a: ast.Annotation, name: []const u8) ?ast.TypeDecl {
+    const sig = env.decorators.get(a.name) orelse return null;
+    if (sig.module.len == 0) return null;
+    const registry = env.typeDeclRegistry orelse return null;
+    const decls = registry.get(sig.module) orelse return null;
+    const d = decls.get(name) orelse return null;
+    return if (d == .type_ and d.type_.shape == .enum_) d.type_ else null;
 }
 
 /// The fields a record or struct type declares, in order; null for any other.
