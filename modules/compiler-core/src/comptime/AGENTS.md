@@ -459,6 +459,19 @@ lifted node) keeps the node's expansion. `modules/template_two_alike_expansions`
 `modules/template_default_arg_two_expansions`,
 `modules/template_built_code_diagnostic_located`.
 
+Code built from a template text (`` @`…` ``, decision 577) is parsed by
+`parseCodeTextAt` (the `.code` and `.custom` outcomes of the eval runtime): a
+leaf `CustomNode`'s text found in the code is located at its span, and every
+other identifier, number or string the code copies from the text — a hole's
+expression the template parsed out of `compiler.text(q)` — at its occurrence
+in the caller's text (`copiedAt`: a whole word at or after the previous match,
+outside every leaf span, so no two copied tokens share a location), through
+`template.mapSpanToLoc` (the two-byte opening, the text's own line breaks). A
+name the template's module declares keeps `builtCodeOrigin`'s location, so
+`dsl_hygiene` still reads its offset; the rest keep it too.
+`modules/template_hole_error_at_column`, `modules/template_hole_error_on_later_line`,
+`modules/template_hole_error_far_in_built_code`.
+
 `recv?.m(args)` over a nominal payload: the written call (typed over the `?T`)
 records no instance lowering of its own, so `inferOptionalOperator` copies the
 `.type_` lowering the synthesised link over the binder recorded (at

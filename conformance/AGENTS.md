@@ -705,8 +705,8 @@ record; the parent binary lowered the first with the second's field access on er
 `modules/template_default_arg_two_expansions` (a call that leaves out a default argument and a call of a
 one-parameter function at the same offset of two expansions; the parent binary filled the default
 into the second, `footer/2 undefined` on erlang) — four targets, no padding — and
-`modules/template_built_code_diagnostic_located` (a diagnostic in built code at the literal's line and
-column plus its offset; the parent binary located it at `1:20`).
+`modules/template_built_code_diagnostic_located` (a diagnostic in built code at the place in the
+caller's text the code copies, after the two-byte `` @` ``; the parent binary located it at `1:20`).
 `test/program_primitive_behavior_extends_std` and `modules/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
@@ -1147,7 +1147,10 @@ on the parent binary; `template_value_not_known` went with the holes (decision 5
 value at build (decision 355): `hole_any_call_at_build`, `hole_any_call_raises`, `hole_known_at_build_raises`,
 `hole_imported_val_known_at_build`, `styled_holes_known_at_build`; `modules/template_hole_typed_at_caller` holds
 14s8-a (e)'s remaining rule (a hole the template parses is spliced and typed at the caller, a mistyped one refused
-at the hole through its `CustomNode` span, `infer.zig` `parseCodeTextAt`). `modules/decorator_arguments_check` and
+at the hole through its `CustomNode` span, `infer.zig` `parseCodeTextAt`); `modules/template_hole_error_at_column`,
+`modules/template_hole_error_on_later_line` and `modules/template_hole_error_far_in_built_code` pin where an error in
+code built from a hole lands — at the hole's expression in the caller's text, after the two-byte `` @` ``, on its own
+line of a multi-line text, wherever the code puts it (`copiedAt`), each red on the parent binary. `modules/decorator_arguments_check` and
 `modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `expr` parameter
 of a function has no value, question `s35-b`).
 

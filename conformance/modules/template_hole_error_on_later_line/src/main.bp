@@ -1,0 +1,42 @@
+//// Decision 577 (1), 14s8-a (e) — a template text may span lines, and an
+//// error in the code built from a hole on its third line is located on that
+//// line, at the hole's expression: `missing`, unbound, is refused there,
+//// never on the line of the opening `` @` ``.
+
+import {compiler} from "std";
+
+fn cssValue(v: string) -> string {
+    return v;
+}
+
+fn quoted(text: string) -> string {
+    return "\"" + text.split("\n").join("\\n") + "\"";
+}
+
+fn css(expr q: string) -> string {
+    var code = "\"\"";
+    var first = true;
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            code = code
+                + " + cssValue("
+                + piece.slice(0, close)
+                + ") + "
+                + quoted(piece.slice(close + 1));
+        }
+    }
+    return compiler.build(code);
+}
+
+val color = "red";
+
+pub fn main() {
+    @print(css @`
+        color: ${color};
+        margin: ${missing};
+    `);
+}

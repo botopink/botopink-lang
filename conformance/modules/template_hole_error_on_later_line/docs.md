@@ -1,0 +1,3 @@
+# template_hole_error_on_later_line
+
+The reference text this cell shows (from `conformance/docs.md`, § Template functions): An error in the code a template builds is located where the text it came from is written (decision 577 (1), 14s8-a (e)): an identifier, a number or a string the built code copies from the template text — a hole's expression the template parsed out of `compiler.text(q)` — is located at its occurrence in the caller's text, which starts after the two-byte opening `` @` `` and keeps its line breaks; where the hole's code lands in the built code does not move it. An unbound or mistyped hole is refused at the first byte of its expression, on its own line of a multi-line text.

@@ -1,0 +1,58 @@
+//// Decision 577 (1), 14s8-a (e) — where a hole's expression lands in the
+//// code a template builds does not move its error: the template below writes
+//// a long prefix before the hole's code and records a `CustomNode` spanning
+//// the whole `${…}`, and the mistyped hole `${flag}` is refused at `flag` in
+//// the caller's text, not at its offset in the built code.
+
+import {compiler.CustomNode, compiler.Span, compiler} from "std";
+
+fn cssValue(v: string) -> string {
+    return v;
+}
+
+fn quoted(text: string) -> string {
+    return "\"" + text.split("\n").join("\\n") + "\"";
+}
+
+fn css(expr q: string) -> string {
+    var code = "\"\"";
+    var holes: CustomNode[] = [];
+    var at = 0;
+    var first = true;
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            code = code + " + " + quoted(piece);
+            at = piece.length;
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            holes.push(CustomNode(
+                kind: "hole",
+                span: Span(at, at + 3 + close, 1),
+                label: "variable",
+                ref: null,
+                children: [],
+            ));
+            code = code
+                + " + quoted(quoted(quoted(quoted(cssValue("
+                + piece.slice(0, close)
+                + "))))) + "
+                + quoted(piece.slice(close + 1));
+            at = at + 2 + piece.length;
+        }
+    }
+    compiler.custom(CustomNode(
+        kind: "css",
+        span: Span(0, at, 1),
+        label: "none",
+        ref: null,
+        children: holes,
+    ));
+    return compiler.build(code);
+}
+
+val flag = true;
+
+pub fn main() {
+    @print(css @`margin: ${flag};`);
+}

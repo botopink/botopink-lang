@@ -3335,6 +3335,21 @@ there is refused at the call that raised (§ Compile-time evaluation), with a
 
 <!-- example: modules/template_hole_typed_at_caller -->
 
+An error in the code a template builds is located where the text it came from
+is written (decision 577 (1), 14s8-a (e)): an identifier, a number or a string
+the built code copies from the template text — a hole's expression the
+template parsed out of `compiler.text(q)` — is located at its occurrence in
+the caller's text, which starts after the two-byte opening `` @` `` and keeps
+its line breaks; where the hole's code lands in the built code does not move
+it. An unbound or mistyped hole is refused at the first byte of its
+expression, on its own line of a multi-line text:
+
+<!-- example: modules/template_hole_error_at_column -->
+
+<!-- example: modules/template_hole_error_on_later_line -->
+
+<!-- example: modules/template_hole_error_far_in_built_code -->
+
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
 (`` val #(n, total) = f @`…`; ``), a lambda (one a module-level `val` holds

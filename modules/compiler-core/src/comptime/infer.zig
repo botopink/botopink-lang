@@ -9810,7 +9810,7 @@ fn expandTemplateCallViaRuntime(
     const expansion: *const ast.Expr = switch (outcome) {
         .code => |src| blk: {
             const origin = builtCodeOrigin(env, captures, loc);
-            const parsed = parseCodeText(env, src, origin) orelse {
+            const parsed = parseCodeTextAt(env, tfn, src, origin, if (captures.len > 0) &captures[0] else null, null) orelse {
                 env.lastError = TypeError.custom(
                     "the code built by the template does not parse as an expression",
                     "`build(…)`/`@code(…)` output must be a single well-formed botopink expression.",
@@ -9836,7 +9836,7 @@ fn expandTemplateCallViaRuntime(
             const origin = builtCodeOrigin(env, captures, loc);
             // The `ast` half: the reference tree the template built.
             const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
-            const parsed = parseCodeTextAt(env, c.code, origin, if (captures.len > 0) &captures[0] else null, root) orelse {
+            const parsed = parseCodeTextAt(env, tfn, c.code, origin, if (captures.len > 0) &captures[0] else null, root) orelse {
                 env.lastError = TypeError.custom(
                     "the code built by the template does not parse as an expression",
                     "`q.custom(tree, code)` — the `code` must be a single well-formed botopink expression (e.g. from `q.build(…)`).",
@@ -10528,12 +10528,22 @@ fn parseCodeText(env: *Env, src: []const u8, origin: ast.Loc) ?*const ast.Expr {
     return node;
 }
 
-/// `parseCodeText` for the code half of a `compiler.custom` answer (decision
-/// 577 (1), 14s8-a (e)): the text a leaf `CustomNode` spans — a hole the
-/// template parsed — is found in the built code, in tree order, and its tokens
-/// are located at that span of the template text in the caller's file
-/// (`template.mapSpanToLoc`), so a mistyped hole is refused at the hole.
-fn parseCodeTextAt(env: *Env, src: []const u8, origin: ast.Loc, cap: ?*const template.CapturedExpr, root: template.CustomNode) ?*const ast.Expr {
+/// `parseCodeText` for the code a template answers from a template text
+/// (decision 577 (1), 14s8-a (e)), located in the caller's file
+/// (`template.mapSpanToLoc`) so an error in the built code is refused where
+/// the text it came from is written:
+///
+/// - the text a leaf `CustomNode` of a `compiler.custom` tree spans is found
+///   in the built code, in tree order, and its tokens are located at that span;
+/// - every other identifier, number or string token the built code copied from
+///   the template text — a hole's expression the sub-language parsed out of
+///   `compiler.text(q)` and spliced — is located at its occurrence in the text
+///   (a whole word at or after the previous match, outside every leaf's span,
+///   so no two tokens share a location), on its own line of a multi-line text;
+///   a name the template's own module declares is not looked up, so
+///   `applyDslHygiene` still reads its offset in the code (decision 112);
+/// - the rest keeps `builtCodeOrigin`'s location, its offset in the code.
+fn parseCodeTextAt(env: *Env, tfn: ast.FnDecl, src: []const u8, origin: ast.Loc, cap: ?*const template.CapturedExpr, root: ?template.CustomNode) ?*const ast.Expr {
     const c = cap orelse return parseCodeText(env, src, origin);
     const text = c.text orelse return parseCodeText(env, src, origin);
     const Hole = struct { from: usize, to: usize, span_start: usize };
@@ -10545,7 +10555,7 @@ fn parseCodeTextAt(env: *Env, src: []const u8, origin: ast.Loc, cap: ?*const tem
         }
     };
     var leaves: std.ArrayListUnmanaged(template.CustomNode) = .empty;
-    Walk.leaves(env.arena, root, &leaves) catch return null;
+    if (root) |r| Walk.leaves(env.arena, r, &leaves) catch return null;
     var cursor: usize = 0;
     for (leaves.items) |n| {
         if (n.span.end <= n.span.start or n.span.end > text.len) continue;
@@ -10554,20 +10564,31 @@ fn parseCodeTextAt(env: *Env, src: []const u8, origin: ast.Loc, cap: ?*const tem
         holes.append(env.arena, .{ .from = at, .to = at + piece.len, .span_start = n.span.start }) catch return null;
         cursor = at + piece.len;
     }
-    if (holes.items.len == 0) return parseCodeText(env, src, origin);
+    // Copies are looked up only in a template text's raw bytes (577): a
+    // string literal's `text` is escaped, its offsets are not the file's.
+    if (holes.items.len == 0 and !c.templateText) return parseCodeText(env, src, origin);
     var lx = Lexer.init(src);
     const tokens = lx.scanAll(env.arena) catch return null;
-    // Each token's byte offset in `src`, read from its line and column.
-    var line_starts: std.ArrayListUnmanaged(usize) = .empty;
-    line_starts.append(env.arena, 0) catch return null;
-    for (src, 0..) |ch, i| if (ch == '\n') line_starts.append(env.arena, i + 1) catch return null;
+    const owner = env.comptimeOwnerOf(tfn);
+    const ownerExports = if (std.mem.eql(u8, owner, env.modulePath)) null else env.templateOwnerExports.get(owner);
+    var copyCursor: usize = 0;
     for (@constCast(tokens)) |*tok| {
-        const off: ?usize = if (tok.line >= 1 and tok.line <= line_starts.items.len) line_starts.items[tok.line - 1] + (tok.col -| 1) else null;
-        const hole: ?Hole = if (off) |o| for (holes.items) |h| {
-            if (o >= h.from and o < h.to) break h;
-        } else null else null;
-        if (hole) |h| {
-            const at = template.mapSpanToLoc(c, .{ .start = h.span_start + (off.? - h.from), .end = h.span_start + (off.? - h.from), .line = 1 });
+        const off = tok.offset;
+        const hole: ?Hole = for (holes.items) |h| {
+            if (off >= h.from and off < h.to) break h;
+        } else null;
+        const textAt: ?usize = if (hole) |h| h.span_start + (off - h.from) else if (c.templateText) copied: {
+            if (tok.kind == .identifier) if (ownerExports) |ex| {
+                if (ex.contains(tok.lexeme)) break :copied null;
+                const key = envMod.templatePrivateKey(env.arena, tok.lexeme) catch return null;
+                if (ex.contains(key)) break :copied null;
+            };
+            const at = copiedAt(text, tok.*, copyCursor, holes.items) orelse break :copied null;
+            copyCursor = at + tok.lexeme.len;
+            break :copied at;
+        } else null;
+        if (textAt) |t| {
+            const at = template.mapSpanToLoc(c, .{ .start = t, .end = t, .line = 1 });
             tok.line = at.line;
             tok.col = at.col;
         } else {
@@ -10581,6 +10602,41 @@ fn parseCodeTextAt(env: *Env, src: []const u8, origin: ast.Loc, cap: ?*const tem
     node.* = p.parseExpr(env.arena) catch return null;
     if (!p.check(.endOfFile)) return null;
     return node;
+}
+
+/// Where a built-code token was copied from in the template text: the first
+/// whole-word occurrence of its lexeme at or after `from` that no leaf span
+/// (`taken`, each `span_start` and its length) covers; null for a token of
+/// another kind, an empty string, or one the text does not spell after `from`
+/// (`parseCodeTextAt`).
+fn copiedAt(text: []const u8, tok: Token, from: usize, taken: anytype) ?usize {
+    switch (tok.kind) {
+        .identifier, .numberLiteral => {},
+        .stringLiteral => if (tok.lexeme.len <= 2) return null,
+        else => return null,
+    }
+    const word = tok.lexeme;
+    if (word.len == 0) return null;
+    const isWord = struct {
+        fn f(ch: u8) bool {
+            return std.ascii.isAlphanumeric(ch) or ch == '_';
+        }
+    }.f;
+    const whole = struct {
+        fn f(t: []const u8, w: []const u8, at: usize, comptime pred: fn (u8) bool) bool {
+            if (pred(w[0]) and at > 0 and pred(t[at - 1])) return false;
+            const end = at + w.len;
+            if (pred(w[w.len - 1]) and end < t.len and pred(t[end])) return false;
+            return true;
+        }
+    }.f;
+    var pos = @min(from, text.len);
+    search: while (std.mem.indexOfPos(u8, text, pos, word)) |at| : (pos = at + 1) {
+        if (!whole(text, word, at, isWord)) continue;
+        for (taken) |h| if (at + word.len > h.span_start and at < h.span_start + (h.to - h.from)) continue :search;
+        return at;
+    }
+    return null;
 }
 
 /// The source lexeme of a literal (or bool-identifier) argument bound to a plain
