@@ -662,11 +662,16 @@ const CallWalk = struct {
 
     fn walk(self: *CallWalk, comptime U: type, ptr: *const U) Error!void {
         if (U == ast.Expr) switch (ptr.*) {
-            .call => |c| if (c.kind == .call and !c.kind.call.is_builtin and c.kind.call.calleeExpr == null) {
-                const cc = c.kind.call;
-                if (cc.receiver) |r| {
-                    if (r.* == .identifier and r.identifier.kind == .ident) try self.found.append(self.arena, .{ .ns = r.identifier.kind.ident, .callee = cc.callee, .loc = c.loc });
-                } else try self.found.append(self.arena, .{ .ns = null, .callee = cc.callee, .loc = c.loc });
+            .call => |c| {
+                // A `compiler.compile` executor is run-time code (decisions 575 (3), 580): it is
+                // spliced into the program's init list, so what it calls is not reached at build.
+                if (ast.isExecutorCall(ptr.*)) return;
+                if (c.kind == .call and !c.kind.call.is_builtin and c.kind.call.calleeExpr == null) {
+                    const cc = c.kind.call;
+                    if (cc.receiver) |r| {
+                        if (r.* == .identifier and r.identifier.kind == .ident) try self.found.append(self.arena, .{ .ns = r.identifier.kind.ident, .callee = cc.callee, .loc = c.loc });
+                    } else try self.found.append(self.arena, .{ .ns = null, .callee = cc.callee, .loc = c.loc });
+                }
             },
             else => {},
         };

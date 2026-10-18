@@ -3718,6 +3718,15 @@ pub fn collectNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayL
     return collectNamesIn(gpa, body, out, false);
 }
 
+/// The call the parser lowers `compiler.compile({ -> … })` to, `<decl>.compile(<function>)`
+/// (decisions 575 (3), 580): its function is run-time code spliced into the program's init
+/// list, so the names it reads are not reached by the decorator that writes it.
+pub fn isExecutorCall(e: Expr) bool {
+    if (e != .call or e.call.kind != .call) return false;
+    const cc = e.call.kind.call;
+    return cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "compile") and cc.args.len == 1 and cc.args[0].value.* == .function;
+}
+
 /// `collectNames` for what runs with the program (144 B-128): an `assert`'s
 /// operands, a typed function expression and a `wrapWith` wrapper's body are
 /// read too.
@@ -3826,6 +3835,7 @@ fn collectExprNamesMode(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnma
                 // Decision 316 — `<handle>.wrapWith({ call -> … })`: the
                 // wrapper runs with the program, as a typed member does.
                 if (!run and cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "wrapWith") and cc.args.len == 1 and cc.args[0].value.* == .function) return;
+                if (!run and isExecutorCall(e)) return;
                 for (cc.args) |a| try collectExprNamesMode(gpa, a.value.*, out, run, mode);
                 for (cc.trailing) |tl| {
                     if (mode == .declared) try out.appendSlice(gpa, tl.params);

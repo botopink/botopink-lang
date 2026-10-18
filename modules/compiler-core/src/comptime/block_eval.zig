@@ -146,6 +146,8 @@ const NameWalk = struct {
 
     fn walk(self: *NameWalk, comptime U: type, ptr: *const U) Error!void {
         if (U == ast.Expr) try self.visit(ptr.*);
+        // A `compiler.compile` executor is run-time code, not read at build (decision 575 (3)).
+        if (U == ast.Expr and !self.declared_only and ast.isExecutorCall(ptr.*)) return;
         if (U == ast.TypeRef and !self.declared_only) return self.typeRef(ptr.*);
         if (U == ast.Pattern) return self.pattern(ptr.*);
         switch (@typeInfo(U)) {
