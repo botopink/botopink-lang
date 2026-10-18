@@ -1187,6 +1187,12 @@ Decisions 610 and 621 (144 B-138, a source's fields) add the refusals `modules/e
 `external-body-not-a-fn` at the argument; `external_fn_body_every_target` and `external_result_on_fn_cell` write a
 template on one target beside their `body:` cells, so neither is all bodies. Decision 618 renamed `.JavaScript` to
 `.JavaScript` in every cell (`scripts/codemod/implementation_javascript.py`).
+Decision 642 (144 B-137) extends 614's fold to every tree a decorator hands the compiler: `modules/member_reads_compiler_name`
+(`out Users`), `modules/wrapper_reads_compiler_name` (`out home:here`), `modules/member_names_its_parameter` (`compiler.name(x)`
+over the member's own parameter, `out x`) and `modules/member_reads_compiler_text` (`out always`; it was
+`expr_captures_build`, a `syntax-captures-build` refusal that decision 642 removed); `modules/init_executor_compiler_arg_at_run_time`
+refuses a `comptime` position (`compiler.typeInfo(s)`), where `compiler.text(s)` is accepted, and
+`modules/decorator_member_captures_handle` reads the handle itself (`decl.name`), still `decorator-member-captures`.
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds

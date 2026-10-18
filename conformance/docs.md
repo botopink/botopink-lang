@@ -3591,8 +3591,8 @@ name there — a local, a field, a parameter.
 
 Its rules are read off the binding, not the spelling: in a body that runs when
 the program runs it is `compiler-at-run-time`, an output outside a decorator
-`compiler-output-outside-decorator`, a read inside a member or a wrapper a decorator
-writes `syntax-captures-build` (inside an executor it is evaluated at build, decision 614);
+`compiler-output-outside-decorator`, a read inside a tree a decorator
+writes is evaluated at build (decisions 614, 642);
 it is read only through its members, and passed as an argument or stored it is
 `compiler-escapes`, at the name.
 
@@ -3828,8 +3828,11 @@ reached, so an argument not known at build (`t("…")`) is accepted. The
 decorator's type parameters take what the annotation bound them to (`T` is
 `Signup`, written `Self`). The member reads nothing else of the decorator's
 body: the handle and a local that is no literal exist only while the program
-compiles (`decorator-member-captures`), and `compiler` inside a member is
-`syntax-captures-build`. Every parameter is typed (`decorator-member-fn-untyped`),
+compiles (`decorator-member-captures`), while a `compiler.*` call inside a member
+is evaluated at build and spliced as its answer (decision 642; cell
+`member_reads_compiler_name`), `compiler.name(x)` over the member's own parameter
+`x` answering `"x"` (`member_names_its_parameter`), `compiler.text(x + 1)` its source as written
+(`member_texts_its_expression`). Every parameter is typed (`decorator-member-fn-untyped`),
 the member is written at the call (`decorator-member-not-fn`), and a `self` is
 the type the member joins and every type parameter it writes is bound
 (`decorator-member-type`); a typed function expression is legal in every other
@@ -3860,7 +3863,8 @@ wrapper, and its original body is reachable only through `call.run()`. The
 wrapper is a tree, as a member function is: it reads the decorator's `syntax`
 parameters, spliced, its `comptime` parameters as literals, and the names of
 the decorator's module, never the handle or a local that is no literal
-(`decorator-member-captures`), nor `compiler` (`syntax-captures-build`).
+(`decorator-member-captures`); a `compiler.*` call in it is evaluated at build
+and spliced as its answer (decision 642; cell `wrapper_reads_compiler_name`).
 
 <!-- example: modules/decorator_wraps_function -->
 
@@ -3953,11 +3957,13 @@ A `compiler.*` call inside the executor is evaluated at build and enters the
 executor as a literal, exactly as a `val` read before it does (decision 614):
 `compiler.init({ -> register(compiler.name(decl)) })` and `val name =
 compiler.name(decl); compiler.init({ -> register(name) })` compile to the same
-init statement. A `compiler.*` argument that is a run-time value of the
-executor — a parameter of a lambda in it, a value it binds — is
-`compiler-arg-at-run-time`, at the argument, naming the value. `compiler.init`
-in a function that is no decorator is `compiler-output-outside-decorator`, at
-the member.
+init statement. So does a call inside a member or a wrapper (decision 642). A
+`syntax` argument of the call is taken as written, so `compiler.name(x)` over a
+parameter `x` of a lambda in the tree is `"x"`; a `comptime` argument of the call
+(`typeInfo(comptime t)`) that is a run-time value of the tree — a parameter of a
+lambda in it, a value it binds — is `compiler-arg-at-run-time`, at the argument,
+naming the parameter and the value. `compiler.init` in a function that is no
+decorator is `compiler-output-outside-decorator`, at the member.
 
 <!-- example: modules/init_executor_reads_compiler -->
 

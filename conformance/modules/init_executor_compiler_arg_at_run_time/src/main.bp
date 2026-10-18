@@ -1,14 +1,15 @@
-//// Decision 614 — a `compiler.*` read inside an executor is evaluated at
-//// build, so its argument is what the build knows: `s`, a parameter of a
-//// lambda the executor runs, exists only when the program runs, and is
-//// refused at the argument (`compiler-arg-at-run-time`).
+//// Decisions 614, 642 — a `compiler.*` read inside an executor is evaluated
+//// at build, so a `comptime` argument of it is what the build knows: `s`, a
+//// parameter of a lambda the executor runs, exists only when the program runs,
+//// and is refused at the argument (`compiler-arg-at-run-time`) — where a
+//// `syntax` argument (`compiler.text(s)`) takes it as written.
 
 import {compiler, io.terminal.print} from "std";
 
 fn registered(syntax decl: unknown) {
     compiler.init({ ->
         for (["a"]) { s ->
-            print(compiler.text(s));
+            print(compiler.typeInfo(s));
         }
     });
 }

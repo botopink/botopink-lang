@@ -468,6 +468,11 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("wrapWith", &.{ V("_Decl"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("wrap")), Ast.field("index", V("Index")) })}),
         }),
+        // Decision 642 — the body's locals the wrapper reads, their values
+        // in `member_fn.capturedLocals`'s order.
+        try b.function("wrapWith", &.{ V("_Decl"), V("Index"), V("Captured") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("wrap")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Captured")})) })}),
+        }),
         // Decision 575 (3) — `decl.compile(f)`: the executor is the
         // program's code, so the body hands its index (`syntax_param.eraseFn`,
         // `member_fn.collectExecutors`'s order) and, by the tree rule, the

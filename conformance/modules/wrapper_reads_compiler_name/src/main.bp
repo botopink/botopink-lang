@@ -1,0 +1,20 @@
+//// Decision 642 — a `compiler.*` call inside a wrapper a decorator writes is
+//// evaluated at build and spliced as its answer: the wrapper prefixes the
+//// annotated function's result with its name.
+
+import {compiler, io.terminal.print} from "std";
+
+fn named(syntax decl: fn() -> string) {
+    compiler.wrapWith({ call ->
+        compiler.name(decl) + ":" + call.run()
+    });
+}
+
+#[named]
+pub fn home() -> string {
+    return "here";
+}
+
+pub fn main() {
+    print(home());
+}

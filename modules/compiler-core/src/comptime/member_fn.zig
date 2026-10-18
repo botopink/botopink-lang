@@ -308,6 +308,18 @@ pub fn capturedLocals(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.Funct
     return out.items;
 }
 
+/// Decision 614 — the prefix of the `val`s `compiler_surface.zig` hoists a
+/// tree's `compiler.*` reads into (`__bp_build_<k>`).
+pub const build_read_prefix = "__bp_build_";
+
+/// Decision 642 — of `capturedLocals`, the ones that are a hoisted
+/// `compiler.*` read: the only locals a wrapper holds as literals.
+pub fn capturedBuildReads(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.FunctionExpr) ![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (try capturedLocals(arena, dfn, func)) |n| if (std.mem.startsWith(u8, n, build_read_prefix)) try out.append(arena, n);
+    return out.items;
+}
+
 /// A value the decorator body computed, as the botopink literal a member
 /// spells it with (the tree rule): a string, a number, a `bool`, `null`, an
 /// array of those. Null for any other value (a record, a function).

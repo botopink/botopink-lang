@@ -777,15 +777,11 @@ pub const compiler_at_run_time: []const u8 = "compiler-at-run-time";
 /// decorator's body.
 pub const compiler_output_outside_decorator: []const u8 = "compiler-output-outside-decorator";
 
-/// Decision 575 (4), the tree rule — `compiler` inside a tree a decorator
-/// writes as a member or a wrapper; inside an executor a `compiler.*` read is
-/// evaluated at build instead (decision 614).
-pub const syntax_captures_build: []const u8 = "syntax-captures-build";
-
-/// Decision 614 — a `compiler.*` read inside an executor whose argument is a
-/// value of the executor (a lambda's parameter, a value it binds): the read
-/// is evaluated at build, the value exists only when the program runs.
-/// Refused at the argument, naming the value.
+/// Decisions 614, 642 — a `comptime` parameter of a `compiler.*` read inside a
+/// tree (executor, member, wrapper) given a value of the tree (a lambda's
+/// parameter, a value it binds): the read is evaluated at build, the value
+/// exists only when the program runs. Refused at the argument, naming the
+/// parameter and the value; a `syntax` parameter takes it as written.
 pub const compiler_arg_at_run_time: []const u8 = "compiler-arg-at-run-time";
 
 /// Decision 612 — `compiler.name(e)` on an expression that has no name (a
@@ -1018,7 +1014,6 @@ pub const all_codes = [_][]const u8{
     template_signature,
     compiler_at_run_time,
     compiler_output_outside_decorator,
-    syntax_captures_build,
     compiler_arg_at_run_time,
     syntax_has_no_name,
     compiler_member_unknown,

@@ -6251,8 +6251,20 @@ fn wrapperSource(
     // A decorator of this module runs before its body is checked.
     if (local) try refuseCaptures(env, func, dfn.params, dfn.body, false, false);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
-    const splices = try env.arena.alloc(memberFn.Splice, values.len);
+    // Decisions 575 (4), 642 — the body's locals the wrapper reads, as the
+    // literals of the values the body handed — the hoisted `compiler.*` reads.
+    const captured = try memberFn.capturedBuildReads(env.arena, dfn, func);
+    const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
+    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
+    for (captured, 0..) |n, k| {
+        const v: std.json.Value = if (k < handed.len) handed[k] else .null;
+        const lit = (try memberFn.literalSource(env.arena, v)) orelse {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s wrapper reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, n });
+            return decoratorError(env, a, msg, "A wrapper holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
+        };
+        splices[values.len + k] = .{ .param = n, .lexeme = lit };
+    }
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
     return memberFn.renderWrapper(env.arena, func, splices, typeArgs, "", renames) catch return error.OutOfMemory;
 }
@@ -23935,8 +23947,9 @@ fn refuseMemberFnShape(env: *Env, func: ast.FunctionExpr, params: []const ast.Pa
 /// handle and no local of the decorator's body (`decorator-member-captures`),
 /// refused where it is read.
 /// Decision 575 (4), the tree rule — a member holds the body's locals as
-/// literals (`member_fn.capturedLocals`): `locals` admits them; a wrapper
-/// does not yet, and neither reads the handle.
+/// literals (`member_fn.capturedLocals`): `locals` admits them; a wrapper holds
+/// only the hoisted `compiler.*` reads (`capturedBuildReads`, decision 642), and
+/// neither reads the handle.
 /// Decision 581 (2) — an executor reads it (`handle`): there it is the
 /// annotated declaration itself as a run-time value (`executorSource`).
 fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt, locals: bool, handle: bool) InferError!void {
@@ -23949,7 +23962,7 @@ fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, 
         if (isExprParam) continue;
         const isHandle = std.mem.eql(u8, n.name, declName);
         if (isHandle and handle) continue;
-        if (!isHandle and (locals or !decoratorLocals.contains(n.name))) continue;
+        if (!isHandle and (locals or !decoratorLocals.contains(n.name) or std.mem.startsWith(u8, n.name, memberFn.build_read_prefix))) continue;
         const msg = if (isHandle)
             try std.fmt.allocPrint(env.arena, "{s}: the member reads `{s}`, the decorator's `@Decl` handle, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name })
         else

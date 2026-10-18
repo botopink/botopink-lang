@@ -1,0 +1,18 @@
+//// Decision 642 — a `syntax` parameter of `Compiler` takes its argument as
+//// written, so `compiler.name(x)` over the member's own parameter `x` is
+//// `"x"` at build, whatever `x` holds when the program runs.
+
+import {compiler, io.terminal.print} from "std";
+
+fn spelled(syntax decl: unknown) {
+    compiler.addMember("spell", fn(x: string) -> string {
+        return compiler.name(x);
+    });
+}
+
+#[spelled]
+pub type Users(id: i32)
+
+pub fn main() {
+    print(Users.spell("anything"));
+}

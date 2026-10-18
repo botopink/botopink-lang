@@ -18,7 +18,7 @@
 //!   site: a parameter's tree as it is, anything else lifted (`@expr(e)` to
 //!   the template machinery).
 //! - The refusals — `compiler-at-run-time`, `compiler-output-outside-decorator`,
-//!   `syntax-captures-build`, `compiler-member-unknown` — are written as the
+//!   `compiler-member-unknown` — are written as the
 //!   reserved builtin `refusal_builtin` at the place, which the checker
 //!   reports there (`infer.zig`).
 
@@ -146,8 +146,6 @@ const Ctx = struct {
     hoisted: std.ArrayListUnmanaged(ast.Stmt) = .empty,
     /// How many such `val`s the body holds (their names, `__bp_build_<k>`).
     hoistCount: usize = 0,
-    /// Inside an executor (`compiler.init(f)`'s `f`).
-    inExecutor: bool = false,
     /// How many `compiler.*` reads the pass mapped so far.
     mapped: usize = 0,
 };
@@ -551,18 +549,16 @@ fn runTimeRefusal(ctx: *Ctx, loc: ast.Loc) error{OutOfMemory}!ast.Expr {
     return refusal(ctx, loc, diagnostics.compiler_at_run_time, "`compiler` is the compiler of a body that runs at build, and this body runs when the program runs", "Read the compiler in a decorator, a template, a function called at build or a `comptime { … }` block (decision 575 (3)).");
 }
 
-fn treeRefusal(ctx: *Ctx, loc: ast.Loc) error{OutOfMemory}!ast.Expr {
-    return refusal(ctx, loc, diagnostics.syntax_captures_build, "a tree holds the code the program runs, and `compiler` exists only while it compiles", "Read the compiler in the decorator's body and hand the tree a `comptime` value or a `syntax` (decision 575 (4), the tree rule).");
-}
-
 /// Decision 614 — every `compiler.*` read the executor `f` writes is
 /// evaluated at build: replaced by the name of a `val` that holds it
 /// (`__bp_build_<k>`, queued on `ctx.hoisted` for `walkStmts` to put before
 /// the `compiler.init` statement), so the executor reads it as the literal
 /// of its value, exactly as a `val` the body wrote before it. A read whose
-/// argument names a value of the executor — a parameter of a lambda in it, a
-/// value it binds — is refused at that argument (`compiler-arg-at-run-time`):
-/// the value exists only when the program runs.
+/// argument names a value of the tree — a parameter of a lambda in it, a
+/// value it binds — is refused at that argument (`compiler-arg-at-run-time`)
+/// only at a `comptime` position; a `syntax` position takes the name as written
+/// and the read folds to a literal (decision 642). Every tree a decorator
+/// hands the compiler — executor, member, wrapper — is hoisted so.
 fn hoistBuildReads(ctx: *Ctx, f: *ast.Expr) error{OutOfMemory}!void {
     const set = memberFn.boundNames(ctx.scratch, &.{}, &[_]ast.Stmt{.{ .expr = f.* }}) catch return error.OutOfMemory;
     var bound: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -573,6 +569,9 @@ fn hoistBuildReads(ctx: *Ctx, f: *ast.Expr) error{OutOfMemory}!void {
 
 fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory}!void {
     const e = p.*;
+    // A `comptime e` in a tree is the build's own (the tree rule splices its
+    // answer): `walkExpr` reads the compiler there, nothing is hoisted.
+    if (e == .comptime_ and e.comptime_.kind == .comptimeExpr) return;
     // `compiler.name(d)` is hoisted whole: the `!` reads the build's answer.
     var read = false;
     if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
@@ -582,10 +581,18 @@ fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory
     if (!read and e == .identifier and e.identifier.kind == .identAccess and isCompiler(e.identifier.kind.identAccess.receiver.*)) read = true;
     if (read) {
         if (try runTimeArgument(ctx, e, bound)) |at| {
-            p.* = try refusal(ctx, at.loc, diagnostics.compiler_arg_at_run_time, try std.fmt.allocPrint(ctx.alloc, "`{s}` is a value of the executor, which exists only when the program runs, and `compiler` reads only what the build knows", .{at.name}), "A `compiler.*` read inside an executor is evaluated at build: hand it a parameter of the decorator or a `val` of its body, never a value the executor computes (decision 614).");
+            p.* = try refusal(ctx, at.loc, diagnostics.compiler_arg_at_run_time, try std.fmt.allocPrint(ctx.alloc, "`{s}` is a value of the tree, which exists only when the program runs, and the `comptime` parameter `{s}` of `compiler.{s}` takes only what the build knows", .{ at.name, at.param, at.callee }), "A `comptime` argument of a `compiler.*` read inside a tree is evaluated at build: hand it a parameter of the decorator or a `val` of its body, never a value the tree computes (decisions 614, 642).");
             return;
         }
-        const name = try std.fmt.allocPrint(ctx.alloc, "__bp_build_{d}", .{ctx.hoistCount});
+        // A `syntax` argument that is a name of the tree: the name as written.
+        if (try foldSyntax(ctx, e, bound)) |lit| {
+            p.* = lit;
+            return;
+        }
+        // A read over a name the tree binds is never hoisted: the decorator's
+        // body does not bind it (a nameless expression keeps its refusal).
+        if (readCall(e)) |rc| if (rc.args.len == 1 and try readsTreeName(ctx, rc.args[0].value.*, bound)) return;
+        const name = try std.fmt.allocPrint(ctx.alloc, "{s}{d}", .{ memberFn.build_read_prefix, ctx.hoistCount });
         ctx.hoistCount += 1;
         const loc = e.getLoc();
         const value = try box(ctx, e);
@@ -625,25 +632,88 @@ fn hoistAny(ctx: *Ctx, v: anytype, bound: []const []const u8) error{OutOfMemory}
     }
 }
 
-const RunTimeArg = struct { name: []const u8, loc: ast.Loc };
+const RunTimeArg = struct { name: []const u8, loc: ast.Loc, param: []const u8, callee: []const u8 };
 
-/// The first name a read's arguments write that the executor binds.
+/// The `compiler.*` call of a hoisted read, `!`-wrapped or not.
+fn readCall(read: ast.Expr) ?CallData {
+    if (compilerCall(read)) |c| return c;
+    if (read == .call and read.call.kind == .call and read.call.kind.call.args.len == 1) return compilerCall(read.call.kind.call.args[0].value.*);
+    return null;
+}
+
+/// The name of the `comptime` parameter of a `Compiler` member (`compiler.bp`).
+fn valueParamName(callee: []const u8) []const u8 {
+    return if (std.mem.eql(u8, callee, "typeInfo")) "t" else "source";
+}
+
+/// The first name a read's `comptime` arguments write that the tree binds
+/// (decision 642): a `syntax` position takes its argument as written, so it
+/// is never at run time.
 fn runTimeArgument(ctx: *Ctx, read: ast.Expr, bound: []const []const u8) error{OutOfMemory}!?RunTimeArg {
     if (bound.len == 0) return null;
-    const c = blk: {
-        if (compilerCall(read)) |c| break :blk c;
-        if (read == .call and read.call.kind == .call and read.call.kind.call.args.len == 1) if (compilerCall(read.call.kind.call.args[0].value.*)) |c| break :blk c;
-        return null;
-    };
-    for (c.args) |a| {
+    const c = readCall(read) orelse return null;
+    const m = memberOf(c.callee) orelse return null;
+    for (c.args, 0..) |a, i| {
+        if (i >= m.params.len or m.params[i] != .value) continue;
         const body = try ctx.scratch.alloc(ast.Stmt, 1);
         body[0] = .{ .expr = a.value.* };
         const lambda: ast.FunctionExpr = .{ .loc = a.value.getLoc(), .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } };
         for (memberFn.freeNames(ctx.scratch, lambda) catch return error.OutOfMemory) |n| {
-            if (contains(bound, n.name)) return .{ .name = n.name, .loc = n.loc };
+            if (contains(bound, n.name)) return .{ .name = n.name, .loc = n.loc, .param = valueParamName(c.callee), .callee = c.callee };
         }
     }
     return null;
+}
+
+/// Decision 642 — a `syntax` parameter of `Compiler` receives its argument as
+/// written. `compiler.text(e)` where `e` reads a name the tree binds (a
+/// parameter of a lambda in it, a value it binds; not the declaration handle,
+/// and whatever a decorator parameter is called) is the literal of `e`'s
+/// source; `compiler.name(e)` is the literal of the name of an identifier or
+/// of a member path (its last segment). Null when the read names nothing of
+/// the tree.
+fn foldSyntax(ctx: *Ctx, read: ast.Expr, bound: []const []const u8) error{OutOfMemory}!?ast.Expr {
+    const c = readCall(read) orelse return null;
+    if (c.args.len != 1 or c.args[0].label != null) return null;
+    const isName = std.mem.eql(u8, c.callee, "name");
+    if (!isName and !std.mem.eql(u8, c.callee, "text")) return null;
+    const a = c.args[0].value.*;
+    if (!try readsTreeName(ctx, a, bound)) return null;
+    if (isName) {
+        const n = nameOf(a) orelse return null;
+        ctx.changed = true;
+        return (try stringLit(ctx, n, read.getLoc())).*;
+    }
+    const format = @import("../format.zig");
+    var f = format.Formatter.init(ctx.scratch);
+    const doc = f.fmtExpr(a) catch return error.OutOfMemory;
+    const text = format.render(ctx.alloc, doc, 100000) catch return error.OutOfMemory;
+    ctx.changed = true;
+    return (try stringLit(ctx, std.mem.trim(u8, text, " \n"), read.getLoc())).*;
+}
+
+/// Whether `e` reads a name the tree binds that is not the declaration handle.
+fn readsTreeName(ctx: *Ctx, e: ast.Expr, bound: []const []const u8) error{OutOfMemory}!bool {
+    if (bound.len == 0) return false;
+    const body = try ctx.scratch.alloc(ast.Stmt, 1);
+    body[0] = .{ .expr = e };
+    const lambda: ast.FunctionExpr = .{ .loc = e.getLoc(), .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } };
+    for (memberFn.freeNames(ctx.scratch, lambda) catch return error.OutOfMemory) |n| {
+        if (!contains(bound, n.name)) continue;
+        if (ctx.decl) |d| if (std.mem.eql(u8, d, n.name)) continue;
+        return true;
+    }
+    return false;
+}
+
+/// The name an identifier or a member path is written with: its last segment.
+fn nameOf(e: ast.Expr) ?[]const u8 {
+    if (e != .identifier) return null;
+    return switch (e.identifier.kind) {
+        .ident => |n| n,
+        .identAccess => |ia| ia.member,
+        else => null,
+    };
 }
 
 fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
@@ -696,10 +766,6 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             p.* = try runTimeRefusal(ctx, at);
             return;
         }
-        if (ctx.inTree) {
-            p.* = try treeRefusal(ctx, at);
-            return;
-        }
         // Decision 578 (3) — `compiler.addType(name, compiler.buildType(s))`:
         // the type built from its text (the text the machinery takes).
         if (std.mem.eql(u8, c.callee, "addType") and c.args.len == 2) if (compilerCall(c.args[1].value.*)) |bt| if (std.mem.eql(u8, bt.callee, "buildType") and bt.args.len == 1) {
@@ -713,10 +779,10 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         // Decision 614 — a `compiler.*` read inside the executor is
         // evaluated at build: hoisted into a `val` of the body before the
         // call, the executor reading it as a literal (575 (4)'s tree rule).
-        const executor = std.mem.eql(u8, c.callee, "init") and c.args.len == 1 and c.args[0].value.* == .function;
-        if (executor) try hoistBuildReads(ctx, c.args[0].value);
-        // The arguments first: a member, a wrapper and an executor are trees.
+        // The arguments first: a member, a wrapper and an executor are trees,
+        // each hoisted alike (decision 642).
         const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "init");
+        if (tree) for (c.args) |a| if (a.value.* == .function) try hoistBuildReads(ctx, a.value);
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;
         for (c.args, 0..) |*a, i| {
             // The expression a read is about — `at:` of `fail`, the first
@@ -729,11 +795,8 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             if (about and a.value.* == .identifier and a.value.identifier.kind == .ident) continue;
             const fnArg = a.value.* == .function;
             const saved = ctx.inTree;
-            const savedExecutor = ctx.inExecutor;
             if (tree and fnArg) ctx.inTree = true;
-            if (executor and fnArg) ctx.inExecutor = true;
             defer ctx.inTree = saved;
-            defer ctx.inExecutor = savedExecutor;
             if (tree and fnArg) try walkTree(ctx, a.value) else try walkExpr(ctx, a.value);
         }
         for (c.trailing) |*t| try walkAny(ctx, t);
@@ -744,7 +807,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     if (e == .identifier) switch (e.identifier.kind) {
         .ident => |n| {
             if (compiler_name != null and std.mem.eql(u8, n, compiler_name.?)) {
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else if (ctx.inTree and !ctx.inExecutor) try treeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
                 return;
             }
             if (!ctx.inTree and contains(ctx.values, n) and !contains(ctx.shadow.items, n)) {
@@ -760,7 +823,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             }
             if (isCompiler(ia.receiver.*)) {
                 const at = ia.receiver.getLoc();
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else if (ctx.inTree) try treeRefusal(ctx, at) else try mapProperty(ctx, if (std.mem.eql(u8, ia.member, "src")) at else loc, ia.member);
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else try mapProperty(ctx, if (std.mem.eql(u8, ia.member, "src")) at else loc, ia.member);
                 // The read replaced the node: its `compiler` is no one's.
                 ctx.alloc.destroy(ia.receiver);
                 return;

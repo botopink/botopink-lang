@@ -5,7 +5,7 @@ import {compiler, io.terminal.print} from "std";
 
 fn named(syntax decl: unknown) {
     compiler.addMember("typeName", fn() -> string {
-        return compiler.name(decl);
+        return decl.name;
     });
 }
 

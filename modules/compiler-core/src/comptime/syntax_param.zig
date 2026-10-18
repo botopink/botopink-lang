@@ -247,11 +247,20 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         if (ctx.declName) |dn| if (memberFn.asWrapCall(v, dn)) |func| {
             var out = v;
             const c = v.call.kind.call;
-            const args = try ctx.arena.alloc(ast.CallArg, 1);
+            // Decision 642 — the body's locals the wrapper reads, handed with it.
+            const captured: []const []const u8 = if (ctx.dfn) |dfn| try memberFn.capturedBuildReads(ctx.arena, dfn, func) else &.{};
+            const args = try ctx.arena.alloc(ast.CallArg, if (captured.len > 0) 2 else 1);
             const idx = try ctx.arena.create(ast.Expr);
             idx.* = .{ .literal = .{ .loc = func.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.wrappers}) } } };
             ctx.wrappers += 1;
             args[0] = .{ .label = c.args[0].label, .value = idx };
+            if (captured.len > 0) {
+                const elems = try ctx.arena.alloc(ast.Expr, captured.len);
+                for (captured, 0..) |n, k| elems[k] = .{ .identifier = .{ .loc = func.loc, .kind = .{ .ident = n } } };
+                const list = try ctx.arena.create(ast.Expr);
+                list.* = .{ .collection = .{ .loc = func.loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+                args[1] = .{ .label = null, .value = list };
+            }
             out.call.kind.call.args = args;
             return out;
         };

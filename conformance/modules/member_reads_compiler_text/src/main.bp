@@ -1,6 +1,7 @@
-//// Decision 575 (4), the tree rule — a member a decorator writes is code the
-//// program runs; `compiler` exists only while it compiles, so a `compiler`
-//// read inside the member is refused there (`syntax-captures-build`).
+//// Decision 642 (amending 575 (4)'s tree rule) — a `compiler.*` call inside a
+//// member a decorator writes is evaluated at build and spliced as its answer:
+//// `compiler.text(rule)` over the `syntax` parameter `rule` is the code as
+//// written, `always`.
 
 import {compiler, io.terminal.print} from "std";
 
