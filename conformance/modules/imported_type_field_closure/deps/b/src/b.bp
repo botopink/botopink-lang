@@ -1,4 +1,4 @@
-import {Client, client} from "a";
+import {Client, client.client} from "a";
 
 pub fn lifeOf(c: Client) -> i32 {
     return c.ms();

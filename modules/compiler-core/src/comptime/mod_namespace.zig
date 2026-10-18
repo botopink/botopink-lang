@@ -303,8 +303,24 @@ const Ctx = struct {
         }
     }
 
+    /// Decision 582 — a `mod` child's namespace written as a value (`config`,
+    /// `config(x)`) is a read of it: the module gains the item that binds it,
+    /// and `default_fn.callableNamespaces` makes the use the module's default.
+    fn noteValueUse(self: *Ctx, e: *const ast.Expr) Error!void {
+        const n = switch (e.*) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => return,
+            },
+            .call => |cl| if (cl.kind == .call and cl.kind.call.receiver == null and !cl.kind.call.is_builtin) cl.kind.call.callee else return,
+            else => return,
+        };
+        if (self.modBound.contains(n) and self.names.contains(n)) try self.used.put(self.arena, n, {});
+    }
+
     fn walk(self: *Ctx, comptime T: type, ptr: *T) (Error || Refusal)!void {
         if (T == ast.Expr) {
+            try self.noteValueUse(ptr);
             if (try self.rewrite(ptr)) return;
         }
         if (T == ast.TypeRef) try self.rewriteTypeRef(ptr);
@@ -340,11 +356,11 @@ const Ctx = struct {
 
 /// Every name a declaration binds inside it: a parameter, a lambda's or a
 /// loop's binder, a `val` / `var`.
-const Binders = struct {
+pub const Binders = struct {
     arena: std.mem.Allocator,
     names: std.StringArrayHashMapUnmanaged(void) = .empty,
 
-    fn walk(self: *Binders, comptime T: type, ptr: *const T) Error!void {
+    pub fn walk(self: *Binders, comptime T: type, ptr: *const T) Error!void {
         if (T == ast.Param) try self.names.put(self.arena, ptr.name, {});
         if (T == ast.ImportDecl) return;
         switch (@typeInfo(T)) {

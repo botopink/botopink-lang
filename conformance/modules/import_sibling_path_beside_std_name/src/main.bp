@@ -10,7 +10,7 @@
 //// through its namespace.
 
 import {collections} from "std";
-import {report} from "kit";
+import {report.report} from "kit";
 
 pub fn main() {
     @print(report());

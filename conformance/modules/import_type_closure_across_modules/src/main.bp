@@ -5,7 +5,7 @@
 //// OWN types only, so `import {Canvas}` was refused with "unknown type
 //// 'Outline'" located in this file. Neither `Outline` nor `Point` is named.
 
-import {Canvas, canvas} from "shapes";
+import {Canvas, canvas.canvas} from "shapes";
 
 fn make() -> Canvas {
     return canvas();

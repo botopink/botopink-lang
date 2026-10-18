@@ -1,0 +1,9 @@
+pub type Props(title: string)
+
+pub fn render(p: Props) -> string {
+    return "<" + p.title + ">";
+}
+
+pub default fn (p: Props) -> string {
+    return "[" + p.title + "]";
+}

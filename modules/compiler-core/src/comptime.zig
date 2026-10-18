@@ -1919,7 +1919,8 @@ fn analyzeSource(
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
-    const marked = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else try ast.ImportDecl.withOwnPackage(arena, parsed_as_written, mod.package);
+    // Decision 582 (3): `import pkg;` is `import {pkg} from "pkg"`.
+    const marked = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else try ast.ImportDecl.withOwnPackage(arena, try default_fn.packageNamespaces(arena, parsed_as_written), mod.package);
     // Decision 337: `mod m;` binds the namespace `m`, and a module namespace
     // of the package is walked as std's is (`mod_namespace.zig`).
     const parsed = if (reflection.modTree) |tree| switch (try mod_namespace.expand(arena, marked, tree, mod.path, mod.package)) {
@@ -1933,9 +1934,15 @@ fn analyzeSource(
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
     // Decision 207: an inline parameter type becomes a record of the module.
-    // Decision 289: an anonymous default is named `default`, and an import of
-    // a module holding a default binds that function.
-    const defaulted = try default_fn.expandImports(arena, try default_fn.nameAnonymous(arena, parsed), templateRegistry, registry);
+    // Decision 289: an anonymous default is named `default`. Decision 582: a
+    // module namespace written as a value is that module's default.
+    const defaulted = switch (try default_fn.callableNamespaces(arena, try default_fn.nameAnonymous(arena, parsed), templateRegistry, registry)) {
+        .ok => |p| p,
+        .refused => |te| {
+            env.deinit();
+            return .{ .typeError = te };
+        },
+    };
     // Decision 297: a `comptime x: V | type T` parameter's two forms.
     // Decision 330 (7): a type declared in a type's body is a top-level type
     // under its owner's path.
@@ -2943,26 +2950,10 @@ fn resolveImports(
                     // {text};` → `text`), and the name binds a namespace its
                     // calls resolve against — ahead of the bare-name scan
                     // below, which would bind some other module's `text`.
-                    // A symbol of that name in the module the source names
-                    // wins (a lib's template handle `qlib` beside its module
-                    // `qlib/qlib`).
-                    const names_symbol = blk: {
-                        // …or in the module the whole path names
-                        // (`import {canvas} from "shapes"` for `shapes/canvas`'s
-                        // own `canvas`).
-                        switch (try u.leafSource(imp, env.arena, true)) {
-                            .module, .key => |path| if (registry.get(path)) |exports| if (exports.contains(name)) break :blk true,
-                            .root => {},
-                        }
-                        var sit = registry.iterator();
-                        while (sit.next()) |e| {
-                            if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (outOfScope(scope, e.key_ptr.*)) continue;
-                            if (leaf_src.namesModule(e.key_ptr.*) and e.value_ptr.contains(name)) break :blk true;
-                        }
-                        break :blk false;
-                    };
-                    if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
+                    // Decision 582 — the namespace always: no symbol named
+                    // like the item wins over it, and written as a value it is
+                    // the module's default (`default_fn.callableNamespaces`).
+                    if (!imp.activate) switch (try u.leafSource(imp, env.arena, true)) {
                         .module, .key => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
                             try env.namespaces.paths.put(env.arena, local, path);
@@ -3866,7 +3857,7 @@ fn registerExports(
         },
         else => {},
     };
-    // Decision 289 — the module's default function, for `default_fn.expandImports`.
+    // Decision 289 — the module's default function, for `default_fn.callableNamespaces`.
     for (decls) |d| switch (d) {
         .@"fn" => |f| if (f.isDefault) try templateRegistry.put(try default_fn.key(arena, path), f),
         else => {},

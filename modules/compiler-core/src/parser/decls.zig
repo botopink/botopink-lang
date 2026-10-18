@@ -203,15 +203,18 @@ pub fn parseImportDecl(this: *This, alloc: std.mem.Allocator) ParseError!ImportD
 
     // Package-namespace form leads with a bare identifier (not `{`).
     var package: ?[]const u8 = null;
+    var packageLoc: ast.Loc = .{ .line = 0, .col = 0 };
     if (!this.check(.leftBrace)) {
-        package = (try this.consume(.identifier)).lexeme;
+        const pkgTok = try this.consume(.identifier);
+        package = pkgTok.lexeme;
+        packageLoc = parser.Parser.locFromToken(pkgTok);
         // `import pkg;` / `import pkg from "…";` — no named list.
         if (!this.match(.comma)) {
             const src: ImportSource = if (this.match(.from)) blk: {
                 const tok = try this.consume(.stringLiteral);
                 break :blk .{ .module = tok.lexeme[1 .. tok.lexeme.len - 1] };
             } else .root;
-            return ImportDecl{ .imports = &.{}, .source = src, .package = package };
+            return ImportDecl{ .imports = &.{}, .source = src, .package = package, .packageLoc = packageLoc };
         }
         // `import pkg, { … } [from …];` falls through to parse the list.
     }
@@ -228,7 +231,7 @@ pub fn parseImportDecl(this: *This, alloc: std.mem.Allocator) ParseError!ImportD
         const tok = try this.consume(.stringLiteral);
         break :blk .{ .module = tok.lexeme[1 .. tok.lexeme.len - 1] };
     } else .root;
-    return ImportDecl{ .imports = imports, .source = source, .package = package, .trailingComma = importsTrailingComma };
+    return ImportDecl{ .imports = imports, .source = source, .package = package, .packageLoc = packageLoc, .trailingComma = importsTrailingComma };
 }
 
 /// Fallback activation statement `dottedPath "*" ";"` — activates an

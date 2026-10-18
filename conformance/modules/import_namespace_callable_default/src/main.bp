@@ -1,0 +1,18 @@
+//// conformance/docs.md § Imports — `import {a.b}` always binds the namespace `b`
+//// (decision 582): `b.Props` and `b.render` reach the module's items, and `b`
+//// written as a value — called, passed, bound — is the module's `pub default`.
+
+pub mod components;
+import {components.card};
+import {components.badge as Badge};
+
+pub fn main() {
+    val p = card.Props(title: "hi");
+    @print(card(p));
+    @print(card.render(p));
+    val f = card;
+    @print(f(card.Props(title: "bound")));
+    val ps = [card.Props(title: "a"), card.Props(title: "b")];
+    @print(ps.map(card).join(","));
+    @print(Badge(3));
+}

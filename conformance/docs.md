@@ -152,8 +152,9 @@ A module may have one **default function**, which its importer names
 module; `pub default <name>;` makes a function the module declares its default
 (it keeps its name there, e.g. for a recursive call); `pub default fn
 Name(…)` is the shorthand of both. `import {m.card};` — whose path names the
-module, not an item of it — binds the default under the path's last segment,
-`import {m.card as Card};` under the alias. A decorator on an anonymous
+module, not an item of it — binds the module's namespace under the path's last
+segment, `import {m.card as Card};` under the alias, and the namespace written
+as a value is the default (decision 582, § Imports). A decorator on an anonymous
 default reads the file's name as `compiler.name(decl)`. A second default is
 `default-twice`; `pub default nope;` naming no function is `default-unknown`.
 
@@ -242,6 +243,41 @@ written as a type, `shapes.Pt(…)` and `shapes.origin()` called, `shapes.shift`
 a function value (decision 430):
 
 <!-- example: modules/package_module_namespace -->
+
+**An item that names a module always binds its namespace** (decision 582). `import
+{components.card};` binds `card`, the namespace of `components/card`: `card.Props`
+and `card.render(p)` reach its items. Written as a value — called, passed, bound
+(`card(p)`, `ps.map(card)`, `val f = card`) — the namespace is the module's `pub
+default` (§ A module's default function), with the default's function type; a module
+declares its default beside its other `pub` items. `import {components.card.render}`
+binds the item `render`, and `import {components.card: {Props, render}}` the items,
+as any path does. No item of a module ever stands in for a namespace of the same
+name: the namespace is what `import {a.b}` binds.
+
+<!-- example: modules/import_namespace_callable_default -->
+
+The namespace of a module that declares no default is not a value: called, passed
+or bound, it is `namespace-not-a-value`, located at the use:
+
+```text
+// src/main.bp — `src/geo/shapes.bp` declares `pub fn area` and no default
+import {geo.shapes};
+val f = shapes;
+
+error: namespace-not-a-value: `shapes` is the namespace of the module `geo.shapes`, which declares no `pub default` — it is not a value
+```
+
+<!-- example: modules/namespace_not_a_value -->
+<!-- example: modules/namespace_not_a_value_called -->
+
+A package's namespace is one form, spelled two ways: `import kit;` is `import {kit}
+from "kit"` — the namespace of the package's module `kit` (`src/kit.bp`), its items
+reached through it, the namespace called as that module's default. `import x from
+"p";` is `import {x} from "p"`, and `import x, {a} from "p";` is `import {x, a} from
+"p"`.
+
+<!-- example: modules/import_package_namespace -->
+<!-- example: modules/import_package_namespace_braces -->
 
 The shorthand is refused at the item, and the refusal writes the import as it
 is spelled instead: the path of the one module of the package that declares the

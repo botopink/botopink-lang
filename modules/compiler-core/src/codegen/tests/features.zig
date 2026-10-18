@@ -571,14 +571,13 @@ test "js: import ---- cross-module record construct and assoc fn" {
     });
 }
 
-test "js: import ---- disk-lib namespace member binds + emits the namespace object" {
+test "js: import ---- disk-lib module named like the lib binds its namespace, not its like-named fn" {
     // A disk-loaded lib (module path `<lib>/<stem>`, reached via `from "<lib>"`)
-    // exports an ordinary `pub fn` (`make`, an emitted symbol) and a template fn
-    // whose name equals the lib (`qlib`, comptime-only → no emitted symbol). The
-    // consumer imports both: `make` destructures from the owning module, while
-    // the lib-named handle is bound to the whole module object so `qlib.make(...)`
-    // resolves at runtime — parity with the bare form. Generic: no lib name lives
-    // in the core; the lib is whatever `from "<lib>"` resolved off disk.
+    // exports an ordinary `pub fn` (`make`) and a template fn whose name equals
+    // the module's (`qlib`). Decision 582: `import {qlib} from "qlib"` names the
+    // module `qlib/qlib`, so it binds that module's namespace — the like-named
+    // fn no longer wins — and `qlib.make(5)` is `make` of it, imported from the
+    // owning module like the bare `make`. Generic: no lib name lives in the core.
     try h.assertConsumerJs(std.testing.allocator, &.{
         .{ .path = "qlib/qlib", .source =
         \\pub fn make(x: i32) -> i32 {
@@ -600,9 +599,8 @@ test "js: import ---- disk-lib namespace member binds + emits the namespace obje
         \\}
         },
     }, &.{
-        "const { make } = require(\"./qlib/qlib.js\");",
-        "const qlib = require(\"./qlib/qlib.js\");",
-        "qlib.make(5)",
+        "const { make, make: __bp_ns_qlib__make } = require(\"./qlib/qlib.js\");",
+        "__bp_ns_qlib__make(5)",
     }, &.{});
 }
 

@@ -271,6 +271,9 @@ pub const ImportDecl = struct {
     /// plain `import { … }` form. The bound name is `package` (= the `from` target
     /// when present, else this identifier).
     package: ?[]const u8 = null,
+    /// Where the package-namespace form's identifier is written (`pkg` in
+    /// `import pkg;`); `line == 0` for the brace form. Left out of the dump.
+    packageLoc: Loc = .{ .line = 0, .col = 0 },
     /// Fallback activation statement `X*;` — no real import, only activation.
     activationOnly: bool = false,
     /// `///` documentation comment (multi-line joined with `\n`)
@@ -291,7 +294,7 @@ pub const ImportDecl = struct {
     trailingComma: bool = false,
 
     pub fn jsonStringify(this: ImportDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"ownPackage"}, &.{"trailingComma"});
+        return stringifyOmitting(this, jws, &.{ "ownPackage", "packageLoc" }, &.{"trailingComma"});
     }
 
     /// `program` with every import marking `package` as the package that wrote

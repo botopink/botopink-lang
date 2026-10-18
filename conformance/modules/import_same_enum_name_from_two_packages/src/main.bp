@@ -7,7 +7,7 @@
 //// `audio`'s `case` tested `traffic`'s tags and every value printed wrong.
 
 import {stop, blink, describe} from "traffic";
-import {quiet, loud, level} from "audio";
+import {quiet, loud, level.level} from "audio";
 
 pub fn main() {
     @print(describe(stop()));

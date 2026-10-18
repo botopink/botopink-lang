@@ -462,6 +462,11 @@ pub const redundant_module_import: []const u8 = "redundant-module-import";
 /// subtree, where `mod1` declares `mod mod2;` (not `pub`). Located at `mod2`.
 pub const private_module: []const u8 = "private-module";
 
+/// Decision 582 (1) — a namespace (`import {a.b}`, `mod b;`) of a module that
+/// declares no `pub default`, written as a value: called, passed or bound.
+/// Located at the use.
+pub const namespace_not_a_value: []const u8 = "namespace-not-a-value";
+
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
 /// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
@@ -860,6 +865,7 @@ pub const all_codes = [_][]const u8{
     shorthand_import,
     redundant_module_import,
     private_module,
+    namespace_not_a_value,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,

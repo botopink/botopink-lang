@@ -1,0 +1,9 @@
+pub type Tag(label: string)
+
+pub fn shout(t: Tag) -> string {
+    return t.label + "!";
+}
+
+pub default fn (label: string) -> Tag {
+    return Tag(label: label);
+}
