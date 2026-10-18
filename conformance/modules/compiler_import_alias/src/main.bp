@@ -6,7 +6,7 @@ import {compiler as c} from "std";
 
 pub type Named(name: string)
 
-fn named(expr decl: unknown) {
+fn named(syntax decl: unknown) {
     c.setMeta(Named(name: c.name(decl)! + " in " + c.module));
 }
 

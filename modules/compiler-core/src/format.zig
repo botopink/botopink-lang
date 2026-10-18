@@ -366,7 +366,7 @@ pub const Formatter = struct {
             });
         }
         const typeDoc: *const Doc = if (p.arrival != .written)
-            // Decision 575 (4) — `comptime x: T` / `expr x: T`: the tree type
+            // Decision 575 (4) — `comptime x: T` / `syntax x: T`: the tree type
             // the parser read them as prints as the `T` written.
             try this.fmtTypeRef(arrivalType(p))
         else if (p.inlineFields) |fs|
@@ -392,7 +392,7 @@ pub const Formatter = struct {
                 defaultDoc,
             }),
             .@"comptime" => this.concatAll(&.{
-                try this.text(if (p.arrival == .expr) "expr " else "comptime "),
+                try this.text(if (p.arrival == .syntax) "syntax " else "comptime "),
                 nameDoc,
                 try this.text(": "),
                 typeDoc,
@@ -452,13 +452,13 @@ pub const Formatter = struct {
             }
             // Decision 575 (4) — a template's return, `-> expr T`.
             if (ast.isExprKeywordReturn(r) and r.generic.args.len == 1)
-                return this.concat(try this.text(" -> expr "), try this.fmtTypeRef(r.generic.args[0]));
+                return this.concat(try this.text(" -> syntax "), try this.fmtTypeRef(r.generic.args[0]));
             return this.concat(try this.text(" -> "), try this.fmtTypeRef(r));
         }
         return this.nil();
     }
 
-    /// The type a `comptime x: T` / `expr x: T` parameter was written with:
+    /// The type a `comptime x: T` / `syntax x: T` parameter was written with:
     /// `T`, inside the tree type (or the declaration handle) the parser read.
     fn arrivalType(p: ast.Param) ast.TypeRef {
         if (p.exprWrapped) return p.typeRef;

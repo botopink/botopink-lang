@@ -14,7 +14,7 @@ fn helper(n: i32) -> i32 {
     return n;
 }
 
-fn named(expr q: string) -> string {
+fn named(syntax q: string) -> string {
     val all = compiler.bindings(q);
     var text = all.length.toString();
     for (["City", "User", "helper"]) { want ->

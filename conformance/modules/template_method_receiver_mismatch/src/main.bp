@@ -10,7 +10,7 @@ behavior Named {
 
 type Robot(serial: i32)
 
-fn tag(expr self: Named, expr q: string) -> string {
+fn tag(syntax self: Named, syntax q: string) -> string {
     return compiler.build("\"["
         + compiler.text(q)
         + "] \" + "

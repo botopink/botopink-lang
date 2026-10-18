@@ -42,7 +42,7 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
-├── expr_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `expr` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `expr` is the declaration handle (`declHandle`); decision 370 (1): a record field's `expr x: T` likewise (`Field.exprWrapped`)
+├── syntax_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `syntax` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `syntax` is the declaration handle (`declHandle`); decision 370 (1): a record field's `syntax x: T` likewise (`Field.exprWrapped`)
 ├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
 ├── implementations.zig ← decision 575 (6): each declaration's `#[external(…)]` sources read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
 ├── template_markers.zig ← decision 5: an implementation's template markers are positional over the declared parameters
@@ -271,7 +271,7 @@ through `parseSignature`) — refuses it: `self-param-outside-type`
 `template_markers.zig` no longer shifts a free function's markers either.
 The one exception, checked once the return type is read, is a template
 method's signature (decisions 311 (3), 415 (1), `ast.isTemplateMethodSignature`):
-`expr self: R` first, `expr q: string` second (the parser reads them onto the internal
+`syntax self: R` first, `syntax q: string` second (the parser reads them onto the internal
 `comptime self: __Expr<R>` and `comptime q: __Expr<…>`, `-> __Expr<…>`) — the receiver of
 `` value.method @`…` ``, which never reaches a backend.
 
@@ -356,7 +356,7 @@ with `<…>` wraps, and two additions for record/builder ergonomics:
   bare `fn(T)`; the name is documentation-only (function types are positional)
   and is discarded.
 - **`fn(..) -> R`, a function of any parameters** (decision 316) — the shape a
-  decorator handle's `expr decl: fn(..) -> R` names: `TypeRef.function.anyParams`, `params` empty.
+  decorator handle's `syntax decl: fn(..) -> R` names: `TypeRef.function.anyParams`, `params` empty.
   `Parser.inDeclPattern` is set for the decorator handle's type argument alone and cleared by
   `parseBaseTypeRefArm` for everything inside it, so `..` written anywhere
   else (a parameter's type, inside the pattern) is `any-params-outside-decl`
@@ -914,7 +914,7 @@ follows, and `failRemovedDeclKeyword` records a located diagnostic:
 messages (`print.zig`) name the 1.0.3 spelling. The words stay usable as
 ordinary identifiers (`val record = 1`).
 
-## `comptime`, `expr` and `compiler` (decisions 575, 576)
+## `comptime`, `syntax` and `compiler` (decisions 575, 576)
 
 A parameter of the `comptime` family arrives one of two ways, and the parser keeps the internal form the
 checker, the decorator and template evaluators and the comptime runtime read, with `Param.arrival` saying
@@ -922,24 +922,24 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
 
 - `comptime x: T` (`arrival = .value`) — the body holds the value, known at build. `parseParam` wraps `T`
   in the tree type (`decls.zig` `wrapTree`, `ast.expr_type_name`), so a non-template function's parameter
-  ends with `typeRef = T` and `exprWrapped` set (`expr_params.zig` `unwrapProgram`).
-- `expr x: T` (`arrival = .expr`) — the expression written, a tree. `expr` is a modifier only when a name
-  or `..` follows it (`isExprModifierAt`); anywhere else it is a name. Its type may write `fn(..) -> R`
-  (`inDeclPattern`). A top-level function that is no template and whose first parameter is `expr` is a
-  decorator: `expr_params.zig` `declHandle` reads that parameter as the declaration handle
-  (`ast.decl_type_name`; `expr decl: unknown` is the handle with no pattern). A template annotation
-  (decision 311) is a template whose second parameter is `expr d: unknown`: that one is the handle.
-- Decisions 577, 578 — a **template** is a function whose first parameter (after an `expr self: R`
-  receiver, for a template method) is its text `expr q: string` (`ast.templateTextIndex`); `unwrapProgram`
+  ends with `typeRef = T` and `exprWrapped` set (`syntax_params.zig` `unwrapProgram`).
+- `syntax x: T` (`arrival = .expr`) — the expression written, a tree. `syntax` is a modifier only when a name
+  or `..` follows it (`isSyntaxModifierAt`); anywhere else it is a name. Its type may write `fn(..) -> R`
+  (`inDeclPattern`). A top-level function that is no template and whose first parameter is `syntax` is a
+  decorator: `syntax_params.zig` `declHandle` reads that parameter as the declaration handle
+  (`ast.decl_type_name`; `syntax decl: unknown` is the handle with no pattern). A template annotation
+  (decision 311) is a template whose second parameter is `syntax d: unknown`: that one is the handle.
+- Decisions 577, 578 — a **template** is a function whose first parameter (after a `syntax self: R`
+  receiver, for a template method) is its text `syntax q: string` (`ast.templateTextIndex`); `unwrapProgram`
   keeps its trees, and `compiler_surface.zig` reads its return — `T`, or `anyvalue` (a type parameter
   `ast.anyvalue_param_name` the built code binds at each call) — as the tree type the machinery knows. It
   is called only `` name @`…` `` / `` recv.name @`…` `` (`CallExpr.call.templateText`, the raw text) or
-  `` #[name @`…`] `` (`Annotation.templateText`); any other call is `expr-call-outside-expr` (the checker),
+  `` #[name @`…`] `` (`Annotation.templateText`); any other call is `syntax-call-outside-syntax` (the checker),
   another parameter `template-signature` (`compiler_surface.zig`), and `anyvalue` elsewhere
   `anyvalue-outside-template` (the checker; std's `compiler.bp` declares `build`'s answer with it).
   `anytype` is the bare `type` (`types.zig`, a `typeparam` with no member; the printer writes it).
   `compiler.addType(name, compiler.buildType("(…)"))` hands the built type's text to `addType`;
-  `buildType` elsewhere waits for B-140. `-> expr T` is `removed-expr-type` (`decls.zig`
+  `buildType` elsewhere waits for B-140. `-> syntax T` is `removed-expr-type` (`decls.zig`
   `parseReturnTypeRef`), and the bare `type` is `removed-bare-type` (`types.zig`; `x is type` keeps it).
 - `@Expr<T>`, `@ExprCustom<T>` and `@Decl` are gone (decision 576 (1)): `types.zig` refuses each as
   `removed-expr-type`, at the name. The tree type, the custom carrier and the handle are internal builtin
@@ -954,21 +954,22 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
 After `unwrapProgram`, `compiler_surface.zig` `expandProgram` reads the surface onto the machinery
 (`Parser.keep_surface` skips it — the formatter and the language server's formatting set it):
 `compiler.<member>(…)` becomes the handle's, the template site's or a builtin's form (its table,
-`members`, is held to std's `compiler.bp` by `comptime/tests/compiler_members.zig`); a bare read of a
+`members`, is held to std's `compiler.bp` by `comptime/tests/compiler_members.zig`, member for member and
+each parameter's arrival — `syntax`, `comptime`, plain — for each, decision 616); a bare read of a
 `comptime x: T` is `x.value` outside a member or a wrapper; a template's `return e` lifts `e`
 (`@expr(e)`) unless it is a tree parameter or a call answering one; a call of a `comptime` parameter,
 `rule(x)`, is `rule.value(x)` (refused for a function, 364 (3)); `compiler.custom(tree)` in a
 template keeps the tree in a local, makes the template the custom carrier (the internal `__ExprCustom<T>`) and each
 return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
-`compiler-output-outside-decorator`, `expr-captures-build` inside a member, a wrapper or an executor
+`compiler-output-outside-decorator`, `syntax-captures-build` inside a member, a wrapper or an executor
 (`compiler.compile(f)`; one named, `compiler.compile(f)` with `f` no function written there, is the tree
 `{ -> f() }`, the call its tail, decision 409),
 `compiler-member-unknown`), which the checker reports there (`infer.zig` `refuseSurface`).
 
-A typed meta record's field is written `f: T`; one a decorator fills from an `expr` parameter holds the
-tree (575 (4), the checker's `treeFed`). The parameter modifier `syntax` is gone (decision 576 (1)):
-`syntax` is an ordinary name.
+A typed meta record's field is written `f: T`; one a decorator fills from a `syntax` parameter holds the
+tree (575 (4), the checker's `treeFed`). The parameter modifier is `syntax` (decision 616 renamed 575 (4)'s
+`expr`): `expr` is an ordinary name, and `syntax` one wherever no parameter name follows it.
 
 ## `defer` (decision 539)
 

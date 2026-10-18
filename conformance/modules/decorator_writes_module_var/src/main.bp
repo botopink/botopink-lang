@@ -13,7 +13,7 @@ fn bump() {
     seen = seen + 1;
 }
 
-fn counted(expr decl: unknown) {
+fn counted(syntax decl: unknown) {
     bump();
     @emit("pub fn summary() -> string { return \""
         + compiler.name(decl)!

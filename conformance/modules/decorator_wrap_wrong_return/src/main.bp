@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-fn counted(expr decl: fn(..) -> string) {
+fn counted(syntax decl: fn(..) -> string) {
     compiler.wrapWith({ call -> 42 });
 }
 

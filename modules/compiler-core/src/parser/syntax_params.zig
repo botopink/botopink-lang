@@ -8,7 +8,7 @@
 //! parameter's type (a decorator's argument check, `comptime/value_or_type.zig`,
 //! the transform's specialisation, a backend's signature) reads `T`, and
 //! `Param.exprWrapped` says the body holds an `Expr<T>` (`x.value`, the
-//! checker's `infer.zig`; `comptime/expr_param.zig` erases the read for the
+//! checker's `infer.zig`; `comptime/syntax_param.zig` erases the read for the
 //! code that runs). The formatter prints `@Expr<T>` back. A record field
 //! written `@Expr<T>` (decision 370 (1)) is read off the same way
 //! (`Field.exprWrapped`): to the program it is a `T`.
@@ -39,24 +39,24 @@ fn unwrapType(alloc: std.mem.Allocator, t: *ast.TypeDecl) void {
 
 /// Decision 575 (4) — a decorator's first `expr` is the annotated
 /// declaration: a top-level function that is no template and whose first
-/// parameter is `expr d: T` reads it as the declaration handle the decorator
+/// parameter is `syntax d: T` reads it as the declaration handle the decorator
 /// machinery knows (`ast.decl_type_name`, `T` the pattern 280 (2) checks;
 /// `unknown` is the handle with no pattern).
 fn declHandle(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {
-    // Decision 311 — a template annotation (`fn sql(expr q: string, expr
+    // Decision 311 — a template annotation (`fn sql(syntax q: string, expr
     // decl: unknown) -> expr string`): its second parameter, an `expr` typed
     // `unknown`, is the annotated declaration.
     if ((if (returnType) |rt| rt.isTemplateReturnType() else false) or ast.templateTextIndex(params) != null) {
-        if (params.len < 2 or params[0].arrival != .expr or std.mem.eql(u8, params[0].name, "self")) return;
+        if (params.len < 2 or params[0].arrival != .syntax or std.mem.eql(u8, params[0].name, "self")) return;
         const d = &params[1];
-        if (d.arrival != .expr or d.variadic or !d.typeRef.isExprType()) return;
+        if (d.arrival != .syntax or d.variadic or !d.typeRef.isExprType()) return;
         const inner = d.typeRef.generic.args[0];
         if (inner != .named or !std.mem.eql(u8, inner.named, ast.unknown_type_name)) return;
         alloc.free(d.typeRef.generic.args);
         d.typeRef = .{ .generic = .{ .name = ast.decl_type_name, .args = &.{}, .is_builtin = true } };
         return;
     }
-    if (params.len == 0 or params[0].arrival != .expr or params[0].variadic) return;
+    if (params.len == 0 or params[0].arrival != .syntax or params[0].variadic) return;
     const p = &params[0];
     if (!p.typeRef.isExprType()) return;
     const g = p.typeRef.generic;
@@ -90,9 +90,9 @@ test "a decorator's and a function's comptime parameters are unwrapped, a templa
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn setting(expr decl: unknown, comptime key: string) {}
+        \\fn setting(syntax decl: unknown, comptime key: string) {}
         \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
-        \\fn sql(expr q: string) -> string { return q; }
+        \\fn sql(syntax q: string) -> string { return q; }
         \\type Kit { fn pick(comptime t: anytype) -> i32 { return 1; } }
     );
     var p = parser.Parser.init(try lx.scanAll(arena));

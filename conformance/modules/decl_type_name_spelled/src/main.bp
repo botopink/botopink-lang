@@ -9,7 +9,7 @@
 
 import {compiler} from "std";
 
-fn shape(expr decl: unknown) {
+fn shape(syntax decl: unknown) {
     val fields = compiler
         .fields(decl)
         .map({ f -> f.name + ": " + f.typeName })

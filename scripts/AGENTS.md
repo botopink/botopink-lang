@@ -35,7 +35,8 @@ scripts/
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── codemod/
 │   ├── compiler_keyword.py      ← 144 B-136's migration (decisions 575 (4), (5), 576, 577, 578): `@Expr<T>` parameters → `comptime` / `expr`, `@Decl` → `expr d: unknown`, `x.text()` / `.fail` / the template model / a handle's reads and outputs → `compiler.*`, `@expr(v)` → `v`, `-> @Expr<T>` / `-> @ExprCustom<T>` → `-> T`, `type T` → `type<T>`, a bare `type` → `anytype`, a template's calls → `` name @`…` `` (§ below)
-│   └── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
+│   ├── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
+│   └── syntax_modifier.py       ← decision 616's migration: the parameter modifier `expr` → `syntax` (`expr decl: unknown` → `syntax decl: unknown`, `expr ..xs: T[]` too); in prose `` `expr` `` / `` `expr decl` `` / `-> expr T` follow, the article agreeing; `.bp`, `.md`, `.sh` and `.snap` in place, a `.zig` file's modifier only; `--check` lists each file and its count (`scripts/codemod/syntax_modifier.py libs conformance modules`)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh)

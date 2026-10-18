@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 import {Item} from "shapes";
-pub fn dsl(expr e: string) -> anyvalue {
+pub fn dsl(syntax e: string) -> anyvalue {
     val code = compiler.build("41");
     val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
     val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);

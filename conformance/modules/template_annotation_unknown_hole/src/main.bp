@@ -7,7 +7,7 @@ import {compiler} from "std";
 
 type Query(sql: string)
 
-fn sql(expr q: string, expr decl: unknown) -> string {
+fn sql(syntax q: string, syntax decl: unknown) -> string {
     compiler.addMember(
         "pub fn "
             + compiler.name(decl)!

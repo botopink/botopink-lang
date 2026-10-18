@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-pub fn hard(expr t: string) -> string {
+pub fn hard(syntax t: string) -> string {
     val x = compiler.text(t);
     return t;
 }

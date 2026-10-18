@@ -540,7 +540,7 @@ test "parser: test rejects in fn body" {
 
 test "parser: template ---- its text parameter and its answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn html(expr template: string) -> Component {
+        \\pub fn html(syntax template: string) -> Component {
         \\    @todo();
         \\}
     );
@@ -548,7 +548,7 @@ test "parser: template ---- its text parameter and its answer (decision 578)" {
 
 test "parser: template ---- anyvalue answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn yaml(expr template: string) -> anyvalue {
+        \\fn yaml(syntax template: string) -> anyvalue {
         \\    @todo();
         \\}
     );
@@ -556,7 +556,7 @@ test "parser: template ---- anyvalue answer (decision 578)" {
 
 test "parser: expr parameter ---- composed type position" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn collect(expr first: ?Element) -> i32 {
+        \\fn collect(syntax first: ?Element) -> i32 {
         \\    @todo();
         \\}
     );

@@ -2,7 +2,7 @@
 
 import {compiler} from "std";
 
-pub fn service(expr decl: unknown) {
+pub fn service(syntax decl: unknown) {
     compiler.addMember(
         "pub fn make() -> "
             + compiler.name(decl)!

@@ -20,7 +20,7 @@ const comptime_pipeline = @import("botopink").comptime_pipeline;
 /// proves the overlay is generic.
 const FIXTURE =
     \\pub type Users(name: string)
-    \\pub fn q(expr e: string) -> anyvalue {
+    \\pub fn q(syntax e: string) -> anyvalue {
     \\    val code = compiler.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
     \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Users"), children: []);
@@ -76,7 +76,7 @@ test "sublanguage: semantic tokens light up keyword + property inside the string
 /// a malformed query. The span (7..11) targets `name` inside `q "select name"`.
 const FIXTURE_FAIL =
     \\pub type Users(name: string)
-    \\pub fn q(expr e: string) -> anyvalue {
+    \\pub fn q(syntax e: string) -> anyvalue {
     \\    compiler.fail("unknown column 'name'", at: e, span: Span(7, 11, 1));
     \\    val code = compiler.build("[1, 2]");
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: []);
@@ -235,7 +235,7 @@ test "sublanguage F4: hover snapshot on a bound sub-language node" {
 
 const X_DEP =
     \\pub type Cities(name: string)
-    \\pub fn erika(expr e: string) -> anyvalue {
+    \\pub fn erika(syntax e: string) -> anyvalue {
     \\    val code = compiler.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
     \\    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Cities"), children: []);
@@ -294,7 +294,7 @@ test "sublanguage R4: cross-module literal paints keyword + property tokens" {
 /// case of R4. The diagnostic must land inside the literal in the CALLER module.
 const X_DEP_FAIL =
     \\pub type Cities(name: string)
-    \\pub fn erika(expr e: string) -> anyvalue {
+    \\pub fn erika(syntax e: string) -> anyvalue {
     \\    compiler.fail("unknown column 'name'", at: e, span: Span(7, 11, 1));
     \\    val code = compiler.build("[1, 2]");
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: []);

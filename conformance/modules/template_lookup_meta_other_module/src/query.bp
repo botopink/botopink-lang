@@ -4,7 +4,7 @@
 import {orm.Table};
 import {compiler} from "std";
 
-pub fn tableOf(expr q: string) -> string {
+pub fn tableOf(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);

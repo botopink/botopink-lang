@@ -9,7 +9,7 @@ import {compiler} from "std";
 
 type Found(names: string)
 
-fn find(expr decl: unknown) {
+fn find(syntax decl: unknown) {
     var out: string[] = [];
     compiler
         .annotations(decl)

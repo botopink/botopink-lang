@@ -20,7 +20,7 @@ fn noteHit() {
 }
 
 /// Counts every call of the function it annotates, whatever its parameters.
-pub fn counted(expr decl: fn(..) -> string) {
+pub fn counted(syntax decl: fn(..) -> string) {
     compiler.wrapWith({ call ->
         noteHit();
         call.run()
@@ -38,11 +38,11 @@ fn cacheThrough(key: i32, body: fn() -> string) -> string {
 
 /// Runs the body once per argument; a later call with the same argument
 /// answers what the first one stored.
-pub fn cached(expr decl: fn(id: i32) -> string) {
+pub fn cached(syntax decl: fn(id: i32) -> string) {
     compiler.wrapWith({ call -> cacheThrough(call.args[0], { -> call.run() }) });
 }
 
 /// Puts the answer between two marks.
-pub fn tagged(expr decl: fn(..) -> string, expr mark: string) {
+pub fn tagged(syntax decl: fn(..) -> string, syntax mark: string) {
     compiler.wrapWith({ call -> mark + call.run() + mark });
 }

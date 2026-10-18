@@ -3,7 +3,7 @@
 pub type Button(
     label: string,
 )
-pub fn need(expr t: string) -> string {
+pub fn need(syntax t: string) -> string {
     val hit = compiler.lookup(t, "Buttom");
     if (hit) { b ->
         return compiler.fail("should be missing", at: t);

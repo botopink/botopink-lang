@@ -12,7 +12,7 @@ pub behavior Field {
     fn column(self: Self) -> string;
 }
 
-pub fn widget(expr decl: Component) {
+pub fn widget(syntax decl: Component) {
     compiler.setMeta(Widget(kind: "widget"));
 }
 

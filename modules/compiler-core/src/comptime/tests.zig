@@ -43,7 +43,7 @@ test {
     _ = @import("./derived_types.zig");
     _ = @import("./default_fn.zig");
     _ = @import("./value_or_type.zig");
-    _ = @import("./expr_param.zig");
+    _ = @import("./syntax_param.zig");
     _ = @import("./member_fn.zig");
     _ = @import("./written_names.zig");
     _ = @import("./type_identity.zig");

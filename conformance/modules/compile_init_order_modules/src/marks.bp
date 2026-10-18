@@ -3,7 +3,7 @@
 import {registry.register};
 import {compiler} from "std";
 
-pub fn registered(expr decl: unknown) {
+pub fn registered(syntax decl: unknown) {
     val name = compiler.name(decl)!;
     compiler.compile({ -> register(name) });
 }

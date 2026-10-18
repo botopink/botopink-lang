@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 pub type Users(name: string)
-pub fn q(expr e: string) -> anyvalue {
+pub fn q(syntax e: string) -> anyvalue {
     val code = compiler.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
     val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Users"), children: []);
@@ -22,10 +22,10 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   (1,0) +3  keyword  "pub"
   (1,4) +2  keyword  "fn"
   (1,7) +1  function [declaration]  "q"
-  (1,9) +4  parameter  "expr"
-  (1,14) +1  variable  "e"
-  (1,17) +6  type [defaultLibrary]  "string"
-  (1,28) +8  type [defaultLibrary]  "anyvalue"
+  (1,9) +6  parameter  "syntax"
+  (1,16) +1  variable  "e"
+  (1,19) +6  type [defaultLibrary]  "string"
+  (1,30) +8  type [defaultLibrary]  "anyvalue"
   (2,4) +3  keyword  "val"
   (2,8) +4  variable [declaration]  "code"
   (2,15) +8  variable  "compiler"
@@ -90,8 +90,8 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   1 0 3 9 0
   0 4 2 9 0
   0 3 1 4 1
-  0 2 4 6 0
-  0 5 1 7 0
+  0 2 6 6 0
+  0 7 1 7 0
   0 3 6 0 4
   0 11 8 0 4
   1 4 3 9 0

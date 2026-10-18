@@ -758,7 +758,7 @@ fn freeItems(gpa: std.mem.Allocator, items: []const proto.CompletionItem) void {
 test "completion: decorator body lists params/locals/closure binder (R1)" {
     const gpa = std.testing.allocator;
     const source =
-        \\pub fn component(expr decl: unknown) {
+        \\pub fn component(syntax decl: unknown) {
         \\    var args = "";
         \\    items.forEach({ f ->
         \\        log(args);
@@ -808,7 +808,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // real `#[service]` emits against `from \"<lib>\"` symbols the LSP compiled
     // without. The spliced re-analysis fails; completion must still degrade.
     const source =
-        \\fn service(expr decl: unknown) {
+        \\fn service(syntax decl: unknown) {
         \\    @emit("val __wired = unresolvedRuntimeSymbol();");
         \\}
         \\

@@ -7,21 +7,21 @@
 
 import {compiler} from "std";
 
-fn service(expr decl: unknown) {
+fn service(syntax decl: unknown) {
     compiler.setMeta(Service(role: "service"));
     compiler.addMember("pub fn make() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
 }
 
-fn repository(expr decl: unknown) {
+fn repository(syntax decl: unknown) {
     compiler.setMeta(Store(store: "sql"));
     compiler.addMember("pub fn make() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
 }
 
-fn audited(expr decl: unknown) {
+fn audited(syntax decl: unknown) {
     compiler.setMeta(Audited(audit: "yes"));
 }
 

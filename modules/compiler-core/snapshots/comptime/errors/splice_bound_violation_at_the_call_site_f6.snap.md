@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-pub fn bad(expr q: string) -> i32 {
+pub fn bad(syntax q: string) -> i32 {
     return "not an int";
 }
 val d = bad @`x`;

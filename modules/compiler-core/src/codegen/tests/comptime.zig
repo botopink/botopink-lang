@@ -298,7 +298,7 @@ test "js: comptime ---- block with a tail" {
 
 test "js: template end to end ---- bounded html expansion" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val page = html @`
@@ -312,7 +312,7 @@ test "js: template end to end ---- bounded html expansion" {
 
 test "js: template end to end ---- an anyvalue answer built from text" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn port(expr q: string) -> anyvalue {
+        \\pub fn port(syntax q: string) -> anyvalue {
         \\    return compiler.build("8080");
         \\}
         \\fn main() {
@@ -328,7 +328,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
         .{
             .path = "view",
             .source =
-            \\pub fn html(expr q: string) -> string {
+            \\pub fn html(syntax q: string) -> string {
             \\    return q;
             \\}
             ,
@@ -364,7 +364,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
 test "js: template end to end ---- lookup() names a caller-scope declaration the build splices" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val greeting = "ola mundo";
-        \\pub fn refer(expr q: string) -> string {
+        \\pub fn refer(syntax q: string) -> string {
         \\    val hit = compiler.lookup(q, "greeting");
         \\    if (hit) { b ->
         \\        return compiler.build(b.name);
@@ -382,7 +382,7 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
 
 test "js: template end to end ---- yaml model computes a labeled tuple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn conf(expr q: string) -> anyvalue {
+        \\pub fn conf(syntax q: string) -> anyvalue {
         \\    val t = compiler.text(q);
         \\    val port = 8000 + t.length;
         \\    val debug = true;

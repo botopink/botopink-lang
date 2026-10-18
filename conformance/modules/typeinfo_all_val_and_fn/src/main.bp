@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn tag(expr decl: unknown) {
+fn tag(syntax decl: unknown) {
     compiler.setMeta(Tag(seen: true));
 }
 

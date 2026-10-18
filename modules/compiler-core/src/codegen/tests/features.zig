@@ -584,7 +584,7 @@ test "js: import ---- disk-lib module named like the lib binds its namespace, no
         \\    return x + 1;
         \\}
         \\
-        \\pub fn qlib(expr e: string) -> i32 {
+        \\pub fn qlib(syntax e: string) -> i32 {
         \\    return compiler.build("99");
         \\}
         \\import {compiler} from "std";
@@ -615,7 +615,7 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\    return x + 1;
         \\}
         \\
-        \\pub fn mlib(expr e: string) -> i32 {
+        \\pub fn mlib(syntax e: string) -> i32 {
         \\    return compiler.build("7");
         \\}
         \\import {compiler} from "std";
@@ -1360,7 +1360,7 @@ test "beam: enum sections ---- an imported enum's inner enum has one type module
 // backends.
 test "js: comptime primitives ---- template body calls string and array methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    val t = compiler.text(q).trim();
         \\    val words = t.split(" ").map({ w -> w.toUpper() });
         \\    val lead = t.slice(0, 5);
@@ -1387,7 +1387,7 @@ test "js: comptime primitives ---- template body calls string and array methods"
 // wasm run log is empty (a wasm backend gap, not a comptime one).
 test "js: comptime primitives ---- decorator body calls string and array methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn describe(expr decl: unknown) {
+        \\pub fn describe(syntax decl: unknown) {
         \\    val names = compiler.fields(decl).map({ f -> f.name });
         \\    val upper = names.map({ n -> n.toUpper() }).join("_");
         \\    val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
@@ -1414,7 +1414,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
 // All four backends print the same RUN LOG.
 test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn component(expr decl: unknown) {
+        \\pub fn component(syntax decl: unknown) {
         \\    var args: Array<string> = [];
         \\    compiler.fields(decl).forEach({ f ->
         \\        var valKey = "";

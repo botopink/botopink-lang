@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn helper<T>(expr decl: T) {
+fn helper<T>(syntax decl: T) {
     compiler.addMember("extra", fn() -> i32 {
         return 1;
     });

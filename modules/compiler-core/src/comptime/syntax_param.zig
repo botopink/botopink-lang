@@ -1,5 +1,5 @@
 //! Decision 364 — a `comptime x: @Expr<T>` parameter of a function that is not
-//! a template (`Param.exprWrapped`, `parser/expr_params.zig`) is read in its
+//! a template (`Param.exprWrapped`, `parser/syntax_params.zig`) is read in its
 //! body as `x.value`. The checker types the read (`infer.zig`); the code that
 //! runs — the program's own functions, and every function the comptime
 //! runtimes lower (a decorator's body and the functions it reaches, a template's
@@ -516,7 +516,7 @@ test "`x.value` is `x`, and a decorator's `x.fail(m)` names its argument" {
     const parser = @import("../parser.zig");
     const format = @import("../format.zig");
     var lx = lexer.Lexer.init(
-        \\fn setting(expr decl: unknown, comptime key: string, comptime n: i32) {
+        \\fn setting(syntax decl: unknown, comptime key: string, comptime n: i32) {
         \\    if (key == "") compiler.fail("empty", at: n);
         \\    decl.setMeta("key", key + n.toString());
         \\}
@@ -545,7 +545,7 @@ test "a typed meta call hands the runtime its index; a parameter given to an `@E
     const parser = @import("../parser.zig");
     const format = @import("../format.zig");
     var lx = lexer.Lexer.init(
-        \\fn check(expr decl: unknown, comptime table: string, expr rule: fn(v: i32) -> bool) {
+        \\fn check(syntax decl: unknown, comptime table: string, syntax rule: fn(v: i32) -> bool) {
         \\    compiler.setMeta(Entity(table: table));
         \\    compiler.addMeta(Check(message: "m", rule: rule));
         \\}
@@ -577,7 +577,7 @@ test "a body's use of a parameter: read, `.value`, `.fail` only" {
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn d(expr decl: unknown, comptime a: string, expr b: string, comptime c: string) {
+        \\fn d(syntax decl: unknown, comptime a: string, syntax b: string, comptime c: string) {
         \\    decl.setMeta("a", a);
         \\    if (compiler.name(decl)! == "") compiler.fail("no", at: b);
         \\}

@@ -16,7 +16,7 @@ fn sayBody(line: string) {
     @print(line);
 }
 
-pub fn module(expr decl: unknown, comptime order: i32) {
+pub fn module(syntax decl: unknown, comptime order: i32) {
     decl.setMeta("order", order.toString());
 }
 

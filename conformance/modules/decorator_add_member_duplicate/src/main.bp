@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn sized<T>(expr decl: T) {
+fn sized<T>(syntax decl: T) {
     compiler.addMember("size", fn(self: T) -> i32 {
         return 0;
     });

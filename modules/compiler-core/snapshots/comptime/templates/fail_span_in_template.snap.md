@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-pub fn html(expr template: string) -> string {
+pub fn html(syntax template: string) -> string {
     return template;
 }
 val c = html @`

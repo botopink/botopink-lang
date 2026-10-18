@@ -2,6 +2,6 @@
 
 import {compiler} from "std";
 
-pub fn tag(expr q: string) -> string {
+pub fn tag(syntax q: string) -> string {
     return compiler.build("\"LOUD\"");
 }

@@ -2,7 +2,7 @@ import {compiler} from "std";
 
 type Element(text: string) implement @Renderable
 
-fn graph(expr decl: unknown) {
+fn graph(syntax decl: unknown) {
     var names: string[] = [];
     compiler
         .hooks(decl)

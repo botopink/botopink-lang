@@ -17,7 +17,7 @@ type Index(column: string, unique: bool, order: i32)
 
 type Other(note: string)
 
-fn entity(expr decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.setMeta(
@@ -33,7 +33,7 @@ fn entity(expr decl: unknown, comptime table: string) {
 }
 
 fn index(
-    expr decl: unknown,
+    syntax decl: unknown,
     comptime column: string,
     comptime order: i32,
 ) {

@@ -10,11 +10,11 @@ pub fn msOf(p: Policy) -> i32 {
     return p.ms;
 }
 
-pub fn quick(expr t: string) -> Policy {
+pub fn quick(syntax t: string) -> Policy {
     return compiler.build("slow()");
 }
 
-pub fn stamp<T>(expr decl: T) {
+pub fn stamp<T>(syntax decl: T) {
     compiler.addMember("policy", fn(self: T) -> Policy {
         return Policy(ms: 7);
     });

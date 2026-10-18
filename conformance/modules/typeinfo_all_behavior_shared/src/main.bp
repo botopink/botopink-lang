@@ -9,11 +9,11 @@ pub behavior Bean {
     fn make() -> Self;
 }
 
-pub fn service(expr decl: Bean) {
+pub fn service(syntax decl: Bean) {
     compiler.setMeta(BeanRole(role: "service"));
 }
 
-pub fn repository(expr decl: Bean) {
+pub fn repository(syntax decl: Bean) {
     compiler.setMeta(BeanRole(role: "repository"));
 }
 

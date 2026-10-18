@@ -81,11 +81,11 @@ pub const emitted_key = "__bp_emitted";
 pub const Error = Ast.Builder.Error;
 
 /// Decision 364 (3) — the function a decorator body's `x.fail(m)` becomes
-/// (`comptime/expr_param.zig`): `'__bp_failArg'(Index, Message)`.
+/// (`comptime/syntax_param.zig`): `'__bp_failArg'(Index, Message)`.
 pub const fail_arg_fn = "__bp_failArg";
 
 /// Decision 576 (2) — the function a decorator body's `compiler.text(x)`
-/// becomes (`comptime/expr_param.zig`): `'__bp_argText'(Index)`, the
+/// becomes (`comptime/syntax_param.zig`): `'__bp_argText'(Index)`, the
 /// argument as the annotation wrote it, read from `arg_texts_key`, which
 /// `main/1` sets (`decorator_eval.zig`).
 pub const arg_text_fn = "__bp_argText";
@@ -96,7 +96,7 @@ pub const arg_texts_key = "__bp_arg_texts";
 pub const typed_meta_fn = "__bp_typedMeta";
 
 /// Question s29-b — the functions `m.meta(T)` / `m.metaAll(T)` on a
-/// `decl.methods` entry become in a decorator body (`expr_param.eraseForRun`).
+/// `decl.methods` entry become in a decorator body (`syntax_param.eraseForRun`).
 pub const method_meta_fn = "__bp_methodMeta";
 pub const method_meta_all_fn = "__bp_methodMetaAll";
 
@@ -443,7 +443,7 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("member")), Ast.field("source", V("Source")) })}),
         }),
         // Decision 370 (2) — `decl.addMember(name, fn…)`: the function is the
-        // program's code, so the body hands its index (`expr_param.eraseFn`,
+        // program's code, so the body hands its index (`syntax_param.eraseFn`,
         // `member_fn.collect`'s order) and the name it gets.
         try b.function("addMember", &.{ V("_Decl"), V("Name"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")) })}),
@@ -455,13 +455,13 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Captured")})) })}),
         }),
         // Decision 316 — `decl.wrapWith(f)`: the wrapper is the program's
-        // code, so the body hands its index (`expr_param.eraseFn`,
+        // code, so the body hands its index (`syntax_param.eraseFn`,
         // `member_fn.collectWrappers`'s order).
         try b.function("wrapWith", &.{ V("_Decl"), V("Index") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("wrap")), Ast.field("index", V("Index")) })}),
         }),
         // Decision 575 (3) — `decl.compile(f)`: the executor is the
-        // program's code, so the body hands its index (`expr_param.eraseFn`,
+        // program's code, so the body hands its index (`syntax_param.eraseFn`,
         // `member_fn.collectExecutors`'s order) and, by the tree rule, the
         // values of the body's locals it reads.
         try b.function("compile", &.{ V("_Decl"), V("Index") }, &.{}, &.{
@@ -482,7 +482,7 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("implement")), Ast.field("data", try b.call(meta_json_fn, &.{V("Value")})) })}),
         }),
         // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)`: the body hands
-        // the call's index (`expr_param.eraseFn`, `typed_meta.collect`'s
+        // the call's index (`syntax_param.eraseFn`, `typed_meta.collect`'s
         // order) and the record it built, which the compiler writes back as
         // the constructor's arguments (`typed_meta.render`).
         try b.function(typed_meta_fn, &.{ V("Index"), V("Value") }, &.{}, &.{
@@ -531,14 +531,14 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             }),
         }),
         // Decision 364 (3) — `x.fail(m)` on a decorator parameter
-        // (`comptime/expr_param.zig`): the span names the parameter's index
+        // (`comptime/syntax_param.zig`): the span names the parameter's index
         // after the `@Decl` one, and the checker reports at its argument.
         try b.function(fail_arg_fn, &.{ V("Index"), V("Message") }, &.{}, &.{
             try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), try b.map(&.{Ast.field("arg", V("Index"))}) })}),
         }),
     });
     // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods`
-    // entry (`comptime/expr_param.zig` `eraseForRun`): the values of record
+    // entry (`comptime/syntax_param.zig` `eraseForRun`): the values of record
     // type `T` the method's decorators recorded, `undefined` / `[]` when
     // none; and decision 302's `decl.attr(name)`.
     try forms.appendSlice(b.arena, try tagForms(b));

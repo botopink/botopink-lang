@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-fn bif(expr decl: unknown, comptime module: string) {
+fn bif(syntax decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }
 

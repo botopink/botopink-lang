@@ -15,7 +15,7 @@ fn guard(label: string) -> i32 {
     return label.length();
 }
 
-fn proxied(expr decl: unknown) {
+fn proxied(syntax decl: unknown) {
     var methods: string[] = [];
     compiler
         .methods(decl)

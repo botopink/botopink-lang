@@ -10,7 +10,7 @@ fn none(s: Signup) -> Violation[] {
     return [];
 }
 
-fn check<T>(expr decl: T, comptime rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, comptime rule: fn(v: T) -> bool) {
     compiler.addMember("validate", none);
 }
 

@@ -133,7 +133,7 @@ EOF
         cat <<'BP'
 import {compiler} from "std";
 
-pub fn conf(expr q: string) -> #(#(string, i32), bool) {
+pub fn conf(syntax q: string) -> #(#(string, i32), bool) {
     val port = 8000 + compiler.text(q).length;
     return compiler.build("#(#(\"0.0.0.0\", " + port.toString() + "), true)");
 }

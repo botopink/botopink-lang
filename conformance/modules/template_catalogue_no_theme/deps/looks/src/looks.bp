@@ -4,11 +4,11 @@
 
 import {compiler} from "std";
 
-pub fn theme(expr decl: unknown) {
+pub fn theme(syntax decl: unknown) {
     compiler.setMeta(Theme(named: compiler.name(decl)!));
 }
 
-pub default fn looks(expr e: string) -> string {
+pub default fn looks(syntax e: string) -> string {
     val themes = @TypeInfo.all(with: theme);
     if (themes.length == 0)
         compiler.fail(

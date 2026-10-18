@@ -13,7 +13,7 @@ type BlogParams(slug: string)
 type User(name: string)
 
 fn page<P>(
-    expr decl: fn(route: Route<P>) -> View,
+    syntax decl: fn(route: Route<P>) -> View,
     comptime seg: string,
     comptime paths: ?fn() -> P[] = null,
 ) {

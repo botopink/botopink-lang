@@ -804,7 +804,7 @@ function and a std namespace the caller does not import, on all four targets) an
 `modules/comptime_expand_library_type_error` (a refusal of the emitted code located in the library, the call as its
 `from` line). `modules/stage_build_and_run`, `modules/stage_of_functions` and `modules/stage_imported` give their
 `Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
-one that is expanded, `Any`. Decision 564 (a decorator's `expr decl: B` names the behavior its declarations
+one that is expanded, `Any`. Decision 564 (a decorator's `syntax decl: B` names the behavior its declarations
 implement) adds `modules/decorator_decl_behavior_not_implemented` (`#[module]` on a type that does not
 `implement Module`, refused at the annotation naming both), `modules/typeinfo_all_behavior_typed` (the answer bound
 and handed on as `Declared<Module>[]`, no `member:`), `modules/typeinfo_all_behavior_shared` (two decorators naming
@@ -814,7 +814,7 @@ ones answer `Declared<unknown>[]`, the ordinary mismatch at the binding) and
 `meta_catalogue_private_type`, `meta_typed_catalogue` and `meta_expr_read_elsewhere` cells catalogue their types
 through such a behavior instead of `member:`. A `behavior` named like a prelude declaration is the module's
 (§ behavior of `docs.md`): `modules/behavior_named_like_prelude_value` (`behavior Component` and `behavior Any`, names
-the prelude also binds as bare variants, in a decorator's `expr decl: Component`, a parameter and an `implement` clause),
+the prelude also binds as bare variants, in a decorator's `syntax decl: Component`, a parameter and an `implement` clause),
 `modules/behavior_named_like_prelude_type` (`behavior Field` and `behavior Result`, names of prelude types) and
 `modules/import_behavior_named_like_prelude` (the same imported from a sibling module). Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
@@ -1114,7 +1114,7 @@ backend halves the checker front listed.
 Decision 280 (`01-checker` step 24, typed comptime decorator arguments) adds, on all four targets,
 `modules/decorator_arguments_check` (example 1 of `01-checker/examples/decorator-arguments-280.md`: a
 function `rule`, a field key `at: .confirm`, a variant `code: .Mismatch` and the function form),
-`modules/decorator_decl_pattern` (`expr decl: fn(e: E) -> unknown`), `modules/decorator_type_argument`
+`modules/decorator_decl_pattern` (`syntax decl: fn(e: E) -> unknown`), `modules/decorator_type_argument`
 (`comptime t: anytype`), `modules/decorator_function_arguments` (`paths:` / `head:` typed by the page's
 `P`, `D`), `modules/decorator_record_argument` (`Cache<T>` through a module `val`),
 `modules/decorator_field_keys` (`index(.state, .name)`, `unique(.code)`, the field's annotations in the
@@ -1132,7 +1132,7 @@ annotation) and `decorator_check_without_rule_not_bool` (the body's `decl.fail`,
 decorator of the cells writes its parameters `comptime`.
 
 Decision 364 (`01-checker` step 35) gave every `comptime` parameter a value read (`x.value`; since decision 575 (4) a `comptime x: T` is written and read
-bare, an `expr x: T` holds a tree), rewrote every `comptime` parameter of the suite to it (a value-or-type
+bare, a `syntax x: T` holds a tree), rewrote every `comptime` parameter of the suite to it (a value-or-type
 parameter keeps `x is type`; a `Box<T>`'s field is `s.value.value`), and adds, on the four targets,
 `modules/decorator_expr_value` (`.value` of a string, a number, a `bool`, a variant, a record, a field
 key and an array in a decorator; an ordinary function's `n.value`, specialised; a template's
@@ -1142,7 +1142,7 @@ at build whose parameter the body never reads is accepted), and the refusals
 `env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `modules/decorator_call_expr_fn`
 (`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
-`modules/expr_param_method` (`message.text()` on an `expr` parameter, decision 576 (2)), each red
+`modules/expr_param_method` (`message.text()` on a `syntax` parameter, decision 576 (2)), each red
 on the parent binary; `template_value_not_known` went with the holes (decision 577 (5)). Decision 577 (5) also deletes the cells that read a hole's
 value at build (decision 355): `hole_any_call_at_build`, `hole_any_call_raises`, `hole_known_at_build_raises`,
 `hole_imported_val_known_at_build`, `styled_holes_known_at_build`; `modules/template_hole_typed_at_caller` holds
@@ -1151,7 +1151,7 @@ at the hole through its `CustomNode` span, `infer.zig` `parseCodeTextAt`); `modu
 `modules/template_hole_error_on_later_line` and `modules/template_hole_error_far_in_built_code` pin where an error in
 code built from a hole lands — at the hole's expression in the caller's text, after the two-byte `` @` ``, on its own
 line of a multi-line text, wherever the code puts it (`copiedAt`), each red on the parent binary. `modules/decorator_arguments_check` and
-`modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `expr` parameter
+`modules/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (a `syntax` parameter
 of a function has no value, question `s35-b`).
 
 Decision 370 (2) (`01-checker` step 35 box 3) — a decorator hands its parameters' trees on to the
@@ -1169,11 +1169,11 @@ captured; it was `decorator-member-fn-imported-name` on the parent binary), and 
 turns `modules/decorator_member_captures` (a local of the decorator's body) from a refusal into the
 literal the member holds (`member_fn.capturedLocals`).
 Decision 575 (3) (`compiler.compile`, 144 B-137) adds `modules/compile_executor_before_main` (executors of a
-function, a type with two annotations and a `val`, two calls per body, one named and one an `expr` parameter,
+function, a type with two annotations and a `val`, two calls per body, one named and one a `syntax` parameter,
 each run before `main`, four targets), `compile_init_order_modules` (dependency order across two modules and
 `main`, an executor writing a registry `var`), `compile_executor_from_library` (a library's decorator whose
 executor calls a private helper of its module, and a library module's own executor run in the program) and the
-refusals `compile_executor_captures_build` (`compiler` inside an executor, `expr-captures-build`) and
+refusals `compile_executor_captures_build` (`compiler` inside an executor, `syntax-captures-build`) and
 `compile_output_outside_decorator` (`compiler-output-outside-decorator`) — each red on the parent binary, where
 `compile` was no member of `Compiler`.
 
@@ -1226,7 +1226,7 @@ refusals `modules/meta_twice`, `modules/meta_not_record`, `modules/meta_field_ty
 `modules/meta_several`, `modules/meta_read_not_type`, `modules/meta_add_outside_decorator`,
 `modules/meta_read_at_build` and `modules/meta_catalogue_generic` (question `130-s8-d`). Decision 370
 (1) adds `modules/meta_expr_field` (`decl.addMeta(Check(message: message, rule: rule))`, `Check`'s
-fields `expr x: T`: the reader calls `rule` and evaluates `message` — `t("signup.mismatch")` — at run
+fields `syntax x: T`: the reader calls `rule` and evaluates `message` — `t("signup.mismatch")` — at run
 time, never at build) with `modules/meta_expr_field_literal` and
 `modules/meta_expr_param_plain_field` (`decorator-meta-expr-arg`). Each red on the parent binary.
 
@@ -1237,7 +1237,7 @@ run with the program) and `modules/decorator_member_type_same_name` (a member na
 `Violation` where the annotated module declares one: two types, the member's under its hygiene alias
 — refused at the annotation, question B-23-a, until decision 603), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
 Decision 311 (`01-checker` step 29 — the template annotation `` #[f @`…`] ``) adds, on the four targets,
-`modules/template_annotation`: a template `query(expr q: string, expr decl: unknown)`
+`modules/template_annotation`: a template `query(syntax q: string, syntax decl: unknown)`
 written on a behavior's methods (`` @`…` ``, beside a decorator) and on a function, each
 hole resolving to the declaration's parameter by name, the method's typed meta read by the
 behavior's `#[repository]` on `decl.methods` (`m.meta(Query)`, `m.meta(Audit)`, question `s29-b`),
@@ -1581,7 +1581,7 @@ object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the
 `aa80e30b` — an array `"dependencies"` is refused since then), resolves from disk relative to the
 project, and the runner does nothing special for it. `modules/local_dependency` is the one
 cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
-(`pub default fn shapesdsl<T>(expr e: string) -> T`, the handler attaching its tree with `compiler.custom(ast)`) and `shapes.bp`
+(`pub default fn shapesdsl<T>(syntax e: string) -> T`, the handler attaching its tree with `compiler.custom(ast)`) and `shapes.bp`
 (a record declared in a module listed in `files`); the program does `import shapesdsl, {area, Rect}
 from "shapesdsl"` and expands `` shapesdsl @`area(4, 5)` `` at compile time (the text spells `area`, the
 name the handler's `e.lookup` asks for — decision 237: a capture carries only the bindings its text
@@ -1977,7 +1977,7 @@ refused at the type — accepted on the parent).
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on
 all four targets (commonJS read a property named after the binding and died on `undefined`).
-`modules/method_named_like_module_fn` — a module declaring `startsWith(expr decl: unknown, …)` and
+`modules/method_named_like_module_fn` — a module declaring `startsWith(syntax decl: unknown, …)` and
 `endsWith(a, b)` calls the string methods of those names (erlang refused the module with
 `PrimOpArgIndexOutOfRange`, commonJS answered `false`), on all four targets.
 `test/type_method_prim_default` — a `type`'s method calls `String.parseInt`, whose body calls

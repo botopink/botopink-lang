@@ -4,11 +4,11 @@
 
 import {compiler} from "std";
 
-pub fn mark(expr decl: unknown) {
+pub fn mark(syntax decl: unknown) {
     compiler.setMeta(Mark(name: compiler.name(decl)!));
 }
 
-pub fn first(expr e: string) -> string {
+pub fn first(syntax e: string) -> string {
     val all = @TypeInfo.all(with: mark);
     val v = all.map({ d -> d.value });
     return compiler.text(e) + v.length.toString();

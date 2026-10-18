@@ -11,8 +11,8 @@ fn defaultMessage(field: string) -> string {
 }
 
 pub fn check<T>(
-    expr decl: T,
-    expr rule: fn(v: T) -> bool,
+    syntax decl: T,
+    syntax rule: fn(v: T) -> bool,
 ) {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];

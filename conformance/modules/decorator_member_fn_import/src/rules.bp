@@ -5,9 +5,9 @@
 import {compiler} from "std";
 
 pub fn rule<T>(
-    expr decl: T,
-    expr holds: fn(v: T) -> bool,
-    expr label: string,
+    syntax decl: T,
+    syntax holds: fn(v: T) -> bool,
+    syntax label: string,
 ) {
     compiler.addMember("check", fn(self: T) -> string {
         val ok = holds(self);

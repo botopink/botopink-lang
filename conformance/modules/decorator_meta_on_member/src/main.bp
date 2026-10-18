@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn column(expr decl: unknown) {
+fn column(syntax decl: unknown) {
     compiler.setMeta(Column(name: compiler.name(decl)!));
 }
 

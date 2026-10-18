@@ -1,5 +1,5 @@
 //// Decision 581 (2) — inside a `compiler.compile` executor the decorator's
-//// `expr decl` handle is the annotated declaration itself as a run-time
+//// `syntax decl` handle is the annotated declaration itself as a run-time
 //// value, with its declared type: `make: decl` is checked against `make`'s
 //// `fn() -> string` for each annotated declaration, and `main` calls it. The
 //// `comptime` parameter `lifecycle` and the body's `val name` enter the

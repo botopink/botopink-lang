@@ -10,7 +10,7 @@ fn make(t: string) -> Entity {
     return Entity(table: t);
 }
 
-fn entity(expr decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) {
     compiler.setMeta(make(table));
 }
 

@@ -12,6 +12,6 @@ pub fn make() -> Ns {
     return Ns(size: 4, unit: "px");
 }
 
-pub fn tag(expr q: string) -> string {
+pub fn tag(syntax q: string) -> string {
     return compiler.build("\"b-" + compiler.text(q) + "\"");
 }

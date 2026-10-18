@@ -1,7 +1,7 @@
 //// Decision 248 — `@typeinfo.all(…)` is refused where it is written, naming
 //// `@TypeInfo.all`.
 
-fn route(expr decl: unknown) {}
+fn route(syntax decl: unknown) {}
 
 #[route]
 pub fn home() -> string { return "home"; }

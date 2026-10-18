@@ -1,12 +1,12 @@
 //// Decisions 311, 577 (3) — `#[f(…)]` naming a template function is
-//// `expr-call-outside-expr` at the annotation, naming the template form
+//// `syntax-call-outside-syntax` at the annotation, naming the template form
 //// `#[f @`…`]`.
 
 import {compiler} from "std";
 
 type Query(sql: string)
 
-fn sql(expr q: string, expr decl: unknown) -> string {
+fn sql(syntax q: string, syntax decl: unknown) -> string {
     compiler.setMeta(Query(sql: compiler.text(q)));
     return compiler.build("\"\"");
 }

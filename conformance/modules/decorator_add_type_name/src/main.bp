@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     compiler.addType("columns", compiler.buildType("(id: string)"));
 }
 

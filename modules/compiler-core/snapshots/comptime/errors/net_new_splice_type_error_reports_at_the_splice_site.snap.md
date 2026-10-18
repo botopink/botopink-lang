@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-pub fn port(expr q: string) -> i32 {
+pub fn port(syntax q: string) -> i32 {
     return true;
 }
 val p = port @`x`;

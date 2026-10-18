@@ -1,11 +1,11 @@
 //// Decision 575 (4), the tree rule — an executor `compiler.compile` hands on
 //// is code the program runs; `compiler` exists only while it compiles, so a
 //// `compiler` read inside the executor is refused there
-//// (`expr-captures-build`).
+//// (`syntax-captures-build`).
 
 import {compiler} from "std";
 
-fn registered(expr decl: unknown) {
+fn registered(syntax decl: unknown) {
     compiler.compile({ -> @print(compiler.name(decl)!) });
 }
 

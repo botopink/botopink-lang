@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-fn job(expr decl: unknown) {
+fn job(syntax decl: unknown) {
     compiler.setMeta(Job(kind: "job"));
 }
 

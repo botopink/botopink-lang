@@ -975,7 +975,7 @@ test "typeinfo.all: a template body's query makes no reader (decision 353)" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const src =
-        \\pub fn tpl(expr e: string) -> string {
+        \\pub fn tpl(syntax e: string) -> string {
         \\    val n = @TypeInfo.all(with: d).length;
         \\    return compiler.text(e) + n.toString();
         \\}

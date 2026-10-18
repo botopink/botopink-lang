@@ -4,12 +4,12 @@ import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 pub type Hydrate(level: i32)
 
-pub fn hydrate(expr decl: unknown, comptime level: i32) {
+pub fn hydrate(syntax decl: unknown, comptime level: i32) {
     compiler.setMeta(Hydrate(level: level));
 }
 
 // `<div #[first] #[second]>`: both annotations over the one tag, in order.
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val firstStart = text.indexOf("#[") + 2;
     val firstEnd = text.indexOf("]");

@@ -13,7 +13,7 @@ type Greeter(who: string) {
 
 type Visitor(who: string)
 
-fn greet(expr self: Visitor, expr q: string) -> string {
+fn greet(syntax self: Visitor, syntax q: string) -> string {
     return compiler.build("\"template "
         + compiler.text(q)
         + ", \" + "

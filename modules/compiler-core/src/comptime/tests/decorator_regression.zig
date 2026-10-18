@@ -91,7 +91,7 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, expe
 // element): the offending field first, the offending field last, and none.
 
 const loop_decorator =
-    \\fn validate(expr decl: unknown) {
+    \\fn validate(syntax decl: unknown) {
     \\    compiler.fields(decl).forEach({ f ->
     \\        if (f.name == "bad") { compiler.fail("field 'bad' not allowed", at: decl); }
     \\    });
@@ -130,7 +130,7 @@ test "decorator regression: loop in body accepts a clean record through lists:fo
 // length satisfies all three.
 
 const conditional_decorator =
-    \\fn checkFields(expr decl: unknown) {
+    \\fn checkFields(syntax decl: unknown) {
     \\    if (compiler.kind(decl) == DeclKind.Type) {
     \\        if (compiler.fields(decl).len > 5) {
     \\            compiler.fail("too many fields", at: decl);
@@ -171,7 +171,7 @@ test "decorator regression: conditional in body accepts three fields" {
 // or truncates reds.
 
 const concat_decorator =
-    \\fn nameCheck(expr decl: unknown) {
+    \\fn nameCheck(syntax decl: unknown) {
     \\    var msg = "invalid name: ";
     \\    msg = msg + compiler.name(decl)!;
     \\    if (compiler.name(decl)! == "Forbidden") { compiler.fail(msg, at: decl); }
@@ -203,7 +203,7 @@ test "decorator regression: string concat in body accepts another name through '
 
 test "decorator regression: @emit in body" {
     try assertAcceptsWithReply(@src(),
-        \\fn addHelper(expr decl: unknown) {
+        \\fn addHelper(syntax decl: unknown) {
         \\    @emit("pub fn helper_" + compiler.name(decl)! + "() -> i32 { return 42; }");
         \\}
         \\#[addHelper]
@@ -223,7 +223,7 @@ test "decorator regression: @emit in body" {
 // accepted.
 
 const fold_decorator =
-    \\fn countFields(expr decl: unknown) {
+    \\fn countFields(syntax decl: unknown) {
     \\    var count = 0;
     \\    compiler.fields(decl).forEach({ f -> count = count + 1; });
     \\    if (count > 5) { compiler.fail("too many fields", at: decl); }

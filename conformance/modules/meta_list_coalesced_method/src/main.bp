@@ -5,7 +5,7 @@ import {compiler} from "std";
 
 pub type Tags(list: string[])
 
-fn tag<T>(expr decl: T) {
+fn tag<T>(syntax decl: T) {
     compiler.setMeta(Tags(list: ["a", "b"]));
 }
 

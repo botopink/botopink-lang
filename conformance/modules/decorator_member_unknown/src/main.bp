@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     compiler.addMember(
         "pub fn fromName(n: string) -> "
             + compiler.name(decl)!

@@ -3,14 +3,14 @@ import {types.Type, compiler} from "std";
 type Level { Low, High }
 
 fn index<T>(
-    expr decl: T,
+    syntax decl: T,
     comptime ..fields: Type.Field<T>[],
 ) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
 }
 
 fn mark(
-    expr decl: unknown,
+    syntax decl: unknown,
     comptime sizes: i32[],
     comptime level: Level = .Low,
 ) {

@@ -19,7 +19,7 @@ const MARKUP =
     \\import {bpp} from "std";
     \\
     \\#[bpp.html]
-    \\pub default fn markup(expr t: string) -> i32 {
+    \\pub default fn markup(syntax t: string) -> i32 {
     \\    val text = compiler.text(t);
     \\    val at = text.indexOf("!");
     \\    if (at >= 0) {

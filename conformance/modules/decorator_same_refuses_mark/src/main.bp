@@ -1,11 +1,11 @@
 import {compiler} from "std";
 
-fn serverOnly(expr decl: unknown) {
+fn serverOnly(syntax decl: unknown) {
     val _n = compiler.name(decl)!;
 }
 
 // Refuses a function marked `serverOnly`, however the mark is spelled.
-fn clientOnly(expr decl: unknown) {
+fn clientOnly(syntax decl: unknown) {
     compiler
         .annotations(decl)
         .forEach({ a ->

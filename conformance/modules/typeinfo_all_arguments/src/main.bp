@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn tagged(expr decl: unknown) {
+fn tagged(syntax decl: unknown) {
     compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }
 

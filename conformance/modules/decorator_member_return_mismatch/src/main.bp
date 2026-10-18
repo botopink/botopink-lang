@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn maker(expr decl: unknown) {
+fn maker(syntax decl: unknown) {
     compiler.addMember("pub fn code(self: Self) -> i32 { return \"nope\"; }");
 }
 

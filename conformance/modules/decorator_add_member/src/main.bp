@@ -7,7 +7,7 @@
 
 import {compiler} from "std";
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.addMember(
@@ -20,7 +20,7 @@ fn entity(expr decl: unknown) {
     );
 }
 
-fn label(expr decl: unknown) {
+fn label(syntax decl: unknown) {
     compiler.addMember(
         "pub fn "
             + compiler.name(decl)!

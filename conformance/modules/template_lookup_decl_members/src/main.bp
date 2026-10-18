@@ -20,7 +20,7 @@ fn scale(x: i32, factor: f64) -> f64 {
     return factor;
 }
 
-fn shape(expr q: string) -> string {
+fn shape(syntax q: string) -> string {
     val d = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);

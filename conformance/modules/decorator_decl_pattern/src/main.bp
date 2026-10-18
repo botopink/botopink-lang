@@ -9,7 +9,7 @@ pub type OrderPlaced(id: string, total: i64)
 
 pub type OrderCancelled(id: string)
 
-fn on<E>(expr decl: fn(e: E) -> unknown) {
+fn on<E>(syntax decl: fn(e: E) -> unknown) {
     compiler.setMeta(EventHandler(event: compiler.name(decl)!));
 }
 

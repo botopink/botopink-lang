@@ -7,7 +7,7 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-fn setting(expr decl: unknown, comptime key: string) {
+fn setting(syntax decl: unknown, comptime key: string) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail("#[setting] annotates a val", at: decl);
     compiler.setMeta(Setting(key: key, declared: compiler.returnType(decl)));

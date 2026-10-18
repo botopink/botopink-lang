@@ -9,16 +9,16 @@ import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 pub type Level(n: i32)
 
-pub fn level(expr decl: unknown, comptime n: i32) {
+pub fn level(syntax decl: unknown, comptime n: i32) {
     compiler.setMeta(Level(n: n));
 }
 
 // Reads the meta the earlier annotation recorded on the same tag.
-pub fn checked(expr decl: unknown) {
+pub fn checked(syntax decl: unknown) {
     if (compiler.meta<Level>(decl) == null) compiler.fail("no level", at: decl);
 }
 
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val firstStart = text.indexOf("#[") + 2;
     val firstEnd = text.indexOf("]");

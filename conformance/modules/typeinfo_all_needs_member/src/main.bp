@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn component(expr decl: unknown) {
+fn component(syntax decl: unknown) {
     compiler.addMember("pub fn describe() -> string { return \"" + compiler.name(decl)! + "\"; }");
 }
 

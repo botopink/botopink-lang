@@ -8,7 +8,7 @@ pub type Shape { Circle(radius: i32), Dot }
 
 pub type Mark(text: string)
 
-fn shaped(expr decl: unknown, comptime shape: Shape) {
+fn shaped(syntax decl: unknown, comptime shape: Shape) {
     compiler.setMeta(Mark(text: "shaped"));
 }
 

@@ -264,8 +264,8 @@ a single-expression `if` block drops its braces, a `\\` line string prints as `"
 Nothing known, as of 2026-09-26: the five sibling libraries formatted as scratch copies lose no
 token and no comment (a lexical multiset comparison per file), and every package `check`s as before.
 
-**A `comptime` / `expr` parameter** (decisions 364, 575 (4)): the parser reads the
+**A `comptime` / `syntax` parameter** (decisions 364, 575 (4)): the parser reads the
 wrapper off a non-template function's parameter (`Param.exprWrapped`,
-`parser/expr_params.zig`) and keeps how the argument arrives (`Param.arrival`); `fmtParam` prints
-`comptime x: T` or `expr x: T` back (`arrivalType`), so
+`parser/syntax_params.zig`) and keeps how the argument arrives (`Param.arrival`); `fmtParam` prints
+`comptime x: T` or `syntax x: T` back (`arrivalType`), so
 `format(parse(src))` keeps the spelling.

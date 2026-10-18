@@ -9,6 +9,6 @@ pub fn makeBadge(label: string) -> Badge {
     return Badge(label: label, size: label.length);
 }
 
-pub default fn badge(expr t: string) -> Badge {
+pub default fn badge(syntax t: string) -> Badge {
     return compiler.build("makeBadge(\"" + compiler.text(t) + "\")");
 }

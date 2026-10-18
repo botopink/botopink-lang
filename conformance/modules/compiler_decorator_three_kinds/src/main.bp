@@ -1,7 +1,7 @@
 //// Decisions 575 (3), (4) — a decorator's parameters arrive three ways. Its
-//// first `expr` is the annotated declaration (`decl`, read through
+//// first `syntax` is the annotated declaration (`decl`, read through
 //// `compiler.name`); `comptime label: string` holds the value at build
-//// (`label.toUpper()`); `expr rule: fn(v: T) -> bool` holds the expression
+//// (`label.toUpper()`); `syntax rule: fn(v: T) -> bool` holds the expression
 //// written, read at build as the annotation wrote it (`compiler.text(rule)`)
 //// and spliced into the member the program runs. In the member, `label` and
 //// the body's `val shown` are spliced as literals (the tree rule).
@@ -12,7 +12,7 @@ pub type Violation(message: string)
 
 pub type Mark(text: string)
 
-fn check<T>(expr decl: T, comptime label: string, expr rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, comptime label: string, syntax rule: fn(v: T) -> bool) {
     val shown = label + " (" + compiler.text(rule) + ")";
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];

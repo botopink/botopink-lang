@@ -11,7 +11,7 @@ import {mark} from "marks";
 import {compiler} from "std";
 
 fn note(
-    expr decl: unknown,
+    syntax decl: unknown,
     comptime text: string = "n",
     comptime size: f64 = 2.5,
 ) {

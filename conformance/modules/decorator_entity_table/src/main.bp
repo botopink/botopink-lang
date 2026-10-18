@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-fn entity(expr decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
     compiler.setMeta(Entity(table: table));

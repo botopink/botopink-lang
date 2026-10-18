@@ -4,12 +4,12 @@ type Entity(table: string, audited: bool)
 
 type Index(column: string)
 
-fn entity(expr decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) {
     compiler.setMeta(Entity(table: table, audited: compiler.name(decl)!
         == "City"));
 }
 
-fn index(expr decl: unknown, comptime column: string) {
+fn index(syntax decl: unknown, comptime column: string) {
     compiler.addMeta(Index(column: column));
 }
 

@@ -10,7 +10,7 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(expr decl: Module) {
+pub fn module(syntax decl: Module) {
     compiler.setMeta(ModuleRole(role: "module"));
 }
 

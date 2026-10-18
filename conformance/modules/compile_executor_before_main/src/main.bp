@@ -4,12 +4,12 @@
 //// in order, any number per declaration. The executor is a tree (575 (4)):
 //// the `comptime` parameter `label` and the body's `val name` are spliced as
 //// literals. An executor may be named instead of written at the call: a
-//// function of the decorator's module (`hello`), or an `expr` parameter
+//// function of the decorator's module (`hello`), or a `syntax` parameter
 //// (`run`), spliced as the annotation wrote it.
 
 import {compiler} from "std";
 
-fn registered(expr decl: unknown, comptime label: string) {
+fn registered(syntax decl: unknown, comptime label: string) {
     val name = compiler.name(decl)!;
     compiler.compile({ -> @print(label + " " + name) });
     compiler.compile({ -> @print("again " + name) });
@@ -23,7 +23,7 @@ fn greet() {
     @print("greet");
 }
 
-fn announced(expr decl: unknown, expr run: fn()) {
+fn announced(syntax decl: unknown, syntax run: fn()) {
     compiler.compile(hello);
     compiler.compile(run);
 }

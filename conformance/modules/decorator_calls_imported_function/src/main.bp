@@ -11,7 +11,7 @@ import {sched.scheduled};
 import {text.shout as yell};
 import {compiler} from "std";
 
-fn tag(expr decl: unknown) {
+fn tag(syntax decl: unknown) {
     @emit("pub fn tagged() -> string { return \""
         + yell(compiler.name(decl)!)
         + "\"; }");

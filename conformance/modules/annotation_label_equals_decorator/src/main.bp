@@ -5,7 +5,7 @@
 import {types.Type, compiler} from "std";
 
 fn check<T>(
-    expr decl: T,
+    syntax decl: T,
     comptime message: string,
     comptime at: ?Type.Field<T> = null,
 ) {

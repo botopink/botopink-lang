@@ -9,7 +9,7 @@ import {types.Type, compiler} from "std";
 pub type Code { Custom, Mismatch }
 
 fn check<T>(
-    expr decl: T,
+    syntax decl: T,
     comptime message: string,
     comptime rule: ?fn(v: T) -> bool = null,
     comptime at: ?Type.Field<T> = null,

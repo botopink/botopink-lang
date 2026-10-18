@@ -4,11 +4,11 @@
 
 import {compiler} from "std";
 
-fn bif(expr decl: unknown, comptime module: string) {
+fn bif(syntax decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }
 
-fn tagged<T>(expr decl: T) {
+fn tagged<T>(syntax decl: T) {
     compiler.addMember("tag", fn(self: T) -> string {
         return "tagged";
     });

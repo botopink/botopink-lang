@@ -10,7 +10,7 @@ import {compiler} from "std";
 pub type Level { Low, High }
 
 fn mark(
-    expr decl: unknown,
+    syntax decl: unknown,
     comptime sizes: i32[],
     comptime big: i64 = 1,
     comptime level: Level = .Low,

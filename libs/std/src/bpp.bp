@@ -17,7 +17,7 @@
 //// declares — `#[bpp.htmlPrelude] pub val prelude = bpp.Prelude();` — whose
 //// value is the empty record `Prelude`. Each annotation is a decorator in
 //// 302's shape and checks only where it sits: a template function — its
-//// first parameter `expr q: string`, answering `R` (275 reads `R` from it,
+//// first parameter `syntax q: string`, answering `R` (275 reads `R` from it,
 //// decision 578) — for the two template roles, a
 //// `val` for the two prelude roles. How many of each a package carries, and
 //// what else a prelude module declares, is the toolchain's check
@@ -32,7 +32,7 @@ pub type Prelude()
 
 // The markup's unfold target: the template function `html """…"""` a `.bpp`
 // file's markup becomes.
-pub fn html(expr decl: unknown) {
+pub fn html(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `"
@@ -40,9 +40,9 @@ pub fn html(expr decl: unknown) {
                 + "` is not a function",
             at: decl,
         );
-    if (!compiler.returnType(decl).startsWith("expr "))
+    if (!compiler.returnType(decl).startsWith("syntax "))
         compiler.fail(
-            "#[bpp.html] annotates a template function, whose first parameter is `expr q: string` — `"
+            "#[bpp.html] annotates a template function, whose first parameter is `syntax q: string` — `"
                 + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)
@@ -53,7 +53,7 @@ pub fn html(expr decl: unknown) {
 
 // The style section's unfold target: the template function the section
 // between `--- style ---` and `---` becomes (`use <style> """…""";`).
-pub fn style(expr decl: unknown) {
+pub fn style(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.style] annotates the template function a .bpp file's style section unfolds onto — `"
@@ -61,9 +61,9 @@ pub fn style(expr decl: unknown) {
                 + "` is not a function",
             at: decl,
         );
-    if (!compiler.returnType(decl).startsWith("expr "))
+    if (!compiler.returnType(decl).startsWith("syntax "))
         compiler.fail(
-            "#[bpp.style] annotates a template function, whose first parameter is `expr q: string` — `"
+            "#[bpp.style] annotates a template function, whose first parameter is `syntax q: string` — `"
                 + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)
@@ -74,7 +74,7 @@ pub fn style(expr decl: unknown) {
 
 // The markup's prelude: the marker `val` of the module whose imports a
 // `.bpp` file's markup and header resolve through.
-pub fn htmlPrelude(expr decl: unknown) {
+pub fn htmlPrelude(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail(
             "#[bpp.htmlPrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
@@ -86,7 +86,7 @@ pub fn htmlPrelude(expr decl: unknown) {
 
 // The style section's prelude: the marker `val` of the module whose imports
 // a `.bpp` file's style section resolves through.
-pub fn stylePrelude(expr decl: unknown) {
+pub fn stylePrelude(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail(
             "#[bpp.stylePrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"

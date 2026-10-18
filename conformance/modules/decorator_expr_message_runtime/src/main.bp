@@ -9,9 +9,9 @@ import {compiler} from "std";
 pub type Violation(field: string, message: string)
 
 fn check<T>(
-    expr decl: T,
-    expr message: string,
-    expr rule: fn(v: T) -> bool,
+    syntax decl: T,
+    syntax message: string,
+    syntax rule: fn(v: T) -> bool,
 ) {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];

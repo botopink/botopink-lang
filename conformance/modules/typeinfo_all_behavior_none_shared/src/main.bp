@@ -13,11 +13,11 @@ pub behavior Job {
     fn run(self: Self) -> string;
 }
 
-pub fn service(expr decl: Bean) {
+pub fn service(syntax decl: Bean) {
     compiler.setMeta(Role(role: "service"));
 }
 
-pub fn job(expr decl: Job) {
+pub fn job(syntax decl: Job) {
     compiler.setMeta(Role(role: "job"));
 }
 

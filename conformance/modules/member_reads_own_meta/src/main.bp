@@ -12,14 +12,14 @@ pub type Violation(field: string, message: string)
 pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 
 fn check<T>(
-    expr decl: T,
-    expr message: string,
-    expr rule: fn(v: T) -> bool,
+    syntax decl: T,
+    syntax message: string,
+    syntax rule: fn(v: T) -> bool,
 ) {
     compiler.addMeta(Check(message: message, rule: rule));
 }
 
-fn validated<T>(expr decl: T) {
+fn validated<T>(syntax decl: T) {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         var out: Violation[] = [];
         for (comptime @typeInfo(T).metaAll(Check)) { c ->

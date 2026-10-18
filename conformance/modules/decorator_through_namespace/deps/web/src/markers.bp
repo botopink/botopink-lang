@@ -5,10 +5,10 @@ import {compiler} from "std";
 
 pub type Tag(label: string)
 
-pub fn tag(expr decl: unknown) {
+pub fn tag(syntax decl: unknown) {
     compiler.setMeta(Tag(label: "tagged " + compiler.name(decl)!));
 }
 
-pub fn serverOnly(expr decl: unknown) {
+pub fn serverOnly(syntax decl: unknown) {
     val _n = compiler.name(decl)!;
 }

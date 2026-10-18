@@ -8,7 +8,7 @@ pub type ClassName(names: string[])
 // One annotation for a tag and a declaration: it records a `ClassName`
 // through `decl` — on an element with the tag's `id` attribute, on a
 // component with the component function's name.
-pub fn cls(expr decl: unknown, comptime name: string) {
+pub fn cls(syntax decl: unknown, comptime name: string) {
     if (compiler.kind(decl) == DeclKind.Element)
         compiler.addMeta(ClassName(names: [name, compiler.attr(decl, "id") ?? "none"]))
     else if (compiler.kind(decl) == DeclKind.Component)
@@ -20,7 +20,7 @@ pub fn cls(expr decl: unknown, comptime name: string) {
 // `markup """<div id="x" #[cls("a")]>hi</div>"""`: one tag, an optional `id`,
 // one annotation; the class names the annotation recorded become `class`. A
 // tag whose name starts upper-case is a component.
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val name = text.slice(1, text.indexOf(" "));
     val kind = if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(name.slice(0, 1)))

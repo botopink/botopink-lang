@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-fn flatten(expr decl: unknown) {
+fn flatten(syntax decl: unknown) {
     compiler.addMember(
         "pub fn flat(self: Self) -> "
             + compiler.name(decl)!

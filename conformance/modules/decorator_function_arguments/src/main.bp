@@ -19,7 +19,7 @@ type BlogParams(slug: string)
 type Post(title: string, body: string)
 
 fn page<P, D>(
-    expr decl: fn(route: Route<P, D>) -> View,
+    syntax decl: fn(route: Route<P, D>) -> View,
     comptime seg: string,
     comptime paths: ?fn() -> #(P, D)[] = null,
     comptime head: ?fn(p: P, d: D) -> Head = null,

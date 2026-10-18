@@ -17,13 +17,16 @@
 ////
 //// `Compiler` has one implementor, the compiler itself: a unit test holds the
 //// compiler's table of members (`parser/compiler_surface.zig` `members`) to
-//// the behavior below, member for member.
+//// the behavior below, member for member, each parameter's arrival included
+//// (decision 616): `syntax` receives the code as written — a declaration, an
+//// argument, a lambda —, `comptime` a value known at build, the rest a plain
+//// value.
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
 ////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
 ////   `implement`.
-//// - The reads of an `expr` (decision 576 (2)): `text`, `name`, `source`,
+//// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
 //// - A template's call site: `build`, `buildType`, `note`, `tagDecl`,
 ////   `annotate`, `custom` (decision 578 (3)).
@@ -48,77 +51,77 @@ pub behavior Compiler {
     // ── Reporting ─────────────────────────────────────────────────────────
     // An error at the argument or the declaration `at` holds (at `span`
     // inside it when given), else at `src`; the body goes on.
-    fn fail(self: Self, message: string, at: unknown, span: ?Span);
+    fn fail(self: Self, message: string, syntax at: ?unknown = null, span: ?Span = null);
     // A note at the template's call site (decision 426 (4)).
     fn note(self: Self, message: string);
 
     // ── The outputs (a decorator's only) ──────────────────────────────────
     // A typed meta value, one per type per declaration (decision 298).
-    fn setMeta<M>(self: Self, value: M);
+    fn setMeta<M>(self: Self, syntax value: M);
     // A typed meta value that repeats (decision 298).
-    fn addMeta<M>(self: Self, value: M);
+    fn addMeta<M>(self: Self, syntax value: M);
     // A member of the annotated type, a function written at the call
     // (decision 370 (2)).
-    fn addMember<F>(self: Self, name: string, member: F);
+    fn addMember<F>(self: Self, name: string, syntax member: F);
     // An associated type of the annotated type (decision 216 (3)).
-    fn addType(self: Self, name: string, source: string);
+    fn addType(self: Self, name: string, comptime source: string);
     // A wrapper of the annotated function, a lambda written at the call
     // (decision 316).
-    fn wrapWith<F>(self: Self, wrapper: F);
+    fn wrapWith<F>(self: Self, syntax wrapper: F);
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
     // declarations in source order, calls in order (decision 575 (3)).
-    fn compile(self: Self, executor: fn());
+    fn compile(self: Self, syntax executor: fn());
     // A host source of the annotated `declare fn` (decision 575 (6)): one per
     // target (`implementation-twice`), never on a declaration with a body
     // (`implement-with-body`).
-    fn implement(self: Self, source: Implementation);
+    fn implement(self: Self, comptime source: Implementation);
 
-    // ── The reads of an `expr` (decision 576 (2)) ─────────────────────────
+    // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
-    fn text(self: Self, e: unknown) -> string;
+    fn text(self: Self, syntax e: unknown) -> string;
     // The name the expression is written as, or the declaration's name;
     // `null` for a lambda or `a + b`.
-    fn name(self: Self, e: unknown) -> ?string;
+    fn name(self: Self, syntax e: unknown) -> ?string;
     // A template text's source and the context it stands in.
-    fn source(self: Self, e: unknown) -> Source;
-    fn context(self: Self, e: unknown) -> ExprContext;
+    fn source(self: Self, syntax e: unknown) -> Source;
+    fn context(self: Self, syntax e: unknown) -> ExprContext;
     // A name resolved where the call stands, and every name in scope there.
-    fn lookup(self: Self, e: unknown, name: string) -> unknown;
-    fn bindings(self: Self, e: unknown) -> unknown[];
+    fn lookup(self: Self, syntax e: unknown, name: string) -> unknown;
+    fn bindings(self: Self, syntax e: unknown) -> unknown[];
 
     // ── A template's call site ────────────────────────────────────────────
     // Code built from source text, typed at the call (decisions 426 (1),
     // 578 (3)).
-    fn build(self: Self, source: string) -> anyvalue;
+    fn build(self: Self, comptime source: string) -> anyvalue;
     // A type built from source text — the one way a type is built
     // (decision 578 (3)).
-    fn buildType(self: Self, source: string) -> anytype;
+    fn buildType(self: Self, comptime source: string) -> anytype;
     // A tag's declaration handle (decision 302), and a handle's annotation.
-    fn tagDecl(self: Self, kind: DeclKind, name: string, attrs: unknown) -> unknown;
-    fn annotate(self: Self, d: unknown, at: Span) -> unknown;
+    fn tagDecl(self: Self, kind: DeclKind, name: string, syntax attrs: unknown) -> unknown;
+    fn annotate(self: Self, syntax d: unknown, at: Span) -> unknown;
     // The reference tree the language server reads, by call location.
     fn custom(self: Self, ast: CustomNode);
 
     // ── A declaration handle's reads (decision 576 (3)) ───────────────────
-    fn kind(self: Self, d: unknown) -> DeclKind;
-    fn moduleOf(self: Self, d: unknown) -> string;
-    fn meta<M>(self: Self, d: unknown) -> ?M;
-    fn metaAll<M>(self: Self, d: unknown) -> M[];
-    fn attr(self: Self, d: unknown, name: string) -> ?string;
-    fn component(self: Self, d: unknown) -> unknown;
-    fn hooks(self: Self, d: unknown) -> HookNode[];
-    fn fields(self: Self, d: unknown) -> Field[];
-    fn methods(self: Self, d: unknown) -> Method[];
-    fn params(self: Self, d: unknown) -> Param[];
-    fn returnType(self: Self, d: unknown) -> string;
-    fn owner(self: Self, d: unknown) -> unknown;
-    fn annotations(self: Self, d: unknown) -> DeclAnnotation[];
-    fn variants(self: Self, d: unknown) -> string[];
+    fn kind(self: Self, syntax d: unknown) -> DeclKind;
+    fn moduleOf(self: Self, syntax d: unknown) -> string;
+    fn meta<M>(self: Self, syntax d: unknown) -> ?M;
+    fn metaAll<M>(self: Self, syntax d: unknown) -> M[];
+    fn attr(self: Self, syntax d: unknown, name: string) -> ?string;
+    fn component(self: Self, syntax d: unknown) -> unknown;
+    fn hooks(self: Self, syntax d: unknown) -> HookNode[];
+    fn fields(self: Self, syntax d: unknown) -> Field[];
+    fn methods(self: Self, syntax d: unknown) -> Method[];
+    fn params(self: Self, syntax d: unknown) -> Param[];
+    fn returnType(self: Self, syntax d: unknown) -> string;
+    fn owner(self: Self, syntax d: unknown) -> unknown;
+    fn annotations(self: Self, syntax d: unknown) -> DeclAnnotation[];
+    fn variants(self: Self, syntax d: unknown) -> string[];
 
     // ── The program ───────────────────────────────────────────────────────
     // The declarations a decorator marks (decision 253), read at build.
-    fn catalogue(self: Self, with: unknown, member: unknown) -> unknown[];
+    fn catalogue(self: Self, with: unknown, member: ?string = null) -> unknown[];
     // A type's reflection (decision 253).
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
 }
@@ -180,7 +183,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "at",
-              "type": "unknown"
+              "type": "?unknown",
+              "is_comptime": true
             },
             {
               "name": "span",
@@ -215,7 +219,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "value",
-              "type": "M"
+              "type": "M",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -232,7 +237,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "value",
-              "type": "M"
+              "type": "M",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -253,7 +259,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "member",
-              "type": "F"
+              "type": "F",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -271,7 +278,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "source",
-              "type": "string"
+              "type": "string",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -288,7 +296,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "wrapper",
-              "type": "F"
+              "type": "F",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -302,7 +311,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "executor",
-              "type": "fn() -> void"
+              "type": "fn() -> void",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -316,7 +326,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "source",
-              "type": "Implementation"
+              "type": "Implementation",
+              "is_comptime": true
             }
           ],
           "return_type": "void"
@@ -330,7 +341,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "string"
@@ -344,7 +356,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "?string"
@@ -358,7 +371,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__Source"
@@ -372,7 +386,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__ExprContext"
@@ -386,7 +401,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             },
             {
               "name": "name",
@@ -404,7 +420,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "e",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "unknown[]"
@@ -418,7 +435,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "source",
-              "type": "string"
+              "type": "string",
+              "is_comptime": true
             }
           ],
           "return_type": "anyvalue"
@@ -432,7 +450,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "source",
-              "type": "string"
+              "type": "string",
+              "is_comptime": true
             }
           ],
           "return_type": "typeparam"
@@ -454,7 +473,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "attrs",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "unknown"
@@ -468,7 +488,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             },
             {
               "name": "at",
@@ -500,7 +521,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__DeclKind"
@@ -514,7 +536,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "string"
@@ -531,7 +554,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "?M"
@@ -548,7 +572,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "M[]"
@@ -562,7 +587,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             },
             {
               "name": "name",
@@ -580,7 +606,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "unknown"
@@ -594,7 +621,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__HookNode[]"
@@ -608,7 +636,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__Decl__Field[]"
@@ -622,7 +651,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__Decl__Method[]"
@@ -636,7 +666,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__Decl__Param[]"
@@ -650,7 +681,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "string"
@@ -664,7 +696,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "unknown"
@@ -678,7 +711,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "__Decl__Annotation[]"
@@ -692,7 +726,8 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "d",
-              "type": "unknown"
+              "type": "unknown",
+              "is_comptime": true
             }
           ],
           "return_type": "string[]"
@@ -710,7 +745,7 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "member",
-              "type": "unknown"
+              "type": "?string"
             }
           ],
           "return_type": "unknown[]"
@@ -773,7 +808,7 @@ pub type HookNode = __HookNode;
 ----- SOURCE CODE -- main.bp
 ```botopink
 val cfg_1 = "unread";
-pub fn conf(expr q: string) -> i32 {
+pub fn conf(syntax q: string) -> i32 {
     val n = compiler.bindings(q).length;
     return n;
 }

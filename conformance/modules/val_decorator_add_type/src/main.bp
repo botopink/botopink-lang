@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn helper(expr decl: unknown) {
+fn helper(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 

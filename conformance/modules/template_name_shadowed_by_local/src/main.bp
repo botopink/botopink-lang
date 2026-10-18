@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn shout(expr q: string) -> string {
+fn shout(syntax q: string) -> string {
     return compiler.build("\"template " + compiler.text(q) + "\"");
 }
 

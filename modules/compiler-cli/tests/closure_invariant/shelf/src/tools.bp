@@ -9,7 +9,7 @@ pub fn pick<T>(a: T, b: T, first: bool) -> T {
     return if (first) a else b;
 }
 
-pub fn tagged(expr decl: unknown) {
+pub fn tagged(syntax decl: unknown) {
     @emit(
         "pub fn "
             + compiler.name(decl)!

@@ -46,7 +46,7 @@ const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
 const valueOrType = @import("value_or_type.zig");
-const exprParam = @import("expr_param.zig");
+const syntaxParam = @import("syntax_param.zig");
 const memberFn = @import("member_fn.zig");
 const writtenNames = @import("written_names.zig");
 const typedMeta = @import("typed_meta.zig");
@@ -4343,7 +4343,7 @@ fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void 
     if (env.compilerBodies) return;
     for (program.decls) |decl| switch (decl) {
         // Decision 604 — no bodyless decorator either: a marker is a decorator
-        // with an empty body (`pub fn page(expr decl: unknown) {}`).
+        // with an empty body (`pub fn page(syntax decl: unknown) {}`).
         .@"fn" => |f| if (f.isDeclare and f.body.len == 0 and f.implementations.len == 0) {
             return refuseUnimplemented(env, f.name, if (f.nameLoc.line > 0) f.nameLoc else null);
         },
@@ -4706,9 +4706,9 @@ fn templateFnNamed(env: *Env, name: []const u8) ?ast.FnDecl {
 /// handle beside its text (`memberFn.isTemplateAnnotation`, question s29-a);
 /// refused at the annotation: a name that is no template function
 /// (`template-annotation-not-template`), a template that takes no
-/// `expr decl` (`template-annotation-without-decl`), and any other form
+/// `syntax decl` (`template-annotation-without-decl`), and any other form
 /// naming a template — `#[f(…)]`, `#[f]`, `#[f "…"]` —
-/// (`expr-call-outside-expr`, decision 577 (3)).
+/// (`syntax-call-outside-syntax`, decision 577 (3)).
 fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
         if (a.is_builtin) continue;
@@ -4718,11 +4718,11 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
             const t = tfn orelse continue;
             if (env.decorators.contains(a.name)) continue;
             // Decision 577 (3) — `#[f(…)]` and `#[f]` naming a template.
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}{s}]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.expr_call_outside_expr, a.name, if (a.args.len > 0) "(…)" else "", a.name, a.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}{s}]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.syntax_call_outside_syntax, a.name, if (a.args.len > 0) "(…)" else "", a.name, a.name });
             const hint = if (memberFn.isTemplateAnnotation(t))
                 "A template takes its text unevaluated: write the template text after the name, `#[f @`…`]` (decision 577 (3))."
             else
-                "A template takes its text unevaluated: write the template text after the name, `#[f @`…`]` — and declare `expr decl: unknown` beside its `expr q: string` (decisions 311, 577 (3)).";
+                "A template takes its text unevaluated: write the template text after the name, `#[f @`…`]` — and declare `syntax decl: unknown` beside its `syntax q: string` (decisions 311, 577 (3)).";
             env.lastError = TypeError.custom(msg, hint).withLoc(at);
             return error.TypeError;
         }
@@ -4731,18 +4731,18 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
                 "a decorator"
             else if (env.lookup(a.name)) |ty| (if (ty.deref().* == .func) "a function that is not a template function" else "not a function") else "not declared";
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} @`…`]` names `{s}`, which is {s}", .{ diagnostics.template_annotation_not_template, a.name, a.name, what });
-            env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(expr q: string, expr decl: unknown) -> R` —; a decorator is written `#[f(…)]` (decisions 311, 578).").withLoc(at);
+            env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(syntax q: string, syntax decl: unknown) -> R` —; a decorator is written `#[f(…)]` (decisions 311, 578).").withLoc(at);
             return error.TypeError;
         };
         // Decision 577 (3) — a template annotation writes the template text.
         if (t.returnType) |rt| if (ast.isExprKeywordReturn(rt) and a.templateText == null) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.expr_call_outside_expr, a.name, a.name, a.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template `{s}`, which is written `#[{s} @`…`]`", .{ diagnostics.syntax_call_outside_syntax, a.name, a.name, a.name });
             env.lastError = TypeError.custom(msg, "Write `#[f @`…`]` (decision 577 (3)).").withLoc(at);
             return error.TypeError;
         };
         if (!memberFn.isTemplateAnnotation(t)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} @`…`]` names the template function `{s}`, which takes no `expr decl: unknown` beside its text", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
-            env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(expr q: string, expr decl: unknown) -> R` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} @`…`]` names the template function `{s}`, which takes no `syntax decl: unknown` beside its text", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
+            env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(syntax q: string, syntax decl: unknown) -> R` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
             return error.TypeError;
         }
     };
@@ -4917,9 +4917,11 @@ fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!
 /// default — before 280 the parser refused it at the `=`.
 /// Decision 551: `catalogue` admits a default that is a `@TypeInfo.all(…)`
 /// query (a top-level function's, not a template's nor a method's).
+/// Decision 616 — a `syntax` parameter is code as written, no value: its
+/// default (`compiler.bp`'s `syntax at: ?unknown = null`) is not 280's.
 fn refuseComptimeDefaults(env: *Env, params: []const ast.Param, catalogue: bool) InferError!void {
     for (params) |p| {
-        if (p.modifier != .@"comptime") continue;
+        if (p.modifier != .@"comptime" or p.arrival == .syntax) continue;
         const d = p.default orelse continue;
         if (catalogue and typeinfoAll.isCatalogueDefault(p)) continue;
         const msg = try std.fmt.allocPrint(env.arena, "{s}: the `comptime` parameter `{s}` takes a default only in a decorator", .{ diagnostics.comptime_default_outside_decorator, p.name });
@@ -5088,7 +5090,7 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
         // Decision 364 (2) — what the body does with the parameter: an
         // argument not known at build is refused only where the body reads
         // it; one it never reads reaches it as `undefined`.
-        const use: exprParam.Use = if (sig.fn_decl) |dfn| exprParam.useOf(dfn, p.name) else .{};
+        const use: syntaxParam.Use = if (sig.fn_decl) |dfn| syntaxParam.useOf(dfn, p.name) else .{};
         if (p.variadic) {
             const elem: ?*T.Type = if (wants[j]) |w| blk: {
                 const d = w.deref();
@@ -5279,7 +5281,7 @@ fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: u
 /// written.
 const CheckedDecoratorArg = struct { expr: *ast.Expr, known: bool, lexeme: ?[]const u8 = null };
 
-fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type, use: exprParam.Use) InferError!CheckedDecoratorArg {
+fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type, use: syntaxParam.Use) InferError!CheckedDecoratorArg {
     const loc = a.argLoc(i) orelse ast.Loc{ .line = 0, .col = 0 };
     const e = try parseDecoratorArg(env, a.args[i], loc);
     // Decision 268 — a `Decorator` parameter (`comptime marker:
@@ -5295,7 +5297,7 @@ fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usiz
     return .{ .expr = e, .known = known };
 }
 
-fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, e: *ast.Expr, p: ast.Param, want: ?*T.Type, loc: ast.Loc, use: exprParam.Use) InferError!bool {
+fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, e: *ast.Expr, p: ast.Param, want: ?*T.Type, loc: ast.Loc, use: syntaxParam.Use) InferError!bool {
     if (p.typeRef == .typeparam) {
         try checkDecoratorTypeArg(env, program, a, e.*, p, loc);
         return true;
@@ -5701,7 +5703,7 @@ fn runDeclDecorators(
         const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         // Decision 364 — the body reads `x.value`; the module holds the value
-        // in `x` (`expr_param.zig`), and `x.fail(m)` names its argument.
+        // in `x` (`syntax_param.zig`), and `x.fail(m)` names its argument.
         // Decision 371 — this module's functions the run reaches are typed
         // first when they compare decorators, and their `same` calls lowered;
         // or when they write a section path, and the path resolved.
@@ -5717,7 +5719,7 @@ fn runDeclDecorators(
         const erasedSupport = try rs.alloc(ast.FnDecl, support.len);
         for (support, 0..) |sf, k| {
             const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-            erasedSupport[k] = try exprParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
+            erasedSupport[k] = try syntaxParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
         const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
         // Decision 451 (3) — the calls of the decorator and of the functions
@@ -5725,7 +5727,7 @@ fn runDeclDecorators(
         // in the decorator's, which the diagnostic then names
         // (`srcPathOfModule`).
         const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -5901,7 +5903,7 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
     const q = tfn.params[0].name;
     // Decision 577 — a template text `#[f @`…`]` is its raw bytes.
     const text: ?[]const u8 = if (node.* == .literal and node.literal.kind == .stringLit) (a.templateText orelse node.literal.kind.stringLit) else null;
-    const valueRead = exprParam.useOf(tfn, q).value;
+    const valueRead = syntaxParam.useOf(tfn, q).value;
     const cap = try env.arena.create(template.CapturedExpr);
     cap.* = .{
         .callee = a.name,
@@ -6323,7 +6325,7 @@ fn checkTypedMetaCalls(env: *Env, program: ast.Program) InferError!void {
                 } else null else if (i < fields.len) i else null;
                 const at = fi orelse continue;
                 if (metaExprParam(f, arg.value.*)) |pn| for (f.params) |p| {
-                    if (p.arrival == .expr and std.mem.eql(u8, p.name, pn)) treeFed[at] = true;
+                    if (p.arrival == .syntax and std.mem.eql(u8, p.name, pn)) treeFed[at] = true;
                 };
             }
             const shapes = try env.arena.alloc(typedMeta.FieldShape, fields.len);
@@ -6841,7 +6843,7 @@ fn isReflectedMethodType(t: *T.Type) bool {
 /// Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods` entry, in
 /// a decorator's (or a template annotation's) body: `?T` / `T[]`, the typed
 /// meta the method's decorators recorded (they run before the owner's), read
-/// while the program compiles (`expr_param.eraseForRun`). `T` is a record
+/// while the program compiles (`syntax_param.eraseForRun`). `T` is a record
 /// type written by its declared name (the run looks it up by that name).
 fn inferMethodMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
     if (currentDeclParam(env) == null) {
@@ -6877,7 +6879,7 @@ fn metaReadCall(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc, on
 
 /// Decision 302 — `d.meta(T)` / `d.metaAll(T)` on a tag's `@Decl`: `?T` /
 /// `T[]`, the typed meta the tag's annotations recorded, read where the
-/// template runs (`expr_param.eraseMetaReads`). On a decorator's own `@Decl`
+/// template runs (`syntax_param.eraseMetaReads`). On a decorator's own `@Decl`
 /// parameter it is refused: a declaration's meta is read through
 /// `@typeInfo(X).meta(T)`.
 fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
@@ -9053,13 +9055,13 @@ fn captureExprArg(
     }
     if (!isLiteral) {
         env.lastError = TypeError.custom(
-            "an `expr` argument must be a literal string at the call site",
+            "a `syntax` argument must be a literal string at the call site",
             "Write the template inline — `f \"\"\"…\"\"\"` or `f(\"…\")`; a variable carries no span or scope to capture (V1).",
         ).withLoc(typedArg.value.getLoc());
         return error.TypeError;
     }
 
-    const valueRead = if (env.templateFns.get(callee)) |tfn| exprParam.useOf(tfn, param.paramName).value else false;
+    const valueRead = if (env.templateFns.get(callee)) |tfn| syntaxParam.useOf(tfn, param.paramName).value else false;
 
     const litLoc = rawArg.getLoc();
     return template.CapturedExpr{
@@ -9795,10 +9797,10 @@ fn expandTemplateCallViaRuntime(
         if (decoratorSameMod.mentionsMethod(f, "annotate")) break true;
     } else false;
     const readsMeta = annotates or looksUp;
-    const runTfn = if (readsMeta) try exprParam.eraseMetaReads(env.arena, carried[0]) else carried[0];
+    const runTfn = if (readsMeta) try syntaxParam.eraseMetaReads(env.arena, carried[0]) else carried[0];
     const runSupport = if (readsMeta) blk: {
         const out = try env.arena.alloc(ast.FnDecl, support.len);
-        for (support, 0..) |f, i| out[i] = try exprParam.eraseMetaReads(env.arena, f);
+        for (support, 0..) |f, i| out[i] = try syntaxParam.eraseMetaReads(env.arena, f);
         break :blk out;
     } else support;
     // Decision 426 (2) — each `q.build` of the body numbered, so the run
@@ -10080,11 +10082,11 @@ fn runTagAnnotation(
     const erasedSupport = try rs.alloc(ast.FnDecl, support.len);
     for (support, 0..) |sf, k| {
         const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-        erasedSupport[k] = try exprParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
+        erasedSupport[k] = try syntaxParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
     }
     const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
     const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try exprParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
+    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
         return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
     };
     var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;
@@ -12449,7 +12451,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // its built code's type) and nothing else — but in std's
             // `compiler.bp`, where `Compiler.build` declares it as its answer.
             if (std.mem.eql(u8, n, ast.anyvalue_type_name) and !std.mem.eql(u8, env.modulePath, "std/compiler")) {
-                var err = TypeError.custom(diagnostics.anyvalue_outside_template ++ ": `anyvalue` — a value whose type is known once its code is built — is written only as a template's return", "A template (`fn f(expr q: string) -> anyvalue`) answers the code it builds; anywhere else write the type.");
+                var err = TypeError.custom(diagnostics.anyvalue_outside_template ++ ": `anyvalue` — a value whose type is known once its code is built — is written only as a template's return", "A template (`fn f(syntax q: string) -> anyvalue`) answers the code it builds; anywhere else write the type.");
                 if (env.typeRefLoc) |l| err = err.withLoc(l);
                 env.lastError = err;
                 return error.TypeError;
@@ -22729,8 +22731,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // annotated declaration's `@Decl` is written only as an
                     // annotation, `#[f "…"]`.
                     if (!localCallee) if (templateFnNamed(env, call.callee)) |tfn| if (memberFn.isTemplateAnnotation(tfn)) {
-                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`expr {s}: unknown`), so it is written as an annotation `#[{s} @`…`]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
-                        env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `expr decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`syntax {s}: unknown`), so it is written as an annotation `#[{s} @`…`]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
+                        env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `syntax decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
                         return error.TypeError;
                     };
 
@@ -22834,7 +22836,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         // Decisions 577 (3), 578 (1) — a template is called one
                         // way: its name before a template text, `` f @`…` ``.
                         if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and (call.templateText == null or (env.inDecoratorFn and loc.expansion == 0))) {
-                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.expr_call_outside_expr, call.callee });
+                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.syntax_call_outside_syntax, call.callee });
                             env.lastError = TypeError.custom(msg, "Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).").withLoc(loc);
                             return error.TypeError;
                         };
@@ -23681,7 +23683,7 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true, true);
     const expected = try env.funcType(&.{}, try env.freshVar());
 
-    // Each `expr x: T` parameter (a tree) is its `T` in the executor.
+    // Each `syntax x: T` parameter (a tree) is its `T` in the executor.
     const Rebound = struct { name: []const u8, was: *T.Type };
     var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
     for (env.currentParams) |p| if (p.exprWrapped) {
@@ -24651,11 +24653,11 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const prepared = try blockEval.prepare(env, ct);
     var support = try blockEval.collectSupport(env, prepared);
     // Decision 364 — a reached function's `comptime x: @Expr<T>` holds the
-    // argument's value in `x` where it runs (`expr_param.zig`): `x.value` is
+    // argument's value in `x` where it runs (`syntax_param.zig`): `x.value` is
     // `x` (376's `comptime campos("a,b")`).
     {
         const erased = try env.arena.alloc(ast.FnDecl, support.fns.len);
-        for (support.fns, 0..) |f, i| erased[i] = try exprParam.eraseFn(env.arena, f, false);
+        for (support.fns, 0..) |f, i| erased[i] = try syntaxParam.eraseFn(env.arena, f, false);
         support.fns = erased;
     }
     if (try blockEval.unexpandedTemplateCall(env, prepared, support)) |msg| {

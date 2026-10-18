@@ -3,11 +3,11 @@
 import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 // Emits a declaration — a declaration's channel, not a tag's.
-pub fn withEmit(expr decl: unknown) {
+pub fn withEmit(syntax decl: unknown) {
     @emit("pub fn extra() -> i32 { return 1; }");
 }
 
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val tag = compiler.tagDecl(DeclKind.Element, "div", []);
     val d = compiler.annotate(tag, Span(start: text.indexOf("#[")

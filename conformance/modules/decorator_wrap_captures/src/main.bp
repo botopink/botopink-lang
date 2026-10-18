@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-fn labelled(expr decl: fn(..) -> string) {
+fn labelled(syntax decl: fn(..) -> string) {
     val label = compiler.name(decl)!;
     compiler.wrapWith({ call -> label + ": " + call.run() });
 }

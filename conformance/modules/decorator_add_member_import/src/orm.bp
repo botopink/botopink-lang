@@ -2,7 +2,7 @@
 
 import {compiler} from "std";
 
-pub fn entity(expr decl: unknown, comptime table: string) {
+pub fn entity(syntax decl: unknown, comptime table: string) {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.addMember(

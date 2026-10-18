@@ -10,7 +10,7 @@ fn record(d: unknown) {
     compiler.addMeta(Entity(table: "cities"));
 }
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     record(decl);
 }
 

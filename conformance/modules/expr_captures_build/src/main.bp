@@ -1,10 +1,10 @@
 //// Decision 575 (4), the tree rule — a member a decorator writes is code the
 //// program runs; `compiler` exists only while it compiles, so a `compiler`
-//// read inside the member is refused there (`expr-captures-build`).
+//// read inside the member is refused there (`syntax-captures-build`).
 
 import {compiler} from "std";
 
-fn named<T>(expr decl: T, expr rule: fn(v: T) -> bool) {
+fn named<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) {
     compiler.addMember("ruleText", fn(self: T) -> string {
         return compiler.text(rule);
     });

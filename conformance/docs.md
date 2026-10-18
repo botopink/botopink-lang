@@ -1170,7 +1170,7 @@ the name it declares or imports.
 That holds for every name the prelude gives — a type (`Result`, `Field`),
 a behavior, a bare variant (`DeclKind.Component`, `Stage.Any`):
 a `behavior` the module declares or imports under that name is what the name
-reads in every type position — an annotation, a decorator's `expr decl: …`, an
+reads in every type position — an annotation, a decorator's `syntax decl: …`, an
 `implement` clause — and the prelude's declaration is out of that module's
 scope.
 
@@ -1224,15 +1224,15 @@ A parameter says how its argument arrives (decisions 575 (4), 576). `comptime
 x: T` is the argument's **value**, known while the program compiles: the body
 holds a `T` and reads `x` directly, never `.value` — in a decorator, a template
 function, any function, a method, a `declare fn`; the argument is checked
-against `T` where it is written. `expr x: T` is the **expression** written,
+against `T` where it is written. `syntax x: T` is the **expression** written,
 checked against `T` where it is written and captured as a tree: opaque in the
 body, handed only to `compiler.*` or into another tree (§ Template functions);
-an `expr` argument to an `expr` parameter hands its tree on. A function or a
+a `syntax` argument to a `syntax` parameter hands its tree on. A function or a
 type given to a `comptime` parameter is checked at the argument and never run
-or inspected while the program compiles. A method or a field read on an `expr`
+or inspected while the program compiles. A method or a field read on a `syntax`
 parameter is `expr-param-method`: its text is read with `compiler.text(x)`. `@Expr<T>`, `@ExprCustom<T>`,
 `@Decl`, `Decl<T>` and `Expr<E>` are not part of the language
-(`removed-expr-type`), nor the parameter modifier `syntax`.
+(`removed-expr-type`); the modifier is `syntax` (decision 616 renamed `expr`), and `expr` is an ordinary name.
 
 A `comptime` parameter may take **a value or a type** (decisions 297, 575 (5)):
 `comptime source: Box<T> | type<T>`. A `Box<T>` argument binds `T` from
@@ -3350,20 +3350,20 @@ expression, which the hint names as the frame that ran it:
 
 ### Template functions
 
-A template is a function whose first parameter (after an `expr self: R`
-receiver) is `expr q: string` — its **template text** — and nothing else
+A template is a function whose first parameter (after a `syntax self: R`
+receiver) is `syntax q: string` — its **template text** — and nothing else
 (decisions 577, 578); a template declared with other parameters is refused at
 its declaration (`template-signature`). It answers a type `R`, `anyvalue` (the
 type of whatever it builds, decided per call) or `anytype`. It is called one
 way, its name before a template text `` @`…` ``: `` name @`…` ``,
 `` value.name @`…` ``, or as an annotation `` #[name @`…`] ``; `name "…"`,
-`name(…)` and the template taken as a value are `expr-call-outside-expr`. The
+`name(…)` and the template taken as a value are `syntax-call-outside-syntax`. The
 template text may span lines and holds its bytes as written — no escape but
 `` \` `` for a backtick, no interpolation. `q` is opaque in the body, handed
 only to `compiler.*` — `compiler.text(q)` answers the raw text,
 `compiler.lookup(q, name)` a declaration — or into a tree (decision 576), and
 `return e` hands `e` to the call site: a `comptime` value is spliced as a
-literal, an `expr` as written.
+literal, a `syntax` as written.
 
 A `comptime x: T` parameter of a function that is no template is read as `x`
 whatever reads it — an operand, or a method's receiver (`names.split(",")`):
@@ -3458,7 +3458,7 @@ A library's default handle is also its namespace: after `import {shapes} from
 
 **A call is typed by the code it built** (decision 426). The type of a
 template call is the type of the code the template built for that call,
-computed at build, so `fn data(expr q: string) -> anyvalue` answers
+computed at build, so `fn data(syntax q: string) -> anyvalue` answers
 `string[]` at one call and `i32` at another. The template's answer is a bound
 the built code fits — `unknown` holds anything, so `-> unknown[]` keeps the
 call's `string[]` —, and code outside it is refused in the template, at its
@@ -3504,7 +3504,7 @@ On a handle, `compiler.meta<T>(d)` (`?T`) and `compiler.metaAll<T>(d)` (`T[]`)
 answer at build what the declaration's decorators recorded, when the record `T`
 is data — each field a string, a number, a `bool`, a variant, an array or an
 optional of those; a field the value left out reads its default. A record with
-a field that holds a tree (filled from an `expr` parameter, § Typed meta) holds
+a field that holds a tree (filled from a `syntax` parameter, § Typed meta) holds
 code the program runs, and its read is refused, naming the field
 (`template-lookup-meta-expr-field`); `@typeInfo(X).meta(T)` in a template body
 stays `typeinfo-meta-at-build`.
@@ -3524,7 +3524,7 @@ before it ran is refused at the call's literal (`typeinfo-meta-hooks-pending`).
 <!-- example: modules/template_lookup_meta_hooks_pending -->
 
 **A template method** (decisions 311 (3), 397 (3), 415 (1)). A template whose
-first parameter is `expr self: R` and whose second is `expr q: string` is
+first parameter is `syntax self: R` and whose second is `syntax q: string` is
 called on a value, `` value.method @`…` ``, as `` f @`…` `` is.
 The receiver is the call site's code, its type checked against `R` as an
 argument's is (a behavior accepts a type that implements it);
@@ -3556,7 +3556,7 @@ line of a template text the text begins after its `` @` ``.
 
 <!-- example: modules/template_fail_at_column_on_open_line -->
 
-A template whose second parameter is `expr decl: unknown` is written as an
+A template whose second parameter is `syntax decl: unknown` is written as an
 annotation, `` #[f @`…`] `` — § Template annotations below.
 
 The calls a template function's built code makes of the expanding module's
@@ -3585,7 +3585,7 @@ name there — a local, a field, a parameter.
 
 Its rules are read off the binding, not the spelling: in a body that runs when
 the program runs it is `compiler-at-run-time`, an output outside a decorator
-`compiler-output-outside-decorator`, a read inside a tree `expr-captures-build`;
+`compiler-output-outside-decorator`, a read inside a tree `syntax-captures-build`;
 it is read only through its members, and passed as an argument or stored it is
 `compiler-escapes`, at the name.
 
@@ -3595,8 +3595,8 @@ it is read only through its members, and passed as an argument or stored it is
 
 ### Decorators
 
-A decorator is a function whose first parameter is `expr` (decisions 575 (4),
-576 (10)) — `fn mark<T>(expr decl: T, comptime label: string)`, `expr decl:
+A decorator is a function whose first parameter is `syntax` (decisions 575 (4),
+576 (10)) — `fn mark<T>(syntax decl: T, comptime label: string)`, `syntax decl:
 unknown` when the declaration has no pattern; `#[name(args)]` runs it at
 compile time over the declaration it annotates, the annotation's arguments after
 that parameter. `decl` is an opaque handle, read through `compiler`
@@ -3735,9 +3735,9 @@ refused where it is written, at the label, naming `label:`:
 A decorator's arguments are typed compile-time values (decision 280), checked
 where they are written, as a call's are:
 
-1. **Every parameter after the first is `comptime x: T` or `expr x: T`**
+1. **Every parameter after the first is `comptime x: T` or `syntax x: T`**
    (decision 575 (4)). A `comptime` parameter is the argument's value, known at
-   build, which the body reads as `x`, a `T`; an `expr` parameter is the user's
+   build, which the body reads as `x`, a `T`; a `syntax` parameter is the user's
    expression, checked against `T` where it is written and handed only to
    `compiler.*` or into a tree; what runs later comes from the decorator's
    outputs. A parameter with neither is `decorator-param-not-comptime` at the
@@ -3762,9 +3762,9 @@ where they are written, as a call's are:
    the annotation.
 3. **The first parameter's type names the shape of the annotated
    declaration** — a type, a field's type, a function's type — and binds the
-   type parameters it names, through a pattern too: `expr decl: fn(e: E) ->
+   type parameters it names, through a pattern too: `syntax decl: fn(e: E) ->
    unknown` binds `E` to the function's parameter type. A declaration that does
-   not fit is refused at the annotation, both shapes spelled; `expr decl:
+   not fit is refused at the annotation, both shapes spelled; `syntax decl:
    unknown` fits any.
 4. **`Type.Field<T>` and `.name`** — a field of `T` (decision 308, std's
    `types.bp`); `.name` resolves against the `T` the parameter expects, a field
@@ -3779,7 +3779,7 @@ where they are written, as a call's are:
 <!-- example: modules/decorator_arguments_meta -->
 
 A function or a type argument is checked at the argument and never run at
-build (decision 364 (3)). The body hands an `expr` on to the program through a
+build (decision 364 (3)). The body hands a `syntax` on to the program through a
 typed member (decision 370 (2)) — `compiler.addMember(name, fn…)` with the
 member written as a function expression at the call, its parameters and its
 return typed:
@@ -3787,17 +3787,17 @@ return typed:
 <!-- example: modules/decorator_expr_message_runtime -->
 
 The member is the program's code, a tree (decision 575 (4)): a member holds
-run-time code, its `expr` parameters spliced as the annotation wrote them, its
+run-time code, its `syntax` parameters spliced as the annotation wrote them, its
 `comptime` parameters and the body's locals spliced as literals (a string, a
 number, a `bool`, `null` or an array of those). The type receives `pub fn
-validate(self: Self) -> Violation[] { … }` with each `expr` argument spliced
+validate(self: Self) -> Violation[] { … }` with each `syntax` argument spliced
 where the member uses it — evaluated at run time, each time that use is
 reached, so an argument not known at build (`t("…")`) is accepted. The
 decorator's type parameters take what the annotation bound them to (`T` is
 `Signup`, written `Self`). The member reads nothing else of the decorator's
 body: the handle and a local that is no literal exist only while the program
 compiles (`decorator-member-captures`), and `compiler` inside a member is
-`expr-captures-build`. Every parameter is typed (`decorator-member-fn-untyped`),
+`syntax-captures-build`. Every parameter is typed (`decorator-member-fn-untyped`),
 the member is written at the call (`decorator-member-not-fn`), and a `self` is
 the type the member joins and every type parameter it writes is bound
 (`decorator-member-type`); a typed function expression is legal in every other
@@ -3810,25 +3810,25 @@ In the member, `@typeInfo(T)` of the decorator's type parameter reads the
 annotated type's typed meta (decision 395): typed in the decorator's body,
 answered where the member joins the type, the list written under `comptime`
 (`for (comptime @typeInfo(T).metaAll(Check)) { c -> … }`). A method or a field
-read on an `expr` parameter (`rule.text()`) is `expr-param-method` (370 (3)).
-The other channel is typed meta whose record holds a tree filled from an `expr`
+read on a `syntax` parameter (`rule.text()`) is `expr-param-method` (370 (3)).
+The other channel is typed meta whose record holds a tree filled from a `syntax`
 parameter (§ Typed meta below).
 
 A decorator on a function or a method may wrap it (decision 316):
 `compiler.wrapWith({ call -> … })`, the wrapper a lambda written at the call. It
 receives the call value — `call.args`, the arguments as a tuple, and
 `call.run()`, which runs the original body with them — and answers the
-function's return type. `expr decl: fn(..) -> R` names a function of any
+function's return type. `syntax decl: fn(..) -> R` names a function of any
 parameters (`call.args` is then `unknown`; a pattern that lists them types it,
-`expr decl: fn(id: i32) -> string` gives `#(i32)`); `fn(..)` is written nowhere
+`syntax decl: fn(id: i32) -> string` gives `#(i32)`); `fn(..)` is written nowhere
 else (`any-params-outside-decl`, at the `..`). Several wrappers compose in
 annotation order, the first written outermost. The function keeps its name,
 signature and annotations: every call of it, an importer's included, runs the
 wrapper, and its original body is reachable only through `call.run()`. The
-wrapper is a tree, as a member function is: it reads the decorator's `expr`
+wrapper is a tree, as a member function is: it reads the decorator's `syntax`
 parameters, spliced, its `comptime` parameters as literals, and the names of
 the decorator's module, never the handle or a local that is no literal
-(`decorator-member-captures`), nor `compiler` (`expr-captures-build`).
+(`decorator-member-captures`), nor `compiler` (`syntax-captures-build`).
 
 <!-- example: modules/decorator_wraps_function -->
 
@@ -3872,7 +3872,7 @@ order the bodies make them; a declaration takes any number. The executor is
 checked against `fn()` (decision 409): a tail that answers a value is refused
 at it, a named executor that answers one at its name. The executor is a tree (575 (4)): run-time code whose names
 resolve where the decorator wrote it — a private helper of the decorator's
-module included, a library's too —, each `expr` parameter spliced as the
+module included, a library's too —, each `syntax` parameter spliced as the
 expression written, each `comptime` parameter and each `val` of the body
 spliced as the literal of its value. A library module's executors run in the
 program that imports it, before the program's own.
@@ -3890,7 +3890,7 @@ below an annotated declaration reads what that declaration's executor did.
 
 <!-- example: modules/compile_executor_module_val_order -->
 
-Inside the executor the decorator's `expr decl` handle is the annotated
+Inside the executor the decorator's `syntax decl` handle is the annotated
 declaration itself as a run-time value, with its declared type (decision 581
 (2)): `add(Module(name: name, lifecycle: lifecycle, make: decl))` is checked
 against `make`'s type for each annotated declaration, and a declaration whose
@@ -3901,7 +3901,7 @@ type does not fit is refused at its annotation, the decorator's
 
 <!-- example: modules/compile_executor_handle_mistyped -->
 
-`compiler` inside the executor is `expr-captures-build`, at the keyword, and
+`compiler` inside the executor is `syntax-captures-build`, at the keyword, and
 `compiler.compile` in a function that is no decorator
 `compiler-output-outside-decorator`, at the member.
 
@@ -3949,8 +3949,8 @@ decorator).
 <!-- example: modules/meta_twice -->
 
 A meta record's field is written plain (`message: string`, `rule: fn(v: T) ->
-bool`); filled from an `expr` parameter it holds the tree (decisions 370 (1),
-576 (12)): the decorator hands one of its `expr x: T` parameters on as it is, and
+bool`); filled from a `syntax` parameter it holds the tree (decisions 370 (1),
+576 (12)): the decorator hands one of its `syntax x: T` parameters on as it is, and
 the value is built in the reading program with the expression spliced where the
 annotation wrote it — a rule is called, a message evaluated, at run time, never
 while the program compiles; filled from a `comptime` parameter it holds the
@@ -4026,7 +4026,7 @@ twice is `typeinfo-all-arguments`.
 <!-- example: modules/typeinfo_all_with_decorator -->
 
 **A decorator names the behavior its declarations implement** (decision 564).
-`pub fn module(expr decl: Module) { … }`, `Module` a `behavior`:
+`pub fn module(syntax decl: Module) { … }`, `Module` a `behavior`:
 `#[module]` on a type that does not `implement Module` is refused at the
 annotation, naming the type and the behavior (`` `#[module]` needs a type
 implementing `Module` — `City` does not ``). `@TypeInfo.all(with: module)`
@@ -4140,7 +4140,7 @@ declaration, never the spelling.
 **Every function's stage** (decision 376). `HookNode.stage` is `Stage.Build`,
 `Stage.Run` or `Stage.Any` — every top-level function has one, whether or not
 it is a component. A function is `Build` when it reads what exists only while
-the program compiles — an `expr` parameter, or a `comptime` parameter
+the program compiles — a `syntax` parameter, or a `comptime` parameter
 read at build, of a function that also takes a run-time parameter (one whose
 every parameter is `comptime` is expanded at its call site instead, below) —
 and `Run` when it calls a host function, std's included,
@@ -4259,10 +4259,10 @@ checker cannot follow (a parameter, a method, generic code) is an edge with `cal
 
 The template call `` f @`…` `` may be written as an annotation, `` #[f @`…`] ``,
 alone or in a `#[a, b]` list. `f` is a template function
-whose first parameter is the literal, `expr q: string`, and whose second
-receives the annotated declaration, `expr decl: unknown` (question `s29-a`).
+whose first parameter is the literal, `syntax q: string`, and whose second
+receives the annotated declaration, `syntax decl: unknown` (question `s29-a`).
 Such a function is written only as an annotation; a template for a call site
-declares no `expr decl`:
+declares no `syntax decl`:
 
 - the text is captured unevaluated, as at a call site: `compiler.text(q)`,
   `compiler.lookup(q, name)`;
@@ -4277,10 +4277,10 @@ declares no `expr decl`:
   declaration at the annotation.
 
 Refused at the annotation: a name that is not a template function
-(`template-annotation-not-template`), a template that takes no `expr decl`
+(`template-annotation-not-template`), a template that takes no `syntax decl`
 (`template-annotation-without-decl`) and any other form naming a template
-function — `#[f(…)]`, `#[f]`, `#[f "…"]` — (`expr-call-outside-expr`,
-decision 577 (3)); a call `` f @`…` `` of a template that takes an `expr decl`
+function — `#[f(…)]`, `#[f]`, `#[f "…"]` — (`syntax-call-outside-syntax`,
+decision 577 (3)); a call `` f @`…` `` of a template that takes a `syntax decl`
 is `template-annotation-only` at the call.
 
 **A method's typed meta, read by its owner's decorator** (question `s29-b`).
@@ -4385,7 +4385,7 @@ refused there, at compile time, naming both declarations.
 
 A bodyless `declare fn` — top-level or a type's, static included — names the
 code each target runs in its place with `#[@external(…)]` (decision 575 (6)):
-one std function, `external(expr decl: unknown, comptime ..sources:
+one std function, `external(syntax decl: unknown, comptime ..sources:
 Implementation[])`, whose sources are values of std's enum `Implementation` —
 `Erlang(template, body, inline, result)`, `Node(template, body, result)`,
 `Typescript(template, result)` and `Wasm(template | op | std | wasi | body,
@@ -4978,7 +4978,7 @@ decorator or template body runs, never at run time):
 | `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime t: type<T>) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
-| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `expr decl: B` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
+| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `syntax decl: B` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
 | `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
 | `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
 | `@RecordKeys` | `RecordKeys(comptime _: type<T>) -> string[]` — COMPTIME-ONLY | the declaration |
@@ -5001,7 +5001,7 @@ is only an operator (decision 322): `x is T` tests a type, and a hand-written
 
 `Decorator` (declared in `builtins.d.bp`, decision 268) is the type of a
 decorator's name: a name has it when it names a function whose first parameter
-is `expr` and which has a body — further arguments included —, and
+is `syntax` and which has a body — further arguments included —, and
 an array literal of such names is a `Decorator[]`. Nothing else is assignable to
 it, and it cannot be constructed: `@TypeInfo.all(with: 42)` and
 `@TypeInfo.all(with: someOrdinaryFn)` are the ordinary type mismatch, at the

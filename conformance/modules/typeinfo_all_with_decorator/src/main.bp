@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-fn route(expr decl: unknown, comptime path: string) {
+fn route(syntax decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
 }
 

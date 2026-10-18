@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-fn mark(expr decl: unknown) {
+fn mark(syntax decl: unknown) {
     compiler.setMeta(Mark(marked: true));
 }
 

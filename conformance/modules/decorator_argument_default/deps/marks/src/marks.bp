@@ -3,7 +3,7 @@
 import {compiler} from "std";
 
 pub fn mark(
-    expr decl: unknown,
+    syntax decl: unknown,
     comptime label: string,
     comptime loud: bool = false,
     comptime times: i32 = -1,

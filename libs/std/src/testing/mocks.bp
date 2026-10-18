@@ -36,7 +36,7 @@
 ////   • the RUNTIME (matchers / `when` / `verify` / the host cells) — ordinary
 ////     botopink over the cells below.
 ////   • the SYNTHESIS (`#[mock]`) — a comptime decorator that reflects a
-////     behavior's methods through the declaration handle (`expr decl: unknown`) and gives the behavior the mock type
+////     behavior's methods through the declaration handle (`syntax decl: unknown`) and gives the behavior the mock type
 ////     `Xxx.Mock` and the factory `Xxx.mock()` (decision 216). The compiler core learns nothing about mocking
 ////     (no lib-specific surface in core); every rule here is botopink.
 
@@ -218,7 +218,7 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // ── mock synthesis (`#[mock]`) ───────────────────────────────────────────────
 //
 // A comptime annotation processor: reflect the annotated behavior's methods through
-// the declaration handle (`expr decl: unknown`) and give the behavior (a) the associated type `<Name>.Mock(__id:
+// the declaration handle (`syntax decl: unknown`) and give the behavior (a) the associated type `<Name>.Mock(__id:
 // string)`, which implements `<Name>` and funnels every method through
 // `invoke` (`decl.addType`), and (b) the associated fn `<Name>.mock() -> <Name>`,
 // the factory (`decl.addMember`) — decision 216. The compiler core provides only the protocol (recognise →
@@ -242,7 +242,7 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // statement is only legal as the last statement in a block; and the body cannot
 // call sibling fns — only this one is lowered into the decorator eval script —
 // so the return-type default is inlined rather than factored out.
-pub fn mock(expr decl: unknown) {
+pub fn mock(syntax decl: unknown) {
     var q = "";
     compiler
         .annotations(decl)

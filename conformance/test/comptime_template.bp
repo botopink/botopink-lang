@@ -3,7 +3,7 @@
 //// unevaluated — the mechanism `erika` and `jhonstart` build their sub-languages
 //// on.
 
-pub fn sql(expr q: string) -> string {
+pub fn sql(syntax q: string) -> string {
     return q;
 }
 

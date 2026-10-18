@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-fn columns(expr decl: unknown) {
+fn columns(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: Missing)"));
 }
 

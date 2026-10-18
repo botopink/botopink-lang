@@ -750,7 +750,7 @@ pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending
 pub const anyvalue_outside_template: []const u8 = "anyvalue-outside-template";
 
 /// Decision 578 (1), 577 (4) — a template (a function whose first parameter
-/// is its `expr q: string` text) declared with other parameters.
+/// is its `syntax q: string` text) declared with other parameters.
 pub const template_signature: []const u8 = "template-signature";
 
 /// Decision 575 (3) — `compiler` in a body that runs only when the program
@@ -763,7 +763,7 @@ pub const compiler_output_outside_decorator: []const u8 = "compiler-output-outsi
 
 /// Decision 575 (4), the tree rule — `compiler` inside a tree (a member, a
 /// wrapper a decorator writes).
-pub const expr_captures_build: []const u8 = "expr-captures-build";
+pub const syntax_captures_build: []const u8 = "syntax-captures-build";
 
 /// Decision 575 (3) — a member `Compiler` does not declare, `compiler` read
 /// without a member, or a member read where the point has none.
@@ -775,7 +775,7 @@ pub const compiler_escapes: []const u8 = "compiler-escapes";
 
 /// Decision 575 (4) — a `-> expr T` function called as a function, outside
 /// the template syntax, an annotation and a tree.
-pub const expr_call_outside_expr: []const u8 = "expr-call-outside-expr";
+pub const syntax_call_outside_syntax: []const u8 = "syntax-call-outside-syntax";
 
 pub const build_and_run: []const u8 = "build-and-run";
 
@@ -990,10 +990,10 @@ pub const all_codes = [_][]const u8{
     template_signature,
     compiler_at_run_time,
     compiler_output_outside_decorator,
-    expr_captures_build,
+    syntax_captures_build,
     compiler_member_unknown,
     compiler_escapes,
-    expr_call_outside_expr,
+    syntax_call_outside_syntax,
     build_and_run,
     run_in_build,
     context_declared_twice,

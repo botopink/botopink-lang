@@ -10,7 +10,7 @@ type Element(text: string) implement @Renderable
 
 type BlogParams(slug: string, id: i32)
 
-fn args(expr decl: unknown) {
+fn args(syntax decl: unknown) {
     var out: string[] = [];
     compiler
         .hooks(decl)

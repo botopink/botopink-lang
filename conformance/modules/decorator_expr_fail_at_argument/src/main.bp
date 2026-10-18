@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn sizeBetween(expr decl: unknown, comptime min: i32, comptime max: i32) {
+fn sizeBetween(syntax decl: unknown, comptime min: i32, comptime max: i32) {
     if (min > max) compiler.fail("the upper bound is below the lower one", at: max);
 }
 

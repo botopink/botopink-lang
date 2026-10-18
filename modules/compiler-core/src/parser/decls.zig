@@ -589,7 +589,7 @@ pub fn parseFnBody(
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
     // Decision 578 (1) — a template method by its text parameter keeps its
-    // `expr self` receiver too.
+    // `syntax self` receiver too.
     if (selfTok) |tok| if (!ast.isTemplateMethodSignature(params, returnType) and ast.templateTextIndex(params) != 1) {
         this.parseError = ParseErrorInfo.fromToken(.selfParamOutsideType, tok);
         return ParseError.UnexpectedToken;
@@ -1255,8 +1255,8 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     }
 
     // ── comptime-prefixed form: `comptime name : type`, and decision 575
-    // (4)'s `expr name : type` ─────────────────────────────────────────
-    const exprAhead = isExprModifierAt(this, 0);
+    // (4)'s `syntax name : type` ─────────────────────────────────────────
+    const exprAhead = isSyntaxModifierAt(this, 0);
     if (this.check(.@"comptime") or exprAhead) {
         const startTok = this.advance(); // consume 'comptime' / 'expr'
         const variadic = matchVariadic(this);
@@ -1264,18 +1264,18 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         _ = try this.consume(.colon);
         const typeTok = this.peek();
         // A decorator's first `expr` is the declaration, its type a pattern
-        // that may write `fn(..) -> R` (decision 316); `expr_params.zig`
+        // that may write `fn(..) -> R` (decision 316); `syntax_params.zig`
         // decides which `expr` is that one.
         if (exprAhead) this.inDeclPattern = true;
         var typeRef = try this.parseTypeRef(alloc);
         this.inDeclPattern = false;
-        // Decision 575 (4) — `comptime x: T` holds the value, `expr x: T` the
+        // Decision 575 (4) — `comptime x: T` holds the value, `syntax x: T` the
         // tree: both are read as the tree type `T` is wrapped in, the
         // arrival kept for the printer. `@Expr<T>` / `@Decl` written keep
         // their own reading until the surface drops them (decision 576).
         var arrival: ast.Arrival = .written;
         if (exprAhead) {
-            arrival = .expr;
+            arrival = .syntax;
             typeRef = try wrapTree(alloc, typeRef);
         } else if (!typeRef.isExprType() and !typeRef.isDeclType()) {
             arrival = .value;
@@ -1380,12 +1380,12 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     };
 }
 
-/// Decision 575 (4) — `expr` is a parameter's modifier when a name (or a
-/// variadic's `..`) follows it: `expr x: T`, `expr ..xs: T[]`. Anywhere else
+/// Decisions 575 (4), 616 — `syntax` is a parameter's modifier when a name (or a
+/// variadic's `..`) follows it: `syntax x: T`, `syntax ..xs: T[]`. Anywhere else
 /// it is an ordinary name.
-pub fn isExprModifierAt(this: *This, offset: usize) bool {
+pub fn isSyntaxModifierAt(this: *This, offset: usize) bool {
     const t = this.peekAt(offset);
-    if (t.kind != .identifier or !std.mem.eql(u8, t.lexeme, "expr")) return false;
+    if (t.kind != .identifier or !std.mem.eql(u8, t.lexeme, "syntax")) return false;
     const next = this.peekAt(offset + 1).kind;
     return next == .identifier or next == .underscore or next == .dotDot;
 }

@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn names(expr q: string) -> unknown[] {
+fn names(syntax q: string) -> unknown[] {
     return compiler.build("[\"" + compiler.text(q) + "\"]");
 }
 

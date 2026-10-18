@@ -7,6 +7,6 @@ pub fn twice(n: i32) -> i32 {
     return n * 2;
 }
 
-pub default fn shapes(expr q: string) -> i32 {
+pub default fn shapes(syntax q: string) -> i32 {
     return compiler.build("1");
 }

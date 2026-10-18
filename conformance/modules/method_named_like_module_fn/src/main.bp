@@ -8,7 +8,7 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-pub fn startsWith(expr decl: unknown, comptime prefix: string) {
+pub fn startsWith(syntax decl: unknown, comptime prefix: string) {
     if (compiler.kind(decl) != DeclKind.Field)
         compiler.fail("#[startsWith] must annotate a field", at: decl);
 }

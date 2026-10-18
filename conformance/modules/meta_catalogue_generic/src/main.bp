@@ -8,11 +8,11 @@ import {compiler} from "std";
 
 pub type Check<T>(note: string)
 
-fn check<T>(expr decl: T, comptime note: string) {
+fn check<T>(syntax decl: T, comptime note: string) {
     compiler.addMeta(Check(note: note));
 }
 
-fn mark(expr decl: unknown) {
+fn mark(syntax decl: unknown) {
     if (compiler.name(decl)! == "")
         compiler.fail("a declaration has a name", at: decl);
 }

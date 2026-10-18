@@ -9,7 +9,7 @@ const Module = @import("../../module.zig").Module;
 const h = @import("helpers.zig");
 
 const frame =
-    \\pub fn m(expr decl: unknown) {
+    \\pub fn m(syntax decl: unknown) {
     \\    decl.setMeta("role", compiler.name(decl)!);
     \\}
     \\

@@ -5,7 +5,7 @@ import {compiler} from "std";
 
 fn count() -> i32 { 1 }
 
-fn named(expr decl: unknown) {
+fn named(syntax decl: unknown) {
     compiler.compile(count);
 }
 

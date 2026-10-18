@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-pub fn tag(expr t: string) -> string {
+pub fn tag(syntax t: string) -> string {
     return compiler.build("\"<" + compiler.text(t) + ">\"");
 }
 

@@ -7,13 +7,13 @@
 
 import {compiler} from "std";
 
-fn data<T>(expr q: string) -> T {
+fn data<T>(syntax q: string) -> T {
     if (compiler.text(q) == "names")
         return compiler.build("[\"ana\", \"bia\"]");
     return compiler.build("41");
 }
 
-fn listed(expr q: string) -> unknown[] {
+fn listed(syntax q: string) -> unknown[] {
     return compiler.build("[\"" + compiler.text(q) + "\"]");
 }
 

@@ -18,7 +18,7 @@ fn helper(n: i32) -> i32 {
     return n;
 }
 
-fn describe(expr q: string) -> string {
+fn describe(syntax q: string) -> string {
     val found = compiler.lookup(q, compiler.text(q));
     if (found == null)
         return compiler.build("\"" + compiler.text(q) + ": not in scope\"");

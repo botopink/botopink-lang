@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub fn component(expr decl: unknown) {
+pub fn component(syntax decl: unknown) {
     var args = "";
     items.forEach({ f ->
         log(args);

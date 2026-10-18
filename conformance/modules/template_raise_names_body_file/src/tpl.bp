@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-pub fn shout(expr t: string) -> string {
+pub fn shout(syntax t: string) -> string {
     val s = compiler.text(t);
     @panic("boom " + s);
     return compiler.build("\"" + s + "\"");

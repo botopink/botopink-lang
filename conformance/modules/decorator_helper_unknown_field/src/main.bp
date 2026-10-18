@@ -7,7 +7,7 @@ fn nameOf(decl: unknown) -> string {
     return decl.nope;
 }
 
-fn tagged(expr decl: unknown) {
+fn tagged(syntax decl: unknown) {
     val n = nameOf(decl);
 }
 

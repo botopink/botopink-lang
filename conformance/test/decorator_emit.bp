@@ -8,7 +8,7 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-fn wire(expr decl: unknown) {
+fn wire(syntax decl: unknown) {
     @emit("pub fn wiredSize() -> i32 { return 99; }");
     if (compiler.kind(decl) != DeclKind.Type)
         compiler.fail("#[wire] must annotate a type", at: decl);

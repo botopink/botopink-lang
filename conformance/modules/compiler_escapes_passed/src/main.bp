@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 fn report(at: unknown) {}
 
-fn mark(expr decl: unknown) {
+fn mark(syntax decl: unknown) {
     report(compiler);
 }
 

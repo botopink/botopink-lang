@@ -15,7 +15,7 @@ import {compiler} from "std";
 
 pub type Query(sql: string, params: string[])
 
-fn query(expr q: string, expr decl: unknown) -> string {
+fn query(syntax q: string, syntax decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
     var first = true;
@@ -28,7 +28,10 @@ fn query(expr q: string, expr decl: unknown) -> string {
         } else {
             val close = piece.indexOf("}");
             params.push(piece.slice(0, close));
-            text = text + "$" + params.length.toString() + piece.slice(close + 1);
+            text = text
+                + "$"
+                + params.length.toString()
+                + piece.slice(close + 1);
         }
     }
     val declared = compiler
@@ -53,7 +56,7 @@ fn query(expr q: string, expr decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-fn repository(expr decl: unknown) {
+fn repository(syntax decl: unknown) {
     var lines: string[] = [];
     for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);
@@ -81,7 +84,7 @@ fn repository(expr decl: unknown) {
 
 pub type Audit(level: i32)
 
-fn audited(expr decl: unknown, comptime level: i32) {
+fn audited(syntax decl: unknown, comptime level: i32) {
     compiler.setMeta(Audit(level: level));
 }
 

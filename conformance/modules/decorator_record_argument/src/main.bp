@@ -8,7 +8,7 @@ type Product(name: string)
 type Cache<T>(name: string)
 
 fn cacheable<A, T>(
-    expr decl: fn(a: A) -> T,
+    syntax decl: fn(a: A) -> T,
     comptime cache: Cache<T>,
 ) {
     compiler.setMeta(Cacheable(cache: cache.name));

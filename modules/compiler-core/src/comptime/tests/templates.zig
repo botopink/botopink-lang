@@ -63,7 +63,7 @@ test "template: expr param capture ---- plain string arg arrives unevaluated" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn sql(expr q: string) -> string {
+        \\pub fn sql(syntax q: string) -> string {
         \\    return q;
         \\}
         \\val stmt = sql @`SELECT 1`;
@@ -90,7 +90,7 @@ test "template: expr param capture ---- a @` text keeps its raw bytes (quotes, n
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn conf(expr q: string) -> string {
+        \\pub fn conf(syntax q: string) -> string {
         \\    return q;
         \\}
         \\val c = conf @`a: "x"
@@ -110,7 +110,7 @@ test "template: expr param capture ---- a one-line @` text is not multiline" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn conf(expr q: string) -> string {
+        \\pub fn conf(syntax q: string) -> string {
         \\    return q;
         \\}
         \\val c = conf @`say "hi"`;
@@ -132,7 +132,7 @@ test "template: scope snapshot lookup ---- hit and miss" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val c = html @`
@@ -165,7 +165,7 @@ test "template: expr methods typecheck and record lowerings" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    val sp = Span(0, 1, 1);
         \\    val t = compiler.text(template);
         \\    val where = compiler.source(template);
@@ -204,7 +204,7 @@ test "template: fail span maps into the caller's template" {
     defer env.deinit();
 
     const src =
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val c = html @`
@@ -239,7 +239,7 @@ test "template: fail span maps into the caller's template" {
 
 test "infer error: expr argument must be a literal string (V1)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val tpl = "<p></p>";
@@ -258,7 +258,7 @@ test "template: context exposes declaration position and scope for second-layer 
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn dsl(expr template: string) -> string {
+        \\pub fn dsl(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val c = dsl @`
@@ -292,7 +292,7 @@ test "template: context exposes declaration position and scope for second-layer 
 
 test "infer: context/source/bindings/build methods typecheck against std.syntax" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn dsl(expr template: string) -> string {
+        \\pub fn dsl(syntax template: string) -> string {
         \\    val ctx = compiler.context(template);
         \\    val file: string = ctx.source.file;
         \\    val line: i32 = ctx.source.line;
@@ -306,7 +306,7 @@ test "infer: context/source/bindings/build methods typecheck against std.syntax"
 
 test "comptime: template fn with expr param compiles through the pipeline" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val c = html @`
@@ -325,7 +325,7 @@ test "template: bounded expansion is transparent to the caller (F6)" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val c = html @`
@@ -347,7 +347,7 @@ test "template: an anyvalue answer reveals the expansion type per call (F6, deci
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn answer(expr q: string) -> anyvalue {
+        \\pub fn answer(syntax q: string) -> anyvalue {
         \\    return 42;
         \\}
         \\val n = answer @`x`;
@@ -367,7 +367,7 @@ test "template: a value return is lifted (F6, decision 575 (4))" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn port(expr q: string) -> i32 {
+        \\pub fn port(syntax q: string) -> i32 {
         \\    return 8080;
         \\}
         \\val p = port @`x`;
@@ -377,7 +377,7 @@ test "template: a value return is lifted (F6, decision 575 (4))" {
 
 test "infer error: splice bound violation at the call site (F6)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn bad(expr q: string) -> i32 {
+        \\pub fn bad(syntax q: string) -> i32 {
         \\    return "not an int";
         \\}
         \\val d = bad @`x`;
@@ -386,7 +386,7 @@ test "infer error: splice bound violation at the call site (F6)" {
 
 test "infer error: template body not expandable by the V1 driver (F6)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn hard(expr t: string) -> string {
+        \\pub fn hard(syntax t: string) -> string {
         \\    val x = compiler.text(t);
         \\    return t;
         \\}
@@ -426,7 +426,7 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
     // body — no runtime is asked. (A decorator body is untyped; its twin is
     // `decorator invocation: a method nothing answers …`.)
     const src =
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    val t = compiler.text(q);
         \\    return compiler.build(t.frobnicate());
         \\}
@@ -448,7 +448,7 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
 
 test "comptime: runtime template body ---- text() + build() end to end" {
     const src =
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    val t = compiler.text(q);
         \\    return compiler.build("\"" + t + "!\"");
         \\}
@@ -464,7 +464,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn need(expr t: string) -> string {
+        \\pub fn need(syntax t: string) -> string {
         \\    val hit = compiler.lookup(t, "Buttom");
         \\    if (hit) { b ->
         \\        return compiler.fail("should be missing", at: t);
@@ -480,7 +480,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
 
 test "comptime: runtime template body ---- a computed value is lifted" {
     const src =
-        \\pub fn six(expr t: string) -> i32 {
+        \\pub fn six(syntax t: string) -> i32 {
         \\    val n = 2 + 4;
         \\    return n;
         \\}
@@ -492,7 +492,7 @@ test "comptime: runtime template body ---- a computed value is lifted" {
 
 test "template: runtime fail() maps into the caller's template" {
     const src =
-        \\pub fn lint(expr q: string) -> string {
+        \\pub fn lint(syntax q: string) -> string {
         \\    val t = compiler.text(q);
         \\    compiler.fail("template rejected: " + t, at: q);
         \\    return q;
@@ -535,7 +535,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     ;
     const main =
         \\import {Item} from "shapes";
-        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\pub fn dsl(syntax e: string) -> anyvalue {
         \\    val code = compiler.build("41");
         \\    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
@@ -599,7 +599,7 @@ test "decision 237: the capture's bindings are the scope entries its text names,
         \\    n: i32,
         \\)
         \\val unrelated = 1;
-        \\pub fn dsl(expr template: string) -> string {
+        \\pub fn dsl(syntax template: string) -> string {
         \\    return template;
         \\}
         \\val a = dsl @`<Card title="x"><Badge/></Card> 9lives _x Badge`;
@@ -641,7 +641,7 @@ test "decision 237: the capture's bindings are the scope entries its text names,
 test "decision 237 ---- a text that names nothing in scope carries no binding" {
     const src =
         \\val cfg_1 = "unread";
-        \\pub fn conf(expr q: string) -> i32 {
+        \\pub fn conf(syntax q: string) -> i32 {
         \\    val n = compiler.bindings(q).length;
         \\    return n;
         \\}
@@ -667,7 +667,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
         \\    n: i32,
         \\)
         \\val unrelated = 1;
-        \\pub fn ui(expr q: string) -> string {
+        \\pub fn ui(syntax q: string) -> string {
         \\    val count = compiler.bindings(q).length;
         \\    val hit = compiler.lookup(q, "Badge");
         \\    if (hit) { b ->
@@ -696,7 +696,7 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
         \\pub type Button(
         \\    label: string,
         \\)
-        \\pub fn need(expr t: string) -> string {
+        \\pub fn need(syntax t: string) -> string {
         \\    val hit = compiler.lookup(t, "Button");
         \\    if (hit) { b ->
         \\        return compiler.build("\"hit\"");
@@ -739,7 +739,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
     // Body-only inference: the carrier return marks `dsl` as a template fn, so it
     // lands in `env.templateFns` and never reaches codegen.
     try inferInto(&env, alloc,
-        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\pub fn dsl(syntax e: string) -> anyvalue {
         \\    val code = compiler.build("[1, 2]");
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
         \\    compiler.custom(root);
@@ -753,7 +753,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
 test "comptime: q.custom executes `code` identically + the tree is retrievable by loc" {
     const src =
         \\pub type Item(id: i32)
-        \\pub fn dsl(expr e: string) -> anyvalue {
+        \\pub fn dsl(syntax e: string) -> anyvalue {
         \\    val code = compiler.build("41");
         \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: compiler.lookup(e, "Item"), children: []);
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
@@ -824,7 +824,7 @@ test "decision 112: lookup answers the declaration's identity, never the alias" 
     const lib =
         \\pub fn area(w: i32, h: i32) -> i32 { return w * h; }
         \\fn double(x: i32) -> i32 { return x * 2; }
-        \\pub default fn shapesdsl(expr e: string) -> anyvalue {
+        \\pub default fn shapesdsl(syntax e: string) -> anyvalue {
         \\    val code = compiler.build("double(" + compiler.text(e) + ")");
         \\    val root = CustomNode(kind: "call", span: Span(0, 7, 1), label: "keyword", ref: compiler.lookup(e, "surface"), children: []);
         \\    compiler.custom(root);
@@ -925,7 +925,7 @@ test "comptime: yaml model ---- a lifted tuple reveals its element types (V1 dri
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn conf(expr q: string) -> anyvalue {
+        \\pub fn conf(syntax q: string) -> anyvalue {
         \\    return #(8080, true);
         \\}
         \\val cfg = conf @`server:`;
@@ -948,7 +948,7 @@ test "template: net-new ---- an empty template is handled gracefully" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn tpl(expr t: string) -> string {
+        \\pub fn tpl(syntax t: string) -> string {
         \\    return t;
         \\}
         \\val c = tpl @``;
@@ -966,7 +966,7 @@ test "template: net-new ---- an empty template is handled gracefully" {
 // body answers a `bool`, but the template answers `i32`.
 test "infer error: net-new ---- splice type error reports at the splice site" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\pub fn port(expr q: string) -> i32 {
+        \\pub fn port(syntax q: string) -> i32 {
         \\    return true;
         \\}
         \\val p = port @`x`;
@@ -983,7 +983,7 @@ test "template: net-new ---- two template invocations expand independently" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub fn tpl(expr q: string) -> string {
+        \\pub fn tpl(syntax q: string) -> string {
         \\    return q;
         \\}
         \\val a = tpl @`one`;
@@ -998,10 +998,10 @@ test "template: net-new ---- two template invocations expand independently" {
 // expands in turn: each template fn expands once for its own call site.
 test "comptime: net-new ---- nested template call inside a template body" {
     const src =
-        \\pub fn inner(expr q: string) -> string {
+        \\pub fn inner(syntax q: string) -> string {
         \\    return q;
         \\}
-        \\pub fn outer(expr q: string) -> string {
+        \\pub fn outer(syntax q: string) -> string {
         \\    return compiler.build("inner @`deep`");
         \\}
         \\val s = outer @`x`;
@@ -1024,7 +1024,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn Page1() -> Element { return Element(); }
         \\fn Page2() -> Element { return Element(); }
-        \\pub fn html(expr q: string) -> Element {
+        \\pub fn html(syntax q: string) -> Element {
         \\    return compiler.build("fragment([Page1(), Page2()])");
         \\}
         \\val page = html @`<Page1/><Page2/>`;
@@ -1060,7 +1060,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\fn depth(n: i32) -> i32 {
         \\    return if (n <= 0) 0 else 1 + depth(n - 1);
         \\}
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    return compiler.build("\"" + wrap(helper(compiler.text(q))) + depth(3).toString() + "\"");
         \\}
         \\val here = shout @`in`;
@@ -1071,7 +1071,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\fn twice(s: string) -> string {
         \\    return s + s;
         \\}
-        \\pub fn echo(expr q: string) -> string {
+        \\pub fn echo(syntax q: string) -> string {
         \\    return compiler.build("\"" + twice(compiler.text(q)) + "\"");
         \\}
         \\val a = shout @`ab`;
@@ -1108,7 +1108,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\fn kindOf(x: #(kind: string, n: i32)) -> string {
         \\    return x.kind;
         \\}
-        \\pub fn pairs(expr q: string) -> string {
+        \\pub fn pairs(syntax q: string) -> string {
         \\    val items: #(kind: string, n: i32)[] = [#(compiler.text(q), 1), #("z", 2)];
         \\    var out = "";
         \\    for (items) { it ->
@@ -1120,7 +1120,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
     ;
     const main =
         \\import {pairs} from "pairs";
-        \\pub fn probe(expr q: string) -> string {
+        \\pub fn probe(syntax q: string) -> string {
         \\    val x: #(kind: string, n: i32) = #(compiler.text(q), 2);
         \\    return compiler.build("\"" + x.kind + x.n.toString() + "\"");
         \\}
@@ -1153,7 +1153,7 @@ test "decision 331: a template body of more variables than a frame holds compile
     const ar = arena.allocator();
     var src: std.ArrayListUnmanaged(u8) = .empty;
     try src.appendSlice(ar,
-        \\pub fn big(expr q: string) -> string {
+        \\pub fn big(syntax q: string) -> string {
         \\    var s = compiler.text(q);
         \\    var n = 0;
         \\
@@ -1183,7 +1183,7 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\    }
         \\}
         \\type Visitor(who: string)
-        \\fn greet(expr self: Visitor, expr q: string) -> string {
+        \\fn greet(syntax self: Visitor, syntax q: string) -> string {
         \\    return compiler.build(compiler.text(self) + ".who");
         \\}
         \\pub fn main() {
@@ -1209,7 +1209,7 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\    }
         \\}
         \\type Visitor(who: string)
-        \\fn greet(expr self: Visitor, expr q: string) -> string {
+        \\fn greet(syntax self: Visitor, syntax q: string) -> string {
         \\    return compiler.build(compiler.text(self) + ".who");
         \\}
         \\fn wave(w: Waves) -> string {
@@ -1230,7 +1230,7 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     var env = try freshTestEnv(alloc);
     defer env.deinit();
     const src =
-        \\fn shout(expr q: string) -> string { return q; }
+        \\fn shout(syntax q: string) -> string { return q; }
         \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
         \\pub fn main() { @print(shout @`a`); @print(run({ s -> s })); }
     ;
@@ -1260,7 +1260,7 @@ test "templates: a raise in another module's template body names the body's file
     // `srcPath`), line 3, column 5 —, and the call site that expanded it is
     // the `called from` line.
     const tpl =
-        \\pub fn shout(expr t: string) -> string {
+        \\pub fn shout(syntax t: string) -> string {
         \\    val s = compiler.text(t);
         \\    @panic("boom " + s);
         \\    return compiler.build("\"" + s + "\"");

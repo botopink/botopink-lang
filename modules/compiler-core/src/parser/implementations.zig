@@ -1,7 +1,7 @@
 //! Decision 575 (6) — a declaration's `#[external(…)]` sources, read into its
 //! `implementations`.
 //!
-//! `external` is std's function `external(expr decl: unknown, comptime
+//! `external` is std's function `external(syntax decl: unknown, comptime
 //! ..sources: Implementation[])` (`libs/std/src/external.bp`), whose body hands
 //! each source to `compiler.implement`. Its sources are values of the enum
 //! `Implementation`, written as its constructor — `.Erlang("lists:member($1,

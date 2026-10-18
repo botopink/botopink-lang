@@ -13,7 +13,7 @@ type Element(text: string) implement @Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as
 // `name: sync` or `name: async`.
-fn graph(expr decl: unknown) {
+fn graph(syntax decl: unknown) {
     var nodes: string[] = [];
     compiler
         .hooks(decl)

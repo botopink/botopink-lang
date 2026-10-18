@@ -1,7 +1,7 @@
 //// Decision 604 — a marker is a decorator with an empty body: it annotates
 //// two functions, and the catalogue reads them back by their marking.
 
-fn registered(expr decl: unknown) {}
+fn registered(syntax decl: unknown) {}
 
 #[registered]
 pub fn first() -> i32 {

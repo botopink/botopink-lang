@@ -7,7 +7,7 @@ import {compiler} from "std";
 
 type Table(name: string)
 
-fn tableOf(expr q: string) -> string {
+fn tableOf(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);
@@ -23,7 +23,7 @@ fn report() -> string {
     return tableOf @`User`;
 }
 
-fn entity(expr decl: unknown, comptime name: string) {
+fn entity(syntax decl: unknown, comptime name: string) {
     compiler.setMeta(Table(name: name));
 }
 

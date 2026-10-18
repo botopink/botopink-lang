@@ -1,11 +1,11 @@
 //// Decision 311, question s29-a — written as an annotation, a template
 //// function receives the annotated declaration beside its literal
-//// (`expr decl: unknown`); a template that takes none has nowhere to put
+//// (`syntax decl: unknown`); a template that takes none has nowhere to put
 //// what it builds and is refused at the annotation.
 
 import {compiler} from "std";
 
-fn shout(expr q: string) -> string {
+fn shout(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q).toUpper() + "\"");
 }
 

@@ -11,7 +11,7 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(expr decl: Module, comptime order: i32) {
+pub fn module(syntax decl: Module, comptime order: i32) {
     compiler.setMeta(ModuleOrder(order: order));
 }
 

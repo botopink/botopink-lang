@@ -37,7 +37,7 @@
             "modifier": "comptime",
             "destruct": null,
             "default": null,
-            "arrival": "expr"
+            "arrival": "syntax"
           }
         ],
         "returnType": {

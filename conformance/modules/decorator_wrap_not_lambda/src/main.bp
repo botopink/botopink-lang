@@ -9,7 +9,7 @@ fn passThrough(call: unknown) -> string {
     return "wrapped";
 }
 
-fn counted(expr decl: fn(..) -> string) {
+fn counted(syntax decl: fn(..) -> string) {
     compiler.wrapWith(passThrough);
 }
 

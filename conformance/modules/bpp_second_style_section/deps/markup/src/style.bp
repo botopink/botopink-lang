@@ -9,7 +9,7 @@ pub fn sized(size: i32) -> @Component<i32> {
 }
 
 #[bpp.style]
-pub fn css(expr t: string) -> @Component<i32> {
+pub fn css(syntax t: string) -> @Component<i32> {
     val text = compiler.text(t);
     val at = text.indexOf("!");
     if (at >= 0)

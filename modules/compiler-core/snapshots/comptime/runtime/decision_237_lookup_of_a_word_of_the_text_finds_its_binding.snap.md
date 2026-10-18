@@ -7,7 +7,7 @@ pub type Badge(
     n: i32,
 )
 val unrelated = 1;
-pub fn ui(expr q: string) -> string {
+pub fn ui(syntax q: string) -> string {
     val count = compiler.bindings(q).length;
     val hit = compiler.lookup(q, "Badge");
     if (hit) { b ->

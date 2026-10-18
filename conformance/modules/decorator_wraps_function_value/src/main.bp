@@ -11,7 +11,7 @@ fn noteHit() {
     hits = hits + 1;
 }
 
-fn counted(expr decl: fn(..) -> i32) {
+fn counted(syntax decl: fn(..) -> i32) {
     compiler.wrapWith({ call ->
         noteHit();
         call.run()

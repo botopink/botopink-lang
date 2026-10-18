@@ -4,11 +4,11 @@
 
 import {compiler} from "std";
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 
-fn table(expr decl: unknown) {
+fn table(syntax decl: unknown) {
     compiler.addType("Columns", compiler.buildType("(name: string)"));
 }
 

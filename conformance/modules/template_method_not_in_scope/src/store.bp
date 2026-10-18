@@ -8,7 +8,7 @@ pub type Memory(prefix: string) {
     }
 }
 
-pub fn read(expr self: Memory, expr q: string) -> string {
+pub fn read(syntax self: Memory, syntax q: string) -> string {
     return compiler.build(compiler.text(self)
         + ".fetch(\""
         + compiler.text(q)

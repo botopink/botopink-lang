@@ -7,9 +7,9 @@ pub type Check<T>(message: string, rule: fn(v: T) -> bool)
 pub type Note(text: string)
 
 pub fn check<T>(
-    expr decl: T,
-    expr message: string,
-    expr rule: fn(v: T) -> bool,
+    syntax decl: T,
+    syntax message: string,
+    syntax rule: fn(v: T) -> bool,
 ) {
     compiler.addMeta(Check(message: message, rule: rule));
 }
@@ -18,7 +18,7 @@ pub behavior Noted {
     fn make() -> Self;
 }
 
-pub fn note(expr decl: Noted, expr text: string) {
+pub fn note(syntax decl: Noted, syntax text: string) {
     compiler.addMeta(Note(text: text));
 }
 

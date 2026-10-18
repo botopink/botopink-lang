@@ -4,11 +4,11 @@
 
 import {compiler} from "std";
 
-fn route(expr decl: unknown, comptime path: string) {
+fn route(syntax decl: unknown, comptime path: string) {
     compiler.setMeta(Route(path: path));
 }
 
-fn job(expr decl: unknown) {
+fn job(syntax decl: unknown) {
     compiler.setMeta(Job(kind: "job"));
 }
 

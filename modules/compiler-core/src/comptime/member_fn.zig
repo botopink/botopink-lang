@@ -10,7 +10,7 @@
 //! (`parser/exprs.zig`). The checker types it in the decorator's module with
 //! each `comptime x: @Expr<T>` parameter read as a `T` (`infer.zig`
 //! `inferMemberFnCall`); the decorator body runs on the comptime runtime with
-//! the function replaced by its index here (`expr_param.zig` `eraseFn`), the
+//! the function replaced by its index here (`syntax_param.zig` `eraseFn`), the
 //! prelude's `addMember/3` hands the name and the index back
 //! (`decorator_eval.Contribution.memberFn`), and `infer.zig`
 //! `runDeclDecorators` renders the member the type receives — `pub fn
@@ -138,7 +138,7 @@ pub fn isTemplateAnnotationParams(params: []const ast.Param) bool {
 // ── the member functions of a body, in order ────────────────────────────────
 
 /// Every member function `f`'s body hands to `decl.addMember`, in the order
-/// `expr_param.eraseFn` numbers them: a pre-order walk, the name argument
+/// `syntax_param.eraseFn` numbers them: a pre-order walk, the name argument
 /// before the function.
 pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
     var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
@@ -148,7 +148,7 @@ pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![
 }
 
 /// Decision 316 — every wrapper `f`'s body hands to `decl.wrapWith`, in the
-/// order `expr_param.eraseFn` numbers them (a pre-order walk).
+/// order `syntax_param.eraseFn` numbers them (a pre-order walk).
 pub fn collectWrappers(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
     var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
     var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .wrappers = true };
@@ -157,7 +157,7 @@ pub fn collectWrappers(arena: std.mem.Allocator, f: ast.FnDecl, declName: []cons
 }
 
 /// Decision 575 (3) — every executor `f`'s body hands to `decl.compile`, in
-/// the order `expr_param.eraseFn` numbers them (a pre-order walk).
+/// the order `syntax_param.eraseFn` numbers them (a pre-order walk).
 pub fn collectExecutors(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
     var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
     var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .executors = true };
@@ -288,7 +288,7 @@ const Binder = struct {
 /// Decision 575 (4), the tree rule — the names of the decorator `dfn`'s body
 /// that the tree `func` (a member, a wrapper) reads: each a local the body
 /// binds (a `val`, a loop's or a pattern's name), none of `dfn`'s parameters.
-/// The body hands their values with the tree (`expr_param.zig`), and the
+/// The body hands their values with the tree (`syntax_param.zig`), and the
 /// member spells each as a literal (`literalSource`). First read first, each
 /// once.
 pub fn capturedLocals(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.FunctionExpr) ![]const []const u8 {
@@ -695,7 +695,7 @@ test "a member function: collected in order, its free names, rendered with each 
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn check<T>(expr decl: T, expr message: string, expr rule: fn(v: T) -> bool) {
+        \\fn check<T>(syntax decl: T, syntax message: string, syntax rule: fn(v: T) -> bool) {
         \\    val unused = 1;
         \\    compiler.addMember("validate", fn(self: T) -> Violation[] {
         \\        if (rule(self)) return [];
@@ -733,7 +733,7 @@ test "decision 316 — a wrapper: collected in order apart from the members, ren
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn tagged(expr decl: fn(..) -> string, expr mark: string) {
+        \\fn tagged(syntax decl: fn(..) -> string, syntax mark: string) {
         \\    compiler.addMember("m", fn(self: T) -> string { return mark; });
         \\    compiler.wrapWith({ call -> mark + call.run() });
         \\    compiler.wrapWith({ call -> call.run() });

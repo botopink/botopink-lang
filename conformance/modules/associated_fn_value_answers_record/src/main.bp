@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-fn maker(expr decl: unknown) {
+fn maker(syntax decl: unknown) {
     compiler.addMember(
         "pub fn make(name: string) -> "
             + compiler.name(decl)!

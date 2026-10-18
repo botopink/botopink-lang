@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn twice(expr decl: unknown) {
+fn twice(syntax decl: unknown) {
     compiler.addMember("pub fn a() -> i32 { return 1; } pub fn b() -> i32 { return 2; }");
 }
 

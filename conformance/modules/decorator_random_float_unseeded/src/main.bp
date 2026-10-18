@@ -7,7 +7,7 @@
 
 import {io, compiler} from "std";
 
-fn drawn(expr decl: unknown) {
+fn drawn(syntax decl: unknown) {
     val x = io.random.float();
     @emit("pub fn label() -> string { return \""
         + compiler.name(decl)!

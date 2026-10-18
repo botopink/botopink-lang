@@ -6,7 +6,7 @@ import {compiler.DeclKind, compiler} from "std";
 pub default mod markup;
 
 /// A decorator that refuses what it annotates, naming it and its kind.
-pub fn named(expr decl: unknown) {
+pub fn named(syntax decl: unknown) {
     val kind = if (compiler.kind(decl) == DeclKind.Fn)
         "a function"
     else
@@ -19,6 +19,6 @@ pub fn named(expr decl: unknown) {
 }
 
 /// A decorator named like a route file: it refuses what it annotates.
-pub fn page(expr decl: unknown) {
+pub fn page(syntax decl: unknown) {
     compiler.fail("page applied to " + compiler.name(decl)!, at: decl);
 }

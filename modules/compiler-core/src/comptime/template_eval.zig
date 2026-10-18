@@ -1357,7 +1357,7 @@ test "template module: one module per declaration, the capture as the argument" 
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    return compiler.build(compiler.text(q));
         \\}
         \\import {compiler} from "std";
@@ -1441,7 +1441,7 @@ test "template module: the emit memo is keyed by the declaration's text and the 
         }
     }.decls;
     const body =
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    return compiler.build(compiler.text(q));
         \\}
         \\import {compiler} from "std";
@@ -1451,7 +1451,7 @@ test "template module: the emit memo is keyed by the declaration's text and the 
     // or the language server re-reading the file) is the same key.
     const moved = try parse(arena, "\n\n" ++ body);
     const edited = try parse(arena,
-        \\pub fn shout(expr q: string) -> string {
+        \\pub fn shout(syntax q: string) -> string {
         \\    return compiler.build(compiler.text(q) + "!");
         \\}
         \\import {compiler} from "std";

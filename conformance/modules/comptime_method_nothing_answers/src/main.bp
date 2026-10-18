@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-fn check(expr decl: unknown) {
+fn check(syntax decl: unknown) {
     val n = compiler.name(decl)!;
     val x = n.frobnicate(1, 2);
 }

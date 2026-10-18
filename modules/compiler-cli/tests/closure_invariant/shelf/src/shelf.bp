@@ -9,6 +9,6 @@ pub fn makeLabel(text: string) -> Label {
     return Label(text: text, size: text.length);
 }
 
-pub default fn label(expr t: string) -> Label {
+pub default fn label(syntax t: string) -> Label {
     return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
 }

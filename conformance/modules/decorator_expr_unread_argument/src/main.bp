@@ -9,7 +9,7 @@ fn label(key: string) -> string {
     return key + "!";
 }
 
-fn audit(expr decl: unknown, comptime message: string) {
+fn audit(syntax decl: unknown, comptime message: string) {
     compiler.setMeta(Audit(audited: compiler.name(decl)!));
 }
 

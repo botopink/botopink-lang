@@ -810,11 +810,11 @@ test "level B: a package expanding a template that reads the catalogue is never 
     const modules = [_]Module{
         .{ .path = "looks/root", .package = "looks", .source = "pub default mod looks;\n" },
         .{ .path = "looks/looks", .package = "looks", .source =
-        \\pub fn theme(expr decl: unknown) {
+        \\pub fn theme(syntax decl: unknown) {
         \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\
-        \\pub default fn looks(expr e: string) -> string {
+        \\pub default fn looks(syntax e: string) -> string {
         \\    val themes = @TypeInfo.all(with: theme);
         \\    return compiler.text(e) + ": " + themes.length.toString();
         \\}
@@ -868,7 +868,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "frame/root", .package = "frame", .source =
-        \\pub fn m(expr decl: unknown) {
+        \\pub fn m(syntax decl: unknown) {
         \\    decl.setMeta("role", compiler.name(decl)!);
         \\}
         \\
@@ -933,7 +933,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "cat/cat", .package = "cat", .source =
-        \\pub fn listed(expr decl: unknown) {
+        \\pub fn listed(syntax decl: unknown) {
         \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\

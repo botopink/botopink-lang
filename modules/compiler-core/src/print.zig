@@ -218,7 +218,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .hint = "Name the type where it is declared — `type LinkProps(href: string)` — and write the name here; `fn link(props: type(href: string))` is the one place an unnamed type stands (decision 207).",
         },
         .metaKindRequiresComptime => .{
-            .message = "A `type`/`expr` parameter must be marked `comptime`",
+            .message = "A `type`/`syntax` parameter must be marked `comptime`",
             .hint = "Meta-kinds only exist at compile time, e.g. `fn f(comptime T: type)` or `fn html(comptime template: expr string)`",
         },
         .badInterpolation => .{
@@ -477,7 +477,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "`@Expr`, `@ExprCustom`, `@Decl` and `-> expr` are gone",
             .caretCaption = "a removed type",
             .lexemeInCaption = true,
-            .hint = "A parameter says how its argument arrives — `comptime x: T` (the value) or `expr x: T` (the expression written); a template is marked by its text `expr q: string` and returns `T`, `anyvalue` or `anytype`; a decorator's first parameter is `expr decl: unknown` (decisions 575 (4), 576, 578).",
+            .hint = "A parameter says how its argument arrives — `comptime x: T` (the value) or `syntax x: T` (the expression written); a template is marked by its text `syntax q: string` and returns `T`, `anyvalue` or `anytype`; a decorator's first parameter is `syntax decl: unknown` (decisions 575 (4), 576, 578).",
         },
         .removedBareType => .{
             .code = "removed-bare-type",

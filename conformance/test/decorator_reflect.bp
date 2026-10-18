@@ -7,7 +7,7 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-fn describe(expr decl: unknown) {
+fn describe(syntax decl: unknown) {
     val isType = compiler.kind(decl) == DeclKind.Type;
     @emit("pub fn describedName() -> string { return \""
         + compiler.name(decl)!

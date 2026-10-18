@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn counted(expr decl: fn(..) -> i32) {
+fn counted(syntax decl: fn(..) -> i32) {
     compiler.wrapWith({ call -> call.run() });
 }
 

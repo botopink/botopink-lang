@@ -447,7 +447,7 @@ fn buildModule(
             .{ .name = "__bp_FieldKey", .fields = &.{ "name", "typeName", "annotations" } },
             .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args", "decorator" } },
             // Decision 370 (1) — a parameter handed to a typed meta value's
-            // `@Expr<T>` field (`expr_param.eraseFn`).
+            // `@Expr<T>` field (`syntax_param.eraseFn`).
             .{ .name = typedMeta.expr_ref_record, .fields = &.{typedMeta.expr_ref_field} },
         },
         .exports = &.{.{ .name = "main", .arity = 1 }},
@@ -947,7 +947,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn getMapping(expr decl: unknown, comptime path: string, comptime verb: string) {
+        \\fn getMapping(syntax decl: unknown, comptime path: string, comptime verb: string) {
         \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
         \\import {compiler, compiler.DeclKind} from "std";
@@ -1027,7 +1027,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn audit(expr decl: unknown) {
+        \\fn audit(syntax decl: unknown) {
         \\    @emit("pub val seen = 1;");
         \\}
     );

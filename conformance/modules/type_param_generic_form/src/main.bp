@@ -9,7 +9,7 @@ pub type Box<T>(value: T)
 
 pub type Provides(name: string)
 
-fn provides<T>(expr decl: fn() -> T, comptime t: type<T>) {
+fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) {
     compiler.setMeta(Provides(name: compiler.name(decl)!));
 }
 
@@ -19,7 +19,7 @@ fn greeting() -> string {
 }
 
 fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
-    if (source is type) return fallback;
+    if (source is anytype) return fallback;
     return source.value;
 }
 

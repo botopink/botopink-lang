@@ -59,7 +59,7 @@ test "format: lambda ---- with param" {
 
 test "format: lambda ---- typed parameters and return (decision 370 (2))" {
     try h.assertFormat(std.testing.allocator,
-        \\fn check<T>(expr decl: T) {
+        \\fn check<T>(syntax decl: T) {
         \\    compiler.addMember("validate", fn(self: T, n: i32) -> string[] {
         \\        return [];
         \\    });

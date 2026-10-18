@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 type Entity(table: string)
 
-fn entity(expr decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) {
     compiler.setMeta(Entity(table: table));
 }
 

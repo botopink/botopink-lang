@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn html(expr template: string) -> string {
+pub fn html(syntax template: string) -> string {
     return template;
 }
 val page = html @`

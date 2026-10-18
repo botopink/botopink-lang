@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 val base = "x";
 
-fn dec(expr decl: unknown, comptime name: string = base) {
+fn dec(syntax decl: unknown, comptime name: string = base) {
     @emit("pub fn " + compiler.name(decl)! + "Tag() -> string { return \"" + name + "\"; }");
 }
 

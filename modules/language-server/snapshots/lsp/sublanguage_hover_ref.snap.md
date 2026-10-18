@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 pub type Users(name: string)
-pub fn q(expr e: string) -> anyvalue {
+pub fn q(syntax e: string) -> anyvalue {
     val code = compiler.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
     val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: compiler.lookup(e, "Users"), children: []);

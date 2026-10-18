@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn wide(expr decl: unknown) {
+fn wide(syntax decl: unknown) {
     var out: string[] = [];
     compiler
         .fields(decl)

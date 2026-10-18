@@ -2,7 +2,7 @@
 
 import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val tag = compiler.tagDecl(DeclKind.Element, "div", []);
     val d = compiler.annotate(tag, Span(start: text.indexOf("#[")

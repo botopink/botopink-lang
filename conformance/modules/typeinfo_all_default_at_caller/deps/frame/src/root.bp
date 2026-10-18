@@ -5,7 +5,7 @@
 
 import {compiler} from "std";
 
-pub fn m(expr decl: unknown) {
+pub fn m(syntax decl: unknown) {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 

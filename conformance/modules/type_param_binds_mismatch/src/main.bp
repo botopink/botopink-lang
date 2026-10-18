@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 pub type Provides(name: string)
 
-fn provides<T>(expr decl: fn() -> T, comptime t: type<T>) {
+fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) {
     compiler.setMeta(Provides(name: compiler.name(decl)!));
 }
 

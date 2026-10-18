@@ -9,7 +9,7 @@ fn posts() -> string {
     return "posts";
 }
 
-fn wrapping(expr q: string) -> string {
+fn wrapping(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("not in scope", at: q);
     compiler.wrapWith({ call -> call.run() });
     return compiler.build("\"" + compiler.name(decl)! + "\"");

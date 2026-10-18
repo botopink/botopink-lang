@@ -1,9 +1,9 @@
-//// Decision 576 (2) — an `expr` parameter is the expression written, opaque
+//// Decision 576 (2) — a `syntax` parameter is the expression written, opaque
 //// in the body: it is read through the compiler, `compiler.text(e)`, and a
 //// method called on it, `message.text()`, is refused at the call
 //// (`expr-param-method`).
 
-fn shout(expr message: string) -> string {
+fn shout(syntax message: string) -> string {
     return message.text();
 }
 

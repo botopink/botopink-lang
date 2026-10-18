@@ -14,7 +14,7 @@ fn quoted(text: string) -> string {
     return "\"" + text + "\"";
 }
 
-fn css(expr q: string) -> string {
+fn css(syntax q: string) -> string {
     var code = "\"\"";
     var holes: CustomNode[] = [];
     var at = 0;

@@ -14,7 +14,7 @@
 //!     decl.addMeta(Check(message: message, rule: rule));
 //!
 //! The pieces here: which calls of a decorator's body record typed meta
-//! (`asCall`, `collect` — in the order `expr_param.eraseFn` numbers them), the
+//! (`asCall`, `collect` — in the order `syntax_param.eraseFn` numbers them), the
 //! record constructor each is (`ctorOf`), and how the value the body built at
 //! build — the prelude's `'__bp_typedMeta'/2` reply, JSON — is written back as
 //! the constructor's arguments (`render`), checked against each field's shape
@@ -31,7 +31,7 @@ pub const set_meta = "setMeta";
 /// `decl.addMeta(v)` — values of one type that repeat.
 pub const add_meta = "addMeta";
 /// The prelude function a typed meta call becomes in the code that runs
-/// (`expr_param.eraseFn`): `'typedMeta'(K, Value)`.
+/// (`syntax_param.eraseFn`): `'typedMeta'(K, Value)`.
 pub const typed_meta_fn = @import("runtime/prelude.zig").typed_meta_fn;
 /// The host record an `@Expr<T>` field's argument becomes in the code that
 /// runs: `__bp_ExprRef(__bp_expr: J)`, `J` the parameter's index after the
@@ -61,7 +61,7 @@ pub fn asCall(e: ast.Expr, declName: []const u8) ?Call {
     return .{ .value = c.args[0].value, .repeat = repeat, .loc = e.call.loc };
 }
 
-/// Every typed meta call of `f`'s body, in the order `expr_param.eraseFn`
+/// Every typed meta call of `f`'s body, in the order `syntax_param.eraseFn`
 /// numbers them: a pre-order walk that does not enter a call's value nor a
 /// member function handed to `decl.addMember(name, fn…)` (the program's code).
 pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const Call {
@@ -480,7 +480,7 @@ test "typed meta calls, in body order; the string form and a member's body are n
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn d(expr decl: unknown, expr m: string) {
+        \\fn d(syntax decl: unknown, syntax m: string) {
         \\    decl.setMeta("key", "value");
         \\    compiler.setMeta(Entity(table: "a"));
         \\    if (compiler.name(decl)! == "") { compiler.addMeta(Index(column: "x")); }

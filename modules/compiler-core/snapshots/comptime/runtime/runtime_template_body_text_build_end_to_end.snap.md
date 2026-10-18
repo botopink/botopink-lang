@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn shout(expr q: string) -> string {
+pub fn shout(syntax q: string) -> string {
     val t = compiler.text(q);
     return compiler.build("\"" + t + "!\"");
 }

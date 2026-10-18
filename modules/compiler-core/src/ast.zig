@@ -1856,12 +1856,12 @@ pub const ParamModifier = enum {
 
 /// Decision 575 (4) — how a parameter of the `comptime` family was written.
 /// `value` is `comptime x: T` (the body holds a `T` known at build), `expr`
-/// is `expr x: T` (the body holds the expression written, a tree). The parser
+/// is `syntax x: T` (the body holds the expression written, a tree). The parser
 /// keeps the internal form the checker and the runtimes read — `modifier`
 /// `.comptime`, `typeRef` the tree type (`expr_type_name`, or
 /// `decl_type_name` for a decorator's first `expr`) — and this says what to
 /// print back.
-pub const Arrival = enum { written, value, expr };
+pub const Arrival = enum { written, value, syntax };
 
 /// Decision 579 — the name std's `compiler.bp` gives its default value, the
 /// item `import {compiler} from "std";` imports. It is no keyword: a module
@@ -1869,7 +1869,7 @@ pub const Arrival = enum { written, value, expr };
 /// `parser/compiler_surface.zig`; anywhere else it is an ordinary name.
 pub const compiler_keyword = "compiler";
 
-/// The internal tree type a `expr x: T` parameter and a `-> expr T` return
+/// The internal tree type a `syntax x: T` parameter and a `-> expr T` return
 /// are read as — a builtin generic no source spells (decision 576 (1)).
 pub const expr_type_name = "__Expr";
 /// Whether `rt` is a return written `-> expr T` (decision 575 (4)) — the
@@ -1880,15 +1880,15 @@ pub fn isExprKeywordReturn(rt: TypeRef) bool {
 }
 
 /// Decision 578 (1) — the position of a template's text parameter: the first
-/// parameter, after an `expr self: R` receiver for a template method,
-/// written `expr q: string` (the parser read it as the tree type of
+/// parameter, after a `syntax self: R` receiver for a template method,
+/// written `syntax q: string` (the parser read it as the tree type of
 /// `string`). Null for any other function — it is no template by its
 /// parameters.
 pub fn templateTextIndex(params: []const Param) ?usize {
-    const q: usize = if (params.len > 0 and params[0].arrival == .expr and std.mem.eql(u8, params[0].name, "self")) 1 else 0;
+    const q: usize = if (params.len > 0 and params[0].arrival == .syntax and std.mem.eql(u8, params[0].name, "self")) 1 else 0;
     if (q >= params.len) return null;
     const p = params[q];
-    if (p.arrival != .expr or !p.typeRef.isExprType() or p.typeRef.generic.args.len != 1) return null;
+    if (p.arrival != .syntax or !p.typeRef.isExprType() or p.typeRef.generic.args.len != 1) return null;
     const inner = p.typeRef.generic.args[0];
     if (inner != .named or !std.mem.eql(u8, inner.named, "string")) return null;
     return q;
@@ -2003,11 +2003,11 @@ pub const Param = struct {
     /// template (a decorator, any other function, a method, a `declare fn`):
     /// the parser keeps `T` in `typeRef`, so every rule that reads a
     /// `comptime` parameter's type reads `T`, and sets this
-    /// (`parser/expr_params.zig`). The body reads `x` as an `Expr<T>`
+    /// (`parser/syntax_params.zig`). The body reads `x` as an `Expr<T>`
     /// (`x.value`), and the formatter prints `@Expr<T>` back. A template
     /// function's `@Expr` parameters keep the wrapper. Dumped only when set.
     exprWrapped: bool = false,
-    /// Decision 575 (4) — `comptime x: T` / `expr x: T` as written
+    /// Decision 575 (4) — `comptime x: T` / `syntax x: T` as written
     /// (`Arrival`). Dumped only when not `written`.
     arrival: Arrival = .written,
     /// Decision 166 — set on the **last** parameter of a list written with a
@@ -3103,7 +3103,7 @@ pub const TypeRef = union(enum) {
             .generic => |g| {
                 // Decision 575 (4) — the internal tree types print as written.
                 if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, expr_type_name) or std.mem.eql(u8, g.name, expr_custom_type_name))) {
-                    try w.print("expr {f}", .{g.args[0]});
+                    try w.print("syntax {f}", .{g.args[0]});
                     return;
                 }
                 try w.print("{s}{s}<", .{ if (g.is_builtin) "@" else "", g.name });
@@ -4206,7 +4206,7 @@ pub const Field = struct {
     /// synthesised. Left out of the AST dump.
     typeLoc: Loc = .{ .line = 0, .col = 0 },
     /// Decision 370 (1) — a record field written `@Expr<T>`: the parser read
-    /// the wrapper off (`parser/expr_params.zig`), `typeRef` holds `T`. To the
+    /// the wrapper off (`parser/syntax_params.zig`), `typeRef` holds `T`. To the
     /// program the field is a `T`; a decorator fills it in a typed meta value
     /// with a parameter's `@Expr`, spliced where the meta is read
     /// (`comptime/typed_meta.zig`). Dumped only when set.

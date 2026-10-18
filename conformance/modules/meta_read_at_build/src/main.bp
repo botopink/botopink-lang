@@ -6,11 +6,11 @@ import {compiler} from "std";
 
 type Entity(table: string)
 
-fn entity(expr decl: unknown) {
+fn entity(syntax decl: unknown) {
     compiler.setMeta(Entity(table: "cities"));
 }
 
-fn audit(expr decl: unknown) {
+fn audit(syntax decl: unknown) {
     for (compiler.hooks(decl)) { h ->
         if (h.function.meta(Entity) == null)
             compiler.fail("no entity", at: decl);

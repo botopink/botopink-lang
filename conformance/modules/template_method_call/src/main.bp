@@ -23,14 +23,14 @@ type Greeter(who: string) implement Named {
     }
 }
 
-fn shout(expr self: Greeter, expr q: string) -> string {
+fn shout(syntax self: Greeter, syntax q: string) -> string {
     return compiler.build(compiler.text(self)
         + ".greet(\""
         + compiler.text(q).toUpper()
         + "\")");
 }
 
-fn tag(expr self: Named, expr q: string) -> string {
+fn tag(syntax self: Named, syntax q: string) -> string {
     return compiler.build("\"["
         + compiler.text(q)
         + "] \" + "
@@ -38,7 +38,7 @@ fn tag(expr self: Named, expr q: string) -> string {
         + ".name()");
 }
 
-fn shape(expr self: Greeter, expr q: string) -> string {
+fn shape(syntax self: Greeter, syntax q: string) -> string {
     val kind = if (compiler.context(q).multiline) "multi" else "single";
     return compiler.build(compiler.text(self) + ".greet(\"" + kind + "\")");
 }

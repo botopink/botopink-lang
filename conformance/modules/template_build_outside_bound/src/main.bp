@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn count(expr q: string) -> i32 {
+fn count(syntax q: string) -> i32 {
     return compiler.build("\"" + compiler.text(q) + "\"");
 }
 

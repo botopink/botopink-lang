@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 type Index(column: string)
 
-fn index(expr decl: unknown, comptime column: string) {
+fn index(syntax decl: unknown, comptime column: string) {
     compiler.addMeta(Index(column: column));
 }
 

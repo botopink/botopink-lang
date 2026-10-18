@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val cfg_1 = "unread";
-pub fn conf(expr q: string) -> i32 {
+pub fn conf(syntax q: string) -> i32 {
     val n = compiler.bindings(q).length;
     return n;
 }

@@ -4,11 +4,11 @@
 
 import {types.Type, compiler} from "std";
 
-fn index<T>(expr decl: T, comptime ..fields: Type.Field<T>[]) {
+fn index<T>(syntax decl: T, comptime ..fields: Type.Field<T>[]) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
 }
 
-fn unique<T>(expr decl: T, comptime field: Type.Field<T>) {
+fn unique<T>(syntax decl: T, comptime field: Type.Field<T>) {
     compiler.setMeta(Unique(column: field.name));
 }
 

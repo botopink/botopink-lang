@@ -8,13 +8,13 @@ pub type Hydrate(level: i32, note: string)
 // An annotation without arguments: records what the tag offers — `attr`
 // answers `null` for an attribute the tag does not have, `component` is
 // `null` on an element.
-pub fn hydrated(expr decl: unknown) {
+pub fn hydrated(syntax decl: unknown) {
     val id = compiler.attr(decl, "id") ?? "no id";
     val comp = compiler.component(decl)?.name ?? "no component";
     compiler.setMeta(Hydrate(level: 1, note: id + ", " + comp));
 }
 
-pub fn markup(expr q: string) -> string {
+pub fn markup(syntax q: string) -> string {
     val text = compiler.text(q);
     val name = text.slice(1, text.indexOf(" "));
     val tag = compiler.tagDecl(DeclKind.Element, name, []);

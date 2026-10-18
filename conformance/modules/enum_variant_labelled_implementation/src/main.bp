@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-fn floorOp(expr decl: unknown) {
+fn floorOp(syntax decl: unknown) {
     compiler.implement(Implementation.Wasm(op: "f64.floor"));
 }
 

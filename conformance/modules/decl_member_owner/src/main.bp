@@ -8,7 +8,7 @@
 
 import {compiler} from "std";
 
-fn register(expr decl: unknown) {
+fn register(syntax decl: unknown) {
     val owner = compiler.owner(decl)!;
     val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;
     @emit(
@@ -25,7 +25,7 @@ fn register(expr decl: unknown) {
     @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
 }
 
-fn topLevel(expr decl: unknown) {
+fn topLevel(syntax decl: unknown) {
     val owner = compiler.owner(decl)?.name ?? "null";
     @emit("val top_" + compiler.name(decl)! + " = \"" + owner + "\";");
     @emit("pub fn top_"

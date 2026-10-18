@@ -3,14 +3,14 @@ import {types.Type, compiler} from "std";
 pub type Order { Asc, Desc }
 
 pub fn index<T>(
-    expr decl: T,
+    syntax decl: T,
     comptime ..fields: Type.Field<T>[],
 ) {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
 }
 
 pub fn sorted<T>(
-    expr decl: T,
+    syntax decl: T,
     comptime by: Type.Field<T>,
     comptime order: Order = .Asc,
 ) {

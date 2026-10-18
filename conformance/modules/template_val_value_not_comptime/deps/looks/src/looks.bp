@@ -3,12 +3,12 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-pub fn theme(expr decl: unknown) {
+pub fn theme(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail("#[theme] annotates a val", at: decl);
 }
 
-pub default fn looks(expr e: string) -> string {
+pub default fn looks(syntax e: string) -> string {
     val themes = @TypeInfo.all(with: theme);
     if (themes.length != 1)
         compiler.fail("looks: one #[theme] declaration, and the program has "

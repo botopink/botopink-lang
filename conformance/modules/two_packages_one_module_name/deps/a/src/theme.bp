@@ -12,6 +12,6 @@ pub fn make() -> Ns {
     return Ns(label: "red");
 }
 
-pub fn tag(expr q: string) -> string {
+pub fn tag(syntax q: string) -> string {
     return compiler.build("\"a-" + compiler.text(q) + "\"");
 }

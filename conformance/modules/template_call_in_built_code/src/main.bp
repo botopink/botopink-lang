@@ -6,15 +6,15 @@
 
 import {compiler} from "std";
 
-fn inner(expr q: string) -> string {
+fn inner(syntax q: string) -> string {
     return compiler.build("\"inner " + compiler.text(q) + "\"");
 }
 
-fn outer(expr q: string) -> string {
+fn outer(syntax q: string) -> string {
     return compiler.build("inner @`" + compiler.text(q) + "`");
 }
 
-fn outermost(expr q: string) -> string {
+fn outermost(syntax q: string) -> string {
     return compiler.build("outer @`" + compiler.text(q) + "` + \"!\"");
 }
 

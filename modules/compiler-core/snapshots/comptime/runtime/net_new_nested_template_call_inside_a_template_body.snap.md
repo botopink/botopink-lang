@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn inner(expr q: string) -> string {
+pub fn inner(syntax q: string) -> string {
     return q;
 }
-pub fn outer(expr q: string) -> string {
+pub fn outer(syntax q: string) -> string {
     return compiler.build("inner @`deep`");
 }
 val s = outer @`x`;

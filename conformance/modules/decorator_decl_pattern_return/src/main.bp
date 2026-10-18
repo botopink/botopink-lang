@@ -9,7 +9,7 @@ type View(html: string)
 type Route<P>(params: P)
 
 fn page<P>(
-    expr decl: fn(route: Route<P>) -> View,
+    syntax decl: fn(route: Route<P>) -> View,
     comptime seg: string,
 ) {
     compiler.setMeta(Page(seg: seg));

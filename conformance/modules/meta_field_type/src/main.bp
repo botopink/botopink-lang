@@ -11,7 +11,7 @@ fn one() -> i32 {
     return 1;
 }
 
-fn hooked(expr decl: unknown) {
+fn hooked(syntax decl: unknown) {
     compiler.setMeta(Hook(run: one));
 }
 

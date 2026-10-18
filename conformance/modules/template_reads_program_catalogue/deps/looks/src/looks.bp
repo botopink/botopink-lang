@@ -5,15 +5,15 @@
 
 import {compiler} from "std";
 
-pub fn theme(expr decl: unknown) {
+pub fn theme(syntax decl: unknown) {
     compiler.setMeta(Theme(named: compiler.name(decl)!));
 }
 
-pub fn palette(expr decl: unknown) {
+pub fn palette(syntax decl: unknown) {
     compiler.setMeta(Palette(named: compiler.name(decl)!));
 }
 
-pub default fn looks(expr e: string) -> string {
+pub default fn looks(syntax e: string) -> string {
     val themes = @TypeInfo.all(with: theme);
     val palettes = @TypeInfo.all(with: palette);
     if (themes.length > 1)

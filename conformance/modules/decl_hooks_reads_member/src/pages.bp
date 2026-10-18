@@ -9,7 +9,7 @@ import {compiler} from "std";
 type Element(text: string) implement @Renderable
 
 // Reads `decl.hooks`: each node as `fn(uses: […])`.
-fn graph(expr decl: unknown) {
+fn graph(syntax decl: unknown) {
     var nodes: string[] = [];
     compiler
         .hooks(decl)
@@ -25,7 +25,7 @@ fn graph(expr decl: unknown) {
 }
 
 // Reads no `.hooks`: gives the type it annotates a `validate` method.
-fn check(expr decl: unknown) {
+fn check(syntax decl: unknown) {
     compiler.addMember(
         "pub fn validate(self: Self) -> string { return \""
             + compiler.name(decl)!

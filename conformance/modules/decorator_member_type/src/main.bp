@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-fn trimmed<T>(expr decl: T) {
+fn trimmed<T>(syntax decl: T) {
     compiler.addMember("trimmedLength", fn(self: T) -> i32 {
         return 0;
     });

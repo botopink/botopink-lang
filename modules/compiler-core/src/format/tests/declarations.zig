@@ -447,7 +447,7 @@ test "format: test ---- named block with assert message" {
 
 test "format: template ---- round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn html(expr template: string) -> Component {
+        \\pub fn html(syntax template: string) -> Component {
         \\    @todo();
         \\}
     );
@@ -455,7 +455,7 @@ test "format: template ---- round-trip (decision 578)" {
 
 test "format: template ---- anyvalue answer round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
-        \\fn yaml(expr template: string) -> anyvalue {
+        \\fn yaml(syntax template: string) -> anyvalue {
         \\    @todo();
         \\}
     );
@@ -982,7 +982,7 @@ test "format: declare fn ---- unannotated generics, discard param and generic re
         \\
         \\pub declare fn getContext<T>(comptime _: anytype) -> Component<T, unknown>;
         \\
-        \\declare fn marker(expr decl: unknown);
+        \\declare fn marker(syntax decl: unknown);
     );
 }
 

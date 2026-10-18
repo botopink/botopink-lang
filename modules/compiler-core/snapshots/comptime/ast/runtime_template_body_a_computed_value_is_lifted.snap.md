@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn six(expr t: string) -> i32 {
+pub fn six(syntax t: string) -> i32 {
     val n = 2 + 4;
     return n;
 }

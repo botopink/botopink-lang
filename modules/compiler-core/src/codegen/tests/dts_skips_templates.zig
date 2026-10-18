@@ -1,4 +1,4 @@
-//! .d.ts emitter: template fns (a first parameter `expr q: string`, decision 578) are skipped.
+//! .d.ts emitter: template fns (a first parameter `syntax q: string`, decision 578) are skipped.
 //! The runtime contract is that template fns expand at their call site and
 //! never reach codegen; the `.d.ts` surface mirrors that drop. This test
 //! asserts no `Expr<` substring leaks into the typedef output.
@@ -50,7 +50,7 @@ fn assertNoExprInDts(src: []const u8, present: []const []const u8, absent: []con
 
 test ".d.ts: a template function is skipped" {
     try assertNoExprInDts(
-        \\pub fn html(expr template: string) -> string {
+        \\pub fn html(syntax template: string) -> string {
         \\    return "hello";
         \\}
         \\pub fn plain(x: i32) -> i32 { return x + 1; }
@@ -60,7 +60,7 @@ test ".d.ts: a template function is skipped" {
 test ".d.ts: a template method of a behavior is skipped" {
     try assertNoExprInDts(
         \\pub behavior Tpl {
-        \\    fn render(expr self: Self, expr q: string) -> string;
+        \\    fn render(syntax self: Self, syntax q: string) -> string;
         \\    fn name(self: Self) -> string;
         \\}
     , &.{ "export declare interface Tpl {", "name(): string;" }, &.{"render("});

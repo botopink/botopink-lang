@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- view.bp
 ```botopink
-pub fn html(expr q: string) -> string {
+pub fn html(syntax q: string) -> string {
     return q;
 }
 ```

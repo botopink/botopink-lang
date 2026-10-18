@@ -2,7 +2,7 @@
 //// file that names it without `import {compiler} from "std";` gets the
 //// ordinary unbound-name error, at the name.
 
-fn mark(expr decl: unknown) {
+fn mark(syntax decl: unknown) {
     compiler.fail("marked", at: decl);
 }
 

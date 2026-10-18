@@ -2950,7 +2950,7 @@ test "wat: a package template's answer is its library's record, its field read a
         \\    return Label(text: text, size: text.length);
         \\}
         \\
-        \\pub default fn label(expr t: string) -> Label {
+        \\pub default fn label(syntax t: string) -> Label {
         \\    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
         \\}
         \\import {compiler} from "std";

@@ -1,7 +1,7 @@
 //! Decisions 575 (3), (4) and 576 — the surface a build-time body talks to the
 //! compiler through, read onto the machinery the checker, the decorator and
 //! template evaluators and the comptime runtime already know. Run once by
-//! `Parser.parse`, after `expr_params.zig` (the formatter parses with
+//! `Parser.parse`, after `syntax_params.zig` (the formatter parses with
 //! `Parser.keep_surface` and sees the program as written).
 //!
 //! - `compiler.<member>(…)` — the `Compiler` of the point (`libs/std/src/
@@ -11,14 +11,14 @@
 //!   template's literal; elsewhere the builtins of the point. `members` is
 //!   the table a unit test holds to `compiler.bp`.
 //! - `comptime x: T` (`Param.arrival == .value`) — a bare read of `x` is the
-//!   value (`x.value` to the machinery; `comptime/expr_param.zig` erases it for
+//!   value (`x.value` to the machinery; `comptime/syntax_param.zig` erases it for
 //!   the code that runs). Inside a tree — a member or a wrapper a decorator
 //!   writes — `x` stays the parameter, spliced where it was written.
 //! - `-> expr T` — a template's `return e` hands the expression `e` to the call
 //!   site: a parameter's tree as it is, anything else lifted (`@expr(e)` to
 //!   the template machinery).
 //! - The refusals — `compiler-at-run-time`, `compiler-output-outside-decorator`,
-//!   `expr-captures-build`, `compiler-member-unknown` — are written as the
+//!   `syntax-captures-build`, `compiler-member-unknown` — are written as the
 //!   reserved builtin `refusal_builtin` at the place, which the checker
 //!   reports there (`infer.zig`).
 
@@ -42,53 +42,62 @@ pub const Kind = enum {
     site,
 };
 
-pub const Member = struct { name: []const u8, kind: Kind };
+/// One member: its name, what it is, and how each of its parameters after
+/// `self` arrives (decision 616) — `syntax`, the code as written; `value`
+/// (`comptime`), a value known at build; `written`, a plain value. A
+/// property has none.
+pub const Member = struct { name: []const u8, kind: Kind, params: []const ast.Arrival = &.{} };
+
+const S: ast.Arrival = .syntax;
+const V: ast.Arrival = .value;
+const W: ast.Arrival = .written;
 
 /// The `Compiler` members built so far — 575 (3) and 576 (2), (3), less
 /// B-139 and B-140's (`setBuiltin`, `embed`, `record`, `fields`
 /// over a type, `optional`, `required`). `comptime/tests/compiler_
-/// members.zig` holds it to `libs/std/src/compiler.bp`.
+/// members.zig` holds it to `libs/std/src/compiler.bp`, member for member and
+/// arrival for arrival (decision 616).
 pub const members = [_]Member{
     .{ .name = "src", .kind = .property },
     .{ .name = "module", .kind = .property },
     .{ .name = "package", .kind = .property },
     .{ .name = "isStd", .kind = .property },
-    .{ .name = "fail", .kind = .read },
-    .{ .name = "setMeta", .kind = .output },
-    .{ .name = "addMeta", .kind = .output },
-    .{ .name = "addMember", .kind = .output },
-    .{ .name = "addType", .kind = .output },
-    .{ .name = "wrapWith", .kind = .output },
-    .{ .name = "compile", .kind = .output },
-    .{ .name = "implement", .kind = .output },
-    .{ .name = "catalogue", .kind = .site },
-    .{ .name = "typeInfo", .kind = .site },
-    .{ .name = "text", .kind = .read },
-    .{ .name = "name", .kind = .read },
-    .{ .name = "source", .kind = .read },
-    .{ .name = "context", .kind = .read },
-    .{ .name = "lookup", .kind = .read },
-    .{ .name = "bindings", .kind = .read },
-    .{ .name = "build", .kind = .site },
-    .{ .name = "buildType", .kind = .site },
-    .{ .name = "note", .kind = .site },
-    .{ .name = "tagDecl", .kind = .site },
-    .{ .name = "annotate", .kind = .site },
-    .{ .name = "custom", .kind = .site },
-    .{ .name = "kind", .kind = .read },
-    .{ .name = "moduleOf", .kind = .read },
-    .{ .name = "meta", .kind = .read },
-    .{ .name = "metaAll", .kind = .read },
-    .{ .name = "attr", .kind = .read },
-    .{ .name = "component", .kind = .read },
-    .{ .name = "hooks", .kind = .read },
-    .{ .name = "fields", .kind = .read },
-    .{ .name = "methods", .kind = .read },
-    .{ .name = "params", .kind = .read },
-    .{ .name = "returnType", .kind = .read },
-    .{ .name = "owner", .kind = .read },
-    .{ .name = "annotations", .kind = .read },
-    .{ .name = "variants", .kind = .read },
+    .{ .name = "fail", .kind = .read, .params = &.{ W, S, W } },
+    .{ .name = "setMeta", .kind = .output, .params = &.{S} },
+    .{ .name = "addMeta", .kind = .output, .params = &.{S} },
+    .{ .name = "addMember", .kind = .output, .params = &.{ W, S } },
+    .{ .name = "addType", .kind = .output, .params = &.{ W, V } },
+    .{ .name = "wrapWith", .kind = .output, .params = &.{S} },
+    .{ .name = "compile", .kind = .output, .params = &.{S} },
+    .{ .name = "implement", .kind = .output, .params = &.{V} },
+    .{ .name = "catalogue", .kind = .site, .params = &.{ W, W } },
+    .{ .name = "typeInfo", .kind = .site, .params = &.{V} },
+    .{ .name = "text", .kind = .read, .params = &.{S} },
+    .{ .name = "name", .kind = .read, .params = &.{S} },
+    .{ .name = "source", .kind = .read, .params = &.{S} },
+    .{ .name = "context", .kind = .read, .params = &.{S} },
+    .{ .name = "lookup", .kind = .read, .params = &.{ S, W } },
+    .{ .name = "bindings", .kind = .read, .params = &.{S} },
+    .{ .name = "build", .kind = .site, .params = &.{V} },
+    .{ .name = "buildType", .kind = .site, .params = &.{V} },
+    .{ .name = "note", .kind = .site, .params = &.{W} },
+    .{ .name = "tagDecl", .kind = .site, .params = &.{ W, W, S } },
+    .{ .name = "annotate", .kind = .site, .params = &.{ S, W } },
+    .{ .name = "custom", .kind = .site, .params = &.{W} },
+    .{ .name = "kind", .kind = .read, .params = &.{S} },
+    .{ .name = "moduleOf", .kind = .read, .params = &.{S} },
+    .{ .name = "meta", .kind = .read, .params = &.{S} },
+    .{ .name = "metaAll", .kind = .read, .params = &.{S} },
+    .{ .name = "attr", .kind = .read, .params = &.{ S, W } },
+    .{ .name = "component", .kind = .read, .params = &.{S} },
+    .{ .name = "hooks", .kind = .read, .params = &.{S} },
+    .{ .name = "fields", .kind = .read, .params = &.{S} },
+    .{ .name = "methods", .kind = .read, .params = &.{S} },
+    .{ .name = "params", .kind = .read, .params = &.{S} },
+    .{ .name = "returnType", .kind = .read, .params = &.{S} },
+    .{ .name = "owner", .kind = .read, .params = &.{S} },
+    .{ .name = "annotations", .kind = .read, .params = &.{S} },
+    .{ .name = "variants", .kind = .read, .params = &.{S} },
 };
 
 fn memberOf(name: []const u8) ?Member {
@@ -117,9 +126,9 @@ const Ctx = struct {
     template: bool = false,
     /// `comptime x: T` parameters: a bare read is the value.
     values: []const []const u8 = &.{},
-    /// Parameters whose argument is a tree (`expr x: T`, a template's).
+    /// Parameters whose argument is a tree (`syntax x: T`, a template's).
     trees: []const []const u8 = &.{},
-    /// `expr x: T` parameters (not the handle): opaque in the body.
+    /// `syntax x: T` parameters (not the handle): opaque in the body.
     exprs: []const []const u8 = &.{},
     /// `main` / a `test` body: no build-time body.
     runTime: bool = false,
@@ -233,14 +242,14 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     const returnType = returnRef.*;
     const alloc = P.scratch;
     var ctx: Ctx = .{ .alloc = P.alloc, .scratch = P.scratch };
-    // Decision 577 (4) — a template takes its text (an `expr self` receiver
+    // Decision 577 (4) — a template takes its text (a `syntax self` receiver
     // before it for a method, the annotated declaration after it for an
     // annotation) and nothing else: refused at the parameter.
     if (ast.templateTextIndex(params)) |q| for (params, 0..) |p, i| {
         if (i <= q) continue;
         if (i == q + 1 and p.typeRef.isDeclType()) continue;
         if (body.len == 0) break;
-        body[0].expr = try refusal(&ctx, if (p.loc.line != 0) p.loc else p.typeLoc, diagnostics.template_signature, try std.fmt.allocPrint(P.alloc, "the template `{s}` takes its text and nothing else, and declares `{s}`", .{ name, p.name }), "A template's parameters are its text `expr q: string` (after an `expr self: R` receiver for a method), and for an annotation the declaration `expr decl: unknown` (decision 577 (4)); make it an ordinary function, or read the input from the text.");
+        body[0].expr = try refusal(&ctx, if (p.loc.line != 0) p.loc else p.typeLoc, diagnostics.template_signature, try std.fmt.allocPrint(P.alloc, "the template `{s}` takes its text and nothing else, and declares `{s}`", .{ name, p.name }), "A template's parameters are its text `syntax q: string` (after a `syntax self: R` receiver for a method), and for an annotation the declaration `syntax decl: unknown` (decision 577 (4)); make it an ordinary function, or read the input from the text.");
         return;
     };
     ctx.runTime = std.mem.eql(u8, name, "main");
@@ -254,7 +263,7 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     var exprs: std.ArrayListUnmanaged([]const u8) = .empty;
     for (params, 0..) |p, i| {
         if (p.arrival == .value) try values.append(alloc, p.name);
-        if (p.arrival == .expr and !p.typeRef.isDeclType()) try exprs.append(alloc, p.name);
+        if (p.arrival == .syntax and !p.typeRef.isDeclType()) try exprs.append(alloc, p.name);
         const tree = p.exprWrapped or p.typeRef.isExprType() or p.typeRef.isExprCustomType();
         if (p.arrival != .value and tree) try trees.append(alloc, p.name);
         if (template and ctx.site == null and p.typeRef.isExprType()) {
@@ -386,7 +395,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
     const args = c.args;
     if (member.kind == .output) {
-        const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `expr` — `fn mark(expr decl: unknown) { compiler.setMeta(…); }` (decision 575 (3)).");
+        const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) { compiler.setMeta(…); }` (decision 575 (3)).");
         return methodCall(ctx, loc, try ident(ctx, d, loc), name, args, c.trailing, c.typeArgs);
     }
     if (std.mem.eql(u8, name, "fail")) {
@@ -422,7 +431,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
         return methodCall(ctx, loc, try ident(ctx, s, loc), name, args, c.trailing, c.typeArgs);
     }
     // A read taking the `expr` / the handle first.
-    if (args.len == 0) return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` takes the expression it reads first", .{name}), "Hand it the `expr` parameter or the declaration: `compiler.text(e)` (decision 576 (2)).");
+    if (args.len == 0) return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` takes the expression it reads first", .{name}), "Hand it the `syntax` parameter or the declaration: `compiler.text(e)` (decision 576 (2)).");
     const first = args[0].value;
     const rest = args[1..];
     if (handleField(name)) |field| {
@@ -495,7 +504,7 @@ fn runTimeRefusal(ctx: *Ctx, loc: ast.Loc) error{OutOfMemory}!ast.Expr {
 }
 
 fn treeRefusal(ctx: *Ctx, loc: ast.Loc) error{OutOfMemory}!ast.Expr {
-    return refusal(ctx, loc, diagnostics.expr_captures_build, "a tree holds the code the program runs, and `compiler` exists only while it compiles", "Read the compiler in the decorator's body and hand the tree a `comptime` value or an `expr` (decision 575 (4), the tree rule).");
+    return refusal(ctx, loc, diagnostics.syntax_captures_build, "a tree holds the code the program runs, and `compiler` exists only while it compiles", "Read the compiler in the decorator's body and hand the tree a `comptime` value or a `syntax` (decision 575 (4), the tree rule).");
 }
 
 fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
@@ -513,13 +522,13 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         // Decision 575 (4) — `@expr` is the compiler's own: a `-> expr T`
         // template returns the expression.
         if (c.is_builtin and std.mem.eql(u8, c.callee, "expr")) {
-            p.* = try refusal(ctx, loc, diagnostics.unknown_builtin, "`@expr` is gone: a `-> expr T` template returns the expression itself", "Write `return e;` — a `comptime` value is spliced as a literal, an `expr` as written (decision 575 (4)).");
+            p.* = try refusal(ctx, loc, diagnostics.unknown_builtin, "`@expr` is gone: a `-> syntax T` template returns the expression itself", "Write `return e;` — a `comptime` value is spliced as a literal, a `syntax` as written (decision 575 (4)).");
             return;
         }
         // Decision 576 (2) — an `expr` is opaque: read only through
         // `compiler.*`.
         if (c.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident and contains(ctx.exprs, r.identifier.kind.ident) and !contains(ctx.shadow.items, r.identifier.kind.ident)) {
-            p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is an `expr` — the expression written — and has no method `.{s}(…)`", .{ r.identifier.kind.ident, c.callee }), "Read it through the compiler — `compiler.text(e)`, `compiler.lookup(e, name)`, … — or hand it to a tree (decision 576 (2)).");
+            p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is a `syntax` — the expression written — and has no method `.{s}(…)`", .{ r.identifier.kind.ident, c.callee }), "Read it through the compiler — `compiler.text(e)`, `compiler.lookup(e, name)`, … — or hand it to a tree (decision 576 (2)).");
             return;
         };
     }
@@ -598,7 +607,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         },
         .identAccess => |ia| {
             if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident and contains(ctx.exprs, ia.receiver.identifier.kind.ident) and !contains(ctx.shadow.items, ia.receiver.identifier.kind.ident)) {
-                p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is an `expr` — the expression written — and has no field `.{s}`", .{ ia.receiver.identifier.kind.ident, ia.member }), "Read it through the compiler — `compiler.text(e)`, … — or hand it to a tree (decision 576 (2)).");
+                p.* = try refusal(ctx, loc, diagnostics.expr_param_method, try std.fmt.allocPrint(ctx.alloc, "`{s}` is a `syntax` — the expression written — and has no field `.{s}`", .{ ia.receiver.identifier.kind.ident, ia.member }), "Read it through the compiler — `compiler.text(e)`, … — or hand it to a tree (decision 576 (2)).");
                 return;
             }
             if (isCompiler(ia.receiver.*)) {
@@ -745,7 +754,7 @@ test "a template's value return is lifted (decision 578)" {
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn shout(expr q: string) -> string {
+        \\fn shout(syntax q: string) -> string {
         \\    return compiler.text(q).toUpper();
         \\}
         \\import {compiler} from "std";

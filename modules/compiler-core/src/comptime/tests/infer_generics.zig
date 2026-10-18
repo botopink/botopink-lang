@@ -158,7 +158,7 @@ test "infer: generic interface Container<T>" {
 
 test "infer: @Expr builtin type ---- declaration with bounded return typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn identity(expr template: string) -> string {
+        \\pub fn identity(syntax template: string) -> string {
         \\    return template;
         \\}
         \\fn main() {

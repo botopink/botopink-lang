@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 fn count() -> i32 { 1 }
 
-fn written(expr decl: unknown) {
+fn written(syntax decl: unknown) {
     compiler.compile({ -> count() });
 }
 

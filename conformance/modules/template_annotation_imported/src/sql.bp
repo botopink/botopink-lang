@@ -10,7 +10,7 @@ fn placeholder(n: i32) -> string {
     return "$" + n.toString();
 }
 
-pub fn query(expr q: string, expr decl: unknown) -> string {
+pub fn query(syntax q: string, syntax decl: unknown) -> string {
     var text = "";
     var params: string[] = [];
     var first = true;
@@ -30,7 +30,7 @@ pub fn query(expr q: string, expr decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-pub fn repository(expr decl: unknown) {
+pub fn repository(syntax decl: unknown) {
     var lines: string[] = [];
     for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);

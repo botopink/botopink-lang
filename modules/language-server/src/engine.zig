@@ -4501,8 +4501,8 @@ fn collectParams(
                 expect_name = false; // the type follows, up to the next top-level comma
             },
             .identifier => if (expect_name and nest == 0) {
-                // Decision 575 (4) — `expr name: T`: `expr` is the modifier.
-                if (std.mem.eql(u8, t.lexeme, "expr") and i + 1 < tokens.len and (tokens[i + 1].kind == .identifier or tokens[i + 1].kind == .dotDot)) continue;
+                // Decision 575 (4) — `syntax name: T`: `syntax` is the modifier (616).
+                if (std.mem.eql(u8, t.lexeme, "syntax") and i + 1 < tokens.len and (tokens[i + 1].kind == .identifier or tokens[i + 1].kind == .dotDot)) continue;
                 try pending.append(arena, .{ .name = t.lexeme, .kind = .param, .line = t.line, .col = t.col, .depth = depth });
                 expect_name = false;
             },
