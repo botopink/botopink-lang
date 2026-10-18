@@ -467,6 +467,11 @@ pub const private_module: []const u8 = "private-module";
 /// Located at the use.
 pub const namespace_not_a_value: []const u8 = "namespace-not-a-value";
 
+/// Decision 582 (4) — an item and a module of one name in one package: a
+/// top-level declaration named like a module its module declares (`mod b;`
+/// beside `fn b`). Located at the item; the message names the `mod` line.
+pub const module_item_collision: []const u8 = "module-item-collision";
+
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
 /// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
@@ -866,6 +871,7 @@ pub const all_codes = [_][]const u8{
     redundant_module_import,
     private_module,
     namespace_not_a_value,
+    module_item_collision,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,

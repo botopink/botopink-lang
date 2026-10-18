@@ -31,7 +31,8 @@
 //! Two refusals belong to the binding: in the declaring module `import
 //! {config};` is a second spelling of the namespace (`redundant-module-import`
 //! at the item, fix: delete it), and a top-level declaration named like a
-//! declared module is `import-name-collision` at the declaration.
+//! declared module is `module-item-collision` at the declaration, the message
+//! naming the `mod` line (decision 582 (4)).
 //!
 //! Runs in `analyzeSource`, first, when the session is a module tree
 //! (`mod_tree.Tree.known`); the formatter prints the source as written.
@@ -466,14 +467,16 @@ fn run(ctx: *Ctx, program_in: ast.Program) (Error || Refusal)!Result {
         },
         else => if (declNamed(d)) |n| try ctx.own.put(arena, n.name, {}),
     };
-    // A top-level declaration named like a declared module.
+    // Decision 582 (4) — a top-level declaration named like a declared
+    // module: `{name}` would name both the item and the module. Located at
+    // the item; the message names the `mod` line (one location a diagnostic).
     for (program.decls) |d| if (declNamed(d)) |n| if (ctx.modBound.get(n.name)) |c| {
         const loc = if (n.loc.line != 0) n.loc else c.loc;
         return ctx.refuse(
             loc,
-            "{s}: `{s}` is declared here and is the module `mod {s};` declares — `mod` binds the module's namespace in this module",
-            .{ diagnostics.import_name_collision, n.name, n.name },
-            "Rename the declaration, or the module.",
+            "{s}: `{s}` names both the item declared here and the module `mod {s};` declares at line {d} — rename one",
+            .{ diagnostics.module_item_collision, n.name, n.name, c.loc.line },
+            "An item and a module of one name cannot share a package path (decision 582): rename the declaration, or the module.",
         );
     };
     for (program.decls) |d| switch (d) {

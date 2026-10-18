@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: import-name-collision: `config` is declared here and is the module `mod config;` declares — `mod` binds the module's namespace in this module
-at src/main.bp:6:4
+refused error: module-item-collision: `config` names both the item declared here and the module `mod config;` declares at line 5 — rename one
+at src/main.bp:7:4

@@ -565,7 +565,7 @@ type Pair = split.Pair;` — the submodule private, the type `split`'s own), and
 four targets; four refusals on every target by its snapshot — `private_module_through_namespace`
 (`geo.plane` through a plain `mod plane;`, `private-module` at `plane`), `redundant_module_import`
 (`import {config};` beside `pub mod config;`), `declaration_named_like_module` (`fn config()` beside
-`mod config;`, `import-name-collision`) and `shorthand_import_one_candidate` (`import {splitPath};`,
+`mod config;`, `module-item-collision`, decision 582 (4)) and `shorthand_import_one_candidate` (`import {splitPath};`,
 `shorthand-import`, the fix `import {config.splitPath};`) — and `modules/shorthand_import` (no module
 declares the name: `unresolved import`). They are `modules/` cells, not refusal ones: each needs a
 second module. The shorthands the suite wrote are their module paths now (`dependency_files_order`,
