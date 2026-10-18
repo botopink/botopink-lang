@@ -32,7 +32,7 @@ tests/
 ├── type_definition.zig   ← textDocument/typeDefinition
 ├── semantic_tokens.zig   ← textDocument/semanticTokens
 ├── inlay_hints.zig       ← textDocument/inlayHint
-├── sublanguage.zig       ← `@ExprCustom` overlay: tokens + diagnostics + hover/def
+├── sublanguage.zig       ← `compiler.custom` overlay: tokens + diagnostics + hover/def
 ├── lifecycle.zig         ← `files.FileCache` didOpen→didChange→didClose
 ├── cross_module.zig      ← project-index requests (references / rename / import-missing)
 ├── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
@@ -48,7 +48,7 @@ while the server answered `null` for every document that did not type-check
 
 `sublanguage.zig` uses `helpers.compileEval` (template-eval context on, unique
 scratch root `<test_scratch root>/lsp-test/<n>` per call — per process and per
-call, `test_scratch.path`) so the `@ExprCustom`
+call, `test_scratch.path`) so the `compiler.custom`
 `CustomNode` trees actually exist — template bodies run through compiler-core's
 persistent `erl` comptime runtime, so `erl` must be on `PATH`.
 

@@ -42,8 +42,8 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
-├── expr_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `expr` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `expr` is the declaration handle (`declHandle`); decision 370 (1): a record field's `@Expr<T>` likewise (`Field.exprWrapped`)
-├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a `-> expr T` template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
+├── expr_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `expr` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `expr` is the declaration handle (`declHandle`); decision 370 (1): a record field's `expr x: T` likewise (`Field.exprWrapped`)
+├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
 ├── implementations.zig ← decision 575 (6): each declaration's `#[external(…)]` sources read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
 ├── template_markers.zig ← decision 5: an implementation's template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
@@ -248,11 +248,11 @@ The unannotated `declare fn` (a `DelegateDecl`, top-level shorthand or `val f =
 declare fn(…)`) reads its signature with **`parseSignature`** — `parseGenericParams`,
 `parseParamList`, `-> parseTypeRef` — the one a behavior's `fn` member
 (`parseBehaviorMethod`, `parseMethodDecl`) reads too, from the same pieces
-`parseFnBody` uses. So `pub declare fn field<T, F>(obj: T, comptime name: @Expr<string>) -> F;`
+`parseFnBody` uses. So `pub declare fn field<T, F>(obj: T, comptime name: string) -> F;`
 and `-> Component<T, any>` parse; the delegate used to take no generics and a
 one-token return.
 
-**`_` as a parameter name** (`comptime _: @Expr<type>`) is a bodyless declaration's
+**`_` as a parameter name** (`comptime _: anytype`) is a bodyless declaration's
 placeholder: `consumeParamName` accepts it and notes it in `Parser.discardParam`
 (reset by `parseParamList`), and every signature that goes on to a body —
 `parseFnBody`, `parseMethodDecl`, `parseImplementMethod`, a `default fn` behavior
@@ -271,8 +271,9 @@ through `parseSignature`) — refuses it: `self-param-outside-type`
 `template_markers.zig` no longer shifts a free function's markers either.
 The one exception, checked once the return type is read, is a template
 method's signature (decisions 311 (3), 415 (1), `ast.isTemplateMethodSignature`):
-`comptime self: @Expr<R>` first, `comptime q: @Expr<…>` second, `-> @Expr<…>`
-— the receiver of `value.method "…"`, which never reaches a backend.
+`expr self: R` first, `expr q: string` second (the parser reads them onto the internal
+`comptime self: __Expr<R>` and `comptime q: __Expr<…>`, `-> __Expr<…>`) — the receiver of
+`` value.method @`…` ``, which never reaches a backend.
 
 **A keyword where a name is declared** is `reserved-word-as-name`
 (`reservedWordAsName`), with the word in the caret caption: a field
@@ -355,8 +356,8 @@ with `<…>` wraps, and two additions for record/builder ergonomics:
   bare `fn(T)`; the name is documentation-only (function types are positional)
   and is discarded.
 - **`fn(..) -> R`, a function of any parameters** (decision 316) — the shape a
-  decorator's `@Decl<…>` names: `TypeRef.function.anyParams`, `params` empty.
-  `Parser.inDeclPattern` is set for `@Decl<…>`'s argument alone and cleared by
+  decorator handle's `expr decl: fn(..) -> R` names: `TypeRef.function.anyParams`, `params` empty.
+  `Parser.inDeclPattern` is set for the decorator handle's type argument alone and cleared by
   `parseBaseTypeRefArm` for everything inside it, so `..` written anywhere
   else (a parameter's type, inside the pattern) is `any-params-outside-decl`
   at the `..`.
@@ -728,7 +729,7 @@ The `@[name(…)]` annotation-block opener (spec 05 §5.12) is **rejected** with
 so the stale form reaches that diagnostic instead of a bare unexpected-token
 error. Annotation blocks are `#[…]`; `@` marks a builtin annotation inside one. A block
 written one annotation per line may end with a comma (`#[\n    a(…),\n]`, decision 280’s example).
-A `comptime` parameter takes a default (`comptime code: @Expr<Code> = .Custom`) — a decorator's; the
+A `comptime` parameter takes a default (`comptime code: Code = .Custom`) — a decorator's; the
 checker refuses one elsewhere (`comptime-default-outside-decorator`) — and every parameter records
 where it starts (`Param.loc`, the refusal site of `decorator-param-not-comptime`).
 
@@ -869,7 +870,7 @@ that uses none of them dumps exactly as it did before they existed.
   `decls.zig`). The parser only records the modifier — uniqueness is validated in
   inference, and the resolver/driver (`comptime.zig`) binds the handle.
 - **`type T` as a union member (decision 297)**: `startsTypeRef` takes `type`,
-  so `comptime s: @Expr<Box<T> | type T>` parses (a `typeparam` member) and `x is type`
+  so `comptime s: Box<T> | type<T>` parses (a `typeparam` member) and `x is type`
   tests the meta-kind; `parseTypeRef` frees a refused union's first member
   once (it used to free it twice — a panic on `| type T` before `type` began a
   type).
@@ -955,7 +956,7 @@ After `unwrapProgram`, `compiler_surface.zig` `expandProgram` reads the surface 
 `comptime x: T` is `x.value` outside a member or a wrapper; a template's `return e` lifts `e`
 (`@expr(e)`) unless it is a tree parameter or a call answering one; a call of a `comptime` parameter,
 `rule(x)`, is `rule.value(x)` (refused for a function, 364 (3)); `compiler.custom(tree)` in a
-template keeps the tree in a local, makes the template the custom carrier (`@ExprCustom<T>`) and each
+template keeps the tree in a local, makes the template the custom carrier (the internal `__ExprCustom<T>`) and each
 return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
 `compiler-output-outside-decorator`, `expr-captures-build` inside a member, a wrapper or an executor

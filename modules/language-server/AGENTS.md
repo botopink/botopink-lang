@@ -262,11 +262,11 @@ the names recovered from the `fn` declaration in the document
 **substring** of the signature label, so two bare `i32` labels would make the
 client underline the first parameter for both.
 
-### Sub-languages (`@ExprCustom`)
+### Sub-languages (`compiler.custom`)
 
-An embedded query/markup literal (e.g. `erika "select name from users"`) lights
-up *from the compiler*, not a hand-written grammar. A template lib returns
-`@ExprCustom<T> { code, ast }`; the `ast` is a generic `CustomNode` tree
+An embedded query/markup literal (e.g. `` erika @`select name from users` ``) lights
+up *from the compiler*, not a hand-written grammar. A template lib attaches its tree with `compiler.custom(ast)`, which makes the template
+answer the pair `{ code, ast }`; the `ast` is a generic `CustomNode` tree
 (`{ kind, span, label, ref?, children }`) the lib built at comptime. The LSP
 knows only `CustomNode` — it never branches on any sub-language:
 
@@ -286,9 +286,9 @@ knows only `CustomNode` — it never branches on any sub-language:
   literal, which starts after `` @` `` for a template text, decision 577 —
   `customContentStart`) to an absolute range; `mergeSemanticTokens` re-sorts them into the
   lexer stream. Unknown labels stay the opaque `string` token.
-- **Diagnostics** — a template's `failAt(span, msg)` maps through compiler-core's
+- **Diagnostics** — a template's `compiler.fail(msg, at: …, span: …)` maps through compiler-core's
   `template.failDiagnostic` to a type error located **inside** the literal.
-- **Hover / go-to-definition** — a node may carry `ref` (a `q.lookup` result tying
+- **Hover / go-to-definition** — a node may carry `ref` (a `compiler.lookup` result tying
   it to a caller-scope symbol). `engine.customRefAt` finds the deepest
   covering node under the cursor; `hoverCustomRef` renders the card of the
   binding the file holds under `ref.local`, and `definitionCustomRef` jumps to
@@ -297,7 +297,7 @@ knows only `CustomNode` — it never branches on any sub-language:
   module that declares it `pub`. Go-to-def is gated on
   `engine.cursorInString` so the common path skips the extra compile.
 
-Any lib returning `@ExprCustom` lights up for free. See
+Any lib calling `compiler.custom` lights up for free. See
 [`src/tests/sublanguage.zig`](src/tests/sublanguage.zig).
 
 Add a new feature → implement it in [`src/engine.zig`](src/AGENTS.md), add a

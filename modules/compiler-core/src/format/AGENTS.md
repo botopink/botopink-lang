@@ -147,7 +147,7 @@ form has always done that); whether it should is a question, recorded in
 | Pipeline `\|>` | A single step with no comments stays inline if it fits; multi-step chains (or any step comment) put each `\|>` on its own line |
 | Array / list / tuple literals | The trailing comma alone decides: with one (`ArrayLit.trailingComma`, `tupleLit.trailingComma`) or a comment the list opens, **one element per line**, `+4`, the comma on every element, `]` / `)` on its own line; without one it is one line whatever its width, and a list written open without the comma is joined. No width rule opens a list (decision 345) |
 | Binary expressions | A run of operands at one precedence level (`a + b - c`) is one `groupMeasured`; broken, the first operand stays on the line and every other one starts a line of its own **operator first**, `+4` from the statement — the method chain's shape, the operator where the chain puts its `.`. A run at another level is its own group, measured where the outer run put it |
-| Behavior literal | `@Decl(kind: …, fields: […])` — the argument list's rule (`behaviorLit.trailingComma`) |
+| Behavior literal | `@Name(kind: …, fields: […])` — the argument list's rule (`behaviorLit.trailingComma`) |
 | Imports, generic parameters | `import {a, b}` and `<A, B>` follow the same rule (`ImportDecl.trailingComma`, `GenericParam.trailingComma` on the last): a comma before the closer opens the list one item per line with the comma kept; without it one line whatever its width. Pattern and type-argument lists carry no flag yet and print on one line |
 | **The trailing comma alone decides** (decisions 166, 243, 345) | Every delimited list — call arguments, parameters, arrays, tuples, records (`type P(…)`), enum bodies, imports, generic parameters, annotations (`#[a, b,]`), behavior literals — is **one element per line with the trailing comma kept** when the source wrote a comma after the last element, and **one line whatever the width** when it did not; a list written open without the comma is joined. The parser records the comma on the last element (`prevIsComma`); the printer's `openList` is the one open form. `tests/trailing_comma.zig` holds one case per kind in both spellings. What still measures width is not a comma-delimited list: a binary run, a brace-less `if`, a method chain, a trailing lambda's one-line body |
 | Call arguments | The trailing comma alone decides (`CallArg.trailingComma` on the last argument; decisions 166, 345): with it the list opens, one argument per line `+4`, the comma on every one, `)` on its own line; without it the list is one line whatever its width — a hand-opened list without the comma is joined. A **lambda argument hugs the call** ([decision 61](../../../../../../specs/1.0.5-beta/decisions-taken.md) rule 1) when the list has no trailing comma: the lambda's own `forceBreak` opens at the call's indentation — body at +4 from the call line, `});` level with the call. It applies to a lambda in **any** argument position and only when that lambda's own printing breaks. An argument carrying a `//` comment and a multiline-string argument keep the open form |
@@ -264,7 +264,8 @@ a single-expression `if` block drops its braces, a `\\` line string prints as `"
 Nothing known, as of 2026-09-26: the five sibling libraries formatted as scratch copies lose no
 token and no comment (a lexical multiset comparison per file), and every package `check`s as before.
 
-**A `comptime` parameter's `@Expr<T>`** (decision 364): the parser reads the
+**A `comptime` / `expr` parameter** (decisions 364, 575 (4)): the parser reads the
 wrapper off a non-template function's parameter (`Param.exprWrapped`,
-`parser/expr_params.zig`); `fmtParam` prints `@Expr<` + `T` + `>` back, so
+`parser/expr_params.zig`) and keeps how the argument arrives (`Param.arrival`); `fmtParam` prints
+`comptime x: T` or `expr x: T` back (`arrivalType`), so
 `format(parse(src))` keeps the spelling.

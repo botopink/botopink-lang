@@ -62,7 +62,7 @@ beam/
   only text the backend assembles there is the helper's Erlang *source* for the
   reader.
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
-- `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — `main/0` as a `Form` built with `Builder`; the `@Decl` handle and captures are `Term`s.
+- `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — `main/0` as a `Form` built with `Builder`; the declaration handle and captures are `Term`s.
 - `../../comptime/runtime/prelude.zig` — the resident host glue as `Form`s, rendered to Erlang source with `writeForms`; the generated module reaches it through a `Form.import`.
 
 ## Template lowering (`erl_lower.zig`; was the comptime lowering, front 14 step 3)

@@ -7,7 +7,7 @@
 //// (`type Id = i32`) stays transparent.
 ////
 //// Every function here runs only at compile time and takes every parameter
-//// `comptime x: @Expr<T>` (decision 364), so a call needs no `comptime`
+//// `comptime x: T`, so a call needs no `comptime`
 //// keyword. The bodies are the
 //// compiler's: bodyless, without `#[@External.<Target>]`, because no target
 //// runs them — the compiler answers `partial`, `required`, `pick`, `omit` and
@@ -18,7 +18,7 @@
 //// `Type` is a namespace type (decision 329): no field list, no value, every
 //// function associated. `Field<T>` is declared in its body, so it is its
 //// associated type `Type.Field<T>` (decision 330 (7)). `pick` and `omit`
-//// take the fields as a variadic (`comptime ..fields: @Expr<Type.Field<T>[]>`,
+//// take the fields as a variadic (`comptime ..fields: Type.Field<T>[]`,
 //// decision 267): `Type.pick(Recipe, .title, .servings)`.
 
 import {compiler.DeclAnnotation};
