@@ -1,0 +1,19 @@
+//// Decision 575 (4), the tree rule — an executor `compiler.init` hands on
+//// is code the program runs; `compiler` exists only while it compiles, so a
+//// `compiler` read inside the executor is refused there
+//// (`syntax-captures-build`).
+
+import {compiler} from "std";
+
+fn registered(syntax decl: unknown) {
+    compiler.init({ -> @print(compiler.name(decl)!) });
+}
+
+#[registered]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() {
+    @print(home());
+}

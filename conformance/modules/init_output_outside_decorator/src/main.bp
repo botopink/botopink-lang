@@ -1,0 +1,14 @@
+//// Decision 575 (3) — `compiler.init` is an output: it compiles code
+//// beside the annotated declaration, and only a decorator has one. A
+//// function whose first parameter is no `syntax` is refused at the output
+//// (`compiler-output-outside-decorator`).
+
+import {compiler} from "std";
+
+fn setup(comptime text: string) {
+    compiler.init({ -> @print(text) });
+}
+
+pub fn main() {
+    setup("x");
+}

@@ -22,7 +22,7 @@
 ////
 //// - The point: `src`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `compile`,
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
@@ -68,8 +68,8 @@ pub behavior Compiler {
     fn wrapWith<F>(self: Self, syntax wrapper: F);
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
-    // declarations in source order, calls in order (decision 575 (3)).
-    fn compile(self: Self, syntax executor: fn());
+    // declarations in source order, calls in order (decisions 575 (3), 615).
+    fn init(self: Self, syntax executor: fn());
     // A host source of the annotated `declare fn` (decision 575 (6)): one per
     // target (`implementation-twice`), never on a declaration with a body
     // (`implement-with-body`).

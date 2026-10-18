@@ -1131,7 +1131,7 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   body `decorator-wrap-without-function`. `decoratorEval.moduleVarWrite`
   skips a wrapper and a member function (they run with the program), and
   `written_names.sharesPrivates` counts a wrapper as it counts a member.
-- **Handed on — an executor (decision 575 (3)).** `compiler.compile(f)` (the
+- **Handed on — an executor (decision 575 (3)).** `compiler.init(f)` (the
   handle's `decl.compile(f)`; `parser/compiler_surface.zig` makes a named
   executor `{ -> f() }`, the call its tail) compiles run-time code beside the annotated
   declaration. `infer.zig` `inferCompileCall` types the lambda as a wrapper's
@@ -1155,7 +1155,7 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   executor lands. **Decision 580:** the executor is a statement of the module's
   body at the annotated declaration's position — `runDeclDecorators` records an
   `Env.executorAnchors` entry (the contribution, `Env.decoratedDeclIndex` set by
-  `invokeDecorators`, the annotation and the `compiler.compile` call), and
+  `invokeDecorators`, the annotation and the `compiler.init` call), and
   `comptime.zig` `parseAndMergeContributions` inserts the executor's
   declarations right after that declaration (past the imports prepended before
   the module's own), so a `val` below it runs after it; a type error inside one
@@ -1164,8 +1164,8 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   admitted in an executor (`refuseCaptures`' `handle`): `inferCompileCall` types
   it as a free type in the decorator's body, and `executorSource` splices it as
   the annotated declaration's name, so the module checks it with its declared
-  type (`modules/compile_executor_handle_typed`,
-  `modules/compile_executor_handle_mistyped`).
+  type (`modules/init_executor_handle_typed`,
+  `modules/init_executor_handle_mistyped`).
 
 ## Typed meta (decisions 298, 370 (1))
 

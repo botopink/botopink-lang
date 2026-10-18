@@ -68,7 +68,7 @@ pub const members = [_]Member{
     .{ .name = "addMember", .kind = .output, .params = &.{ W, S } },
     .{ .name = "addType", .kind = .output, .params = &.{ W, V } },
     .{ .name = "wrapWith", .kind = .output, .params = &.{S} },
-    .{ .name = "compile", .kind = .output, .params = &.{S} },
+    .{ .name = "init", .kind = .output, .params = &.{S} },
     .{ .name = "implement", .kind = .output, .params = &.{V} },
     .{ .name = "catalogue", .kind = .site, .params = &.{ W, W } },
     .{ .name = "typeInfo", .kind = .site, .params = &.{V} },
@@ -396,7 +396,10 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     const args = c.args;
     if (member.kind == .output) {
         const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) { compiler.setMeta(…); }` (decision 575 (3)).");
-        return methodCall(ctx, loc, try ident(ctx, d, loc), name, args, c.trailing, c.typeArgs);
+        // Decision 615 — `compiler.init(f)` is the handle's executor output,
+        // `decl.compile(f)` to the machinery (`member_fn.compile_name`).
+        const handleName = if (std.mem.eql(u8, name, "init")) "compile" else name;
+        return methodCall(ctx, loc, try ident(ctx, d, loc), handleName, args, c.trailing, c.typeArgs);
     }
     if (std.mem.eql(u8, name, "fail")) {
         const pos = try positional(ctx, args);
@@ -566,13 +569,13 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         if (std.mem.eql(u8, c.callee, "addType") and c.args.len == 2) if (compilerCall(c.args[1].value.*)) |bt| if (std.mem.eql(u8, bt.callee, "buildType") and bt.args.len == 1) {
             c.args[1].value = bt.args[0].value;
         };
-        // Decision 575 (3) — `compiler.compile(e)` with an executor that is
+        // Decision 575 (3) — `compiler.init(e)` with an executor that is
         // no function written at the call (a function's name, an `expr`
         // parameter): the executor is `{ -> e() }`, a tree like any other.
-        if (std.mem.eql(u8, c.callee, "compile") and c.args.len == 1 and c.args[0].value.* != .function)
+        if (std.mem.eql(u8, c.callee, "init") and c.args.len == 1 and c.args[0].value.* != .function)
             c.args[0].value = try executorOf(ctx, c.args[0].value);
         // The arguments first: a member, a wrapper and an executor are trees.
-        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "compile");
+        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "init");
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;
         for (c.args, 0..) |*a, i| {
             // The expression a read is about — `at:` of `fail`, the first

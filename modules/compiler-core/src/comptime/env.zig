@@ -659,11 +659,11 @@ pub const ArithKind = enum {
 /// Which sequence a `.next()` (`InstanceLowering.sequence_next`) steps.
 pub const SequenceKind = enum { iterator, stream };
 
-/// Decision 580 — where a `compiler.compile` executor stands: the index of
+/// Decision 580 — where a `compiler.init` executor stands: the index of
 /// its source in `Env.contributions`, and the index of its annotated
 /// declaration in the module's declarations. Decision 567 — a type error
 /// inside it is located at `loc`, the annotation that ran the decorator, its
-/// `compiler.compile` call (`call`) the `called from` line.
+/// `compiler.init` call (`call`) the `called from` line.
 pub const ExecutorAnchor = struct { contribution: usize, decl: usize, loc: ?ast.Loc = null, call: ?CallSite = null };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
@@ -1571,7 +1571,7 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
-    /// Decision 580 — the `compiler.compile` executors among `contributions`:
+    /// Decision 580 — the `compiler.init` executors among `contributions`:
     /// each one's index there and the index in the module's declarations of
     /// the declaration it annotates (the type that owns an annotated member).
     /// The re-analysis places the executor's `val _bp_init_<k>` right after

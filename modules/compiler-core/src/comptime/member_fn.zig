@@ -74,7 +74,7 @@ pub fn isWrapWithOn(c: anytype, declName: []const u8) bool {
 }
 
 /// Decision 575 (3) — the name a decorator body's `compile` is written with
-/// (`compiler.compile(f)`, read onto the handle).
+/// (`compiler.init(f)`, read onto the handle).
 pub const compile_name = "compile";
 
 /// `e` as `<declName>.compile(<function>)` — the executor written at the

@@ -152,7 +152,7 @@ pub const Contribution = struct {
 
     /// `wrap` — decision 316, `decl.wrapWith(f)`: `index` is the wrapper's
     /// (`member_fn.collectWrappers`'s order).
-    /// `compile` — decision 575 (3), `compiler.compile(f)`: `index` is the
+    /// `compile` — decision 575 (3), `compiler.init(f)`: `index` is the
     /// executor's (`member_fn.collectExecutors`'s order), `data` the values
     /// of the body's locals it reads.
     /// `implement` — decision 575 (6), `compiler.implement(source)`: `data`

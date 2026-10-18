@@ -5742,7 +5742,7 @@ fn runDeclDecorators(
                         .member => "addMember",
                         .memberFn => "addMember",
                         .wrap => "wrapWith",
-                        .compile => "compile",
+                        .compile => "compiler.init",
                         else => "addType",
                     } });
                     return decoratorError(env, a, msg, hooks_output_hint);
@@ -5783,7 +5783,7 @@ fn runDeclDecorators(
                         const source = try wrapperSource(env, a, dfn, sig, values, c, local);
                         try env.wrapContributions.append(env.arena, .{ .target = handle.name, .owner = if (isMethod) memberOwner else null, .source = source, .loc = a.loc, .decorator = a.name });
                     },
-                    // `compiler.compile(f)` (decision 575 (3)) — the executor
+                    // `compiler.init(f)` (decision 575 (3)) — the executor
                     // the body wrote, rendered with each parameter's argument
                     // and each local it reads spliced, joins the module beside
                     // its declarations: a function, and the module-level `val`
@@ -6091,7 +6091,7 @@ fn wrapperSource(
     return memberFn.renderWrapper(env.arena, func, splices, typeArgs, "", renames) catch return error.OutOfMemory;
 }
 
-/// Decision 575 (3) — the source `compiler.compile(f)` gives the annotated
+/// Decision 575 (3) — the source `compiler.init(f)` gives the annotated
 /// declaration's module: the body's `c.index`-th executor
 /// (`member_fn.collectExecutors`) as a function, each decorator parameter it
 /// reads replaced by the argument as the annotation wrote it, each local of
@@ -6114,7 +6114,7 @@ fn executorSource(
 ) InferError![]const u8 {
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
     const fns = try memberFn.collectExecutors(env.arena, dfn, declName);
-    if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back an executor the body does not write", "Report it: `compiler.compile(f)` numbers the body's executors in source order.");
+    if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back an executor the body does not write", "Report it: `compiler.init(f)` numbers the body's executors in source order.");
     const func = fns[c.index];
     // A decorator of this module runs before its body is checked.
     if (local) try refuseCaptures(env, func, dfn.params, dfn.body, true, true);
@@ -21598,7 +21598,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (currentDeclParam(env)) |declName| if (memberFn.isWrapWithOn(call, declName)) {
                 return inferWrapWithCall(env, call, loc);
             };
-            // Decision 575 (3) — `compiler.compile(f)` in a decorator's body:
+            // Decision 575 (3) — `compiler.init(f)` in a decorator's body:
             // the executor is the program's code.
             if (currentDeclParam(env)) |declName| if (memberFn.isCompileOn(call, declName)) {
                 return inferCompileCall(env, call, loc);
@@ -23670,7 +23670,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     } } } };
 }
 
-/// Decision 575 (3) — `compiler.compile(f)` in a decorator's body (read onto
+/// Decision 575 (3) — `compiler.init(f)` in a decorator's body (read onto
 /// the handle, `decl.compile(f)`). `f` is the executor, a function written at
 /// the call that takes nothing; it is the program's code, typed here as a
 /// wrapper is (`inferWrapWithCall`): each `comptime x: T` parameter read as

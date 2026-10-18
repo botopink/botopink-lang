@@ -663,7 +663,7 @@ const CallWalk = struct {
     fn walk(self: *CallWalk, comptime U: type, ptr: *const U) Error!void {
         if (U == ast.Expr) switch (ptr.*) {
             .call => |c| {
-                // A `compiler.compile` executor is run-time code (decisions 575 (3), 580): it is
+                // A `compiler.init` executor is run-time code (decisions 575 (3), 580): it is
                 // spliced into the program's init list, so what it calls is not reached at build.
                 if (ast.isExecutorCall(ptr.*)) return;
                 if (c.kind == .call and !c.kind.call.is_builtin and c.kind.call.calleeExpr == null) {

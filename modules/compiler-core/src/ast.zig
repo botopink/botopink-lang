@@ -3721,7 +3721,7 @@ pub fn collectNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayL
     return collectNamesIn(gpa, body, out, false);
 }
 
-/// The call the parser lowers `compiler.compile({ -> … })` to, `<decl>.compile(<function>)`
+/// The call the parser lowers `compiler.init({ -> … })` to, `<decl>.compile(<function>)`
 /// (decisions 575 (3), 580): its function is run-time code spliced into the program's init
 /// list, so the names it reads are not reached by the decorator that writes it.
 pub fn isExecutorCall(e: Expr) bool {

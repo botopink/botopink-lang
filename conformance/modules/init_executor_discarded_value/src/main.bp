@@ -1,0 +1,24 @@
+//// Decision 541 (1) — an executor `compiler.init` takes may end with a
+//// statement written with `;`: its value is discarded, and the executor
+//// answers nothing, as `fn()` asks.
+
+import {compiler} from "std";
+
+fn reg(name: string) -> i32 {
+    @print(name);
+    return 0;
+}
+
+fn registered(syntax decl: unknown) {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> reg(name); });
+}
+
+#[registered]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() {
+    @print(home());
+}

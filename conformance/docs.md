@@ -3864,8 +3864,8 @@ method) with type parameters `decorator-wrap-generic`, at the annotation
 <!-- example: modules/decorator_any_params_outside_decl -->
 
 A decorator compiles run-time code beside the annotated declaration with
-`compiler.compile(executor)` (decision 575 (3)): the executor, a function of
-no parameter written at the call (`compiler.compile({ -> register(name) })`)
+`compiler.init(executor)` (decision 575 (3)): the executor, a function of
+no parameter written at the call (`compiler.init({ -> register(name) })`)
 or named there, runs once before `main`, in the program's init list —
 modules in dependency order, declarations in source order, the calls in the
 order the bodies make them; a declaration takes any number. The executor is
@@ -3877,41 +3877,41 @@ expression written, each `comptime` parameter and each `val` of the body
 spliced as the literal of its value. A library module's executors run in the
 program that imports it, before the program's own.
 
-<!-- example: modules/compile_executor_before_main -->
+<!-- example: modules/init_executor_before_main -->
 
-<!-- example: modules/compile_init_order_modules -->
+<!-- example: modules/init_order_modules -->
 
-<!-- example: modules/compile_executor_from_library -->
+<!-- example: modules/init_executor_from_library -->
 
 An executor is a statement of its module's body at the annotated
 declaration's position (decision 580): a module's `val`s, `var`s, `_`
 statements and executors run in one order, source order, so a `val` written
 below an annotated declaration reads what that declaration's executor did.
 
-<!-- example: modules/compile_executor_module_val_order -->
+<!-- example: modules/init_executor_module_val_order -->
 
 Inside the executor the decorator's `syntax decl` handle is the annotated
 declaration itself as a run-time value, with its declared type (decision 581
 (2)): `add(Module(name: name, lifecycle: lifecycle, make: decl))` is checked
 against `make`'s type for each annotated declaration, and a declaration whose
 type does not fit is refused at its annotation, the decorator's
-`compiler.compile` call its `called from` line (decision 567).
+`compiler.init` call its `called from` line (decision 567).
 
-<!-- example: modules/compile_executor_handle_typed -->
+<!-- example: modules/init_executor_handle_typed -->
 
-<!-- example: modules/compile_executor_handle_mistyped -->
+<!-- example: modules/init_executor_handle_mistyped -->
 
 `compiler` inside the executor is `syntax-captures-build`, at the keyword, and
-`compiler.compile` in a function that is no decorator
+`compiler.init` in a function that is no decorator
 `compiler-output-outside-decorator`, at the member.
 
-<!-- example: modules/compile_executor_captures_build -->
+<!-- example: modules/init_executor_captures_build -->
 
-<!-- example: modules/compile_executor_answers -->
+<!-- example: modules/init_executor_answers -->
 
-<!-- example: modules/compile_executor_named_answers -->
+<!-- example: modules/init_executor_named_answers -->
 
-<!-- example: modules/compile_output_outside_decorator -->
+<!-- example: modules/init_output_outside_decorator -->
 
 ### Typed meta (decision 298)
 

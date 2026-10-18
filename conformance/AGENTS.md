@@ -1168,14 +1168,16 @@ captured; it was `decorator-member-fn-imported-name` on the parent binary), and 
 `fn(self: T)`, `T` the field's type), each red on the parent binary. Decision 575 (4)'s tree rule
 turns `modules/decorator_member_captures` (a local of the decorator's body) from a refusal into the
 literal the member holds (`member_fn.capturedLocals`).
-Decision 575 (3) (`compiler.compile`, 144 B-137) adds `modules/compile_executor_before_main` (executors of a
+Decision 575 (3) (`compiler.init`, 144 B-137) adds `modules/init_executor_before_main` (executors of a
 function, a type with two annotations and a `val`, two calls per body, one named and one a `syntax` parameter,
-each run before `main`, four targets), `compile_init_order_modules` (dependency order across two modules and
-`main`, an executor writing a registry `var`), `compile_executor_from_library` (a library's decorator whose
+each run before `main`, four targets), `init_order_modules` (dependency order across two modules and
+`main`, an executor writing a registry `var`), `init_executor_from_library` (a library's decorator whose
 executor calls a private helper of its module, and a library module's own executor run in the program) and the
-refusals `compile_executor_captures_build` (`compiler` inside an executor, `syntax-captures-build`) and
-`compile_output_outside_decorator` (`compiler-output-outside-decorator`) — each red on the parent binary, where
-`compile` was no member of `Compiler`.
+refusals `init_executor_captures_build` (`compiler` inside an executor, `syntax-captures-build`) and
+`init_output_outside_decorator` (`compiler-output-outside-decorator`) — each red on the parent binary, where
+`compile` was no member of `Compiler`. Decision 615 renamed the member `compiler.init` and these cells, and their
+siblings, from `compile_executor_*` / `compile_init_order_modules` / `compile_output_outside_decorator` to
+`init_executor_*` / `init_order_modules` / `init_output_outside_decorator`.
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds
