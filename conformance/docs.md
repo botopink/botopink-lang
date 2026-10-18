@@ -4579,13 +4579,22 @@ A source is a value of `Implementation`: a target written another way
 
 <!-- example: modules/external_lowercase_target -->
 
-**An implementation's flags are labelled** (decision 487): `result:` on
-every variant, `inline:` on `.Erlang`, each a `bool` read by its label after
-the template, as a constructor's labelled arguments are. A bare `true` or
-`false` fills the next field the variant declares (`body:`), which a
-binding of one cell refuses:
+**Only the template is positional** (decisions 487, 621): in a cell of
+`Implementation` every other field — `body:`, `result:` on every variant,
+`inline:` on `.Erlang`, and on `.Wasm` `op:`, `std:`, `wasi:`, `host:`,
+`needs:` — is written by its label, in any order among the arguments
+(`.Erlang(result: true, "json:decode($0)")` is `.Erlang("json:decode($0)",
+result: true)`). A second unlabelled argument is refused at the argument,
+naming the label to write — the one its value fits (`body:` for a name,
+`result:` for a `bool`, and `inline:` beside it on `.Erlang`), else the labels
+the variant has:
 
 <!-- example: modules/external_flag_bare_bool_refused -->
+
+<!-- example: modules/external_flag_bare_fn_refused -->
+
+A first unlabelled argument is the template, so `.Wasm(reverseBody)` is the
+constructor's refusal: `template` is a string.
 
 `inline: true` on `.Erlang` opts the declaration out of the dispatch
 table so the backend's hand-coded shape keeps emitting. That variant alone

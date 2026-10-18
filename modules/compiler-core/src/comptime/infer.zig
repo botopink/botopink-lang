@@ -3953,6 +3953,14 @@ fn implError(env: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferE
 fn checkImplementations(env: *Env, program: ast.Program, d: ImplDecl, annotations: []const ast.Annotation, impls: []const ast.Implementation) InferError!void {
     for (annotations) |a| {
         if (!implementationsParse.isSourceAnnotation(a)) continue;
+        // Decision 621 — only the template is positional: a second
+        // unlabelled argument is refused before the constructor reads it
+        // into the next field.
+        for (a.args, 0..) |arg, i| {
+            const at = a.argLoc(i) orelse a.loc orelse ast.Loc{ .line = 0, .col = 0 };
+            const src = (try implementationsParse.parseSource(env.arena, arg, at)) orelse continue;
+            try refuseUnlabelledField(env, src);
+        }
         if (env.decorators.get(a.name)) |sig| try checkDecoratorArgs(env, program, a, sig, .{ .name = d.name, .type_ = null });
         for (a.args, 0..) |arg, i| {
             const at = a.argLoc(i) orelse a.loc orelse ast.Loc{ .line = 0, .col = 0 };
@@ -3970,6 +3978,46 @@ fn checkImplementations(env: *Env, program: ast.Program, d: ImplDecl, annotation
     }
     try refuseImplementationTwice(env, d, impls);
     for (impls) |impl| try checkImplementation(env, program, d, impl);
+}
+
+/// Decision 621 — in a cell of `Implementation` only the `template` is
+/// positional: a second unlabelled argument is refused at the argument,
+/// naming the label its value fits (`body:` for a name, `inline:` /
+/// `result:` for a `bool`, …), else the labels the variant has.
+fn refuseUnlabelledField(env: *Env, src: implementationsParse.Source) InferError!void {
+    const target = src.target orelse return;
+    for (src.args) |arg| {
+        if (arg.labelled) continue;
+        if (arg.field) |f| if (std.mem.eql(u8, f, "template")) continue;
+        const value = try tokensText(env, arg.tokens);
+        const fix: []const u8 = blk: {
+            if (implementationsParse.identOf(arg.tokens)) |name| break :blk try std.fmt.allocPrint(env.arena, "write `body: {s}`", .{name});
+            if (implementationsParse.boolOf(arg.tokens) != null) break :blk if (target == .erlang)
+                try std.fmt.allocPrint(env.arena, "write `inline: {s}` or `result: {s}`", .{ value, value })
+            else
+                try std.fmt.allocPrint(env.arena, "write `result: {s}`", .{value});
+            if (target == .wasm) {
+                if (implementationsParse.stringOf(arg.tokens) != null) break :blk try std.fmt.allocPrint(env.arena, "write `op: {s}` or `std: {s}`", .{ value, value });
+                if (implementationsParse.enumValueOf(arg.tokens)) |name| {
+                    const host = std.mem.eql(u8, name, "Wasi") or std.mem.eql(u8, name, "Browser");
+                    break :blk try std.fmt.allocPrint(env.arena, "write `{s}: {s}`", .{ if (host) "host" else "wasi", value });
+                }
+                if (arg.tokens.len > 0 and arg.tokens[0].kind == .leftSquareBracket) break :blk try std.fmt.allocPrint(env.arena, "write `needs: {s}`", .{value});
+            }
+            var labels: std.ArrayListUnmanaged(u8) = .empty;
+            for (implementationsParse.fieldsOf(target)) |f| {
+                if (std.mem.eql(u8, f, "template")) continue;
+                if (labels.items.len > 0) try labels.appendSlice(env.arena, ", ");
+                try labels.print(env.arena, "`{s}:`", .{f});
+            }
+            break :blk try std.fmt.allocPrint(env.arena, "write it by one of `.{s}`'s labels: {s}", .{ target.variant(), labels.items });
+        };
+        return implError(env, arg.loc, try std.fmt.allocPrint(
+            env.arena,
+            "{s}: a cell's field is written by its label — {s}",
+            .{ diagnostics.external_field_unlabelled, fix },
+        ), "Only the template is written by position (`.Erlang(\"lists:reverse($0)\")`); every other field by its label, in any order: `body:`, `inline:`, `result:`, and on `.Wasm` `op:`, `std:`, `wasi:`, `host:`, `needs:` (decision 621).");
+    }
 }
 
 /// Decisions 305 and 481 — each source's cell, as written: one at most

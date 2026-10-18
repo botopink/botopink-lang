@@ -472,8 +472,8 @@ test "infer error: external ---- inline on a variant that does not declare it" {
     );
 }
 
-// Decision 487 — `External`'s flags are labelled and read by their label; a
-// bare positional bool names no flag, refused at the argument.
+// Decisions 487, 621 — only the template is positional; a bare bool after it
+// is refused at the argument, naming the label (`result:`).
 test "infer error: external ---- a bare positional bool is refused" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@external(.JavaScript("Math.max($args)", true))]

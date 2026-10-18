@@ -376,6 +376,9 @@ pub const declare_in_behavior: []const u8 = "declare-in-behavior";
 pub const implementation_twice: []const u8 = "implementation-twice";
 /// Decision 575 (6) — an implementation on a declaration with a body.
 pub const implement_with_body: []const u8 = "implement-with-body";
+/// Decision 621 — a second unlabelled argument of a cell of
+/// `Implementation`: only the `template` is positional.
+pub const external_field_unlabelled: []const u8 = "external-field-unlabelled";
 
 /// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<R>` (a
 /// component, or no `@Component` at all).
