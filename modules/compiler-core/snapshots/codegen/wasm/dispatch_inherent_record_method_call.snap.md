@@ -8,8 +8,10 @@ type Contador(
 }
 fn main() {
     val c = Contador(5);
-    @print(c.atual());
+    print(c.atual());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

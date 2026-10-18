@@ -4,6 +4,8 @@ pub type Meter(base: i32) {
     #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 }
+
+import {compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- hostlib.js
@@ -52,8 +54,10 @@ export declare class Meter {
 import { hostlib.Meter };
 
 pub fn main() {
-    @print(Meter(base: 40).plus(2));
+    print(Meter(base: 40).plus(2));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

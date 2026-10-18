@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print([10, 20, 30].join(", "));
+    print([10, 20, 30].join(", "));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-fn fetchCount() -> @Task<i32> {
+fn fetchCount() -> Task<i32> {
     return 3;
 }
-fn semAwait() -> @Result<i32, string> {
+fn semAwait() -> Result<i32, string> {
     val x = await fetchCount();
     return x;
 }

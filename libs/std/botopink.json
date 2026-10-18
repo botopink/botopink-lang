@@ -7,7 +7,6 @@
   "files": [
     "primitives.bp",
     "external.bp",
-    "builtins.d.bp",
-    "builtins_fns.d.bp"
+    "builtins.d.bp"
   ]
 }

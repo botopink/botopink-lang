@@ -258,7 +258,7 @@ pub fn assertTypeErrorSnap(
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var env = try inferMod.freshEnv(alloc, allocator);
@@ -296,7 +296,7 @@ pub fn assertInfersOk(
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var env = try inferMod.freshEnv(alloc, allocator);
@@ -328,7 +328,7 @@ pub fn resultJumpLoweringCount(
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var env = try inferMod.freshEnv(alloc, allocator);

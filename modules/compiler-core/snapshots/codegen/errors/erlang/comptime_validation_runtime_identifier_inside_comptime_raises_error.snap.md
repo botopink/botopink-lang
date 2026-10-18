@@ -3,8 +3,10 @@
 val greeting = "hi";
 val msg = comptime { greeting };
 fn main() {
-    @print(msg);
+    print(msg);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERROR

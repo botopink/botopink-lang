@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn fetch() -> @Task<i32> {
+fn fetch() -> Task<i32> {
     throw "boom";
 }
 

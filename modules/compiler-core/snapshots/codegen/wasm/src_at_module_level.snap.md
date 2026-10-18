@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val top = @src();
+val top = comptime compiler.src;
 fn main() {
-    @print(top.file, top.line, top.column);
-    @print(top.fnName == "");
+    print(top.file, top.line, top.column);
+    print(top.fnName == "");
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -41,7 +43,7 @@ fn main() {
     (local $__mem0 i32)
     global.get $__s1
     i32.const 1
-    i32.const 11
+    i32.const 20
     global.get $__s0
     struct.new $rec_SourceLocation
     global.set $top
@@ -430,6 +432,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-main.bp 1 11
+main.bp 1 20
 true
 ```

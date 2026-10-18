@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print([1, 2, 3, 4].indexOf(3));
-    @print([1, 2, 3].indexOf(99));
+    print([1, 2, 3, 4].indexOf(3));
+    print([1, 2, 3].indexOf(99));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

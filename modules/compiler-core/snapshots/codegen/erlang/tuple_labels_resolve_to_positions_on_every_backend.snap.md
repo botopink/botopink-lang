@@ -12,17 +12,19 @@ fn show(r: #(city: string, pop: i32)) -> i32 {
 
 fn main() {
     val row = load();
-    @print(row.name);
-    @print(row.pop + 1);
+    print(row.name);
+    print(row.pop + 1);
     val a = "RJ";
     val b = 7;
     val local = #(a, b);
-    @print(local.a);
-    @print(show(#("BH", 3)));
-    @print(show(row));
+    print(local.a);
+    print(show(#("BH", 3)));
+    print(show(row));
     val typed: #(x: i32, y: i32) = #(1, 2);
-    @print(typed.y);
+    print(typed.y);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -42,7 +44,7 @@ show(R) ->
 main() ->
     Row = load(),
     '__bp_print'([erlang:element(1, Row)]),
-    '__bp_print'(['__bp_int'((erlang:element(2, Row) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:14:20">>)]),
+    '__bp_print'(['__bp_int'((erlang:element(2, Row) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:14:19">>)]),
     A = <<"RJ">>,
     B = 7,
     Local = {A, B},

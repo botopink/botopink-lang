@@ -5,11 +5,13 @@ fn main() {
     val r = R(kind: 11);
     val maybe: ?R = r;
     if (maybe == null) {
-        @print(0);
+        print(0);
     } else {
-        @print(maybe.kind);
+        print(maybe.kind);
     }
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

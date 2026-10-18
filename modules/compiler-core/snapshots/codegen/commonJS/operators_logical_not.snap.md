@@ -4,8 +4,10 @@ fn negate(v: bool) -> bool {
     return !v;
 }
 fn main() {
-    @print(negate(true));
+    print(negate(true));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -8,13 +8,15 @@ fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
 }
 fn main() {
     val c = mk();
-    @print(c.value);
-    @print(c.set(9));
+    print(c.value);
+    print(c.set(9));
     val t = #(1, { n -> return n + 100; });
-    @print(t._1(2));
+    print(t._1(2));
     val o = Ops(step: { n -> return n - 1; });
-    @print(o.step(10));
+    print(o.step(10));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

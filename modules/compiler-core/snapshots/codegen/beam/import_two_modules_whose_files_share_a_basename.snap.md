@@ -62,9 +62,11 @@ import {models.user.label};
 import {services.user.tag};
 
 fn main() {
-    @print(label());
-    @print(tag());
+    print(label());
+    print(tag());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

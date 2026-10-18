@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val s = "hello";
-    @print(s.len + 1);
+    print(s.len + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -12,7 +14,7 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\05\00\00\00hello")
-  (data (i32.const 268) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:18")
+  (data (i32.const 268) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:17")
   (global $__heap_ptr (mut i32) (i32.const 316))
   (func $main
     (local $s i32)

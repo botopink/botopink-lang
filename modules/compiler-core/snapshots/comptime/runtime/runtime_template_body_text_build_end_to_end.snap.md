@@ -5,6 +5,7 @@ pub fn shout(syntax q: string) -> string {
     return compiler.build("\"" + t + "!\"");
 }
 val s = shout @`hey`;
+
 import {compiler} from "std";
 ```
 

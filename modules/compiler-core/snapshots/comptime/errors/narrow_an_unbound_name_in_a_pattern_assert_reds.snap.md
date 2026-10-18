@@ -1,8 +1,10 @@
 ----- SOURCE CODE
 fn main() {
     val assert 42 = answer catch 0;
-    @print("unreachable");
+    print("unreachable");
 }
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: unbound variable

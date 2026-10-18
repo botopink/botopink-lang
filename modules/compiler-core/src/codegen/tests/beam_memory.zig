@@ -35,6 +35,7 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
         \\    print(seen);
         \\    print(hits);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "[3, 3, 3, 3, 3]\n0\n", &.{
         "std@beam:pdGet(",
@@ -66,6 +67,7 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\    print(done.length());
         \\    print(hits);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n15\n", &.{
         "std@beam:etsBump(",
@@ -92,6 +94,7 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
         \\    val seen = await async.runAll([{ -> read() }]);
         \\    print(seen);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "[38]\n", &.{
         "std@beam:etsPut(",
@@ -117,6 +120,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         \\    print(seen);
         \\    print(version);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "[101, 101]\n101\n", &.{
         "-on_load('__bp_load'/0).",
@@ -149,6 +153,7 @@ const keyed_program =
     \\    print(done);
     \\    print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 
@@ -194,6 +199,7 @@ const bump_program =
     \\    print(done);
     \\    print(counts.at("hot"), counts.at("seed"), counts.at("none"));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 
@@ -224,6 +230,7 @@ test "erlang: beam memory ---- a var in a module that imports nothing from std r
         \\    hits = hits + 1;
         \\    print(hits);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "2\n", &.{
         "std@beam:pdGet(",

@@ -5,9 +5,11 @@ fn greet(x: ?string) -> string {
     return "hello " + x;
 }
 fn main() {
-    @print(greet("world"));
-    @print(greet(null));
+    print(greet("world"));
+    print(greet(null));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

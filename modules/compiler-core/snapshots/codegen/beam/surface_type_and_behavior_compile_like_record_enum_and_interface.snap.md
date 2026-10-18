@@ -21,9 +21,11 @@ fn weight(s: Size) -> i32 {
 
 fn main() {
     val sq = Square(side: 3);
-    @print(sq.area());
-    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+    print(sq.area());
+    print(weight(Size.Large(n: 5)) + weight(Size.Small));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -83,7 +85,7 @@ fn main() {
     {test, is_ge, {f, 41}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 42}}.
   {label, 41}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:23:37">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:23:36">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 42}.
     {test_heap, 2, 1}.

@@ -2,12 +2,14 @@
 ```botopink
 fn countdown(n: i32) {
     for (0..n) { i ->
-        @print(n - i);
+        print(n - i);
     };
 }
 fn main() {
     countdown(3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -18,7 +20,7 @@ fn main() {
 
 countdown(N) ->
     lists:foreach(fun(I) ->
-        '__bp_print'(['__bp_int'((N - I), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:3:18">>)])
+        '__bp_print'(['__bp_int'((N - I), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:3:17">>)])
     end, lists:seq(0, (N) - 1)).
 
 main() ->

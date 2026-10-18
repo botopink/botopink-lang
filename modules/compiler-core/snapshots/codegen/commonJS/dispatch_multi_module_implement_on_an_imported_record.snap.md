@@ -42,8 +42,10 @@ val PatoNada = implement Swimmer for Pato {
 }
 fn main() {
     val donald = Pato(2);
-    @print(donald.swim());
+    print(donald.swim());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

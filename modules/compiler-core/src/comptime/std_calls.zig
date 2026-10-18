@@ -39,6 +39,56 @@ pub const Fn = enum {
     }
 };
 
+/// The two declarations as std writes them — each one's annotation and
+/// `pub declare fn` line, taken from its module's source — as one source
+/// text: what the compiler reads their signatures and cells from
+/// (`registerBuiltinDecls`, `prelude_cache.builtins`, the backends' dispatch
+/// and `comptime/builtins.zig`'s drift test). Null when a module no longer
+/// declares its function.
+pub fn declarationsText(alloc: std.mem.Allocator) error{OutOfMemory}!?[]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    inline for (@typeInfo(Fn).@"enum".fields) |fld| {
+        const f: Fn = @enumFromInt(fld.value);
+        const src = moduleSource(f.module()) orelse return null;
+        const head = "pub declare fn " ++ fld.name ++ "(";
+        const at = std.mem.indexOf(u8, src, head) orelse return null;
+        const start = std.mem.lastIndexOf(u8, src[0..at], "#[") orelse at;
+        const end = (std.mem.indexOfScalarPos(u8, src, at, ';') orelse return null) + 1;
+        try out.appendSlice(alloc, src[start..end]);
+        try out.append(alloc, '\n');
+    }
+    return out.items;
+}
+
+/// The two declarations parsed from their modules' own sources (each slice a
+/// slice of the embedded source, as any std declaration's is): `print`,
+/// then `panic`.
+pub fn declarations(alloc: std.mem.Allocator) error{ OutOfMemory, StdDeclarationMissing }![]ast.FnDecl {
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    inline for (@typeInfo(Fn).@"enum".fields) |fld| {
+        const f: Fn = @enumFromInt(fld.value);
+        const src = moduleSource(f.module()) orelse return error.StdDeclarationMissing;
+        var lx = Lexer.init(src);
+        const tokens = lx.scanAll(alloc) catch return error.StdDeclarationMissing;
+        var p = Parser.init(tokens);
+        const program = p.parse(alloc) catch return error.StdDeclarationMissing;
+        const found = for (program.decls) |d| {
+            if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, fld.name)) break d.@"fn";
+        } else return error.StdDeclarationMissing;
+        try out.append(alloc, found);
+    }
+    return out.items;
+}
+
+fn moduleSource(key: []const u8) ?[]const u8 {
+    for (@import("std_prelude").pkg_modules) |spm| {
+        if (std.mem.eql(u8, spm.path["std/".len..], key)) return spm.source;
+    }
+    return null;
+}
+
 fn ofModule(key: []const u8) ?Fn {
     inline for (@typeInfo(Fn).@"enum".fields) |fld| {
         const f: Fn = @enumFromInt(fld.value);
@@ -55,6 +105,20 @@ pub fn ofItemPath(path: []const u8) ?Fn {
         if (path.len == m.len + 1 + fld.name.len and std.mem.startsWith(u8, path, m) and path[m.len] == '/' and std.mem.endsWith(u8, path, fld.name)) return f;
     }
     return null;
+}
+
+/// True when an import item names what exists at build alone — std's
+/// `compiler` value (decision 579): every read of it is the compiler's
+/// (`parser/compiler_surface.zig`, `#[compiler.external(…)]`), so the item
+/// binds nothing a backend reads and its module is no dependency.
+pub fn isBuildOnlyItem(path: []const u8) bool {
+    return std.mem.eql(u8, path, "compiler");
+}
+
+/// An item this pass takes out of the program: `print` / `panic` (once every
+/// use was a call) and the `compiler` value.
+pub fn isDroppedItem(path: []const u8) bool {
+    return ofItemPath(path) != null or isBuildOnlyItem(path);
 }
 
 fn fromStd(u: ast.ImportDecl) bool {
@@ -162,9 +226,13 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, key: ?[]const u8) 
         },
         else => {},
     };
-    if (ctx.items.count() == 0 and ctx.namespaces.count() == 0 and ctx.own == null) return program;
+    var build_only = false;
+    for (program.decls) |d| if (d == .use and fromStd(d.use)) for (d.use.imports) |imp| {
+        if (isBuildOnlyItem(try imp.fullPath(arena))) build_only = true;
+    };
+    if (ctx.items.count() == 0 and ctx.namespaces.count() == 0 and ctx.own == null and !build_only) return program;
     for (program.decls) |*d| try ctx.walk(ast.DeclKind, @constCast(d));
-    if (ctx.items.count() == 0) return program;
+    if (ctx.items.count() == 0 and !build_only) return program;
 
     // The items every use of which became the call node bind nothing left.
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
@@ -178,6 +246,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, key: ?[]const u8) 
             for (u.imports) |imp| {
                 const whole = try imp.fullPath(arena);
                 if (ofItemPath(whole) != null and !ctx.read.contains(imp.name())) continue;
+                if (isBuildOnlyItem(whole)) continue;
                 try kept.append(arena, imp);
             }
             if (kept.items.len == 0) continue;
@@ -218,6 +287,19 @@ test "std calls: an imported print, a namespace's panic, an alias" {
         try std.testing.expect(cc.receiver == null);
         try std.testing.expectEqualStrings(w, cc.callee);
     }
+}
+
+test "std calls: the declarations are read from io/terminal.bp and failure.bp" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const text = (try declarationsText(arena_state.allocator())).?;
+    try std.testing.expect(std.mem.indexOf(u8, text, "pub declare fn print(..values: unknown[]);") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "pub declare fn panic(message: string = \"panic\") -> noreturn;") != null);
+    try std.testing.expect(std.mem.startsWith(u8, text, "#["));
+    const decls = try declarations(arena_state.allocator());
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expectEqualStrings("print", decls[0].name);
+    try std.testing.expectEqualStrings("panic", decls[1].name);
 }
 
 test "std calls: a module's own print is no import" {

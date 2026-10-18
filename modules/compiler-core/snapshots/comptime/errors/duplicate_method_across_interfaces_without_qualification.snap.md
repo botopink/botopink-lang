@@ -8,9 +8,11 @@ val SolarCharger = behavior {
 val Camera = type(battery: i32);
 val CameraCharger = implement UsbCharger, SolarCharger for Camera {
     fn connect(self: Self) {
-        @print("connect");
+        print("connect");
     }
 };
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: ambiguous method

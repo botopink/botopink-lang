@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val s = "hello";
-    @print(s.len + 1);
+    print(s.len + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -69,7 +71,7 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 
 function main() {
     const s = "hello";
-    __bp_print(__bp_int((s.length + 1), -2147483648, 2147483647, "+ on i32 at main.bp:3:18"));
+    __bp_print(__bp_int((s.length + 1), -2147483648, 2147483647, "+ on i32 at main.bp:3:17"));
 }
 
 function _botopink_main() {

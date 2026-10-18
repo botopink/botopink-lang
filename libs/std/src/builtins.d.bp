@@ -2,18 +2,9 @@
 //// Host-backed I/O primitives — declaration-only, no pure implementation.
 //// Each target's code is the declaration's `#[external(…)]` source (`external.bp`).
 
-// `@print`, `@println` and `@debug` are bound by their sources on every target
-// (decision 575 (6)); no backend but wasm lowers them by name. On erlang and beam the
-// template names the `'__bp_print'/1` helper the backend emits once per module
-// (it prints a binary with `~ts` and any other value with `~p`).
-#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
-pub declare fn print(..values: unknown[]);
-
-#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
-pub declare fn println(..values: unknown[]);
-
-#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
-pub declare fn debug(..values: unknown[]);
+// `print` is `io/terminal.bp`'s, `panic` `failure.bp`'s (decision 606 (2)); the
+// compiler reads their cells from those declarations. `println`, `debug` and `todo`
+// are gone: `print(…)`, `panic("not implemented")`.
 
 // ── result type ──────────────────────────────────────────────────────────────
 
@@ -273,8 +264,8 @@ pub behavior Annotation {
 
 // ── builtin functions (decision 252) ────────────────────────────────────────
 //
-// Every `@name(…)` a program can call is declared here (or, for the two with a
-// literal default, in the sibling `builtins_fns.d.bp`): bodyless, because the
+// Every `@name(…)` the compiler still reads is declared here (`print` and `panic`
+// are `io/terminal.bp`'s and `failure.bp`'s, decision 606 (2)): bodyless, because the
 // compiler IS the body, and without `#[external(…)]` unless a host
 // supplies it. The compiler's own table of what it implements is
 // `modules/compiler-core/src/comptime/builtins.zig`; a unit test there parses
@@ -351,10 +342,6 @@ pub declare fn compilerError(message: string) -> noreturn;
 pub declare fn expr<T>(comptime value: T) -> __Expr<T>;
 
 pub declare fn code<T>(text: string) -> __Expr<T>;
-
-// `todo` and `panic` live in the sibling `builtins_fns.d.bp` so the compiler's
-// `registerStdlib` can parse them into the global env (each has a trailing
-// literal default that `expandTrailingDefaults` injects at the call site).
 
 // ── target enum ──────────────────────────────────────────────────────────────
 

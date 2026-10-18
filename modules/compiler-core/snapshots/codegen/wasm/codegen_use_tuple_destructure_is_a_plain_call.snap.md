@@ -39,6 +39,8 @@
 //// refuses every reference to them but a `use`'s operand, and the bodies
 //// panic.
 
+import {failure.panic};
+
 // A context of `T`: the value a provider gives, or a type's declared default.
 pub type Context<T>(contextValue: T)
 
@@ -51,8 +53,8 @@ pub fn createContext<T>(value: T) -> Context<T> {
 
 // Gives `ctx` to every component this component renders below it — never
 // to itself or a sibling; the nearest provider of a type wins.
-pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
-    @panic(
+pub fn provide<T>(ctx: Context<T>) -> Component<void> {
+    panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
 }
@@ -60,8 +62,8 @@ pub fn provide<T>(ctx: Context<T>) -> @Component<void> {
 // The value of the context of type `T` provided nearest above this body, or
 // `T`'s declared default: `use context(T)` answers `T`, which the checker
 // reads off the type the argument names (decision 379 (3)).
-pub fn context(comptime t: anytype) -> @Component<unknown> {
-    @panic(
+pub fn context(comptime t: anytype) -> Component<unknown> {
+    panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
 }
@@ -72,8 +74,8 @@ pub fn context(comptime t: anytype) -> @Component<unknown> {
 // inject(Deps)`). `T` is a record; a behavior is read with `use context`.
 // `createContext(value, Behavior)` keys a context by the behavior its value
 // implements, so a field typed by the behavior reads it.
-pub fn inject(comptime t: anytype) -> @Component<unknown> {
-    @panic(
+pub fn inject(comptime t: anytype) -> Component<unknown> {
+    panic(
         "`use inject` is lowered where it is written; this body never runs",
     );
 }
@@ -804,12 +806,12 @@ fn frameParent(f: Frame) -> unknown {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Renderable
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
+val Element = type() implement Renderable
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
-fn LikeWidget() -> @Component<Element> {
+fn LikeWidget() -> Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
     return Element();

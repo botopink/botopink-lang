@@ -2,13 +2,15 @@
 ```botopink
 type Stub(n: i32) {
     fn where(self: Self) -> SourceLocation {
-        return @src();
+        return comptime compiler.src;
     }
 }
 fn main() {
     val loc = Stub(n: 1).where();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -86,7 +88,7 @@ class Stub {
     }
 
     where() {
-        return new SourceLocation("main.bp", 3, 16, "Stub.where");
+        return new SourceLocation("main.bp", 3, 25, "Stub.where");
     }
 }
 Stub.prototype.__bp = "Stub";
@@ -113,5 +115,5 @@ Object.defineProperty(exports, "__bp_priv__", { value: { SourceLocation, Stub, m
 
 ----- RUN LOG -----
 ```logs
-main.bp 3 16 Stub.where
+main.bp 3 25 Stub.where
 ```

@@ -5,8 +5,10 @@ fn double(x: i32) -> i32 {
 }
 val result = double(5);
 fn main() {
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

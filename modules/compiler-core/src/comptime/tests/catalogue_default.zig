@@ -23,6 +23,7 @@ const frame =
     \\}
     \\
     \\import {compiler} from "std";
+    \\
     \\import {io.terminal.print} from "std";
 ;
 

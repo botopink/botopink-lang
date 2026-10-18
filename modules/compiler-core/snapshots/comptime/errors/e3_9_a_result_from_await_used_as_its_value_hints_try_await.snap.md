@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+fn fetchCount(n: i32) -> Task<Result<i32, string>> {
     return n;
 }
-fn run() -> @Task<@Result<i32, string>> {
+fn run() -> Task<Result<i32, string>> {
     val count: i32 = await fetchCount(3);
     return count;
 }

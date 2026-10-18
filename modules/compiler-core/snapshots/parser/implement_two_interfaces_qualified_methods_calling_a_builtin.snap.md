@@ -47,7 +47,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "print",
-                        "is_builtin": true,
+                        "is_builtin": false,
                         "is_tagged": false,
                         "optional": false,
                         "args": [
@@ -57,14 +57,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 3,
-                                  "col": 53
+                                  "col": 52
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "literal": {
                                     "loc": {
                                       "line": 3,
-                                      "col": 16
+                                      "col": 15
                                     },
                                     "kind": {
                                       "stringLit": "Connected via USB. Battery level: "
@@ -75,7 +75,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 3,
-                                      "col": 60
+                                      "col": 59
                                     },
                                     "kind": {
                                       "identAccess": {
@@ -83,7 +83,7 @@
                                           "identifier": {
                                             "loc": {
                                               "line": 3,
-                                              "col": 55
+                                              "col": 54
                                             },
                                             "kind": {
                                               "ident": "self"
@@ -138,7 +138,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "print",
-                        "is_builtin": true,
+                        "is_builtin": false,
                         "is_tagged": false,
                         "optional": false,
                         "args": [
@@ -148,14 +148,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 6,
-                                  "col": 61
+                                  "col": 60
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "literal": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 16
+                                      "col": 15
                                     },
                                     "kind": {
                                       "stringLit": "Connected via Solar Panel. Battery level: "
@@ -166,7 +166,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 68
+                                      "col": 67
                                     },
                                     "kind": {
                                       "identAccess": {
@@ -174,7 +174,7 @@
                                           "identifier": {
                                             "loc": {
                                               "line": 6,
-                                              "col": 63
+                                              "col": 62
                                             },
                                             "kind": {
                                               "ident": "self"
@@ -203,6 +203,29 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "io",
+              "terminal",
+              "print"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

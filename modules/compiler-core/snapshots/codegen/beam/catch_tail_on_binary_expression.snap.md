@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type CalcError(msg: string)
-fn getA() -> @Result<i32, CalcError> {
+fn getA() -> Result<i32, CalcError> {
     throw CalcError(msg: "overflow");
 }
 fn compute() -> i32 {

@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parse() -> @Result<i32, string> {
+fn parse() -> Result<i32, string> {
     return 42;
 }
 fn main() {
     val result = parse();
     val assert Ok(value) = result;
-    @print(value);
+    print(value);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

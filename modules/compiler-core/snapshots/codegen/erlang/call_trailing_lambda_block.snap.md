@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn run(f: fn(i32) -> string) {
-    @todo();
+    panic("not implemented");
 }
 fn main() {
     run { x ->
         return "done";
     };
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -17,7 +19,7 @@ fn main() {
 -export(['__bp_priv__run'/1, '__bp_priv__main'/0]).
 
 run(F) ->
-    erlang:error({todo, <<"not implemented">>}).
+    erlang:error({panic, <<"not implemented">>}).
 
 main() ->
     run(fun(X) ->

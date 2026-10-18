@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val s = "foobar";
-    @print(s.endsWith("bar"));
+    print(s.endsWith("bar"));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

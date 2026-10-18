@@ -2,7 +2,7 @@
 ```botopink
 fn free(a: i32) -> i32 { return a; }
 behavior Greeter { fn greet(self: Self) -> string; }
-fn counter() -> @Iterator<i32> :gen { yield 1; }
+fn counter() -> Iterator<i32> :gen { yield 1; }
 ```
 
 ----- SEMANTIC TOKENS
@@ -22,10 +22,10 @@ fn counter() -> @Iterator<i32> :gen { yield 1; }
   (1,43) +6  type [defaultLibrary]  "string"
   (2,0) +2  keyword  "fn"
   (2,3) +7  function [declaration,async]  "counter"
-  (2,16) +9  type [defaultLibrary]  "@Iterator"
-  (2,26) +3  type [defaultLibrary]  "i32"
-  (2,32) +3  keyword  "gen"
-  (2,38) +5  keyword  "yield"
+  (2,16) +8  type [defaultLibrary]  "Iterator"
+  (2,25) +3  type [defaultLibrary]  "i32"
+  (2,31) +3  keyword  "gen"
+  (2,37) +5  keyword  "yield"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 2 9 0
   0 3 4 4 1
@@ -43,7 +43,7 @@ fn counter() -> @Iterator<i32> :gen { yield 1; }
   0 9 6 0 4
   1 0 2 9 0
   0 3 7 4 9
-  0 13 9 0 4
-  0 10 3 0 4
+  0 13 8 0 4
+  0 9 3 0 4
   0 6 3 9 0
   0 6 5 9 0

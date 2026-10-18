@@ -8,8 +8,10 @@ fn describe(n: i32) -> string {
     };
 }
 fn main() {
-    @print(describe(5));
+    print(describe(5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -41,7 +43,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(describe(5));"
+          "source": "print(describe(5));"
         }
       ]
     }

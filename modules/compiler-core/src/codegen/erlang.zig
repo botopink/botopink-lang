@@ -3848,7 +3848,7 @@ const Emitter = struct {
     }
 
     /// Seeds `builtin_erlang_dispatch` with the `panic` / `todo` entries from
-    /// `builtins_fns.d.bp` (which the prelude scan does not read). Templates
+    /// `failure.bp`'s `panic` (which the prelude scan does not read). Templates
     /// mirror the file's `when(argc == N)` clauses byte-for-byte.
     fn registerInlineBuiltinErlangDispatch(this: *Emitter) !void {
         try this.putInlineErlangBuiltin("todo", &.{

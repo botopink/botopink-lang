@@ -3,11 +3,13 @@
 fn main() {
     val x: ?i32 = null;
     if (x == null) {
-        @print(1);
+        print(1);
     } else {
-        @print(0);
+        print(0);
     }
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

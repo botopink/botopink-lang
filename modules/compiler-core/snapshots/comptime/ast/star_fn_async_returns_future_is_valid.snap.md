@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> @Task<i32> {
+fn fetch(x: i32) -> Task<i32> {
     return x;
 }
 ```

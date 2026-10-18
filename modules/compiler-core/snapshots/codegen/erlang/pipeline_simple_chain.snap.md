@@ -6,8 +6,10 @@ fn main() {
     val result = 1
         |> double
         |> inc;
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

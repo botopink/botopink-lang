@@ -2,7 +2,7 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Builtins):
 
-> An abort writes to stderr alone — a checked integer operator's abort as `@panic`'s —, so what the
+> An abort writes to stderr alone — a checked integer operator's abort as `panic`'s —, so what the
 > program printed before it is its whole stdout, on every target.
 
 And from § Numbers:

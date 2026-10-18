@@ -13,17 +13,19 @@ fn greet(p: Person) -> string {
 
 pub fn main() {
     val p = Point(x: 1, y: 2);
-    @print(sum(p));
-    @print(p);
+    print(sum(p));
+    print(p);
     val q = Person(name: "Ana", age: 30, tall: true, h: 1.75, home: p);
-    @print(greet(q));
-    @print(q);
-    @print(q.home.y);
-    @print(q.h);
-    @print(q.tall);
-    @print(p == Point(x: 1, y: 2));
-    @print(p == Point(x: 1, y: 3));
+    print(greet(q));
+    print(q);
+    print(q.home.y);
+    print(q.h);
+    print(q.tall);
+    print(p == Point(x: 1, y: 2));
+    print(p == Point(x: 1, y: 3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

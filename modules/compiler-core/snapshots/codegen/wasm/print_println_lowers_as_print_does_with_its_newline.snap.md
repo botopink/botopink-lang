@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @println("a", 1);
+    print("a", 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

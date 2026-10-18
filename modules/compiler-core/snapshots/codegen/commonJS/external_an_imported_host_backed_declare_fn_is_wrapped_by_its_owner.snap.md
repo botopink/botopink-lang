@@ -8,6 +8,8 @@ pub declare fn hostLen(xs: Array<string>) -> i32;
 
 #[@external(.JavaScript("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;
+
+import {compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- hostlib.js
@@ -55,9 +57,11 @@ export declare function nodeOnly(s: string): void;
 import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
 
 pub fn main() {
-    @print(hostKey(42));
-    @print(hostLen(["a", "b"]));
+    print(hostKey(42));
+    print(hostLen(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

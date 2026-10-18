@@ -60,7 +60,7 @@ cat >"$WS/botopink.json" <<'EOF'
 EOF
 for c in one two; do
   printf '{ "name": "%s" }\n' "$c" >"$WS/$c/botopink.json"
-  printf 'import {greet} from "lib";\n\npub fn main() {\n    @print(greet("%s"));\n}\n' "$c" >"$WS/$c/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\nimport {greet} from "lib";\n\npub fn main() {\n    print(greet("%s"));\n}\n' "$c" >"$WS/$c/src/main.bp"
   mkdir -p "$WS/$c/snapshot/output"
   printf 'botopink-cell 1\nout hello %s\n' "$c" >"$WS/$c/snapshot/output/main.snap"
 done

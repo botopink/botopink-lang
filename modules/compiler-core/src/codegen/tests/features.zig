@@ -112,6 +112,7 @@ test "js: effect annotation ---- next by hand steps an iterator with YieldStep" 
         \\    print(stepText(it.next()));
         \\    print(stepText(it.next()));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -140,6 +141,7 @@ test "js: effect annotation ---- next by hand on a stream answers a Task of Yiel
         \\pub fn main() {
         \\    run();
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -327,6 +329,7 @@ test "js: destructure ---- record val binding" {
         \\fn main() {
         \\    describe(Point(x: 3, y: 4));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -351,6 +354,7 @@ test "js: destructure ---- record parameter in fn" {
         \\fn main() {
         \\    greet(Person(name: "Ana", age: 30));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -361,6 +365,7 @@ test "js: destructure ---- tuple val binding" {
         \\    val #(a, b) = #(12, "hello");
         \\    print(a, b);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -456,6 +461,7 @@ test "js: import ---- two modules whose files share a basename" {
         \\    print(label());
         \\    print(tag());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -499,6 +505,7 @@ test "js: import ---- a dotted path and a group bind their leaves across a modul
         \\    print(label());
         \\    print(circleLabel());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -526,6 +533,7 @@ test "js: import ---- a group activates an extension on its leaf" {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -575,6 +583,7 @@ test "js: import ---- cross-module record construct and assoc fn" {
         \\    val a = App(8080, "/");
         \\    print(a.port);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -596,6 +605,7 @@ test "js: import ---- disk-lib module named like the lib binds its namespace, no
         \\pub fn qlib(syntax e: string) -> i32 {
         \\    return compiler.build("99");
         \\}
+        \\
         \\import {compiler} from "std";
         },
         .{ .path = "", .source =
@@ -606,6 +616,7 @@ test "js: import ---- disk-lib module named like the lib binds its namespace, no
         \\    val b = qlib.make(5);
         \\    print(a + b);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, &.{
@@ -628,6 +639,7 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\pub fn mlib(syntax e: string) -> i32 {
         \\    return compiler.build("7");
         \\}
+        \\
         \\import {compiler} from "std";
         },
         .{ .path = "mlib/extra", .source =
@@ -641,6 +653,7 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\fn main() {
         \\    print(mlib.make(1) + mlib.twice(3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, &.{
@@ -665,6 +678,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\fn main() {
         \\    print(Leaf(v: 7).v);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
@@ -681,6 +695,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\fn main() {
         \\    print(seven());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, "tree/api", &.{"const { Leaf } = require(\"../tree/leaf.js\");"});
@@ -696,6 +711,7 @@ test "js: pipeline ---- simple chain" {
         \\        |> inc;
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -710,6 +726,7 @@ test "js: pipeline ---- with labeled args" {
         \\        |> inc;
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -746,6 +763,7 @@ test "js: negation ---- simple unary minus" {
         \\fn main() {
         \\    print(negate(42));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -758,6 +776,7 @@ test "js: negation ---- in expression" {
         \\fn main() {
         \\    print(diff(10, 3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -811,6 +830,7 @@ test "js: enum ---- an associated fn on an enum is a call, not a variant" {
         \\    val s: Shape = Shape.unit();
         \\    print(s.area());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -839,6 +859,7 @@ test "js: enum ---- a method is called on a variant value" {
         \\    print(Shape.Square(side: 4).area());
         \\    print(Shape.Circle(radius: 2).area());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -868,6 +889,7 @@ test "js: lambda ---- standalone with params" {
         \\fn main() {
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -936,6 +958,7 @@ test "js: optional chaining ---- member access short-circuits null" {
         \\    val u: ?User = User(name: "ana");
         \\    print(u?.name);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -958,6 +981,7 @@ test "js: reserved word identifiers" {
         \\fn main() {
         \\    print(delete("a", "b"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -986,6 +1010,7 @@ test "js: iterator fromList yields array items" {
         \\fn main() {
         \\    print(toList(fromList([1, 2, 3])).join(","));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1009,6 +1034,7 @@ test "js: a tuple element's optional read by the nullish default" {
         \\    val empty = firstAndRest([]);
         \\    print(empty._1 == null);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1025,6 +1051,7 @@ test "js: array slice 2-arg lowers byte-identically across backends" {
         \\    val xs = [1, 2, 3, 4, 5];
         \\    print(xs.slice(1, 4));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1041,6 +1068,7 @@ test "js: array join lowers byte-identically across backends" {
         \\fn main() {
         \\    print([10, 20, 30].join(", "));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1056,6 +1084,7 @@ test "js: array indexOf lowers byte-identically across backends" {
         \\    print([1, 2, 3, 4].indexOf(3));
         \\    print([1, 2, 3].indexOf(99));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1073,6 +1102,7 @@ test "js: array at lowers byte-identically across backends" {
         \\    print([10, 20].at(0));
         \\    print([10].at(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1094,6 +1124,7 @@ test "js: interface associated fn namespace" {
         \\    val p = Pairish.of(1, "one");
         \\    print(Pairish.first(p));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1110,6 +1141,7 @@ test "js: stdlib associated fn namespace injected" {
         \\    val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
         \\    print(inc(10));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1126,6 +1158,7 @@ test "js: array instance default-fn methods" {
         \\    print(xs.isEmpty());
         \\    print(xs.all({ x -> x > 0 }));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1150,6 +1183,7 @@ test "js: array zip via @External.Node template" {
         \\    val ys = ["a", "b", "c"];
         \\    print(xs.zip(ys));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1165,6 +1199,7 @@ test "js: bool instance default-fn methods" {
         \\    print(true.nand(true));
         \\    print(true.exclusiveOr(false));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1183,6 +1218,7 @@ test "js: numeric instance methods (external + default-fn)" {
         \\    val x = 7;
         \\    print(x.isEven());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1216,6 +1252,7 @@ test "js: `at` on an array default fn and on a string do not share a rename" {
         \\    print(xs.at(1) ?? 0);
         \\    print("abc".at(1) ?? "?");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\n4\nb\n");
 }
@@ -1233,6 +1270,7 @@ test "js: a typed array `at` beside a String default fn in use keeps its name" {
         \\    val parts = "a=1".split("=");
         \\    print(parts.at(0) ?? "");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "bc\n8\na\n");
 }
@@ -1248,6 +1286,7 @@ test "js: string at out of range is null, a negative index counts from the end" 
         \\    print(s.at(-1));
         \\    print(s.at(-3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "b\nnull\nb\nnull\n");
 }
@@ -1264,6 +1303,7 @@ test "js: string methods map to native JS names" {
         \\    print(s.split(",").join("|"));
         \\    print(s.slice(0, 5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1278,6 +1318,7 @@ test "beam template path: endsWith lowers via its @External.Erlang template" {
         \\    val s = "foobar";
         \\    print(s.endsWith("bar"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1362,6 +1403,7 @@ const imported_section_modules = [_]Module{
     \\    print(red());
     \\    print(blue());
     \\}
+    \\
     \\import {io.terminal.print} from "std";
     },
 };
@@ -1419,6 +1461,7 @@ test "js: comptime primitives ---- template body calls string and array methods"
         \\    print(s);
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1444,6 +1487,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\    print(describeUser());
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1497,6 +1541,7 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\    print(collect([1, 2, 3]).join(","));
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1550,6 +1595,7 @@ test "js: print ---- an f64 answered by a module-handle call keeps its .0" {
         \\fn main() {
         \\    print(math.abs(0.0 - 1.0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , &.{"__bp_print_as([\"f\"], math.abs("});
 }
@@ -1572,6 +1618,7 @@ test "js: print ---- an f64 out of a case payload binding keeps its .0" {
         \\        },
         \\    );
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , &.{"__bp_print_as([\"f\"], "});
 }

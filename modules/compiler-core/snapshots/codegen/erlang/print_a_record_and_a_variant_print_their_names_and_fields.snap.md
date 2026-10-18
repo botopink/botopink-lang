@@ -3,14 +3,16 @@
 type Point(x: i32, y: i32)
 type Shape { Square(side: i32), Nothing }
 fn main() {
-    @print("hi");
-    @print([1, 2]);
-    @print(#(1, "a"));
-    @print(Point(x: 1, y: 2));
-    @print(Shape.Square(side: 4));
-    @print(Shape.Nothing);
-    @print([Point(x: 1, y: 2)]);
+    print("hi");
+    print([1, 2]);
+    print(#(1, "a"));
+    print(Point(x: 1, y: 2));
+    print(Shape.Square(side: 4));
+    print(Shape.Nothing);
+    print([Point(x: 1, y: 2)]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

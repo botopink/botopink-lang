@@ -5,8 +5,10 @@ val add = { x, y ->
 };
 val result = add(10, 20);
 fn main() {
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

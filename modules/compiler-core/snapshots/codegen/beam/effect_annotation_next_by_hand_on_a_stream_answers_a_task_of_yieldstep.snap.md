@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn countdown(n: i32) -> @Stream<i32> {
+fn countdown(n: i32) -> Stream<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -14,14 +14,16 @@ fn stepText(s: YieldStep<i32>) -> string {
     };
     return t;
 }
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val s = countdown(1);
-    @print(stepText(await s.next()));
-    @print(stepText(await s.next()));
+    print(stepText(await s.next()));
+    print(stepText(await s.next()));
 }
 pub fn main() {
     run();
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

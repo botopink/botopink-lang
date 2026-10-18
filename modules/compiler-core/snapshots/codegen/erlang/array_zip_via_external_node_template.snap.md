@@ -3,8 +3,10 @@
 fn main() {
     val xs = [1, 2, 3];
     val ys = ["a", "b", "c"];
-    @print(xs.zip(ys));
+    print(xs.zip(ys));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

@@ -3,8 +3,10 @@
 val Pair = type <A, B>(first: A, second: B);
 val p = Pair(first: 42, second: "hello");
 fn main() {
-    @print(p);
+    print(p);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -50,7 +52,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(p);"
+          "source": "print(p);"
         }
       ]
     }

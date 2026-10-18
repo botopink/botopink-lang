@@ -2,9 +2,11 @@
 ```botopink
 fn main() {
     val fs = [1.5, 2.5];
-    @print(fs[0]);
-    @print(fs.at(0));
+    print(fs[0]);
+    print(fs.at(0));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

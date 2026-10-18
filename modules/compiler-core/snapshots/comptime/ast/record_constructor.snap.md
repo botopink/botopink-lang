@@ -3,8 +3,10 @@
 val Point = type(x: i32, y: i32);
 val p = Point(x: 1, y: 2);
 fn main() {
-    @print(p);
+    print(p);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -46,7 +48,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(p);"
+          "source": "print(p);"
         }
       ]
     }

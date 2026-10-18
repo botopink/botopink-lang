@@ -6,8 +6,10 @@ type D(id: i32) {
 fn main() {
     val d = D(id: 1);
     val a: string = d.get();
-    @print(a);
+    print(a);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main

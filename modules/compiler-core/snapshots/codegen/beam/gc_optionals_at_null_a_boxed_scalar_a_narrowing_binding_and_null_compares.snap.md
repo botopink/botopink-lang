@@ -19,26 +19,28 @@ fn show(o: ?i32) -> i32 {
 
 pub fn main() {
     val xs = [7, 8];
-    @print(xs.at(1));
-    @print(xs.at(5));
-    @print(first(xs));
-    @print(pick(true));
-    @print(pick(false));
-    @print(show(pick(true)));
-    @print(show(pick(false)));
+    print(xs.at(1));
+    print(xs.at(5));
+    print(first(xs));
+    print(pick(true));
+    print(pick(false));
+    print(show(pick(true)));
+    print(show(pick(false)));
     val b = Box(n: 3, s: "x");
-    @print(b);
+    print(b);
     val c = Box(n: null, s: null);
-    @print(c);
-    if (b.n) { v -> @print(v + 1); }
+    print(c);
+    if (b.n) { v -> print(v + 1); }
     val words = ["a", "b"];
-    @print(words.at(0));
-    @print(words.at(9));
-    @print(words[1] ?? "z");
-    @print(xs[0]);
-    @print(b.n == null);
-    @print(c.n == null);
+    print(words.at(0));
+    print(words.at(9));
+    print(words[1] ?? "z");
+    print(xs[0]);
+    print(b.n == null);
+    print(c.n == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -181,7 +183,7 @@ pub fn main() {
     {test, is_ge, {f, 51}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 52}}.
   {label, 51}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:31:30">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:31:29">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 52}.
     {test_heap, 2, 1}.

@@ -20,6 +20,7 @@ test "js: comptime folding ---- integer addition folds to literal" {
         \\fn main() {
         \\    print(v1);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -30,6 +31,7 @@ test "js: comptime folding ---- block with a tail value inlines result" {
         \\fn main() {
         \\    print(t);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -40,6 +42,7 @@ test "js: comptime folding ---- float multiplication folds to literal" {
         \\fn main() {
         \\    print(pi2);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -50,6 +53,7 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
         \\fn main() {
         \\    print(n);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -64,6 +68,7 @@ test "js: comptime validation ---- runtime identifier inside comptime raises err
         \\fn main() {
         \\    print(msg);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -80,6 +85,7 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
         \\fn main() {
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -98,6 +104,7 @@ test "js: comptime specialization ---- distinct string args generate specialized
         \\    print(r2);
         \\    print(r3);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -116,6 +123,7 @@ test "js: comptime specialization ---- distinct integer args generate specialize
         \\    print(triple);
         \\    print(doubleAgain);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -135,6 +143,7 @@ test "js: comptime specialization ---- same string arg reuses specialized functi
         \\    print(r1);
         \\    print(r2);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -302,6 +311,7 @@ test "js: comptime ---- block with a tail" {
         \\fn main() {
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -317,6 +327,7 @@ test "js: template end to end ---- bounded html expansion" {
         \\fn main() {
         \\    print(page);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -331,6 +342,7 @@ test "js: template end to end ---- an anyvalue answer built from text" {
         \\    print(p);
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -357,6 +369,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             \\fn main() {
             \\    print(page);
             \\}
+            \\
             \\import {io.terminal.print} from "std";
             ,
         },
@@ -390,6 +403,7 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
         \\    print(s);
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -407,6 +421,7 @@ test "js: template end to end ---- yaml model computes a labeled tuple" {
         \\    print(cfg.port + 1);
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -447,6 +462,7 @@ test "js: comptime runtime ---- a block with a call and a loop is evaluated at b
         \\    };
         \\    print(d);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -468,6 +484,7 @@ test "js: comptime runtime ---- a record holding a function reference is lifted"
         \\    print(op.run());
         \\    print(op.twice());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

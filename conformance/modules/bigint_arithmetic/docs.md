@@ -8,7 +8,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Numbers):
 > for the other integers, and `/` or `%` by zero aborts. Its literal is suffixed
 > `n` (`2n`); an unsuffixed literal is never one, and a `bigint` mixes with no
 > other number — the crossing is written: `bigint.of(n)` (an `i64`) and
-> `bigint.parse(text)` (`@Result<bigint, string>`, a decimal numeral of any
+> `bigint.parse(text)` (`Result<bigint, string>`, a decimal numeral of any
 > length) in, `toString()`, `toI64()` and `toF64()` out, each conversion aborting
 > when the value does not fit (`toI64: 9223372036854775808 does not fit i64`).
 > erlang and beam hold the VM's own integer, commonJS a `BigInt` (`.d.ts`

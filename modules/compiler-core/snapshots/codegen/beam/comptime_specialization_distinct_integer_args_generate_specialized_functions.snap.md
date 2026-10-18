@@ -8,10 +8,12 @@ fn main() {
     val double = multiply(2, 21);
     val triple = multiply(3, 21);
     val doubleAgain = multiply(2, 10);
-    @print(double);
-    @print(triple);
-    @print(doubleAgain);
+    print(double);
+    print(triple);
+    print(doubleAgain);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

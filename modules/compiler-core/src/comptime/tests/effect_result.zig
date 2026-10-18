@@ -158,6 +158,7 @@ test "a throw in a case arm of a @Result fn is the fn's error in every arm form 
         \\    }
         \\    return 0;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , .wrap_error);
     try std.testing.expectEqual(@as(usize, 6), n);

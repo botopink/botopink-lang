@@ -2,13 +2,15 @@
 ```botopink
 fn sign(n: i32) -> string {
     val r = if (n > 0) { "positive"; };
-    @print(r);
+    print(r);
     return r;
 }
 fn main() {
     sign(5);
     sign(-3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main

@@ -3,8 +3,10 @@
 fn main() {
     val t = #(10, 20);
     val #(a, b) = t;
-    @print(a + b);
+    print(a + b);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -554,7 +556,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: + on i32 at main.bp:4:14")
+  (data $__d0 "integer overflow: + on i32 at main.bp:4:13")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

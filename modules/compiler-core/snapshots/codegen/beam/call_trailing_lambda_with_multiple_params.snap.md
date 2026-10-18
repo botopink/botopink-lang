@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
-    @todo();
+    panic("not implemented");
 }
 fn main() {
     val r = calc(2) { a, b ->
         return 0;
     };
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -28,7 +30,7 @@ fn main() {
     {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"not implemented">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.

@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
 fn main() {
     val n = parseAge("42").unwrapOr(0);
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

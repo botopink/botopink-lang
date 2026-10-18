@@ -32,6 +32,7 @@ test "infer: narrow ---- if null check record field access" {
         \\fn main() {
         \\    print(greet(User(name: "alice")));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -49,6 +50,7 @@ test "infer: narrow ---- if null check bool" {
         \\fn main() {
         \\    print(and(true, true));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -69,6 +71,7 @@ test "infer: narrow ---- if null check chained" {
         \\    print(getC(Outer(b: Inner(c: 7))));
         \\    print(getC(Outer(b: null)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -91,6 +94,7 @@ test "infer: narrow ---- case result ok err" {
         \\fn main() {
         \\    print(handle(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -113,6 +117,7 @@ test "infer: narrow ---- case result different payload types" {
         \\        });
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -136,6 +141,7 @@ test "infer: narrow ---- case enum variant field bindings" {
         \\fn main() {
         \\    print(area(Shape.Circle(2.0)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -153,6 +159,7 @@ test "infer: narrow ---- case enum nested variant access" {
         \\fn main() {
         \\    print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -189,6 +196,7 @@ test "infer: narrow ---- case guard bound identifier" {
         \\fn main() {
         \\    print(describe(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -211,6 +219,7 @@ test "infer: narrow ---- case guard variant field" {
         \\    print(handle(Response.Data(200, "hi")));
         \\    print(handle(Response.Error(500)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -237,6 +246,7 @@ test "infer: narrow ---- early return guard clause" {
         \\    print(greet("world"));
         \\    print(greet(null));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -251,6 +261,7 @@ test "infer: narrow ---- type guard basic" {
         \\fn main() {
         \\    print(isPositive(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -265,6 +276,7 @@ test "infer: narrow ---- type guard narrowing in if" {
         \\    print(isString("hello"));
         \\    print(isString(null));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -289,6 +301,7 @@ test "infer: narrow ---- and condition field access" {
         \\fn main() {
         \\    print(describe(Box(weight: 20)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -318,6 +331,7 @@ test "infer: narrow ---- else if chain with null checks" {
         \\    print(classify(42));
         \\    print(classify(null));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -353,6 +367,7 @@ test "infer: narrow ---- a guard call is a bool" {
         \\    val b: bool = isPositive(5);
         \\    print(b);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -369,6 +384,7 @@ test "infer: narrow ---- a guard narrows the argument in the then-branch" {
         \\        print(s);
         \\    }
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -392,6 +408,7 @@ test "infer error: narrow ---- an unbound name in a pattern assert reds" {
         \\    val assert 42 = answer catch 0;
         \\    print("unreachable");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -403,6 +420,7 @@ test "infer error: narrow ---- a pattern assert handler is checked too" {
         \\    val assert 42 = answer catch fallback;
         \\    print(answer);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

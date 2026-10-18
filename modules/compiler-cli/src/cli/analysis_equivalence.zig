@@ -605,7 +605,7 @@ test "level B: a file a library's `@embed` reads under its `src` is in the libra
         .{ "banner/src/banner.bp", "pub fn line() -> string {\n    return @embed(\"src/line.txt\").text();\n}\n" },
         .{ "banner/src/line.txt", "first edition" },
         .{ "app/botopink.json", "{ \"name\": \"app\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"main.bp\", \"dependencies\": { \"banner\": { \"path\": \"../banner\" } } }" },
-        .{ "app/src/main.bp", "import {banner.line} from \"banner\";\n\npub fn main() {\n    @print(line());\n}\n" },
+        .{ "app/src/main.bp", "import {banner.line} from \"banner\";\nimport {io.terminal.print} from \"std\";\n\npub fn main() {\n    print(line());\n}\n" },
     };
     for (files) |f| {
         const path = try std.fs.path.join(arena, &.{ dir, f[0] });

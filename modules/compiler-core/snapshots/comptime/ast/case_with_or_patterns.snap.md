@@ -5,8 +5,10 @@ val parity = case 5 {
     _ -> "odd";
 };
 fn main() {
-    @print(parity);
+    print(parity);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -36,7 +38,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(parity);"
+          "source": "print(parity);"
         }
       ]
     }

@@ -2888,9 +2888,11 @@ fn describe(o: Order) -> string {
 }
 
 fn main() {
-    @print(collections.toInt(collections.lt()));
-    @print(describe(collections.reverse(collections.lt())));
+    print(collections.toInt(collections.lt()));
+    print(describe(collections.reverse(collections.lt())));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

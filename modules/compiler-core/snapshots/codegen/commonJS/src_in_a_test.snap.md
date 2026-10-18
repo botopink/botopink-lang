@@ -2,12 +2,14 @@
 ```botopink
 fn helper() -> i32 { return 1; }
 test "src: in a test" {
-    val loc = @src();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    val loc = comptime compiler.src;
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
 test {
-    @print(@src().fnName);
+    print(comptime compiler.src.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -99,12 +101,12 @@ function __bp_print() {
 }
 
 async function __bp_test_0() {
-    const loc = new SourceLocation("main.bp", 3, 15, "src: in a test");
+    const loc = new SourceLocation("main.bp", 3, 24, "src: in a test");
     __bp_print(loc.file, loc.line, loc.column, loc.fnName);
 }
 
 async function __bp_test_1() {
-    __bp_print(new SourceLocation("main.bp", 7, 12, "test_1").fnName);
+    __bp_print(new SourceLocation("main.bp", 7, 20, "test_1").fnName);
 }
 
 const __bp_tests = [
@@ -174,7 +176,7 @@ if (require.main === module) __bp_run_tests();
 TEST main.bp:2 src: in a test
 ----- RUN LOG -----
 ```logs
-main.bp 3 15 src: in a test
+main.bp 3 24 src: in a test
 ```
   duration <ms>ms
   ok   src: in a test

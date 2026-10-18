@@ -10,14 +10,16 @@ fn two() -> i32 {
 
 fn main() {
     val a = comptime two();
-    @print(a);
+    print(a);
     val d = comptime {
         var d = 0;
         for ([1, 2, 3]) { b -> d = add(d, b); }
         d
     };
-    @print(d);
+    print(d);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPTIME WAT -- comptime block

@@ -1,22 +1,24 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn inner(should_fail: bool) -> @Result<i32, string> {
+fn inner(should_fail: bool) -> Result<i32, string> {
     if (should_fail) {
         throw "inner-fail";
     } else {
         return 7;
     }
 }
-fn outer(should_fail: bool) -> @Result<i32, string> {
+fn outer(should_fail: bool) -> Result<i32, string> {
     val v = try inner(should_fail);
     return v + 1;
 }
 fn main() {
     val r = try outer(false) catch -1;
-    @print(r);
+    print(r);
     val r2 = try outer(true) catch -1;
-    @print(r2);
+    print(r2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

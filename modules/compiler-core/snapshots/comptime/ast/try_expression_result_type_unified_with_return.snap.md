@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch() -> @Result<i32, string> {
-    @todo();
+fn fetch() -> Result<i32, string> {
+    panic("not implemented");
 }
-fn process() -> @Result<i32, string> {
+fn process() -> Result<i32, string> {
     val r = try fetch();
     return r;
 }
 val x = process();
+
+import {failure.panic} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -22,7 +24,7 @@ val x = process();
       "return_type": "Result<i32,string>",
       "body": [
         {
-          "source": "@todo();"
+          "source": "panic(\"not implemented\");"
         }
       ]
     },

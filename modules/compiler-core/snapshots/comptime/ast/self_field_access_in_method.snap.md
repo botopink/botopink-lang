@@ -8,8 +8,10 @@ type Point(
     }
 }
 fn main() {
-    @print(Point(x: 1, y: 2).sum());
+    print(Point(x: 1, y: 2).sum());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -44,7 +46,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(Point(x: 1, y: 2).sum());"
+          "source": "print(Point(x: 1, y: 2).sum());"
         }
       ]
     }

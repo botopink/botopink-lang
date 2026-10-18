@@ -22,7 +22,6 @@ stdlib/
 |---|---|---|
 | `primitives` | `primitives.bp` | `registerStdlib` — flattened into the global env, but for its private bodied fns (the wasm bodies of 164 s3, decision 565), inferred and then taken out (`hidePreludeBodies`) |
 | `builtins` | `builtins.d.bp` | `registerBuiltinDecls` → `env.builtinDecls` (its builtin fns only — the types stay the documented surface); `comptime/builtins.zig`'s tests (the calls, `@Result`'s methods, and every type `comptime.zig` `builtin_type_mirrors` registers) |
-| `builtin_fns` | `builtins_fns.d.bp` | `registerStdlib` → `env.stdlibFnDecls`; `registerBuiltinDecls` → `env.builtinDecls`; `comptime/builtins.zig`'s tests |
 | `pkg_modules` | generated `std_pkg` module | `comptime.zig std_pkg_modules` — the `import {…} from "std"` registry |
 
 ## Wiring
@@ -30,7 +29,7 @@ stdlib/
 - `build.zig` declares `std_prelude` with `prelude.zig` as root and exposes each
   embedded file as an **anonymous import** (the sources sit outside the module
   root, so a relative `@embedFile` would be rejected): `std_core_files`
-  (primitives / builtins / builtins_fns).
+  (primitives / external / builtins). `print` and `panic` are std modules' (`io/terminal.bp`, `failure.bp`, decision 606 (2)), read through `comptime/std_calls.zig` `declarations` / `declarationsText`.
 - The "std" package modules are derived from `libs/std/src/root.bp` (one
   `pub mod <name>;` per module, read by `stdPkgFilesFromRoot` in the workspace
   root `build.zig`), which generates `std_pkg_modules.zig`

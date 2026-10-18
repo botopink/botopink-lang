@@ -18,7 +18,7 @@
             "args": [
               ".Erlang(\"string:slice($0, $1, $2)\")"
             ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
@@ -78,6 +78,27 @@
         },
         "typeGuardParam": null,
         "body": []
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

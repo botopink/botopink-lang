@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn two() -> @Iterator<i32> {
+fn two() -> Iterator<i32> {
     yield 1;
     yield 2;
 }
@@ -13,10 +13,12 @@ fn stepText(s: YieldStep<i32>) -> string {
 }
 pub fn main() {
     val it = two();
-    @print(stepText(it.next()));
-    @print(stepText(it.next()));
-    @print(stepText(it.next()));
+    print(stepText(it.next()));
+    print(stepText(it.next()));
+    print(stepText(it.next()));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

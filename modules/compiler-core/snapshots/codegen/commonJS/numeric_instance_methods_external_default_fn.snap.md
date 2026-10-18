@@ -2,13 +2,15 @@
 ```botopink
 fn main() {
     val n = -5;
-    @print(n.abs());
-    @print(n.min(3));
-    @print(n.max(10));
-    @print(n.clamp(0, 5));
+    print(n.abs());
+    print(n.min(3));
+    print(n.max(10));
+    print(n.clamp(0, 5));
     val x = 7;
-    @print(x.isEven());
+    print(x.isEven());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

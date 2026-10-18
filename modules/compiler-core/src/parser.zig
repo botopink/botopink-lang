@@ -76,8 +76,15 @@ pub const ParseErrorType = enum {
     uselessSpread,
     /// Removed error union syntax `T!E` (use `@Result<D, E>` instead)
     removedErrorUnion,
-    /// Removed builtin type syntax `@Result(D, E)` (use `@Result<D, E>` instead)
+    /// Removed builtin type syntax `@Result(D, E)` (use `Result<D, E>` instead)
     removedBuiltinType,
+    /// Decision 606 (1) — a prelude type written with `@` (`@Result<…>`): the
+    /// prelude's names are written bare. Located at the `@name`.
+    preludeNameWithSigil,
+    /// Decision 606 (2), (3) — a call written `@print(…)`, `@panic(…)`,
+    /// `@typeInfo(…)`, …, or the annotation `#[@external(…)]`: no `@name`
+    /// is left. Located at the `@name`.
+    builtinNameRemoved,
     /// Malformed `${…}` string interpolation (unterminated or invalid expression)
     badInterpolation,
     /// Meta-kind parameter (`type` / `expr T`) without the `comptime` modifier
@@ -464,6 +471,13 @@ pub const Parser = struct {
     /// `compiler.*`, a bare read of a `comptime` parameter and a template's
     /// `return e` back as they were written.
     keep_surface: bool = false,
+    /// Decision 606 — refuse the spellings no source writes any more
+    /// (`@print(…)`, `@Result<…>`, `#[@external(…)]`: `builtinNameRemoved`,
+    /// `preludeNameWithSigil`). Set where a module's own source is parsed
+    /// (`comptime.zig` `analyzeSource`); the compiler's own re-parses of
+    /// text it rendered (a decorator's member, a template's expansion) read
+    /// its internal builtins as before.
+    refuse_removed_builtins: bool = false,
     /// Decision 316 — set while the type argument of `@Decl<…>` is parsed:
     /// `fn(..) -> R` (a function of any parameters) is a pattern written there
     /// alone (`anyParamsOutsideDecl` anywhere else).
@@ -1580,6 +1594,11 @@ pub const Parser = struct {
             is_builtin = true;
             name_start = this.advance();
             name_end = name_start;
+            // Decision 606 (4) — the source annotation is `#[compiler.external(…)]`.
+            if (this.refuse_removed_builtins and std.mem.eql(u8, name_start.lexeme, "@external")) {
+                this.parseError = ParseErrorInfo.fromToken(.builtinNameRemoved, name_start);
+                return ParseError.UnexpectedToken;
+            }
         } else {
             const nameTok = this.peek();
             if (nameTok.kind != .identifier and !isReservedWord(nameTok.kind)) return ParseError.UnexpectedToken;
@@ -1590,7 +1609,7 @@ pub const Parser = struct {
             _ = this.advance(); // `.`
             name_end = this.advance(); // ident
         }
-        const name: []const u8 = blk: {
+        const written_name: []const u8 = blk: {
             const skip: usize = if (is_builtin) 1 else 0; // strip leading `@`
             if (name_end.lexeme.ptr == name_start.lexeme.ptr) {
                 break :blk name_start.lexeme[skip..];
@@ -1599,6 +1618,13 @@ pub const Parser = struct {
             const end = @intFromPtr(name_end.lexeme.ptr) + name_end.lexeme.len;
             break :blk @as([*]const u8, @ptrFromInt(begin))[0 .. end - begin];
         };
+        // Decision 606 (4) — `#[compiler.external(…)]` is the source annotation:
+        // the checker reads it as std's `external` (`external.bp`), its sources
+        // typed as that decorator's; the formatter keeps it as written.
+        const name: []const u8 = if (!this.keep_surface and std.mem.eql(u8, written_name, @import("parser/implementations.zig").member_annotation_name))
+            @import("parser/implementations.zig").annotation_name
+        else
+            written_name;
 
         // Decision 311 — `#[f "…"]` / `#[f """…"""]`: the template call
         // `f "…"` written as an annotation. The literal is kept as written (a

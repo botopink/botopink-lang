@@ -1,4 +1,5 @@
-//! The embedded `primitives.bp` and `builtins.d.bp` preludes, parsed once for
+//! The embedded `primitives.bp` and `builtins.d.bp` preludes (the latter with std's
+//! `print` and `panic`), parsed once for
 //! the life of the process — what the emitters read a `default fn`'s helpers
 //! from (`stringSlice0`'s declared return, its `.Wasm(…)` cell) and the
 //! prelude's declarations' implementations (`ast.Implementation`, decision
@@ -52,7 +53,9 @@ pub fn primitives() ?ast.Program {
     return primitives_program;
 }
 
-/// The parsed `builtins.d.bp` (`@print`'s implementations), or null when it
+/// The parsed `builtins.d.bp`, with std's `print` and `panic` as their modules
+/// write them (`io/terminal.bp`, `failure.bp`, decision 606 (2)) — the
+/// implementations the backends dispatch those calls by —, or null when it
 /// does not parse.
 pub fn builtins() ?ast.Program {
     lock();
@@ -60,10 +63,19 @@ pub fn builtins() ?ast.Program {
     if (builtins_tried) return builtins_program;
     builtins_tried = true;
     const a = arena.allocator();
-    var lx = lexerMod.Lexer.init(prelude.builtins);
+    const fns = (@import("../comptime/std_calls.zig").declarationsText(a) catch return null) orelse return null;
+    const text = std.mem.concat(a, u8, &.{ prelude.builtins, "\n", fns }) catch return null;
+    var lx = lexerMod.Lexer.init(text);
     const tokens = lx.scanAll(a) catch return null;
     var p = parserMod.Parser.init(tokens);
-    builtins_program = p.parse(a) catch null;
+    const parsed = p.parse(a) catch return null;
+    // `panic` keeps the backends' own per-arity dispatch (its default).
+    var kept: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    for (parsed.decls) |d| {
+        if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, "panic")) continue;
+        kept.append(a, d) catch return null;
+    }
+    builtins_program = .{ .decls = kept.items };
     return builtins_program;
 }
 

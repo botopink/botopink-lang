@@ -1,21 +1,23 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type DbError(msg: string)
-fn inner() -> @Result<i32, DbError> {
+fn inner() -> Result<i32, DbError> {
     throw DbError(msg: "conn refused");
 }
-fn outer() -> @Result<i32, DbError> {
+fn outer() -> Result<i32, DbError> {
     throw DbError(msg: "timeout");
 }
 fn process() -> i32 {
     val a = try inner() catch 0;
     val b = try outer() catch a;
-    @print(a, b);
+    print(a, b);
     return a + b;
 }
 fn main() {
-    @print(process());
+    print(process());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

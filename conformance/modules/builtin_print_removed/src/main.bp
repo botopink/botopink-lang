@@ -1,0 +1,6 @@
+//// Decision 606 — no `@name` is left: `@print(…)` names no builtin. `print` is std's
+//// `io.terminal.print`, imported where it is used.
+
+pub fn main() {
+    @print("hello");
+}

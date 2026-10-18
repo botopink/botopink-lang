@@ -1,23 +1,25 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn failing() -> @Result<void, string> {
+fn failing() -> Result<void, string> {
     throw "boom";
 }
-fn passing() -> @Result<void, string> {
+fn passing() -> Result<void, string> {
     return;
 }
 test "t: fails" {
     try failing();
-    @print("not reached");
+    print("not reached");
 }
 test "t: passes" {
     try passing();
-    @print("reached");
+    print("reached");
 }
 test "t: a lambda's try is its own" {
-    val f: fn() -> @Result<i32, string> = { -> try failing(); return 0; };
-    @print("still here");
+    val f: fn() -> Result<i32, string> = { -> try failing(); return 0; };
+    print("still here");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

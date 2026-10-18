@@ -2,12 +2,14 @@
 ```botopink
 fn countdown(n: i32) {
     for (0..n) { i ->
-        @print(n - i);
+        print(n - i);
     };
 }
 fn main() {
     countdown(3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -550,7 +552,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:3:18")
+  (data $__d0 "integer overflow: - on i32 at main.bp:3:17")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

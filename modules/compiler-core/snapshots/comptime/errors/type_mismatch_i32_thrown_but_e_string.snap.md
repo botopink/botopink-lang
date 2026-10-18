@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     throw 404;
 }
 

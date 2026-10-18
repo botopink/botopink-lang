@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn load() -> @Task<i32> { return 1; }
+fn load() -> Task<i32> { return 1; }
 val it = load();
 val first = it.
                ↑

@@ -42,10 +42,12 @@ import {http.Response, http.App};
 
 fn main() {
     val r = Response.ok("hi");
-    @print(r.body);
+    print(r.body);
     val a = App(8080, "/");
-    @print(a.port);
+    print(a.port);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

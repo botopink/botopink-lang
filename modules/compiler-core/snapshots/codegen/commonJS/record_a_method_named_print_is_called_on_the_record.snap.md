@@ -10,8 +10,10 @@ type Doc(
 
 fn main() {
     val d = Doc(title: "hi");
-    @print(d.print());
+    print(d.print());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

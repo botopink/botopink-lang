@@ -27,6 +27,7 @@ test "js: record implement ---- fields round-trip at runtime" {
         \\fn main() {
         \\    print(mk().n);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -74,6 +75,7 @@ test "js: record ---- method with todo placeholder" {
         \\        return panic("not implemented");
         \\    }
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -152,6 +154,7 @@ test "js: tuple ---- a labeled element of function type is called like a method"
         \\    val c = mk();
         \\    print(c.set(9));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -212,6 +215,7 @@ test "js: record ---- a method named print is called on the record" {
         \\    val d = Doc(title: "hi");
         \\    print(d.print());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -228,6 +232,7 @@ test "js: tuple ---- chained positional access and a method on an element" {
         \\    val p = #(7, "x");
         \\    print(p.0.toString());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -247,6 +252,7 @@ test "js: tuple ---- a bare digit index and optional chaining over a found pair"
         \\    print(lookup(pairs, "b"));
         \\    print(lookup(pairs, "z") == null);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -282,6 +288,7 @@ test "js: interface literal ---- basic" {
         \\    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
         \\    print(decl.name);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -295,6 +302,7 @@ test "js: interface literal ---- with fields" {
         \\    val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
         \\    print(at.line);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -329,6 +337,7 @@ test "js: tuple ---- labels resolve to positions on every backend" {
         \\    val typed: #(x: i32, y: i32) = #(1, 2);
         \\    print(typed.y);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -361,6 +370,7 @@ test "js: surface ---- type and behavior compile like record, enum and interface
         \\    print(sq.area());
         \\    print(weight(Size.Large(n: 5)) + weight(Size.Small));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -396,6 +406,7 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
         \\  val t = #(1, "a");
         \\  print(t[0]);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "10\n30\nb\n1\n", &.{ "lists:nth(__J + 1, __L)", "element(1, T)" });
 }
@@ -407,6 +418,7 @@ test "erlang: index ---- out of range answers null, not an error" {
     // printed the atom `undefined` before 00 · 02-erlang).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() { val xs = [10, 20]; print(xs[5]); }
+        \\
         \\import {io.terminal.print} from "std";
     , "null\n", &.{});
 }
@@ -424,6 +436,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
         \\  val s = "abcd";
         \\  print(s[1..3]);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "[10, 20]\n[20, 30]\nbc\n", &.{ "array_slice(Xs, 0, 2)", "array_slice(Xs, 1, undefined)" });
 }
@@ -458,6 +471,7 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         \\    print(xs[i + 1]);
         \\    print([[1, 2], [3, 4]][1]?.[0] ?? 0);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -467,10 +481,10 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         "__bp_print((s.at(1) ?? null));",
         "__bp_print(s.slice(1, 3));",
         "__bp_print(t[0]);",
-        "__bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, \"+ on i32 at main.bp:12:17\")));",
+        "__bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, \"+ on i32 at main.bp:12:16\")));",
         // `xs[k]` answers `?T`, so a second index reads through `?.[k]`
         // (decision 330): the `if` over the first, the second inside it.
-        "const __bp_opt_13_31 = __bp_array_at([[1, 2], [3, 4]], 1); if (__bp_opt_13_31 != null) { return __bp_array_at(__bp_opt_13_31, 0); } else { return null; }",
+        "const __bp_opt_13_30 = __bp_array_at([[1, 2], [3, 4]], 1); if (__bp_opt_13_30 != null) { return __bp_array_at(__bp_opt_13_30, 0); } else { return null; }",
     });
     // An open-ended range is `.slice(start, null)` here and the lazy
     // `__bp_range_from` generator everywhere else, so the helper is not pulled
@@ -510,6 +524,7 @@ test "js: destructure ---- a constructor in binding position is a plain destruct
         \\    print(t + "!");
         \\    print(w);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -551,6 +566,7 @@ test "wasm: destructure ---- a nested constructor in binding position binds off 
         \\    print(q);
         \\    print(k + "!");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src,
@@ -580,6 +596,7 @@ test "js: call ---- the result of a call is called (curried)" {
         \\    val g = greeter("c");
         \\    print(g("d") + "!");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"__bp_print(adder(3)(4));"});
@@ -608,6 +625,7 @@ test "js: behavior literal ---- a method taking self is called on the literal" {
         \\    val g = @Greeter(greet: { self, who -> "hi " + who });
         \\    print(g.greet("bo"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"greet(who) {"});
@@ -632,6 +650,7 @@ test "wasm: a string in a generic declaration's type-parameter field prints as t
         \\    print(Box(value: "b", n: 2));
         \\    print(Box(value: 3, n: 4));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src, "Tree.Leaf(value: \"a\")\nTree.Leaf(value: 7)\nBox(value: \"b\", n: 2)\nBox(value: 3, n: 4)\n");
@@ -662,6 +681,7 @@ test "wasm: a record out of try await keeps its string field a string" {
         \\    val r = await viaBlock();
         \\    print(r.unwrapOr("none"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertWasmRunLog(std.testing.allocator, src, "Hguest\nBana\n");
@@ -690,6 +710,7 @@ const print_result_src =
     \\    print([check(1), check(-2)]);
     \\    print(Report(label: "a", outcome: check(5)));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 const print_result_log =

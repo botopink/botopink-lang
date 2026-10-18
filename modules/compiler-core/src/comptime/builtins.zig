@@ -1,6 +1,6 @@
 //! Decision 252 — the compiler's table of every builtin a program can call as
-//! `@name(…)`, held to its declaration in `libs/std/src/builtins.d.bp` (or
-//! `builtins_fns.d.bp`).
+//! `@name(…)`, held to its declaration in `libs/std/src/builtins.d.bp` (`print`
+//! and `panic` to theirs in `io/terminal.bp` and `failure.bp`, decision 606 (2)).
 //!
 //! Each row is one builtin the checker or a backend implements, with the
 //! signature the declaration spells (`signature`, in `renderSignature`'s
@@ -44,10 +44,7 @@ pub const Builtin = struct {
 pub const table = [_]Builtin{
     // ── run time ──
     .{ .name = "print", .signature = "print(..values: unknown[])", .held = .declaration },
-    .{ .name = "println", .signature = "println(..values: unknown[])", .held = .declaration },
-    .{ .name = "debug", .signature = "debug(..values: unknown[])", .held = .declaration },
     .{ .name = "panic", .signature = "panic(message: string = \"panic\") -> noreturn", .held = .declaration },
-    .{ .name = "todo", .signature = "todo(message: string = \"not implemented\") -> noreturn", .held = .declaration },
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
     // ── build (decision 519: a `Build` builtin, computed where written) ──
@@ -411,10 +408,15 @@ fn printDrift(items: []const Drift) void {
 
 const prelude = @import("std_prelude");
 
+/// std's `print` and `panic` as written in their modules (decision 606 (2)).
+fn stdFns(a: std.mem.Allocator) ![]const u8 {
+    return (try @import("std_calls.zig").declarationsText(a)) orelse error.StdDeclarationMissing;
+}
+
 test "builtins: every implemented builtin is declared, every declaration implemented, signatures equal" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const items = try drift(arena.allocator(), &.{ prelude.builtins, prelude.builtin_fns });
+    const items = try drift(arena.allocator(), &.{ prelude.builtins, try stdFns(arena.allocator()) });
     printDrift(items);
     try std.testing.expectEqual(@as(usize, 0), items.len);
 }
@@ -424,7 +426,7 @@ test "builtins: a removed declaration is named as undeclared" {
     defer arena.deinit();
     const a = arena.allocator();
     const removed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub declare fn trap() -> noreturn;", "");
-    const items = try drift(a, &.{ removed, prelude.builtin_fns });
+    const items = try drift(a, &.{ removed, try stdFns(a) });
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("trap", items[0].undeclared);
 }
@@ -434,7 +436,7 @@ test "builtins: a changed signature is named with both spellings" {
     defer arena.deinit();
     const a = arena.allocator();
     const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub declare fn emit(source: string);", "pub declare fn emit(source: string, again: bool);");
-    const items = try drift(a, &.{ changed, prelude.builtin_fns });
+    const items = try drift(a, &.{ changed, try stdFns(a) });
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("emit", items[0].signature.name);
     try std.testing.expectEqualStrings("emit(source: string, again: bool)", items[0].signature.declared);
@@ -445,7 +447,7 @@ test "builtins: a declaration the compiler does not implement is named" {
     defer arena.deinit();
     const a = arena.allocator();
     const extra = try std.mem.concat(a, u8, &.{ prelude.builtins, "\npub declare fn frobnicate() -> i32;\n" });
-    const items = try drift(a, &.{ extra, prelude.builtin_fns });
+    const items = try drift(a, &.{ extra, try stdFns(a) });
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("frobnicate", items[0].unimplemented);
 }
@@ -455,7 +457,7 @@ const type_mirrors = @import("../comptime.zig").builtin_type_mirrors;
 test "builtins: every type the compiler mirrors is declared alike, every builtin method declared" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const items = try typeDrift(arena.allocator(), &.{ prelude.builtins, prelude.builtin_fns }, &type_mirrors);
+    const items = try typeDrift(arena.allocator(), &.{ prelude.builtins, try stdFns(arena.allocator()) }, &type_mirrors);
     printTypeDrift(items);
     try std.testing.expectEqual(@as(usize, 0), items.len);
 }
@@ -465,7 +467,7 @@ test "builtins: a mirrored field the declaration lacks is named" {
     defer arena.deinit();
     const a = arena.allocator();
     const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "    fnName: string,\n)", "    fnName: string,\n    offset: i32,\n)");
-    const items = try typeDrift(a, &.{ changed, prelude.builtin_fns }, &type_mirrors);
+    const items = try typeDrift(a, &.{ changed, try stdFns(a) }, &type_mirrors);
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("SourceLocation", items[0].member.type_name);
     try std.testing.expectEqualStrings("offset: i32", items[0].member.member);
@@ -479,7 +481,7 @@ test "builtins: a mirror spelled under another name than its declaration is name
     // The reflection record a handle's `annotations` hold was mirrored as
     // `Annotation` while `builtins.d.bp` declares `__Decl__Annotation` (`compiler.DeclAnnotation`, decision 576 (13)).
     const renamed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub type __Decl__Annotation(", "pub type ReflectedAnnotation(");
-    const items = try typeDrift(a, &.{ renamed, prelude.builtin_fns }, &type_mirrors);
+    const items = try typeDrift(a, &.{ renamed, try stdFns(a) }, &type_mirrors);
     var undeclared: usize = 0;
     for (items) |item| if (item == .undeclared) {
         try std.testing.expectEqualStrings("__Decl__Annotation", item.undeclared);
@@ -493,16 +495,16 @@ test "builtins: a builtin method declared with another signature, or not at all,
     defer arena.deinit();
     const a = arena.allocator();
     const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isOk(self: Self<R, E>) -> bool;", "declare fn isOk(self: Self<R, E>) -> i32;");
-    const items = try typeDrift(a, &.{ changed, prelude.builtin_fns }, &type_mirrors);
+    const items = try typeDrift(a, &.{ changed, try stdFns(a) }, &type_mirrors);
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("isOk", items[0].method.name);
     try std.testing.expectEqualStrings("isOk(self: Self<R, E>) -> i32", items[0].method.declared.?);
     const removed = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isError(self: Self<R, E>) -> bool;", "");
-    const gone = try typeDrift(a, &.{ removed, prelude.builtin_fns }, &type_mirrors);
+    const gone = try typeDrift(a, &.{ removed, try stdFns(a) }, &type_mirrors);
     try std.testing.expectEqual(@as(usize, 1), gone.len);
     try std.testing.expect(gone[0].method.declared == null);
     const extra = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isError(self: Self<R, E>) -> bool;", "declare fn isError(self: Self<R, E>) -> bool;\n    declare fn swap(self: Self<R, E>) -> Result<E, R>;");
-    const more = try typeDrift(a, &.{ extra, prelude.builtin_fns }, &type_mirrors);
+    const more = try typeDrift(a, &.{ extra, try stdFns(a) }, &type_mirrors);
     try std.testing.expectEqual(@as(usize, 1), more.len);
     try std.testing.expectEqualStrings("swap", more[0].method.name);
     try std.testing.expect(more[0].method.table == null);

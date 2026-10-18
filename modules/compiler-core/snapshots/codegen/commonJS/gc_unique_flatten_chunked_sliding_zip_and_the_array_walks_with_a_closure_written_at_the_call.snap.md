@@ -2,18 +2,20 @@
 ```botopink
 pub fn main() {
     val xs = [3, 1, 3, 2, 1];
-    @print(xs.unique());
-    @print(["a", "b", "a"].unique());
-    @print([[1, 2], [3]].flatten());
-    @print(xs.chunked(2));
-    @print(xs.sliding(3));
-    @print(xs.map({ x -> x * 2 }));
-    @print(xs.filter({ x -> x > 1 }));
-    @print(xs.fold(0, { acc, x -> acc + x }));
-    @print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
-    @print(["a", "bb"].map({ s -> s.length() }));
-    @print(xs.zip(["a", "b"]));
+    print(xs.unique());
+    print(["a", "b", "a"].unique());
+    print([[1, 2], [3]].flatten());
+    print(xs.chunked(2));
+    print(xs.sliding(3));
+    print(xs.map({ x -> x * 2 }));
+    print(xs.filter({ x -> x > 1 }));
+    print(xs.fold(0, { acc, x -> acc + x }));
+    print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
+    print(["a", "bb"].map({ s -> s.length() }));
+    print(xs.zip(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -278,13 +280,13 @@ function main() {
     __bp_print(xs.chunked(2));
     __bp_print(xs.sliding(3));
     __bp_print(xs.map((x) => {
-    return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:8:28");
+    return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:8:27");
 }));
     __bp_print(xs.filter((x) => {
     return (x > 1);
 }));
     __bp_print(xs.fold(0, (acc, x) => {
-    return __bp_int((acc + x), -2147483648, 2147483647, "+ on i32 at main.bp:10:39");
+    return __bp_int((acc + x), -2147483648, 2147483647, "+ on i32 at main.bp:10:38");
 }));
     __bp_print(xs.any((x) => {
     return (x === 2);

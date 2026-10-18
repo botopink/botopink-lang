@@ -299,7 +299,7 @@ Every abort this backend raises carries a non-enumerable own property `__bp_pani
 `failure.attempt` / `attemptTask` tell a program's own abort (kind `panic`) from a host raise
 (kind `host`) without wrapping any call: `@panic` / `@todo` (and so `x!`, which the checker
 desugars to `@panic`) throw `Object.defineProperty(new Error(m), '__bp_panic', { value: true })`
-(`registerInlineBuiltinDispatch`, the `@todo` / `@panic` fallback, `builtins_fns.d.bp`'s Node
+(`registerInlineBuiltinDispatch`, the `@todo` / `@panic` fallback, `failure.bp`'s `panic` Node
 templates — one text); `__bp_int`, `__bp_wnorm`, the 64-bit and `bigint` divisions mark their
 throw the same way; `__bp_assert_fatal` marks it with the message alone (its `message` adds
 ` at <file:line>`), which `attempt` answers as the `Failure`'s message. A test body's

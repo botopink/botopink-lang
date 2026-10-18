@@ -4,8 +4,8 @@ The reference text this cell shows (from `conformance/docs.md`, § Builtins):
 
 > | Builtin | Declaration | Held at the call by |
 > |---|---|---|
-> | `@print` / `@println` / `@debug` | `print(..values: unknown[])` (each alike) — any number of arguments (§ A variadic parameter) | the declaration |
-> | `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
+> | `print` / `print` / `print` | `print(..values: unknown[])` (each alike) — any number of arguments (§ A variadic parameter) | the declaration |
+> | `panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
 > | `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
 > | `@trap` | `trap() -> noreturn` | the declaration |
 > | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |

@@ -11,9 +11,11 @@ fn getC(o: ?Outer) -> i32 {
     return 0;
 }
 fn main() {
-    @print(getC(Outer(b: Inner(c: 7))));
-    @print(getC(Outer(b: null)));
+    print(getC(Outer(b: Inner(c: 7))));
+    print(getC(Outer(b: null)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -62,10 +64,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(getC(Outer(b: Inner(c: 7))));"
+          "source": "print(getC(Outer(b: Inner(c: 7))));"
         },
         {
-          "source": "@print(getC(Outer(b: null)));"
+          "source": "print(getC(Outer(b: null)));"
         }
       ]
     }

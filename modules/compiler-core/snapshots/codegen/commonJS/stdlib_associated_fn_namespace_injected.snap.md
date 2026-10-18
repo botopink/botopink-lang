@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val p = Pair.of(1, "one");
-    @print(Pair.first(p));
-    @print(Function.identity(42));
+    print(Pair.first(p));
+    print(Function.identity(42));
     val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
-    @print(inc(10));
+    print(inc(10));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

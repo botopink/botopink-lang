@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val xs: i32[] = [];
-    @print(xs.len);
+    print(xs.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

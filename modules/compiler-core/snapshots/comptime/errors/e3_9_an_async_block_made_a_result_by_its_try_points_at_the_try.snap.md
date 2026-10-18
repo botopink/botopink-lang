@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     return 1;
 }
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val t = async {
         val n = try parse("7");
         return n + 1;

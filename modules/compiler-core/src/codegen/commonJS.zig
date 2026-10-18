@@ -2120,7 +2120,7 @@ const Emitter = struct {
     }
 
     /// Hand-rolls the `panic` / `todo` dispatch entries, one template per
-    /// argument count — `panic`/`todo` live in `builtins_fns.d.bp`, which the
+    /// argument count — `panic`/`todo` live in `failure.bp`'s `panic`, which the
     /// prelude scan does not read, and the dispatch needs these two callees
     /// registered to lower `@panic(…)` / `@todo(…)`.
     fn registerInlineBuiltinDispatch(self: *Emitter) !void {

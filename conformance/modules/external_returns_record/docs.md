@@ -9,5 +9,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Host bindings
 > type decides which record the answer becomes: a plain object or map is adopted
 > into the record the declaration names, field by declared name, and an answer
 > that already carries its type is left exactly as it is. The same holds one
-> container deep — `?T`, `T[]`, `@Result<T, E>` and `@Task<T>` are looked
+> container deep — `?T`, `T[]`, `Result<T, E>` and `Task<T>` are looked
 > through — and no deeper.

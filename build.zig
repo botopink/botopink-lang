@@ -844,7 +844,6 @@ fn stdPreludeModule(
         "primitives.bp",
         "external.bp",
         "builtins.d.bp",
-        "builtins_fns.d.bp",
     };
     for (std_core_files) |f| {
         std_prelude.addAnonymousImport(f, .{

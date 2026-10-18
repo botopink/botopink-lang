@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val top = @src();
+val top = comptime compiler.src;
 fn main() {
-    @print(top.file, top.line, top.column);
-    @print(top.fnName == "");
+    print(top.file, top.line, top.column);
+    print(top.fnName == "");
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -29,7 +31,7 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {test_heap, 6, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 1}, {integer, 11}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 1}, {integer, 20}, {x, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, {test@main, top}}, {x, 0}}.
@@ -459,6 +461,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-main.bp 1 11
+main.bp 1 20
 true
 ```

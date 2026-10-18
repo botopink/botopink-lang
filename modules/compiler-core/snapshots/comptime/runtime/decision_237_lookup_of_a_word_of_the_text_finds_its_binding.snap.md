@@ -17,6 +17,7 @@ pub fn ui(syntax q: string) -> string {
     };
 }
 val s = ui @`<Card title="x"><Badge/></Card>`;
+
 import {compiler} from "std";
 ```
 

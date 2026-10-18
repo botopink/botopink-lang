@@ -2,12 +2,14 @@
 ```botopink
 fn countdown(n: i32) {
     for (0..n) { i ->
-        @print(n - i);
+        print(n - i);
     };
 }
 fn main() {
     countdown(3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -73,7 +75,7 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 
 function countdown(n) {
     for (const i of Array.from({length: Math.max(0, (n) - (0))}, (_, __i) => (0) + __i)) {
-    __bp_print(__bp_int((n - i), -2147483648, 2147483647, "- on i32 at main.bp:3:18"));
+    __bp_print(__bp_int((n - i), -2147483648, 2147483647, "- on i32 at main.bp:3:17"));
 }
 }
 

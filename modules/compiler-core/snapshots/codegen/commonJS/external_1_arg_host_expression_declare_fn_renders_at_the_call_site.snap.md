@@ -4,8 +4,10 @@
 declare fn pid() -> i32;
 
 fn main() {
-    @print(pid() > 0);
+    print(pid() > 0);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

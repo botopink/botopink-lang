@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> @Iterator<i32> {
+fn nums() -> Iterator<i32> {
     yield 1;
     throw "no";
 }

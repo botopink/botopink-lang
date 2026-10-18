@@ -151,6 +151,7 @@ test "diagnostics: a misused #[@external(…)] source surfaces a typeError diagn
     var c = try h.compile(gpa,
         \\#[compiler.external(.Erlang())]
         \\pub declare fn length(s: string) -> i32;
+        \\
         \\import {compiler} from "std";
     );
     defer c.deinit(gpa);
@@ -181,6 +182,7 @@ test "diagnostics: a checker warning surfaces with severity Warning" {
         \\    var out = [];
         \\    print("x");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     var result = try engine.diagnose(gpa, std.testing.io, h.TEST_URI, source, null, &.{});
@@ -205,6 +207,7 @@ test "diagnostics: from naming a module of this package is module-import-with-fr
         \\pub fn main() {
         \\    print(area(2));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const package = [_]engine.ModuleSource{
@@ -228,6 +231,7 @@ test "diagnostics: from naming an undeclared package is an unresolved import sou
         \\pub fn main() {
         \\    print(start() + greet());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &.{}, "/proj/src", &.{"starter"}, "");
@@ -247,6 +251,7 @@ test "diagnostics: from naming this package itself is module-import-with-from" {
         \\pub fn main() {
         \\    print(area(2));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const package = [_]engine.ModuleSource{

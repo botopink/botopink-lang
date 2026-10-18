@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn notImplemented() {
-    @todo("implement this function");
+    panic("implement this function");
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -11,7 +13,7 @@ fn notImplemented() {
 -export(['__bp_priv__notImplemented'/0]).
 
 notImplemented() ->
-    erlang:error({todo, <<"implement this function">>}).
+    erlang:error({panic, <<"implement this function">>}).
 
 '__bp_priv__notImplemented'() -> notImplemented().
 ```

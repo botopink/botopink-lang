@@ -11,9 +11,11 @@ fn average(xs: Array<f64>) -> f64 {
 }
 fn main() {
     val cat = { x, y -> x + y };
-    @print(cat("ab", "cd"));
-    @print(average([2.0, 4.0, 9.0]));
+    print(cat("ab", "cd"));
+    print(average([2.0, 4.0, 9.0]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

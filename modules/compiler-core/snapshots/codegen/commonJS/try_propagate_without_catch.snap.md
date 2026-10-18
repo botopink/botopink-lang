@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch() -> @Result<i32, string> {
-    @todo();
+fn fetch() -> Result<i32, string> {
+    panic("not implemented");
 }
-fn process() -> @Result<i32, string> {
+fn process() -> Result<i32, string> {
     val r = try fetch();
-    @print(r);
+    print(r);
     return r;
 }
+
+import {io.terminal.print, failure.panic} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

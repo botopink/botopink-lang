@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("aB".toUpper());
-    @print("aB".toLower());
+    print("aB".toUpper());
+    print("aB".toLower());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

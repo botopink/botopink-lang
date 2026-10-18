@@ -18,15 +18,6 @@ pub const primitives = @embedFile("primitives.bp");
 pub const external = @embedFile("external.bp");
 pub const builtins = @embedFile("builtins.d.bp");
 
-/// `builtins_fns.d.bp` carries the parseable fn-decl slice of `builtins.d.bp`
-/// (todo / panic / trap / emit / module / field) so
-/// `registerStdlib` can install them in the global env. Splitting them out
-/// keeps the synthetic-interface declarations (Result / Future / Generator /
-/// ResultGenerator / FutureGenerator / Context) in `builtins.d.bp` doc-only — those
-/// types are pre-registered by `Env.registerBuiltins`, so re-parsing them
-/// would red on duplicate type registration.
-pub const builtin_fns = @embedFile("builtins_fns.d.bp");
-
 // "std" package impl modules — importable via `import {…} from "std";`.
 // These are NOT flattened into the global env (see comptime.zig std_pkg_modules).
 // NOTE: `option`/`result` are NOT modules — they are builtin namespaces lowered

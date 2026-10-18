@@ -7,7 +7,7 @@ fn count(limit: i32) -> i32 {
         acc = acc + i.toString();
         i = i + 1;
     };
-    @print(acc);
+    print(acc);
     return i;
 }
 fn evens(limit: i32) -> i32 {
@@ -21,10 +21,12 @@ fn evens(limit: i32) -> i32 {
     return sum;
 }
 fn main() {
-    @print(count(4));
-    @print(count(0));
-    @print(evens(6));
+    print(count(4));
+    print(count(0));
+    print(evens(6));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

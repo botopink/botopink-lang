@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn g(x: i32) -> @Result<i32, string> {
+fn g(x: i32) -> Result<i32, string> {
     if (x > 0) { return x; };
     throw "neg";
 }
-fn f(x: i32) -> @Result<i32, string> {
+fn f(x: i32) -> Result<i32, string> {
     val r = try g(x) catch { e -> throw; };
     return r;
 }

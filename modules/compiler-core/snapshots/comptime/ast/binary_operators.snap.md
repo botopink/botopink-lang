@@ -4,8 +4,10 @@ val sum = 1 + 2;
 val product = 3.0 * 2.0;
 val joined = "a" + "b";
 fn main() {
-    @print(sum, product, joined);
+    print(sum, product, joined);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -35,7 +37,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(sum, product, joined);"
+          "source": "print(sum, product, joined);"
         }
       ]
     }

@@ -1,20 +1,22 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type UserError(msg: string)
-fn fetchName() -> @Result<string, UserError> {
+fn fetchName() -> Result<string, UserError> {
     throw UserError(msg: "name missing");
 }
-fn fetchAge() -> @Result<i32, UserError> {
+fn fetchAge() -> Result<i32, UserError> {
     throw UserError(msg: "age missing");
 }
 fn loadUser() {
     val name = try fetchName() catch "anonymous";
     val age = try fetchAge() catch 0;
-    @print(name, age);
+    print(name, age);
 }
 fn main() {
     loadUser();
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

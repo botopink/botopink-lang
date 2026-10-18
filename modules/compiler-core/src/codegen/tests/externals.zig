@@ -418,7 +418,7 @@ test "js: external ---- no prelude template calls the method it patches" {
     var lx = lexerMod.Lexer.init(prelude.primitives);
     const tokens = try lx.scanAll(alloc);
     var p = parserMod.Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../../comptime/std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var seen: usize = 0;

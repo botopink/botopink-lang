@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string)
-fn find(p: Person) -> ?Person { @todo(); }
+fn find(p: Person) -> ?Person { panic("not implemented"); }
 fn greet(p: Person) -> string {
     return find(p)?.name ?? "Hello stranger";
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -15,7 +17,7 @@ fn greet(p: Person) -> string {
 %% type Person: name
 
 find(P) ->
-    erlang:error({todo, <<"not implemented">>}).
+    erlang:error({panic, <<"not implemented">>}).
 
 greet(P) ->
     case (fun(undefined) -> undefined; (_Opt0) -> erlang:element(2, _Opt0) end)(find(P)) of

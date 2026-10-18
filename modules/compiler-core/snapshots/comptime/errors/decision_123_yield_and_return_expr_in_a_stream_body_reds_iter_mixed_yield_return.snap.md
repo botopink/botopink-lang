@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> @Stream<@Result<i32, string>> {
+fn nums() -> Stream<Result<i32, string>> {
     yield 1;
     return 42;
 }

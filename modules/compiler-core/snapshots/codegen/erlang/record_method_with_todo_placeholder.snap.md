@@ -2,9 +2,11 @@
 ```botopink
 type Unimplemented(id: i32) {
     fn process(self: Self) -> string {
-        return @todo();
+        return panic("not implemented");
     }
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -20,7 +22,7 @@ type Unimplemented(id: i32) {
 -export([process/1, '__bp_get'/2, '__bp_format'/1]).
 
 process(Self) ->
-    erlang:error({todo, "not implemented"}).
+    erlang:error({panic, <<"not implemented">>}).
 
 '__bp_get'(V, id) -> erlang:element(2, V).
 

@@ -9,8 +9,10 @@ fn and(a: ?bool, b: ?bool) -> bool {
     return false;
 }
 fn main() {
-    @print(and(true, true));
+    print(and(true, true));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -49,7 +51,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(and(true, true));"
+          "source": "print(and(true, true));"
         }
       ]
     }

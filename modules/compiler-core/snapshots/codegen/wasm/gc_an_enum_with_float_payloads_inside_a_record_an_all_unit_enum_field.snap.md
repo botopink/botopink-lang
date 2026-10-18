@@ -25,14 +25,16 @@ fn warm(c: Color) -> bool {
 }
 
 pub fn main() {
-    @print(area(Shape.Square(side: 2.0)));
-    @print(area(Shape.Circle(radius: 1.0)));
+    print(area(Shape.Square(side: 2.0)));
+    print(area(Shape.Circle(radius: 1.0)));
     val it = Item(shape: Shape.Square(side: 3.0), color: Color.Green, label: "x");
-    @print(it);
-    @print(warm(it.color));
-    @print(it.color);
-    @print(area(it.shape));
+    print(it);
+    print(warm(it.color));
+    print(it.color);
+    print(area(it.shape));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

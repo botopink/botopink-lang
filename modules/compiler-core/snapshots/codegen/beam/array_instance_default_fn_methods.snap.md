@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val xs = [1, 2, 3];
-    @print(xs.prepend(0).join(","));
-    @print(xs.fold(0, { a, x -> a + x }));
-    @print(xs.isEmpty());
-    @print(xs.all({ x -> x > 0 }));
+    print(xs.prepend(0).join(","));
+    print(xs.fold(0, { a, x -> a + x }));
+    print(xs.isEmpty());
+    print(xs.all({ x -> x > 0 }));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

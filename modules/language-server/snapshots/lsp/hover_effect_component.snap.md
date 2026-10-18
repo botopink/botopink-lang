@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
-val Element = type() implement @Renderable
-fn state(initial: i32) -> @Component<i32> {
+val Element = type() implement Renderable
+fn state(initial: i32) -> Component<i32> {
    ↑
     return initial;
 }
@@ -11,7 +11,7 @@ fn state(initial: i32) -> @Component<i32> {
 kind: markdown
 
 ```botopink
-fn state(initial: i32) -> @Component<i32>
+fn state(initial: i32) -> Component<i32>
 ```
 
 ---

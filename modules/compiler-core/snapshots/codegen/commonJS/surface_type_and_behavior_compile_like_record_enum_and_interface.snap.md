@@ -21,9 +21,11 @@ fn weight(s: Size) -> i32 {
 
 fn main() {
     val sq = Square(side: 3);
-    @print(sq.area());
-    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+    print(sq.area());
+    print(weight(Size.Large(n: 5)) + weight(Size.Small));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -144,7 +146,7 @@ function weight(s) {
 function main() {
     const sq = new Square(3);
     __bp_print(sq.area());
-    __bp_print(__bp_int((weight(Size.Large(5)) + weight(Size.Small)), -2147483648, 2147483647, "+ on i32 at main.bp:23:37"));
+    __bp_print(__bp_int((weight(Size.Large(5)) + weight(Size.Small)), -2147483648, 2147483647, "+ on i32 at main.bp:23:36"));
 }
 
 function _botopink_main() {

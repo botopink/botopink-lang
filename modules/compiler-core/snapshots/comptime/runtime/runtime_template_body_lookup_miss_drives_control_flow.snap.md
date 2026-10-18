@@ -11,6 +11,7 @@ pub fn need(syntax t: string) -> string {
     return compiler.build("\"ok\"");
 }
 val r = need @`<Buttom/>`;
+
 import {compiler} from "std";
 ```
 

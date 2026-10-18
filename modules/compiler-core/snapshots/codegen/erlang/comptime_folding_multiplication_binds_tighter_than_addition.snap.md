@@ -2,8 +2,10 @@
 ```botopink
 val n = comptime { 2 + 3 * 4 };
 fn main() {
-    @print(n);
+    print(n);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPTIME VALUES -- main

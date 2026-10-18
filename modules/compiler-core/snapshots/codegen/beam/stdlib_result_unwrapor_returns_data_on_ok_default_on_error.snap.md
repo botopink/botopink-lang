@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
 fn main() {
     val n = parseAge("42").unwrapOr(0);
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -23,7 +25,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"not implemented">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.

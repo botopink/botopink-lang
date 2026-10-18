@@ -11,8 +11,10 @@ fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
     return out;
 }
 fn main() {
-    @print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
+    print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -57,7 +59,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());"
+          "source": "print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());"
         }
       ]
     }

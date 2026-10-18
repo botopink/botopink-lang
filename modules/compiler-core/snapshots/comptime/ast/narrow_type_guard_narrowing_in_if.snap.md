@@ -5,9 +5,11 @@ fn isString(x: ?string) -> x is string {
     return false;
 }
 fn main() {
-    @print(isString("hello"));
-    @print(isString(null));
+    print(isString("hello"));
+    print(isString(null));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -42,10 +44,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(isString(\"hello\"));"
+          "source": "print(isString(\"hello\"));"
         },
         {
-          "source": "@print(isString(null));"
+          "source": "print(isString(null));"
         }
       ]
     }

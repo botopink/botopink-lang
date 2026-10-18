@@ -2,20 +2,22 @@
 ```botopink
 type User(name: string)
 type AppError { NotFound, Timeout(msg: string) }
-fn fetchUser(id: i32) -> @Result<User, AppError> {
+fn fetchUser(id: i32) -> Result<User, AppError> {
     if (id == 0) { throw AppError.NotFound; };
     return User(name: "alice");
 }
 fn main() {
     val r = fetchUser(1);
     case r {
-        Ok(u) -> @print(u.name);
-        Err(e) -> @print(case e {
+        Ok(u) -> print(u.name);
+        Err(e) -> print(case e {
             NotFound -> "404";
             Timeout(msg) -> "timeout: " + msg;
         });
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

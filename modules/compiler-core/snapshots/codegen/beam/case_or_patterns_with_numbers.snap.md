@@ -5,7 +5,7 @@ fn classify(day: i32) -> string {
         6 | 7 -> "weekend";
         _ -> "weekday";
     };
-    @print(kind);
+    print(kind);
     return kind;
 }
 fn main() {
@@ -13,6 +13,8 @@ fn main() {
     classify(6);
     classify(7);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

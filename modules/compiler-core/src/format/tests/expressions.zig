@@ -272,6 +272,7 @@ test "format: panic ---- simple" {
         \\fn main() {
         \\    panic();
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -281,6 +282,7 @@ test "format: panic ---- with message" {
         \\fn main() {
         \\    panic("panicking");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -342,6 +344,7 @@ test "format: block ---- one tail on one line, statements open (decision 525)" {
         \\    val c = comptime { 2 * 3 };
         \\    val t = async { a + c };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -355,6 +358,7 @@ test "format: block ---- a trailing lambda without `->` gains it (decision 525)"
         \\        print(y);
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\fn main() {
@@ -364,6 +368,7 @@ test "format: block ---- a trailing lambda without `->` gains it (decision 525)"
         \\        print(y);
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -441,6 +446,7 @@ test "format: block ---- the last `;` of a value `case` arm is dropped (decision
         \\    }
         \\    return v;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\fn f(n: i32) -> string {
@@ -463,6 +469,7 @@ test "format: block ---- the last `;` of a value `case` arm is dropped (decision
         \\    }
         \\    return v;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -522,6 +529,7 @@ test "format: panic ---- with message and comment" {
         \\fn main() {
         \\    panic("wibble");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -687,6 +695,7 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
         \\        yield 1;
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -882,6 +891,7 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
         \\        print(n);
         \\    }
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -896,6 +906,7 @@ test "format: lambda ---- a parameterless lambda on one line stays on one line" 
         \\    val g = { -> 3 + 4 };
         \\    print(g());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1024,6 +1035,7 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
         \\        _ {}
         \\    }
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1041,6 +1053,7 @@ test "format: call ---- a lambda argument's body indents +4 and its brace lines 
         \\        print(x + 1);
         \\    });
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1079,6 +1092,7 @@ test "format: call ---- nesting compounds by +4 a level, not +8" {
         \\        });
         \\    });
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1108,6 +1122,7 @@ test "format: call ---- a comment on an argument still opens the list" {
         \\        },
         \\    );
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1224,6 +1239,7 @@ test "format: method chain ---- a link whose lambda breaks opens the whole chain
         \\            print(x);
         \\        });
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1247,6 +1263,7 @@ test "format: method chain ---- round trip is idempotent and lossless" {
         \\            print(x);
         \\        });
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1403,6 +1420,7 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\    if (c) n = 3 else { n = 4; n = 5; };
         \\    return n;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\fn f(c: bool, xs: i32[]) -> i32 {
@@ -1431,6 +1449,7 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\    }
         \\    return n;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1615,6 +1634,7 @@ test "format: body markers print as written (decision 553)" {
         \\    val k: fn(x: i32) -> Task<i32> = async fn(x) { await one() };
         \\    print(await f(1));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

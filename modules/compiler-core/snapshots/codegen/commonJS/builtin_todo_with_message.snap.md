@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn notImplemented() {
-    @todo("implement this function");
+    panic("implement this function");
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

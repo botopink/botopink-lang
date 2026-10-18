@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val xs = [1, 2, 3];
-    @print(xs.prepend(0).join(","));
-    @print(xs.fold(0, { a, x -> a + x }));
-    @print(xs.isEmpty());
-    @print(xs.all({ x -> x > 0 }));
+    print(xs.prepend(0).join(","));
+    print(xs.fold(0, { a, x -> a + x }));
+    print(xs.isEmpty());
+    print(xs.all({ x -> x > 0 }));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -237,7 +239,7 @@ function main() {
     const xs = [1, 2, 3];
     __bp_print(xs.prepend(0).join(","));
     __bp_print(xs.fold(0, (a, x) => {
-    return __bp_int((a + x), -2147483648, 2147483647, "+ on i32 at main.bp:4:35");
+    return __bp_int((a + x), -2147483648, 2147483647, "+ on i32 at main.bp:4:34");
 }));
     __bp_print(xs.isEmpty());
     __bp_print(xs.all((x) => {

@@ -25,6 +25,7 @@ test "infer: integer and float literals" {
         \\fn main() {
         \\    print(x, y);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -35,6 +36,7 @@ test "infer: string literal" {
         \\fn main() {
         \\    print(greeting);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -47,6 +49,7 @@ test "infer: binary operators" {
         \\fn main() {
         \\    print(sum, product, joined);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -83,6 +86,7 @@ test "infer: case on integer with wildcard" {
         \\fn main() {
         \\    print(desc);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -96,6 +100,7 @@ test "infer: case with OR patterns" {
         \\fn main() {
         \\    print(parity);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -260,6 +265,7 @@ test "infer: try expression ---- result type unified with return" {
         \\    return r;
         \\}
         \\val x = process();
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -274,6 +280,7 @@ test "infer: try-catch ---- handler provides fallback" {
         \\    return r;
         \\}
         \\val x = safe();
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -337,6 +344,7 @@ test "infer: src types as SourceLocation" {
         \\test "src: in a test" {
         \\    val here = comptime compiler.src;
         \\}
+        \\
         \\import {compiler} from "std";
     );
 }

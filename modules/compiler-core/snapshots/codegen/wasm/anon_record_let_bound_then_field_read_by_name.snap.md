@@ -4,8 +4,10 @@ fn main() {
     val code = 7;
     val kind = 11;
     val r = #(code, kind);
-    @print(r.kind);
+    print(r.kind);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

@@ -24,7 +24,7 @@ A first program:
 | *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, blocks, `if`, `case`, loops, `assert`, `use` |
 | *Functions* | recursion, inline parameter types, defaults, variadics, record parameters, effects, results, tasks, iterators and streams |
 | *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
-| *Builtins* | the builtins, what `@print` writes, a value's own type, `@src()` |
+| *Builtins* | the builtins, what `print` writes, a value's own type, `@src()` |
 | *Tests* | `test` blocks, mocks |
 | *Backends*, *Project manifest*, *The manifest schema* | the four targets; `botopink.json`, every field and every refusal |
 | *Migrating from the effect annotations*, *Decided, not yet implemented* | the 1.0.10-beta move; what is decided and not built |
@@ -80,8 +80,8 @@ identifiers now. An anonymous group of values is a tuple, `#(…)`, which
 replaces the old anonymous record. Repetition is three keywords with one meaning
 each — `for (xs) { x -> … }`, `while (cond) { … }`, `loop { … }` — and `loop (…)`
 reports an error naming `for` and `while`. A host template numbers its parameters
-positionally (`$0`, `$1`, …). A function's effect is its return type — `@Result`,
-`@Task`, `@Component`, `@Iterator`, `@Stream` — and the effect annotations are gone
+positionally (`$0`, `$1`, …). A function's effect is its return type — `Result`,
+`Task`, `Component`, `Iterator`, `Stream` — and the effect annotations are gone
 (decisions 118–128; *Migrating from the effect annotations*).
 
 The move from the previous surface, declaration by declaration, is in
@@ -380,7 +380,7 @@ A namespace brings no bare name of its module, std's as a module of the
 package: neither a type's constructor nor an enum's variant enters scope. After
 `import {failure} from "std"`, `failure`'s `HostErrorName.Error` is
 `failure.HostErrorName.Error`, and a bare `Error` is what it is without the
-import — no name in an expression (decision 208), the `@Result`'s error in a
+import — no name in an expression (decision 208), the `Result`'s error in a
 pattern:
 
 <!-- example: modules/import_std_namespace_no_bare_variant -->
@@ -439,13 +439,13 @@ std's, and a library calls it rather than writing its own:
 
 | Where | What | Answers |
 |---|---|---|
-| a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1 |
-| a `string` | `s.parseFloat()` | `@Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
+| a `string` | `s.parseInt()` | `Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1 |
+| a `string` | `s.parseFloat()` | `Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
 | a `string` | `s.indexOf(x)`, `s.lastIndexOf(x)` | an index `s.at` and `s.slice` take, on every target (`-1` when absent) |
 | `json.Json` | `v.kindName()`, `v.isObject()`, `v.members()`, `v.field(key)`, `v.str()`, `v.items()` | the readers of a decoded value: `members` and `items` are `[]`, `str` is `""` and `field` is `null` for a value of another kind — none throws |
 | `hash` | `pbkdf2Sha256(password, salt, iterations, length)` | `length` bytes of PBKDF2-HMAC-SHA256 as unpadded base64url; the password and the salt are text |
-| `io.clock` | `parseDuration(text)` | `@Result<i64, string>` — the milliseconds of digits and one unit, `ms` `s` `m` `h` `d` (`"30s"` is `30000`); `"30"`, `"1.5s"`, `"30 s"`, `"30S"` are an `Error` |
-| `async` | `RetryPolicy(maxAttempts, initialMillis, multiplier, maxMillis)`, `nextDelay(policy, attempt)`, `retry(policy, work)` | `nextDelay` is `?i64` — `initialMillis × multiplier^(attempt − 1)`, never above `maxMillis`, `null` past `maxAttempts`; `retry` runs a `fn() -> @Task<@Result<T, E>>` until it answers `Ok` and answers the last `Error` when every attempt failed |
+| `io.clock` | `parseDuration(text)` | `Result<i64, string>` — the milliseconds of digits and one unit, `ms` `s` `m` `h` `d` (`"30s"` is `30000`); `"30"`, `"1.5s"`, `"30 s"`, `"30S"` are an `Error` |
+| `async` | `RetryPolicy(maxAttempts, initialMillis, multiplier, maxMillis)`, `nextDelay(policy, attempt)`, `retry(policy, work)` | `nextDelay` is `?i64` — `initialMillis × multiplier^(attempt − 1)`, never above `maxMillis`, `null` past `maxAttempts`; `retry` runs a `fn() -> Task<Result<T, E>>` until it answers `Ok` and answers the last `Error` when every attempt failed |
 | `io.fs` | `walk(root)`, `glob(pattern, root)`, `removeTree(path)` | relative, `/`-separated, sorted paths, the same for every spelling of the root; a dangling link under `walk` is an `Error` naming it; `glob`'s `*` and `**` do not match a name starting with `.` unless the segment writes the dot, and do not descend through a link to a directory |
 
 <!-- example: modules/std_generic_primitives -->
@@ -507,15 +507,15 @@ What a command-line program needs of its host (decision 506 (1)), the same on co
 beam, and refused at the call on wasm (`std-unsupported-on-target`, decision 518 (4)); every failure is a
 type of its own module (decision 431-a).
 
-`io.stdin.readLine()` is a `@Task<?string>`: the next line without its `\n` or `\r\n`, a last line with no
+`io.stdin.readLine()` is a `Task<?string>`: the next line without its `\n` or `\r\n`, a last line with no
 terminator included, `null` at the end of input — again and again once it has ended. `isTTY()` is `false`
 for a pipe, a file or `/dev/null`; `readChunk()` is the byte-level read, whatever has arrived, `null` at the end.
 
 <!-- example: modules/std_io_stdin_eof -->
 
 `io.terminal` is the terminal. `stdoutIsTTY()` and `size()` (`#(columns, rows)`, `null` with no terminal) say what
-the output is; `setRaw(on)` answers `@Result<void, TerminalError>` (`NotATerminal` when standard input is none) and
-`keys()` is the `@Stream<Key>` of key presses (`Char`, `Ctrl`, `Alt`, `Enter`, `Tab`, `Backspace`, `Delete`,
+the output is; `setRaw(on)` answers `Result<void, TerminalError>` (`NotATerminal` when standard input is none) and
+`keys()` is the `Stream<Key>` of key presses (`Char`, `Ctrl`, `Alt`, `Enter`, `Tab`, `Backspace`, `Delete`,
 `Escape`, the arrows, `Home`, `End`, `PageUp`, `PageDown`, `Unknown`) that `parseKey(sequence)` decodes. With no
 terminal the non-terminal answers are the same on every target:
 
@@ -523,13 +523,13 @@ terminal the non-terminal answers are the same on every target:
 
 `io.process.onSignal(s, handler)` runs `handler` each time the process receives `s` (`Int`, `Term`, `Hup`, `Winch`);
 several handlers for one signal run in the order they were added, and while one is installed the signal no longer
-ends the process. It answers `@Result<void, ProcessError>`.
+ends the process. It answers `Result<void, ProcessError>`.
 
 <!-- example: modules/std_io_signal_handlers -->
 
 `io.process.spawn(cmd, args)` starts a child with no shell, sharing the parent's streams, and answers
-`@Result<Child, ProcessError>` without waiting: `NotFound` and `PermissionDenied` say why nothing started.
-`Child.wait()` is a `@Task<i32>` of the exit status (`128 + n` for a child ended by signal `n`) and answers the same
+`Result<Child, ProcessError>` without waiting: `NotFound` and `PermissionDenied` say why nothing started.
+`Child.wait()` is a `Task<i32>` of the exit status (`128 + n` for a child ended by signal `n`) and answers the same
 again; `Child.kill(s)` sends a signal and is `NoSuchProcess` once the child has ended.
 
 <!-- example: modules/std_io_process_spawn -->
@@ -541,7 +541,7 @@ to the child: the parent no longer ends on them, and ends when the child does.
 
 ### The file system, `io.fs`
 
-Every `io.fs` function that can fail answers `@Result<…, FsError>` (decision 540) — never a `string`
+Every `io.fs` function that can fail answers `Result<…, FsError>` (decision 540) — never a `string`
 error — and `FsError` is std's, the same on every target:
 
 ```text
@@ -580,13 +580,13 @@ unchecked binary.
 `File`, a `Closeable` the writer closes — `val f = try fs.open(p); defer f.close();` — and nothing checks
 that it is. Its calls are `path()`, `size()`, `read(n)` (up to `n` bytes, empty at the end), `bytes()` and
 `text()` (the rest from the position), `hash()` (the SHA-256 of the whole file, lowercase hex),
-`write(b)` and `close()`; each that can fail answers `@Result<…, FsError>`.
+`write(b)` and `close()`; each that can fail answers `Result<…, FsError>`.
 
 <!-- example: modules/fs_file_handle -->
 
 <!-- example: modules/fs_file_defer_close -->
 
-`chunks(size = 65536)` and `lines()` are `@Stream<@Result<…, FsError>>`: the rest of the file in pieces of
+`chunks(size = 65536)` and `lines()` are `Stream<Result<…, FsError>>`: the rest of the file in pieces of
 at most `size` bytes, or line by line with `\n` and `\r\n` stripped. An error ends the stream; a line that
 is not UTF-8 is `InvalidUtf8`.
 
@@ -880,12 +880,12 @@ A declaration with no body says what it answers: `fn f(x: string);` with no `-> 
 <!-- example: modules/bodyless_fn_no_return_type -->
 
 A value leaves a function through `return` or its tail (below), so a `fn` whose return type has a
-value must end every path with one of them (or `@panic` / `@todo`) —
+value must end every path with one of them (or `panic` / `@todo`) —
 `fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
-running off the end would hand out: a `@Result` in any layer has a value (`Ok` or `Error`), so
-`-> @Result<void, E>` and `-> @Task<@Result<void, E>>` end with the empty `return;`, and so does a
-`@Task<T>` or `@Component<T>` whose `T` is a value; one whose `T` is `void` falls through as a
-`void` fn does. `@Iterator` and `@Stream` end by running off their body.
+running off the end would hand out: a `Result` in any layer has a value (`Ok` or `Error`), so
+`-> Result<void, E>` and `-> Task<Result<void, E>>` end with the empty `return;`, and so does a
+`Task<T>` or `Component<T>` whose `T` is a value; one whose `T` is `void` falls through as a
+`void` fn does. `Iterator` and `Stream` end by running off their body.
 
 A function body's last expression written without `;` is its value (decision 409) — in every
 body: a named `fn`, a method, a function expression and a lambda. `fn inc(x: i32) -> i32 { x + 1 }`;
@@ -910,7 +910,7 @@ on every other path; an `if` / `else if` / `else` expression is a tail like any 
 may name a `case` bound by a `val` before it. A method answering nothing refuses a tail of another
 type as a free function does; a `void` tail — a call answering nothing — is accepted in a function,
 a method and a lambda that answer nothing. A tail is the function's value wherever its body runs:
-at compile time (`comptime square(3)`), and in a function answering `@Result<T, E>`, where it is
+at compile time (`comptime square(3)`), and in a function answering `Result<T, E>`, where it is
 the `T` as `return value;` is:
 
 <!-- example: modules/fn_tail_after_loop_return -->
@@ -954,7 +954,7 @@ indices.
 erlang and beam, a `Uint8Array` on commonJS, a buffer in wasm memory. No literal
 is `Bytes`, and nothing converts between `Bytes` and `string` but two calls:
 `Bytes.fromUtf8(s)` answers the UTF-8 bytes of `s`, and `b.toUtf8()` answers
-`@Result<string, string>` — the text, or `Error("Bytes.toUtf8: not valid
+`Result<string, string>` — the text, or `Error("Bytes.toUtf8: not valid
 UTF-8")` for bytes that are not well-formed UTF-8 (a sequence cut short, an
 overlong form, a surrogate, a code point past U+10FFFF; a byte order mark is kept).
 A string literal where `Bytes` is expected, and `Bytes` where a `string` is, are
@@ -963,7 +963,7 @@ end)` with `string`'s bounds (a negative index counts from the end, both clamp,
 an absent end is the length — `b[1..3]`, `b[2..]`), and `a.concat(b)` joins two.
 `==` and `!=` compare the bytes; `Bytes` takes no other operator (`+` and a string
 template do not read it as text). A host binding takes and answers `Bytes` as its
-target holds it. `Bytes` does not widen to `unknown` (so `@print` does not take it),
+target holds it. `Bytes` does not widen to `unknown` (so `print` does not take it),
 and `is` does not test it — erlang holds it and a `string` alike. A `Bytes` value
 may exist at build (decision 520): a `comptime` computes one, and the artifact
 carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
@@ -975,7 +975,7 @@ wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).
 
 std's `encoding` bridges `Bytes` and text losslessly: `base64EncodeBytes(b)` and
 `hexEncodeBytes(b)` answer the text of the bytes as they are, and
-`base64DecodeBytes(s)` / `hexDecodeBytes(s)` answer `@Result<Bytes, EncodingError>` with
+`base64DecodeBytes(s)` / `hexDecodeBytes(s)` answer `Result<Bytes, EncodingError>` with
 the text codecs' rules and `Error` variants (`NotBase64`, `NotHex`, decision 486).
 
 <!-- example: modules/bytes_encoding_bridges -->
@@ -1190,8 +1190,8 @@ a connection or a handle without the program naming a concrete type.
 
 <!-- example: modules/generic_fn_and_type -->
 
-Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Task<T>`,
-`@Iterator<T>`. Optionals are `?T`; tuples are `#(A, B)`.
+Built-in generic types carry an `@` prefix: `Result<D, E>`, `Task<T>`,
+`Iterator<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
 A written generic type carries all of its type arguments — `fn get(b: Box)` for a
 `type Box<T>` is `error: Box needs 1 type argument`, and `Pair<i32>` for a
@@ -1280,7 +1280,7 @@ against the other. Nothing of the alias reaches the emitted program.
   types its target names come with it.
 - An alias of an effect wrapper **types** a function and never **activates** the
   effect (decision 118): `-> Parser<i32>` is a function that hands a
-  `@Result<i32, ParseError>` value along, and the capabilities (`throw`, `try`,
+  `Result<i32, ParseError>` value along, and the capabilities (`throw`, `try`,
   `await`, …) are granted only by the wrapper written literally in the return.
 
 ### Derived types
@@ -1510,15 +1510,15 @@ array element and as an operand of `+`.
 
 <!-- example: modules/interpolation_single_float_hole -->
 
-A template hole holding a value of an enum writes it as `@print` writes it at
-the top level (§ What `@print` writes) — a variant names its enum, `Shape.Dot`,
+A template hole holding a value of an enum writes it as `print` writes it at
+the top level (§ What `print` writes) — a variant names its enum, `Shape.Dot`,
 `Shape.Circle(radius: 2)` —, and `string + value` writes the same text.
 
 <!-- example: modules/enum_value_template_hole -->
 
-A template hole writes the text `@print` writes for every value (decision 530) — a record
+A template hole writes the text `print` writes for every value (decision 530) — a record
 `Point(x: 1, y: 2)`, an array `[1, 2, 3]`, a tuple `#(1, "a")`, `null`, an enum — on every target, and
-a `string` writes itself. A type implementing `Display` writes its `display()` in a hole as in `@print`.
+a `string` writes itself. A type implementing `Display` writes its `display()` in a hole as in `print`.
 A `Bytes` hole stays refused.
 
 <!-- example: modules/template_hole_prints_every_value -->
@@ -1694,8 +1694,8 @@ Five rules hold them: an operator over a value that is never `null` is a compile
 error (`s?.length()` with `s: string`, and the left side of `??`); `?.` flattens —
 a member answering `?U` read through `?.` is `?U`, never `??U`; `??` beside `&&`
 or `||` takes parentheses (`(a ?? false) && b`; `nullish-beside-logical`); `x!` is checked at run time, a
-program error like `@panic`, alike on every target; and `map`, `flatMap` and
-`unwrapOr` belong to `@Result` alone (`r.unwrapOr(0)`) — there is no `result`
+program error like `panic`, alike on every target; and `map`, `flatMap` and
+`unwrapOr` belong to `Result` alone (`r.unwrapOr(0)`) — there is no `result`
 namespace.
 
 <!-- example: modules/nullish_beside_logical -->
@@ -1804,7 +1804,7 @@ Crossing between integer types, and to `f64`, is written and exact:
 `toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()` answer the value when
 the target type holds it and abort otherwise, never wrap, saturate or round
 (`toI32: 2147483648 does not fit i32`, `toF64: 9007199254740993 has no exact
-f64`). `@print` and string interpolation write an integer's digits, whatever
+f64`). `print` and string interpolation write an integer's digits, whatever
 its size.
 
 <!-- example: modules/integer_conversions_exact -->
@@ -1821,7 +1821,7 @@ never overflow; `/` truncates toward zero and `%` takes the dividend's sign, as
 for the other integers, and `/` or `%` by zero aborts. Its literal is suffixed
 `n` (`2n`); an unsuffixed literal is never one, and a `bigint` mixes with no
 other number — the crossing is written: `bigint.of(n)` (an `i64`) and
-`bigint.parse(text)` (`@Result<bigint, string>`, a decimal numeral of any
+`bigint.parse(text)` (`Result<bigint, string>`, a decimal numeral of any
 length) in, `toString()`, `toI64()` and `toF64()` out, each conversion aborting
 when the value does not fit (`toI64: 9223372036854775808 does not fit i64`).
 erlang and beam hold the VM's own integer, commonJS a `BigInt` (`.d.ts`
@@ -2080,7 +2080,7 @@ A deferred statement that panics runs once, even when the way out that ran it is
 
 <!-- example: modules/defer_inner_panic_runs_once -->
 
-In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `@Stream` when
+In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `Stream` when
 the stream ends or its consumer stops (a `break` in `for await`):
 
 <!-- example: modules/defer_async_after_awaits -->
@@ -2284,10 +2284,10 @@ them into an iterator or a stream (decision 125):
 |---|---|---|
 | `loop { … }` | repeats until `break` | no |
 | `while (cond) { … }` | repeats while `cond` holds | no |
-| `for (coll) { x -> … }` | walks a collection, a range or an `@Iterator` | no |
-| `for await (s) { x -> … }` | walks a `@Stream`, where the body has an await channel | no |
-| `iter loop` · `iter while` · `iter for` | the loop is an iterator: `yield v` / `break v` emit | **yes** — `@Iterator<T>` |
-| `stream loop` · `stream while` · `stream for` · `stream for await` | the same, and the body may `await` | **yes** — `@Stream<T>` |
+| `for (coll) { x -> … }` | walks a collection, a range or an `Iterator` | no |
+| `for await (s) { x -> … }` | walks a `Stream`, where the body has an await channel | no |
+| `iter loop` · `iter while` · `iter for` | the loop is an iterator: `yield v` / `break v` emit | **yes** — `Iterator<T>` |
+| `stream loop` · `stream while` · `stream for` · `stream for await` | the same, and the body may `await` | **yes** — `Stream<T>` |
 
 A plain loop is a statement: bare `break` leaves it and `continue` starts its
 next round, in all three. `for` binds the item only — the index is
@@ -2309,7 +2309,7 @@ A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
 <!-- example: modules/loop_forms -->
 
 **`yield v` and `break v` need a generator scope** — a function whose return is
-`@Iterator<T>` or `@Stream<T>`, or an `iter` / `stream` loop. `yield v` emits
+`Iterator<T>` or `Stream<T>`, or an `iter` / `stream` loop. `yield v` emits
 and continues; `break v` emits and ends (≡ `yield v; break;`). Outside a
 generator scope both are refused: no plain loop answers a value, and collecting
 in an ordinary function is `xs.map(…)` / `filter(…)` or a `var`. A `yield`
@@ -2330,21 +2330,21 @@ The rules of the prefixed loop:
 - The prefixed loop **is** the iterator: `break` and `break v` in it end the
   sequence.
 - Its body is **closed**: it has the iterator's or the stream's own capabilities,
-  never the enclosing function's. Inside a `@Component` function an `iter loop`
+  never the enclosing function's. Inside a `Component` function an `iter loop`
   may neither `use` nor `await`; `await` exists only in `stream` (`iter-await`
   suggests it), and `break :outer` / `continue :outer` across its border are
   refused like leaving a closure.
-- The item becomes `@Result<U, E>` on its own when the body has `throw` or `try`
+- The item becomes `Result<U, E>` on its own when the body has `throw` or `try`
   (*Iterators and streams*). To pin the type, annotate the binding —
-  `val xs: @Iterator<i32> = iter loop { … };` — and a `try` in the body is then a
+  `val xs: Iterator<i32> = iter loop { … };` — and a `try` in the body is then a
   located error. Two different error types in one body are
   `gen-infer-conflicting-errors`, asking for that annotation.
 
 **`for` does no implicit `try`** (decision 122): over an
-`@Iterator<@Result<U, E>>` the item is the `@Result`, and the body decides —
-`try r` to propagate (with a `@Result` in the return), `case` to carry on.
-`for` over any `@Iterator` is legal in any body; `for await` needs an await
-channel (a `@Task`, `@Component` or `@Stream` return, an `async { }` block or a
+`Iterator<Result<U, E>>` the item is the `Result`, and the body decides —
+`try r` to propagate (with a `Result` in the return), `case` to carry on.
+`for` over any `Iterator` is legal in any body; `for await` needs an await
+channel (a `Task`, `Component` or `Stream` return, an `async { }` block or a
 `stream` loop) and is otherwise `await-without-async`. `for` over a
 `bool` is refused naming `while`.
 
@@ -2363,7 +2363,7 @@ A `//` comment inside a loop body parses like any other comment.
 
 **Per backend.** On commonJS `iter …` is `(function* () { … })()` and
 `stream …` is `(async function* () { … })()`; erlang and beam make the prefixed
-loop a generator as they make an `@Iterator` / `@Stream` function's — the body
+loop a generator as they make an `Iterator` / `Stream` function's — the body
 runs in a process of its own, one step per item; wasm makes the body a resumable state machine
 as an asynchronous function's, each `yield` a suspension point.
 
@@ -2406,64 +2406,64 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 — and anything else is `'Name' does not name an implement/extend symbol`
 (`notAnExtension`).
 
-**Expression role.** `@Component<R>` is the one wrapper of `use` (decisions
+**Expression role.** `Component<R>` is the one wrapper of `use` (decisions
 104, 118, 128, 354). A function returning it is a **component** when its `R`
-implements the marker `@Renderable` (`type Element(…) implement @Renderable`):
+implements the marker `Renderable` (`type Element(…) implement Renderable`):
 a component is **called** (`Widget(1)`, or as a tag), never `use`d. Any other
-`@Component<R>` is **read with `use`** — what React calls a hook: `val x = use
+`Component<R>` is **read with `use`** — what React calls a hook: `val x = use
 <f>(…)` runs it and binds `R`, a bare `use <f>(…);` runs one whose `R` is
 `void`, and `val {a, b} = use …` binds `R`'s fields by name. Such a function is
 named by its noun (`state`, `effect`, `router`, `pathname` — never
 `useState`), because the keyword *is* the activation. The body that `use`s is
-itself a `@Component` function — another one read with `use` (they compose) or
+itself a `Component` function — another one read with `use` (they compose) or
 a component, which may `await` too. There is no annotation: the return is the
 declaration of the effect (decision 118), and there is no base: any
-`@Component` may be `use`d in any `@Component` body.
+`Component` may be `use`d in any `Component` body.
 
 <!-- example: modules/component_use -->
 
 The rules, each with its diagnostic:
 
-- **Only a `@Component<R>` return grants `use`** (decisions 104 and 118). A
-  `use` in any other body — a plain `fn`, a `@Task` one whatever it wraps — is
+- **Only a `Component<R>` return grants `use`** (decisions 104 and 118). A
+  `use` in any other body — a plain `fn`, a `Task` one whatever it wraps — is
   refused at the `use`: `` use-without-component: `use` needs a
-  `-> @Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
+  `-> Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
   Nothing is unwrapped to find one: the server component that awaits and
-  uses is `fn Page() -> @Component<Element>`, which the chain lets `await`
-  (`@Component ⊃ @Task`). An `async { }` block is not the `@Component` body
+  uses is `fn Page() -> Component<Element>`, which the chain lets `await`
+  (`Component ⊃ Task`). An `async { }` block is not the `Component` body
   either: `use` is not inherited by it, as `await` is not.
-- **The wrapper takes one type argument.** `@Component<C, R>` — decision
-  128's base — is refused where it is written, at the base: `` `@Component`
-  takes one type argument, `@Component<R>` — its base parameter was removed
+- **The wrapper takes one type argument.** `Component<C, R>` — decision
+  128's base — is refused where it is written, at the base: `` `Component`
+  takes one type argument, `Component<R>` — its base parameter was removed
   (decision 354) `` (`generic-arg-count-exceeded`). The owner marker
   `@Context<C>` left with it (`context-marker-removed`, naming `implement
-  @Renderable`), and `@Renderable` takes no type argument. An aliased return
-  (`type Comp<T> = @Component<T>`) types the function but grants nothing
+  Renderable`), and `Renderable` takes no type argument. An aliased return
+  (`type Comp<T> = Component<T>`) types the function but grants nothing
   (`effect-wrapper-behind-alias`).
 - **A component never propagates** (decision 121). `throw` and `try` are legal
-  in a `@Component` body only when `R` is a `@Result`; a component returns
+  in a `Component` body only when `R` is a `Result`; a component returns
   `Element`, so it handles a failure in its own body — `try await load() catch
   fallback`, a `case`, a navigation signal or an error screen. A bare `try` there
   is `effect-try-without-fallible-channel`. One read with `use` may return
-  `@Component<@Result<T, E>>`, and then its body may `try`.
+  `Component<Result<T, E>>`, and then its body may `try`.
 - **The operand is read with `use`.** `use plain()` where `plain : -> User` is
-  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `@Component<R>` ``,
+  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `Component<R>` ``,
   and `use Card()` where `Card` is a component (its `R` implements
-  `@Renderable`) is refused: a component is called, not `use`d.
+  `Renderable`) is refused: a component is called, not `use`d.
 - **The rules of hooks** (decision 357). A `use` is written at the top level of
-  its `@Component` body and runs on every call, in the same order and the same
+  its `Component` body and runs on every call, in the same order and the same
   number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /
   `loop` (or an `iter` / `stream` loop), a lambda, a `catch` handler, the right
   operand of `&&` / `||` / `??`, or after a statement that may `return`,
   `throw` or `try` early is refused at the `use`, naming what encloses it:
   `` use-not-top-level: `use` inside an `if` / `else` — a `use` is written at the
-  top level of a `@Component` body and runs on every call (decision 357) ``. A
+  top level of a `Component` body and runs on every call (decision 357) ``. A
   condition goes inside the argument, never around the `use` (the example
   below the list).
 - **The type is `R`.** `val c = use state(0)` binds `c : State`, and
   `val {value, set} = use state(0)` binds each name to the field of `R` it
   names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
-  i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)>`,
+  i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)>`,
   `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
   `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
   `R` has to be a tuple; either failing is refused at the binding —
@@ -2486,12 +2486,12 @@ refused:
 <!-- example: modules/use_in_if -->
 
 **Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam. On commonJS a
-`@Component` function whose hooks node is asynchronous (`HookNode.async`,
+`Component` function whose hooks node is asynchronous (`HookNode.async`,
 decision 375 — it writes `await` or `async { … }`, or reaches an asynchronous
 hook, component or host task) is an `async function`, and a `use` or call of
 it is awaited (`await f(x)`); a synchronous one is a plain `function`, and a
 `use` or call of it is not awaited, written or not — `await` stays legal on
-any component, a no-op on a synchronous one. A method answering `@Component`
+any component, a no-op on a synchronous one. A method answering `Component`
 — a type's, an enum's, a behavior's `default fn` — is marked by its own body
 as a top-level function is, and a call of a `default fn` follows the adopting
 type's `implement` to the behavior's mark (decision 375, question 04s12-a); a
@@ -2521,7 +2521,7 @@ else (`context-hook-without-use`):
   context to everything that component renders below it — descendants only,
   never itself or a sibling; the nearest provider of a type wins (`use
   provide(themeContext)` gives the declared default again). In a body whose
-  `R` is not `@Renderable` it is `context-provide-outside-component`, and after
+  `R` is not `Renderable` it is `context-provide-outside-component`, and after
   the body rendered a component it is `context-provide-after-render` (that
   child would not see it).
 - `val t = use context(Theme);` reads the context of type `Theme` provided
@@ -2587,7 +2587,7 @@ context per dependency, so a test's root swaps one.
 <!-- example: modules/context_provide_read -->
 
 A component is a lambda over a render scope (decision 388): `fn C(…) ->
-@Component<R>` answers a function of std's opaque `RenderScope`, and calling
+Component<R>` answers a function of std's opaque `RenderScope`, and calling
 `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
 the scope of the body that places them). In the body, `use provide(ctx)` makes
 the scope its children receive, `use context(T)` finds `T`'s identity in the
@@ -2636,7 +2636,7 @@ body waits on the host the same way.
 
 ## Functions
 
-`use` and the `@Component` return (hooks and components) are under *Expressions › use*;
+`use` and the `Component` return (hooks and components) are under *Expressions › use*;
 the effects a return grants are under *Effects*.
 
 ### Recursion
@@ -2664,7 +2664,7 @@ answer, not the language's:
   function held in a binding;
 * a function that also makes a closure reading one of its own parameters, or
   one with a destructuring or defaulted parameter;
-* a function returning `@Iterator`, `@Stream`, `@Task` or `@Component`.
+* a function returning `Iterator`, `Stream`, `Task` or `Component`.
 
 A function may call one declared after it, so two functions recurse into each
 other in either order:
@@ -2742,7 +2742,7 @@ takes defaults and labels like one (`"w" |> greet(mark: "?")`).
 `..name: T[]` as a function's **last** parameter takes zero or more positional
 arguments after the fixed ones, each checked against `T`, and the body reads
 `name` as a `T[]` (decision 267). It holds for a free `fn`, a method, an
-associated function and a `declare fn` alike — `@print`, `@println` and `@debug`
+associated function and a `declare fn` alike — `print`, `print` and `print`
 are declared `(..values: unknown[])`. A function has at most one, it is the last
 parameter, its type is written `T[]` and it takes no default
 (`variadic-not-last`, `variadic-twice`, `variadic-not-array`,
@@ -2759,8 +2759,8 @@ takes an existing array declares `values: T[]`, not `..values`:
 The checker packs the arguments into one array, so erlang and beam receive one
 list argument and wasm one array; commonJS writes the function with a rest
 parameter (`function total(label, ...values)`) and the call with the arguments
-one by one, so a host function bound by `#[@external(.JavaScript(…))]` receives them as
-JavaScript does (`Math.max(3, 9, 4)`), and `#[@external(.Erlang(…))]` one list
+one by one, so a host function bound by `#[compiler.external(.JavaScript(…))]` receives them as
+JavaScript does (`Math.max(3, 9, 4)`), and `#[compiler.external(.Erlang(…))]` one list
 (`lists:max([3, 9, 4])`).
 
 ### A record parameter
@@ -2807,55 +2807,55 @@ there is no annotation; the return is the annotation (decision 118):
 | Return | The body may write |
 |---|---|
 | `T` | only `try … catch` (handles the error on the spot) |
-| `@Result<T, E>` | `throw` · `try` |
-| `@Task<T>` | `await` |
-| `@Component<T>` | `use` · `await` |
-| `@Iterator<T>` | `yield` · `break v` |
-| `@Stream<T>` | `yield` · `break v` · `await` |
+| `Result<T, E>` | `throw` · `try` |
+| `Task<T>` | `await` |
+| `Component<T>` | `use` · `await` |
+| `Iterator<T>` | `yield` · `break v` |
+| `Stream<T>` | `yield` · `break v` · `await` |
 
-In `@Task`, `@Component`, `@Iterator` and `@Stream`, **`throw` and `try` are
-also legal when the value (or the item) is a `@Result<U, E>`** — for example
-`@Task<@Result<User, string>>`.
+In `Task`, `Component`, `Iterator` and `Stream`, **`throw` and `try` are
+also legal when the value (or the item) is a `Result<U, E>`** — for example
+`Task<Result<User, string>>`.
 
 Blocks and loops have no signature, so they take a prefix:
 
 | Form | Worth |
 |---|---|
-| `async { … }` | `@Task<T>` |
-| `iter loop` · `iter while` · `iter for` | `@Iterator<T>` |
-| `stream loop` · `stream while` · `stream for` · `stream for await` | `@Stream<T>` |
+| `async { … }` | `Task<T>` |
+| `iter loop` · `iter while` · `iter for` | `Iterator<T>` |
+| `stream loop` · `stream while` · `stream for` · `stream for await` | `Stream<T>` |
 
 The rules that make it work:
 
-1. **The wrapper is written in the return.** `-> @Task<User>` activates the
-   effect; an alias (`type Job<T> = @Task<T>`) types the function and activates
+1. **The wrapper is written in the return.** `-> Task<User>` activates the
+   effect; an alias (`type Job<T> = Task<T>`) types the function and activates
    nothing — a capability used under it is `effect-wrapper-behind-alias`,
    because whoever reads the signature has to see the `@`. A function has one
    return, so it has one effect.
 2. **The capabilities form a chain**, and each level grants everything below it:
 
    ```
-   @Component<T>  ⊃  @Task<T>        use · await
-   @Stream<T>        ⊃  @Task + yield   yield · await
-   @Iterator<T>                         yield
+   Component<T>  ⊃  Task<T>        use · await
+   Stream<T>        ⊃  Task + yield   yield · await
+   Iterator<T>                         yield
    ```
 
    That is why a hook or a component may `await`, and a stream may `await`.
-3. **Only `@Result` fails** (decisions 120 and 121). `@Task`, `@Component`,
-   `@Iterator` and `@Stream` never fail. When something can fail, the failure
-   goes **inside the value** — `@Task<@Result<T, E>>`,
-   `@Iterator<@Result<T, E>>` — the body gains `throw` and `try`, and the
+3. **Only `Result` fails** (decisions 120 and 121). `Task`, `Component`,
+   `Iterator` and `Stream` never fail. When something can fail, the failure
+   goes **inside the value** — `Task<Result<T, E>>`,
+   `Iterator<Result<T, E>>` — the body gains `throw` and `try`, and the
    receiver decides what to do with the error.
-4. **The chain grants downwards only.** `use` exists only under a `@Component`
+4. **The chain grants downwards only.** `use` exists only under a `Component`
    return; `yield` only in iterators and streams; `await` neither under a
-   `@Result` return nor in an `@Iterator`; `throw` / `try` only with a `@Result`
+   `Result` return nor in an `Iterator`; `throw` / `try` only with a `Result`
    in some layer of the return. A capability the return does not grant is a
    located compile error, and no flag turns it off (decision 67):
 
 ```text
-error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer
-of the return — this fn's return has no `@Result` in it; `try … catch` handles
-the failure on the spot, and a host binding answers a `@Result` with `result: true`
+error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer
+of the return — this fn's return has no `Result` in it; `try … catch` handles
+the failure on the spot, and a host binding answers a `Result` with `result: true`
 ```
 
 Two forms are **not** gated by the return, because neither leaves the body.
@@ -2868,28 +2868,28 @@ other.
 **What `return` does** (decision 119). In a function with a wrapper return,
 `return v` with `v: T` **wraps** (`Ok(v)`, a resolved Task, …); `return w` with
 `w` already of the wrapper's type **passes it through** as it is. With
-`@Task<@Result<U, E>>` both layers wrap: `return v` with `v: U` is a Task
-holding `Ok(v)`, `return r` with `r: @Result<U, E>` is a Task holding `r`. A
-value that fits two layers of a nested wrapper (`-> @Result<@Result<i32, E>,
+`Task<Result<U, E>>` both layers wrap: `return v` with `v: U` is a Task
+holding `Ok(v)`, `return r` with `r: Result<U, E>` is a Task holding `r`. A
+value that fits two layers of a nested wrapper (`-> Result<Result<i32, E>,
 E>`) is `effect-return-ambiguous-nesting`, asking which layer is meant: return
 the inner value (`return try r;`), or bind the whole value with the declared type
 and return that. `Ok(…)` / `Error(…)` are never written as constructors: a
-`@Result` is made by `return` and `throw` alone (decision 208) — they are
+`Result` is made by `return` and `throw` alone (decision 208) — they are
 patterns only (`Ok(n) -> …`).
 
 The quick reference:
 
 | I want… | I write | I call it with |
 |---|---|---|
-| a function that can fail | `fn f() -> @Result<T, E>` | `try f()` · `try f() catch x` · `case` |
-| an asynchronous function | `fn f() -> @Task<T>` | `await f()`, with an await channel |
-| an asynchronous function that can fail | `fn f() -> @Task<@Result<T, E>>` | `try await f()` · `try await f() catch x` · `case (await f())` |
+| a function that can fail | `fn f() -> Result<T, E>` | `try f()` · `try f() catch x` · `case` |
+| an asynchronous function | `fn f() -> Task<T>` | `await f()`, with an await channel |
+| an asynchronous function that can fail | `fn f() -> Task<Result<T, E>>` | `try await f()` · `try await f() catch x` · `case (await f())` |
 | a Task in the middle of a function | `async { … }` | pass it along, `await` it |
-| a `@Component` read with `use` | `fn h() -> @Component<T>` (`T` not `@Renderable`) | `use h()`, at the top level of a `@Component` body |
-| a component, page or layout | `fn C() -> @Component<Element>` | `C()`, an ordinary call |
-| a sequence | `fn g() -> @Iterator<T>` | `for (g()) { x -> … }`, in any function |
-| a sequence of items that fail | `fn g() -> @Iterator<@Result<T, E>>` | `for` + `try r` or `case` |
-| an asynchronous sequence | `fn g() -> @Stream<T>` | `for await`, with an await channel |
+| a `Component` read with `use` | `fn h() -> Component<T>` (`T` not `Renderable`) | `use h()`, at the top level of a `Component` body |
+| a component, page or layout | `fn C() -> Component<Element>` | `C()`, an ordinary call |
+| a sequence | `fn g() -> Iterator<T>` | `for (g()) { x -> … }`, in any function |
+| a sequence of items that fail | `fn g() -> Iterator<Result<T, E>>` | `for` + `try r` or `case` |
+| an asynchronous sequence | `fn g() -> Stream<T>` | `for await`, with an await channel |
 | an iterator or a stream in the middle of a function | `iter …` · `stream …` | `for` · `for await` |
 
 #### Body markers
@@ -2933,7 +2933,7 @@ without `->` is `marker-without-arrow` — a function named `iter`, `async` or
 <!-- example: modules/marker_without_arrow -->
 
 A `component { x -> … }` lambda is a `component fn` (decision 574): typed by
-the function type it is written for, `fn(x: T) -> @Component<R>`, its body is a
+the function type it is written for, `fn(x: T) -> Component<R>`, its body is a
 component body — it `use`s and `await`s, and its `return`s and its last
 expression answer `R` — and calling it only makes the component, which runs
 where it is rendered, with the scope it is rendered with. Its parameters and
@@ -2943,11 +2943,11 @@ what it captures reach the body:
 <!-- example: modules/component_lambda_typed_param -->
 
 Until every body writes its marker, an unmarked body keeps its return's effect
-(`-> @Iterator<T>` with a `yield` is still a generator).
+(`-> Iterator<T>` with a `yield` is still a generator).
 
 ### Results
 
-A function that can fail returns `@Result<T, E>`; `throw` produces the error,
+A function that can fail returns `Result<T, E>`; `throw` produces the error,
 `return` the value, and `try` propagates the error of a call.
 
 <!-- example: modules/result_throw_try -->
@@ -2959,7 +2959,7 @@ function answers `Error(e)` on that path and the other arms' value on the rest.
 
 <!-- example: modules/throw_in_case_arm_result -->
 
-A method declared `-> @Result` is a function like any other (decision 304): a record's and an
+A method declared `-> Result` is a function like any other (decision 304): a record's and an
 enum's method, and a behavior's method dispatched through a parameter typed by the behavior —
 its `default fn` included — answer `Ok(v)` for `return v` and `Error(e)` for `throw e`, and their
 `try` propagates, on every target:
@@ -2967,11 +2967,11 @@ its `default fn` included — answer `Ok(v)` for `return v` and `Error(e)` for `
 <!-- example: modules/result_method_throw -->
 <!-- example: modules/behavior_method_result_dispatch -->
 
-Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
+Three ways to consume a `Result`, and a fourth for when a failure is a bug:
 
 <!-- example: modules/result_four_ways -->
 
-The value a `@Result` holds is whole whatever its type: an `f64` or an `i64` comes back unchanged
+The value a `Result` holds is whole whatever its type: an `f64` or an `i64` comes back unchanged
 through `unwrapOr`, a `case` arm's binder, `try`, `try … catch`, `map` and `flatMap`:
 
 <!-- example: modules/result_wide_payloads -->
@@ -2996,15 +2996,15 @@ the fallback, its left side is the whole expression before it. `try await t catc
 
 <!-- example: modules/catch_lowest_precedence -->
 
-A `throw` or a propagating `try` needs a `@Result` in some layer of the
-enclosing function's return (`@Result<T, E>`, `@Task<@Result<T, E>>`,
-`@Iterator<@Result<T, E>>`, …); in a function with none, and in a lambda whose
+A `throw` or a propagating `try` needs a `Result` in some layer of the
+enclosing function's return (`Result<T, E>`, `Task<Result<T, E>>`,
+`Iterator<Result<T, E>>`, …); in a function with none, and in a lambda whose
 expected return has none, both are `effect-try-without-fallible-channel`. The
 message names the two ways out: `try … catch` handles the failure on the spot,
-in any function, and needs no channel; a host binding answers a `@Result` with
+in any function, and needs no channel; a host binding answers a `Result` with
 `result: true` (§ Host bindings). The refusal is located at the `throw` or the
 `try`, and its middle part names the return that lacks the channel — a plain
-`fn`, a `@Task<T>`, a `@Component`, the item of an `@Iterator<T>`, a lambda's
+`fn`, a `Task<T>`, a `Component`, the item of an `Iterator<T>`, a lambda's
 expected return:
 
 <!-- example: modules/throw_outside_result -->
@@ -3023,10 +3023,10 @@ expected return:
 
 <!-- example: modules/try_in_lambda_without_result -->
 
-**A crash is contained by `attempt`.** `@panic`, `@todo`, `x!` over `null`, a
+**A crash is contained by `attempt`.** `panic`, `@todo`, `x!` over `null`, a
 failed `assert`, an integer overflow or division by zero, and a raise from a
 host binding without `result: true` are defects, never in a signature. std's
-`failure.attempt(f)` runs `f` and answers `@Result<T, Failure>`: `Ok` of its
+`failure.attempt(f)` runs `f` and answers `Result<T, Failure>`: `Ok` of its
 value, or `Error(Failure(message, kind))` for the crash it caught — `kind` is
 `"panic"` for the program's own abort, its message the text the program wrote,
 `"host"` for a host raise, its message the host's text (a JavaScript
@@ -3057,8 +3057,8 @@ the audit did not list is a `crash`, as is any raise nothing marked:
 <!-- example: modules/std_failure_attempt_host -->
 <!-- example: modules/std_failure_attempt_crash -->
 
-`try e catch f` handles the `Error` of its operand's `@Result` on the spot (431), and only
-that: a host raise or a `@panic` inside the operand is not an `Error`, it leaves the
+`try e catch f` handles the `Error` of its operand's `Result` on the spot (431), and only
+that: a host raise or a `panic` inside the operand is not an `Error`, it leaves the
 `try … catch` and only `attempt` contains it. A `result: true` binding answers its
 failure as an `Error`, so that one reaches the `catch`:
 
@@ -3066,7 +3066,7 @@ failure as an `Error`, so that one reaches the `catch`:
 
 On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an
-exception, which `attempt` catches as `panic` — an `@panic`, an assert, an integer overflow, a
+exception, which `attempt` catches as `panic` — an `panic`, an assert, an integer overflow, a
 division by zero; a trap is no exception and ends the program.
 
 <!-- example: modules/std_failure_attempt -->
@@ -3078,9 +3078,9 @@ program does, on every target (decisions 518, 543).
 
 <!-- example: modules/comptime_attempt_at_build -->
 
-`failure.attemptTask(f)` is its `@Task` form: it awaits the task `f` answers,
+`failure.attemptTask(f)` is its `Task` form: it awaits the task `f` answers,
 and is `Error(Failure)` when that task crashed. A task that fails with its own
-`E` did not crash — its `@Result` is the value.
+`E` did not crash — its `Result` is the value.
 
 <!-- example: modules/std_failure_attempt_task -->
 
@@ -3094,31 +3094,31 @@ host's text, the erlang reason by `~tp` without its class.
 
 ### Tasks
 
-`@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A
-`@Task<T>` **never fails** (decisions 120, 432): if the operation can go wrong,
-the value is a `@Result` — `@Task<@Result<T, E>>` is the task that fails with
-`E` — and `await` hands over that `@Result`. To propagate the error, combine it
+`Task<T>` is a value that has not arrived yet, and `await` unwraps it. A
+`Task<T>` **never fails** (decisions 120, 432): if the operation can go wrong,
+the value is a `Result` — `Task<Result<T, E>>` is the task that fails with
+`E` — and `await` hands over that `Result`. To propagate the error, combine it
 with `try`:
 
 <!-- example: modules/task_result_await -->
 
 `await` and `try` are separate things — `await t` waits, `try r` propagates.
-With `t: @Task<@Result<U, E>>`:
+With `t: Task<Result<U, E>>`:
 
 | I write | I get | Legal where |
 |---|---|---|
-| `await t` | `@Result<U, E>` | with an await channel |
-| `try await t` | `U` (the error rises) | with an await channel **and** a `@Result` in the return |
+| `await t` | `Result<U, E>` | with an await channel |
+| `try await t` | `U` (the error rises) | with an await channel **and** a `Result` in the return |
 | `try await t catch x` | `U` (or `x`) | with an await channel |
 
 Every way a failing task reaches an `await` reads the same on every target —
 a function or a method that throws, a task handed over whole, generic code
-awaiting a `@Task<T>`, tasks started before either is awaited, an
+awaiting a `Task<T>`, tasks started before either is awaited, an
 `async { }` block that throws:
 
 <!-- example: modules/task_result_rejects -->
 
-A generic function over a thunk answering a task — `work: fn() -> @Task<@Result<T,
+A generic function over a thunk answering a task — `work: fn() -> Task<Result<T,
 E>>`, std's `async.retry` — binds `T` and `E` from the thunk's answer, in its own
 module or another, and so does the generic it passes the thunk on to:
 
@@ -3138,7 +3138,7 @@ method answers:
 
 The lambda's type is the same written or not: bound without an annotation
 (`val failing = { n -> async { throw "inner"; } }`) it is still a function
-answering `@Task<@Result<…>>`, and its `await` reads back as `Error(e)`; a
+answering `Task<Result<…>>`, and its `await` reads back as `Error(e)`; a
 lambda a function or method returns takes its parameters from the declared
 `fn(n: i32) -> …`, so `n.toString()` in it resolves:
 
@@ -3146,26 +3146,26 @@ lambda a function or method returns takes its parameters from the declared
 
 <!-- example: modules/task_lambda_method_to_string -->
 
-**A `@Task` has no methods** (decision 523). `map`, `then`, `mapError` and `catch` are
-withdrawn from `@Task<T>` and from `@Task<@Result<T, E>>`, so a call to one is refused as
+**A `Task` has no methods** (decision 523). `map`, `then`, `mapError` and `catch` are
+withdrawn from `Task<T>` and from `Task<Result<T, E>>`, so a call to one is refused as
 an unknown member:
 
 <!-- example: modules/task_method_refused -->
 
 A task's value is read by `await`, and a failing task is read one way: `try await … catch`,
-or `case` on `await`'s `@Result`. Every composition of a task — recover, map, bind, map the
-error — is an `async { }` block, itself a `@Task` (decision 375): `val safe = async { try await
-load() catch 0 };` is a `@Task<i32>`.
+or `case` on `await`'s `Result`. Every composition of a task — recover, map, bind, map the
+error — is an `async { }` block, itself a `Task` (decision 375): `val safe = async { try await
+load() catch 0 };` is a `Task<i32>`.
 
 <!-- example: modules/task_compose_by_async_block -->
 
-An **await channel** is a `@Task`, `@Component` or `@Stream` return, an
+An **await channel** is a `Task`, `Component` or `Stream` return, an
 `async { }` block or a `stream` loop; `await` anywhere else is
 `await-without-async`. An ordinary function that holds a Task either
-returns a `@Task` too or hands the Task on.
+returns a `Task` too or hands the Task on.
 
 **`async { … }` — a Task in the middle of a function** (decision 124). The block
-creates a `@Task` without declaring a separate function, in **any** function:
+creates a `Task` without declaring a separate function, in **any** function:
 it waits for nothing, it creates the Task.
 
 <!-- example: modules/async_block_both -->
@@ -3176,7 +3176,7 @@ it waits for nothing, it creates the Task.
 
 <!-- example: modules/await_result_print -->
 
-An awaited `@Result` is the value it is: `@print` of `await f(x)` answers
+An awaited `Result` is the value it is: `print` of `await f(x)` answers
 `Ok(21)` or `Error("negative")` on every target, for a generic `f`, a plain one
 and an `async { }` block that fails.
 
@@ -3184,17 +3184,17 @@ and an `async { }` block that fails.
   a braced `case` / `if` at its end included, and `return v` **leaves the
   block** with `v`, not the enclosing function — the block is a task of its
   own;
-- it is **closed**: inside a `@Component` function an `async { }` cannot `use`,
+- it is **closed**: inside a `Component` function an `async { }` cannot `use`,
   and `break :outer` / `continue :outer` across its border are refused;
 - `T` comes from its tail and its `return`s. A body with `throw` or `try` makes the value
-  `@Result<U, E>` on its own, `E` coming from those `throw` / `try`; two
+  `Result<U, E>` on its own, `E` coming from those `throw` / `try`; two
   different error types are `gen-infer-conflicting-errors`, asking for an
-  annotation: `val x: @Task<@Result<User, string>> = async { … };`.
+  annotation: `val x: Task<Result<User, string>> = async { … };`.
 
-**Per backend.** On commonJS every `@Task` function, and every `@Component`
+**Per backend.** On commonJS every `Task` function, and every `Component`
 one whose hooks node is asynchronous (decision 375), is an `async function`
 and its caller awaits; `async { }` is `(async () => { … })()`.
-**A `@Task<@Result<T, E>>` rejects its Promise with `E` and resolves it with
+**A `Task<Result<T, E>>` rejects its Promise with `E` and resolves it with
 the bare `T`** (decision 432) — no `{ ok }` / `{ error }` wrapper: JavaScript
 that awaits a botopink task writes `try { await t } catch (e) { … }`, and the
 `.d.ts` declares `Promise<T>` under `/** @throws {E} */`. A failing task nobody
@@ -3204,12 +3204,12 @@ awaits is not an unhandled rejection.
 
 <!-- example: modules/task_failure_rejects -->
 
-On erlang and beam a `@Task` is eager, `await` is the identity — a failing
+On erlang and beam a `Task` is eager, `await` is the identity — a failing
 task's value is `{error, E}` — and `async { }` runs the block in place.
 
-**On wasm a `@Task` behaves as a Promise** (decision 392): a task starts when
+**On wasm a `Task` behaves as a Promise** (decision 392): a task starts when
 it is made and runs to its first `await`; `await` on a task still pending
-suspends the body while other tasks run; a task settles once. A `-> @Task<T>`
+suspends the body while other tasks run; a task settles once. A `-> Task<T>`
 function, a method answering one and an `async { }` block compile to a
 resumable state machine — the locals live in a frame on the heap, and the
 body is entered again at the `await` it suspended at, inside a loop, an `if`,
@@ -3219,7 +3219,7 @@ host's pending pollables (`wasi:io/poll` on `wasi`; on `browser` the loader
 waits on the JavaScript event loop and hands each answer back — no JSPI). A
 synchronous function is untouched. A call evaluated before an `await` in the
 same statement is refused where it is written — re-entering the statement
-would run it twice; bind it to a `val` first. A `@Component` body stays eager
+would run it twice; bind it to a `val` first. A `Component` body stays eager
 on wasm: an `await` of a task there runs the ready tasks until it settles, and
 traps — on both hosts — when the task still waits on the host.
 
@@ -3256,21 +3256,21 @@ the same block, in a nested one, and in a lambda.
 
 <!-- example: modules/generator_captured_var_shared -->
 
-**Items that can fail — `@Iterator<@Result<T, E>>`.** The iterator does not
-fail; **each item** may be an error. When the item is `@Result<U, E>` the body
-gains the sugar: `yield v` with `v: U` emits `Ok(v)` (with `v: @Result<U, E>` it
+**Items that can fail — `Iterator<Result<T, E>>`.** The iterator does not
+fail; **each item** may be an error. When the item is `Result<U, E>` the body
+gains the sugar: `yield v` with `v: U` emits `Ok(v)` (with `v: Result<U, E>` it
 emits it as is), `throw e` emits `Error(e)` and ends, and a `try x` that fails
-emits `Error(e)` and ends. Whoever iterates receives the `@Result` and decides —
+emits `Error(e)` and ends. Whoever iterates receives the `Result` and decides —
 **`for` does no implicit `try`**:
 
 <!-- example: modules/iterator_result_items_handled -->
 
-**`@Stream<T>` — asynchronous, iterated with `for await`.** The rules above
+**`Stream<T>` — asynchronous, iterated with `for await`.** The rules above
 hold, and a failing `try await` also emits `Error(e)` and ends:
 
 <!-- example: modules/stream_pages_count -->
 
-**Iterator or factory.** A function with an `@Iterator` or `@Stream` return is
+**Iterator or factory.** A function with an `Iterator` or `Stream` return is
 an iterator if its own body has `yield` or `break v` (not counting closures and
 inner `iter` / `stream` loops); otherwise it is an ordinary function that
 **returns** a ready-made iterator. Mixing the two in one body is
@@ -3293,8 +3293,8 @@ The refusals, each located:
 
 <!-- example: modules/iterator_error_param_removed -->
 
-**Per backend.** On commonJS an `@Iterator` function with `yield` is a
-`function*` and a `@Stream` one an `async function*`; a factory is a plain
+**Per backend.** On commonJS an `Iterator` function with `yield` is a
+`function*` and a `Stream` one an `async function*`; a factory is a plain
 function. A generator cannot be an arrow function, so `this` and captured
 variables get the treatment ordinary closures get.
 
@@ -3332,8 +3332,8 @@ What a `comptime` computes is what the program computes when it runs, one
 answer for every target (decisions 331, 434 (5)): the primitives' methods —
 the integer conversions (`1000.toI64()`), strings, floats, arrays, integer
 division —, a suffixed number literal (`4500000000l` is the `i64` its suffix
-types, lifted back by its digits), a `@Result`'s methods (`unwrapOr`, `isOk`,
-`map`, `flatMap`) and a `@Result` function's own `return` / `throw`, and a
+types, lifted back by its digits), a `Result`'s methods (`unwrapOr`, `isOk`,
+`map`, `flatMap`) and a `Result` function's own `return` / `throw`, and a
 function named as a value and passed as an argument (`r.flatMap(half)`,
 `xs.map(double)`).
 
@@ -3347,7 +3347,7 @@ function named as a value and passed as an argument (`r.flatMap(half)`,
 
 A `comptime` whose evaluation raises is refused at the call that raised
 (decision 451 (3)) — the innermost of this module's calls the raise leaves,
-`@panic` in a function the `comptime` called — not at the `comptime`
+`panic` in a function the `comptime` called — not at the `comptime`
 expression, which the hint names as the frame that ran it:
 
 <!-- example: modules/typeinfo_all_duplicate_at_entry -->
@@ -3608,8 +3608,8 @@ it, naming its kind (`` `{ x -> x }` is a lambda: it has no name ``).
 <!-- example: modules/compiler_name_of_lambda -->
 
 What the compiler does is a member of `compiler` (decision 606 (3)): `compiler.typeInfo(T)`
-answers `Type.Info<T>`, `compiler.embed(path)` a `Link`, `#[compiler.external(…)]` names a
-`declare fn`'s host sources. In a body that runs when the program runs, `compiler` is written
+answers `Info<T>` (decision 630), `#[compiler.external(…)]` names a `declare fn`'s host
+sources. In a body that runs when the program runs, `compiler` is written
 under `comptime` — `val name = comptime compiler.typeInfo(City).name;` — and the answer is
 computed at build.
 
@@ -4170,7 +4170,7 @@ components (decision 277), so a framework's decorator checks what a page
 activates at build — which markers its hooks carry, which contexts it reads —
 without the compiler naming any stage, marker or library. `compiler.hooks(decl):
 HookNode[]` is the function's own node first, then the node of every function
-reachable through its `use`s and calls of `@Component` functions,
+reachable through its `use`s and calls of `Component` functions,
 breadth-first, each node's edges in body order, each function once; empty for
 a type, a field, a method and a `val`. A node holds only what is written in its
 `function`:
@@ -4179,7 +4179,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 |---|---|
 | `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
 | `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the `val` that declares the type's default of a `use provide(ctx)` / `use context(T)`, decisions 354 (4), 379; `null` for any other hook) |
-| `HookCall` — one call of a `@Component` function | `callee: Declared<unknown>`, `at: string` |
+| `HookCall` — one call of a `Component` function | `callee: Declared<unknown>`, `at: string` |
 
 A call a template builds from a tag counts as written. `at` is
 `"<module>:<line>:<column>"`, the entry module `main`. A cycle is an edge back
@@ -4189,8 +4189,8 @@ function's body is checked, and an importer reads the nodes of the functions
 it reaches in another module. A node is `async` when its body writes `await`
 or `async { … }`; when it `use`s an asynchronous hook or calls an asynchronous
 component, written `await` or not; when it calls a host function answering
-`@Task` (or `@Component`, which extends it); or when it calls what the checker
-cannot follow — a function value answering `@Component<R>`, a `use` with
+`Task` (or `Component`, which extends it); or when it calls what the checker
+cannot follow — a function value answering `Component<R>`, a `use` with
 `hook: null`; a call of a method it resolves (a type's, an enum's, a `default fn`
 through the adopting type's `implement`) follows that method's own mark. A cycle is asynchronous when any node in it is; every
 other node is synchronous (a page may then be rendered without streaming), and
@@ -4448,7 +4448,7 @@ refused there, at compile time, naming both declarations.
 ### Host bindings
 
 A bodyless `declare fn` — top-level or a type's, static included — names the
-code each target runs in its place with `#[@external(…)]` (decision 575 (6)):
+code each target runs in its place with `#[compiler.external(…)]` (decision 575 (6)):
 one std function, `external(syntax decl: unknown, comptime ..sources:
 Implementation[])`, whose sources are values of std's enum `Implementation` —
 `Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`
@@ -4458,7 +4458,7 @@ template is written in; a `.d.ts` typing of the commonJS output is derived
 from the declaration and is no source (§ The manifest schema, `"typings"`):
 
 ```
-#[@external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"), .Wasm(op: "f64.floor"))]
+#[compiler.external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"), .Wasm(op: "f64.floor"))]
 ```
 
 Inside std the annotation is written `#[external(…)]`. A source is checked as
@@ -4614,19 +4614,19 @@ refused at the argument (`` `Implementation.JavaScript` has no parameter named `
 
 <!-- example: modules/external_inline_unread -->
 
-A host call that can fail answers a `@Result` only when its binding writes
-`result: true`: the return is then `@Result<T, HostError>` (or a `@Task` of
+A host call that can fail answers a `Result` only when its binding writes
+`result: true`: the return is then `Result<T, HostError>` (or a `Task` of
 one), and every way the host fails becomes `Error(HostError(…))`. Without the
 flag the binding promises no failure. `effect-try-without-fallible-channel`
 names this flag and `try … catch` as the ways out of a `throw` or `try` that
-has no `@Result` channel.
+has no `Result` channel.
 
 The flag has one reading, so the checker holds it to it, at the annotation
 (decisions 487, 488, 490, 491):
 
-- `result: true` needs the return `@Result<…, HostError>` or
-  `@Task<@Result<…, HostError>>` — a plain value, or a `@Task<T>` that has no
-  `@Result` inside it, is refused:
+- `result: true` needs the return `Result<…, HostError>` or
+  `Task<Result<…, HostError>>` — a plain value, or a `Task<T>` that has no
+  `Result` inside it, is refused:
 
 <!-- example: modules/external_result_return -->
 
@@ -4642,7 +4642,7 @@ The flag has one reading, so the checker holds it to it, at the annotation
 <!-- example: modules/external_result_not_bool -->
 
 - `result:` belongs to a host call that can fail: beside a `body:` cell (a
-  botopink function, which fails only through its own `@Result`) or an `op:`
+  botopink function, which fails only through its own `Result`) or an `op:`
   cell (a wasm instruction) it is refused:
 
 <!-- example: modules/external_result_on_fn_cell -->
@@ -4677,12 +4677,12 @@ alone:
 <!-- example: modules/external_result_erlang_exit -->
 
 A host function declared as a method of its type answers the same way, a
-`@Task` method's failure read back as `Error(HostError(…))` at its `await`:
+`Task` method's failure read back as `Error(HostError(…))` at its `await`:
 
 <!-- example: modules/external_result_host_method -->
 
 **std maps its own host failures** (decisions 431, 486). A std function whose host call can fail answers
-`@Result<T, E>`, never a `string`. Where std maps the host's raise — `encoding`, `io.clock`, `io.fs` — the
+`Result<T, E>`, never a `string`. Where std maps the host's raise — `encoding`, `io.clock`, `io.fs` — the
 binding stays private, writes `result: true`, and the public function maps the `HostError` into the
 module's own error enum (`EncodingError`, `ClockError`, `FsError`), so the same input is the same variant
 on every target; `json`, `regex` and `io.process` answer std's `HostError` itself, its `kind` `"host"`.
@@ -4712,7 +4712,7 @@ the rule existed. So the boundary accepts both shapes and the declared return
 type decides which record the answer becomes: a plain object or map is adopted
 into the record the declaration names, field by declared name, and an answer
 that already carries its type is left exactly as it is. The same holds one
-container deep — `?T`, `T[]`, `@Result<T, E>` and `@Task<T>` are looked
+container deep — `?T`, `T[]`, `Result<T, E>` and `Task<T>` are looked
 through — and no deeper.
 
 <!-- example: modules/external_returns_record -->
@@ -4720,10 +4720,10 @@ through — and no deeper.
 A field the host leaves out is the absent value, not an error — a host is not
 asked to fill a record it does not know about.
 
-**A host that answers later** is declared with a `@Task` return (decision 126).
-With `result: true` and `-> @Task<@Result<T, HostError>>`, a rejected Promise
+**A host that answers later** is declared with a `Task` return (decision 126).
+With `result: true` and `-> Task<Result<T, HostError>>`, a rejected Promise
 (Node) or a raise or `{error, R}` (Erlang) becomes `Error(HostError(…))`;
-declared `-> @Task<T>`, a rejection is a fatal host failure — that form is for a
+declared `-> Task<T>`, a rejection is a fatal host failure — that form is for a
 host that guarantees it does not fail.
 
 <!-- example: modules/host_node_task_result -->
@@ -4732,7 +4732,7 @@ host that guarantees it does not fail.
 is written, on every backend:**
 
 ```
-error: `listToBinary` has no `#[@external(.<Target>(…))]` for the wasm backend
+error: `listToBinary` has no `#[compiler.external(.<Target>(…))]` for the wasm backend
   --> src/main.bp:21:12
 ```
 
@@ -4811,7 +4811,7 @@ The functions a `std:` binding names, and the std declarations that bind them
 |---|---|---|
 | `hash.contentHash` | `(string) -> string` | `hash.contentHash` |
 | `text.trim`, `text.trimStart`, `text.trimEnd` | `(string) -> string` | `String.trim`, `trimStart`, `trimEnd` |
-| `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text: `@print`, `"${x}"`, `"x" + x` |
+| `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text: `print`, `"${x}"`, `"x" + x` |
 | `text.length` | `(string) -> i32` | `String.length` (code points) |
 | `text.split`, `text.chars`, `text.lines`, `text.words` | `(string, string) -> string[]`, `(string) -> string[]` | `String.split`, `chars`, `lines`, `words` |
 | `text.contains`, `text.startsWith`, `text.endsWith` | `(string, string) -> bool` | the `String` methods of those names |
@@ -4860,7 +4860,7 @@ is host code, always:
 
 `op:` and `wasi:` are `.Wasm`'s cells alone: written as a prefixed
 string on `.JavaScript` or `.Erlang`, the refusal names the wasm
-cell to write (`#[@external(.Wasm(op: "f64.floor"))]`):
+cell to write (`#[compiler.external(.Wasm(op: "f64.floor"))]`):
 
 <!-- example: modules/external_node_prefixed_op_refused -->
 
@@ -4896,7 +4896,7 @@ the same chain, included.
 
 **A float written as text keeps its decimal part on every target**, commonJS
 included (decision 521): in a template hole, through `toString()`, beside a
-string in a `+` and through `@print` — an imported record's `f64` field and an
+string in a `+` and through `print` — an imported record's `f64` field and an
 `f64` a generic method answers included, and a record's `f64` field when the
 record prints. An `f64` a generic function's body holds as its type parameter
 is written the same way, alone, in an array of the type parameter or as a
@@ -4909,14 +4909,14 @@ record's field.
 | Adapter | Signature | Answers |
 |---|---|---|
 | `.RandomF64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
-| `.Delay` | `(i32, T) -> @Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
-| `.Race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
-| `.RaceOf` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
-| `.SpawnAll` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+| `.Delay` | `(i32, T) -> Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
+| `.Race` | `(Array<Task<T>>) -> Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
+| `.RaceOf` | `(Array<fn() -> Task<T>>) -> Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
+| `.SpawnAll` | `(Array<fn() -> Task<T>>) -> Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
 | `.GateNew` | `() -> unknown` | a closed gate (std's `async` gates): a pending task no host answers |
 | `.GateOpen` | `(unknown) -> void` | the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped first, so an open gate leaves no timer behind; opening an open gate changes nothing |
-| `.GateAwait` | `(unknown, i32) -> @Task<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
-| `.Attempt` | `(fn() -> T) -> @Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
+| `.GateAwait` | `(unknown, i32) -> Task<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
+| `.Attempt` | `(fn() -> T) -> Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
 `std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar
@@ -4927,7 +4927,7 @@ located at the call that drew it, in a `comptime` expression or a decorator body
 alike (`comptime_random_float_unseeded`, `decorator_random_float_unseeded`) — a
 build has no entropy and never pretends to.
 
-An adapter answering `@Task<T>` (decision 393) is declared over one type
+An adapter answering `Task<T>` (decision 393) is declared over one type
 parameter and checked by **shape** at the annotation — the signature in the
 table, whatever `T` is — and the compiler makes the pending task the host's
 pollable backs:
@@ -4962,8 +4962,8 @@ writes names an address: there is no raw memory in the vocabulary. A
 names it in `botopink.json`, `"wasm": { "host": "wasi" }` or `"browser"`
 (*The manifest schema*); absent, it is `wasi` — wasmtime and the runtimes
 that follow WASI preview 2. A binding may name the host it serves with
-`host:` — `#[@external(.Wasm(op: "f64.floor", host: .Wasi))]` beside
-`#[@external(.Wasm(body: floorBody, host: .Browser))]` —, and one written without
+`host:` — `#[compiler.external(.Wasm(op: "f64.floor", host: .Wasi))]` beside
+`#[compiler.external(.Wasm(body: floorBody, host: .Browser))]` —, and one written without
 `host:` serves every host. A build reads the binding serving its host and
 checks every other one too; a function with no binding for the build's host
 is refused at its call as above, and a std function with none is
@@ -4974,7 +4974,7 @@ binding without `host:` beside a hosted one included) is an error at the
 annotation.
 
 **A binding declares the host features it needs** (decision 518):
-`#[@external(.Wasm(wasi: .Attempt, needs: [.Exceptions]))]`, each a value of
+`#[compiler.external(.Wasm(wasi: .Attempt, needs: [.Exceptions]))]`, each a value of
 std's closed enum `WasmNeed { Exceptions, Http }`. The compiler gathers the
 needs of the bindings a program reaches into the custom section
 `botopink.needs` of the module, and the runner hands the host only the
@@ -5010,7 +5010,7 @@ answers differ.
 
 **A private fn binds a declaration on a target** (decisions 238, 263, 305, 610). On
 `.JavaScript` and `.Erlang` (which the beam target reads) the
-labelled cell `body: <name>` (`#[@external(.Erlang(body: sinBody))]`) binds what
+labelled cell `body: <name>` (`#[compiler.external(.Erlang(body: sinBody))]`) binds what
 wasm's `body: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
 checked the same way, at the argument. One algorithm written in botopink then
@@ -5078,12 +5078,19 @@ alias included —, std's own modules by the same import.
 <!-- example: modules/print_from_io_terminal -->
 <!-- example: modules/panic_from_failure -->
 
+There is no `@name`: `@print(…)`, `@panic(…)`, `@todo(…)`, `@typeInfo(…)`, `@src()` and
+`#[compiler.external(…)]` are `error[unknown-builtin]` at the name, and so is a prelude type written
+with `@` (`@Result<…>`).
+
+<!-- example: modules/builtin_print_removed -->
+<!-- example: modules/prelude_name_with_sigil -->
+
 ## Builtins
 
 <!-- example: modules/builtin_print_todo -->
 
-Every builtin is declared in `libs/std/src/builtins.d.bp` (`@todo` and `@panic`,
-which carry a default, in `libs/std/src/builtins_fns.d.bp`), and the compiler is
+Every builtin the compiler still reads is declared in `libs/std/src/builtins.d.bp`
+(`print` and `panic` are std's `io/terminal.bp` and `failure.bp`, § `print` and `panic`), and the compiler is
 held to the declarations (decision 252): a unit test fails, naming the builtin,
 when the compiler implements one the files do not declare, the files declare one
 it does not implement, or the two signatures differ. The declarations, as
@@ -5092,9 +5099,8 @@ decorator or template body runs, never at run time):
 
 | Builtin | Declaration | Held at the call by |
 |---|---|---|
-| `@print` / `@println` / `@debug` | `print(..values: unknown[])` (each alike) — any number of arguments (§ A variadic parameter) | the declaration |
-| `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
-| `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
+| `print` (`io/terminal.bp`, imported) | `print(..values: unknown[])` — any number of arguments (§ A variadic parameter) | the declaration |
+| `panic` (`failure.bp`, imported) | `panic(message: string = "panic") -> noreturn` | the declaration |
 | `@trap` | `trap() -> noreturn` | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
 | `@embed` | `embed(comptime path: string) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
@@ -5144,17 +5150,17 @@ declaration's identity:
 
 <!-- example: modules/decorator_argument_decorator_alias -->
 
-`@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
+`panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
 bottom type, so a call to one stands wherever a value of any type is expected —
-`val x: i32 = @todo();`, `return @panic("…");`, one branch of an `if` whose other
+`val x: i32 = @todo();`, `return panic("…");`, one branch of an `if` whose other
 branch has the value. `@module()` is declared but no target lowers it, so it is
 `error[builtin-not-lowered]`.
 
-A `@panic(message)` aborts the program with a non-zero status, and its message —
+A `panic(message)` aborts the program with a non-zero status, and its message —
 the text it was given, quotes and non-ASCII characters included — reaches stderr
 unchanged on every target; what the runtime writes around it (a stack trace, a
 trap notice) is the runtime's own. An abort writes to stderr alone — a checked
-integer operator's abort as `@panic`'s —, so what the program printed before it
+integer operator's abort as `panic`'s —, so what the program printed before it
 is its whole stdout, on every target:
 
 <!-- example: modules/panic_library_message -->
@@ -5162,7 +5168,7 @@ is its whole stdout, on every target:
 
 What an uncaught abort writes is the `Failure` an `attempt` would have answered
 (decisions 535, 527), one line, `<kind>: <message>`, on every target: `panic: <message>` for
-`@panic`, `@todo`, a failed `assert`, an overflow or a division by zero, `host: <message>` for a raise of a
+`panic`, `@todo`, a failed `assert`, an overflow or a division by zero, `host: <message>` for a raise of a
 host binding without `result: true`, `crash: <reason>` for any raise nothing marked — a `case` no arm
 matches, `badarith`. Never the runtime's raw `Class:Reason` term. A target that does not abort where
 another does (a float division by zero: commonJS and wasm answer `Infinity`) declares that departure; the
@@ -5179,7 +5185,7 @@ mistyped — is not:
 <!-- example: modules/abort_text_crash -->
 <!-- example: modules/case_no_arm_matches_raises -->
 
-### What `@print` writes
+### What `print` writes
 
 A value prints the way the source writes it. A record names its type and its
 fields, a variant names its enum, a container separates its elements with
@@ -5188,18 +5194,13 @@ nested inside a container too.
 
 <!-- example: modules/print_value_text -->
 
-`@println` writes as `@print` does — its arguments separated by a space, its line ended — on
-every target:
-
-<!-- example: modules/println_every_target -->
-
 A field's name changes nothing: a record with a field called `tag` is a record,
 printed by its type's name and its fields:
 
 <!-- example: modules/record_field_named_tag -->
 
 A variant with a payload prints as `Enum.Variant(…)` however it reaches
-`@print` — built in place, bound by a `val`, in an array, its enum declared in
+`print` — built in place, bound by a `val`, in an array, its enum declared in
 the module or imported:
 
 <!-- example: modules/enum_payload_value_prints -->
@@ -5210,7 +5211,7 @@ it, in a record or a variant, built directly or by a generic function:
 
 <!-- example: modules/generic_record_prints_its_arguments -->
 
-A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
+A `Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
 the top level and nested in a container or a record, its payload printed as any
 nested value is (a string quoted):
 
@@ -5283,7 +5284,7 @@ are not known where the call is checked — a parameter, a function's answer —
 
 `a.open()` is the `File` of std's file system over the embedded copy (decision 538): the same
 `read`, `bytes`, `text`, `chunks`, `lines`, `hash` and `size` as a file on disk, a fallible one answering
-`@Result<…, FsError>`, `close` a no-op, and no `@Result` around the `File` itself — the build proved the
+`Result<…, FsError>`, `close` a no-op, and no `Result` around the `File` itself — the build proved the
 file exists. Code that takes a `File` reads one on disk (`fs.open`) and an embedded one alike. The call
 hands the `Asset` to std's `io.fs`, so the module that writes it imports `io.fs`; without the import it is
 `error[embed-open-needs-fs]`, at the call.
@@ -5350,12 +5351,12 @@ ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
 (a non-string `e` is rendered) and the `at` is the test's own line. The
 statements after the failed `try` do not run; a `try` inside a lambda is the
 lambda's, not the test's. An assertion helper is therefore an ordinary
-`fn … -> @Result<void, string>` whose `ok` position is the empty
+`fn … -> Result<void, string>` whose `ok` position is the empty
 `return;`. What the runner prints for the failed test below is the CLI's
 contract (`modules/compiler-cli/tests/test_tooling.sh`), not a cell's:
 
 ```text
-fn isPositive(n: i32) -> @Result<void, string> {
+fn isPositive(n: i32) -> Result<void, string> {
     if (n <= 0) { throw "asserts.isPositive: value not positive"; }
     return;
 }
@@ -5403,7 +5404,7 @@ publishes no export list to the checker, so a missing name there is not yet refu
 <!-- example: test/mocks_decorator_double -->
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
-host throw, not an `@Result`, so the caller catches it with `asserts.throws`
+host throw, not an `Result`, so the caller catches it with `asserts.throws`
 and not with `try … catch`; and there is no generic `any<T>()` matcher, because
 it would need a per-type default it cannot synthesize.
 
@@ -5529,7 +5530,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
 | `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
 | `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
-| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
+| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[compiler.external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
 | `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
 | `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
@@ -5687,12 +5688,12 @@ row says otherwise):
 
 #### Host sidecars
 
-A `#[@external(.JavaScript("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
+A `#[compiler.external(.JavaScript("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
 in the emitted module. The file is the library's, not the consumer's, so
 `botopink build` and `botopink test` copy it next to the emitted JS —
 `<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's
 own — and rewrite the `require` when the authored path would escape the output
-directory. The `.erl` host module of an `#[@external(.Erlang("host", "f"))]` is
+directory. The `.erl` host module of an `#[compiler.external(.Erlang("host", "f"))]` is
 copied the same way.
 
 Which directory a sidecar is copied *from* is the dependency this manifest
@@ -5782,7 +5783,7 @@ Every library is a workspace with a core, a `-test` member and its examples as
 members. An example member carries a `README.md` beside its `botopink.json`
 naming the upstream section it shows and the front that owns it, and reaches its
 library by `{ "workspace": true }`, never by `"git"`. A `-test` member exposes at
-least one helper `pub fn assert<Subject>(loc: SourceLocation, …) -> @Result<void,
+least one helper `pub fn assert<Subject>(loc: SourceLocation, …) -> Result<void,
 string>`, no more helpers than a consumer uses. `scripts/check-packaging.sh` checks
 the four rules across the library repositories — a README per example, a helper
 per `-test` member, no `"git"` to an ecosystem library from an example, every
@@ -5844,7 +5845,7 @@ check each one (`zig build test`), never a conformance cell — every cell's man
 118–128) and kept no compatibility window (decision 127): every old form below
 is a located compile error with a fix-it — `effect-annotation-removed` for an
 annotation (on a loop it suggests `iter` / `stream`), `effect-type-removed` for
-a wrapper name, `iterator-error-param-removed` for `@Iterator<T, E>`. There is
+a wrapper name, `iterator-error-param-removed` for `Iterator<T, E>`. There is
 no automatic rewriter: each error names the new spelling, from the table below.
 
 <!-- example: modules/effect_annotation_removed_async_generator -->
@@ -5872,26 +5873,26 @@ no automatic rewriter: each error names the new spelling, from the table below.
 
 | Old | Now |
 |---|---|
-| `#[@result] fn f() -> @Result<T, E>` | `fn f() -> @Result<T, E>` |
-| `#[@future] fn f() -> @Future<T, E>` | `fn f() -> @Task<@Result<T, E>>` (and `await x` → `try await x` where the error must propagate) |
-| `@Future<T>` with no error | `@Task<T>` |
-| `#[@use] fn f() -> @Use<C, T>` | `fn f() -> @Component<T>` (`throw` / `try` only if `T` is a `@Result`) |
-| `#[@use] fn f() -> @Component<T>` | `fn f() -> @Component<T>` |
-| `#[@generator]` + `@Generator<T>` | `@Iterator<T>` |
-| `#[@resultGenerator]` + `@ResultGenerator<T, E>` | `@Iterator<@Result<T, E>>` (`for` no longer does an implicit `try`) |
-| `#[@futureGenerator]` + `@FutureGenerator<T, E>` | `@Stream<@Result<T, E>>` |
+| `#[@result] fn f() -> Result<T, E>` | `fn f() -> Result<T, E>` |
+| `#[@future] fn f() -> @Future<T, E>` | `fn f() -> Task<Result<T, E>>` (and `await x` → `try await x` where the error must propagate) |
+| `@Future<T>` with no error | `Task<T>` |
+| `#[@use] fn f() -> @Use<C, T>` | `fn f() -> Component<T>` (`throw` / `try` only if `T` is a `Result`) |
+| `#[@use] fn f() -> Component<T>` | `fn f() -> Component<T>` |
+| `#[@generator]` + `@Generator<T>` | `Iterator<T>` |
+| `#[@resultGenerator]` + `@ResultGenerator<T, E>` | `Iterator<Result<T, E>>` (`for` no longer does an implicit `try`) |
+| `#[@futureGenerator]` + `@FutureGenerator<T, E>` | `Stream<Result<T, E>>` |
 | `#[@generator] loop { … }` | `iter loop { … }` |
-| `#[@resultGenerator] loop { … }` | `iter loop { … }` (the item becomes a `@Result` from the body) |
+| `#[@resultGenerator] loop { … }` | `iter loop { … }` (the item becomes a `Result` from the body) |
 | `#[@futureGenerator] loop { … }` | `stream loop { … }` |
 | `YieldStep<T, E>` with `Error(error: E)` | `YieldStep<T>` = `{ Yield(value: T), Done }` |
-| `@Iterator<T, E>` | `@Iterator<@Result<T, E>>` |
-| `#[@context]` / `@Context<B, R>` as an effect | `-> @Component<R>` |
-| `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator` | `@Iterator<@Result<…>>` / `@Stream<@Result<…>>` |
+| `Iterator<T, E>` | `Iterator<Result<T, E>>` |
+| `#[@context]` / `@Context<B, R>` as an effect | `-> Component<R>` |
+| `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator` | `Iterator<Result<…>>` / `Stream<Result<…>>` |
 | `Iterable`, `IteratorStep`, `Yield<T, R>` | `YieldStep<T>` |
 | `loop (xs) { x -> }` · `loop (cond)` · `loop await` | `for (xs) { x -> }` · `while (cond)` · `for await` |
-| `-> Element` on a component that uses a hook | `-> @Component<Element>` |
-| `@Component<C, R>` (decision 128's base) | `@Component<R>` (decision 354) |
-| `type T(…) implement @Context<C>` | `type T(…) implement @Renderable` |
+| `-> Element` on a component that uses a hook | `-> Component<Element>` |
+| `Component<C, R>` (decision 128's base) | `Component<R>` (decision 354) |
+| `type T(…) implement @Context<C>` | `type T(…) implement Renderable` |
 | `val c = use @getContext(T);` | `T`'s default declared with `createContext(…)`, `use provide(createContext(…))` in the component that renders the reader, `val c = use context(T);` |
 
 Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py`
@@ -5899,7 +5900,7 @@ Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py
 @getContext(T)` at its line — which component provides the context is the
 author's choice.
 
-Decision 354 leaves one wrapper, `@Component<R>`, and `@Renderable` as a bare marker: `@Component<C, R>` is a type-arity error (`generic-arg-count-exceeded`) naming `@Component<R>`, located on the base; `@Renderable<T>` is the same error at the `<`, naming `@Renderable`; and the owner marker `@Context<C>` is `context-marker-removed`, naming `implement @Renderable`.
+Decision 354 leaves one wrapper, `Component<R>`, and `Renderable` as a bare marker: `Component<C, R>` is a type-arity error (`generic-arg-count-exceeded`) naming `Component<R>`, located on the base; `Renderable<T>` is the same error at the `<`, naming `Renderable`; and the owner marker `@Context<C>` is `context-marker-removed`, naming `implement Renderable`.
 
 <!-- example: modules/component_base_parameter -->
 <!-- example: modules/context_marker_removed -->
@@ -5907,16 +5908,16 @@ Decision 354 leaves one wrapper, `@Component<R>`, and `@Renderable` as a bare ma
 
 Four changes are not a rename and are reviewed by hand:
 
-- **An `await` whose error used to propagate.** `await` answers the `@Result`
-  now; where the function's return carries a `@Result`, write `try await`.
-  Where it does not — a component returning `Element`, a `@Task<T>` — handle the
+- **An `await` whose error used to propagate.** `await` answers the `Result`
+  now; where the function's return carries a `Result`, write `try await`.
+  Where it does not — a component returning `Element`, a `Task<T>` — handle the
   error there: `try await x catch fallback`, a `case`, a navigation signal.
-- **A `throw` in a hook or component** whose `T` is not a `@Result`: either the
-  hook returns `@Component<@Result<T, E>>`, or the error is handled in its
+- **A `throw` in a hook or component** whose `T` is not a `Result`: either the
+  hook returns `Component<Result<T, E>>`, or the error is handled in its
   body (decision 121).
-- **A `for` over a fallible iterator** hands over the `@Result`: add `try r`
-  (with a `@Result` in the return) or a `case`; `for await` likewise.
-- **JavaScript that consumes botopink.** A `@Task<@Result<…>>` resolves its
+- **A `for` over a fallible iterator** hands over the `Result`: add `try r`
+  (with a `Result` in the return) or a `case`; `for await` likewise.
+- **JavaScript that consumes botopink.** A `Task<Result<…>>` resolves its
   Promise with the `Error` value instead of rejecting it.
 
 ## Decided, not yet implemented
@@ -5939,10 +5940,10 @@ assignability rule, `x is <Type>` with narrowing, `case` arms written
 the four backends agree on it), `val assert <pattern> = <expr>;` (binding its
 names, and fatal when the match fails), a `//` comment inside a loop body, a
 **parameter default applied at the call site** on all four backends, an
-**effect on a record method** (`fn iter(self: Self) -> @Iterator<i32>` in a
+**effect on a record method** (`fn iter(self: Self) -> Iterator<i32>` in a
 `type … { … }` body is a generator method, walked by `for (b.iter()) { x -> … }`),
-and `await` inside a `@Component` body (an `async function` on commonJS, awaited
-by every caller; a `@Component` whose hooks node is synchronous is a plain
+and `await` inside a `Component` body (an `async function` on commonJS, awaited
+by every caller; a `Component` whose hooks node is synchronous is a plain
 `function`, decision 375).
 
 A default on an **imported function** is filled at the call like a local
@@ -5960,7 +5961,7 @@ These forms are **deliberately absent**, so that none reads as unfinished work:
 |---|---|
 | `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
 | `type Shape { Circle(i32) }` — a variant payload with no field name | `error[field-needs-name]`: a field with no name, at the payload, naming `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind |
-| `val assert Ok(v) = parse("42") catch 0` | ``after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |
+| `val assert Ok(v) = parse("42") catch 0` | ``after `catch` the value is not a Result — a `val assert` over a `Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |
 | `c ? a : b` | `error[ternary-absent]` — `if` is an expression: `val x = if (c) { a } else { b };` |
 | `1 + if (c) { 2 } else { 3 }` — an `if` as an operand | `error[if-operand]`, at the `if`: an `if` begins an expression, as `try` / `await` do; bind it first |
 | `x: any` — a type that takes anything | `any-type-removed`, at the annotation: the type that holds any value is `unknown`, tested with `is` before use |

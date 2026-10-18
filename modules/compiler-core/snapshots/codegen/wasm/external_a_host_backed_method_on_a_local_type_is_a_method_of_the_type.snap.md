@@ -28,12 +28,14 @@ pub type Level {
 
 pub fn main() {
     val m = Meter(base: 3);
-    @print(m.plus(4));
-    @print(m.twice());
-    @print(m.label(5, "x"));
-    @print(Level.High.scale(2));
-    @print(Level.Low.scale(2));
+    print(m.plus(4));
+    print(m.twice());
+    print(m.label(5, "x"));
+    print(Level.High.scale(2));
+    print(Level.Low.scale(2));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main

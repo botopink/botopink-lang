@@ -24,14 +24,16 @@ fn ident<T>(x: T) -> T {
 
 pub fn main() {
     val b = Box(value: 41);
-    @print(b.value + 1);
-    @print(b.get());
-    @print(Box(value: "s"));
-    @print(Box(value: true));
-    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
-    @print(Maybe.Some(value: "x"));
-    @print(ident(3) + 1);
+    print(b.value + 1);
+    print(b.get());
+    print(Box(value: "s"));
+    print(Box(value: true));
+    print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+    print(Maybe.Some(value: "x"));
+    print(ident(3) + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -96,7 +98,7 @@ pub fn main() {
     {test, is_ge, {f, 16}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 17}}.
   {label, 16}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:25:20">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:25:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 17}.
     {test_heap, 2, 1}.
@@ -147,7 +149,7 @@ pub fn main() {
     {test, is_ge, {f, 46}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 47}}.
   {label, 46}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:31:21">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:31:20">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 47}.
     {test_heap, 2, 1}.

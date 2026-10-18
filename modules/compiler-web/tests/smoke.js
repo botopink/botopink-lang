@@ -28,21 +28,23 @@ function assert(cond, what) {
 }
 
 const PLAIN = `
+import {io.terminal.print} from "std";
 fn greet(name: string) -> string {
   "hello, " + name
 }
 
 fn main() {
-  @print(greet("web"))
+  print(greet("web"))
 }
 `;
 
-const RUNNABLE = `fn greet(name: string) -> string {
+const RUNNABLE = `import {io.terminal.print} from "std";
+fn greet(name: string) -> string {
     return "hello, " + name;
 }
 
 fn main() {
-    @print(greet("web"));
+    print(greet("web"));
 }
 `;
 
@@ -136,9 +138,9 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   // Decision 519: the page's compiler is handed no reader — `@embed` is a
   // located refusal, never a read.
   compiler.reset();
-  compiler.addSource("main", 'pub fn main() {\n    @print(@embed("assets/logo.png").size);\n}\n');
+  compiler.addSource("main", 'import {io.terminal.print} from "std";\npub fn main() {\n    print(@embed("assets/logo.png").size);\n}\n');
   const embed = compiler.compile("commonJS");
-  assert(embed.status === 1 && String(embed.modules[0].diagnostic).includes("embed-no-reader") && String(embed.modules[0].diagnostic).includes("main.bp:2:12"), `@embed is refused in the page, located (${embed.modules[0].diagnostic})`);
+  assert(embed.status === 1 && String(embed.modules[0].diagnostic).includes("embed-no-reader") && String(embed.modules[0].diagnostic).includes("main.bp:3:11"), `@embed is refused in the page, located (${embed.modules[0].diagnostic})`);
 
   // The decorator + template program: on every target its comptime runs on
   // the wasm runtime (decision 434) — lowered by the compiler, run by the

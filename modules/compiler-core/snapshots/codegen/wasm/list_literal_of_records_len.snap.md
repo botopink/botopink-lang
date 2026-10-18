@@ -3,8 +3,10 @@
 type P(x: i32, y: i32)
 fn main() {
     val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
-    @print(pts.len);
+    print(pts.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

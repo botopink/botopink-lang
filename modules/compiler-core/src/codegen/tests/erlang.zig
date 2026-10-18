@@ -21,9 +21,9 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
     const at = std.mem.indexOf(u8, prelude.primitives, marker) orelse return error.PreludeMarkerMoved;
     const line_start = if (std.mem.lastIndexOfScalar(u8, prelude.primitives[0..at], '\n')) |nl| nl + 1 else 0;
     const line = std.mem.count(u8, prelude.primitives[0..at], "\n") + 1;
-    // The call's column is its `.`; `@print(s.trim())`'s `.` is 8 past the pad.
+    // The call's column is its `.`; `print(s.trim())`'s `.` is 7 past the pad.
     const dot = at + "out = out".len - line_start;
-    try std.testing.expect(dot >= 8 and line > 4);
+    try std.testing.expect(dot >= 7 and line > 4);
 
     var src: std.ArrayListUnmanaged(u8) = .empty;
     defer src.deinit(alloc);
@@ -32,10 +32,9 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
         \\    val s = " ab ";
         \\    print([1, 1, 2].unique());
         \\
-        \\import {io.terminal.print} from "std";
     );
     for (4..line) |_| try src.appendSlice(alloc, "    //\n");
-    try src.appendNTimes(alloc, ' ', dot - 8);
+    try src.appendNTimes(alloc, ' ', dot - 7);
     try src.appendSlice(alloc,
         \\print(s.trim());
         \\}
@@ -74,6 +73,7 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\    val none: i32[] = [];
         \\    print(none.firstOr(9));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)" });
 }
@@ -89,6 +89,7 @@ test "erlang: Array.unique keeps each value's first occurrence" {
         \\    val none: i32[] = [];
         \\    print(none.unique());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "[1, 2, 3]\n[4]\n[]\n", &.{});
 }
@@ -103,6 +104,7 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
         \\pub fn main() {
         \\    print("é", "\u{1F600}");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "é 😀\n", &.{"'_botopink_main'() ->\n    io:setopts(standard_io, [{encoding, unicode}]),\n    main()."});
 }
@@ -131,6 +133,7 @@ test "erlang: true and false inside a tuple pattern are matched, not bound" {
         \\    print(first(#(false, 7, 8)));
         \\    print(first(#(true, 7, 8)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "no 1\nyes 2\n0\n7\n", &.{ "{true, N} ->", "{false, N@1} ->", "=:= false" });
 }
@@ -164,6 +167,7 @@ test "erlang: a record's constructor pattern carries the record's own tag" {
         \\    print(onAxis(Point(x: 3, y: 0)));
         \\    print(onAxis(Point(x: 3, y: 4)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n3\non y\non x\noff\n", &.{"{test@main@@Point, 0, _} ->"});
 }
@@ -187,6 +191,7 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
         \\    print(parse(1).unwrapOr(-2));
         \\    print(parse(2).unwrapOr(-3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, '__bp_int'((N * 2), -2147483648, 2147483647, <<\"integer overflow: * on i32 at main.bp:5:16\">>)}" });
 }
@@ -209,6 +214,7 @@ test "erlang: a fn in a generic record's field is applied when called through th
         \\    val lam = Box(value: { s -> s + "?" });
         \\    print(lam.value("e"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "b!\ne?\n", &.{ "(erlang:element(2, H))(<<\"b\">>)", "(erlang:element(2, Lam))(<<\"e\">>)" });
 }
@@ -230,6 +236,7 @@ test "erlang: a list pattern that is a spread alone binds the whole list" {
         \\    val assert [..every] = [4, 5];
         \\    print(every);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "all 3\nall 0\n[4, 5]\n", &.{"Every = case"});
 }
@@ -265,6 +272,7 @@ test "erlang: a block reassigning an enclosing `var` answers it beside its value
         \\    print(firstOver([1, 7, 3], 5));
         \\    print(firstOver([1, 2], 5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "703\n-80\n", &.{"erlang:element(1, {_, "});
 }
@@ -301,6 +309,7 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\    print(describe(Queue(label: "crowded", size: 2)));
         \\    print(collections.toInt(collections.lt()));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, "main", "crowded:2\n-1\n", &.{"{test@items@@Queue, <<\"crowded\">>, 2}"});
@@ -314,6 +323,7 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\    print(describe(Queue(label: "after", size: 3)));
         \\    print(collections.toInt(collections.gt()));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, "main", "after:3\n1\n", &.{"{test@items@@Queue, <<\"after\">>, 3}"});
@@ -340,6 +350,7 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
         \\pub fn main() {
         \\    print(_d);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "10\n", &.{"'_c'() ->"});
 }
@@ -356,6 +367,7 @@ const bytes_src =
     \\    print(j[2..].toUtf8().unwrapOr("?"));
     \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";

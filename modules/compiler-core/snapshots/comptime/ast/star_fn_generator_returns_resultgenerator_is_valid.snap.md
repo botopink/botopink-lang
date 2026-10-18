@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn gen() -> @Iterator<i32> {
+fn gen() -> Iterator<i32> {
     yield 1;
 }
 ```

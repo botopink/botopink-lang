@@ -22,6 +22,7 @@ test "js: narrow ---- if null check with print" {
         \\    val x: ?i32 = 42;
         \\    if (x) { n -> print(n); };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -41,6 +42,7 @@ test "js: narrow ---- case enum area with print" {
         \\    print(area(Shape.Circle(2.0)));
         \\    print(area(Shape.Square(3.0)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -61,6 +63,7 @@ test "js: narrow ---- case result ok err with print" {
         \\    val msg2 = case r2 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
         \\    print(msg2);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -77,6 +80,7 @@ test "js: narrow ---- early return with print" {
         \\    print(greet("world"));
         \\    print(greet(null));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -101,6 +105,7 @@ test "js: narrow ---- type guard basic codegen" {
         \\    print(isPositive(5));
         \\    print(isPositive(-5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -114,6 +119,7 @@ test "js: narrow ---- type guard if codegen" {
         \\fn main() {
         \\    print(isString("hello"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -159,6 +165,7 @@ test "js: narrow ---- `is` tests the value, and a named type by its prototype" {
         \\    val xs = [1, 2];
         \\    print(xs is i32[]);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\true
@@ -192,6 +199,7 @@ test "js: narrow ---- case option some none" {
         \\    print(describe(Opt.Some(value: 42)));
         \\    print(describe(Opt.None));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -215,6 +223,7 @@ test "js: narrow ---- and condition field access" {
         \\fn main() {
         \\    print(describe(Box(weight: 20)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -232,6 +241,7 @@ test "js: narrow ---- optional chaining field access" {
         \\    val o = Outer(inner: Inner(value: 42));
         \\    print(getValue(o));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -249,6 +259,7 @@ test "js: narrow ---- else if chain with null checks" {
         \\    print(classify(42));
         \\    print(classify(0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -282,6 +293,7 @@ test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none"
         \\    val p = Outer(inner: Inner(v: 4));
         \\    print(p.inner?.v ?? 9);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsNotContains(std.testing.allocator, src, &.{"!== null"});
@@ -333,6 +345,7 @@ test "codegen: is ---- a named type is tested by the tag the value carries" {
         \\    print(nameOf(Person(name: "Ana", age: 30)));
         \\    print(nameOf(Vec(name: "Ana", age: 30)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -355,6 +368,7 @@ test "js: is ---- an enum variant path is tested by the enum's class and its tag
         \\    print(e is Token.Eof);
         \\    print(e is Token.Text);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\true

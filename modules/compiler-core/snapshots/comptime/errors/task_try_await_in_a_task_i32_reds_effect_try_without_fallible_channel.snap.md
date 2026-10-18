@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-fn fetchUser() -> @Task<@Result<i32, string>> {
+fn fetchUser() -> Task<Result<i32, string>> {
     return 1;
 }
-fn count() -> @Task<i32> {
+fn count() -> Task<i32> {
     val n = try await fetchUser();
     return n;
 }

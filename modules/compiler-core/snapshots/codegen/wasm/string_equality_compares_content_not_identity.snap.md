@@ -5,16 +5,18 @@ fn main() {
     val same = left == "foo";
     val diff = "foo" == "bar";
     if (same) {
-        @print(1);
+        print(1);
     } else {
-        @print(0);
+        print(0);
     };
     if (diff) {
-        @print(1);
+        print(1);
     } else {
-        @print(0);
+        print(0);
     }
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

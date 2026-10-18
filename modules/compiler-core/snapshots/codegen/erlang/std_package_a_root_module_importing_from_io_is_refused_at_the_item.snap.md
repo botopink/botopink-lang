@@ -904,6 +904,8 @@ string_slice(Self, Start, End) ->
 //// fault) is no exception and is not caught. `attemptTask` contains what
 //// the thunk raises before the task's first `await`.
 
+import {compiler};
+
 pub type HostErrorName {
     Error,
     Throw,
@@ -918,7 +920,7 @@ pub type Failure(message: string, kind: string)
 // with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
 // Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
 // inside std); `panic("not implemented")` is what `todo` was.
-#[external(
+#[compiler.external(
     .Erlang("erlang:error({panic, $0})"),
     .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
 )]
@@ -938,14 +940,14 @@ pub declare fn panic(message: string = "panic") -> noreturn;
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptOnWasm),
 )]
-pub declare fn attempt<T>(f: fn() -> T) -> @Result<T, Failure>;
+pub declare fn attempt<T>(f: fn() -> T) -> Result<T, Failure>;
 
 #[external(
     .JavaScript("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))"""),
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptTaskOnWasm),
 )]
-pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>;
+pub declare fn attemptTask<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>>;
 
 // wasm's form (decision 518): the thunk's value, or the message of the abort
 // it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
@@ -956,9 +958,9 @@ pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>
     .Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)"""),
     .Wasm(wasi: .Attempt, needs: [.Exceptions]),
 )]
-declare fn caught<T>(f: fn() -> T) -> @Result<T, string>;
+declare fn caught<T>(f: fn() -> T) -> Result<T, string>;
 
-fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
+fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
     case caught(f) {
         Ok(v) -> return v;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -967,7 +969,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
+fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -1204,7 +1206,7 @@ attemptTaskOnWasm(F) ->
 //// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
 //// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 
-import {path.relative, failure, failure.HostError};
+import {path.relative, failure, failure.HostError, compiler};
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 // caller wrote (for `copy`, the source; for `walk`, the root).
@@ -1250,7 +1252,7 @@ pub type FileStat(
     .JavaScript("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawReadBytes(path: string) -> @Result<Bytes, HostError>;
+declare fn rawReadBytes(path: string) -> Result<Bytes, HostError>;
 
 // Write `contents` to `path`, creating or truncating.
 // Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
@@ -1258,7 +1260,7 @@ declare fn rawReadBytes(path: string) -> @Result<Bytes, HostError>;
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, HostError>;
+declare fn rawWriteBytes(path: string, contents: Bytes) -> Result<i32, HostError>;
 
 // Append `contents` to `path`, creating it when it is not there.
 // Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
@@ -1266,7 +1268,7 @@ declare fn rawWriteBytes(path: string, contents: Bytes) -> @Result<i32, HostErro
     .JavaScript("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawAppendText(path: string, contents: string) -> @Result<i32, HostError>;
+declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostError>;
 
 // The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
 // starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
@@ -1293,14 +1295,14 @@ declare fn stripEol(line: Bytes) -> Bytes;
     .JavaScript("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [read, binary, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawOpen(path: string) -> @Result<unknown, HostError>;
+declare fn rawOpen(path: string) -> Result<unknown, HostError>;
 
 // The handle of the file at `path`, open for writing: created, or truncated.
 #[external(
     .JavaScript("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawCreate(path: string) -> @Result<unknown, HostError>;
+declare fn rawCreate(path: string) -> Result<unknown, HostError>;
 
 // A handle over bytes held in memory — what an `Asset` opens as. The position is a field
 // on Node and a `counters` cell on Erlang.
@@ -1315,28 +1317,28 @@ declare fn memHandle(bytes: Bytes) -> unknown;
     .JavaScript("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true),
     .Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
 )]
-declare fn rawSize(handle: unknown, path: string) -> @Result<i64, HostError>;
+declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
 
 // Up to `n` bytes (n > 0) from the handle's position; empty at the end.
 #[external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true),
     .Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
 )]
-declare fn rawRead(handle: unknown, n: i32) -> @Result<Bytes, HostError>;
+declare fn rawRead(handle: unknown, n: i32) -> Result<Bytes, HostError>;
 
 // Every byte from the handle's position to the end.
 #[external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true),
 )]
-declare fn rawReadAll(handle: unknown) -> @Result<Bytes, HostError>;
+declare fn rawReadAll(handle: unknown) -> Result<Bytes, HostError>;
 
 // The next line, terminator included; empty at the end.
 #[external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
 )]
-declare fn rawReadLine(handle: unknown) -> @Result<Bytes, HostError>;
+declare fn rawReadLine(handle: unknown) -> Result<Bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 // whatever the position, which it leaves where it was.
@@ -1344,21 +1346,21 @@ declare fn rawReadLine(handle: unknown) -> @Result<Bytes, HostError>;
     .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true),
 )]
-declare fn rawHash(handle: unknown) -> @Result<string, HostError>;
+declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 
 // Write `bytes` at the handle's position; answers how many.
 #[external(
     .JavaScript("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true),
     .Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawWrite(handle: unknown, bytes: Bytes) -> @Result<i32, HostError>;
+declare fn rawWrite(handle: unknown, bytes: Bytes) -> Result<i32, HostError>;
 
 // Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
 #[external(
     .JavaScript("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
 )]
-declare fn rawClose(handle: unknown) -> @Result<i32, HostError>;
+declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
 
 // Write `contents` to `path`, creating or truncating. Reds with the
 // host's I/O error message.
@@ -1371,7 +1373,7 @@ declare fn rawClose(handle: unknown) -> @Result<i32, HostError>;
 declare fn rawWriteText(
     path: string,
     contents: string,
-) -> @Result<i32, HostError>;
+) -> Result<i32, HostError>;
 
 // Whether a path exists, of any kind: a regular file, a directory, a
 // character or block device (`/dev/null`), a FIFO or a socket. A symbolic
@@ -1394,7 +1396,7 @@ pub declare fn exists(path: string) -> bool;
     .JavaScript("""(() => { return require('fs').readdirSync($0) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawList(path: string) -> @Result<string[], HostError>;
+declare fn rawList(path: string) -> Result<string[], HostError>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
 // intermediate parents.
@@ -1404,7 +1406,7 @@ declare fn rawList(path: string) -> @Result<string[], HostError>;
     .JavaScript("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawMkdir(path: string) -> @Result<i32, HostError>;
+declare fn rawMkdir(path: string) -> Result<i32, HostError>;
 
 // Create the directory at `path` and every missing directory above it. A
 // directory that is already there is `Ok` too; a path that exists as anything
@@ -1416,7 +1418,7 @@ declare fn rawMkdir(path: string) -> @Result<i32, HostError>;
     .JavaScript("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawMkdirRecursive(path: string) -> @Result<i32, HostError>;
+declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
 
 // Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
 // both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
@@ -1427,7 +1429,7 @@ declare fn rawMkdirRecursive(path: string) -> @Result<i32, HostError>;
     .JavaScript("""(() => { require('fs').rmSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
 )]
-declare fn rawRm(path: string) -> @Result<i32, HostError>;
+declare fn rawRm(path: string) -> Result<i32, HostError>;
 
 // Copy file from `src` to `dest`. Reds when `src` is missing or
 // `dest` already exists (Node's default `copyFileSync` semantics).
@@ -1437,7 +1439,7 @@ declare fn rawRm(path: string) -> @Result<i32, HostError>;
     .JavaScript("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawCopy(src: string, dest: string) -> @Result<i32, HostError>;
+declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
 
 // File metadata. Returns a `FileStat { size, mtime, isDir }` on
 // success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
@@ -1453,7 +1455,7 @@ declare fn rawCopy(src: string, dest: string) -> @Result<i32, HostError>;
     .JavaScript("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawStat(path: string) -> @Result<FileStat, HostError>;
+declare fn rawStat(path: string) -> Result<FileStat, HostError>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 
@@ -1480,7 +1482,7 @@ declare fn rawStat(path: string) -> @Result<FileStat, HostError>;
     .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true),
     .Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true),
 )]
-declare fn rawWalk(root: string) -> @Result<Walked, HostError>;
+declare fn rawWalk(root: string) -> Result<Walked, HostError>;
 
 // The entries under `root` matching the glob `pattern`, as paths relative to
 // `root` with `/` separators, sorted, each once. The pattern is read segment
@@ -1521,7 +1523,7 @@ declare fn rawGlob(pattern: string, root: string) -> string[];
     .JavaScript("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawRemoveTree(path: string) -> @Result<i32, HostError>;
+declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
 
 // Internal, test scaffolding: a fresh, unique, empty directory under the
 // host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
@@ -1563,7 +1565,7 @@ fn fsError(path: string, e: HostError) -> FsError {
 }
 
 // A host cell's answer, its failure read as an `FsError` of `path`.
-fn lift<T>(path: string, r: @Result<T, HostError>) -> @Result<T, FsError> {
+fn lift<T>(path: string, r: Result<T, HostError>) -> Result<T, FsError> {
     case r {
         Ok(v) -> return v;
         Error(e) -> throw fsError(path, e);
@@ -1571,7 +1573,7 @@ fn lift<T>(path: string, r: @Result<T, HostError>) -> @Result<T, FsError> {
 }
 
 // The text of `b`, or `InvalidUtf8` at the first invalid byte.
-fn decode(path: string, b: Bytes) -> @Result<string, FsError> {
+fn decode(path: string, b: Bytes) -> Result<string, FsError> {
     val offset = utf8Offset(b);
     if (offset >= 0l) throw FsError.InvalidUtf8(path: path, offset: offset);
     return b.toUtf8().unwrapOr("");
@@ -1594,74 +1596,74 @@ declare fn rawReadOnly(handle: unknown) -> bool;
 // ── whole-file shortcuts ─────────────────────────────────────────────────────
 
 // The file's bytes.
-pub fn readBytes(path: string) -> @Result<Bytes, FsError> {
+pub fn readBytes(path: string) -> Result<Bytes, FsError> {
     val b = try lift(path, rawReadBytes(path));
     return b;
 }
 
 // The file as UTF-8 text. Bytes that are not UTF-8 are `InvalidUtf8` on every
 // target — never node's silent U+FFFD nor erlang's unchecked binary.
-pub fn readText(path: string) -> @Result<string, FsError> {
+pub fn readText(path: string) -> Result<string, FsError> {
     val b = try readBytes(path);
     val s = try decode(path, b);
     return s;
 }
 
 // Write `contents` to `path`, creating or truncating.
-pub fn writeBytes(path: string, contents: Bytes) -> @Result<i32, FsError> {
+pub fn writeBytes(path: string, contents: Bytes) -> Result<i32, FsError> {
     val n = try lift(path, rawWriteBytes(path, contents));
     return n;
 }
 
-pub fn writeText(path: string, contents: string) -> @Result<i32, FsError> {
+pub fn writeText(path: string, contents: string) -> Result<i32, FsError> {
     val n = try lift(path, rawWriteText(path, contents));
     return n;
 }
 
 // Append `contents`, creating the file when it is not there.
-pub fn appendText(path: string, contents: string) -> @Result<i32, FsError> {
+pub fn appendText(path: string, contents: string) -> Result<i32, FsError> {
     val n = try lift(path, rawAppendText(path, contents));
     return n;
 }
 
 // ── metadata and directories ─────────────────────────────────────────────────
 
-pub fn stat(path: string) -> @Result<FileStat, FsError> {
+pub fn stat(path: string) -> Result<FileStat, FsError> {
     val s = try lift(path, rawStat(path));
     return s;
 }
 
-pub fn list(path: string) -> @Result<string[], FsError> {
+pub fn list(path: string) -> Result<string[], FsError> {
     val names = try lift(path, rawList(path));
     return names;
 }
 
-pub fn mkdir(path: string) -> @Result<i32, FsError> {
+pub fn mkdir(path: string) -> Result<i32, FsError> {
     val n = try lift(path, rawMkdir(path));
     return n;
 }
 
-pub fn mkdirRecursive(path: string) -> @Result<i32, FsError> {
+pub fn mkdirRecursive(path: string) -> Result<i32, FsError> {
     val n = try lift(path, rawMkdirRecursive(path));
     return n;
 }
 
-pub fn rm(path: string) -> @Result<i32, FsError> {
+pub fn rm(path: string) -> Result<i32, FsError> {
     val n = try lift(path, rawRm(path));
     return n;
 }
 
-pub fn removeTree(path: string) -> @Result<i32, FsError> {
+pub fn removeTree(path: string) -> Result<i32, FsError> {
     val n = try lift(path, rawRemoveTree(path));
     return n;
 }
 
-pub fn copy(src: string, dest: string) -> @Result<i32, FsError> {
+pub fn copy(src: string, dest: string) -> Result<i32, FsError> {
     val n = try lift(src, rawCopy(src, dest));
     return n;
 }
 
-pub fn walk(root: string) -> @Result<string[], FsError> {
+pub fn walk(root: string) -> Result<string[], FsError> {
     val found = try lift(root, rawWalk(root));
     if (found.dangling.length > 0) {
         val first = found.dangling.at(0) ?? "";
@@ -1670,7 +1672,7 @@ pub fn walk(root: string) -> @Result<string[], FsError> {
     return found.files;
 }
 
-pub fn glob(pattern: string, root: string) -> @Result<string[], FsError> {
+pub fn glob(pattern: string, root: string) -> Result<string[], FsError> {
     return rawGlob(pattern, root);
 }
 
@@ -1693,33 +1695,33 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // The file's size in bytes.
-    pub fn size(self: Self) -> @Result<i64, FsError> {
+    pub fn size(self: Self) -> Result<i64, FsError> {
         val n = try lift(self.location, rawSize(self.handle, self.location));
         return n;
     }
 
     // Up to `n` bytes from the position; empty at the end of the file.
-    pub fn read(self: Self, n: i32) -> @Result<Bytes, FsError> {
+    pub fn read(self: Self, n: i32) -> Result<Bytes, FsError> {
         if (n <= 0) return Bytes.fromUtf8("");
         val b = try lift(self.location, rawRead(self.handle, n));
         return b;
     }
 
     // Every byte from the position to the end.
-    pub fn bytes(self: Self) -> @Result<Bytes, FsError> {
+    pub fn bytes(self: Self) -> Result<Bytes, FsError> {
         val b = try lift(self.location, rawReadAll(self.handle));
         return b;
     }
 
     // The rest of the file as UTF-8 text (`InvalidUtf8` otherwise).
-    pub fn text(self: Self) -> @Result<string, FsError> {
+    pub fn text(self: Self) -> Result<string, FsError> {
         val b = try self.bytes();
         val s = try decode(self.location, b);
         return s;
     }
 
     // The rest of the file in pieces of at most `size` bytes. An error ends the stream.
-    pub fn chunks(self: Self, size: i32 = 65536) -> @Stream<@Result<Bytes, FsError>> {
+    pub fn chunks(self: Self, size: i32 = 65536) -> Stream<Result<Bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
             if (b.length == 0) break;
@@ -1730,7 +1732,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     // The rest of the file line by line, `\n` and `\r\n` stripped. A line that is not
     // UTF-8 ends the stream with `InvalidUtf8`, its offset counted from the first
     // line this call read.
-    pub fn lines(self: Self) -> @Stream<@Result<string, FsError>> {
+    pub fn lines(self: Self) -> Stream<Result<string, FsError>> {
         var consumed = 0l;
         while (true) {
             val raw = try lift(self.location, rawReadLine(self.handle));
@@ -1747,13 +1749,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // The SHA-256 of the whole file, lowercase hex.
-    pub fn hash(self: Self) -> @Result<string, FsError> {
+    pub fn hash(self: Self) -> Result<string, FsError> {
         val h = try lift(self.location, rawHash(self.handle));
         return h;
     }
 
     // Write `b` at the position; answers the number of bytes written.
-    pub fn write(self: Self, b: Bytes) -> @Result<i32, FsError> {
+    pub fn write(self: Self, b: Bytes) -> Result<i32, FsError> {
         if (rawReadOnly(self.handle))
             throw FsError.Other(path: self.location, message: "the file is open for reading");
         val n = try lift(self.location, rawWrite(self.handle, b));
@@ -1767,13 +1769,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
 }
 
 // Open the file at `path` for reading. A directory is `IsDirectory` on every target.
-pub fn open(path: string) -> @Result<File, FsError> {
+pub fn open(path: string) -> Result<File, FsError> {
     val h = try lift(path, rawOpen(path));
     return File(location: path, handle: h);
 }
 
 // Open the file at `path` for writing: created, or truncated.
-pub fn create(path: string) -> @Result<File, FsError> {
+pub fn create(path: string) -> Result<File, FsError> {
     val h = try lift(path, rawCreate(path));
     return File(location: path, handle: h);
 }
@@ -2100,7 +2102,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
 // ── FsError, readText and the handle ─────────────────────────────────────────
 
 // Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
-fn variantOf<T>(r: @Result<T, FsError>) -> string {
+fn variantOf<T>(r: Result<T, FsError>) -> string {
     return case r {
         Ok(_) -> "ok";
         Error(e) -> describe(e);

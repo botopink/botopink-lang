@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("x =", 42, true);
+    print("x =", 42, true);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -17,7 +19,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(\"x =\", 42, true);"
+          "source": "print(\"x =\", 42, true);"
         }
       ]
     }

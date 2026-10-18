@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn bad() -> @Task<i32> {
+fn bad() -> Task<i32> {
     val x = await 5;
     return x;
 }

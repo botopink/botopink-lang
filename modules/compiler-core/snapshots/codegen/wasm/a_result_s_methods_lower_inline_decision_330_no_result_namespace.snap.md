@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
 }
 
 fn main() {
     val r = parse(21).map({ x -> x * 2 });
-    @print(r.unwrapOr(0));
+    print(r.unwrapOr(0));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

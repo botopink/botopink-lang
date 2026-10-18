@@ -8,10 +8,12 @@ fn main() {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("WARN", "Memória alta");
     val r3 = build("INFO", "Log replicado");
-    @print(r1);
-    @print(r2);
-    @print(r3);
+    print(r1);
+    print(r2);
+    print(r3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

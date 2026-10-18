@@ -20,6 +20,7 @@ test "format: todo ---- with message" {
         \\fn main() {
         \\    panic("todo with a label");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -227,6 +228,7 @@ test "format: todo ---- with message and comment" {
         \\fn main() {
         \\    panic("wibble");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }

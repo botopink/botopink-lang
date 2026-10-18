@@ -4,16 +4,18 @@
 pub declare fn basename(p: string) -> string;
 
 fn main() {
-    @print(basename("/tmp/notes.txt"));
+    print(basename("/tmp/notes.txt"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `basename` has no implementation for the wasm backend
-  ┌─ :5:12
+  ┌─ :5:11
   │
-5 │     @print(basename("/tmp/notes.txt"));
-  │            ^
+5 │     print(basename("/tmp/notes.txt"));
+  │           ^
 ```
 

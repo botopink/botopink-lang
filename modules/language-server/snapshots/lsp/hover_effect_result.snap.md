@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn parse(x: i32) -> @Result<i32, string> {
+fn parse(x: i32) -> Result<i32, string> {
    ↑
     if (x < 0) { throw "negative"; };
     return x;
@@ -11,5 +11,5 @@ fn parse(x: i32) -> @Result<i32, string> {
 kind: markdown
 
 ```botopink
-fn parse(x: i32) -> @Result<i32, string>
+fn parse(x: i32) -> Result<i32, string>
 ```

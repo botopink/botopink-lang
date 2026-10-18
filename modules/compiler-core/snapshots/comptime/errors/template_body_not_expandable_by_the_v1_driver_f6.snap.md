@@ -4,6 +4,7 @@ pub fn hard(syntax t: string) -> string {
     return t;
 }
 val c = hard @`SELECT 1`;
+
 import {compiler} from "std";
 
 ----- ERROR

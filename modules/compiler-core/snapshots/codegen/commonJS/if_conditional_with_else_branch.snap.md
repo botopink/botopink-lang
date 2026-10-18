@@ -4,9 +4,11 @@ fn describe(n: i32) -> string {
     return if (n > 0) "positive" else "non-positive";
 }
 fn main() {
-    @print(describe(5));
-    @print(describe(-3));
+    print(describe(5));
+    print(describe(-3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

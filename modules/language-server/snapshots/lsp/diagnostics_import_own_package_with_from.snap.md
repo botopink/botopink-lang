@@ -3,8 +3,10 @@
 import {area} from "shapes.geometry";
 
 pub fn main() {
-    @print(area(2));
+    print(area(2));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- DIAGNOSTICS

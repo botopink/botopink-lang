@@ -1,10 +1,10 @@
 ----- SOURCE CODE
-val Element = type() implement @Renderable
+val Element = type() implement Renderable
 val Request = type(path: string)
-fn request() -> @Component<Request> {
+fn request() -> Component<Request> {
     return Request(path: "/");
 }
-fn Page() -> @Task<Element> {
+fn Page() -> Task<Element> {
     val r = use request();
     return Element();
 }

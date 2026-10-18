@@ -714,6 +714,7 @@ test "definition: a member through the namespace a `mod` binds jumps into its mo
         \\    print(config.label("x"));
         \\    print(text.split.splitPath("a/b"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const others = [_]engine.ModuleSource{

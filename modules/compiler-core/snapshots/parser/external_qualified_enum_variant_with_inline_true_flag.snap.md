@@ -19,7 +19,7 @@
               ".Erlang(\"lists:search($0, $1)\", inline: true)",
               ".JavaScript(\"./gleam_stdlib.mjs\", \"index_of\")"
             ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
@@ -58,6 +58,27 @@
         },
         "typeGuardParam": null,
         "body": []
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

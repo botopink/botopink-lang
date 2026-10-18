@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn log(msg: string) {
-    @print(msg);
+    print(msg);
 }
 fn main() {
     log("started");
     val x = 42;
     log("done");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

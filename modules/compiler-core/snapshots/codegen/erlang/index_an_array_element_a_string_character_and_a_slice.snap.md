@@ -3,16 +3,18 @@
 fn main() {
     val xs = [10, 20, 30];
     val i = 1;
-    @print(xs[0]);
-    @print(xs[i + 1]);
+    print(xs[0]);
+    print(xs[i + 1]);
     val names = ["ana", "bo"];
-    @print(names[1]);
+    print(names[1]);
     val s = "hello";
-    @print(s[1]);
-    @print(s[1..3]);
-    @print(s[3..]);
-    @print(xs[1..]);
+    print(s[1]);
+    print(s[1..3]);
+    print(s[3..]);
+    print(xs[1..]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -59,7 +61,7 @@ main() ->
     Xs = [10, 20, 30],
     I = 1,
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, 0)]),
-    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:5:17">>))]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:5:16">>))]),
     Names = [<<"ana">>, <<"bo">>],
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Names, 1)]),
     S = <<"hello">>,

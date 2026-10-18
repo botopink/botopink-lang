@@ -4,16 +4,18 @@
 declare fn stringify(value: i32) -> string;
 
 fn main() {
-    @print(stringify(42));
+    print(stringify(42));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `stringify` has no implementation for the wasm backend
-  ┌─ :5:12
+  ┌─ :5:11
   │
-5 │     @print(stringify(42));
-  │            ^
+5 │     print(stringify(42));
+  │           ^
 ```
 

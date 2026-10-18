@@ -4,8 +4,10 @@ fn isPositive(n: i32) -> n is i32 {
     return n > 0;
 }
 fn main() {
-    @print(isPositive(5));
+    print(isPositive(5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -37,7 +39,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(isPositive(5));"
+          "source": "print(isPositive(5));"
         }
       ]
     }

@@ -3,8 +3,10 @@
 fn main() {
     var count = 0;
     count += 1;
-    @print(count);
+    print(count);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

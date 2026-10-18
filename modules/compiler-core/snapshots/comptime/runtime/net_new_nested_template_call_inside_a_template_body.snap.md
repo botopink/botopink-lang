@@ -7,6 +7,7 @@ pub fn outer(syntax q: string) -> string {
     return compiler.build("inner @`deep`");
 }
 val s = outer @`x`;
+
 import {compiler} from "std";
 ```
 

@@ -4,8 +4,10 @@
 pub declare fn dirname(p: string) -> string;
 
 fn main() {
-    @print(dirname("/tmp/notes.txt"));
+    print(dirname("/tmp/notes.txt"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

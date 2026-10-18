@@ -4,17 +4,19 @@ fn main() {
     var i = 0;
     var found = 0;
     while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
-    @print(found);
-    @print(i);
+    print(found);
+    print(i);
     var k = 0;
     var r = 0;
     loop { k = k + 1; if (k > 2) { r = k; break; }; };
-    @print(r);
+    print(r);
     var n = 0;
     var never = 0;
     while (n < 3) { if (n == 99) { never = n; break; }; n = n + 1; };
-    @print(never);
+    print(never);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

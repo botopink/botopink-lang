@@ -24,14 +24,16 @@ fn ident<T>(x: T) -> T {
 
 pub fn main() {
     val b = Box(value: 41);
-    @print(b.value + 1);
-    @print(b.get());
-    @print(Box(value: "s"));
-    @print(Box(value: true));
-    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
-    @print(Maybe.Some(value: "x"));
-    @print(ident(3) + 1);
+    print(b.value + 1);
+    print(b.get());
+    print(Box(value: "s"));
+    print(Box(value: true));
+    print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+    print(Maybe.Some(value: "x"));
+    print(ident(3) + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -1148,7 +1150,7 @@ pub fn main() {
     )
     local.get $out
   )
-  (data $__d0 "integer overflow: + on i32 at main.bp:25:20")
+  (data $__d0 "integer overflow: + on i32 at main.bp:25:19")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "Box")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
@@ -1164,7 +1166,7 @@ pub fn main() {
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (data $__d7 "x")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "integer overflow: + on i32 at main.bp:31:21")
+  (data $__d8 "integer overflow: + on i32 at main.bp:31:20")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 "Maybe.Some")
   (global $__s9 (mut (ref null $str)) (ref.null $str))

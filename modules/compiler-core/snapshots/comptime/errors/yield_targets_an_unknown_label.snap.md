@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn gen() -> @Iterator<i32> {
+fn gen() -> Iterator<i32> {
     yield :nope 1;
 }
 

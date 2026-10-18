@@ -22,6 +22,7 @@ test "decision 539: `defer` marks the statement, a block is a block expression" 
         \\    defer { print("b"); }
         \\    print("c");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
     const body = program.decls[0].@"fn".body;
@@ -38,6 +39,7 @@ test "decision 539: a deferred statement at the end answers no tail" {
         \\fn f() {
         \\    defer print("a")
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
     const body = program.decls[0].@"fn".body;

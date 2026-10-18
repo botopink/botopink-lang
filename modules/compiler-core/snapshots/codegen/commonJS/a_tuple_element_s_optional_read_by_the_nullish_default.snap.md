@@ -9,10 +9,12 @@ fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
 fn main() {
     val result = firstAndRest([1, 2, 3]);
     val head = result._1;
-    @print(head ?? -1);
+    print(head ?? -1);
     val empty = firstAndRest([]);
-    @print(empty._1 == null);
+    print(empty._1 == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

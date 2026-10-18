@@ -7,8 +7,10 @@ fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
 }
 fn main() {
     val c = mk();
-    @print(c.set(9));
+    print(c.set(9));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

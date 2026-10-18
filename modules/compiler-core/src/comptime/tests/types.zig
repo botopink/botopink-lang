@@ -128,6 +128,7 @@ test "types: assert pattern ---- with enum variant" {
         \\    val assert Ok(value) = result;
         \\    print(value);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -305,6 +306,7 @@ test "types: self ---- field access in method" {
         \\fn main() {
         \\    print(Point(x: 1, y: 2).sum());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

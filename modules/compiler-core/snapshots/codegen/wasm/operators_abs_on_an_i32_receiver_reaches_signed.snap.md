@@ -4,8 +4,10 @@ fn mag(n: i32) -> i32 {
     return n.abs();
 }
 fn main() {
-    @print(mag(-7));
+    print(mag(-7));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -546,7 +548,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:5:16")
+  (data $__d0 "integer overflow: - on i32 at main.bp:5:15")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

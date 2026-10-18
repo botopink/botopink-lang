@@ -5,9 +5,11 @@ fn abs(n: i32) -> i32 {
     return result;
 }
 fn main() {
-    @print(abs(-5));
-    @print(abs(3));
+    print(abs(-5));
+    print(abs(3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -554,7 +556,7 @@ fn main() {
   )
   (data $__d0 "integer overflow: - on i32 at main.bp:2:29")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: - on i32 at main.bp:6:16")
+  (data $__d1 "integer overflow: - on i32 at main.bp:6:15")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

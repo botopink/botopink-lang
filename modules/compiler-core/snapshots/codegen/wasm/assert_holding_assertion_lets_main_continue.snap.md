@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     assert 1 + 1 == 2, "arithmetic";
-    @print("after");
+    print("after");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

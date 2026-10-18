@@ -2,18 +2,20 @@
 ```botopink
 pub fn main() {
     val b = Bytes.fromUtf8("hello");
-    @print(b.length());
-    @print(b.slice(1, 3).length());
+    print(b.length());
+    print(b.slice(1, 3).length());
     val c = b.concat(Bytes.fromUtf8("!"));
-    @print(c.length());
-    @print(b == Bytes.fromUtf8("hello"));
+    print(c.length());
+    print(b == Bytes.fromUtf8("hello"));
     val r = b.toUtf8();
-    @print(r);
+    print(r);
     val parts = "a,b,c".split(",");
-    @print(parts);
-    @print("hello".at(1));
-    @print("hello".at(9));
+    print(parts);
+    print("hello".at(1));
+    print("hello".at(9));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

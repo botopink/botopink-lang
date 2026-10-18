@@ -5,8 +5,10 @@ fn main() {
     val Fn = "main";
     val names = #(File, Fn);
     val at = @SourceLocation(file: names.File, line: 3, column: 7, fnName: names.Fn);
-    @print(at.line);
+    print(at.line);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

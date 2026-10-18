@@ -33,6 +33,7 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
         \\    print("xy".firstChar());
         \\    print("".firstChar());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\6
@@ -69,6 +70,7 @@ test "js: primitive behavior default fn ---- return and throw build the @Result"
         \\        Error(e) -> e;
         \\    });
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\true
@@ -112,6 +114,7 @@ test "js: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\    print(V.W(x: nan) == V.W(x: z / z));
         \\    print(F(x: nan) == F(x: 1.0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }
@@ -147,6 +150,7 @@ test "js: f64 text ---- a template hole, toString and a string + keep the decima
         \\    print(1000.0, 1.0e20, 0.00001, 1200.0);
         \\    print("${9007199254740992.0}", 9007199254740991.0);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\5.0
@@ -182,6 +186,7 @@ test "js: template hole ---- a record, an array and a tuple are written as @prin
         \\    print("${p} ${xs} ${t} ${fs}");
         \\    print("p=" + p);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\Point(x: 1, y: 2) [1, 2, 3] #(1, "a") [1.5, 2.0]
@@ -199,7 +204,7 @@ test "js: f64 text ---- __bp_f64 answers std-wasm's shortFloat" {
     defer src.deinit(gpa);
     var want: std.ArrayListUnmanaged(u8) = .empty;
     defer want.deinit(gpa);
-    try src.appendSlice(gpa, "pub fn main() {\n");
+    try src.appendSlice(gpa, "import {io.terminal.print} from \"std\";\npub fn main() {\n");
     var prng = std.Random.DefaultPrng.init(521);
     const r = prng.random();
     var n: usize = 0;
@@ -209,7 +214,7 @@ test "js: f64 text ---- __bp_f64 answers std-wasm's shortFloat" {
         if (!std.math.isFinite(f)) continue;
         var buf: [64]u8 = undefined;
         const text = stdWasm.number.shortFloat(f, &buf);
-        try src.print(gpa, "    @print({s});\n", .{text});
+        try src.print(gpa, "    print({s});\n", .{text});
         try want.print(gpa, "{s}\n", .{text});
         n += 1;
     }
@@ -228,6 +233,7 @@ test "js: trim ---- std-wasm's whitespace set, a NBSP stays" {
         \\    print("[" + "\u{a0} x ".trimStart() + "]");
         \\    print("[" + " x \u{a0}".trimEnd() + "]");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         "[\u{a0}x\u{a0}]\n[x\u{2003}]\n[\u{a0} x ]\n[ x \u{a0}]\n",
@@ -244,7 +250,7 @@ test "js: case mapping ---- toUpper and toLower answer std-wasm's text" {
     const arena = arena_state.allocator();
     var src: std.ArrayListUnmanaged(u8) = .empty;
     var want: std.ArrayListUnmanaged(u8) = .empty;
-    try src.appendSlice(arena, "pub fn main() {\n");
+    try src.appendSlice(arena, "import {io.terminal.print} from \"std\";\npub fn main() {\n");
     for ([_]stdWasm.text.Case{ .upper, .lower }) |case| {
         // Every code point that maps under `case`, in runs of 64.
         var word: std.ArrayListUnmanaged(u8) = .empty;
@@ -263,13 +269,13 @@ test "js: case mapping ---- toUpper and toLower answer std-wasm's text" {
         }
         if (word.items.len > 0) try flushCase(arena, &src, &want, word.items, case);
     }
-    try src.appendSlice(arena, "    @print(\"ΟΔΟΣ\".toLower());\n}\n");
+    try src.appendSlice(arena, "    print(\"ΟΔΟΣ\".toLower());\n}\n");
     try want.appendSlice(arena, "οδοσ\n");
     try h.assertJsRunLog(gpa, src.items, want.items);
 }
 
 fn flushCase(arena: std.mem.Allocator, src: *std.ArrayListUnmanaged(u8), want: *std.ArrayListUnmanaged(u8), word: []const u8, case: stdWasm.text.Case) !void {
-    try src.print(arena, "    @print(\"{s}\".{s}());\n", .{ word, if (case == .upper) "toUpper" else "toLower" });
+    try src.print(arena, "    print(\"{s}\".{s}());\n", .{ word, if (case == .upper) "toUpper" else "toLower" });
     const out = try arena.alloc(u8, stdWasm.text.caseLength(word, case, false));
     stdWasm.text.caseInto(out, word, case, false);
     try want.print(arena, "{s}\n", .{out});
@@ -302,6 +308,7 @@ test "js: f64 text ---- a record's and a variant's float field" {
         \\    print(Pt(x: 1.0, n: 3, ys: [2.0]));
         \\    print([Shape.Circle(r: 2.0), Shape.Dot]);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\Pt(x: 1.0, n: 3, ys: [2.0])
@@ -322,6 +329,7 @@ const bytes_src =
     \\    print(j[2..].toUtf8().unwrapOr("?"));
     \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
@@ -350,6 +358,7 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
         \\    print(find(1)?.str().length() ?? -1);
         \\    print(find(0)?.str().length() ?? -1);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\3
@@ -371,6 +380,7 @@ test "js: decision 521 ---- trim and toLower through ?. are std-wasm's, guarded"
         \\    print("[" + (o?.trim().toLower() ?? "-") + "]");
         \\    print(none?.trim().toLower() ?? "absent");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         "[\u{a0}ΟΔΟΣ]\n[\u{a0}οδοσ]\nabsent\n",

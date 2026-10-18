@@ -1,19 +1,21 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type LoadError(msg: string)
-fn load() -> @Result<i32, LoadError> {
+fn load() -> Result<i32, LoadError> {
     throw LoadError(msg: "not found");
 }
 fn process() -> i32 {
     val prefix = 10;
     val data = try load() catch 0;
     val suffix = 20;
-    @print(prefix, data, suffix);
+    print(prefix, data, suffix);
     return prefix + data + suffix;
 }
 fn main() {
-    @print(process());
+    print(process());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

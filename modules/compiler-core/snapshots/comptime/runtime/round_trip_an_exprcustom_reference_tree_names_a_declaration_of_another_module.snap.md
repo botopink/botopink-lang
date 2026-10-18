@@ -9,6 +9,7 @@ pub fn dsl(syntax e: string) -> anyvalue {
     return code;
 }
 val rows = dsl @`select id from Item`;
+
 import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 

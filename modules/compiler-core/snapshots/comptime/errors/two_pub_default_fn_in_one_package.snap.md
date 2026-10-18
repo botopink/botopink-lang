@@ -1,6 +1,7 @@
 ----- SOURCE CODE
 pub default fn one(syntax q: string) -> i32 { return compiler.build("0"); }
 pub default fn two(syntax q: string) -> i32 { return compiler.build("0"); }
+
 import {compiler} from "std";
 
 ----- ERROR

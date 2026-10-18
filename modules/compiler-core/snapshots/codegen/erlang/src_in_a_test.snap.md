@@ -2,12 +2,14 @@
 ```botopink
 fn helper() -> i32 { return 1; }
 test "src: in a test" {
-    val loc = @src();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    val loc = comptime compiler.src;
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
 test {
-    @print(@src().fnName);
+    print(comptime compiler.src.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -44,11 +46,11 @@ helper() ->
 -export([main/1]).
 
 '__bp_test_0'() ->
-    Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
+    Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 24, <<"src: in a test">>},
     '__bp_print'([erlang:element(2, Loc), erlang:element(3, Loc), erlang:element(4, Loc), erlang:element(5, Loc)]).
 
 '__bp_test_1'() ->
-    '__bp_print'([erlang:element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
+    '__bp_print'([erlang:element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 20, <<"test_1">>})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

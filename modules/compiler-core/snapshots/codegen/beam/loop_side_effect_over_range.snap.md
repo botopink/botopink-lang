@@ -2,9 +2,11 @@
 ```botopink
 fn main() {
     for (0..10) { i ->
-        @print(i);
+        print(i);
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

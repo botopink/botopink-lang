@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> @Iterator<i32> :outer {
+fn nums() -> Iterator<i32> :outer {
     yield :nonsense 1;
 }
 

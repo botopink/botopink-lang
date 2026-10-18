@@ -6,9 +6,11 @@ fn classify(x: ?i32) -> string {
     else { return "null"; }
 }
 fn main() {
-    @print(classify(42));
-    @print(classify(0));
+    print(classify(42));
+    print(classify(0));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

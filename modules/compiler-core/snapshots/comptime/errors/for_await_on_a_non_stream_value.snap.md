@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn bad() -> @Task<i32> {
+fn bad() -> Task<i32> {
     for await (5) { x ->
         ping(x);
     }

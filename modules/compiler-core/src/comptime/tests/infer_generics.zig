@@ -56,6 +56,7 @@ test "infer: generic record Pair<A, B>" {
         \\fn main() {
         \\    print(p);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -165,6 +166,7 @@ test "infer: @Expr builtin type ---- declaration with bounded return typechecks"
         \\fn main() {
         \\    print("ok");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -243,6 +245,7 @@ test "infer: net-new ---- generic return inferred from usage context" {
         \\    val n: i32 = make();
         \\    val s: string = make();
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -433,7 +436,7 @@ test "infer error: a `?T` never narrows to its `T` at a return" {
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, std.testing.allocator);
     defer env.deinit();

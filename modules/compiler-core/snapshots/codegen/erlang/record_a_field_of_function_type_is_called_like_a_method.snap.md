@@ -11,9 +11,11 @@ fn mk(v: i32) -> Cell {
 
 pub fn main() {
     val c = mk(5);
-    @print(c.value);
-    @print(c.set(9));
+    print(c.value);
+    print(c.set(9));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

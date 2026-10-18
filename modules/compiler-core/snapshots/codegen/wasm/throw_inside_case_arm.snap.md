@@ -1,16 +1,18 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Status { Ok, Fail }
-fn check(s: Status) -> @Result<i32, string> {
+fn check(s: Status) -> Result<i32, string> {
     return case s {
         Ok -> 1;
         Fail -> throw "failed";
     };
 }
 fn main() {
-    @print(check(Status.Ok).isOk());
-    @print(check(Status.Fail).isOk());
+    print(check(Status.Ok).isOk());
+    print(check(Status.Fail).isOk());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

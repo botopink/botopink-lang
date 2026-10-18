@@ -8,8 +8,10 @@ fn greet(maybeUser: ?User) -> string {
     return "no user";
 }
 fn main() {
-    @print(greet(User(name: "alice")));
+    print(greet(User(name: "alice")));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -51,7 +53,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(greet(User(name: \"alice\")));"
+          "source": "print(greet(User(name: \"alice\")));"
         }
       ]
     }

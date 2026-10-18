@@ -3,11 +3,13 @@
 fn main() {
     val s = "ye" + "s";
     if (s == "yes") {
-        @print(42);
+        print(42);
     } else {
-        @print(0);
+        print(0);
     }
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

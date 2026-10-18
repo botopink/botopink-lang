@@ -8,8 +8,10 @@ pub fn max(a: i32, b: i32) -> i32 {
     }
 }
 fn main() {
-    @print(max(3, 7));
+    print(max(3, 7));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -3,16 +3,18 @@
 fn main() {
     val xs = [10, 20, 30];
     val i = 1;
-    @print(xs[0]);
-    @print(xs[i + 1]);
+    print(xs[0]);
+    print(xs[i + 1]);
     val names = ["ana", "bo"];
-    @print(names[1]);
+    print(names[1]);
     val s = "hello";
-    @print(s[1]);
-    @print(s[1..3]);
-    @print(s[3..]);
-    @print(xs[1..]);
+    print(s[1]);
+    print(s[1..3]);
+    print(s[3..]);
+    print(xs[1..]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -1027,7 +1029,7 @@ fn main() {
   ;; std:text.at — from std_wasm.wasm (sha256 ca07132d18ff)
   (data $__d0 "null")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: + on i32 at main.bp:5:17")
+  (data $__d1 "integer overflow: + on i32 at main.bp:5:16")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (data $__d2 "ana")
   (global $__s2 (mut (ref null $str)) (ref.null $str))

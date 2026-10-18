@@ -14,26 +14,28 @@ fn longest(names: string[]) -> i32 {
 
 pub fn main() {
     val xs = [3, 1, 2];
-    @print(xs);
-    @print(total(xs));
-    @print(xs[1]);
-    @print(xs.length);
-    @print(xs.length());
+    print(xs);
+    print(total(xs));
+    print(xs[1]);
+    print(xs.length);
+    print(xs.length());
     var ys = [10, 20];
     ys.push(30);
-    @print(ys);
+    print(ys);
     val names = ["ann", "bobby"];
-    @print(names);
-    @print(longest(names));
-    @print(names[1]);
+    print(names);
+    print(longest(names));
+    print(names[1]);
     val fs = [1.5, 2.5];
-    @print(fs);
-    @print(xs == [3, 1, 2]);
-    @print(xs == ys);
+    print(fs);
+    print(xs == [3, 1, 2]);
+    print(xs == ys);
     val e: i32[] = [];
-    @print(e.length());
-    @print(e);
+    print(e.length());
+    print(e);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

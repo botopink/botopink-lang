@@ -84,11 +84,12 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 // ── new ───────────────────────────────────────────────────────────────────────
 
 const MAIN_BP =
+    \\import {io.terminal.print} from "std";
+    \\
     \\pub fn main() {
     \\    print("hello");
     \\}
     \\
-    \\import {io.terminal.print} from "std";
 ;
 
 fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
@@ -1433,7 +1434,6 @@ test "refusalsOf reads the called-from lines of a raise at build under the refus
         \\  = called from src/main.bp:9:3
         \\  = called from src/main.bp:12:1
         \\
-        \\import {failure.panic} from "std";
     ;
     const got = try refusalsOf(a, text);
     try testing.expect(got.get("main") == null);

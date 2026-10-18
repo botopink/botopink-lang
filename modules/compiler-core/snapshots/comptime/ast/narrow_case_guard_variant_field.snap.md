@@ -13,9 +13,11 @@ fn handle(r: Response) -> string {
     };
 }
 fn main() {
-    @print(handle(Response.Data(200, "hi")));
-    @print(handle(Response.Error(500)));
+    print(handle(Response.Data(200, "hi")));
+    print(handle(Response.Error(500)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -66,10 +68,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(handle(Response.Data(200, \"hi\")));"
+          "source": "print(handle(Response.Data(200, \"hi\")));"
         },
         {
-          "source": "@print(handle(Response.Error(500)));"
+          "source": "print(handle(Response.Error(500)));"
         }
       ]
     }

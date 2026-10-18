@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch() -> @Result<i32, string> {
+fn fetch() -> Result<i32, string> {
     throw "primary";
 }
-fn process() -> @Result<i32, string> {
+fn process() -> Result<i32, string> {
     val r = try fetch() catch throw "secondary";
     return r;
 }

@@ -23,10 +23,12 @@ type Bag<T>(
 }
 
 fn main() {
-    @print(Bag(items: []).isEmpty());
-    @print(Bag(items: [1]).isEmpty());
-    @print(Bag(items: [1, 2]).twiceSize());
+    print(Bag(items: []).isEmpty());
+    print(Bag(items: [1]).isEmpty());
+    print(Bag(items: [1, 2]).twiceSize());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

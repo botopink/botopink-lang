@@ -1805,8 +1805,8 @@ fn analyzeMerged(
 /// Process-lifetime template Env populated once by `registerBuiltins` +
 /// `registerStdlib`. Each `freshEnv` then clones the (already-inferred)
 /// hashmaps in ~µs instead of re-lexing + re-parsing + re-inferring the
-/// stdlib (`primitives.bp` + `@Decl` cluster + `CustomNode` +
-/// `builtins_fns.d.bp`) on every call.
+/// stdlib (`primitives.bp` + `@Decl` cluster + `CustomNode` + std's
+/// modules) on every call.
 ///
 /// Before this template was introduced, every `freshEnv` invocation
 /// re-ran the stdlib pipeline — ~83ms per call. With ~1000 calls in
@@ -1948,6 +1948,7 @@ fn analyzeSource(
     };
 
     var parser = Parser.init(tokens);
+    parser.refuse_removed_builtins = true;
     const parsed_source = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.
@@ -2676,7 +2677,7 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
                     const whole = try imp.fullPath(scratch);
                     // Decision 606 (2) — `print` / `panic` is the call node
                     // (`std_calls.zig`): its module is no dependency.
-                    if (std_calls.ofItemPath(whole) != null) continue;
+                    if (std_calls.isDroppedItem(whole)) continue;
                     const prefix = try imp.prefixPath(scratch);
                     for (std_pkg_modules, 0..) |spm, i| {
                         const key = spm.path["std/".len..];
@@ -2855,7 +2856,7 @@ fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
         if (!importsStd(u, true)) continue;
         for (u.imports) |imp| {
             const whole = try imp.fullPath(scratch);
-            if (std_calls.ofItemPath(whole) != null) continue;
+            if (std_calls.isDroppedItem(whole)) continue;
             const prefix = try imp.prefixPath(scratch);
             for (std_pkg_modules, 0..) |spm, i| {
                 const key = spm.path["std/".len..];
@@ -3969,11 +3970,11 @@ fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
 /// Called for the global env and for every scratch env `registerStdlib` infers
 /// a std module in, so a std module's signature may name a prelude record.
 /// Whether `mod`'s bodyless declarations are the compiler's (`Env.compilerBodies`):
-/// std's `compiler.bp` (its `Type`, decision 624), whose derived types the compiler
+/// std's `types.bp`, whose derived types the compiler
 /// answers (`comptime/derived_types.zig`) until step B-140 writes them in
 /// botopink.
 fn declaresCompilerBodies(mod: Module) bool {
-    return mod.std_member and (std.mem.eql(u8, mod.path, "compiler") or std.mem.eql(u8, mod.path, "std/compiler"));
+    return mod.std_member and (std.mem.eql(u8, mod.path, "types") or std.mem.eql(u8, mod.path, "std/types"));
 }
 
 /// Decision 575 (6) — std's `external.bp` (`Implementation`, the enums its
@@ -4073,12 +4074,20 @@ test "ambient behaviors: builtins.d.bp's public behaviors no rule reads (decisio
 }
 
 /// Decision 252 — every builtin's declaration into `env.builtinDecls`: each
-/// top-level `declare fn` of `builtins.d.bp` and `builtins_fns.d.bp`, and each
+/// top-level `declare fn` of `builtins.d.bp` and std's `print` / `panic`
+/// (`std_calls.declarations`, decision 606 (2)), and each
 /// static `declare fn` of a type there (`TypeInfo.all`). Parsed into
 /// `env.arena`, which the declarations' slices outlive with the env.
 fn registerBuiltinDecls(env: *Env) anyerror!void {
     const prelude = @import("std_prelude");
-    for ([_][]const u8{ prelude.builtins, prelude.builtin_fns }, [_][]const u8{ "builtins.d", "builtins_fns.d" }) |src, name| {
+    // Decision 606 (2) — `print` and `panic` are `io/terminal.bp`'s and
+    // `failure.bp`'s: their declarations are read from those modules.
+    for (try std_calls.declarations(env.arena)) |f| try env.builtinDecls.put(f.name, .{
+        .genericParams = f.genericParams,
+        .params = f.params,
+        .returnType = f.returnType,
+    });
+    for ([_][]const u8{prelude.builtins}, [_][]const u8{"builtins.d"}) |src, name| {
         const program = try parseEmbeddedStd(env.arena, name, src);
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| if (f.isDeclare) try env.builtinDecls.put(f.name, .{
@@ -4199,32 +4208,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         _ = try infer.inferProgram(env, program);
     }
 
-    // `builtins_fns.d.bp`: the parseable fn-decl slice of `builtins.d.bp`
-    // (todo / panic / trap / emit / module / getContext / field). Parse it
-    // here so a bare `todo()` / `panic()` call at user code resolves to the
-    // declared `FnDecl` and `expandTrailingDefaults` injects the trailing
-    // literal default into `c.args` before dispatch. The full doc surface
-    // (Result / Future / Generator / ResultGenerator / FutureGenerator / Context
-    // interfaces) stays in `builtins.d.bp` — re-parsing it here would red
-    // on the synthetic interfaces already registered by `registerBuiltins`.
-    {
-        const alloc = env.arena;
-        var lx = Lexer.init(prelude.builtin_fns);
-        const tokens = try lx.scanAll(alloc);
-        var p = Parser.init(tokens);
-        const program = try p.parse(alloc);
-        // Inference will still type-check the fn decls so any future
-        // call-site work reads a real signature; we only care about the
-        // FnDecl carrier here. Best-effort: a parse/inference red here
-        // would stop the compiler from booting, so a failure surfaces
-        // immediately.
-        _ = try infer.inferProgram(env, program);
-        env.compilerBodies = false;
-        for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| try env.stdlibFnDecls.put(f.name, f),
-            else => {},
-        };
-    }
+    // `panic`'s declaration (`failure.bp`, decision 606 (2)) is the `FnDecl` a
+    // call's trailing default is read from (`expandTrailingDefaults` injects
+    // `"panic"` into `panic()` before dispatch).
+    env.compilerBodies = false;
+    for (try std_calls.declarations(env.arena)) |f| try env.stdlibFnDecls.put(f.name, f);
 
     try registerBuiltinDecls(env);
 
@@ -4243,10 +4231,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         var env2 = Env.init(env.arena);
         // An embedded std module is std's (decision 445).
         env2.inStd = true;
-        // `compiler.bp`'s `Type` (decision 624): its derived types' bodies are the compiler's
+        // `types.bp`'s derived types: their bodies are the compiler's
         // (`comptime/derived_types.zig`) until step B-140 writes them in
         // botopink, so `declare-without-implementation` is not their rule.
-        env2.compilerBodies = std.mem.eql(u8, mod_name, "compiler");
+        env2.compilerBodies = std.mem.eql(u8, mod_name, "types");
         defer env2.deinit();
         try env2.registerBuiltins();
         env2.ambientBehaviorDecls = try env.ambientBehaviorDecls.clone(env.arena);
@@ -4313,7 +4301,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         {
             var type_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
             // Decision 576 (13) — a type this module exports that names an
-            // alias it imports (a std type's `annotations: DeclAnnotation[]`,
+            // alias it imports (`types.bp`'s `annotations: DeclAnnotation[]`,
             // `import {compiler.DeclAnnotation};`) names the alias's target:
             // an importer of the type need not import the alias.
             var imported_aliases: std.ArrayListUnmanaged(ast.TypeAliasDecl) = .empty;
@@ -4918,9 +4906,9 @@ fn compileOnce(
                 var fn_decls = std.StringHashMap(ast.FnDecl).init(arena_alloc);
                 var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);
                 {
-                    // Stdlib fn decls (`todo`/`panic`/`trap`/`emit`/`module`/
-                    // `getContext`/`field`) come from `registerStdlib`'s parse
-                    // of `builtins_fns.d.bp`. Seed them first so user-module
+                    // Stdlib fn decls (`print` / `panic`, decision 606 (2))
+                    // come from `registerStdlib`'s parse of their modules.
+                    // Seed them first so user-module
                     // bindings (next loop) win on name collision — a user-
                     // defined `panic` shadows the builtin, same as any other
                     // stdlib symbol.

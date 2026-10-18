@@ -3,8 +3,10 @@
 fn main() {
     val ids = [10, 20, 30];
     val dobrados = ids.map({ id -> id * 2 });
-    @print(dobrados);
+    print(dobrados);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

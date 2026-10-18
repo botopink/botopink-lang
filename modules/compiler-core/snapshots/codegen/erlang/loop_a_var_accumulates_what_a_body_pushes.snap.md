@@ -8,8 +8,10 @@ fn doubles(arr: i32[]) -> i32[] {
     return out;
 }
 fn main() {
-    @print(doubles([1, 2, 3]));
+    print(doubles([1, 2, 3]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

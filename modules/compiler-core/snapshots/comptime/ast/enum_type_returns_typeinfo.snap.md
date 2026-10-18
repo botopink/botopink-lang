@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Color = type { Red, Blue };
-val info = @typeInfo(Color);
+val info = comptime compiler.typeInfo(Color);
+
+import {compiler} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

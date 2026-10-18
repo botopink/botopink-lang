@@ -279,6 +279,7 @@ test "pattern: non-empty list pattern" {
         \\    print(first_or_default([1, 2], 0));
         \\    print(first_or_default([], 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -345,6 +346,7 @@ test "@print: single string argument infers void" {
         \\fn main() {
         \\    print("hello");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -354,6 +356,7 @@ test "@print: multiple arguments infers void" {
         \\fn main() {
         \\    print("x =", 42, true);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -364,6 +367,7 @@ test "@print: expression argument infers void" {
         \\    val x = 10;
         \\    print(x + 5);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -381,6 +385,7 @@ test "@print: in if branch infers void" {
         \\    check(1);
         \\    check(-1);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -390,6 +395,7 @@ test "@print: string interpolation argument" {
         \\fn greet(name: string) {
         \\    print("Hello, " + name + "!");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

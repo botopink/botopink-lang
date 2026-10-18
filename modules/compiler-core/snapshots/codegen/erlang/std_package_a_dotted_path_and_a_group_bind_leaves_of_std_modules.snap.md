@@ -1099,9 +1099,11 @@ import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
 
 fn main() {
     val d: Dict<string, i32> = Dict.empty();
-    @print(d.insert("a", 1).size());
-    @print(rank(reverse(gt())));
+    print(d.insert("a", 1).size());
+    print(rank(reverse(gt())));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

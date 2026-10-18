@@ -13,15 +13,17 @@ fn nameOf(v: Person | Vec) -> string {
 
 fn main() {
     val u: unknown = Vec(name: "Ana", age: 30);
-    @print(u is Vec);
-    @print(u is Person);
+    print(u is Vec);
+    print(u is Person);
     val s: unknown = Shape.Circle(radius: 4);
-    @print(s is Shape);
+    print(s is Shape);
     val d: unknown = Shape.Dot;
-    @print(d is Shape);
-    @print(nameOf(Person(name: "Ana", age: 30)));
-    @print(nameOf(Vec(name: "Ana", age: 30)));
+    print(d is Shape);
+    print(nameOf(Person(name: "Ana", age: 30)));
+    print(nameOf(Vec(name: "Ana", age: 30)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

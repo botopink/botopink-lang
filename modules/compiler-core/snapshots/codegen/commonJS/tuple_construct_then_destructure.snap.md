@@ -3,8 +3,10 @@
 fn main() {
     val t = #(10, 20);
     val #(a, b) = t;
-    @print(a + b);
+    print(a + b);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -71,7 +73,7 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 function main() {
     const t = [10, 20];
     const [ a, b ] = t;
-    __bp_print(__bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:4:14"));
+    __bp_print(__bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:4:13"));
 }
 
 function _botopink_main() {

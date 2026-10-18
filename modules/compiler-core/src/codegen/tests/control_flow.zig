@@ -30,6 +30,7 @@ test "js: case ---- number literal patterns" {
         \\    classify(1);
         \\    classify(7);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -50,6 +51,7 @@ test "js: case ---- string literal patterns" {
         \\    greet("pt");
         \\    greet("fr");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -69,6 +71,7 @@ test "js: case ---- or patterns with numbers" {
         \\    classify(6);
         \\    classify(7);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -87,6 +90,7 @@ test "js: if ---- simple conditional in fn body" {
         \\    sign(5);
         \\    sign(-3);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -100,6 +104,7 @@ test "js: if ---- conditional with else branch" {
         \\    print(describe(5));
         \\    print(describe(-3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -117,6 +122,7 @@ test "js: try ---- propagate without catch" {
         \\    print(r);
         \\    return r;
         \\}
+        \\
         \\import {io.terminal.print, failure.panic} from "std";
     );
 }
@@ -134,6 +140,7 @@ test "js: try ---- with inline catch handler" {
         \\fn main() {
         \\    print(safe());
         \\}
+        \\
         \\import {io.terminal.print, failure.panic} from "std";
     );
 }
@@ -159,6 +166,7 @@ test "js: loop ---- side-effect print in iterator" {
         \\        print(msg);
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -191,6 +199,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
         \\    print(pick(["a", "b", "c"]));
         \\    print(weigh([10, 20, 30]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -225,6 +234,7 @@ test "js: loop ---- a condition loop repeats while its condition holds and threa
         \\    print(count(0));
         \\    print(evens(6));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -258,6 +268,7 @@ test "js: loop ---- an unconditioned loop ends at break and a break leaves only 
         \\    print(firstSquareOver(20));
         \\    print(nested());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -280,6 +291,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
         \\fn main() {
         \\    print(render(["a", "b"]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -291,6 +303,7 @@ test "js: loop ---- side-effect over range" {
         \\        print(i);
         \\    };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -315,6 +328,7 @@ test "js: loop ---- a var pushed to in a loop body (add tax)" {
         \\    };
         \\    print(precosComTaxa);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -331,6 +345,7 @@ test "js: loop ---- a conditional push keeps some items" {
         \\    };
         \\    print(apenasGrandes);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -342,6 +357,7 @@ test "js: loop ---- map is the collecting form" {
         \\    val dobrados = ids.map({ id -> id * 2 });
         \\    print(dobrados);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -357,6 +373,7 @@ test "js: loop ---- even numbers pushed from a range loop" {
         \\    };
         \\    print(processamento);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -413,6 +430,7 @@ test "js: case ---- written variant path, arm value and whole-value binder" {
         \\    show(Shape.Circle(radius: 2));
         \\    show(Shape.Rect(width: 1, height: 2));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -491,6 +509,7 @@ test "js: case ---- type-test, tuple, range, labelled and nested arms" {
         \\    print(nested(Maybe.Some(value: #(2, 3))));
         \\    print(rest(Shape.Rect(width: 5, height: 9)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -554,6 +573,7 @@ test "js: loop ---- a loop over an array literal, and a break out of one" {
         \\    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
         \\    print(first);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -572,6 +592,7 @@ test "js: loop ---- a search ends at break with its answer in a var" {
         \\fn main() {
         \\    print(find([5, 8, 15, 20]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -594,6 +615,7 @@ test "js: loop ---- a condition loop's answer is read from a var" {
         \\    while (n < 3) { n = n + 1; };
         \\    print(n);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\n8\n3\n");
 }
@@ -615,6 +637,7 @@ test "js: loop ---- a condition loop's answer in a var, on every backend" {
         \\    while (n < 3) { if (n == 99) { never = n; break; }; n = n + 1; };
         \\    print(never);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -644,6 +667,7 @@ test "js: loop ---- a var accumulates what a body pushes" {
         \\fn main() {
         \\    print(doubles([1, 2, 3]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -658,6 +682,7 @@ test "js: if ---- with else branch" {
         \\    print(abs(-5));
         \\    print(abs(3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -744,6 +769,7 @@ test "js: try ---- nested try catch" {
         \\fn main() {
         \\    print(process());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -869,6 +895,7 @@ test "js: throw ---- inside case arm" {
         \\    print(check(Status.Ok).isOk());
         \\    print(check(Status.Fail).isOk());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -889,6 +916,7 @@ test "js: try ---- catch preserves surrounding bindings" {
         \\fn main() {
         \\    print(process());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -904,6 +932,7 @@ test "js: throw ---- inside loop body" {
         \\fn main() {
         \\    print(validate(2).isOk());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -925,6 +954,7 @@ test "js: try ---- multiple catch with different fallbacks" {
         \\fn main() {
         \\    loadUser();
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1058,6 +1088,7 @@ test "erlang: case ---- a variant pattern written with its path matches the bare
         \\type Maybe { Some(v: i32), None }
         \\fn show(m: Maybe) { case m { .Some(v) { print(v) } .None { print(0) } }; }
         \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
+        \\
         \\import {io.terminal.print} from "std";
     , "0\n7\n", &.{ "{test@main@@Maybe__v__some, V} ->", "test@main@@Maybe__v__none ->" });
 }
@@ -1070,6 +1101,7 @@ test "erlang: case ---- a one-parameter arm binds the whole subject" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn show(n: i32) { case n { 0 { print("zero") } _ { v -> print(v) } }; }
         \\fn main() { show(4); show(0); }
+        \\
         \\import {io.terminal.print} from "std";
     , "4\nzero\n", &.{"        V ->"});
 }
@@ -1081,6 +1113,7 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
         \\type Maybe { Some(v: i32), None }
         \\fn show(m: Maybe) { case m { .Some(v) { w -> print(v) } .None { print(0) } }; }
         \\fn main() { show(Maybe.Some(v: 7)); }
+        \\
         \\import {io.terminal.print} from "std";
     , "7\n", &.{"W = {test@main@@Maybe__v__some, V} ->"});
 }
@@ -1107,6 +1140,7 @@ test "erlang: case ---- a tuple pattern is the bare tuple, with no variant tag" 
         \\  val p = #(0, 5);
         \\  case p { #(0, s) { print(s) } #(n, _) { print(n) } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n", &.{ "{0, S} ->", "{N, _} ->" });
 }
@@ -1122,6 +1156,7 @@ test "erlang: case ---- `..` writes the fields the pattern does not name" {
         \\  case Shape.Rect(width: 5, height: 9) { Rect(width: w, ..) { print(w) } Circle(..) { print(0) } };
         \\  case Shape.Circle(radius: 1) { Rect(width: w, ..) { print(w) } Circle(..) { print(0) } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n0\n", &.{ "{test@main@@Shape__v__rect, W, _} ->", "{test@main@@Shape__v__circle, _} ->" });
 }
@@ -1136,6 +1171,7 @@ test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed ar
         \\  val t = #(4, 5, 6);
         \\  case t { #(a, ..) { print(a) } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "4\n", &.{ "when erlang:is_tuple(", "erlang:tuple_size(", ") >= 1) ->", "= erlang:element(1, " });
 }
@@ -1151,6 +1187,7 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
         \\  case v { i32 { print("int") } string { print("str") } };
         \\}
         \\fn main() { show(3); show("abcd"); }
+        \\
         \\import {io.terminal.print} from "std";
     , "int\nstr\n", &.{ "I32 when erlang:is_number(I32), (I32 == erlang:trunc(I32))", "String when erlang:is_binary(String) ->" });
 }
@@ -1172,6 +1209,7 @@ test "beam: case ---- an inclusive range is two is_ge tests (decision 53)" {
         \\  print(n(0)); print(n(1)); print(n(3)); print(n(4)); print(n(6)); print(n(7));
         \\  print(s("a")); print(s("b")); print(s("d")); print(s("e"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "0\n1\n1\n2\n2\n0\n0\n1\n1\n0\n", &.{ "{test, is_ge, ", "[{x, 0}, {integer, 1}]", "[{integer, 3}, {x, 0}]" });
 }
@@ -1190,6 +1228,7 @@ test "beam: case ---- a tuple pattern is the bare tuple, element by element" {
         \\  print(classify(#(0, "a"))); print(classify(#(7, "x"))); print(classify(#(7, "y")));
         \\  print(first(#(4, 5, 6)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "zero a\nx 7\ny\n4\n", &.{ "{test, test_arity, ", "{bif, element, " });
 }
@@ -1210,6 +1249,7 @@ test "beam: case ---- `..` and labels read the declared variant" {
         \\  print(five(Shape.Rect(width: 5, height: 9))); print(five(Shape.Rect(width: 6, height: 9)));
         \\  print(kind(Shape.Rect(width: 2, height: 2))); print(kind(Shape.Rect(width: 2, height: 3))); print(kind(Shape.Circle(radius: 2)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "509\n0\n1\n0\nsquare\nrect\ncircle\n", &.{"{test, is_tagged_tuple, "});
 }
@@ -1227,6 +1267,7 @@ test "beam: case ---- a primitive type or a bool literal is a test, not a binder
         \\  print(kind(3)); print(kind("abcd")); print(yesNo(true)); print(yesNo(false));
         \\  print(sign(3)); print(sign(-3)); print(sign(0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "int\nstr\nyes\nno\npositive\nnegative\nzero\n", &.{ "{test, is_integer, ", "{test, is_binary, ", "{test, is_eq_exact, " });
 }
@@ -1244,6 +1285,7 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
         \\  print(shown(Shape.Rect(width: 5, height: 2)));
         \\  print(shown(Shape.Rect(5, 2)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "502\n502\n502\n", &.{});
 }
@@ -1264,6 +1306,7 @@ test "erlang: a non-ASCII string literal is its UTF-8 bytes" {
         \\  print(["ç", "\u{e9}"]);
         \\  print("Memória".toUpper());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
 }
@@ -1279,6 +1322,7 @@ test "beam: a non-ASCII string literal is its UTF-8 bytes" {
         \\  print(["ç", "\u{e9}"]);
         \\  print("Memória".toUpper());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
 }
@@ -1316,6 +1360,7 @@ test "erlang: a return inside a loop's body leaves the function" {
         \\  print(firstBad(9).unwrapOr(-1));
         \\  print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
 }
@@ -1345,6 +1390,7 @@ test "beam: a return inside a loop's body leaves the function" {
         \\  print(firstBad(9).unwrapOr(-1));
         \\  print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
 }
@@ -1371,6 +1417,7 @@ test "erlang: a @Result/@Option op does not capture the program's own names" {
         \\  val c = conf(-1);
         \\  print(c.unwrapOr(Conf(name: "dflt", port: 1)).port);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n7\n3\n6\n1\n", &.{"__BpV0"});
 }
@@ -1392,6 +1439,7 @@ test "erlang: a top-level fn named as a value is its fun" {
         \\  print(g(9));
         \\  print([1, 2].map(inc));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "1\n5\n10\n[2, 3]\n", &.{"fun one/0"});
 }
@@ -1409,6 +1457,7 @@ test "beam: a top-level fn named as a value is its fun" {
         \\  print(g(9));
         \\  print([1, 2].map(inc));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "1\n5\n10\n[2, 3]\n", &.{"{make_fun3, "});
 }
@@ -1426,6 +1475,7 @@ test "erlang: a bare break at a generator's own level ends it" {
         \\  print(digits(upto(3)));
         \\  print(digits(upto(1)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "1\n012\n09\n", &.{"'__bp_gen_stop'"});
 }
@@ -1445,6 +1495,7 @@ test "erlang: x is Enum.Variant tests that variant" {
         \\  print(y is Token.Text);
         \\  print(x is Token);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
 }
@@ -1461,6 +1512,7 @@ test "beam: x is Enum.Variant tests that variant" {
         \\  print(y is Token.Text);
         \\  print(x is Token);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
 }
@@ -1477,6 +1529,7 @@ test "erlang: calling the result of a call applies it (`calleeExpr`)" {
         \\  print(pick(false)(5));
         \\  print(adder(10)(adder(1)(2)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "7\n-5\n13\n", &.{"(adder(3))(4)"});
 }
@@ -1495,6 +1548,7 @@ test "beam: calling the result of a call applies it (`calleeExpr`)" {
         \\  val xs: Array<i32> = [1, 2];
         \\  print(xs.map({ x -> adder(x)(100) }));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "7\n13\n8\n[101, 102]\n", &.{"{call_fun, 1}"});
 }
@@ -1511,6 +1565,7 @@ test "erlang: an enum variant's labelled payload claims its declared slot" {
         \\  print(shown(Shape.Rect(width: 5, height: 2)));
         \\  print(shown(Shape.Rect(5, 2)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "502\n502\n502\n", &.{});
 }
@@ -1531,6 +1586,7 @@ test "beam: a lambda whose body is an if, a case or a try answers its value" {
         \\  print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
         \\  print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "1,20,30\n100,200,200\n0,20,30\n", &.{});
 }
@@ -1547,6 +1603,7 @@ test "beam: a synth helper a type's module reached first is the file module's to
         \\}
         \\fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }
         \\fn main() { print(Row(cells: ["abc"]).widest()); print(firstOf(["ab"])); }
+        \\
         \\import {io.terminal.print} from "std";
     , "3\n2\n", &.{});
 }
@@ -1562,6 +1619,7 @@ test "beam: the module body runs once, in declaration order, before main" {
         \\val first = note("first");
         \\val _second = note("second");
         \\fn main() { print("main"); print(first); print(first); }
+        \\
         \\import {io.terminal.print} from "std";
     , "first\nsecond\nmain\n1\n1\n", &.{ "{extfunc, persistent_term, get, 2}", "{extfunc, persistent_term, put, 2}" });
 }
@@ -1606,6 +1664,7 @@ test "beam: is and == read numbers by value only where decision 8 says so" {
         \\    print(d == 2);
         \\    print(d != 2);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "number 3\nother\nempty text\nother\ntrue\ntrue\ntrue\nfalse\n3\ntrue\nfalse\n", &.{ "{test, is_number, ", "{gc_bif, trunc, ", "{test, is_eq_exact, " });
 }
@@ -1637,6 +1696,7 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
         \\    for (g) { x -> print(x); };
         \\    print(n);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "10\n20\n30\n40\n4\n");
 }
@@ -1652,6 +1712,7 @@ test "js: generator loop ---- break v inside a for ends the whole generator" {
         \\fn main() {
         \\    for (firstOver([1, 5, 9, 12], 4)) { v -> print(v); };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "0\n5\n");
 }
@@ -1677,6 +1738,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
         \\    return sum;
         \\}
         \\fn main() { total(3); }
+        \\
         \\import {io.terminal.print} from "std";
     , "12\n");
 }
@@ -1687,6 +1749,7 @@ test "js: range ---- a...b includes its end" {
         \\    for (1..4) { i -> print(i); };
         \\    for (1...4) { i -> print(i); };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "1\n2\n3\n1\n2\n3\n4\n");
 }
@@ -1706,6 +1769,7 @@ test "erlang: loop ---- a condition loop's answer comes back in the var it reass
         \\  print(found);
         \\  print(i);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "8\n4\n", &.{});
 }
@@ -1719,6 +1783,7 @@ test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned
         \\  print(r);
         \\  print(k);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\n3\n", &.{});
 }
@@ -1747,6 +1812,7 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\  for (nums(0)) { x -> runs = runs + 1; };
         \\  print(runs);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "012\n0\n", &.{ "'__bp_gen_new'(fun() ->", "'__bp_gen_yield'(I@1)" });
 }
@@ -1761,6 +1827,7 @@ test "erlang: generator ---- a bare-yield body is a generator too" {
         \\  for (two()) { x -> a = a + x.toString(); };
         \\  print(a);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "12\n", &.{});
 }
@@ -1791,10 +1858,11 @@ test "js: lambda ---- an expression body is the lambda's value" {
         \\    print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
         \\    print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "return (() => { if ((x > 1)) { return __bp_int((x * 10), -2147483648, 2147483647, \"* on i32 at main.bp:6:41\"); } else { return x; } })();",
+        "return (() => { if ((x > 1)) { return __bp_int((x * 10), -2147483648, 2147483647, \"* on i32 at main.bp:6:40\"); } else { return x; } })();",
         "return \"error\" in _try0 ? (0) : _try0.ok;",
     });
     try h.assertJsRunLog(std.testing.allocator, src,
@@ -1815,6 +1883,7 @@ test "js: lambda ---- a tail if whose branches return stays a statement" {
         \\fn main() {
         \\    print(pick([1, 2, 3]).join(","));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1844,6 +1913,7 @@ test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
         \\fn main() {
         \\    print(sumDown(20000, 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1872,6 +1942,7 @@ test "js: self tail call ---- one inside the function's own loop is labelled" {
         \\fn main() {
         \\    print(firstUnder(9000, 10));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1895,6 +1966,7 @@ test "js: self tail call ---- a closure over a parameter keeps the recursion" {
         \\fn main() {
         \\    print(tally(3, 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1917,6 +1989,7 @@ test "js: self tail call ---- a `??` IIFE reading a parameter keeps the loop" {
         \\fn main() {
         \\    print(count(["ab", "c", "def"], 0, 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1939,6 +2012,7 @@ test "js: self tail call ---- a closure inside an IIFE keeps the recursion" {
         \\fn main() {
         \\    print(tally(3, 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -1972,6 +2046,7 @@ test "erlang: unknown ---- `is`, type arms and `==` answer by value" {
         \\  show(c);
         \\  show("s");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true false false\ntrue\n3\ntrue true false true\n2\n2.5\nother\n", &.{
         "    A = 2.0,",
@@ -1997,6 +2072,7 @@ test "erlang: case ---- `A...B` matches both bounds, through guards" {
         \\  val t = #(5, "x");
         \\  case t { #(1...3, _) { print("low") } #(4...6, s) { print("mid " + s) } _ { print("hi") } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "other digit 1 digit 9 two two other\nmid x\n", &.{
         "D = _Rng0 when (_Rng0 >= 1), (_Rng0 =< 9) ->",
@@ -2044,6 +2120,7 @@ test "js: throw ---- in a case arm bound, passed and in statement position" {
         \\    print(statement(Value.Num(1)).unwrapOr(-1));
         \\    print(statement(Value.Text("z")).isError());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n");
 }
@@ -2080,6 +2157,7 @@ test "erlang: a throw in a case arm bound, passed and in statement position" {
         \\    print(statement(Value.Num(1)).unwrapOr(-1));
         \\    print(statement(Value.Text("z")).isError());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n", &.{"'__bp_try'"});
 }
@@ -2116,6 +2194,7 @@ test "beam: a throw in a case arm bound, passed and in statement position" {
         \\    print(statement(Value.Num(1)).unwrapOr(-1));
         \\    print(statement(Value.Text("z")).isError());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "3\ntrue\n6\ntrue\nnum\n0\ntrue\n", &.{});
 }

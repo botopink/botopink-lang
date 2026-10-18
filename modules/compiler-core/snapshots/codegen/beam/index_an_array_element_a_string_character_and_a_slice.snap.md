@@ -3,16 +3,18 @@
 fn main() {
     val xs = [10, 20, 30];
     val i = 1;
-    @print(xs[0]);
-    @print(xs[i + 1]);
+    print(xs[0]);
+    print(xs[i + 1]);
     val names = ["ana", "bo"];
-    @print(names[1]);
+    print(names[1]);
     val s = "hello";
-    @print(s[1]);
-    @print(s[1..3]);
-    @print(s[3..]);
-    @print(xs[1..]);
+    print(s[1]);
+    print(s[1..3]);
+    print(s[3..]);
+    print(xs[1..]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -148,7 +150,7 @@ fn main() {
     {test, is_ge, {f, 54}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 55}}.
   {label, 54}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:5:17">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:5:16">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 55}.
     {move, {x, 0}, {x, 1}}.

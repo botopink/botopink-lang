@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § use — imports, activation, and hooks):
 
 > A component is a lambda over a render scope (decision 388): `fn C(…) ->
-> @Component<R>` answers a function of std's opaque `RenderScope`, and calling
+> Component<R>` answers a function of std's opaque `RenderScope`, and calling
 > `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
 > the scope of the body that places them). In the body, `use provide(ctx)` makes
 > the scope its children receive, `use context(T)` finds `T`'s identity in the

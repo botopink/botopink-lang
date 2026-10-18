@@ -13,20 +13,22 @@ type Box(items: Array<i32>) {
 fn main() {
     var seen = 0;
     [1, 2].forEach({ n -> seen = n });
-    @print(seen);
+    print(seen);
     val b = Box(items: [3, 4]);
-    @print(b.total());
+    print(b.total());
     var h: ?i32 = null;
-    @print(h);
+    print(h);
     h = 5;
-    @print(h);
+    print(h);
     var acc: ?i32 = null;
     [7, 8].forEach({ n -> acc = n });
-    @print(acc);
-    @print(b.isBig());
-    @print(b.doubled());
-    @print(b.label());
+    print(acc);
+    print(b.isBig());
+    print(b.doubled());
+    print(b.label());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

@@ -3,16 +3,18 @@
 fn main() {
     val xs = [10, 20, 30];
     val i = 1;
-    @print(xs[0]);
-    @print(xs[i + 1]);
+    print(xs[0]);
+    print(xs[i + 1]);
     val names = ["ana", "bo"];
-    @print(names[1]);
+    print(names[1]);
     val s = "hello";
-    @print(s[1]);
-    @print(s[1..3]);
-    @print(s[3..]);
-    @print(xs[1..]);
+    print(s[1]);
+    print(s[1..3]);
+    print(s[3..]);
+    print(xs[1..]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -338,7 +340,7 @@ function main() {
     const xs = [10, 20, 30];
     const i = 1;
     __bp_print(__bp_array_at(xs, 0));
-    __bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:5:17")));
+    __bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:5:16")));
     const names = ["ana", "bo"];
     __bp_print(__bp_array_at(names, 1));
     const s = "hello";

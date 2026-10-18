@@ -3,12 +3,14 @@
 type Point(x: i32, y: i32)
 fn describe(p: Point) -> i32 {
     val { x, y } = p;
-    @print(x, y);
+    print(x, y);
     return x;
 }
 fn main() {
     describe(Point(x: 3, y: 4));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

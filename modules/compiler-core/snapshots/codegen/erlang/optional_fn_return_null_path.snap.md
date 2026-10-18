@@ -9,8 +9,10 @@ fn choose(present: bool) -> ?R {
     }
 }
 fn main() {
-    @print(choose(false)?.kind);
+    print(choose(false)?.kind);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

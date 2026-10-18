@@ -12,17 +12,19 @@ fn show(r: #(city: string, pop: i32)) -> i32 {
 
 fn main() {
     val row = load();
-    @print(row.name);
-    @print(row.pop + 1);
+    print(row.name);
+    print(row.pop + 1);
     val a = "RJ";
     val b = 7;
     val local = #(a, b);
-    @print(local.a);
-    @print(show(#("BH", 3)));
-    @print(show(row));
+    print(local.a);
+    print(show(#("BH", 3)));
+    print(show(row));
     val typed: #(x: i32, y: i32) = #(1, 2);
-    @print(typed.y);
+    print(typed.y);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -665,7 +667,7 @@ fn main() {
   )
   (data $__d0 "SP")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: + on i32 at main.bp:14:20")
+  (data $__d1 "integer overflow: + on i32 at main.bp:14:19")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (data $__d2 "RJ")
   (global $__s2 (mut (ref null $str)) (ref.null $str))

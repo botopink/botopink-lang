@@ -8,8 +8,10 @@ fn find(arr: i32[]) -> i32 {
     return found;
 }
 fn main() {
-    @print(find([5, 8, 15, 20]));
+    print(find([5, 8, 15, 20]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -8,9 +8,11 @@ fn describe(opt: Opt) -> string {
     };
 }
 fn main() {
-    @print(describe(Opt.Some(value: 42)));
-    @print(describe(Opt.None));
+    print(describe(Opt.Some(value: 42)));
+    print(describe(Opt.None));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

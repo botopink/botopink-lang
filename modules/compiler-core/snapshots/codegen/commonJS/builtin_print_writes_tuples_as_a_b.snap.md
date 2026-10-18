@@ -4,15 +4,17 @@ fn pairOf(a: i32, b: string) -> #(i32, string) {
     return #(a, b);
 }
 fn show(p: #(i32, string)) {
-    @print(p);
+    print(p);
 }
 fn main() {
-    @print(#(true, 1));
-    @print(#(#(1, 2), "x"));
-    @print([#(1, 2), #(17, 1)]);
-    @print(pairOf(7, "s"));
+    print(#(true, 1));
+    print(#(#(1, 2), "x"));
+    print([#(1, 2), #(17, 1)]);
+    print(pairOf(7, "s"));
     show(#(3, "z"));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

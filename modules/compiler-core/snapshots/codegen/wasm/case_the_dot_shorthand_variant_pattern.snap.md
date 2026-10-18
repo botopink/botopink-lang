@@ -7,10 +7,12 @@ type Shape {
 fn main() {
     val c = Shape.Circle(radius: 7);
     case c {
-        .Circle(r) { @print(r); }
-        _ { @print(0); }
+        .Circle(r) { print(r); }
+        _ { print(0); }
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

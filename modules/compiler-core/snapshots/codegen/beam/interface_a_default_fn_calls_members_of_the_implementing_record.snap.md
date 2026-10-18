@@ -23,8 +23,10 @@ type Money(
 
 fn main() {
     val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
-    @print(m.cents);
+    print(m.cents);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

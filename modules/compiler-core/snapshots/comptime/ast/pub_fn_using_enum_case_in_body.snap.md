@@ -14,13 +14,15 @@ pub fn label(d: Direction) -> string {
         West -> "W";
         _ -> "?";
     };
-    @print(result);
+    print(result);
     return result;
 }
 val n = label(Direction.North);
 fn main() {
-    @print(n);
+    print(n);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -61,7 +63,7 @@ fn main() {
           "source": "val result = case d {"
         },
         {
-          "source": "@print(result);"
+          "source": "print(result);"
         },
         {
           "source": "return result;"
@@ -90,7 +92,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(n);"
+          "source": "print(n);"
         }
       ]
     }

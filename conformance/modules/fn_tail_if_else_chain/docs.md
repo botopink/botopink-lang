@@ -7,5 +7,5 @@ The reference text this cell shows (from `conformance/docs.md`, § fn — functi
 > may name a `case` bound by a `val` before it. A method answering nothing refuses a tail of another
 > type as a free function does; a `void` tail — a call answering nothing — is accepted in a function,
 > a method and a lambda that answer nothing. A tail is the function's value wherever its body runs:
-> at compile time (`comptime square(3)`), and in a function answering `@Result<T, E>`, where it is
+> at compile time (`comptime square(3)`), and in a function answering `Result<T, E>`, where it is
 > the `T` as `return value;` is:

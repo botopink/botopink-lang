@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § Loops):
 
 > **`yield v` and `break v` need a generator scope** — a function whose return is
-> `@Iterator<T>` or `@Stream<T>`, or an `iter` / `stream` loop. `yield v` emits
+> `Iterator<T>` or `Stream<T>`, or an `iter` / `stream` loop. `yield v` emits
 > and continues; `break v` emits and ends (≡ `yield v; break;`). Outside a
 > generator scope both are refused: no plain loop answers a value, and collecting
 > in an ordinary function is `xs.map(…)` / `filter(…)` or a `var`. A `yield`

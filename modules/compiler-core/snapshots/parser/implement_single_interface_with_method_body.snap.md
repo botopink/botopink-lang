@@ -44,7 +44,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "print",
-                        "is_builtin": true,
+                        "is_builtin": false,
                         "is_tagged": false,
                         "optional": false,
                         "args": [
@@ -54,7 +54,7 @@
                               "literal": {
                                 "loc": {
                                   "line": 3,
-                                  "col": 16
+                                  "col": 15
                                 },
                                 "kind": {
                                   "stringLit": "Drawing circle"
@@ -75,6 +75,29 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "io",
+              "terminal",
+              "print"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

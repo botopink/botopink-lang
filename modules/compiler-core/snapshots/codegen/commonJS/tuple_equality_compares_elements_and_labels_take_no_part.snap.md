@@ -3,26 +3,28 @@
 fn main() {
     val a = #(1, "a");
     val b = #(1, "a");
-    @print(a == b);
-    @print(a != b);
+    print(a == b);
+    print(a != b);
     val c = #(1, "b");
-    @print(a == c);
+    print(a == c);
     val name = "SP";
     val pop = 12;
     val labeled = #(name, pop);
     val plain = #("SP", 12);
-    @print(labeled == plain);
+    print(labeled == plain);
     val n1 = #(#(1, 2), "x");
     val n2 = #(#(1, 2), "x");
     val n3 = #(#(1, 3), "x");
-    @print(n1 == n2);
-    @print(n1 == n3);
+    print(n1 == n2);
+    print(n1 == n3);
     val f1 = #(1.5, true);
     val f2 = #(1.5, true);
     val f3 = #(1.5, false);
-    @print(f1 == f2);
-    @print(f1 == f3);
+    print(f1 == f2);
+    print(f1 == f3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

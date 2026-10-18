@@ -2,8 +2,10 @@
 ```botopink
 val greeting = "hello";
 fn main() {
-    @print(greeting);
+    print(greeting);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -23,7 +25,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(greeting);"
+          "source": "print(greeting);"
         }
       ]
     }

@@ -2,7 +2,7 @@
 ```botopink
 type ParseError(msg: string)
 val Parser = type() {
-    fn parse(self: Self) -> @Result<i32, ParseError> {
+    fn parse(self: Self) -> Result<i32, ParseError> {
         throw ParseError(msg: "bad input");
     }
 }

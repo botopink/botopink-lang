@@ -12,17 +12,19 @@ fn show(r: #(city: string, pop: i32)) -> i32 {
 
 fn main() {
     val row = load();
-    @print(row.name);
-    @print(row.pop + 1);
+    print(row.name);
+    print(row.pop + 1);
     val a = "RJ";
     val b = 7;
     val local = #(a, b);
-    @print(local.a);
-    @print(show(#("BH", 3)));
-    @print(show(row));
+    print(local.a);
+    print(show(#("BH", 3)));
+    print(show(row));
     val typed: #(x: i32, y: i32) = #(1, 2);
-    @print(typed.y);
+    print(typed.y);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -88,7 +90,7 @@ fn main() {
     {test, is_ge, {f, 40}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 41}}.
   {label, 40}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:14:20">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:14:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 41}.
     {test_heap, 2, 1}.

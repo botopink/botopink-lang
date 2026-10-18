@@ -1,8 +1,10 @@
 ----- SOURCE CODE
 pub fn hello() -> string {
-    @todo();
+    panic("not implemented");
 }
 val bad = hello(42);
+
+import {failure.panic} from "std";
 
 ----- ERROR
 error: arity mismatch

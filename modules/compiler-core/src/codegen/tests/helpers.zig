@@ -1350,6 +1350,7 @@ pub const closure_plain = [_]Module{
     \\pub fn main() {
     \\    print(describe(Queue(label: "plain", size: 1)));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
     },
 };
@@ -1368,6 +1369,7 @@ pub const closure_crowded = [_]Module{
     \\    print(describe(Queue(label: "crowded", size: 2)));
     \\    print(area(Shape.Square(side: 2)).toString());
     \\}
+    \\
     \\import {io.terminal.print} from "std";
     },
 };

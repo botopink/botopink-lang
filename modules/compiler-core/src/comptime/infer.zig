@@ -1537,10 +1537,15 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
         return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
     }
-    for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, name, b)) {
-        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — printing is the builtin `@{s}`", .{ name, name });
-        return TypeError.custom(msg, "Write `@print(…)`: a builtin is spelled with `@`, and every backend lowers it.").withLoc(loc);
-    };
+    // Decision 606 (2) — `print` and `panic` are std's, imported where used.
+    if (std.mem.eql(u8, name, "print")) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `print` is std's `io.terminal.print`, imported where it is used", .{name});
+        return TypeError.custom(msg, "Import it: `import {io.terminal.print} from \"std\";` (decision 606 (2)).").withLoc(loc);
+    }
+    if (std.mem.eql(u8, name, "panic")) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `panic` is std's `failure.panic`, imported where it is used", .{name});
+        return TypeError.custom(msg, "Import it: `import {failure.panic} from \"std\";` (decision 606 (2)).").withLoc(loc);
+    }
     return TypeError.unboundVariable(name).withLoc(loc);
 }
 
@@ -4231,7 +4236,7 @@ fn refuseResultReturn(env: *Env, impl: ast.Implementation, name: []const u8, ret
     const written = if (ret) |r| try std.fmt.allocPrint(env.arena, "{f}", .{r}) else "void";
     return implError(env, impl.loc, try std.fmt.allocPrint(
         env.arena,
-        "`{s}` writes `result: true` on `.{s}`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `{s}`",
+        "`{s}` writes `result: true` on `.{s}`, so it must return `Result<…, HostError>` or `Task<Result<…, HostError>>`, not `{s}`",
         .{ name, variant, written },
     ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.");
 }
@@ -11261,10 +11266,10 @@ fn inferBuiltinCallReturnType(
         return error.TypeError;
     }
     // `@panic` / `@todo` / `@trap` never return: each is declared `-> noreturn`
-    // (`builtins_fns.d.bp`, `builtins.d.bp`), and `noreturn` is the bottom type
+    // (`failure.bp`'s `panic`, `builtins.d.bp`), and `noreturn` is the bottom type
     // `unify` accepts wherever a value is expected, so `val x: i32 = @todo();`
     // and `return @panic("…");` type in any position. A declared
-    // `builtins_fns.d.bp` entry answers its own return; the name list only
+    // `failure.bp`'s `panic` entry answers its own return; the name list only
     // holds the doc-only `trap`.
     if (builtinsMod.neverReturns(callee)) return env.namedType("noreturn");
     // `@module()` is declared `-> module` in `builtins.d.bp` but no target
@@ -11348,7 +11353,7 @@ fn isPrimitiveTypeName(name: []const u8) bool {
 
 /// Decision 252 — a call to a builtin held `.declaration` (`comptime/
 /// builtins.zig`) meets its declaration (`Env.builtinDecls`, from
-/// `builtins.d.bp` / `builtins_fns.d.bp`): no more arguments than it declares,
+/// `builtins.d.bp` / `failure.bp`'s `panic`): no more arguments than it declares,
 /// every parameter without a default given, a label naming a parameter, and
 /// each argument's type the parameter's (generic parameters fresh per call; a
 /// `type` parameter is the builtin's own to read). Refused at the call as

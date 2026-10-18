@@ -8,6 +8,8 @@ pub declare fn hostLen(xs: Array<string>) -> i32;
 
 #[@external(.JavaScript("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;
+
+import {compiler} from "std";
 ```
 
 ----- WASM TEXT -- hostlib.wat
@@ -30,17 +32,19 @@ pub declare fn nodeOnly(s: string) -> void;
 import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
 
 pub fn main() {
-    @print(hostKey(42));
-    @print(hostLen(["a", "b"]));
+    print(hostKey(42));
+    print(hostLen(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `hostKey` has no implementation for the wasm backend
-  ┌─ :4:12
+  ┌─ :4:11
   │
-4 │     @print(hostKey(42));
-  │            ^
+4 │     print(hostKey(42));
+  │           ^
 ```
 

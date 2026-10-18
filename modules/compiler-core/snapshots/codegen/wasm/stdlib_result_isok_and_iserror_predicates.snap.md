@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
 fn main() {
     val r = parseAge("42");
     val ok = r.isOk();
     val bad = r.isError();
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

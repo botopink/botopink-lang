@@ -2,18 +2,20 @@
 ```botopink
 pub fn main() {
     val xs = [3, 1, 3, 2, 1];
-    @print(xs.unique());
-    @print(["a", "b", "a"].unique());
-    @print([[1, 2], [3]].flatten());
-    @print(xs.chunked(2));
-    @print(xs.sliding(3));
-    @print(xs.map({ x -> x * 2 }));
-    @print(xs.filter({ x -> x > 1 }));
-    @print(xs.fold(0, { acc, x -> acc + x }));
-    @print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
-    @print(["a", "bb"].map({ s -> s.length() }));
-    @print(xs.zip(["a", "b"]));
+    print(xs.unique());
+    print(["a", "b", "a"].unique());
+    print([[1, 2], [3]].flatten());
+    print(xs.chunked(2));
+    print(xs.sliding(3));
+    print(xs.map({ x -> x * 2 }));
+    print(xs.filter({ x -> x > 1 }));
+    print(xs.fold(0, { acc, x -> acc + x }));
+    print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
+    print(["a", "bb"].map({ s -> s.length() }));
+    print(xs.zip(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -2076,9 +2078,9 @@ pub fn main() {
   (global $__s3 (mut (ref null $str)) (ref.null $str))
   (data $__d4 "b")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 "integer overflow: * on i32 at main.bp:8:28")
+  (data $__d5 "integer overflow: * on i32 at main.bp:8:27")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "integer overflow: + on i32 at main.bp:10:39")
+  (data $__d6 "integer overflow: + on i32 at main.bp:10:38")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (data $__d7 "bb")
   (global $__s7 (mut (ref null $str)) (ref.null $str))

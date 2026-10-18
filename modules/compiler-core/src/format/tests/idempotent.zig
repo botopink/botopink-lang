@@ -161,6 +161,7 @@ test "format: idempotent ---- defer statement and block (decision 539)" {
         \\    }
         \\    print("c");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

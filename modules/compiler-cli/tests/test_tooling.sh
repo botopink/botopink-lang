@@ -228,7 +228,9 @@ mkaudit() { # mkaudit <lib> — an erlang-only member: `"targets": ["erlang"]`
 # hostbound: its one host cell has an erlang binding and no node one.
 mkaudit hostbound
 cat >"$AUDWORK/hostbound/src/cell.bp" <<'BP'
-#[@external(.Erlang("erlang:system_time()"))]
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("erlang:system_time()"))]
 declare fn now() -> i64;
 
 pub fn stamp() -> i64 {
@@ -238,7 +240,9 @@ BP
 # bothbound: the same cell, given a node binding too — it builds on commonJS.
 mkaudit bothbound
 cat >"$AUDWORK/bothbound/src/cell.bp" <<'BP'
-#[@external(.Erlang("erlang:system_time()"), .JavaScript("Date.now()"))]
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("erlang:system_time()"), .JavaScript("Date.now()"))]
 declare fn now() -> i64;
 
 pub fn stamp() -> i64 {
@@ -348,10 +352,10 @@ echo "==> [env] BOTOPINK_BIN in a test is the running compiler, unless the calle
 mkdir -p "$LIBWORK/binprobe/src"
 printf '{ "name": "binprobe", "version": "0.0.1", "target": "commonJS", "src": "src/" }\n' >"$LIBWORK/binprobe/botopink.json"
 cat >"$LIBWORK/binprobe/src/main.bp" <<'BP'
-import {io.env} from "std";
+import {io.env, io.terminal.print} from "std";
 
 test "the compiler names itself" {
-    @print(env.read("BOTOPINK_BIN") ?? "unset");
+    print(env.read("BOTOPINK_BIN") ?? "unset");
 }
 BP
 BP_REAL="$(cd "$(dirname "$BP_BIN")" && pwd -P)/$(basename "$BP_BIN")"
@@ -405,7 +409,9 @@ if command -v escript >/dev/null 2>&1; then
 { "name": "hostlib", "version": "0.0.1", "src": "src/", "files": ["hostlib.bp"] }
 JSON
   cat >"$ERLWORK/root/hostlib/src/hostlib.bp" <<'BP'
-#[@external(.Erlang("hostlib_native:greet($0)"))]
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("hostlib_native:greet($0)"))]
 pub declare fn greet(name: string) -> string;
 BP
   cat >"$ERLWORK/root/hostlib/src/hostlib_native.erl" <<'ERL'
@@ -462,6 +468,7 @@ cat >"$UNITWORK/app/botopink.json" <<'JSON'
 JSON
 cat >"$UNITWORK/app/src/main.bp" <<'BP'
 import {one} from "unitlib";
+import {io.terminal.print} from "std";
 
 fn helper(x: i32) -> i32 {
     return x * 2;
@@ -470,7 +477,7 @@ fn helper(x: i32) -> i32 {
 val secret = 21;
 
 fn main() {
-    @print("main ran");
+    print("main ran");
 }
 
 test "reads a private fn and a private val" {

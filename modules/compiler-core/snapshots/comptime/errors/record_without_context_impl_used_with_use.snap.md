@@ -1,10 +1,10 @@
 ----- SOURCE CODE
-val Element = type() implement @Renderable
+val Element = type() implement Renderable
 val Plain = type(x: i32)
 fn make() -> Plain {
     return Plain(x: 0);
 }
-fn comp() -> @Component<i32> {
+fn comp() -> Component<i32> {
     val p = use make();
     return 0;
 }

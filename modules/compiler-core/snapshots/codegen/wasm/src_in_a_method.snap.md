@@ -2,13 +2,15 @@
 ```botopink
 type Stub(n: i32) {
     fn where(self: Self) -> SourceLocation {
-        return @src();
+        return comptime compiler.src;
     }
 }
 fn main() {
     val loc = Stub(n: 1).where();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -26,7 +28,7 @@ fn main() {
     (local $__mem0 i32)
     global.get $__s0
     i32.const 3
-    i32.const 16
+    i32.const 25
     global.get $__s1
     struct.new $rec_SourceLocation
     return
@@ -347,5 +349,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-main.bp 3 16 Stub.where
+main.bp 3 25 Stub.where
 ```

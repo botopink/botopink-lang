@@ -45,8 +45,10 @@ swim(Self) ->
 import {pond: {Pato, PatoNada*}};
 fn main() {
     val donald = Pato(2);
-    @print(donald.swim());
+    print(donald.swim());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

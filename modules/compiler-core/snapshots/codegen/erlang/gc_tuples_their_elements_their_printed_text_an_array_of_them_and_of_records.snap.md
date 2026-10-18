@@ -4,20 +4,22 @@ type Pair(a: i32, b: string)
 
 pub fn main() {
     val t = #(1, "x", 2.5, true);
-    @print(t);
-    @print(t.0);
-    @print(t.1);
-    @print(t._2);
-    @print(t._3);
+    print(t);
+    print(t.0);
+    print(t.1);
+    print(t._2);
+    print(t._3);
     val u = #(1, "x", 2.5, true);
-    @print(t == u);
+    print(t == u);
     val rs = [Pair(a: 1, b: "p"), Pair(a: 2, b: "q")];
-    @print(rs);
-    for (rs) { r -> @print(r.b); }
+    print(rs);
+    for (rs) { r -> print(r.b); }
     val ts = [#(1, "a"), #(2, "b")];
-    @print(ts);
-    @print(ts[0]);
+    print(ts);
+    print(ts[0]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

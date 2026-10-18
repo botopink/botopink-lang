@@ -12,8 +12,10 @@ fn render(words: Array<string>) -> string {
     return out + " " + count.toString();
 }
 fn main() {
-    @print(render(["a", "b"]));
+    print(render(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

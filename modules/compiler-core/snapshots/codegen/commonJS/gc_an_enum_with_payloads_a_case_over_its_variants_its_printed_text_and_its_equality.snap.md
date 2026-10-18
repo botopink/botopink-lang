@@ -25,16 +25,18 @@ fn name(s: Shape) -> string {
 pub fn main() {
     val a = Shape.Circle(r: 2);
     val b = Shape.Rect(w: 3, h: 4);
-    @print(area(a));
-    @print(area(b));
-    @print(area(Shape.Dot));
-    @print(name(b));
-    @print(a);
-    @print(b);
-    @print(Shape.Dot);
-    @print(a == Shape.Circle(r: 2));
-    @print(a == b);
+    print(area(a));
+    print(area(b));
+    print(area(Shape.Dot));
+    print(name(b));
+    print(a);
+    print(b);
+    print(Shape.Dot);
+    print(a == Shape.Circle(r: 2));
+    print(a == b);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

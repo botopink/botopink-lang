@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> @Iterator<i32> {
+fn evens(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -8,18 +8,20 @@ fn evens(n: i32) -> @Iterator<i32> {
     }
 }
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return s.length();
 }
 
 pub fn main() {
-    for (evens(7)) { v -> @print(v); }
-    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+    for (evens(7)) { v -> print(v); }
+    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("") }).isError());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -1283,19 +1285,19 @@ pub fn main() {
   (global $__s3 (mut (ref null $str)) (ref.null $str))
   (data $__d4 "abc")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 "integer overflow: * on i32 at main.bp:16:38")
+  (data $__d5 "integer overflow: * on i32 at main.bp:16:37")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "integer overflow: - on i32 at main.bp:16:55")
+  (data $__d6 "integer overflow: - on i32 at main.bp:16:54")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "integer overflow: * on i32 at main.bp:17:35")
+  (data $__d7 "integer overflow: * on i32 at main.bp:17:34")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "integer overflow: - on i32 at main.bp:17:52")
+  (data $__d8 "integer overflow: - on i32 at main.bp:17:51")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 "ab")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
   (data $__d10 "xyz")
   (global $__s10 (mut (ref null $str)) (ref.null $str))
-  (data $__d11 "integer overflow: - on i32 at main.bp:18:64")
+  (data $__d11 "integer overflow: - on i32 at main.bp:18:63")
   (global $__s11 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

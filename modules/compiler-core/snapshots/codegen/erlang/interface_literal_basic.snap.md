@@ -5,8 +5,10 @@ fn main() {
     val Fn = "Fn";
     val kinds = #(Type, Fn);
     val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
-    @print(decl.name);
+    print(decl.name);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

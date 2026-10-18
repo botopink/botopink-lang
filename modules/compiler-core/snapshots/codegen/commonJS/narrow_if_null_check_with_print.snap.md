@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val x: ?i32 = 42;
-    if (x) { n -> @print(n); };
+    if (x) { n -> print(n); };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

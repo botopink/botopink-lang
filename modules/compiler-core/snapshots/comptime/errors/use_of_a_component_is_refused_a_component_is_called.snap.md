@@ -1,9 +1,9 @@
 ----- SOURCE CODE
-val Element = type() implement @Renderable
-fn Card() -> @Component<Element> {
+val Element = type() implement Renderable
+fn Card() -> Component<Element> {
     return Element();
 }
-fn Page() -> @Component<Element> {
+fn Page() -> Component<Element> {
     val c = use Card();
     return Element();
 }

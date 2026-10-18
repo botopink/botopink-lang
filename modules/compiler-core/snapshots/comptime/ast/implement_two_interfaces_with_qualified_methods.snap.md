@@ -9,12 +9,14 @@ val SolarCharger = behavior {
 val SmartCamera = type(batteryLevel: i32);
 val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
     fn UsbCharger.Connect(self: Self) {
-        @print("Connected via USB");
+        print("Connected via USB");
     }
     fn SolarCharger.Connect(self: Self) {
-        @print("Connected via Solar");
+        print("Connected via Solar");
     }
 };
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

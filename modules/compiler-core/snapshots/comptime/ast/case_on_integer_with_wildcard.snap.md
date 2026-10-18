@@ -5,8 +5,10 @@ val desc = case 42 {
     _ -> "nonzero";
 };
 fn main() {
-    @print(desc);
+    print(desc);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -36,7 +38,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(desc);"
+          "source": "print(desc);"
         }
       ]
     }

@@ -8,8 +8,10 @@ fn describe(b: ?Box) -> string {
     return "light or none";
 }
 fn main() {
-    @print(describe(Box(weight: 20)));
+    print(describe(Box(weight: 20)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main

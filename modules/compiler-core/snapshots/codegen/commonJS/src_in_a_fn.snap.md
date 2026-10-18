@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 fn main() {
     val loc = locate();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -79,7 +81,7 @@ class SourceLocation {
 SourceLocation.prototype.__bp = "SourceLocation";
 
 function locate() {
-    return new SourceLocation("main.bp", 2, 12, "locate");
+    return new SourceLocation("main.bp", 2, 21, "locate");
 }
 
 function main() {
@@ -104,5 +106,5 @@ Object.defineProperty(exports, "__bp_priv__", { value: { SourceLocation, locate,
 
 ----- RUN LOG -----
 ```logs
-main.bp 2 12 locate
+main.bp 2 21 locate
 ```

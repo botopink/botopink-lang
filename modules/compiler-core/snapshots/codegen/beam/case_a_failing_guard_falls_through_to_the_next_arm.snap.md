@@ -8,10 +8,12 @@ fn classify(n: i32) -> string {
     };
 }
 fn main() {
-    @print(classify(5));
-    @print(classify(0));
-    @print(classify(-3));
+    print(classify(5));
+    print(classify(0));
+    print(classify(-3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

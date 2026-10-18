@@ -1,8 +1,10 @@
 ----- SOURCE CODE
 pub fn double(x: i32) -> i32 {
-    @todo();
+    panic("not implemented");
 }
 val bad = double("hello");
+
+import {failure.panic} from "std";
 
 ----- ERROR
 error: type mismatch

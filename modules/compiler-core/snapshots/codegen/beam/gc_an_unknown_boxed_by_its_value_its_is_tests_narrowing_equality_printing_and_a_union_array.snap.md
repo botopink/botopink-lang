@@ -23,20 +23,22 @@ fn show(x: unknown) -> string {
 }
 
 pub fn main() {
-    @print(describe(3));
-    @print(describe("a"));
-    @print(describe(true));
-    @print(show(1), show(2.5), show("s"), show(false));
+    print(describe(3));
+    print(describe("a"));
+    print(describe(true));
+    print(show(1), show(2.5), show("s"), show(false));
     val two: unknown = 2.0;
-    @print(two == 2, two == 3);
+    print(two == 2, two == 3);
     val t: unknown = "hi";
-    @print(t == "hi", t);
+    print(t == "hi", t);
     val b: unknown = true;
-    @print(b);
-    @print(300 is i8, 100 is i8, 2 is f64);
+    print(b);
+    print(300 is i8, 100 is i8, 2 is f64);
     val xs = [1, "a", true];
-    @print(xs);
+    print(xs);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

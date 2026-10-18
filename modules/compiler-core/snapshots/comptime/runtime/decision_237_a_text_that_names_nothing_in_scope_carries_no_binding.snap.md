@@ -6,6 +6,7 @@ pub fn conf(syntax q: string) -> i32 {
     return n;
 }
 val n = conf @`cfg-0`;
+
 import {compiler} from "std";
 ```
 

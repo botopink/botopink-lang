@@ -16,8 +16,11 @@ pub const Options = struct {
 /// (`specs/1.0.4-beta/08-review-backlog/semantics-decisions.md` decision 2), so
 /// a body whose only statement is the literal `"Hello, world!"` evaluates to
 /// nothing and `botopink run` shows an empty screen — the quick start of the
-/// README then has no visible effect. `@print` is the builtin, on every target.
+/// README then has no visible effect. `print` is std's `io.terminal.print`,
+/// imported (decision 606 (2)), on every target.
 const MAIN_BP =
+    \\import {io.terminal.print} from "std";
+    \\
     \\fn greet(name: string) -> string {
     \\    return "Hello, " + name + "!";
     \\}
@@ -26,7 +29,6 @@ const MAIN_BP =
     \\    print(greet("world"));
     \\}
     \\
-    \\import {io.terminal.print} from "std";
 ;
 
 const GITIGNORE =

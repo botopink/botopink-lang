@@ -454,7 +454,7 @@ test "infer: import of a failed module ---- a name missing from a module that ch
     };
     const main = (try moduleTypeError(&modules, "main", "comptime/import_of_failed_module_missing")).?;
     defer std.testing.allocator.free(main);
-    try std.testing.expectEqualStrings("3:12 unbound variable 'perimeter'", main);
+    try std.testing.expectEqualStrings("3:11 unbound variable 'perimeter'", main);
 }
 
 // An import that names its module says which declaration a name is. The
@@ -1258,7 +1258,7 @@ fn refusalOf(src: []const u8) ![]u8 {
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, std.testing.allocator);
     defer env.deinit();

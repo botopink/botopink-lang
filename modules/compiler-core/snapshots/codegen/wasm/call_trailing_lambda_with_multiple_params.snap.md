@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
-    @todo();
+    panic("not implemented");
 }
 fn main() {
     val r = calc(2) { a, b ->
         return 0;
     };
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

@@ -6,8 +6,10 @@ pub fn delete(with: string, class: string) -> string {
 }
 
 fn main() {
-    @print(delete("a", "b"));
+    print(delete("a", "b"));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

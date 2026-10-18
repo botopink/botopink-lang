@@ -2,31 +2,33 @@
 ```botopink
 pub fn main() {
     val xs = [3, 1, 2];
-    @print(xs.reverse());
-    @print(xs.slice(1));
-    @print(xs.slice(0, 2));
-    @print(xs.take(2));
-    @print(xs.drop(1));
-    @print(xs.rest());
-    @print(xs.append([9, 8]));
-    @print(xs.prepend(7));
-    @print(xs.indexOf(2));
-    @print(xs.indexOf(5));
-    @print(xs.lastIndexOf(1));
-    @print(xs.contains(1));
-    @print(xs.contains(8));
-    @print(xs.join("-"));
+    print(xs.reverse());
+    print(xs.slice(1));
+    print(xs.slice(0, 2));
+    print(xs.take(2));
+    print(xs.drop(1));
+    print(xs.rest());
+    print(xs.append([9, 8]));
+    print(xs.prepend(7));
+    print(xs.indexOf(2));
+    print(xs.indexOf(5));
+    print(xs.lastIndexOf(1));
+    print(xs.contains(1));
+    print(xs.contains(8));
+    print(xs.join("-"));
     val ws = ["a", "b", "c"];
-    @print(ws.reverse());
-    @print(ws.join(", "));
-    @print(ws.indexOf("c"));
-    @print(ws.contains("z"));
+    print(ws.reverse());
+    print(ws.join(", "));
+    print(ws.indexOf("c"));
+    print(ws.contains("z"));
     val ns = [-5, 0, 123];
-    @print(ns.join("|"));
+    print(ns.join("|"));
     val fs = [1.5, 2.5];
-    @print(fs.reverse());
-    @print(fs.indexOf(2.5));
+    print(fs.reverse());
+    print(fs.indexOf(2.5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

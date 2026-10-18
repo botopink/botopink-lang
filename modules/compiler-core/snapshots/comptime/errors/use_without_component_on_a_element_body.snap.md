@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-val Element = type() implement @Renderable
-fn state(initial: i32) -> @Component<i32> {
+val Element = type() implement Renderable
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 fn Counter() -> Element {

@@ -3,10 +3,12 @@
 fn main() {
     val v = 7;
     case v {
-        0 { @print("zero"); }
-        _ { n -> @print(n); }
+        0 { print("zero"); }
+        _ { n -> print(n); }
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

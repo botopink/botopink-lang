@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> @Iterator<@Result<i32, string>> :outer {
+fn nums() -> Iterator<Result<i32, string>> :outer {
     yield 1;
     break :nonsense 42;
 }

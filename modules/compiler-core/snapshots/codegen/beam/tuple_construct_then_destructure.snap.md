@@ -3,8 +3,10 @@
 fn main() {
     val t = #(10, 20);
     val #(a, b) = t;
-    @print(a + b);
+    print(a + b);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

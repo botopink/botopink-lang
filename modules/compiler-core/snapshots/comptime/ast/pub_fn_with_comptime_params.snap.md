@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub fn repeat(s comptime: string, n comptime: i32) -> string {
-    @todo();
+    panic("not implemented");
 }
 val r = repeat("hi", 3);
+
+import {failure.panic} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -29,7 +31,7 @@ val r = repeat("hi", 3);
       "return_type": "string",
       "body": [
         {
-          "source": "@todo();"
+          "source": "panic(\"not implemented\");"
         }
       ]
     },

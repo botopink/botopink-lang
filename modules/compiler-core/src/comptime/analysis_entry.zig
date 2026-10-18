@@ -193,12 +193,11 @@ const prelude = @import("std_prelude");
 /// prelude's four files, then every std module's. Inside the compiler key,
 /// like every other source of the binary.
 const embedded_sources = blk: {
-    var out: [4 + prelude.pkg_modules.len][]const u8 = undefined;
+    var out: [3 + prelude.pkg_modules.len][]const u8 = undefined;
     out[0] = prelude.primitives;
     out[1] = prelude.builtins;
-    out[2] = prelude.builtin_fns;
-    out[3] = prelude.external;
-    for (prelude.pkg_modules, 0..) |m, i| out[4 + i] = m.source;
+    out[2] = prelude.external;
+    for (prelude.pkg_modules, 0..) |m, i| out[3 + i] = m.source;
     break :blk out;
 };
 

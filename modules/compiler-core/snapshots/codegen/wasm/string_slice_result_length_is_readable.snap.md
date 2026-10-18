@@ -3,8 +3,10 @@
 fn main() {
     val s = "abcdef";
     val mid = s.slice(1, 5);
-    @print(mid.len);
+    print(mid.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

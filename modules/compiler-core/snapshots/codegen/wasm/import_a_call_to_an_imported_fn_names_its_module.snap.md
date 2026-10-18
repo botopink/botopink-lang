@@ -546,8 +546,10 @@ pub fn quad(x: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(quad(3));
+    print(quad(3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- b.wat

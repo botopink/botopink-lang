@@ -309,6 +309,10 @@ pub fn preludeNameShadowed(this: *This, name: []const u8) bool {
 /// The builtin type after its name: `@Name<…>`, or a prelude wrapper written
 /// bare (`bare`, decision 606 (1)).
 fn parseBuiltinTypeTail(this: *This, alloc: std.mem.Allocator, tok: parser.Token, name: []const u8, bare: bool) ParseError!ast.TypeRef {
+    if (!bare and this.refuse_removed_builtins and isPreludeWrapperName(name)) {
+        this.parseError = ParseErrorInfo.fromToken(.preludeNameWithSigil, tok);
+        return ParseError.UnexpectedToken;
+    }
     {
         if (this.check(.leftParenthesis)) {
             this.parseError = ParseErrorInfo.fromToken(.removedBuiltinType, tok);

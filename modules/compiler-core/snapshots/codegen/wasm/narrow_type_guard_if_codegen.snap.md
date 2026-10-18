@@ -5,8 +5,10 @@ fn isString(x: ?string) -> x is string {
     return false;
 }
 fn main() {
-    @print(isString("hello"));
+    print(isString("hello"));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

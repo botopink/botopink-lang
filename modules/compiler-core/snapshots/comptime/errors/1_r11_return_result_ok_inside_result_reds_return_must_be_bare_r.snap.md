@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn fetch() -> @Result<i32, string> {
+fn fetch() -> Result<i32, string> {
     return Result.Ok(42);
 }
 

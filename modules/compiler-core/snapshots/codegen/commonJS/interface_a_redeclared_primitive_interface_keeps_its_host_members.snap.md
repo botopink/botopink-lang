@@ -8,8 +8,10 @@ behavior Number {
 
 fn main() {
     val n: i32 = 50;
-    @print(n.clampTo(0, 10));
+    print(n.clampTo(0, 10));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

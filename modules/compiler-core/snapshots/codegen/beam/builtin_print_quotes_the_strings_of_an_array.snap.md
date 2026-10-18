@@ -2,9 +2,11 @@
 ```botopink
 fn main() {
     val words = ["plain", "say \"hi\"", "back\\slash", "two\nlines"];
-    @print(words);
-    @print("top", words);
+    print(words);
+    print("top", words);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

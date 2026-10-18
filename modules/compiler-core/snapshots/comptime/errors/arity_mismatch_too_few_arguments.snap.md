@@ -1,8 +1,10 @@
 ----- SOURCE CODE
 pub fn add(a: i32, b: i32) -> i32 {
-    @todo();
+    panic("not implemented");
 }
 val bad = add(1);
+
+import {failure.panic} from "std";
 
 ----- ERROR
 error: arity mismatch

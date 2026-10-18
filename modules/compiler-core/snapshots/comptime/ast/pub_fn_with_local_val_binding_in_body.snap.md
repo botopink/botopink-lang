@@ -2,13 +2,15 @@
 ```botopink
 pub fn compute(x: i32) -> i32 {
     val doubled = x + x;
-    @print(doubled);
+    print(doubled);
     return doubled;
 }
 val result = compute(21);
 fn main() {
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -31,7 +33,7 @@ fn main() {
           "source": "val doubled = x + x;"
         },
         {
-          "source": "@print(doubled);"
+          "source": "print(doubled);"
         },
         {
           "source": "return doubled;"
@@ -60,7 +62,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(result);"
+          "source": "print(result);"
         }
       ]
     }

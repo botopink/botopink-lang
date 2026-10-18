@@ -3,8 +3,10 @@ fn takeOption(x: @Option<i32>) -> i32 {
     return x.unwrapOr(0);
 }
 fn main() {
-    @print(takeOption(3));
+    print(takeOption(3));
 }
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: `@Option<T>` is not a type — the optional type is written `?T`

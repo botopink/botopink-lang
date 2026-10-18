@@ -4,16 +4,18 @@
 pub declare fn dirname(p: string) -> string;
 
 fn main() {
-    @print(dirname("/tmp/notes.txt"));
+    print(dirname("/tmp/notes.txt"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `dirname` has no implementation for the wasm backend
-  ┌─ :5:12
+  ┌─ :5:11
   │
-5 │     @print(dirname("/tmp/notes.txt"));
-  │            ^
+5 │     print(dirname("/tmp/notes.txt"));
+  │           ^
 ```
 

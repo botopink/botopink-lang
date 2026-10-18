@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parse(n: i32) -> @Result<string, string> {
+fn parse(n: i32) -> Result<string, string> {
     if (n < 0) { throw "negative"; };
     return "ok";
 }
@@ -12,8 +12,10 @@ fn handle(n: i32) -> string {
     };
 }
 fn main() {
-    @print(handle(5));
+    print(handle(5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -68,7 +70,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(handle(5));"
+          "source": "print(handle(5));"
         }
       ]
     }

@@ -2,9 +2,11 @@
 ```botopink
 type Unimplemented(id: i32) {
     fn process(self: Self) -> string {
-        return @todo();
+        return panic("not implemented");
     }
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

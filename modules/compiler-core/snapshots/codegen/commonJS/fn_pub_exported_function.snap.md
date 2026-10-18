@@ -5,8 +5,10 @@ pub fn add(a: i32, b: i32) -> i32 {
 }
 val result = add(3, 4);
 fn main() {
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -13,8 +13,10 @@ fn innerLength(b: unknown) -> i32 {
 }
 fn main() {
     val s: unknown = Maybe.Some(value: "abc");
-    @print(innerLength(s));
+    print(innerLength(s));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

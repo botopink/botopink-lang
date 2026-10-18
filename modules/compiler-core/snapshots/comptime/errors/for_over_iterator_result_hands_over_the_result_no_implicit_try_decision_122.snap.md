@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+fn upTo(n: i32) -> Iterator<Result<i32, string>> {
     yield n;
 }
 fn total(n: i32) -> i32 {

@@ -980,8 +980,8 @@ is shipped on erlang and beam although the cell's own `libs/orm/` — a library 
 carries a package named like the folder; the shipper took that package for the module's owner) and
 `modules/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/sidecar_named_like_emitted_atom@text.erl`, named
 like the atom `src/text.bp` compiles to, is a located build error on erlang and beam naming both,
-`snapshot/targets/erlang/` and `snapshot/targets/beam/`), `modules/bare_print_call` (`println(x)` is unbound
-and the refusal names `@println`), `modules/float_record_field` (an `f64` record field read, compared,
+`snapshot/targets/erlang/` and `snapshot/targets/beam/`), `modules/bare_print_call` (`print(x)` without its import is unbound
+and the refusal names `import {io.terminal.print} from "std"`, decision 606 (2)), `modules/float_record_field` (an `f64` record field read, compared,
 destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
 narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
 `modules/linked_fn_name_collision` (two modules each declaring `parse`, reached by their own calls, a

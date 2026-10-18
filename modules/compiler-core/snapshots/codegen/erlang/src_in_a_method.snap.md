@@ -2,13 +2,15 @@
 ```botopink
 type Stub(n: i32) {
     fn where(self: Self) -> SourceLocation {
-        return @src();
+        return comptime compiler.src;
     }
 }
 fn main() {
     val loc = Stub(n: 1).where();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -76,7 +78,7 @@ main(_Args) ->
 -export([where/1, '__bp_get'/2, '__bp_format'/1]).
 
 where(Self) ->
-    {test@main@@SourceLocation, <<"main.bp">>, 3, 16, <<"Stub.where">>}.
+    {test@main@@SourceLocation, <<"main.bp">>, 3, 25, <<"Stub.where">>}.
 
 '__bp_get'(V, n) -> erlang:element(2, V).
 
@@ -85,5 +87,5 @@ where(Self) ->
 
 ----- RUN LOG -----
 ```logs
-main.bp 3 16 Stub.where
+main.bp 3 25 Stub.where
 ```

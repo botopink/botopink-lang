@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn pulses() -> @Stream<i32> { yield 1; }
+fn pulses() -> Stream<i32> { yield 1; }
 val it = pulses();
 val first = it.
                ↑

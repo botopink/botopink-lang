@@ -6,10 +6,12 @@ val Drawable = behavior {
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn draw(self: Self) {
-        @todo();
+        panic("not implemented");
     }
 };
 val c = Circle(radius: 5.0);
+
+import {failure.panic} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

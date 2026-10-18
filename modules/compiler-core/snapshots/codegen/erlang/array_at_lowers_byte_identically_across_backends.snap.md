@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print([10, 20].at(0));
-    @print([10].at(5));
+    print([10, 20].at(0));
+    print([10].at(5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

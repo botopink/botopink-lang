@@ -13,8 +13,10 @@ fn area(s: Shape) -> f64 {
     };
 }
 fn main() {
-    @print(area(Shape.Circle(2.0)));
+    print(area(Shape.Circle(2.0)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -68,7 +70,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(area(Shape.Circle(2.0)));"
+          "source": "print(area(Shape.Circle(2.0)));"
         }
       ]
     }

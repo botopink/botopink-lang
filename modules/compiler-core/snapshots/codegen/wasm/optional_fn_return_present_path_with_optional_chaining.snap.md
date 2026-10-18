@@ -9,8 +9,10 @@ fn choose(present: bool) -> ?R {
     }
 }
 fn main() {
-    @print(choose(true)?.kind);
+    print(choose(true)?.kind);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

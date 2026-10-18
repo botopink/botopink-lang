@@ -1,12 +1,12 @@
 ----- SOURCE CODE
-val Element = type() implement @Renderable
-fn state(initial: i32) -> @Component<i32> {
+val Element = type() implement Renderable
+fn state(initial: i32) -> Component<i32> {
     return initial;
 }
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
-fn fetch(n: i32) -> @Task<i32> {
+fn fetch(n: i32) -> Task<i32> {
     return n;
 }
 fn plain(n: i32) -> i32 {

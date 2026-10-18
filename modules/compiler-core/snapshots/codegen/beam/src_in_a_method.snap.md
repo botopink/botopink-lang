@@ -2,13 +2,15 @@
 ```botopink
 type Stub(n: i32) {
     fn where(self: Self) -> SourceLocation {
-        return @src();
+        return comptime compiler.src;
     }
 }
 fn main() {
     val loc = Stub(n: 1).where();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -433,7 +435,7 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"Stub.where">>}, {x, 0}}.
     {test_heap, 6, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 3}, {integer, 16}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 3}, {integer, 25}, {x, 0}]}}.
     {deallocate, 1}.
     return.
 
@@ -473,5 +475,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-main.bp 3 16 Stub.where
+main.bp 3 25 Stub.where
 ```

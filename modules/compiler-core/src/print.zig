@@ -75,7 +75,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "the language has no bitwise operators",
             .caretCaption = "not an operator",
             .lexemeInCaption = true,
-            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@external(.<Target>(…))]` is the way to a bit operation.",
+            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[compiler.external(.<Target>(…))]` is the way to a bit operation.",
         },
         .charLiteralAbsent => .{
             .code = "char-literal-absent",
@@ -119,7 +119,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "marker-type-mismatch",
             .message = "a body marker names its return type, and this function does not write it",
             .caretCaption = "the return type does not match this marker",
-            .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> @Task<T>`, `iter fn … -> @Iterator<T>`, `async iter fn … -> @Stream<T>`, `component fn … -> @Component<R>`. Write that return type, or drop the marker.",
+            .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> Task<T>`, `iter fn … -> Iterator<T>`, `async iter fn … -> Stream<T>`, `component fn … -> Component<R>`. Write that return type, or drop the marker.",
         },
         .markerWithoutArrow => .{
             .code = "marker-without-arrow",
@@ -170,7 +170,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write",
             .lexemeInCaption = true,
             .lexemeSuffix = ":",
-            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[@BeamMemory.Ets(keyed: true)]`, `#[@external(.Erlang(\"…\", inline: true))]`, `#[mark(level: .High)]`.",
+            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[@BeamMemory.Ets(keyed: true)]`, `#[compiler.external(.Erlang(\"…\", inline: true))]`, `#[mark(level: .High)]`.",
         },
         .tupleLiteralLabel => .{
             .code = "tuple-literal-label",
@@ -205,11 +205,25 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .removedErrorUnion => .{
             .message = "Error union syntax `T!E` has been removed",
-            .hint = "Use `@Result<D, E>` instead, e.g. `fn fetch() -> @Result<i32, MyError>`",
+            .hint = "Use `Result<D, E>` instead, e.g. `fn fetch() -> Result<i32, MyError>`",
         },
         .removedBuiltinType => .{
             .message = "Builtin type syntax `@Result(D, E)` has been removed",
-            .hint = "Use `@Result<D, E>` instead",
+            .hint = "Use `Result<D, E>` instead",
+        },
+        .preludeNameWithSigil => .{
+            .code = "unknown-builtin",
+            .message = "a prelude type is written without `@`",
+            .caretCaption = "no builtin of this name",
+            .lexemeInCaption = true,
+            .hint = "The prelude's types and behaviors are written bare in every module — `Result<T, E>`, `Task<T>`, `Component<R>`, `Iterator<T>`, `Stream<T>`, `implement Renderable` (decision 606 (1)).",
+        },
+        .builtinNameRemoved => .{
+            .code = "unknown-builtin",
+            .message = "there is no `@name`: std's functions are imported and what the compiler does is a member of `compiler`",
+            .caretCaption = "no builtin of this name",
+            .lexemeInCaption = true,
+            .hint = "`print(…)` with `import {io.terminal.print} from \"std\";`, `panic(…)` with `import {failure.panic} from \"std\";` (`@todo()` is `panic(\"not implemented\")`), `comptime compiler.typeInfo(T)` and `comptime compiler.src` with `import {compiler} from \"std\";`, `#[compiler.external(…)]` (decision 606).",
         },
         .inlineTypeOutsideParameter => .{
             .code = "inline-type-outside-parameter",
@@ -246,45 +260,45 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "effect-annotation-removed",
             .message = "effect annotations were removed — the return type is the effect (decision 118)",
             .caretCaption = "remove the annotation; write the wrapper in the return",
-            .note = "`#[@result]` → `-> @Result<T, E>`; `#[@future]` → `-> @Task<T>` (or `-> @Task<@Result<T, E>>` when it can fail); `#[@use]` → `-> @Component<T>`; `#[@generator]` → `-> @Iterator<T>`; `#[@resultGenerator]` → `-> @Iterator<@Result<T, E>>`; `#[@futureGenerator]` → `-> @Stream<@Result<T, E>>`",
-            .hint = "Delete the annotation: `fn f() -> @Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
+            .note = "`#[@result]` → `-> Result<T, E>`; `#[@future]` → `-> Task<T>` (or `-> Task<Result<T, E>>` when it can fail); `#[@use]` → `-> Component<T>`; `#[@generator]` → `-> Iterator<T>`; `#[@resultGenerator]` → `-> Iterator<Result<T, E>>`; `#[@futureGenerator]` → `-> Stream<Result<T, E>>`",
+            .hint = "Delete the annotation: `fn f() -> Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
         },
         .effectAnnotationRemovedLoop => .{
             .code = "effect-annotation-removed",
             .message = "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)",
             .caretCaption = "remove the annotation; write `iter loop` (or `stream loop`)",
             .note = "`#[@generator] loop` and `#[@resultGenerator] loop` are `iter loop`; `#[@futureGenerator] loop` is `stream loop`; `iter` / `stream` also prefix `while` and `for`",
-            .hint = "`val xs = iter loop { … yield x; … };` is worth `@Iterator<T>`; the item becomes `@Result<T, E>` on its own when the body has `throw` / `try`.",
+            .hint = "`val xs = iter loop { … yield x; … };` is worth `Iterator<T>`; the item becomes `Result<T, E>` on its own when the body has `throw` / `try`.",
         },
         .effectTypeRemovedFuture => .{
             .code = "effect-type-removed",
             .message = "`@Future` was removed — the wrapper is `@Task<T>`, which never fails (decision 120)",
             .caretCaption = "write `@Task<@Result<T, E>>` (or `@Task<T>` when it cannot fail)",
-            .hint = "`@Future<T, E>` is `@Task<@Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `@Task<T>`.",
+            .hint = "`@Future<T, E>` is `Task<Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `Task<T>`.",
         },
         .effectTypeRemovedGenerator => .{
             .code = "effect-type-removed",
             .message = "`@Generator` was renamed `@Iterator` (decision 122)",
             .caretCaption = "write `@Iterator<T>`",
-            .hint = "`fn g() -> @Iterator<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
+            .hint = "`fn g() -> Iterator<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
         },
         .effectTypeRemovedResultGenerator => .{
             .code = "effect-type-removed",
             .message = "`@ResultGenerator` was removed — the item carries the failure (decision 122)",
             .caretCaption = "write `@Iterator<@Result<T, E>>`",
-            .hint = "`@ResultGenerator<T, E>` is `@Iterator<@Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
+            .hint = "`@ResultGenerator<T, E>` is `Iterator<Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
         },
         .effectTypeRemovedFutureGenerator => .{
             .code = "effect-type-removed",
             .message = "`@FutureGenerator` was removed — the asynchronous sequence is `@Stream` (decision 122)",
             .caretCaption = "write `@Stream<@Result<T, E>>` (or `@Stream<T>`)",
-            .hint = "`@FutureGenerator<T, E>` is `@Stream<@Result<T, E>>`; iterate it with `for await` where there is an await channel.",
+            .hint = "`@FutureGenerator<T, E>` is `Stream<Result<T, E>>`; iterate it with `for await` where there is an await channel.",
         },
         .effectTypeRemovedUse => .{
             .code = "effect-type-removed",
             .message = "`@Use` was removed — one wrapper, `@Component<R>` (decisions 128, 354)",
             .caretCaption = "write `@Component<R>`",
-            .hint = "`@Use<C, T>` is `@Component<T>`: a hook returns any `T`, a component an `R` that implements `@Renderable`.",
+            .hint = "`@Use<C, T>` is `Component<T>`: a hook returns any `T`, a component an `R` that implements `Renderable`.",
         },
         .contextMarkerRemoved => .{
             .code = "context-marker-removed",
@@ -296,7 +310,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "generic-arg-count-exceeded",
             .message = "`@Component` takes one type argument, `@Component<R>` — its base parameter was removed (decision 354)",
             .caretCaption = "drop the base: `@Component<R>`",
-            .hint = "`@Component<ElementBase, Element>` is `@Component<Element>`: a component is the `@Component<R>` whose `R` implements `@Renderable`, any other `R` is a hook.",
+            .hint = "`Component<ElementBase, Element>` is `Component<Element>`: a component is the `Component<R>` whose `R` implements `Renderable`, any other `R` is a hook.",
         },
         .renderableTakesNoTypeArguments => .{
             .code = "generic-arg-count-exceeded",
@@ -314,14 +328,14 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "effect-type-removed",
             .message = "this sequence type left the language (decisions 103, 122)",
             .caretCaption = "write `@Stream<T>`, `@Iterator<T>` or `YieldStep<T>`",
-            .note = "`@AsyncIterator<T>` is `@Stream<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `@Iterator<T>`",
-            .hint = "`fn iter(self: Self) -> @Iterator<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
+            .note = "`@AsyncIterator<T>` is `Stream<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `Iterator<T>`",
+            .hint = "`fn iter(self: Self) -> Iterator<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
         },
         .iteratorErrorParamRemoved => .{
             .code = "iterator-error-param-removed",
             .message = "`@Iterator` has no error parameter — the item carries the failure (decision 122)",
             .caretCaption = "write `@Iterator<@Result<T, E>>`",
-            .hint = "`@Iterator<T, E>` is `@Iterator<@Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
+            .hint = "`Iterator<T, E>` is `Iterator<Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
         },
         .genericDefaultBeforeRequired => .{
             .message = "generic-default-before-required: default-typed generic parameters must be the trailing parameters of the list.",
@@ -398,7 +412,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .retiredAnnotationBlock => .{
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",
-            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.JavaScript(\"f($0)\"))]`.",
+            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[compiler.external(.JavaScript(\"f($0)\"))]`.",
         },
         .removedKeywordRecord => .{
             .code = "removed-keyword-record",
@@ -434,7 +448,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "removed-delegate",
             .message = "`val x = declare fn(…)` does not exist (decision 575 (6))",
             .caretCaption = "declare the function by its name",
-            .hint = "A host function is a named `declare fn` its annotation implements: `#[@external(.JavaScript(\"…\"))] declare fn log(message: string);`. A function type is written `fn(message: string)`.",
+            .hint = "A host function is a named `declare fn` its annotation implements: `#[compiler.external(.JavaScript(\"…\"))] declare fn log(message: string);`. A function type is written `fn(message: string)`.",
         },
         .removedLoopParenthesised => .{
             .code = "removed-loop-parenthesised",
@@ -464,7 +478,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "loop-annotation-not-generator",
             .message = "a loop takes no annotation — it takes the `iter` / `stream` prefix",
             .caretCaption = "not a loop annotation",
-            .hint = "`iter loop { … }` is worth `@Iterator<T>` and `stream loop { … }` `@Stream<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
+            .hint = "`iter loop { … }` is worth `Iterator<T>` and `stream loop { … }` `Stream<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",
@@ -589,7 +603,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .typeAliasAnnotated => .{
             .code = "type-alias-annotated",
             .message = "a type alias takes no annotation",
-            .hint = "An alias is only a name for a type (`type Parser<T> = @Result<T, ParseError>;`); put the annotation on a declaration that carries it.",
+            .hint = "An alias is only a name for a type (`type Parser<T> = Result<T, ParseError>;`); put the annotation on a declaration that carries it.",
         },
         .typeAliasGenericDefault => .{
             .code = "type-alias-generic-default",

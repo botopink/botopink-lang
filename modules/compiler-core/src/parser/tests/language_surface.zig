@@ -505,7 +505,6 @@ test "surface R10: a decided-against form renders its code, the replacement and 
         \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[compiler.external(.<Target>(…))]` is the way to a bit operation.
         \\
         \\
-        \\import {compiler} from "std";
     ,
         \\fn f() -> i32 { return 1 << 2; }
     );
@@ -540,6 +539,7 @@ test "surface R11: a one-line trailing lambda body needs no `;`" {
         \\    val w = memo { -> 42 };
         \\    return acc;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -550,8 +550,9 @@ test "surface R11: a trailing lambda body with several statements keeps its `;`"
         \\    xs.forEach { x -> print(x.toString()) print(x.toString()); };
         \\    return 1;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
-    , .unexpectedToken, 2, 44);
+    , .unexpectedToken, 2, 43);
 }
 
 // ── C-13 — decision 29 (c), ordered by decision 60 ───────────────────────────
@@ -583,6 +584,7 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\    if (c) n = 3 else { n = 4; n = 5; };
         \\    return n;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\fn f(c: bool, xs: i32[]) -> i32 {
@@ -604,6 +606,7 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\    if (c) n = 3 else { n = 4; n = 5; }
         \\    return n;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

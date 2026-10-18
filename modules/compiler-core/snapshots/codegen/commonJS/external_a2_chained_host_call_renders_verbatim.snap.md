@@ -4,8 +4,10 @@
 pub declare fn b64encode(s: string) -> string;
 
 fn main() {
-    @print(b64encode("hi"));
+    print(b64encode("hi"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 fn main() {
     val loc = locate();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
+    print(loc.file, loc.line, loc.column, loc.fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -26,7 +28,7 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"locate">>}, {x, 0}}.
     {test_heap, 6, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 2}, {integer, 12}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 2}, {integer, 21}, {x, 0}]}}.
     {deallocate, 0}.
     return.
 
@@ -433,5 +435,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-main.bp 2 12 locate
+main.bp 2 21 locate
 ```

@@ -6,8 +6,10 @@ fn double(x: i32) -> i32 {
 }
 val output = double(10);
 fn main() {
-    @print(output);
+    print(output);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

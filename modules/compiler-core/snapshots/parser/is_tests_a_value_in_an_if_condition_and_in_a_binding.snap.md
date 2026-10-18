@@ -92,7 +92,7 @@
                               "call": {
                                 "receiver": null,
                                 "callee": "print",
-                                "is_builtin": true,
+                                "is_builtin": false,
                                 "is_tagged": false,
                                 "optional": false,
                                 "args": [
@@ -102,7 +102,7 @@
                                       "identifier": {
                                         "loc": {
                                           "line": 2,
-                                          "col": 28
+                                          "col": 27
                                         },
                                         "kind": {
                                           "ident": "a"
@@ -210,6 +210,29 @@
             "emptyLinesBefore": 0
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "io",
+              "terminal",
+              "print"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

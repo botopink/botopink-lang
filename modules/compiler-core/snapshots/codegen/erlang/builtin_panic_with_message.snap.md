@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn fail() {
-    @panic("something went wrong");
+    panic("something went wrong");
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl

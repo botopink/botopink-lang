@@ -8,13 +8,15 @@ fn check(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(GREETING);
-    @print(check(3));
+    print(GREETING);
+    print(check(3));
     if (check(1) < 0) {
-        @panic("negative");
+        panic("negative");
     }
-    @print("done");
+    print("done");
 }
+
+import {io.terminal.print, failure.panic} from "std";
 ```
 
 ----- COMPTIME VALUES -- main

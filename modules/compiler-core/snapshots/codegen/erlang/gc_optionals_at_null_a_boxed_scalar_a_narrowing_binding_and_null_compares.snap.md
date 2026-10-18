@@ -19,26 +19,28 @@ fn show(o: ?i32) -> i32 {
 
 pub fn main() {
     val xs = [7, 8];
-    @print(xs.at(1));
-    @print(xs.at(5));
-    @print(first(xs));
-    @print(pick(true));
-    @print(pick(false));
-    @print(show(pick(true)));
-    @print(show(pick(false)));
+    print(xs.at(1));
+    print(xs.at(5));
+    print(first(xs));
+    print(pick(true));
+    print(pick(false));
+    print(show(pick(true)));
+    print(show(pick(false)));
     val b = Box(n: 3, s: "x");
-    @print(b);
+    print(b);
     val c = Box(n: null, s: null);
-    @print(c);
-    if (b.n) { v -> @print(v + 1); }
+    print(c);
+    if (b.n) { v -> print(v + 1); }
     val words = ["a", "b"];
-    @print(words.at(0));
-    @print(words.at(9));
-    @print(words[1] ?? "z");
-    @print(xs[0]);
-    @print(b.n == null);
-    @print(c.n == null);
+    print(words.at(0));
+    print(words.at(9));
+    print(words[1] ?? "z");
+    print(xs[0]);
+    print(b.n == null);
+    print(c.n == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -84,7 +86,7 @@ main() ->
     case erlang:element(2, B) of
         undefined -> undefined;
         V ->
-            '__bp_print'(['__bp_int'((V + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:31:30">>)])
+            '__bp_print'(['__bp_int'((V + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:31:29">>)])
     end,
     Words = [<<"a">>, <<"b">>],
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Words, 0)]),

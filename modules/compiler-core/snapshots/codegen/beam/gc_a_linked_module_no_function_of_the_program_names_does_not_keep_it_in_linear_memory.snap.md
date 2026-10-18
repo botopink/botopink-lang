@@ -2879,8 +2879,10 @@ test "order case over Order" {
 import {collections} from "std";
 
 pub fn main() {
-    @print("x");
+    print("x");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

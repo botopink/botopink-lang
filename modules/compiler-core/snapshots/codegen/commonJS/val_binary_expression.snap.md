@@ -2,8 +2,10 @@
 ```botopink
 val sum = 1 + 2;
 fn main() {
-    @print(sum);
+    print(sum);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

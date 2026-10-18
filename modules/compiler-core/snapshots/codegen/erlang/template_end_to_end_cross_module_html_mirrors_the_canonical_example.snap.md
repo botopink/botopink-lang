@@ -23,8 +23,10 @@ val page = html @`<div>
   <Page1/>
 </div>`;
 fn main() {
-    @print(page);
+    print(page);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

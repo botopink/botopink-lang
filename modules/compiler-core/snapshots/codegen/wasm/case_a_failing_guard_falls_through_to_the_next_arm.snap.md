@@ -8,10 +8,12 @@ fn classify(n: i32) -> string {
     };
 }
 fn main() {
-    @print(classify(5));
-    @print(classify(0));
-    @print(classify(-3));
+    print(classify(5));
+    print(classify(0));
+    print(classify(-3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -616,7 +618,7 @@ fn main() {
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (data $__d2 "negative")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "integer overflow: - on i32 at main.bp:11:21")
+  (data $__d3 "integer overflow: - on i32 at main.bp:11:20")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

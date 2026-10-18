@@ -2,15 +2,17 @@
 ```botopink
 fn check(x: i32) {
     if (x > 0) {
-        @print("positive");
+        print("positive");
     } else {
-        @print("non-positive");
+        print("non-positive");
     }
 }
 fn main() {
     check(1);
     check(-1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

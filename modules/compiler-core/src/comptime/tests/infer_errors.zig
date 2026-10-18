@@ -22,6 +22,7 @@ test "infer error: two pub default fn in one package" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub default fn one(syntax q: string) -> i32 { return compiler.build("0"); }
         \\pub default fn two(syntax q: string) -> i32 { return compiler.build("0"); }
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -1119,7 +1120,7 @@ fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]
     var lx = Lexer.init(src);
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, allocator);
     defer env.deinit();
@@ -1251,7 +1252,7 @@ test "infer: `#[@BeamMemory]` is accepted on erlang and beam" {
         );
         const tokens = try lx.scanAll(alloc);
         var p = Parser.init(tokens);
-        var program = try p.parse(alloc);
+        var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
         defer program.deinit(alloc);
         var env = try inferMod.freshEnv(alloc, std.testing.allocator);
         defer env.deinit();
@@ -1693,7 +1694,7 @@ fn warningMessages(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
     var lx = Lexer.init(src);
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, allocator);
     defer env.deinit();
@@ -1982,7 +1983,7 @@ fn expectSpreadRefusal(src: []const u8, code: []const u8, line: usize, col: usiz
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, std.testing.allocator);
     defer env.deinit();
@@ -2050,7 +2051,7 @@ test "infer error: record spread ---- a labelled value a later spread overrides 
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, std.testing.allocator);
     defer env.deinit();
@@ -2074,7 +2075,7 @@ test "infer: record spread ---- an overridden labelled value is evaluated in the
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, std.testing.allocator);
     defer env.deinit();

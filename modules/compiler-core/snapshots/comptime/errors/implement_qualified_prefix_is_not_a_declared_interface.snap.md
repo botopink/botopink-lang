@@ -5,9 +5,11 @@ val Drawable = behavior {
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn Renderable.draw(self: Self) {
-        @print("draw");
+        print("draw");
     }
 };
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: unknown interface

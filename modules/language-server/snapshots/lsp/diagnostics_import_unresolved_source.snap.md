@@ -4,8 +4,10 @@ import {start} from "starter";
 import {greet} from "core";
 
 pub fn main() {
-    @print(start() + greet());
+    print(start() + greet());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- DIAGNOSTICS

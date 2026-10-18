@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type RiskError(level: i32)
-fn risky() -> @Result<i32, RiskError> {
+fn risky() -> Result<i32, RiskError> {
     throw RiskError(level: 5);
 }
 fn safe() -> i32 {

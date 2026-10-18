@@ -1,6 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val info = @typeInfo(void);
+val info = comptime compiler.typeInfo(void);
+
+import {compiler} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

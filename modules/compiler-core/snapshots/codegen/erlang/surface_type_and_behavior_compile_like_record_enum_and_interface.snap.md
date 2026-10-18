@@ -21,9 +21,11 @@ fn weight(s: Size) -> i32 {
 
 fn main() {
     val sq = Square(side: 3);
-    @print(sq.area());
-    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+    print(sq.area());
+    print(weight(Size.Large(n: 5)) + weight(Size.Small));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -51,7 +53,7 @@ weight(S) ->
 main() ->
     Sq = {test@main@@Square, 3},
     '__bp_print'([test@main@@Square:area(Sq)]),
-    '__bp_print'(['__bp_int'((weight({test@main@@Size__v__large, 5}) + weight(test@main@@Size__v__small)), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:23:37">>)]).
+    '__bp_print'(['__bp_int'((weight({test@main@@Size__v__large, 5}) + weight(test@main@@Size__v__small)), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:23:36">>)]).
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

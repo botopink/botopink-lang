@@ -3,9 +3,11 @@
 fn main() {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
     for (messages) { msg ->
-        @print(msg);
+        print(msg);
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

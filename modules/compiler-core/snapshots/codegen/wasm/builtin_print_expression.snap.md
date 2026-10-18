@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val x = 10;
-    @print(x * 2);
+    print(x * 2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -527,7 +529,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: * on i32 at main.bp:3:14")
+  (data $__d0 "integer overflow: * on i32 at main.bp:3:13")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

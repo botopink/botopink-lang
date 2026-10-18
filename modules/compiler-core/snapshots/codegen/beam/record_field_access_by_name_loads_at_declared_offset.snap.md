@@ -3,8 +3,10 @@
 type R(a: i32, b: i32)
 fn main() {
     val r = R(a: 7, b: 11);
-    @print(r.b);
+    print(r.b);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

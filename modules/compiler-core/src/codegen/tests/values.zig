@@ -32,6 +32,7 @@ test "js: val ---- binary expression" {
         \\fn main() {
         \\    print(sum);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -45,6 +46,7 @@ test "js: fn ---- private function with return" {
         \\fn main() {
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -61,6 +63,7 @@ test "js: fn ---- max via if comparison" {
         \\fn main() {
         \\    print(max(3, 7));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -74,6 +77,7 @@ test "js: fn ---- pub exported function" {
         \\fn main() {
         \\    print(result);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -88,6 +92,7 @@ test "js: fn ---- with local binding" {
         \\fn main() {
         \\    print(output);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -150,6 +155,7 @@ test "js: operators ---- comparison" {
         \\    print(isPositive(5));
         \\    print(isPositive(-1));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -163,6 +169,7 @@ test "js: operators ---- equality maps to ==" {
         \\    print(isZero(0));
         \\    print(isZero(42));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -175,6 +182,7 @@ test "js: operators ---- logical and" {
         \\fn main() {
         \\    print(both(true, false));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -187,6 +195,7 @@ test "js: operators ---- logical or" {
         \\fn main() {
         \\    print(either(false, true));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -199,6 +208,7 @@ test "js: operators ---- logical not" {
         \\fn main() {
         \\    print(negate(true));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -233,6 +243,7 @@ test "js: call ---- trailing lambda block" {
         \\        return "done";
         \\    };
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -247,6 +258,7 @@ test "js: call ---- trailing lambda with multiple params" {
         \\        return 0;
         \\    };
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -313,6 +325,7 @@ test "js: assign ---- update var with plusEq" {
         \\    count += 1;
         \\    print(count);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -367,6 +380,7 @@ test "js: string ---- interpolation lowers to concat" {
         \\    val name = "world";
         \\    print("hi ${name}!");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -438,6 +452,7 @@ test "js: tuple ---- equality is positional, and labels take no part" {
         \\    val wide = #(1, "a", 2);
         \\    print(a == wide);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true\nfalse\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\n");
 }
@@ -460,6 +475,7 @@ test "js: operators ---- plus on untyped operands and division of floats" {
         \\    print(cat("ab", "cd"));
         \\    print(average([2.0, 4.0, 9.0]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -474,6 +490,7 @@ test "js: operators ---- abs on an i32 receiver reaches Signed" {
         \\fn main() {
         \\    print(mag(-7));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

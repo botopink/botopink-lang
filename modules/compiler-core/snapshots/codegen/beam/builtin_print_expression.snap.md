@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val x = 10;
-    @print(x * 2);
+    print(x * 2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -27,7 +29,7 @@ fn main() {
     {test, is_ge, {f, 8}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 9}}.
   {label, 8}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:3:14">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:3:13">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 9}.
     {test_heap, 2, 1}.

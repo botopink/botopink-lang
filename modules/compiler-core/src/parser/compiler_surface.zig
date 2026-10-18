@@ -528,8 +528,10 @@ fn executorOf(ctx: *Ctx, e: *ast.Expr) error{OutOfMemory}!*ast.Expr {
 }
 
 /// `compiler.<p>` read without a call.
+/// `compiler.src` is located where `compiler` is written: the place it reads.
 fn mapProperty(ctx: *Ctx, loc: ast.Loc, name: []const u8) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
+    ctx.mapped += 1;
     if (std.mem.eql(u8, name, "src")) return builtinCall(loc, "src", &.{}, &[_]ast.TrailingLambda{});
     if (std.mem.eql(u8, name, "module")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "module");
     if (std.mem.eql(u8, name, "package")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "package");
@@ -758,7 +760,9 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             }
             if (isCompiler(ia.receiver.*)) {
                 const at = ia.receiver.getLoc();
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else if (ctx.inTree) try treeRefusal(ctx, at) else try mapProperty(ctx, loc, ia.member);
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else if (ctx.inTree) try treeRefusal(ctx, at) else try mapProperty(ctx, if (std.mem.eql(u8, ia.member, "src")) at else loc, ia.member);
+                // The read replaced the node: its `compiler` is no one's.
+                ctx.alloc.destroy(ia.receiver);
                 return;
             }
             return walkExpr(ctx, ia.receiver);
@@ -773,11 +777,20 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     if (e == .comptime_) switch (e.comptime_.kind) {
         .comptimeExpr => |inner| {
             const was = ctx.runTime;
+            const was_tree = ctx.inTree;
             ctx.runTime = false;
+            // Inside a tree a `comptime` is the build's own (the tree rule
+            // splices its answer): the compiler is read there, and the
+            // `comptime` stays.
+            ctx.inTree = false;
             defer ctx.runTime = was;
+            defer ctx.inTree = was_tree;
             const before = ctx.mapped;
             try walkExpr(ctx, inner);
-            if (ctx.mapped != before) p.* = inner.*;
+            if (ctx.mapped != before and !was_tree) {
+                p.* = inner.*;
+                ctx.alloc.destroy(inner);
+            }
             return;
         },
         .comptimeBlock => if (ctx.runTime) {

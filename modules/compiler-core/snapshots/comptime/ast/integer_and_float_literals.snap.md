@@ -3,8 +3,10 @@
 val x = 42;
 val y = 3.14;
 fn main() {
-    @print(x, y);
+    print(x, y);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -29,7 +31,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(x, y);"
+          "source": "print(x, y);"
         }
       ]
     }

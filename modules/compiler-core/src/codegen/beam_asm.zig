@@ -9743,7 +9743,7 @@ const Emitter = struct {
     fn lowerBuiltinCall(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             // `erlang:error({todo, Msg})` / `{panic, Msg}` — the erlang
-            // backend's reason, message defaulted as `builtins_fns.d.bp`
+            // backend's reason, message defaulted as `failure.bp`'s `panic`
             // declares it. `@todo()` raised the bare atom `undef`, which read
             // as a missing function (`{undef, main:notReady/0}`).
             const is_todo = std.mem.eql(u8, cc.callee, "todo");

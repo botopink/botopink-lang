@@ -6,9 +6,11 @@ fn classify(x: ?i32) -> string {
     else { return "null"; }
 }
 fn main() {
-    @print(classify(42));
-    @print(classify(null));
+    print(classify(42));
+    print(classify(null));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -40,10 +42,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(classify(42));"
+          "source": "print(classify(42));"
         },
         {
-          "source": "@print(classify(null));"
+          "source": "print(classify(null));"
         }
       ]
     }

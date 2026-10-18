@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn collected() -> @Task<i32> {
+fn collected() -> Task<i32> {
     var n = 0;
     for ([1, 2, 3]) { x -> yield x * 2; };
     return n;

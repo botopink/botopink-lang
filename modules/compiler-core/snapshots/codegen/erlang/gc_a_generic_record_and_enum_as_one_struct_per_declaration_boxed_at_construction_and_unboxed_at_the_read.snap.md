@@ -24,14 +24,16 @@ fn ident<T>(x: T) -> T {
 
 pub fn main() {
     val b = Box(value: 41);
-    @print(b.value + 1);
-    @print(b.get());
-    @print(Box(value: "s"));
-    @print(Box(value: true));
-    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
-    @print(Maybe.Some(value: "x"));
-    @print(ident(3) + 1);
+    print(b.value + 1);
+    print(b.get());
+    print(Box(value: "s"));
+    print(Box(value: true));
+    print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+    print(Maybe.Some(value: "x"));
+    print(ident(3) + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -59,13 +61,13 @@ ident(X) ->
 
 main() ->
     B = {test@main@@Box, 41},
-    '__bp_print'(['__bp_int'((erlang:element(2, B) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:25:20">>)]),
+    '__bp_print'(['__bp_int'((erlang:element(2, B) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:25:19">>)]),
     '__bp_print'([test@main@@Box:get(B)]),
     '__bp_print'([{test@main@@Box, <<"s">>}]),
     '__bp_print'([{test@main@@Box, true}]),
     '__bp_print'([orZero({test@main@@Maybe__v__some, 7}), orZero(test@main@@Maybe__v__none)]),
     '__bp_print'([{test@main@@Maybe__v__some, <<"x">>}]),
-    '__bp_print'(['__bp_int'((ident(3) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:31:21">>)]).
+    '__bp_print'(['__bp_int'((ident(3) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:31:20">>)]).
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

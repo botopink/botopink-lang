@@ -24,14 +24,16 @@ fn ident<T>(x: T) -> T {
 
 pub fn main() {
     val b = Box(value: 41);
-    @print(b.value + 1);
-    @print(b.get());
-    @print(Box(value: "s"));
-    @print(Box(value: true));
-    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
-    @print(Maybe.Some(value: "x"));
-    @print(ident(3) + 1);
+    print(b.value + 1);
+    print(b.get());
+    print(Box(value: "s"));
+    print(Box(value: true));
+    print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+    print(Maybe.Some(value: "x"));
+    print(ident(3) + 1);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -152,13 +154,13 @@ function ident(x) {
 
 function main() {
     const b = new Box(41);
-    __bp_print(__bp_int((b.value + 1), -2147483648, 2147483647, "+ on i32 at main.bp:25:20"));
+    __bp_print(__bp_int((b.value + 1), -2147483648, 2147483647, "+ on i32 at main.bp:25:19"));
     __bp_print(b.get());
     __bp_print(new Box("s"));
     __bp_print(new Box(true));
     __bp_print(orZero(Maybe.Some(7)), orZero(Maybe.None));
     __bp_print(Maybe.Some("x"));
-    __bp_print(__bp_int((ident(3) + 1), -2147483648, 2147483647, "+ on i32 at main.bp:31:21"));
+    __bp_print(__bp_int((ident(3) + 1), -2147483648, 2147483647, "+ on i32 at main.bp:31:20"));
 }
 exports.main = main;
 

@@ -9,8 +9,10 @@ fn describe(r: Result_) -> string {
     };
 }
 fn main() {
-    @print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
+    print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -65,7 +67,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(describe(Result_.OkData(Payload(code: 200, msg: \"ok\"))));"
+          "source": "print(describe(Result_.OkData(Payload(code: 200, msg: \"ok\"))));"
         }
       ]
     }

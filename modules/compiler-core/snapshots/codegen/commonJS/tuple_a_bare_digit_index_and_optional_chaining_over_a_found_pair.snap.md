@@ -6,9 +6,11 @@ fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
 
 fn main() {
     val pairs = [#("a", 1), #("b", 2)];
-    @print(lookup(pairs, "b"));
-    @print(lookup(pairs, "z") == null);
+    print(lookup(pairs, "b"));
+    print(lookup(pairs, "z") == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val labels = ["a", "bb", "ccc"];
-    @print(labels.len);
+    print(labels.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

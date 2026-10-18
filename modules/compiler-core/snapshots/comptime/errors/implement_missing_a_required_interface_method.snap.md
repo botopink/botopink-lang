@@ -6,9 +6,11 @@ val Drawable = behavior {
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn draw(self: Self) {
-        @print("draw");
+        print("draw");
     }
 };
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: missing interface method

@@ -1098,8 +1098,10 @@ array_slice(Self, Start, End) ->
 import {collections} from "std";
 
 pub fn main() {
-    @print("x");
+    print("x");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

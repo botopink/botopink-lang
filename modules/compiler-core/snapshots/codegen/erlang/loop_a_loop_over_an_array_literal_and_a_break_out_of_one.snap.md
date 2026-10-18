@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    for ([1, 2, 3]) { x -> @print(x); };
+    for ([1, 2, 3]) { x -> print(x); };
     var first = 0;
     for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
-    @print(first);
+    print(first);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

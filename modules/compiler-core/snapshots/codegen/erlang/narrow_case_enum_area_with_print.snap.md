@@ -8,9 +8,11 @@ fn area(s: Shape) -> f64 {
     };
 }
 fn main() {
-    @print(area(Shape.Circle(2.0)));
-    @print(area(Shape.Square(3.0)));
+    print(area(Shape.Circle(2.0)));
+    print(area(Shape.Square(3.0)));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

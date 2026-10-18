@@ -944,8 +944,8 @@ pub const Env = struct {
     /// may write a `std:` cell (`infer.refuseStdBinding`).
     inStd: bool = false,
     /// The module's bodyless declarations are the compiler's (the prelude's
-    /// `builtins.d.bp` / `builtins_fns.d.bp`, the reflection cluster, std's
-    /// `compiler.bp`'s `Type`, decision 624; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
+    /// `builtins.d.bp` / `failure.bp`'s `panic`, the reflection cluster, std's
+    /// `types.bp`; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
     /// compiler's builtins, which no annotation implements until `#[builtin]`
     /// marks them (decision 575 (2)), so `declare-without-implementation` is
     /// not its rule.
@@ -1848,14 +1848,14 @@ pub const Env = struct {
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
-    /// Fn declarations parsed by `registerStdlib` from `builtins_fns.d.bp`
-    /// (todo / panic / trap / emit / module / field). Made
-    /// available to `transform.expandTrailingDefaults` so a bare `todo()` /
-    /// `panic()` call site at user code resolves to the parsed `FnDecl` and
-    /// its trailing literal default lands in `c.args` before dispatch.
+    /// Fn declarations `registerStdlib` reads from std's modules — `print`
+    /// (`io/terminal.bp`) and `panic` (`failure.bp`), decision 606 (2). Made
+    /// available to `transform.expandTrailingDefaults` so a `panic()` call
+    /// site resolves to the parsed `FnDecl` and its trailing literal default
+    /// lands in `c.args` before dispatch.
     stdlibFnDecls: std.StringHashMap(ast.FnDecl),
     /// Decision 252 — every builtin's declaration, parsed by
-    /// `registerStdlib` from `builtins.d.bp` and `builtins_fns.d.bp` and keyed
+    /// `registerStdlib` from `builtins.d.bp` and std's `print` / `panic` and keyed
     /// by the name after `@` (`TypeInfo.all` for the static method). A call to
     /// a builtin held `.declaration` (`comptime/builtins.zig`) is checked
     /// against it (`infer.zig` `checkBuiltinArguments`).
@@ -2001,7 +2001,7 @@ pub const Env = struct {
     /// (level, jump lowerings, label stack, etc.) is freshly initialised.
     ///
     /// Avoids the ~83ms/call cost of re-parsing + re-inferring the stdlib
-    /// (`primitives.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
+    /// (`primitives.bp`, `@Decl` cluster, `CustomNode`, `failure.bp`'s `panic`)
     /// on every `freshEnv`, which `registerStdlib` did unconditionally.
     /// Lex + parse + infer of the test snippet itself only costs ~µs.
     pub fn cloneFromTemplate(tmpl: *const Env, arena: std.mem.Allocator) !Env {
@@ -2525,7 +2525,7 @@ pub const Env = struct {
             // `resolveTypeRefInContext` as `any-type-removed`, naming
             // `unknown`, the type that holds any value.
             // The declared return of `@panic` / `todo` / `trap`
-            // (`libs/std/src/builtins_fns.d.bp`, `builtins.d.bp`): a type no
+            // (`libs/std/src/failure.bp`'s `panic`, `builtins.d.bp`): a type no
             // module declares, so C10's second pass needs it named here.
             "noreturn",
             // special

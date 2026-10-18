@@ -112,7 +112,7 @@
                   ".Erlang(\"lists:reverse($0)\")",
                   ".JavaScript(\"./bp_stdlib.mjs\", \"list_reverse\")"
                 ],
-                "is_builtin": true
+                "is_builtin": false
               }
             ],
             "genericParams": [],
@@ -145,6 +145,27 @@
             "isPub": false
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

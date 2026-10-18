@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 type Oops(msg: string)
-fn parse(s: string) -> @Result<i32, Oops> { return 1; }
+fn parse(s: string) -> Result<i32, Oops> { return 1; }
 fn f(s: string) -> string { return s; }
 fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
 

@@ -7,8 +7,10 @@ fn main() {
             processamento.push(i);
         };
     };
-    @print(processamento);
+    print(processamento);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

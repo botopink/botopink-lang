@@ -4,8 +4,10 @@ fn both(a: bool, b: bool) -> bool {
     return a && b;
 }
 fn main() {
-    @print(both(true, false));
+    print(both(true, false));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

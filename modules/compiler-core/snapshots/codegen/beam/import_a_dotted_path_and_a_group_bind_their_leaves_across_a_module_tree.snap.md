@@ -89,11 +89,13 @@ pub fn label() -> string {
 import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
 
 fn main() {
-    @print(circleName());
-    @print(seven());
-    @print(label());
-    @print(circleLabel());
+    print(circleName());
+    print(seven());
+    print(label());
+    print(circleLabel());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

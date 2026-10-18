@@ -13,15 +13,17 @@ fn ageOf(u: ?User) -> ?i32 {
 pub fn main() {
     val a = User(name: "ann", age: 3, next: null);
     val b = User(name: "bob", age: 4, next: a);
-    @print(nameOf(a));
-    @print(nameOf(null));
-    @print(ageOf(b));
-    @print(b.next?.name);
-    @print(a.next?.name);
-    @print(b.next?.age ?? 0);
-    @print(a == b);
-    @print(b.next == a);
+    print(nameOf(a));
+    print(nameOf(null));
+    print(ageOf(b));
+    print(b.next?.name);
+    print(a.next?.name);
+    print(b.next?.age ?? 0);
+    print(a == b);
+    print(b.next == a);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

@@ -4,8 +4,10 @@
 pub declare fn basename(p: string) -> string;
 
 fn main() {
-    @print(basename("/tmp/notes.txt"));
+    print(basename("/tmp/notes.txt"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl

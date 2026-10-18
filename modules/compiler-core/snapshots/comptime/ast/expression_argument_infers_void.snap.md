@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val x = 10;
-    @print(x + 5);
+    print(x + 5);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -21,7 +23,7 @@ fn main() {
           "source": "val x = 10;"
         },
         {
-          "source": "@print(x + 5);"
+          "source": "print(x + 5);"
         }
       ]
     }

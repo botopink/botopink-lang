@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type IoError(path: string)
-fn step1() -> @Result<i32, IoError> {
+fn step1() -> Result<i32, IoError> {
     throw IoError(path: "/data");
 }
-fn step2(x: i32) -> @Result<i32, IoError> {
+fn step2(x: i32) -> Result<i32, IoError> {
     throw IoError(path: "/out");
 }
-fn pipeline() -> @Result<i32, IoError> {
+fn pipeline() -> Result<i32, IoError> {
     val a = try step1();
     val b = try step2(a);
     return b;

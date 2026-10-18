@@ -4,8 +4,10 @@
 pub declare fn floor(n: f64) -> f64;
 
 fn main() {
-    @print(floor(1.7));
+    print(floor(1.7));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

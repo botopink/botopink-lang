@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val xs = [1, 2, 3];
-    @print(xs.len);
+    print(xs.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

@@ -1523,6 +1523,14 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             callee = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ callee, member.lexeme });
         }
 
+        // Decision 606 — no `@name` is left for these: `print` and `panic`
+        // are std's functions, imported; `typeInfo` and `src` members of
+        // `compiler`; `println`, `debug` and `todo` gone.
+        if (this.refuse_removed_builtins) for ([_][]const u8{ "print", "println", "debug", "panic", "todo", "typeInfo", "src" }) |gone| if (std.mem.eql(u8, callee, gone)) {
+            this.parseError = ParseErrorInfo.fromToken(.builtinNameRemoved, nameTok);
+            return ParseError.UnexpectedToken;
+        };
+
         // Decision 525 — `@block` is removed: a block is `{ … }`.
         if (std.mem.eql(u8, callee, "block")) {
             this.parseError = ParseErrorInfo.fromTokenSpan(.removedBlockBuiltin, nameTok, nameTok.lexeme.len);

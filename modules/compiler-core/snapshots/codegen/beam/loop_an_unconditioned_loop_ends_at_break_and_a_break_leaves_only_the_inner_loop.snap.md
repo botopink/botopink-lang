@@ -21,9 +21,11 @@ fn nested() -> i32 {
     return outer * 10 + inner;
 }
 fn main() {
-    @print(firstSquareOver(20));
-    @print(nested());
+    print(firstSquareOver(20));
+    print(nested());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

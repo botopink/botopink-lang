@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> @Iterator<i32> {
+fn evens(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -8,18 +8,20 @@ fn evens(n: i32) -> @Iterator<i32> {
     }
 }
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return s.length();
 }
 
 pub fn main() {
-    for (evens(7)) { v -> @print(v); }
-    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+    for (evens(7)) { v -> print(v); }
+    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("") }).isError());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -65,10 +67,10 @@ main() ->
         '__bp_print'([V])
     end, evens(7)),
     '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> ((-1)) end end)((fun(__BpR) -> case __BpR of {ok, __BpV1} -> {ok, (fun(N) ->
-        '__bp_int'((N * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:16:38">>)
+        '__bp_int'((N * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:16:37">>)
     end)(__BpV1)}; _ -> __BpR end end)(parse(<<"abc">>)))]),
     '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV2} -> __BpV2; _ -> ((-1)) end end)((fun(__BpR) -> case __BpR of {ok, __BpV3} -> {ok, (fun(N) ->
-        '__bp_int'((N * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:17:35">>)
+        '__bp_int'((N * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:17:34">>)
     end)(__BpV3)}; _ -> __BpR end end)(parse(<<"">>)))]),
     '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV4} -> __BpV4; _ -> ((-1)) end end)((fun(__BpR) -> case __BpR of {ok, __BpV5} -> (fun(N) ->
         parse(<<"xyz">>)

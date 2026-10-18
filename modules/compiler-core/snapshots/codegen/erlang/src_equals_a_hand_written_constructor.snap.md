@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 fn main() {
-    @print(locate().fnName);
+    print(locate().fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -17,7 +19,7 @@ fn main() {
 %% type SourceLocation: file, line, column, fnName
 
 locate() ->
-    {test@main@@SourceLocation, <<"main.bp">>, 2, 12, <<"locate">>}.
+    {test@main@@SourceLocation, <<"main.bp">>, 2, 21, <<"locate">>}.
 
 main() ->
     '__bp_print'([erlang:element(5, locate())]).

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> @Iterator<@Result<i32, string>> {
+fn nums() -> Iterator<Result<i32, string>> {
     yield 1;
     break "not an i32";
 }

@@ -105,7 +105,7 @@
           "call": {
             "loc": {
               "line": 3,
-              "col": 11
+              "col": 20
             },
             "kind": {
               "call": {
@@ -120,6 +120,27 @@
             }
           }
         }
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

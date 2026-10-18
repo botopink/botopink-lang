@@ -2,9 +2,11 @@
 ```botopink
 type Unimplemented(id: i32) {
     fn process(self: Self) -> string {
-        return @todo();
+        return panic("not implemented");
     }
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -32,7 +34,7 @@ type Unimplemented(id: i32) {
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"not implemented">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext_only, 1, {extfunc, erlang, error, 1}}.
 
 {function, '__bp_get', 2, 5}.

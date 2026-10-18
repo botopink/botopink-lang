@@ -4,8 +4,10 @@ fn mag(n: i32) -> i32 {
     return n.abs();
 }
 fn main() {
-    @print(mag(-7));
+    print(mag(-7));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

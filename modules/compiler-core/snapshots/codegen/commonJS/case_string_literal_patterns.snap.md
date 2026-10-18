@@ -6,7 +6,7 @@ fn greet(lang: string) -> string {
         "pt" -> "ola";
         _ -> "hi";
     };
-    @print(msg);
+    print(msg);
     return msg;
 }
 fn main() {
@@ -14,6 +14,8 @@ fn main() {
     greet("pt");
     greet("fr");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

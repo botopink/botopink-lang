@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 fn main() {
-    @print(locate().fnName);
+    print(locate().fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -22,7 +24,7 @@ fn main() {
     (local $__mem0 i32)
     global.get $__s0
     i32.const 2
-    i32.const 12
+    i32.const 21
     global.get $__s1
     struct.new $rec_SourceLocation
     return

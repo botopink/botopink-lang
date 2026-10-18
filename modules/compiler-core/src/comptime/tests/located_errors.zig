@@ -152,6 +152,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\}
             \\
             \\import {compiler} from "std";
+            \\
             \\import {io.terminal.print} from "std";
             ,
             .line = 4,
@@ -198,6 +199,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\}
             \\
             \\import {compiler} from "std";
+            \\
             \\import {io.terminal.print, failure.panic} from "std";
             ,
             .line = 3,
@@ -274,6 +276,7 @@ test "a raise inside a decorator is located in its own build when an earlier bui
         \\}
         \\
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const cases = [_]struct { src: []const u8, line: u32 }{

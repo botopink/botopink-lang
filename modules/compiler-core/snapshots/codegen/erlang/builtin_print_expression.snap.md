@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val x = 10;
-    @print(x * 2);
+    print(x * 2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -14,7 +16,7 @@ fn main() {
 
 main() ->
     X = 10,
-    '__bp_print'(['__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:3:14">>)]).
+    '__bp_print'(['__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:3:13">>)]).
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

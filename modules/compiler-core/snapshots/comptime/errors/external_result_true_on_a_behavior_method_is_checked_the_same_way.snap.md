@@ -4,6 +4,8 @@ pub behavior Shape {
     fn area(self: Self) -> i32;
 }
 
+import {compiler} from "std";
+
 ----- ERROR
 error: `area` writes `result: true` on `.JavaScript`, so it must return `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`, not `i32`
   ┌─ main.bp:2:7

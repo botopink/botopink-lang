@@ -4,16 +4,18 @@
 pub declare fn b64encode(s: string) -> string;
 
 fn main() {
-    @print(b64encode("hi"));
+    print(b64encode("hi"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `b64encode` has no implementation for the wasm backend
-  ┌─ :5:12
+  ┌─ :5:11
   │
-5 │     @print(b64encode("hi"));
-  │            ^
+5 │     print(b64encode("hi"));
+  │           ^
 ```
 

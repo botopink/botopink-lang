@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("before");
+    print("before");
     assert 1 == 2, "boom";
-    @print("after");
+    print("after");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

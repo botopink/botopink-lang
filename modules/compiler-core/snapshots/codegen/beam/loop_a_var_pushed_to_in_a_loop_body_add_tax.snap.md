@@ -7,8 +7,10 @@ fn main() {
         val taxa = valor * 0.15;
         precosComTaxa.push(valor + taxa);
     };
-    @print(precosComTaxa);
+    print(precosComTaxa);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

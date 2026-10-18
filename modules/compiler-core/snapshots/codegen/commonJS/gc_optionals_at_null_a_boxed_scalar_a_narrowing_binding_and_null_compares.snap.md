@@ -19,26 +19,28 @@ fn show(o: ?i32) -> i32 {
 
 pub fn main() {
     val xs = [7, 8];
-    @print(xs.at(1));
-    @print(xs.at(5));
-    @print(first(xs));
-    @print(pick(true));
-    @print(pick(false));
-    @print(show(pick(true)));
-    @print(show(pick(false)));
+    print(xs.at(1));
+    print(xs.at(5));
+    print(first(xs));
+    print(pick(true));
+    print(pick(false));
+    print(show(pick(true)));
+    print(show(pick(false)));
     val b = Box(n: 3, s: "x");
-    @print(b);
+    print(b);
     val c = Box(n: null, s: null);
-    @print(c);
-    if (b.n) { v -> @print(v + 1); }
+    print(c);
+    if (b.n) { v -> print(v + 1); }
     val words = ["a", "b"];
-    @print(words.at(0));
-    @print(words.at(9));
-    @print(words[1] ?? "z");
-    @print(xs[0]);
-    @print(b.n == null);
-    @print(c.n == null);
+    print(words.at(0));
+    print(words.at(9));
+    print(words[1] ?? "z");
+    print(xs[0]);
+    print(b.n == null);
+    print(c.n == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -138,7 +140,7 @@ function main() {
     __bp_print(b);
     const c = new Box(null, null);
     __bp_print(c);
-    (() => { const v = b.n; if (v != null) { return __bp_print(__bp_int((v + 1), -2147483648, 2147483647, "+ on i32 at main.bp:31:30")); } })();
+    (() => { const v = b.n; if (v != null) { return __bp_print(__bp_int((v + 1), -2147483648, 2147483647, "+ on i32 at main.bp:31:29")); } })();
     const words = ["a", "b"];
     __bp_print(__bp_array_at(words, 0));
     __bp_print(__bp_array_at(words, 9));

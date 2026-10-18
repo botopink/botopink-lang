@@ -4,8 +4,10 @@
 declare fn stringify(value: i32) -> string;
 
 fn main() {
-    @print(stringify(42));
+    print(stringify(42));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

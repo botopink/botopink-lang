@@ -1,17 +1,19 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(ok: bool) -> @Result<string, string> {
+fn fetch(ok: bool) -> Result<string, string> {
     if (ok) { return "data"; };
     throw "fail";
 }
 fn main() {
     val r1 = fetch(true);
     val msg1 = case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-    @print(msg1);
+    print(msg1);
     val r2 = fetch(false);
     val msg2 = case r2 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-    @print(msg2);
+    print(msg2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val xs = [1, 2, 3];
-    @print(xs.prepend(0).join(","));
-    @print(xs.fold(0, { a, x -> a + x }));
-    @print(xs.isEmpty());
-    @print(xs.all({ x -> x > 0 }));
+    print(xs.prepend(0).join(","));
+    print(xs.fold(0, { a, x -> a + x }));
+    print(xs.isEmpty());
+    print(xs.all({ x -> x > 0 }));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -877,7 +879,7 @@ fn main() {
   )
   (data $__d0 ",")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: + on i32 at main.bp:4:35")
+  (data $__d1 "integer overflow: + on i32 at main.bp:4:34")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

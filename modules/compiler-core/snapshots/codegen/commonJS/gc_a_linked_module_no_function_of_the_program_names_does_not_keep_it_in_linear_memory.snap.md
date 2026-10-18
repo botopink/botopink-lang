@@ -1282,8 +1282,10 @@ export declare function reverse(o: Order): Order;
 import {collections} from "std";
 
 pub fn main() {
-    @print("x");
+    print("x");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

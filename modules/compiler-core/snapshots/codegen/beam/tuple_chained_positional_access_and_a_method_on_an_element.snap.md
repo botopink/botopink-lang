@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val t = #(#(1, 2), "x");
-    @print(t.0.1);
-    @print(t.1);
+    print(t.0.1);
+    print(t.1);
     val p = #(7, "x");
-    @print(p.0.toString());
+    print(p.0.toString());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

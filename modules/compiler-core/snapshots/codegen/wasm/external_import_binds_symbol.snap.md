@@ -4,16 +4,18 @@
 pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(extname("docs/readme.md"));
+    print(extname("docs/readme.md"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: `extname` has no implementation for the wasm backend
-  ┌─ :5:12
+  ┌─ :5:11
   │
-5 │     @print(extname("docs/readme.md"));
-  │            ^
+5 │     print(extname("docs/readme.md"));
+  │           ^
 ```
 

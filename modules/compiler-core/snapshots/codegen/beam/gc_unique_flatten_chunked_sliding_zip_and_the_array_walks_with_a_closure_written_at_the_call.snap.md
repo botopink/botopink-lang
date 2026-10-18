@@ -2,18 +2,20 @@
 ```botopink
 pub fn main() {
     val xs = [3, 1, 3, 2, 1];
-    @print(xs.unique());
-    @print(["a", "b", "a"].unique());
-    @print([[1, 2], [3]].flatten());
-    @print(xs.chunked(2));
-    @print(xs.sliding(3));
-    @print(xs.map({ x -> x * 2 }));
-    @print(xs.filter({ x -> x > 1 }));
-    @print(xs.fold(0, { acc, x -> acc + x }));
-    @print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
-    @print(["a", "bb"].map({ s -> s.length() }));
-    @print(xs.zip(["a", "b"]));
+    print(xs.unique());
+    print(["a", "b", "a"].unique());
+    print([[1, 2], [3]].flatten());
+    print(xs.chunked(2));
+    print(xs.sliding(3));
+    print(xs.map({ x -> x * 2 }));
+    print(xs.filter({ x -> x > 1 }));
+    print(xs.fold(0, { acc, x -> acc + x }));
+    print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
+    print(["a", "bb"].map({ s -> s.length() }));
+    print(xs.zip(["a", "b"]));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -851,7 +853,7 @@ pub fn main() {
     {test, is_ge, {f, 60}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 61}}.
   {label, 60}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:8:28">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:8:27">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 61}.
     {deallocate, 1}.

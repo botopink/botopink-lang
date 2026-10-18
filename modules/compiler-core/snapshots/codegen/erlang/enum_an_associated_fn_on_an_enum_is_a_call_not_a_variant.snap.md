@@ -18,8 +18,10 @@ pub type Shape {
 
 fn main() {
     val s: Shape = Shape.unit();
-    @print(s.area());
+    print(s.area());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

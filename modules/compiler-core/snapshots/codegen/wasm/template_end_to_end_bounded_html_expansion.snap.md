@@ -7,8 +7,10 @@ val page = html @`
 <p>world</p>
 `;
 fn main() {
-    @print(page);
+    print(page);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

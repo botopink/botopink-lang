@@ -13,9 +13,11 @@ pub type Shape {
 }
 
 pub fn main() {
-    @print(Shape.Square(side: 4).area());
-    @print(Shape.Circle(radius: 2).area());
+    print(Shape.Square(side: 4).area());
+    print(Shape.Circle(radius: 2).area());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

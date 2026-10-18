@@ -547,7 +547,7 @@ fn appendTypeRef(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), tr: ast.TypeRe
             try buf.append(gpa, ')');
         },
         .generic => |b| {
-            if (b.is_builtin) try buf.append(gpa, '@');
+            if (b.is_builtin and !b.bare) try buf.append(gpa, '@');
             try buf.appendSlice(gpa, b.name);
             try buf.append(gpa, '<');
             for (b.args, 0..) |a, i| {
@@ -3850,6 +3850,17 @@ pub fn semanticTokens(
             continue;
         }
 
+        // Decision 606 (1) — a prelude wrapper written bare is the builtin
+        // type `@Name` painted as (`Task<…>`, `implement Renderable`).
+        if (tok.kind == .identifier and isPreludeWrapperName(tok.lexeme) and
+            (std.mem.eql(u8, tok.lexeme, "Renderable") or nextSignificantKind(tokens, i) == .lessThan))
+        {
+            try emitSem(arena, &out, tok, proto.SemanticTokenTypes.type_, proto.SemanticTokenModifiers.defaultLibrary);
+            prev_kind = tok.kind;
+            saw_comptime = false;
+            continue;
+        }
+
         if (tok.kind == .identifier) {
             const pk = prev_kind;
             const nk = nextSignificantKind(tokens, i);
@@ -4374,6 +4385,9 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
     if (tokens[j].kind != .rightArrow) return false;
     j = nextSignificantIndex(tokens, j) orelse return false;
     const rt = tokens[j];
+    // Decision 606 (1) — the wrapper is written bare (`-> Task<i32>`); `@Task`
+    // is the spelling it replaced.
+    if (rt.kind == .identifier) return ast.EffectKind.fromWrapperName(rt.lexeme) != null;
     if (rt.kind != .builtinIdent or rt.lexeme.len < 2) return false;
     return ast.EffectKind.fromWrapperName(rt.lexeme[1..]) != null;
 }
@@ -4390,6 +4404,11 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// early costs nothing — no other declaration may be called `unknown`.
 /// `anyvalue` and `anytype` are decision 578's (a template's answer, the kind
 /// of types).
+fn isPreludeWrapperName(name: []const u8) bool {
+    for ([_][]const u8{ "Result", "Task", "Component", "Iterator", "Stream", "Renderable" }) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
         "bool",     "string",  "void",    "v128",   "noreturn",

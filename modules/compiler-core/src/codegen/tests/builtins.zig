@@ -103,6 +103,7 @@ test "js: assert pattern ---- with enum variant" {
         \\    val assert Ok(value) = result;
         \\    print(value);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -139,6 +140,7 @@ test "js: builtin ---- @todo with message" {
         \\fn notImplemented() {
         \\    panic("implement this function");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -148,6 +150,7 @@ test "js: builtin ---- @panic with message" {
         \\fn fail() {
         \\    panic("something went wrong");
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -165,6 +168,7 @@ test "wat: builtin ---- @panic message reaches stderr before the trap" {
         \\    refuse("--gutter");
         \\    print("after");
         \\}
+        \\
         \\import {io.terminal.print, failure.panic} from "std";
     ,
         \\before
@@ -188,6 +192,7 @@ test "every backend: builtin ---- @panic message reaches stderr unchanged" {
         \\    refuse("--gutter");
         \\    print("after");
         \\}
+        \\
         \\import {io.terminal.print, failure.panic} from "std";
     , "lib: '--gutter' is in no known namespace — a prefix\n");
 }
@@ -200,6 +205,7 @@ test "every backend: builtin ---- an uncaught @panic writes panic: <message>" {
         \\    print("before");
         \\    panic("boom — 2");
         \\}
+        \\
         \\import {io.terminal.print, failure.panic} from "std";
     , "panic: boom — 2\n");
 }
@@ -209,6 +215,7 @@ test "every backend: builtin ---- an uncaught @todo writes panic: <message>" {
         \\fn main() {
         \\    panic("later");
         \\}
+        \\
         \\import {failure.panic} from "std";
     , "panic: later\n");
 }
@@ -221,6 +228,7 @@ test "every backend but wasm: builtin ---- an uncaught integer division by zero 
         \\fn main() {
         \\    print(div(1, 0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "panic: integer division by zero: / on i32 at ");
 }
@@ -238,6 +246,7 @@ test "js: builtin ---- @print single argument" {
         \\fn main() {
         \\    print("Hello, World!");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -247,6 +256,7 @@ test "js: builtin ---- @print multiple arguments" {
         \\fn main() {
         \\    print("Hello", 42, true);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -257,6 +267,7 @@ test "js: builtin ---- @print expression" {
         \\    val x = 10;
         \\    print(x * 2);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -279,6 +290,7 @@ test "js: builtin ---- user fns named like type-manipulation builtins call their
         \\    print(mergeRecords(2, 3));
         \\    print(mapFields(3));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -289,6 +301,7 @@ test "js: stdlib ---- Result.map transforms Ok, propagates Error intact" {
         \\fn main() {
         \\    val r = parseAge("42").map({ n -> n + 1 });
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -300,6 +313,7 @@ test "js: stdlib ---- Result.flatMap chains and flattens" {
         \\fn main() {
         \\    val r = parseAge("42").flatMap({ n -> validate(n) });
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -310,6 +324,7 @@ test "js: stdlib ---- Result.unwrapOr returns data on Ok, default on Error" {
         \\fn main() {
         \\    val n = parseAge("42").unwrapOr(0);
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -322,6 +337,7 @@ test "js: stdlib ---- Result.isOk and isError predicates" {
         \\    val ok = r.isOk();
         \\    val bad = r.isError();
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -333,6 +349,7 @@ test "js: stdlib ---- an optional is read by its operators, not by methods (deci
         \\fn greet(p: Person) -> string {
         \\    return find(p)?.name ?? "Hello stranger";
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -347,6 +364,7 @@ test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
         \\        .flatMap({ n -> validate(n) })
         \\        .unwrapOr(0);
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -364,6 +382,7 @@ test "js: builtin ---- @print in if branch" {
         \\    check(1);
         \\    check(-1);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -374,6 +393,7 @@ test "js: builtin ---- @print with variable" {
         \\    val name = "world";
         \\    print("Hello, " + name);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -388,6 +408,7 @@ test "js: builtin ---- @print in loop" {
         \\fn main() {
         \\    countdown(3);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -402,6 +423,7 @@ test "js: builtin ---- @print return value void" {
         \\    val x = 42;
         \\    log("done");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -436,6 +458,7 @@ test "codegen: test runner excluded from normal build" {
         \\fn main() {
         \\    print("hello");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"function add"});
@@ -451,6 +474,7 @@ test "js: assert ---- holding assertion lets main continue" {
         \\    assert 1 + 1 == 2, "arithmetic";
         \\    print("after");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -468,6 +492,7 @@ test "js: assert ---- failing assertion outside test mode is fatal" {
         \\    assert 1 == 2, "boom";
         \\    print("after");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -480,6 +505,7 @@ test "js: builtin ---- @print mixes strings and terms as text" {
         \\    val name = "ana";
         \\    print("hi", name, 42, [1, 2]);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -494,6 +520,7 @@ test "js: builtin ---- @print quotes the strings of an array" {
         \\    print(words);
         \\    print("top", words);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -516,6 +543,7 @@ test "js: builtin ---- @print writes tuples as #(a,b)" {
         \\    print(pairOf(7, "s"));
         \\    show(#(3, "z"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -540,6 +568,7 @@ test "js: src ---- in a test" {
         \\test {
         \\    print(comptime compiler.src.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     );
 }
@@ -553,6 +582,7 @@ test "js: src ---- in a fn" {
         \\    val loc = locate();
         \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     );
 }
@@ -569,6 +599,7 @@ test "js: src ---- in a method" {
         \\    val loc = Stub(n: 1).where();
         \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     );
 }
@@ -581,6 +612,7 @@ test "js: src ---- at module level" {
         \\    print(top.file, top.line, top.column);
         \\    print(top.fnName == "");
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     );
 }
@@ -596,15 +628,17 @@ test "js: src ---- equals a hand-written constructor" {
         \\fn main() {
         \\    print(locate().fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     ;
     const hand_written =
         \\fn locate() -> SourceLocation {
-        \\    return SourceLocation(file: "main.bp", line: 2, column: 12, fnName: "locate");
+        \\    return SourceLocation(file: "main.bp", line: 2, column: 21, fnName: "locate");
         \\}
         \\fn main() {
         \\    print(locate().fnName);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const a = try h.generateJs(std.testing.allocator, with_builtin);
@@ -623,8 +657,9 @@ test "js: src ---- run log" {
         \\    print(comptime compiler.src.line);
         \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
-    , "2\n12 main\n");
+    , "2\n20 main\n");
 }
 
 test "erlang: src ---- run log" {
@@ -633,27 +668,9 @@ test "erlang: src ---- run log" {
         \\    print(comptime compiler.src.line);
         \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
-    , "2\n12 main\n", &.{ ", 2, 12, <<\"main\">>}", ", 3, 12, <<\"main\">>}", ", 3, 27, <<\"main\">>}" });
-}
-
-test "js: src ---- with an argument is refused" {
-    // `src-takes-no-arguments`, located at the call — recorded as the
-    // `COMPILE DIAGNOSTIC` of every backend (the H3 contract for a program
-    // whose point is that it does not compile).
-    try h.assertJsCompileError(std.testing.allocator, @src(),
-        \\fn main() {
-        \\    val loc = @src(1);
-        \\}
-    );
-}
-
-test "js: src ---- with a trailing lambda is refused" {
-    try h.assertJsCompileError(std.testing.allocator, @src(),
-        \\fn main() {
-        \\    val loc = @src { 1; };
-        \\}
-    );
+    , "2\n20 main\n", &.{ ", 2, 20, <<\"main\">>}", ", 3, 20, <<\"main\">>}", ", 3, 50, <<\"main\">>}" });
 }
 
 test "js: unknown builtin ---- is refused" {
@@ -701,6 +718,7 @@ test "js: test body ---- try on an Error fails the test" {
         \\    val f: fn() -> Result<i32, string> = { -> try failing(); return 0; };
         \\    print("still here");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -719,12 +737,13 @@ test "js: src ---- in a test run log" {
         \\test {
         \\    print(comptime compiler.src.fnName);
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     ,
         \\TEST main.bp:1 src: in a test
         \\----- RUN LOG -----
         \\```logs
-        \\main.bp 2 15 src: in a test
+        \\main.bp 2 24 src: in a test
         \\```
         \\  ok   src: in a test
         \\TEST main.bp:5 test_1
@@ -759,6 +778,7 @@ test "js: test body ---- try on an Error prints the FAIL line" {
         \\    try passing();
         \\    print("reached");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\TEST main.bp:7 t: fails

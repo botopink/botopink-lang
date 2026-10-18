@@ -99,6 +99,7 @@ test "decision 8 N21: is tests a value in an if condition and in a binding" {
         \\    val b = a is string;
         \\    return b;
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }

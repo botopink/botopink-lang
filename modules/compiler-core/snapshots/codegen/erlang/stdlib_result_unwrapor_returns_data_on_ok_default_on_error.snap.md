@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
+fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
 fn main() {
     val n = parseAge("42").unwrapOr(0);
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -13,7 +15,7 @@ fn main() {
 -export(['__bp_priv__parseAge'/1, '__bp_priv__main'/0]).
 
 parseAge(S) ->
-    erlang:error({todo, <<"not implemented">>}).
+    erlang:error({panic, <<"not implemented">>}).
 
 main() ->
     N = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (0) end end)(parseAge(<<"42">>)).

@@ -7,10 +7,12 @@ type Shape {
 fn main() {
     val s = Shape.Circle(radius: 3);
     case s {
-        Circle(r) { @print("circle"); }
-        Rect(w, h) { @print("rect"); }
+        Circle(r) { print("circle"); }
+        Rect(w, h) { print("rect"); }
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

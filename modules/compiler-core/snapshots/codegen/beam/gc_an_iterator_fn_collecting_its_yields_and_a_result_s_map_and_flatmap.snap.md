@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> @Iterator<i32> {
+fn evens(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -8,18 +8,20 @@ fn evens(n: i32) -> @Iterator<i32> {
     }
 }
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return s.length();
 }
 
 pub fn main() {
-    for (evens(7)) { v -> @print(v); }
-    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+    for (evens(7)) { v -> print(v); }
+    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("") }).isError());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -1595,7 +1597,7 @@ pub fn main() {
     {test, is_ge, {f, 254}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 255}}.
   {label, 254}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:16:38">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:16:37">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 255}.
     {deallocate, 1}.
@@ -1614,7 +1616,7 @@ pub fn main() {
     {test, is_ge, {f, 262}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 263}}.
   {label, 262}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:17:35">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:17:34">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 263}.
     {deallocate, 1}.

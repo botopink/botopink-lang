@@ -1,18 +1,18 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn half(n: i32) -> @Result<i32, string> {
+fn half(n: i32) -> Result<i32, string> {
     if (n % 2 == 0) {
         return n / 2;
     }
     throw "odd";
 }
 
-fn twice(n: i32) -> @Result<i32, string> {
+fn twice(n: i32) -> Result<i32, string> {
     val h = try half(n);
     return try half(h);
 }
 
-fn show(r: @Result<i32, string>) -> string {
+fn show(r: Result<i32, string>) -> string {
     return case r {
         Ok(v) -> "ok " + v;
         Error(e) -> "err " + e;
@@ -20,16 +20,18 @@ fn show(r: @Result<i32, string>) -> string {
 }
 
 pub fn main() {
-    @print(half(4));
-    @print(half(3));
-    @print(twice(8));
-    @print(twice(6));
-    @print(show(half(10)));
-    @print(show(half(7)));
-    @print(half(6).unwrapOr(0));
-    @print(half(5).unwrapOr(0));
-    @print(half(6).isOk());
+    print(half(4));
+    print(half(3));
+    print(twice(8));
+    print(twice(6));
+    print(show(half(10)));
+    print(show(half(7)));
+    print(half(6).unwrapOr(0));
+    print(half(5).unwrapOr(0));
+    print(half(6).isOk());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

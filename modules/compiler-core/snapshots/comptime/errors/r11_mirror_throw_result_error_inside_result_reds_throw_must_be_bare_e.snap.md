@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     throw Result.Error(error: "boom");
 }
 

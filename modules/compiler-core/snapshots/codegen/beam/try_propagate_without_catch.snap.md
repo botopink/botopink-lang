@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch() -> @Result<i32, string> {
-    @todo();
+fn fetch() -> Result<i32, string> {
+    panic("not implemented");
 }
-fn process() -> @Result<i32, string> {
+fn process() -> Result<i32, string> {
     val r = try fetch();
-    @print(r);
+    print(r);
     return r;
 }
+
+import {io.terminal.print, failure.panic} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -25,7 +27,7 @@ fn process() -> @Result<i32, string> {
     {allocate, 0, 0}.
     {move, {literal, <<"not implemented">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.

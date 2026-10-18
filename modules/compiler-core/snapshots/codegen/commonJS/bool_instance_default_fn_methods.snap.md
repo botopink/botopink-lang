@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print(true.negate());
-    @print(false.nor(false));
-    @print(true.nand(true));
-    @print(true.exclusiveOr(false));
+    print(true.negate());
+    print(false.nor(false));
+    print(true.nand(true));
+    print(true.exclusiveOr(false));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

@@ -4,8 +4,10 @@ type User(name: string)
 
 fn main() {
     val u: ?User = User(name: "ana");
-    @print(u?.name);
+    print(u?.name);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> @Iterator<i32> {
+fn evens(n: i32) -> Iterator<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -8,18 +8,20 @@ fn evens(n: i32) -> @Iterator<i32> {
     }
 }
 
-fn parse(s: string) -> @Result<i32, string> {
+fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";
     return s.length();
 }
 
 pub fn main() {
-    for (evens(7)) { v -> @print(v); }
-    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
-    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+    for (evens(7)) { v -> print(v); }
+    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+    print(parse("ab").flatMap({ n -> parse("") }).isError());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -126,10 +128,10 @@ function main() {
     __bp_print(v);
 }
     __bp_print(((_r) => "error" in _r ? ((-1)) : _r.ok)(((_r) => "error" in _r ? _r : { ok: ((n) => {
-    return __bp_int((n * 10), -2147483648, 2147483647, "* on i32 at main.bp:16:38");
+    return __bp_int((n * 10), -2147483648, 2147483647, "* on i32 at main.bp:16:37");
 })(_r.ok) })(parse("abc"))));
     __bp_print(((_r) => "error" in _r ? ((-1)) : _r.ok)(((_r) => "error" in _r ? _r : { ok: ((n) => {
-    return __bp_int((n * 10), -2147483648, 2147483647, "* on i32 at main.bp:17:35");
+    return __bp_int((n * 10), -2147483648, 2147483647, "* on i32 at main.bp:17:34");
 })(_r.ok) })(parse(""))));
     __bp_print(((_r) => "error" in _r ? ((-1)) : _r.ok)(((_r) => "error" in _r ? _r : ((n) => {
     return parse("xyz");

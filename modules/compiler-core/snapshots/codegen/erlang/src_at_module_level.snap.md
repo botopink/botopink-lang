@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val top = @src();
+val top = comptime compiler.src;
 fn main() {
-    @print(top.file, top.line, top.column);
-    @print(top.fnName == "");
+    print(top.file, top.line, top.column);
+    print(top.fnName == "");
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -17,7 +19,7 @@ fn main() {
 
 top() ->
     case persistent_term:get({test@main, top}, '__bp_unset') of
-        '__bp_unset' -> __BpV = {test@main@@SourceLocation, <<"main.bp">>, 1, 11, <<"">>}, persistent_term:put({test@main, top}, __BpV), __BpV;
+        '__bp_unset' -> __BpV = {test@main@@SourceLocation, <<"main.bp">>, 1, 20, <<"">>}, persistent_term:put({test@main, top}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
@@ -79,6 +81,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-main.bp 1 11
+main.bp 1 20
 true
 ```

@@ -1,15 +1,17 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@external(
+#[compiler.external(
     .Erlang("""(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
     .JavaScript("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()"""),
 )]
-pub declare fn parseInt(s: string) -> @Result<i32, string>;
+pub declare fn parseInt(s: string) -> Result<i32, string>;
 
 fn main() {
     val r = parseInt("42");
-    @print(r.unwrapOr(-1));
+    print(r.unwrapOr(-1));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl

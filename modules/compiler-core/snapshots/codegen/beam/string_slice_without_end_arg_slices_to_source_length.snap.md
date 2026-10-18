@@ -3,8 +3,10 @@
 fn main() {
     val s = "hello";
     val tail = s.slice(2);
-    @print(tail.len);
+    print(tail.len);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

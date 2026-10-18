@@ -2,8 +2,10 @@
 ```botopink
 fn main() {
     val xs = [10, 20, 30];
-    @print(xs[9]);
+    print(xs[9]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

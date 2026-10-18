@@ -28,6 +28,7 @@ const h = @import("helpers.zig");
 test "typeInfo: primitive i32 returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val info = comptime compiler.typeInfo(i32);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -35,6 +36,7 @@ test "typeInfo: primitive i32 returns TypeInfo" {
 test "typeInfo: primitive string returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val info = comptime compiler.typeInfo(string);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -42,6 +44,7 @@ test "typeInfo: primitive string returns TypeInfo" {
 test "typeInfo: primitive bool returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val info = comptime compiler.typeInfo(bool);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -49,6 +52,7 @@ test "typeInfo: primitive bool returns TypeInfo" {
 test "typeInfo: void type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val info = comptime compiler.typeInfo(void);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -57,6 +61,7 @@ test "typeInfo: record type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Point = type(x: i32, y: string);
         \\val info = comptime compiler.typeInfo(Point);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -65,6 +70,7 @@ test "typeInfo: enum type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Color = type { Red, Blue };
         \\val info = comptime compiler.typeInfo(Color);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -73,6 +79,7 @@ test "typeInfo: fn type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn add(a: i32, b: i32) -> i32 { return a + b; }
         \\val info = comptime compiler.typeInfo(add);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -80,6 +87,7 @@ test "typeInfo: fn type returns TypeInfo" {
 test "typeInfo: float type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val info = comptime compiler.typeInfo(f64);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -165,6 +173,7 @@ test "field: record value field access" {
 test "typeInfo: TypeInfo record is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val ti: TypeInfo<i32> = comptime compiler.typeInfo(i32);
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -188,7 +197,7 @@ test "comptimeError: string literal raises custom error" {
 // `Type.merge` / `partial` / `omit` / `pick` / `required` answer a NEW record
 // named after its `val` — `comptime/derived_types.zig`'s unit tests and
 // `conformance`'s `run/derived_type_*` and `reject/derived_type_*` cells
-// (a snapshot here would embed std's `compiler.bp` (`Type`)). The bare names the checker
+// (a snapshot here would embed std's `types.bp`). The bare names the checker
 // once intercepted (`mergeRecords`, `partial`, `omit`, `pick`) are unbound.
 
 test "Type: the bare `mergeRecords` is an unbound name" {

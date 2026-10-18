@@ -111,7 +111,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "panic",
-                        "is_builtin": true,
+                        "is_builtin": false,
                         "is_tagged": false,
                         "optional": false,
                         "args": [
@@ -121,7 +121,7 @@
                               "literal": {
                                 "loc": {
                                   "line": 5,
-                                  "col": 16
+                                  "col": 15
                                 },
                                 "kind": {
                                   "stringLit": "unreachable"
@@ -145,6 +145,28 @@
             "isPub": false
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "failure",
+              "panic"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

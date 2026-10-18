@@ -867,7 +867,7 @@ codegen/
   `typeTestNode` on erlang, `emitTypeTestBranchOn` on beam; the whole-enum arm
   had no case for a dotted name, so both answered `false` for every value.
 - **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
-  `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
+  `{panic, Msg}`, the erlang backend's reason, with `failure.bp`'s `panic`
   default message; `@todo()` raised the bare atom `undef`, which read as a
   missing function (`{undef, main:notReady/0}`, reported by C-16). `botopink run` writes an uncaught abort as the `Failure` an `attempt` would answer (decision 535): `otp.zig` `guardedEval` (through `cli/otp.zig` `mainEval`) catches in the program's `-eval` `{panic, Msg}`, `{todo, Msg}`, `{integer_overflow, Msg}` and `{bp_assert, …, Msg}` and writes `panic: <Msg>`, `{bp_host, Msg}` and writes `host: <Msg>`, anything else and writes `crash: <reason by ~tp>`, one line to stderr, status 1 — `erl` printed the raw term as a boot failure, `Msg`'s bytes as numbers once one left ASCII. commonJS gets the same line from `otp.node_abort_import` (`node --import <data: URL>`, `run.programArgv`, `runtime.executeAborting`): an `uncaughtException` / `unhandledRejection` handler reading the `__bp_panic` mark (else `host`, as `attempt`'s Node form). wasm's abort text is its own until the wasm codegen writes the `Failure` too.
 - **A bare `break` at a generator fn's own level** (decision 103) ends the

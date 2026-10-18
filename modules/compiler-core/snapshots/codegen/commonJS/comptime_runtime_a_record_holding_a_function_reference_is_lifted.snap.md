@@ -8,10 +8,12 @@ fn two() -> i32 {
 
 fn main() {
     val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
-    @print(op.name);
-    @print(op.run());
-    @print(op.twice());
+    print(op.name);
+    print(op.run());
+    print(op.twice());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPTIME WAT -- comptime block

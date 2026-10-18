@@ -5,8 +5,10 @@ val result = comptime {
     x * 2
 };
 fn main() {
-    @print(result);
+    print(result);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- COMPTIME VALUES -- main

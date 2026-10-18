@@ -11,8 +11,10 @@ val PatoNada = implement Swimmer for Pato {
 }
 fn main() {
     val donald = Pato(3);
-    @print(PatoNada.swim(donald));
+    print(PatoNada.swim(donald));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

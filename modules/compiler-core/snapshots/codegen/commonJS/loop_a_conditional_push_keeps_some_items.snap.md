@@ -8,8 +8,10 @@ fn main() {
             apenasGrandes.push(valor);
         };
     };
-    @print(apenasGrandes);
+    print(apenasGrandes);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

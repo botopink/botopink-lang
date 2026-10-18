@@ -4,9 +4,11 @@ fn isPositive(n: i32) -> n is i32 {
     return n > 0;
 }
 fn main() {
-    @print(isPositive(5));
-    @print(isPositive(-5));
+    print(isPositive(5));
+    print(isPositive(-5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

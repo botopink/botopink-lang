@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val top = @src();
+val top = comptime compiler.src;
 fn main() {
-    @print(top.file, top.line, top.column);
-    @print(top.fnName == "");
+    print(top.file, top.line, top.column);
+    print(top.fnName == "");
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -76,7 +78,7 @@ class SourceLocation {
 }
 SourceLocation.prototype.__bp = "SourceLocation";
 
-const top = new SourceLocation("main.bp", 1, 11, "");
+const top = new SourceLocation("main.bp", 1, 20, "");
 
 function main() {
     __bp_print(top.file, top.line, top.column);
@@ -100,6 +102,6 @@ Object.defineProperty(exports, "__bp_priv__", { value: { SourceLocation, top, ma
 
 ----- RUN LOG -----
 ```logs
-main.bp 1 11
+main.bp 1 20
 true
 ```

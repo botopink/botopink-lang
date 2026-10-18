@@ -1,11 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
 fn main() {
-    @print(locate().fnName);
+    print(locate().fnName);
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -78,7 +80,7 @@ class SourceLocation {
 SourceLocation.prototype.__bp = "SourceLocation";
 
 function locate() {
-    return new SourceLocation("main.bp", 2, 12, "locate");
+    return new SourceLocation("main.bp", 2, 21, "locate");
 }
 
 function main() {

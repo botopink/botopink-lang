@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn run(f: fn(i32) -> string) {
-    @todo();
+    panic("not implemented");
 }
 fn main() {
     run { x ->
         return "done";
     };
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

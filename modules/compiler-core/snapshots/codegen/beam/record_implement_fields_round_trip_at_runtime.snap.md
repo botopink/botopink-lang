@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = type(tag: string, n: i32) implement @Renderable
+val E = type(tag: string, n: i32) implement Renderable
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
 fn main() {
-    @print(mk().n);
+    print(mk().n);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

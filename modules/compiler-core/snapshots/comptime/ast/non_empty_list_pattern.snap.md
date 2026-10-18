@@ -7,9 +7,11 @@ val first_or_default = fn(list: i32[], fallback: i32) -> i32 {
     };
 };
 fn main() {
-    @print(first_or_default([1, 2], 0));
-    @print(first_or_default([], 0));
+    print(first_or_default([1, 2], 0));
+    print(first_or_default([], 0));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -45,10 +47,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(first_or_default([1, 2], 0));"
+          "source": "print(first_or_default([1, 2], 0));"
         },
         {
-          "source": "@print(first_or_default([], 0));"
+          "source": "print(first_or_default([], 0));"
         }
       ]
     }

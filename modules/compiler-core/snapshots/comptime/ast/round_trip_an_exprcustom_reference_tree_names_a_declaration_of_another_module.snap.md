@@ -156,72 +156,6 @@ pub type Method = __Decl__Method;
 
 pub type HookNode = __HookNode;
 
-// ── `Type` (decisions 307, 308, 624) ─────────────────────────────────────
-// std's `Type`, declared here beside the behavior whose members it names
-// (decision 624: `compiler.bp` incorporates what `types.bp` declared) — the
-// derived types: a compile-time function answers a NEW record type, bound by
-// a module-level `val` and named after it (`pub val RecipePatch =
-// Type.partial(Recipe);`), nominal, usable in every type position, exported
-// and imported like any type, and annotatable; the source fields' markers come
-// with them. A program imports it by its path, `import {compiler.Type} from
-// "std";`. Every function here runs only at compile time and takes every
-// parameter `comptime x: T`; the bodies are the compiler's
-// (`comptime/derived_types.zig`) until B-140 writes them in botopink.
-
-pub type Type {
-    // The field of `T` (decision 308): its name, its type as the source
-    // spells it and its annotations. Its values are the fields of `T`'s
-    // declaration; nobody constructs one (`.title` names it where a
-    // `Type.Field<T>` is expected). A key is also a run-time value: stored,
-    // passed, compared, matched by `case key { .title -> … }` exhaustively
-    // over `T`'s fields. The reflection record `decl.fields` hands out is
-    // still `builtins.d.bp`'s `Field` until `134` step 2 makes it
-    // `Type.Field<unknown>`.
-    pub type Field<T>(
-        name: string,
-        typeName: string,
-        annotations: DeclAnnotation[],
-    ) {
-        // The key named `text`, or `null` when `T` declares no such field.
-        pub declare fn of(text: string) -> ?Type.Field<T>;
-
-        // Every key of `T`, in declaration order.
-        pub declare fn all() -> Type.Field<T>[];
-    }
-
-    // The field key of `T`: `Type.Field<T>` itself, one value per field of
-    // `T`'s declaration (`.title`), never a second enum nor a copy — bound by a
-    // module-level `val`, the alias `K.of(text)` and `K.all()` are called
-    // through.
-    pub declare fn keys<T>(comptime source: type<T>) -> anytype;
-
-    // Every field `F` of `T` made `?F`.
-    pub declare fn partial<T>(comptime source: type<T>) -> anytype;
-
-    // Every field `?F` of `T` made `F` — every `?` goes: `required` does not
-    // know what was optional before a `partial`.
-    pub declare fn required<T>(comptime source: type<T>) -> anytype;
-
-    // The fields of `first`, then those of `second`; a field on both sides is
-    // an error (`omit` it first: nothing overrides silently).
-    pub declare fn merge<A, B>(
-        comptime first: type<A>,
-        comptime second: type<B>,
-    ) -> anytype;
-
-    // The fields of `T` named in `fields`, in the order `T` declares them.
-    pub declare fn pick<T>(
-        comptime source: type<T>,
-        comptime ..fields: Type.Field<T>[],
-    ) -> anytype;
-
-    // The fields of `T` but those named in `fields`.
-    pub declare fn omit<T>(
-        comptime source: type<T>,
-        comptime ..fields: Type.Field<T>[],
-    ) -> anytype;
-}
-
 ```
 
 ----- TYPED AST JSON -- std/compiler.json
@@ -867,158 +801,6 @@ pub type Type {
     },
     {
       "ast": "typeAlias"
-    },
-    {
-      "ast": "record_def",
-      "name": "Type",
-      "fields": {},
-      "methods": [
-        {
-          "name": "keys",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "T"
-          ],
-          "params": [
-            {
-              "name": "source",
-              "type": "typeparam T",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        },
-        {
-          "name": "partial",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "T"
-          ],
-          "params": [
-            {
-              "name": "source",
-              "type": "typeparam T",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        },
-        {
-          "name": "required",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "T"
-          ],
-          "params": [
-            {
-              "name": "source",
-              "type": "typeparam T",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        },
-        {
-          "name": "merge",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "A",
-            "B"
-          ],
-          "params": [
-            {
-              "name": "first",
-              "type": "typeparam A",
-              "is_comptime": true
-            },
-            {
-              "name": "second",
-              "type": "typeparam B",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        },
-        {
-          "name": "pick",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "T"
-          ],
-          "params": [
-            {
-              "name": "source",
-              "type": "typeparam T",
-              "is_comptime": true
-            },
-            {
-              "name": "fields",
-              "type": "Type__Field<T>[]",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        },
-        {
-          "name": "omit",
-          "is_pub": true,
-          "is_declare": true,
-          "generic_params": [
-            "T"
-          ],
-          "params": [
-            {
-              "name": "source",
-              "type": "typeparam T",
-              "is_comptime": true
-            },
-            {
-              "name": "fields",
-              "type": "Type__Field<T>[]",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "typeparam"
-        }
-      ]
-    },
-    {
-      "ast": "record_def",
-      "name": "Type__Field",
-      "generic": [
-        "T"
-      ],
-      "fields": {
-        "name": "string",
-        "typeName": "string",
-        "annotations": "__Decl__Annotation[]"
-      },
-      "methods": [
-        {
-          "name": "of",
-          "is_pub": true,
-          "is_declare": true,
-          "params": [
-            {
-              "name": "text",
-              "type": "string"
-            }
-          ],
-          "return_type": "?Type__Field<T>"
-        },
-        {
-          "name": "all",
-          "is_pub": true,
-          "is_declare": true,
-          "params": [],
-          "return_type": "Type__Field<T>[]"
-        }
-      ]
     }
   ]
 }
@@ -1057,6 +839,7 @@ pub fn dsl(syntax e: string) -> anyvalue {
     return code;
 }
 val rows = dsl @`select id from Item`;
+
 import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ```
 
@@ -1066,7 +849,7 @@ import {Item} from "shapes";
 
 pub val rows = 41;
 
-import {compiler, compiler.Span, compiler.CustomNode} from "std";
+import {compiler.Span, compiler.CustomNode} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json

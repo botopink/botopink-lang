@@ -182,6 +182,7 @@ test "template: expr methods typecheck and record lowerings" {
         \\    compiler.note("a reason");
         \\    return template;
         \\}
+        \\
         \\import {compiler, compiler.Span, compiler.CustomNode, compiler.DeclKind} from "std";
     );
 
@@ -300,6 +301,7 @@ test "infer: context/source/bindings/build methods typecheck against std.syntax"
         \\    val names = compiler.bindings(template);
         \\    return compiler.build("file + raw");
         \\}
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -391,6 +393,7 @@ test "infer error: template body not expandable by the V1 driver (F6)" {
         \\    return t;
         \\}
         \\val c = hard @`SELECT 1`;
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -431,6 +434,7 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
         \\    return compiler.build(t.frobnicate());
         \\}
         \\val s = shout @`hey`;
+        \\
         \\import {compiler} from "std";
     ;
     const io = std.testing.io;
@@ -453,6 +457,7 @@ test "comptime: runtime template body ---- text() + build() end to end" {
         \\    return compiler.build("\"" + t + "!\"");
         \\}
         \\val s = shout @`hey`;
+        \\
         \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
@@ -472,6 +477,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\    return compiler.build("\"ok\"");
         \\}
         \\val r = need @`<Buttom/>`;
+        \\
         \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
@@ -498,6 +504,7 @@ test "template: runtime fail() maps into the caller's template" {
         \\    return q;
         \\}
         \\val s = lint @`bad`;
+        \\
         \\import {compiler} from "std";
     ;
     const io = std.testing.io;
@@ -510,8 +517,8 @@ test "template: runtime fail() maps into the caller's template" {
     );
     defer session.deinit(std.testing.allocator);
 
-    // std's `compiler`, which the module imports (decision 579), then the module.
-    try std.testing.expectEqual(@as(usize, 2), session.outputs.items.len);
+    // The module alone: std's `compiler` is no dependency (decision 606).
+    try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
     const te = outcome.typeError;
@@ -543,6 +550,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
         \\    return code;
         \\}
         \\val rows = dsl @`select id from Item`;
+        \\
         \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
@@ -646,6 +654,7 @@ test "decision 237 ---- a text that names nothing in scope carries no binding" {
         \\    return n;
         \\}
         \\val n = conf @`cfg-0`;
+        \\
         \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -677,6 +686,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
         \\    };
         \\}
         \\val s = ui @`<Card title="x"><Badge/></Card>`;
+        \\
         \\import {compiler} from "std";
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -705,14 +715,15 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
         \\    };
         \\}
         \\val r = need @`<Card/>`;
+        \\
         \\import {compiler} from "std";
     ;
     const io = std.testing.io;
     {
         var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
         defer session.deinit(std.testing.allocator);
-        // std's `compiler`, which the module imports (decision 579), then the module.
-        try std.testing.expectEqual(@as(usize, 2), session.outputs.items.len);
+        // The module alone: std's `compiler` is no dependency (decision 606).
+        try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
         const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
         try std.testing.expect(outcome == .typeError);
         const message = try outcome.typeError.message(std.testing.allocator);
@@ -745,6 +756,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
         \\    compiler.custom(root);
         \\    return code;
         \\}
+        \\
         \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     );
     try std.testing.expect(env.templateFns.contains("dsl"));
@@ -762,6 +774,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         \\}
         \\val rows = dsl @`select id from Item`;
         \\val answer = rows + 1;
+        \\
         \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const io = std.testing.io;
@@ -830,6 +843,7 @@ test "decision 112: lookup answers the declaration's identity, never the alias" 
         \\    compiler.custom(root);
         \\    return code;
         \\}
+        \\
         \\import {compiler, compiler.Span, compiler.CustomNode} from "std";
     ;
     const main =
@@ -1005,6 +1019,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
         \\    return compiler.build("inner @`deep`");
         \\}
         \\val s = outer @`x`;
+        \\
         \\import {compiler} from "std";
     ;
     try assertCompilesOk(@src(), src);
@@ -1028,6 +1043,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
         \\    return compiler.build("fragment([Page1(), Page2()])");
         \\}
         \\val page = html @`<Page1/><Page2/>`;
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -1064,6 +1080,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\    return compiler.build("\"" + wrap(helper(compiler.text(q))) + depth(3).toString() + "\"");
         \\}
         \\val here = shout @`in`;
+        \\
         \\import {compiler} from "std";
     ;
     const main =
@@ -1076,6 +1093,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
         \\}
         \\val a = shout @`ab`;
         \\val b = echo @`xy`;
+        \\
         \\import {compiler} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
@@ -1116,6 +1134,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\    };
         \\    return compiler.build("\"" + out + kindOf(#("w", 7)) + "\"");
         \\}
+        \\
         \\import {compiler} from "std";
     ;
     const main =
@@ -1126,6 +1145,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\}
         \\val a = probe @`ab`;
         \\val b = pairs @`xy`;
+        \\
         \\import {compiler} from "std";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
@@ -1166,6 +1186,7 @@ test "decision 331: a template body of more variables than a frame holds compile
         \\    return compiler.build("\"" + s.slice(0, 6) + n.toString() + "\"");
         \\}
         \\val got = big @`q`;
+        \\
         \\import {compiler} from "std";
     );
     const replies = try h.canonicalReplies(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
@@ -1192,6 +1213,7 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\    print(g.greet @`hello`);
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1221,6 +1243,7 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\    print(wave(Waver(name: "Bia")));
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -1235,11 +1258,12 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
         \\fn shout(syntax q: string) -> string { return q; }
         \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
         \\pub fn main() { print(shout @`a`); print(run({ s -> s })); }
+        \\
         \\import {io.terminal.print} from "std";
     ;
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(alloc));
-    const program = try p.parse(alloc);
+    const program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     _ = try inferMod.inferProgramTyped(&env, program);
     // The parameter's call is the parameter's: it owes no expansion.
     try std.testing.expectEqual(@as(usize, 1), env.templateExpansions.count());
@@ -1250,7 +1274,7 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     try std.testing.expectError(error.TypeError, inferMod.refuseUnexpandedTemplateCalls(&env, program));
     const te = env.lastError.?;
     try std.testing.expectEqual(@as(usize, 3), te.loc.?.line);
-    try std.testing.expectEqual(@as(usize, 24), te.loc.?.col);
+    try std.testing.expectEqual(@as(usize, 23), te.loc.?.col);
     const msg = try te.message(std.testing.allocator);
     defer std.testing.allocator.free(msg);
     try std.testing.expectEqualStrings("template-call-unexpanded: `shout \"…\"` calls a template function here, where the compiler does not expand it", msg);
@@ -1269,6 +1293,7 @@ test "templates: a raise in another module's template body names the body's file
         \\    return compiler.build("\"" + s + "\"");
         \\}
         \\import {compiler} from "std";
+        \\
         \\import {failure.panic} from "std";
     ;
     const src =
@@ -1276,6 +1301,7 @@ test "templates: a raise in another module's template body names the body's file
         \\pub fn main() {
         \\    print(shout @`hi`);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     const io = std.testing.io;
@@ -1300,5 +1326,5 @@ test "templates: a raise in another module's template body names the body's file
     try std.testing.expectEqual(@as(usize, 1), outcome.typeError.frames.len);
     try std.testing.expectEqualStrings("main.bp", outcome.typeError.frames[0].file);
     const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
-    try std.testing.expectEqual([2]usize{ 3, 12 }, [2]usize{ got.line, got.col });
+    try std.testing.expectEqual([2]usize{ 3, 11 }, [2]usize{ got.line, got.col });
 }

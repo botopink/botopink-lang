@@ -5,7 +5,7 @@ The reference text this cell shows (from `conformance/docs.md`, § A variadic pa
 > `..name: T[]` as a function's **last** parameter takes zero or more positional
 > arguments after the fixed ones, each checked against `T`, and the body reads
 > `name` as a `T[]` (decision 267). It holds for a free `fn`, a method, an
-> associated function and a `declare fn` alike — `@print`, `@println` and `@debug`
+> associated function and a `declare fn` alike — `print`, `print` and `print`
 > are declared `(..values: unknown[])`. A function has at most one, it is the last
 > parameter, its type is written `T[]` and it takes no default
 > (`variadic-not-last`, `variadic-twice`, `variadic-not-array`,

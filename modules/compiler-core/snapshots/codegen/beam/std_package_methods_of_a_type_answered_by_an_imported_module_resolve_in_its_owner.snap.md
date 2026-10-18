@@ -2880,9 +2880,11 @@ import {collections.Dict} from "std";
 
 fn main() {
     val d = Dict.empty().insert("a", 1);
-    @print(d.at("a") ?? 0);
-    @print(d.insert("b", 2).size());
+    print(d.at("a") ?? 0);
+    print(d.insert("b", 2).size());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

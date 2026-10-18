@@ -40,6 +40,7 @@ test "js: dispatch ---- inherent record method call" {
         \\    val c = Contador(5);
         \\    print(c.atual());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -54,6 +55,7 @@ test "js: dispatch ---- string contains lowers to native includes" {
         \\    val hw = "hello world";
         \\    print(hw.contains("world"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -68,6 +70,7 @@ test "js: dispatch ---- string startsWith lowers to native startsWith" {
         \\    val hw = "hello world";
         \\    print(hw.startsWith("hello"));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -87,6 +90,7 @@ test "js: dispatch ---- auto-applied extension method call" {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -106,6 +110,7 @@ test "js: dispatch ---- qualified extension method call" {
         \\    val donald = Pato(3);
         \\    print(PatoNada.swim(donald));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -132,6 +137,7 @@ test "js: dispatch ---- multi-module implement on an imported record" {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -158,6 +164,7 @@ test "js: dispatch ---- multi-module extension activated via star import" {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -230,6 +237,7 @@ test "js: dispatch ---- a method on an imported enum, an imported associated fn 
         \\    print(Shape.Square(side: 4).area());
         \\    print(make().bump());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     });
@@ -268,6 +276,7 @@ test "js: interface ---- a default fn calls members of the implementing record" 
         \\    val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
         \\    print(m.cents);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -306,6 +315,7 @@ test "js: interface ---- a generic record adopts defaults through an extends cha
         \\    print(Bag(items: [1]).isEmpty());
         \\    print(Bag(items: [1, 2]).twiceSize());
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -327,6 +337,7 @@ test "js: interface ---- a redeclared primitive interface keeps its host members
         \\    val n: i32 = 50;
         \\    print(n.clampTo(0, 10));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -367,6 +378,7 @@ test "js: import ---- a call to an imported fn names its module" {
             \\pub fn main() {
             \\    print(quad(3));
             \\}
+            \\
             \\import {io.terminal.print} from "std";
             ,
         },
@@ -435,6 +447,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
         \\    print(c.set(5));
         \\    print(c.value);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, "main", "10\n3\n", &.{});
@@ -445,6 +458,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
         \\pub fn main() {
         \\    print(cell(3).set(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, "main", "10\n", &.{});
@@ -469,6 +483,7 @@ test "js: record ---- a field of function type is called like a method" {
         \\    print(c.value);
         \\    print(c.set(9));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     );
 }
@@ -495,6 +510,7 @@ test "js: dispatch ---- a string method on a lambda's parameter renames too" {
         \\    val items = [Item(name: "box"), Item(name: "cup"), Item(name: "axe")];
         \\    print(items.filter({ e -> e.name.contains("x") }).length);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{

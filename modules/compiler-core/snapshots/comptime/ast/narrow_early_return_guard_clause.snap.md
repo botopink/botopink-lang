@@ -5,9 +5,11 @@ fn greet(x: ?string) -> string {
     return "hello " + x;
 }
 fn main() {
-    @print(greet("world"));
-    @print(greet(null));
+    print(greet("world"));
+    print(greet(null));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -42,10 +44,10 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(greet(\"world\"));"
+          "source": "print(greet(\"world\"));"
         },
         {
-          "source": "@print(greet(null));"
+          "source": "print(greet(null));"
         }
       ]
     }

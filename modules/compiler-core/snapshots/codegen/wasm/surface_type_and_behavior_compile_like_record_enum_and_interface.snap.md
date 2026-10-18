@@ -21,9 +21,11 @@ fn weight(s: Size) -> i32 {
 
 fn main() {
     val sq = Square(side: 3);
-    @print(sq.area());
-    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+    print(sq.area());
+    print(weight(Size.Large(n: 5)) + weight(Size.Small));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -608,7 +610,7 @@ fn main() {
   )
   (data $__d0 "integer overflow: * on i32 at main.bp:7:26")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: + on i32 at main.bp:23:37")
+  (data $__d1 "integer overflow: + on i32 at main.bp:23:36")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

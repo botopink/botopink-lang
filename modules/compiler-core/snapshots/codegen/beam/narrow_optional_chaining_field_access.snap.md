@@ -7,8 +7,10 @@ fn getValue(o: Outer) -> ?i32 {
 }
 fn main() {
     val o = Outer(inner: Inner(value: 42));
-    @print(getValue(o));
+    print(getValue(o));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

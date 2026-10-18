@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn greet(name: string) {
-    @print("Hello, " + name + "!");
+    print("Hello, " + name + "!");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -22,7 +24,7 @@ fn greet(name: string) {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(\"Hello, \" + name + \"!\");"
+          "source": "print(\"Hello, \" + name + \"!\");"
         }
       ]
     }

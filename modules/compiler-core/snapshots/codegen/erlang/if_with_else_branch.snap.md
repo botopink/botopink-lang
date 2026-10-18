@@ -5,9 +5,11 @@ fn abs(n: i32) -> i32 {
     return result;
 }
 fn main() {
-    @print(abs(-5));
-    @print(abs(3));
+    print(abs(-5));
+    print(abs(3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

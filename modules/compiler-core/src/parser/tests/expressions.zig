@@ -249,6 +249,7 @@ test "parser: builtin ---- zero-arg call" {
         \\        comptime compiler.src;
         \\    }
         \\}
+        \\
         \\import {compiler} from "std";
     );
 }
@@ -262,6 +263,7 @@ test "parser: builtin ---- single-arg call" {
         \\        panic("unreachable");
         \\    }
         \\}
+        \\
         \\import {failure.panic} from "std";
     );
 }
@@ -291,6 +293,7 @@ test "parser: builtin ---- as val initializer" {
         \\val size = @sizeOf(Float);
         \\val name = @typeName(String);
         \\val src = comptime compiler.src;
+        \\
         \\import {compiler} from "std";
     );
 }

@@ -175,7 +175,7 @@ test "parser error: deprecated *fn prefix" {
         \\  = hint: rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`
         \\
         \\
-    , "*fn parse(n: i32) -> @Result<i32, string> { return n; }");
+    , "*fn parse(n: i32) -> Result<i32, string> { return n; }");
 }
 
 test "parser: validateListSpread ---- empty list is valid" {

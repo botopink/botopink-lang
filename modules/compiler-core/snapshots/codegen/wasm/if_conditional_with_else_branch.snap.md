@@ -4,9 +4,11 @@ fn describe(n: i32) -> string {
     return if (n > 0) "positive" else "non-positive";
 }
 fn main() {
-    @print(describe(5));
-    @print(describe(-3));
+    print(describe(5));
+    print(describe(-3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -590,7 +592,7 @@ fn main() {
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "non-positive")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "integer overflow: - on i32 at main.bp:6:21")
+  (data $__d2 "integer overflow: - on i32 at main.bp:6:20")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

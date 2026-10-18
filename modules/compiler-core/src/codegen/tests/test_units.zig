@@ -26,6 +26,7 @@ const main_src =
     \\test "reads a private fn and a private val" {
     \\    assert helper(secret) == 42;
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 

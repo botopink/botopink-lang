@@ -2,18 +2,20 @@
 ```botopink
 fn main() {
     val rows = [[1, 2], [3, 4]];
-    @print(rows);
-    @print(rows[1]);
+    print(rows);
+    print(rows[1]);
     val r1: i32[] = rows[1] ?? [];
-    @print(r1[0]);
-    @print(rows[0]?.length);
+    print(r1[0]);
+    print(rows[0]?.length);
     val xs = [10, 20, 30];
-    @print(xs[0..2].length);
+    print(xs[0..2].length);
     val sl = xs[0..2];
-    @print(sl.length);
+    print(sl.length);
     val ps = [#(1, "a"), #(2, "b")];
-    @print(ps[1]);
+    print(ps[1]);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

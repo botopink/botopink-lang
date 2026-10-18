@@ -9,10 +9,12 @@ fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
 fn main() {
     val result = firstAndRest([1, 2, 3]);
     val head = result._1;
-    @print(head ?? -1);
+    print(head ?? -1);
     val empty = firstAndRest([]);
-    @print(empty._1 == null);
+    print(empty._1 == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -760,7 +762,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:10:20")
+  (data $__d0 "integer overflow: - on i32 at main.bp:10:19")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

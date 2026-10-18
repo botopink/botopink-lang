@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn parse(n: i32) -> @Result<i32, string> {
+fn parse(n: i32) -> Result<i32, string> {
     val r = Result.Ok(result: n);
     return n;
 }

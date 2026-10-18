@@ -17,12 +17,14 @@ type Counter(n: i32, label: string) {
 
 pub fn main() {
     val c = Counter(n: 4, label: "ctr");
-    @print(c.bump());
-    @print(c.name());
-    @print(c.scaled(3));
-    @print(c.twice());
-    @print(c.twice().twice().n);
+    print(c.bump());
+    print(c.name());
+    print(c.scaled(3));
+    print(c.twice());
+    print(c.twice().twice().n);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

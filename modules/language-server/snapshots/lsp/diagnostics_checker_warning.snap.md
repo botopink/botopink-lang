@@ -2,8 +2,10 @@
 ```botopink
 pub fn main() {
     var out = [];
-    @print("x");
+    print("x");
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- DIAGNOSTICS

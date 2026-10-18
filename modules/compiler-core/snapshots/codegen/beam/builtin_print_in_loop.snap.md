@@ -2,12 +2,14 @@
 ```botopink
 fn countdown(n: i32) {
     for (0..n) { i ->
-        @print(n - i);
+        print(n - i);
     };
 }
 fn main() {
     countdown(3);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -341,7 +343,7 @@ fn main() {
     {test, is_ge, {f, 12}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 13}}.
   {label, 12}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at test@main.bp:3:18">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at test@main.bp:3:17">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 13}.
     {test_heap, 2, 1}.

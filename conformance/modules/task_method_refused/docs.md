@@ -2,5 +2,5 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Tasks):
 
-> A `@Task` has no methods (decision 523): `map`, `then`, `mapError` and `catch` are
+> A `Task` has no methods (decision 523): `map`, `then`, `mapError` and `catch` are
 > withdrawn, so a call to one is the ordinary unknown-member error:

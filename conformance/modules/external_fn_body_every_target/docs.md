@@ -4,7 +4,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Host bindings
 
 > **A private fn binds a declaration on a target** (decisions 238, 263, 305, 610). On
 > `.JavaScript` and `.Erlang` (which the beam target reads) the
-> labelled cell `body: <name>` (`#[@external(.Erlang(body: sinBody))]`) binds what
+> labelled cell `body: <name>` (`#[compiler.external(.Erlang(body: sinBody))]`) binds what
 > wasm's `body: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 > parameter types in the same order and answering the same type — and it is
 > checked the same way, at the argument. One algorithm written in botopink then

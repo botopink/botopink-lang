@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return @src();
+    return comptime compiler.src;
 }
-val loc = @src();
+val loc = comptime compiler.src;
 test "src: in a test" {
-    val here = @src();
+    val here = comptime compiler.src;
 }
+
+import {compiler} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -21,7 +23,7 @@ test "src: in a test" {
       "return_type": "SourceLocation",
       "body": [
         {
-          "source": "return @src();"
+          "source": "return comptime compiler.src;"
         }
       ]
     },

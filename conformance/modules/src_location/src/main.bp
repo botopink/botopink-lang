@@ -14,6 +14,6 @@ pub fn main() {
         loc.line,
         loc.column,
         loc.fnName,
-    ); // src/main.bp 5 12 where
+    ); // src/main.bp 7 21 where
     print(comptime compiler.src.fnName); // main
 }

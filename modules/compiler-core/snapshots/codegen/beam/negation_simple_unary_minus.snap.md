@@ -4,8 +4,10 @@ fn negate(x: i32) -> i32 {
     return -x;
 }
 fn main() {
-    @print(negate(42));
+    print(negate(42));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

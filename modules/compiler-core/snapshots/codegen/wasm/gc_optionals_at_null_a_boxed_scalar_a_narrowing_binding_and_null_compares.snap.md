@@ -19,26 +19,28 @@ fn show(o: ?i32) -> i32 {
 
 pub fn main() {
     val xs = [7, 8];
-    @print(xs.at(1));
-    @print(xs.at(5));
-    @print(first(xs));
-    @print(pick(true));
-    @print(pick(false));
-    @print(show(pick(true)));
-    @print(show(pick(false)));
+    print(xs.at(1));
+    print(xs.at(5));
+    print(first(xs));
+    print(pick(true));
+    print(pick(false));
+    print(show(pick(true)));
+    print(show(pick(false)));
     val b = Box(n: 3, s: "x");
-    @print(b);
+    print(b);
     val c = Box(n: null, s: null);
-    @print(c);
-    if (b.n) { v -> @print(v + 1); }
+    print(c);
+    if (b.n) { v -> print(v + 1); }
     val words = ["a", "b"];
-    @print(words.at(0));
-    @print(words.at(9));
-    @print(words[1] ?? "z");
-    @print(xs[0]);
-    @print(b.n == null);
-    @print(c.n == null);
+    print(words.at(0));
+    print(words.at(9));
+    print(words[1] ?? "z");
+    print(xs[0]);
+    print(b.n == null);
+    print(c.n == null);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -1310,7 +1312,7 @@ pub fn main() {
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (data $__d7 ")")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "integer overflow: + on i32 at main.bp:31:30")
+  (data $__d8 "integer overflow: + on i32 at main.bp:31:29")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 "a")
   (global $__s9 (mut (ref null $str)) (ref.null $str))

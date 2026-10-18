@@ -4,8 +4,10 @@ fn diff(x: i32, y: i32) -> i32 {
     return x + -y;
 }
 fn main() {
-    @print(diff(10, 3));
+    print(diff(10, 3));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

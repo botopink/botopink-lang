@@ -1,13 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-fn validate(n: i32) -> @Result<i32, string> { @todo(); }
+fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
+fn validate(n: i32) -> Result<i32, string> { panic("not implemented"); }
 fn main() {
     val r = parseAge("42")
         .map({ n -> n + 1 })
         .flatMap({ n -> validate(n) })
         .unwrapOr(0);
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- ERLANG -- main.erl
@@ -17,10 +19,10 @@ fn main() {
 -export(['__bp_priv__parseAge'/1, '__bp_priv__validate'/1, '__bp_priv__main'/0]).
 
 parseAge(S) ->
-    erlang:error({todo, <<"not implemented">>}).
+    erlang:error({panic, <<"not implemented">>}).
 
 validate(N) ->
-    erlang:error({todo, <<"not implemented">>}).
+    erlang:error({panic, <<"not implemented">>}).
 
 main() ->
     R = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (0) end end)((fun(__BpR) -> case __BpR of {ok, __BpV1} -> (fun(N) ->

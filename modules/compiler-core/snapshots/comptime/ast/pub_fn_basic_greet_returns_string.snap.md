@@ -5,8 +5,10 @@ pub fn greet(name: string) -> string {
 }
 val msg = greet("world");
 fn main() {
-    @print(msg);
+    print(msg);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -52,7 +54,7 @@ fn main() {
       "return_type": "void",
       "body": [
         {
-          "source": "@print(msg);"
+          "source": "print(msg);"
         }
       ]
     }

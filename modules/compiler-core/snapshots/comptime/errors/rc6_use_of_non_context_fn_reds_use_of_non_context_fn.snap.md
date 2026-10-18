@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 type User(id: i32)
 fn plain() -> User { return User(id: 1); }
-fn lookup() -> @Component<User> {
+fn lookup() -> Component<User> {
     val u = use plain();
     return u;
 }

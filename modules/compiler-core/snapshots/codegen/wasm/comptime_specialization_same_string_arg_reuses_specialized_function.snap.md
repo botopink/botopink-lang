@@ -7,9 +7,11 @@ fn build(comptime prefix: string, name: string) -> string {
 fn main() {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("INFO", "Log replicado");
-    @print(r1);
-    @print(r2);
+    print(r1);
+    print(r2);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

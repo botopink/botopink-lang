@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn doubles(arr: i32[]) -> @Iterator<i32> {
+fn doubles(arr: i32[]) -> Iterator<i32> {
     for (arr) { x ->
         yield x * 2;
     };

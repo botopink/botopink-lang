@@ -4,8 +4,10 @@ fn either(a: bool, b: bool) -> bool {
     return a || b;
 }
 fn main() {
-    @print(either(false, true));
+    print(either(false, true));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

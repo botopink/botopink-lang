@@ -5,12 +5,14 @@ val Drawable = behavior {
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn draw(self: Self) {
-        @print("draw");
+        print("draw");
     }
     fn explode(self: Self) {
-        @print("boom");
+        print("boom");
     }
 };
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: unknown method

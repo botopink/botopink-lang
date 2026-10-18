@@ -2,11 +2,13 @@
 ```botopink
 fn main() {
     val s = "Hello,World";
-    @print(s.toUpper());
-    @print(s.toLower());
-    @print(s.split(",").join("|"));
-    @print(s.slice(0, 5));
+    print(s.toUpper());
+    print(s.toLower());
+    print(s.split(",").join("|"));
+    print(s.slice(0, 5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat

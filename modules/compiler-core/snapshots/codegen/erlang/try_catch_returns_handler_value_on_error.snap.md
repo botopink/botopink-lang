@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn maybeFail(should_fail: bool) -> @Result<i32, string> {
+fn maybeFail(should_fail: bool) -> Result<i32, string> {
     if (should_fail) {
         throw "boom";
     } else {
@@ -9,8 +9,10 @@ fn maybeFail(should_fail: bool) -> @Result<i32, string> {
 }
 fn main() {
     val v = try maybeFail(true) catch -1;
-    @print(v);
+    print(v);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- ERLANG -- main.erl

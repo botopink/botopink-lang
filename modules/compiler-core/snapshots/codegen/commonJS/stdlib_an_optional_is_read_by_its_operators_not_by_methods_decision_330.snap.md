@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string)
-fn find(p: Person) -> ?Person { @todo(); }
+fn find(p: Person) -> ?Person { panic("not implemented"); }
 fn greet(p: Person) -> string {
     return find(p)?.name ?? "Hello stranger";
 }
+
+import {failure.panic} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

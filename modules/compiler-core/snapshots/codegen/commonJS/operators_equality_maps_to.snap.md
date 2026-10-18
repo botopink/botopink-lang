@@ -4,9 +4,11 @@ fn isZero(n: i32) -> bool {
     return n == 0;
 }
 fn main() {
-    @print(isZero(0));
-    @print(isZero(42));
+    print(isZero(0));
+    print(isZero(42));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

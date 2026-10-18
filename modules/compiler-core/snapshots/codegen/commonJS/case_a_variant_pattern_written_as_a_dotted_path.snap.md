@@ -7,15 +7,17 @@ type Shape {
 fn main() {
     val c = Shape.Circle(radius: 7);
     case c {
-        Shape.Circle(r) { @print(r); }
-        _ { @print(0); }
+        Shape.Circle(r) { print(r); }
+        _ { print(0); }
     };
     val q = Shape.Rect(width: 2, height: 5);
     case q {
-        Shape.Circle(r) { @print(r); }
-        _ { @print(0); }
+        Shape.Circle(r) { print(r); }
+        _ { print(0); }
     };
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- JAVASCRIPT -- main.js

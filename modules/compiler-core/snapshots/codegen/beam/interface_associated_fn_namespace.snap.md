@@ -11,8 +11,10 @@ behavior Pairish<A, B> {
 
 fn main() {
     val p = Pairish.of(1, "one");
-    @print(Pairish.first(p));
+    print(Pairish.first(p));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

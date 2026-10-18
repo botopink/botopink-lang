@@ -6,7 +6,7 @@ fn classify(n: i32) -> string {
         1 -> "one";
         _ -> "many";
     };
-    @print(result);
+    print(result);
     return result;
 }
 fn main() {
@@ -14,6 +14,8 @@ fn main() {
     classify(1);
     classify(7);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

@@ -30,6 +30,7 @@ test "beam: a list pattern binds every element and its spread's tail" {
         \\    print(describe([1, 2, 3, 4]));
         \\    print(describe([9, 8, 7]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\empty
@@ -63,6 +64,7 @@ test "beam: a number in a list pattern is a test of that element" {
         \\    print(sum([2, 5]));
         \\    print(sum([1, 2, 3, 4, 5]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\0
@@ -93,6 +95,7 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
         \\fn main() {
         \\    print(scaleBy(3)(10));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "30\n", &.{"{make_fun3, "});
 }
@@ -143,6 +146,7 @@ test "beam: a type adopts its behavior's default fns as methods of its module" {
         \\    print(show(Sq(s: 1)));
         \\    print(show(Rect(w: 1, h: 7)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\18
@@ -175,6 +179,7 @@ test "beam: ?. on an absent tuple element answers absent before the label is rea
         \\    print(rs.at(1)?.b ?? "none");
         \\    print(rs.at(5)?.a ?? -1);
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\none
@@ -208,6 +213,7 @@ test "beam: -x is the unary minus, so -0.0 is negative zero" {
         \\    print(negi(3) + 1);
         \\    print(-(z + 0.0));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\-0.0
@@ -253,6 +259,7 @@ test "beam: a bare break in a for's body ends the loop" {
         \\        break;
         \\    }
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\1
@@ -280,6 +287,7 @@ test "beam: the keyword form's method is a template compiled at build time" {
         \\    print(biggest(1, 2));
         \\    print(smallest(9, 4));
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
     , "2\n4\n", &.{"{function, smallest, 2, "});
 }
@@ -297,8 +305,9 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
         \\fn main() {
         \\    print(moduleNamed());
         \\}
+        \\
         \\import {io.terminal.print, compiler} from "std";
-    , "`moduleNamed`'s `.Erlang(…)` template does not compile for the beam backend: macros (`?NAME`)", 4, 12);
+    , "`moduleNamed`'s `.Erlang(…)` template does not compile for the beam backend: macros (`?NAME`)", 4, 11);
 }
 
 // ── step 2 — C-07's beam tails: decision 8 §2, §4, §5, §6 on beam ───────────
@@ -325,6 +334,7 @@ test "beam: unknown ---- `is`, type arms and `==` answer by value" {
         \\  show(c);
         \\  show("s");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "true false false\ntrue\n3\ntrue true false true\n2\n2.5\nother\n", &.{});
 }
@@ -339,6 +349,7 @@ test "beam: case ---- `A...B` inside a tuple pattern, and with a binder" {
         \\  val t = #(5, "x");
         \\  case t { #(1...3, _) { print("low") } #(4...6, s) { print("mid " + s) } _ { print("hi") } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "other digit 1 digit 9 two two other\nmid x\n", &.{});
 }
@@ -363,6 +374,7 @@ test "beam: case ---- true and false inside a tuple pattern are matched, not bou
         \\    print(first(#(false, 7, 8)));
         \\    print(first(#(true, 7, 8)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "no 1\nyes 2\n0\n7\n", &.{});
 }
@@ -390,6 +402,7 @@ test "beam: case ---- a record's constructor pattern tests the record's own tag"
         \\    print(onAxis(Point(x: 3, y: 0)));
         \\    print(onAxis(Point(x: 3, y: 4)));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "5\n3\non y\non x\noff\n", &.{});
 }
@@ -400,6 +413,7 @@ test "beam: case ---- a tuple under `..` bounds the arity from below" {
         \\  val t = #(4, 5, 6);
         \\  case t { #(a, ..) { print(a) } };
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "4\n", &.{"{bif, element, "});
 }
@@ -444,6 +458,7 @@ test "beam: is ---- §4.1 × §4.2, one mark per value (a tuple type tests each 
         \\    print(marks(values().map({ v -> v is Box<unknown> })));
         \\    print(marks(values().map({ v -> v is #(i32, string) })));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     ,
         \\TT.T......
@@ -473,6 +488,7 @@ test "beam: an entry point sets standard_io to unicode before anything prints" {
         \\pub fn main() {
         \\    print("é", "\u{1F600}");
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "é 😀\n", &.{
         \\    {allocate, 0, 0}.
@@ -504,6 +520,7 @@ test "beam: a loop closure does not capture the register of an earlier `??`" {
         \\fn main() {
         \\    print(joined(["<", "|", "|", ">"], ["a", "b", "c"]));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
     , "<a|b|c>\n", &.{"{make_fun3, "});
 }
@@ -523,6 +540,7 @@ test "beam: a member call through a library's default handle is a call into the 
         \\pub fn qlib(syntax e: string) -> i32 {
         \\    return compiler.build("99");
         \\}
+        \\
         \\import {compiler} from "std";
         },
         .{ .path = "", .source =
@@ -531,6 +549,7 @@ test "beam: a member call through a library's default handle is a call into the 
         \\fn main() {
         \\    print(qlib.make(5));
         \\}
+        \\
         \\import {io.terminal.print} from "std";
         },
     }, &.{"{extfunc, test@qlib@qlib, make, 1}"}, &.{"unresolved_method"});
@@ -554,6 +573,7 @@ const bytes_src =
     \\    print(j[2..].toUtf8().unwrapOr("?"));
     \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";

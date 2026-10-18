@@ -2,8 +2,10 @@
 fn main() {
     val answer = 42;
     val assert 42 = answer catch fallback;
-    @print(answer);
+    print(answer);
 }
+
+import {io.terminal.print} from "std";
 
 ----- ERROR
 error: unbound variable

@@ -220,10 +220,12 @@ pub fn make() -> Counter { return Counter(n: 41); }
 import {geometry.Counter, geometry.Shape, geometry.make};
 fn main() {
     val c: Counter = Counter.zero();
-    @print(c.bump());
-    @print(Shape.Square(side: 4).area());
-    @print(make().bump());
+    print(c.bump());
+    print(Shape.Square(side: 4).area());
+    print(make().bump());
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- BEAM ASSEMBLY -- main.S

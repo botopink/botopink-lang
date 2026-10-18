@@ -4,9 +4,11 @@ fn isPositive(n: i32) -> n is i32 {
     return n > 0;
 }
 fn main() {
-    @print(isPositive(5));
-    @print(isPositive(-5));
+    print(isPositive(5));
+    print(isPositive(-5));
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
@@ -568,7 +570,7 @@ fn main() {
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:6:23")
+  (data $__d0 "integer overflow: - on i32 at main.bp:6:22")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

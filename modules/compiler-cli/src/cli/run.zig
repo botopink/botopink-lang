@@ -173,7 +173,7 @@ test "declaresMain: read by the parser, not by lines" {
     const a = ar.allocator();
     try std.testing.expect(declaresMain(a, "fn main() {\n}\n"));
     try std.testing.expect(declaresMain(a, "import x;\npub fn main() -> i32 {\n  return 0;\n}\n"));
-    try std.testing.expect(declaresMain(a, "#[@external(.Erlang(\"m:f()\"))] pub fn main() {\n}\n"));
+    try std.testing.expect(declaresMain(a, "#[compiler.external(.Erlang(\"m:f()\"))] pub fn main() {\n}\n"));
     try std.testing.expect(!declaresMain(a, "test \"t\" {\n}\npub mod registry;\n"));
     try std.testing.expect(!declaresMain(a, "fn mainly() {\n}\n"));
     try std.testing.expect(!declaresMain(a, "val s = \"\"\"\nfn main() {\n}\n\"\"\";\n"));

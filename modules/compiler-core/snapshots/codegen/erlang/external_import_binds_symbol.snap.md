@@ -4,8 +4,10 @@
 pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(extname("docs/readme.md"));
+    print(extname("docs/readme.md"));
 }
+
+import {io.terminal.print, compiler} from "std";
 ```
 
 ----- ERLANG -- main.erl

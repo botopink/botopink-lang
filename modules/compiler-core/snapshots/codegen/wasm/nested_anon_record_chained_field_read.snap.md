@@ -6,8 +6,10 @@ fn main() {
     val span = #(start, end);
     val kind = 3;
     val outer = #(span, kind);
-    @print(outer.span.start);
+    print(outer.span.start);
 }
+
+import {io.terminal.print} from "std";
 ```
 
 ----- WASM TEXT -- main.wat
