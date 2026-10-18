@@ -33,7 +33,7 @@
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
-//// - The program: `catalogue`, `typeInfo`.
+//// - The program: `find`, `typeInfo`.
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -121,8 +121,9 @@ pub behavior Compiler {
     fn variants(self: Self, syntax d: unknown) -> string[];
 
     // ── The program ───────────────────────────────────────────────────────
-    // The declarations a decorator marks (decision 253), read at build.
-    fn catalogue(self: Self, with: unknown, member: ?string = null) -> unknown[];
+    // The declarations marked with a decorator (decisions 253, 581 (3)),
+    // read at build.
+    fn find(self: Self, with: unknown, member: ?string = null) -> unknown[];
     // A type's reflection (decision 253).
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
 }
@@ -225,7 +226,7 @@ pub type HookNode = __HookNode;
 
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 
-//// - The program: `catalogue`, `typeInfo`.
+//// - The program: `find`, `typeInfo`.
 
 //// 
 
@@ -272,7 +273,7 @@ pub type HookNode = __HookNode;
 //   fn owner(...)
 //   fn annotations(...)
 //   fn variants(...)
-//   fn catalogue(...)
+//   fn find(...)
 //   fn typeInfo(...)
 
 // The value the module's import binds (decision 579): its value is given by
@@ -327,7 +328,7 @@ export declare interface Compiler {
     owner(d: unknown): unknown;
     annotations(d: unknown): __Decl__Annotation[];
     variants(d: unknown): string[];
-    catalogue(with_: unknown, member: string | null): unknown[];
+    find(with_: unknown, member: string | null): unknown[];
     typeInfo<T>(t: any): TypeInfo<T>;
 }
 

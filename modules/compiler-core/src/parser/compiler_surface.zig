@@ -71,7 +71,7 @@ pub const members = [_]Member{
     .{ .name = "wrapWith", .kind = .output, .params = &.{S} },
     .{ .name = "init", .kind = .output, .params = &.{S} },
     .{ .name = "implement", .kind = .output, .params = &.{V} },
-    .{ .name = "catalogue", .kind = .site, .params = &.{ W, W } },
+    .{ .name = "find", .kind = .site, .params = &.{ W, W } },
     .{ .name = "typeInfo", .kind = .site, .params = &.{V} },
     .{ .name = "text", .kind = .read, .params = &.{S} },
     .{ .name = "name", .kind = .read, .params = &.{S} },
@@ -441,7 +441,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
         return methodCall(ctx, loc, target, "fail", pos, c.trailing, null);
     }
     if (std.mem.eql(u8, name, "typeInfo")) return builtinCall(loc, "typeInfo", args, c.trailing);
-    if (std.mem.eql(u8, name, "catalogue")) return builtinCall(loc, "TypeInfo.all", args, c.trailing);
+    if (std.mem.eql(u8, name, "find")) return builtinCall(loc, "TypeInfo.all", args, c.trailing);
     if (member.kind == .site) {
         const s = ctx.site orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` reads a template's call site, and this body is no template", .{name}), "A template answers `-> expr T`; its body reads the call site through `compiler` (decision 576 (2)).");
         if (std.mem.eql(u8, name, "buildType"))

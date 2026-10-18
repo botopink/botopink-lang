@@ -3622,7 +3622,7 @@ the outputs a decorator's only (`compiler-output-outside-decorator`):
 | a member of the annotated type | `compiler.addMember("table", fn() -> string { … })` — the member a function expression at the call | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
 | comptime meta, a typed value keyed by its type (decision 298) | `compiler.setMeta(Entity(table: "cities"))`, `compiler.addMeta(Index(column: "name"))` | `@typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and on a `@TypeInfo.all` entry — the values written back where they are read |
 | an associated type | `compiler.addType("Columns", compiler.buildType("(name: string)"))` — a type built from its text (decision 578 (3)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
-| the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point (`compiler.catalogue(with: entity)` is the same query) |
+| the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point (`compiler.find(with: entity)` is the same query) |
 
 A marker is a decorator with an empty body (decision 604): `fn registered(comptime decl: @Decl) {}`
 annotates declarations, runs nothing, and is read back by its marking —
@@ -4016,7 +4016,7 @@ the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
-`compiler.catalogue(with: d, member: …)` is the same query spelled through
+`compiler.find(with: d, member: …)` is the same query spelled through
 `compiler`.
 A template function's body may read the catalogue too (decision 353): there,
 `@TypeInfo.all(with: d)` answers for the program that expands the call — every
