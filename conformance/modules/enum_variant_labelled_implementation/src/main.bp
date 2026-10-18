@@ -4,6 +4,8 @@
 //// and `needs` from their defaults, on every target, in a library's source
 //// annotation.
 
+import {compiler} from "std";
+
 fn floorOp(expr decl: unknown) {
     compiler.implement(Implementation.Wasm(op: "f64.floor"));
 }

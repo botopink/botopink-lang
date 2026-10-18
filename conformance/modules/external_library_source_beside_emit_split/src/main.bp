@@ -3,6 +3,8 @@
 //// two `@emit` calls make one declaration, so the module is re-analysed on its
 //// source with the text spliced in, and `#[bif]` keeps its implementation.
 
+import {compiler} from "std";
+
 fn bif(expr decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }

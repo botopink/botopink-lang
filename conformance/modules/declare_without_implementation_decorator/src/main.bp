@@ -2,7 +2,7 @@
 //// (and `compiler.bp`'s): a decorator is no exception, a marker is a decorator
 //// with an empty body. A bodyless one is refused at the declaration.
 
-declare fn registered(comptime decl: @Decl);
+declare fn registered(expr decl: unknown);
 
 pub fn main() {
     @print("unreached");

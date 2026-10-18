@@ -2,6 +2,8 @@
 //// (`.Circle(radius: 2)`) is known at build, like a literal: the decorator's
 //// `comptime` parameter receives it and the program runs.
 
+import {compiler} from "std";
+
 pub type Shape { Circle(radius: i32), Dot }
 
 pub type Mark(text: string)

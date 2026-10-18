@@ -1,6 +1,8 @@
 //// Decision 587 — `compiler.implement` takes `Implementation`, so its argument
 //// may be the dot shorthand `.Erlang(…)`.
 
+import {compiler} from "std";
+
 fn bif(expr decl: unknown, comptime module: string) {
     compiler.implement(.Erlang(module + ":reverse($0)"));
 }

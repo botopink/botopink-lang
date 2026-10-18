@@ -2,6 +2,8 @@
 //// re-analysis: a decorator of the same module that wraps a function
 //// (`compiler.wrapWith`) does not lose the implementation `#[bif]` gave.
 
+import {compiler} from "std";
+
 fn bif(expr decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }
