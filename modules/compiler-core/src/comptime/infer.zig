@@ -5792,7 +5792,13 @@ fn runDeclDecorators(
                     // Decision 580 — its `val` stands at the annotated
                     // declaration's index, not at the module's end.
                     .compile => {
-                        const source = try executorSource(env, a, dfn, sig, values, c, local, handle.name);
+                        // Decision 613 — `decl` is the annotated declaration
+                        // spliced as code and bound to it: a method or a field
+                        // by its owner's path (`Users.make`, `Config.db`),
+                        // never the bare name the module would resolve.
+                        const isMember = std.mem.eql(u8, handle.kind, "Method") or std.mem.eql(u8, handle.kind, "Field");
+                        const annotated = if (isMember) if (memberOwner) |o| try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ o, handle.name }) else handle.name else handle.name;
+                        const source = try executorSource(env, a, dfn, sig, values, c, local, annotated);
                         try env.executorAnchors.append(env.arena, .{ .contribution = env.contributions.items.len, .decl = env.decoratedDeclIndex, .loc = a.loc, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
                         try env.contributions.append(env.arena, source);
                     },
@@ -6109,7 +6115,8 @@ fn executorSource(
     c: decoratorEval.Contribution,
     local: bool,
     /// Decision 581 (2) — what the handle is in the executor: the annotated
-    /// declaration itself, read by its name in its module.
+    /// declaration itself, spliced as code bound to it (decision 613) — its
+    /// name, or a member's owner path (`Users.make`).
     annotated: []const u8,
 ) InferError![]const u8 {
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");

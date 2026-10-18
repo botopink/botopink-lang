@@ -1,0 +1,13 @@
+//// The run-time registry the executors write to.
+
+pub type Entry(name: string, make: fn() -> string)
+
+var entries: Entry[] = [];
+
+pub fn add(e: Entry) {
+    entries.push(e);
+}
+
+pub fn all() -> Entry[] {
+    return entries;
+}

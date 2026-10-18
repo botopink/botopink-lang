@@ -1,0 +1,21 @@
+//// Decision 613 — on a method `decl` is the method by its owner's path:
+//// the executor registers `Users.make`, a static method's function value,
+//// called when `main` runs.
+
+pub mod marks;
+pub mod registry;
+import {marks.registered};
+import {registry.all};
+
+pub type Users() {
+    #[registered]
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() {
+    for (all()) { e ->
+        @print(e.name + " " + e.make());
+    }
+}

@@ -3902,6 +3902,18 @@ type does not fit is refused at its annotation, the decorator's
 
 <!-- example: modules/init_executor_handle_mistyped -->
 
+On every kind the handle is the annotated declaration spliced as code and
+bound to it (decision 613), and the checker's ordinary rules apply to it: a
+type is the type in expression position — `decl.make()` is `Users.make()` —,
+a method is its owner's path, `Users.make`, a field `Config.db`; never what
+the bare name resolves to in the module.
+
+<!-- example: modules/init_executor_handle_on_type -->
+
+<!-- example: modules/init_executor_handle_on_method -->
+
+<!-- example: modules/init_executor_handle_not_module_name -->
+
 A `compiler.*` call inside the executor is evaluated at build and enters the
 executor as a literal, exactly as a `val` read before it does (decision 614):
 `compiler.init({ -> register(compiler.name(decl)) })` and `val name =
