@@ -3,7 +3,9 @@
 The reference text this cell shows (from `conformance/docs.md`, § Imports):
 
 > Without an alias the second item binds the name again (`import-name-collision`,
-> decision 170), and a type this module declares beside an aliased import of a
-> same-named type is refused too (question B-23-a).
+> decision 170); a type this module declares beside an aliased import of a
+> same-named type is two types (decision 603), the alias the other module's type here
+> (a std type's alias is not one: `own_type_beside_std_type_import` stays
+> refused).
 
 `a/p`'s and `b/p`'s `Policy` imported with no alias: the second item is refused, naming both, on every target.

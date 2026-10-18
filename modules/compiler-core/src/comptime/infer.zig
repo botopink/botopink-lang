@@ -393,12 +393,13 @@ fn locateInStd(env: *Env, err: InferError, mod_name: []const u8, imp: ast.Import
 /// Types are nominal by name in the checker, so one module holds one type of
 /// a name: a `type Dict(…)` beside `import {collections.Dict as D} from
 /// "std"`, two un-aliased imports of two modules' `Policy` (decision 170), a
-/// type of this module beside an aliased import of a same-named type
-/// (question B-23-a). Each used to resolve silently to whichever registered
+/// type of this module beside an un-aliased import of a same-named type.
+/// Each used to resolve silently to whichever registered
 /// last; the second source is `import-name-collision` at its import item,
 /// naming both. Two imported types of one declared name each under an alias
 /// (`import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`, or one
-/// of them un-aliased) are two types (decision 310): the alias is the type's
+/// of them un-aliased) are two types (decision 310), and so is an aliased
+/// import beside a type of this module (decision 603): the alias is the type's
 /// identity here (`Env.renamedTypeImports`). (Two functions of one name under
 /// two aliases are legal too — a function is bound by its local name.)
 fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {

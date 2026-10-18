@@ -3306,13 +3306,18 @@ fn failedModule(env: *const envMod.Env, path: []const u8) ?[]const u8 {
     return if (r.failedModules.getKey(path)) |k| k else null;
 }
 
+/// The `first` entry of a type this module declares in `contestedTypeNames`:
+/// no module path can spell it.
+const local_module_marker: []const u8 = "\x00local";
+
 /// Decision 310 — the declared names two type import items of `program`
 /// resolve to in two different modules (`import {m1.T as A}; import {m2.T as
 /// B};`): each aliased item of such a name is the type's identity in this
-/// module (`Env.renamedTypeImports`). A name this module declares itself is
-/// left out: a type of this module beside an aliased import of a same-named
-/// type stays refused (`import-name-collision`, question B-23-a), and so does
-/// an un-aliased pair (decision 170) — `noteExplicitTypeNames` refuses both.
+/// module (`Env.renamedTypeImports`). A name this module declares itself
+/// counts as one of the two (decision 603): a type of this module beside an
+/// aliased import of a same-named type is two types, the import held under its
+/// alias. An un-aliased import beside it, and an un-aliased pair (decision 170),
+/// stay `import-name-collision` — `noteExplicitTypeNames` refuses both.
 fn contestedTypeNames(
     env: *envMod.Env,
     program: anytype,
@@ -3320,6 +3325,21 @@ fn contestedTypeNames(
 ) !std.StringHashMapUnmanaged(void) {
     var out: std.StringHashMapUnmanaged(void) = .empty;
     var first: std.StringHashMapUnmanaged([]const u8) = .empty;
+    // Decision 603 — a type this module declares is one of the sources of its
+    // name (held under the name, the module being the one that is not an
+    // import's): an aliased import of a same-named type is the other, and is
+    // held under its alias.
+    var locals: std.StringHashMapUnmanaged(void) = .empty;
+    for (program.decls) |decl| {
+        const name = switch (decl) {
+            .type_ => |t| t.name,
+            .typeAlias => |a| a.name,
+            .behavior => |b| b.name,
+            else => continue,
+        };
+        try locals.put(env.arena, name, {});
+        try first.put(env.arena, name, local_module_marker);
+    }
     for (program.decls) |decl| {
         if (decl != .use) continue;
         const u = decl.use;
@@ -3334,6 +3354,7 @@ fn contestedTypeNames(
             for (u.imports) |imp| {
                 if (!imp.isQualified()) continue;
                 const name = imp.leaf();
+                if (locals.contains(name)) continue;
                 const path = try std.mem.concat(env.arena, u8, &.{ "std/", try imp.prefixPath(env.arena) });
                 const d = (typeDeclRegistry.get(path) orelse continue).get(name) orelse continue;
                 if (d != .type_) continue;
@@ -3373,12 +3394,6 @@ fn contestedTypeNames(
             }
         }
     }
-    for (program.decls) |decl| switch (decl) {
-        .type_ => |t| _ = out.remove(t.name),
-        .typeAlias => |a| _ = out.remove(a.name),
-        .behavior => |b| _ = out.remove(b.name),
-        else => {},
-    };
     return out;
 }
 

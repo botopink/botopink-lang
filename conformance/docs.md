@@ -325,8 +325,10 @@ tells them apart, and each value prints as declared. A std type is one of the
 two as well (`import {collections.Dict as D} from "std";` beside `import
 {kit.Dict as KitDict};`).
 Without an alias the second item binds the name again (`import-name-collision`,
-decision 170), and a type this module declares beside an aliased import of a
-same-named type is refused too (question B-23-a). An activation cannot be
+decision 170); a type this module declares beside an aliased import of a
+same-named type is two types (decision 603), the alias the other module's type here
+(a std type's alias is not one: `own_type_beside_std_type_import` stays
+refused). An activation cannot be
 renamed (`import-alias-on-activation`). A leaf that names a folder is a namespace of
 its submodules (decision 110): after `import {io} from "std"`, `io.fs.readText(p)`
 calls `io/fs`'s `readText` — only the modules the program reaches are imported —
@@ -369,7 +371,7 @@ std module's declaration is located in that module's file:
 
 <!-- example: modules/import_two_types_one_name_unaliased -->
 
-<!-- example: modules/own_type_beside_aliased_type_import -->
+<!-- example: modules/import_alias_beside_local_type -->
 
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,

@@ -1,0 +1,11 @@
+//// A module whose `Box` another module's own `Box` meets under an alias.
+
+pub type Box(w: i32) {
+    fn describe(self: Self) -> string {
+        return "shapes:" + self.w.toString();
+    }
+}
+
+pub fn widthOf(b: Box) -> i32 {
+    return b.w;
+}

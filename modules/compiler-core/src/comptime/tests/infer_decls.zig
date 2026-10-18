@@ -695,9 +695,9 @@ test "infer: a namespace call answers the aliased same-named type" {
     try std.testing.expect(err == null);
 }
 
-// Question B-23-a is open: a type of this module beside an aliased import of
-// a same-named type stays `import-name-collision`.
-test "infer: a local type beside an aliased same-named import stays refused" {
+// Decision 603: a type of this module beside an aliased import of a
+// same-named type is two types — the alias is the import's identity here.
+test "infer: a local type beside an aliased same-named import is two types" {
     const err = try policyConsumerTypeError(
         \\import {app.a.Policy as APolicy};
         \\import {app.b.Policy as BPolicy};
@@ -707,8 +707,8 @@ test "infer: a local type beside an aliased same-named import stays refused" {
         \\}
     , "comptime/local_beside_aliased_types");
     defer if (err) |e| std.testing.allocator.free(e);
-    try std.testing.expect(err != null);
-    try std.testing.expect(std.mem.startsWith(u8, err.?, "import-name-collision"));
+    if (err) |e| std.debug.print("unexpected: {s}\n", .{e});
+    try std.testing.expect(err == null);
 }
 
 // The same declaration imported twice is one declaration: an `@emit`

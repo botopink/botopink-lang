@@ -517,8 +517,9 @@ namespace call, an imported template's built code and a decorator's member) and
 each refused or mistyped by the parent binary. B-23's Conformance step pins the two refusals 310
 leaves, each green on the group's base: `modules/import_two_types_one_name_unaliased` (two
 un-aliased items of two modules' `Policy`, decision 170) and
-`modules/own_type_beside_aliased_type_import` (a type of this module beside an aliased same-named
-import, question B-23-a open).
+`modules/import_alias_beside_local_type` (a type of this module beside an aliased same-named
+import — refused while question B-23-a was open, two types by decision 603: it prints, constructs,
+answers its own method and is told apart by `is` from the alias).
 `modules/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
