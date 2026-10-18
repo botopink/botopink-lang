@@ -6,4 +6,6 @@ The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 > bound to it (decision 613), and the checker's ordinary rules apply to it: a
 > type is the type in expression position — `decl.make()` is `Users.make()` —,
 > a method is its owner's path, `Users.make`, a field `Config.db`; never what
-> the bare name resolves to in the module.
+> the bare name resolves to in the module. `Users` where a function is expected
+> is the checker's own refusal at the annotation, the `compiler.init` call its
+> `called from` line.

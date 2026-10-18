@@ -1,0 +1,23 @@
+//// Decision 613 — on a type `decl` is the type in expression position, and
+//// the checker's ordinary rules apply to it: `make: decl` hands the type
+//// `Users` where a value is expected, refused with the checker's own text
+//// at the annotation, the decorator's `compiler.init` its `called from`
+//// line (567).
+
+pub mod marks;
+pub mod registry;
+import {marks.registered};
+import {registry.all};
+
+#[registered]
+pub type Users() {
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() {
+    for (all()) { e ->
+        @print(e.name + " " + e.make());
+    }
+}
