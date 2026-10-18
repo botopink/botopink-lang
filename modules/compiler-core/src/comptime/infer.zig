@@ -2160,6 +2160,12 @@ fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
         }
     }.f;
     const resultTy = typed.getType();
+    // A function called through its module (`kit.resolve<Box>(…)`).
+    if (call.receiver) |recv| if (recv.* == .identifier and recv.identifier.kind == .ident and env.namespaces.paths.contains(recv.identifier.kind.ident)) {
+        const key = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recv.identifier.kind.ident, call.callee });
+        const f = env.importedFnDecls.get(key) orelse return countError(env, call.callee, 0, resolved.len, loc);
+        return pinImportedFnTypeArgs(env, f, typed, resolved, resultTy, call.callee, loc, countError);
+    };
     // A method call (`ctx.resolve<T>()`): the method's own type parameters
     // take the arguments; the type's are the receiver's.
     if (typed.call.kind == .call) if (typed.call.kind.call.receiver) |recv| {
@@ -2215,7 +2221,61 @@ fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
         }
         return typed;
     }
+    // An imported function: its declaration is written in its own module, so
+    // its types are not re-read here; each place that names a type parameter
+    // is met, through the shape around it, with what the call inferred there.
+    if (env.importedFnDecls.get(call.callee)) |f| return pinImportedFnTypeArgs(env, f, typed, resolved, resultTy, call.callee, loc, countError);
     return countError(env, call.callee, 0, resolved.len, loc);
+}
+
+/// `f`, a function of another module, called with the type arguments
+/// `resolved`: the count checked, then each argument and the result pinned.
+fn pinImportedFnTypeArgs(
+    env: *Env,
+    f: ast.FnDecl,
+    typed: TypedExpr,
+    resolved: []const *T.Type,
+    resultTy: *T.Type,
+    callee: []const u8,
+    loc: ast.Loc,
+    countError: fn (*Env, []const u8, usize, usize, ast.Loc) InferError,
+) InferError!TypedExpr {
+    if (f.genericParams.len != resolved.len) return countError(env, callee, f.genericParams.len, resolved.len, loc);
+    const args = typed.call.kind.call.args;
+    for (f.params, 0..) |p, i| {
+        if (i >= args.len) break;
+        if (args[i].label != null) break;
+        try pinTypeParams(env, f.genericParams, resolved, p.typeRef, args[i].value.getType(), args[i].value.getLoc());
+    }
+    if (f.returnType) |rtRef| try pinTypeParams(env, f.genericParams, resolved, rtRef, resultTy, loc);
+    return typed;
+}
+
+/// Decision 8 §1.3 — each type parameter `ref` names (a declaration of
+/// another module, written in its scope) unified with `pinned`, the type
+/// argument the call wrote for it, at the matching place of `ty`: an array's
+/// element, an optional's inner type, a generic type's arguments, a
+/// function's parameters and return. A name that is no type parameter, and a
+/// shape `ty` does not repeat, pin nothing.
+fn pinTypeParams(env: *Env, generics: []const ast.GenericParam, pinned: []const *T.Type, ref: ast.TypeRef, ty: *T.Type, loc: ast.Loc) InferError!void {
+    const d = ty.deref();
+    switch (ref) {
+        .named => |n| for (generics, pinned) |gp, r| {
+            if (std.mem.eql(u8, gp.name, n)) return unifyAt(env, r, ty, loc);
+        },
+        .array => |inner| if (d.* == .named and std.mem.eql(u8, d.named.name, "array") and d.named.args.len == 1)
+            try pinTypeParams(env, generics, pinned, inner.*, d.named.args[0], loc),
+        .optional => |inner| if (optionalInner(d)) |o|
+            try pinTypeParams(env, generics, pinned, inner.*, o, loc),
+        .generic => |g| if (d.* == .named and d.named.args.len == g.args.len) {
+            for (g.args, d.named.args) |a, t| try pinTypeParams(env, generics, pinned, a, t, loc);
+        },
+        .function => |fnRef| if (d.* == .func and d.func.params.len == fnRef.params.len) {
+            for (fnRef.params, d.func.params) |a, t| try pinTypeParams(env, generics, pinned, a, t, loc);
+            try pinTypeParams(env, generics, pinned, fnRef.returnType.*, d.func.ret, loc);
+        },
+        else => {},
+    }
 }
 
 /// Decision 255 (1) — the type a type application names

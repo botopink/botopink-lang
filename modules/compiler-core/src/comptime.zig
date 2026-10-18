@@ -3035,6 +3035,7 @@ fn resolveImports(
                             while (eit.next()) |fname| {
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
                                     try env.namespaces.params.put(env.arena, try envMod.NamespaceImports.paramsKey(env.arena, local, fname.*), pfn.params);
+                                    try env.importedFnDecls.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), pfn);
                                     // Decision 562 — `ns.f(…)` of a function expanded at its call site.
                                     if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), .{ .decl = pfn, .owner = path });
                                 }
@@ -3298,6 +3299,7 @@ fn resolveImports(
                     // a call here that omits a trailing default is filled.
                     if (owner.len > 0) if (templateRegistry.get(try defaultParamsKey(env.arena, owner, name))) |pfn| {
                         try env.fnParams.put(local, pfn.params);
+                        try env.importedFnDecls.put(env.arena, local, pfn);
                         // Decision 562 — a function expanded at its call site.
                         if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, local, .{ .decl = pfn, .owner = owner });
                     };

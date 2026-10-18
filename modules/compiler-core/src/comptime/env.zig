@@ -1755,6 +1755,12 @@ pub const Env = struct {
     /// imported function itself, under that name) — what a decorator of this
     /// module carries when its body calls it (`infer.decoratorSupport`).
     importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// Decision 8 §1.3 — an imported function's declaration as its module
+    /// exports it, by the name it is bound under (`ns.f` through a
+    /// namespace), for a call that writes its type arguments
+    /// (`resolve<Box>(…)`): the generic parameters, in order, and the types
+    /// that name them.
+    importedFnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
     /// Decision 341 — every std function as a comptime module carries it
     /// (`host_cells.zig` `StdFn`: named `__bp_std__<module>__<name>`, its
     /// own std calls renamed so), keyed by that name. Built once, by

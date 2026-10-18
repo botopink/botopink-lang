@@ -1225,6 +1225,12 @@ type's name reached through a module namespace takes them the same way:
 
 <!-- example: modules/type_application_through_namespace_mismatch -->
 
+A function another module declares takes its type arguments as one of this
+module does, imported by name or called through its module:
+`resolve<i32>("n", 7)`, `kit.pair<i32>(1, 2)` — one per type parameter, in order.
+
+<!-- example: modules/imported_generic_fn_type_arguments -->
+
 A parameter says how its argument arrives (decisions 575 (4), 576). `comptime
 x: T` is the argument's **value**, known while the program compiles: the body
 holds a `T` and reads `x` directly, never `.value` — in a decorator, a template

@@ -1,0 +1,14 @@
+//// A package of generic functions.
+
+/// A value held with its label.
+pub type Box<T>(label: string, value: T)
+
+/// `first` and `second`, in a list of `T`.
+pub fn pair<T>(first: T, second: T) -> T[] {
+    return [first, second];
+}
+
+/// `value` boxed under `label`.
+pub fn resolve<T>(label: string, value: T) -> Box<T> {
+    return Box(label: label, value: value);
+}

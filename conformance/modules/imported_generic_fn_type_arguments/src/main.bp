@@ -1,0 +1,18 @@
+//// An imported generic function takes its type arguments as a function of
+//// this module does (decision 8 §1.3): one per type parameter, in order,
+//// whether it is imported by name or called through its module.
+
+import {kit} from "lib";
+import {kit.pair, kit.resolve, kit.Box} from "lib";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    val names: string[] = pair<string>("a", "b");
+    print(names.length);
+    val box: Box<i32> = resolve<i32>("n", 7);
+    print(box.label + " " + box.value.toString());
+    val numbers = kit.pair<i32>(1, 2);
+    print(numbers.length);
+    val again = kit.resolve<string>("s", "x");
+    print(again.label + " " + again.value);
+}
