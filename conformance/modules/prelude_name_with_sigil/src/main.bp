@@ -1,7 +1,7 @@
 //// Decision 606 (1) — the prelude's types are written bare: `@Result<…>` names no builtin,
 //// and is refused at the `@` name.
 
-fn parse(s: string) -> Result<i32, string> {
+fn parse(s: string) -> @Result<i32, string> {
     if (s == "1") return 1;
     throw "not one";
 }

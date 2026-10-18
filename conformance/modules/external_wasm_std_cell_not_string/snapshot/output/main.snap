@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: unbound variable 'hash'
-at src/main.bp:5:68
+at src/main.bp:7:76

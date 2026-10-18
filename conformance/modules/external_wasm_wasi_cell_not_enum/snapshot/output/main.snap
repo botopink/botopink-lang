@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: type mismatch: expected WasiAdapter, got string
-at src/main.bp:4:82
+at src/main.bp:6:90

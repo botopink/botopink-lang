@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: unbound variable 'Deno'
-at src/main.bp:6:73
+at src/main.bp:8:81

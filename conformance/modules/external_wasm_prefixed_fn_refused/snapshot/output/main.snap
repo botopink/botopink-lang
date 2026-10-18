@@ -1,3 +1,3 @@
 botopink-cell 1
 refused error: `.Wasm("fn:tanBody")` on `tanOf`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(body: tanBody)`
-at src/main.bp:1:73
+at src/main.bp:3:81
