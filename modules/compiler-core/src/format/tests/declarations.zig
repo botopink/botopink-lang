@@ -980,7 +980,7 @@ test "format: declare fn ---- unannotated generics, discard param and generic re
     try h.assertFormatLossless(std.testing.allocator,
         \\pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
         \\
-        \\pub declare fn getContext<T>(comptime _: anytype) -> Component<T, unknown>;
+        \\pub declare fn getContext<T>(comptime _: anytype) -> Holder<T, unknown>;
         \\
         \\declare fn marker(syntax decl: unknown);
     );

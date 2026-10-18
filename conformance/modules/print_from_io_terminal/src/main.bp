@@ -1,0 +1,16 @@
+//// Decision 606 (2) — `print` is a function of std's `io/terminal.bp`, imported where it is
+//// used: by its item, and under an alias. It writes its values space-separated and ends the
+//// line, a string as its text and any other value as the source writes it, on every target;
+//// with no value it writes an empty line (wasm wrote nothing).
+
+import {io.terminal.print, io.terminal.print as say} from "std";
+
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    print("one", 2, true);
+    print(Point(x: 1, y: 2), [3, 4]);
+    say("aliased");
+    print();
+    print("after the empty line");
+}

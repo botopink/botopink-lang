@@ -1044,6 +1044,16 @@ pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?
 
 pub type Failure(message: string, kind: string)
 
+// Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+// with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+// Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+// inside std); `panic("not implemented")` is what `todo` was.
+#[external(
+    .Erlang("erlang:error({panic, $0})"),
+    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+)]
+pub declare fn panic(message: string = "panic") -> noreturn;
+
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
 // every one it raises — `@panic`, `@todo`, an integer overflow or division
 // by zero, a failed `assert` (whose mark carries its message) — or a test
@@ -1282,6 +1292,18 @@ class Failure {
 Failure.prototype.__bp = "Failure";
 exports.Failure = Failure;
 
+// Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+
+// with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+
+// Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+
+// inside std); `panic("not implemented")` is what `todo` was.
+
+// panic: per-call template (see annotation)
+function panic(message) { return (() => { throw Object.defineProperty(new Error(message), '__bp_panic', { value: true }) })(); }
+exports.panic = panic;
+
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
 
 // every one it raises — `@panic`, `@todo`, an integer overflow or division
@@ -1356,7 +1378,7 @@ function attemptTaskOnWasm(f) {
     })());
 }
 
-Object.defineProperty(exports, "__bp_priv__", { value: { HostErrorName, HostErrorName$Error, HostErrorName$Throw, HostErrorName$Exit, HostError, Failure, attempt, attemptTask, attemptOnWasm, attemptTaskOnWasm } });
+Object.defineProperty(exports, "__bp_priv__", { value: { HostErrorName, HostErrorName$Error, HostErrorName$Throw, HostErrorName$Exit, HostError, Failure, panic, attempt, attemptTask, attemptOnWasm, attemptTaskOnWasm } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/failure.d.ts
@@ -1383,6 +1405,9 @@ export declare class Failure {
     readonly kind: string;
     constructor(message: string, kind: string);
 }
+
+
+export declare function panic(message: string): never;
 
 
 export declare function attempt<T>(f: () => T): { ok: T } | { error: Failure };

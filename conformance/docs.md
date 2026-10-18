@@ -3607,6 +3607,15 @@ it, naming its kind (`` `{ x -> x }` is a lambda: it has no name ``).
 
 <!-- example: modules/compiler_name_of_lambda -->
 
+What the compiler does is a member of `compiler` (decision 606 (3)): `compiler.typeInfo(T)`
+answers `Type.Info<T>`, `compiler.embed(path)` a `Link`, `#[compiler.external(…)]` names a
+`declare fn`'s host sources. In a body that runs when the program runs, `compiler` is written
+under `comptime` — `val name = comptime compiler.typeInfo(City).name;` — and the answer is
+computed at build.
+
+<!-- example: modules/type_info_comptime_run_time -->
+<!-- example: modules/external_compiler_member -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `syntax` (decisions 575 (4),
@@ -5044,6 +5053,30 @@ renaming the function renames the binding.
 Until 2026-09-21 wasm lowered such a call to a `wasm trap`, so the program
 compiled and then died at run time where the other three refused it; it
 refuses too, and there is no flag that restores the trap.
+
+## Prelude
+
+The prelude is std's `primitives.bp` (decision 606 (1)): what it declares — the primitives,
+`Array`, `Pair`, and the types and behaviors `Result`, `Task`, `Component`, `Renderable`,
+`Iterator`, `Stream`, `Display`, `Closeable`, `Index`, `Slice`, `Annotation` and `Decorator` —
+is visible in every module with no import and is written bare, in every type position.
+
+<!-- example: modules/prelude_name_bare -->
+
+A module's own declaration of one of these names — a `type`, a `behavior`, an import —
+shadows the prelude's in that module, the rule `string` and `Array` already follow.
+
+<!-- example: modules/prelude_name_shadowed -->
+
+### `print` and `panic`
+
+`print(..values: unknown[])` is a function of std's `io/terminal.bp` and `panic(message:
+string = "panic") -> noreturn` one of `failure.bp` (decision 606 (2)): each is imported where it
+is used — `import {io.terminal.print} from "std";`, `import {failure.panic} from "std";`, an
+alias included —, std's own modules by the same import.
+
+<!-- example: modules/print_from_io_terminal -->
+<!-- example: modules/panic_from_failure -->
 
 ## Builtins
 

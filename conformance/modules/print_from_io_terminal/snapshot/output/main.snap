@@ -1,0 +1,6 @@
+botopink-cell 1
+out one 2 true
+out Point(x: 1, y: 2) [3, 4]
+out aliased
+out
+out after the empty line

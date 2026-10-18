@@ -156,6 +156,72 @@ pub type Method = __Decl__Method;
 
 pub type HookNode = __HookNode;
 
+// ── `Type` (decisions 307, 308, 624) ─────────────────────────────────────
+// std's `Type`, declared here beside the behavior whose members it names
+// (decision 624: `compiler.bp` incorporates what `types.bp` declared) — the
+// derived types: a compile-time function answers a NEW record type, bound by
+// a module-level `val` and named after it (`pub val RecipePatch =
+// Type.partial(Recipe);`), nominal, usable in every type position, exported
+// and imported like any type, and annotatable; the source fields' markers come
+// with them. A program imports it by its path, `import {compiler.Type} from
+// "std";`. Every function here runs only at compile time and takes every
+// parameter `comptime x: T`; the bodies are the compiler's
+// (`comptime/derived_types.zig`) until B-140 writes them in botopink.
+
+pub type Type {
+    // The field of `T` (decision 308): its name, its type as the source
+    // spells it and its annotations. Its values are the fields of `T`'s
+    // declaration; nobody constructs one (`.title` names it where a
+    // `Type.Field<T>` is expected). A key is also a run-time value: stored,
+    // passed, compared, matched by `case key { .title -> … }` exhaustively
+    // over `T`'s fields. The reflection record `decl.fields` hands out is
+    // still `builtins.d.bp`'s `Field` until `134` step 2 makes it
+    // `Type.Field<unknown>`.
+    pub type Field<T>(
+        name: string,
+        typeName: string,
+        annotations: DeclAnnotation[],
+    ) {
+        // The key named `text`, or `null` when `T` declares no such field.
+        pub declare fn of(text: string) -> ?Type.Field<T>;
+
+        // Every key of `T`, in declaration order.
+        pub declare fn all() -> Type.Field<T>[];
+    }
+
+    // The field key of `T`: `Type.Field<T>` itself, one value per field of
+    // `T`'s declaration (`.title`), never a second enum nor a copy — bound by a
+    // module-level `val`, the alias `K.of(text)` and `K.all()` are called
+    // through.
+    pub declare fn keys<T>(comptime source: type<T>) -> anytype;
+
+    // Every field `F` of `T` made `?F`.
+    pub declare fn partial<T>(comptime source: type<T>) -> anytype;
+
+    // Every field `?F` of `T` made `F` — every `?` goes: `required` does not
+    // know what was optional before a `partial`.
+    pub declare fn required<T>(comptime source: type<T>) -> anytype;
+
+    // The fields of `first`, then those of `second`; a field on both sides is
+    // an error (`omit` it first: nothing overrides silently).
+    pub declare fn merge<A, B>(
+        comptime first: type<A>,
+        comptime second: type<B>,
+    ) -> anytype;
+
+    // The fields of `T` named in `fields`, in the order `T` declares them.
+    pub declare fn pick<T>(
+        comptime source: type<T>,
+        comptime ..fields: Type.Field<T>[],
+    ) -> anytype;
+
+    // The fields of `T` but those named in `fields`.
+    pub declare fn omit<T>(
+        comptime source: type<T>,
+        comptime ..fields: Type.Field<T>[],
+    ) -> anytype;
+}
+
 ```
 
 ----- BEAM ASSEMBLY -- std/compiler.S
@@ -206,6 +272,102 @@ pub type HookNode = __HookNode;
 % ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 % No prelude name: a file naming one imports it, `import {compiler.Span} from
 % "std";`. Each is the compiler's own type, written here under its name.
+% ── `Type` (decisions 307, 308, 624) ─────────────────────────────────────
+% std's `Type`, declared here beside the behavior whose members it names
+% (decision 624: `compiler.bp` incorporates what `types.bp` declared) — the
+% derived types: a compile-time function answers a NEW record type, bound by
+% a module-level `val` and named after it (`pub val RecipePatch =
+% Type.partial(Recipe);`), nominal, usable in every type position, exported
+% and imported like any type, and annotatable; the source fields' markers come
+% with them. A program imports it by its path, `import {compiler.Type} from
+% "std";`. Every function here runs only at compile time and takes every
+% parameter `comptime x: T`; the bodies are the compiler's
+% (`comptime/derived_types.zig`) until B-140 writes them in botopink.
+```
+
+----- BEAM ASSEMBLY -- std@compiler@@Type.S
+```erlang
+{module, std@compiler@@Type}.
+{exports, [{'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 4}.
+
+{function, '__bp_format', 1, 3}.
+  {label, 2}.
+    {line, [{location, "std@compiler@@Type.erl", 1}]}.
+    {func_info, {atom, std@compiler@@Type}, {atom, '__bp_format'}, 1}.
+  {label, 3}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Type">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- std@compiler@@Type__Field.S
+```erlang
+{module, std@compiler@@Type__Field}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 9}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@compiler@@Type__Field.erl", 1}]}.
+    {func_info, {atom, std@compiler@@Type__Field}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, name}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, typeName}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, annotations}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 6}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 8}.
+  {label, 7}.
+    {line, [{location, "std@compiler@@Type__Field.erl", 1}]}.
+    {func_info, {atom, std@compiler@@Type__Field}, {atom, '__bp_format'}, 1}.
+  {label, 8}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"annotations">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"typeName">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"name">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Type.Field">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
 ```
 
 ----- RUN LOG -----

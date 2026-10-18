@@ -945,7 +945,7 @@ pub const Env = struct {
     inStd: bool = false,
     /// The module's bodyless declarations are the compiler's (the prelude's
     /// `builtins.d.bp` / `builtins_fns.d.bp`, the reflection cluster, std's
-    /// `types.bp`; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
+    /// `compiler.bp`'s `Type`, decision 624; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
     /// compiler's builtins, which no annotation implements until `#[builtin]`
     /// marks them (decision 575 (2)), so `declare-without-implementation` is
     /// not its rule.

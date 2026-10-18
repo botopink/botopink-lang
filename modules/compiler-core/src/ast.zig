@@ -3032,7 +3032,26 @@ pub const TypeRef = union(enum) {
         }
     },
     /// Generic type: `@Result<D, E>` (builtin) or `MyType<T>` (user-defined). Owns the argument types.
-    generic: struct { name: []const u8, args: []TypeRef, is_builtin: bool },
+    generic: struct {
+        name: []const u8,
+        args: []TypeRef,
+        is_builtin: bool,
+        /// Decision 606 (1) — a prelude wrapper written without `@`
+        /// (`Result<i32, string>`): `is_builtin`, printed as written.
+        bare: bool = false,
+
+        /// The parser snapshots' shape: `bare` is the formatter's.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("name");
+            try jws.write(this.name);
+            try jws.objectField("args");
+            try jws.write(this.args);
+            try jws.objectField("is_builtin");
+            try jws.write(this.is_builtin);
+            try jws.endObject();
+        }
+    },
     /// Comptime type parameter: `typeparam` or `typeparam string | int | bool`.
     /// `constraints` is the `|`-separated list of accepted types; an empty slice
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
@@ -3103,7 +3122,7 @@ pub const TypeRef = union(enum) {
                     try w.print("syntax {f}", .{g.args[0]});
                     return;
                 }
-                try w.print("{s}{s}<", .{ if (g.is_builtin) "@" else "", g.name });
+                try w.print("{s}{s}<", .{ if (g.is_builtin and !g.bare) "@" else "", g.name });
                 for (g.args, 0..) |a, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", a });
                 try w.writeAll(">");
             },

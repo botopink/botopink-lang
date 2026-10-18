@@ -252,7 +252,64 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
     // @Name<T1, T2> — builtin type constructor
     if (this.check(.builtinIdent)) {
         const tok = this.advance();
-        const name = tok.lexeme[1..];
+        return parseBuiltinTypeTail(this, alloc, tok, tok.lexeme[1..], false);
+    }
+    // Decision 606 (1) — a prelude wrapper written bare (`Result<i32,
+    // string>`, `Task<User>`, `implement Renderable`) is the prelude's
+    // declaration unless the file declares or imports one of that name.
+    if (this.check(.identifier) and this.peekAt(1).kind != .dot and isPreludeWrapperName(this.peek().lexeme) and
+        (std.mem.eql(u8, this.peek().lexeme, "Renderable") or this.peekAt(1).kind == .lessThan) and !preludeNameShadowed(this, this.peek().lexeme))
+    {
+        const tok = this.advance();
+        return parseBuiltinTypeTail(this, alloc, tok, tok.lexeme, true);
+    }
+    return parseNamedTypeRef(this, alloc);
+}
+
+/// The prelude's wrappers and markers a type position names bare (decision
+/// 606 (1)): what `@Name` spelled before.
+pub const prelude_wrapper_names = [_][]const u8{ "Result", "Task", "Component", "Iterator", "Stream", "Renderable" };
+
+pub fn isPreludeWrapperName(name: []const u8) bool {
+    for (prelude_wrapper_names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+/// True when the file being parsed declares a `type` / `behavior` (or a
+/// `val` / `var` binding a type) named
+/// `name`, or names it inside an `import { … }`: its own declaration
+/// shadows the prelude's, as `string` and `Array` already are (decision 606
+/// (1)).
+pub fn preludeNameShadowed(this: *This, name: []const u8) bool {
+    const ts = this.tokens;
+    var i: usize = 0;
+    while (i < ts.len) : (i += 1) {
+        const k = ts[i].kind;
+        if ((k == .type or k == .behavior or k == .val or k == .@"var") and i + 1 < ts.len and ts[i + 1].kind == .identifier and std.mem.eql(u8, ts[i + 1].lexeme, name)) return true;
+        if (k == .import and i + 1 < ts.len and ts[i + 1].kind == .leftBrace) {
+            var depth: usize = 0;
+            var j = i + 1;
+            while (j < ts.len) : (j += 1) {
+                switch (ts[j].kind) {
+                    .leftBrace => depth += 1,
+                    .rightBrace => {
+                        depth -= 1;
+                        if (depth == 0) break;
+                    },
+                    .identifier => if (std.mem.eql(u8, ts[j].lexeme, name)) return true,
+                    else => {},
+                }
+            }
+            i = j;
+        }
+    }
+    return false;
+}
+
+/// The builtin type after its name: `@Name<…>`, or a prelude wrapper written
+/// bare (`bare`, decision 606 (1)).
+fn parseBuiltinTypeTail(this: *This, alloc: std.mem.Allocator, tok: parser.Token, name: []const u8, bare: bool) ParseError!ast.TypeRef {
+    {
         if (this.check(.leftParenthesis)) {
             this.parseError = ParseErrorInfo.fromToken(.removedBuiltinType, tok);
             return ParseError.UnexpectedToken;
@@ -296,7 +353,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
                 this.parseError = ParseErrorInfo.fromToken(.renderableTakesNoTypeArguments, this.peek());
                 return ParseError.UnexpectedToken;
             }
-            return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
+            return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true, .bare = bare } };
         }
         // Other builtin types always take their generic parameters
         // (`@Task<i32>`, never bare `@Task`).
@@ -339,8 +396,12 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         }
         try this.consumeGenericClose();
         const owned = try args.toOwnedSlice(alloc);
-        return ast.TypeRef{ .generic = .{ .name = name, .args = owned, .is_builtin = true } };
+        return ast.TypeRef{ .generic = .{ .name = name, .args = owned, .is_builtin = true, .bare = bare } };
     }
+}
+
+/// The rest of `parseTypeRefMember`: `type<…>`, `anytype`, a plain name.
+fn parseNamedTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
     // type [Constraint (| Constraint)*] — comptime type parameter (meta-kind)
     // with an optional `|`-separated constraint list. `type` alone is unconstrained.
     // Decision 207 — `type(…)` is a type only as a parameter's whole

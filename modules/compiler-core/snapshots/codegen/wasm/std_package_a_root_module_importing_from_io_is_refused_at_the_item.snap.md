@@ -2183,6 +2183,16 @@ pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?
 
 pub type Failure(message: string, kind: string)
 
+// Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+// with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+// Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+// inside std); `panic("not implemented")` is what `todo` was.
+#[external(
+    .Erlang("erlang:error({panic, $0})"),
+    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+)]
+pub declare fn panic(message: string = "panic") -> noreturn;
+
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
 // every one it raises — `@panic`, `@todo`, an integer overflow or division
 // by zero, a failed `assert` (whose mark carries its message) — or a test
@@ -2291,6 +2301,11 @@ fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
   ;; is `panic`; a trap (an overflow or a division by zero there, a host
   ;; fault) is no exception and is not caught. `attemptTask` contains what
   ;; the thunk raises before the task's first `await`.
+  ;; Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+  ;; with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+  ;; Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+  ;; inside std); `panic("not implemented")` is what `todo` was.
+  ;; declare fn panic — no wasm implementation (host-backed)
   ;; The Node forms read an abort by the `__bp_panic` mark the backend puts on
   ;; every one it raises — `@panic`, `@todo`, an integer overflow or division
   ;; by zero, a failed `assert` (whose mark carries its message) — or a test

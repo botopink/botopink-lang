@@ -3282,9 +3282,10 @@ pub const Formatter = struct {
                     try this.join(argDocs, try this.text(", "));
                 // A bare builtin type (`@Expr`) round-trips without `<>`.
                 if (b.is_builtin and b.args.len == 0) {
+                    if (b.bare) break :blk try this.text(b.name);
                     break :blk this.concat(try this.text("@"), try this.text(b.name));
                 }
-                break :blk if (b.is_builtin)
+                break :blk if (b.is_builtin and !b.bare)
                     this.concatAll(&.{
                         try this.text("@"),
                         try this.text(b.name),

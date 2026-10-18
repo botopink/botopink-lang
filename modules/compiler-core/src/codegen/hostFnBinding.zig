@@ -215,7 +215,7 @@ fn forwarding(ar: std.mem.Allocator, f: ast.FnDecl, name: []const u8) !ast.FnDec
     const loc: ast.Loc = f.nameLoc;
     var annotations: std.ArrayListUnmanaged(ast.Annotation) = .empty;
     for (f.annotations) |a| {
-        if (std.mem.eql(u8, a.name, "external")) continue;
+        if (@import("../parser/implementations.zig").isSourceAnnotation(a)) continue;
         try annotations.append(ar, a);
     }
     const args = try ar.alloc(ast.CallArg, f.params.len);

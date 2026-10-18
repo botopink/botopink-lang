@@ -148,6 +148,8 @@ const Ctx = struct {
     hoistCount: usize = 0,
     /// Inside an executor (`compiler.init(f)`'s `f`).
     inExecutor: bool = false,
+    /// How many `compiler.*` reads the pass mapped so far.
+    mapped: usize = 0,
 };
 
 /// Read the program's new surface onto the machinery (see the file comment).
@@ -733,6 +735,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             if (tree and fnArg) try walkTree(ctx, a.value) else try walkExpr(ctx, a.value);
         }
         for (c.trailing) |*t| try walkAny(ctx, t);
+        ctx.mapped += 1;
         p.* = try mapCall(ctx, loc, c);
         return;
     }
@@ -761,6 +764,28 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             return walkExpr(ctx, ia.receiver);
         },
         .dotIdent => return,
+    };
+    // Decision 606 (3) — `comptime compiler.typeInfo(T)` in a run-time body:
+    // what `comptime` holds runs at build, where `compiler` is the call site.
+    // The compiler's answer is computed where the program is checked (the
+    // reads `@typeInfo` made), so `comptime compiler.typeInfo(T).name` is
+    // that read, the `comptime` it is written under done.
+    if (e == .comptime_) switch (e.comptime_.kind) {
+        .comptimeExpr => |inner| {
+            const was = ctx.runTime;
+            ctx.runTime = false;
+            defer ctx.runTime = was;
+            const before = ctx.mapped;
+            try walkExpr(ctx, inner);
+            if (ctx.mapped != before) p.* = inner.*;
+            return;
+        },
+        .comptimeBlock => if (ctx.runTime) {
+            ctx.runTime = false;
+            defer ctx.runTime = true;
+            return walkAny(ctx, &p.comptime_);
+        },
+        else => {},
     };
     if (e == .function) {
         // A lambda's parameters shadow the value parameters they name.

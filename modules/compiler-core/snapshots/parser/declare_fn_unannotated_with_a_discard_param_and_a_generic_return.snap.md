@@ -35,7 +35,7 @@
         ],
         "returnType": {
           "generic": {
-            "name": "Component",
+            "name": "Holder",
             "args": [
               {
                 "named": "T"

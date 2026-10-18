@@ -15,6 +15,16 @@
 
 import {io.stdin};
 
+// Decision 606 (2) — each value written to standard output, space-separated, and the line
+// ended: a string as its text, any other value as `print` reads it (a type's own `Display`
+// first, decision 27). Imported where it is used, `import {io.terminal.print} from "std";`
+// (`import {io.terminal.print};` inside std); `print(a, b, "\n")` is what `println` was.
+// On erlang and beam the template names the `'__bp_print'/1` helper the backend emits once
+// per module (a binary with `~ts`, any other value with `~p`); on wasm the call is lowered by
+// the backend until its cell is written (164 s3).
+#[external(.Node("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
+pub declare fn print(..values: unknown[]);
+
 // The error of `setRaw`.
 pub type TerminalError {
     // Standard input is not a terminal: there is no mode to change.

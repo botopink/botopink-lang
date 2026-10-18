@@ -1,0 +1,12 @@
+//// Decision 606 (4) — a `declare fn` names its host sources with `#[compiler.external(…)]`,
+//// the member of `compiler` written as an annotation: each source an `Implementation`, one per
+//// target.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Node("($0 + $1)"), .Erlang("($0 + $1)"), .Wasm(op: "i32.add"))]
+declare fn add(a: i32, b: i32) -> i32;
+
+pub fn main() {
+    print(add(40, 2));
+}

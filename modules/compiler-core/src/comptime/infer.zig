@@ -4911,6 +4911,8 @@ fn refuseAnnotationNotDecorator(env: *Env, program: ast.Program, a: ast.Annotati
 
 fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const ast.Annotation) InferError!void {
     for (anns) |a| {
+        // Decision 606 (4) — `#[compiler.external(…)]` is the source annotation.
+        if (implementationsParse.isSourceAnnotation(a)) continue;
         if (!a.is_builtin) {
             // `#[mocks.mokc]` through a std module handle names a decorator
             // of that module or nothing: it used to do nothing, silently.

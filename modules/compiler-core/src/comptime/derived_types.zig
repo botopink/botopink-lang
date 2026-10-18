@@ -3,14 +3,14 @@
 //! it.
 //!
 //! ```bp
-//! import {types.Type} from "std";
+//! import {compiler.Type} from "std";
 //! pub val RecipeTitle = Type.pick(Recipe, .title);
 //! #[validated] pub val RecipePatch = Type.partial(Recipe);
 //! pub val AnchorProps = Type.merge(Type.merge(GlobalAttrs, AriaAttrs), AnchorAttrs);
 //! ```
 //!
 //! `Type.partial`, `Type.required`, `Type.pick`, `Type.omit` and `Type.merge`
-//! are declared bodyless in `libs/std/src/types.bp`; the bodies are this
+//! are declared bodyless in `libs/std/src/compiler.bp` (decision 624); the bodies are this
 //! pass. It runs on the parsed program before the checker and the backends
 //! see it (`analyzeSource`, after `nested_types`) and turns each such `val`
 //! into the record declaration it answers — `pub type RecipeTitle(title:
@@ -22,7 +22,7 @@
 //! declaration.
 //!
 //! The call is recognised by its receiver: a name the module binds to std's
-//! `types.Type` (`import {types.Type} from "std";`, an alias included) — never
+//! `compiler.Type` (`import {compiler.Type} from "std";`, an alias included) — never
 //! by the bare function names, so `partial(Recipe)` is an unbound name.
 //!
 //! The source is a record type of the module, a record type it imports, a
@@ -119,7 +119,7 @@ const Ctx = struct {
     arena: std.mem.Allocator,
     program: ast.Program,
     lookup: ?ImportLookup,
-    /// The names this module binds to std's `types.Type`.
+    /// The names this module binds to std's `compiler.Type`.
     binders: std.StringHashMapUnmanaged(void) = .empty,
     /// The module's derived `val`s, by name (index into `program.decls`).
     derived: std.StringHashMapUnmanaged(usize) = .empty,
@@ -135,7 +135,7 @@ const Ctx = struct {
         return error.Refused;
     }
 
-    /// `Type.<fn>(…)` with `Type` bound to std's `types.Type`: the call node.
+    /// `Type.<fn>(…)` with `Type` bound to std's `compiler.Type`: the call node.
     fn deriveCall(self: *const Ctx, e: *const ast.Expr) ?CallNode {
         if (e.* != .call or e.call.kind != .call) return null;
         const c = e.call.kind.call;
@@ -147,7 +147,7 @@ const Ctx = struct {
         return c;
     }
 
-    /// `Type.keys(…)` with `Type` bound to std's `types.Type` (decision 308):
+    /// `Type.keys(…)` with `Type` bound to std's `compiler.Type` (decision 308):
     /// the call node.
     fn keysCall(self: *const Ctx, e: *const ast.Expr) ?CallNode {
         if (e.* != .call or e.call.kind != .call) return null;
@@ -416,7 +416,7 @@ fn mayHoldExpr(comptime T: type) bool {
     };
 }
 
-/// Whether `decl` brings std's `types.Type` into the module, and under which
+/// Whether `decl` brings std's `compiler.Type` into the module, and under which
 /// name.
 fn stdTypeBinder(arena: std.mem.Allocator, decl: ast.ImportDecl, imp: ast.ImportPath) Error!?[]const u8 {
     if (imp.activate) return null;
@@ -427,7 +427,7 @@ fn stdTypeBinder(arena: std.mem.Allocator, decl: ast.ImportDecl, imp: ast.Import
     if (!std.mem.eql(u8, imp.leaf(), "Type")) return null;
     const src = try decl.leafSource(imp, arena, false);
     return switch (src) {
-        .module => |m| if (std.mem.eql(u8, m, "std/types")) imp.name() else null,
+        .module => |m| if (std.mem.eql(u8, m, "std/compiler")) imp.name() else null,
         .root, .key => null,
     };
 }
@@ -510,7 +510,7 @@ fn isFieldKeyRef(t: ast.TypeRef) bool {
 /// (`import {recipes.RecipeKey};`, `RecipeKey` being `Type.keys(Recipe)`'s
 /// answer) writes keys (`.title`, `RecipeKey.all()`), which construct std's
 /// `Type.Field<T>` record: the module imports it (`import
-/// {types.Type__Field} from "std";`), as a module writing `Type.Field<T>` does
+/// {compiler.Type__Field} from "std";`), as a module writing `Type.Field<T>` does
 /// through `assoc_types.zig`, unless an import already binds it.
 fn withFieldKeyImport(arena: std.mem.Allocator, program: ast.Program, lookup: ImportLookup) Error!ast.Program {
     var need = false;
@@ -530,7 +530,7 @@ fn withFieldKeyImport(arena: std.mem.Allocator, program: ast.Program, lookup: Im
     const decls = try arena.alloc(ast.DeclKind, program.decls.len + 1);
     @memcpy(decls[0..at], program.decls[0..at]);
     const items = try arena.alloc(ast.ImportPath, 1);
-    items[0] = .{ .segments = &.{ "types", field_key_mangled } };
+    items[0] = .{ .segments = &.{ "compiler", field_key_mangled } };
     decls[at] = .{ .use = .{ .imports = items, .source = .{ .module = "std" } } };
     @memcpy(decls[at + 1 ..], program.decls[at..]);
     return .{ .decls = decls };
@@ -550,7 +550,7 @@ test "derived types: a `val` over `Type.pick` / `Type.partial` / `Type.merge` be
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const program = try parseProgram(arena,
-        \\import {types.Type} from "std";
+        \\import {compiler.Type} from "std";
         \\pub type Recipe(title: string, description: ?string, servings: i32 = 2)
         \\pub type Extra(note: string)
         \\pub val Patch = Type.partial(Brief);
@@ -575,7 +575,7 @@ test "derived types: the lineage a spread reads (decision 359)" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const program = try parseProgram(arena,
-        \\import {types.Type} from "std";
+        \\import {compiler.Type} from "std";
         \\type Recipe(title: string, servings: i32 = 2)
         \\type Extra(note: string)
         \\val Brief = Type.omit(Recipe, .servings);
@@ -617,12 +617,12 @@ test "derived types: the refusals are located" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const cases = [_]struct { src: []const u8, line: usize, col: usize }{
-        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nval P = Type.pick(R, \"a\");", .line = 3, .col = 22 },
-        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nval P = Type.pick(R, .b);", .line = 3, .col = 22 },
-        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nval P = Type.merge(R, R);", .line = 3, .col = 23 },
-        .{ .src = "import {types.Type} from \"std\";\ntype E { A, B }\nval P = Type.partial(E);", .line = 3, .col = 22 },
-        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nfn f() { val P = Type.partial(R); }", .line = 3, .col = 23 },
-        .{ .src = "import {types.Type as T} from \"std\";\ntype R(a: i32)\nval P = T.omit(R, .a);", .line = 3, .col = 11 },
+        .{ .src = "import {compiler.Type} from \"std\";\ntype R(a: i32)\nval P = Type.pick(R, \"a\");", .line = 3, .col = 22 },
+        .{ .src = "import {compiler.Type} from \"std\";\ntype R(a: i32)\nval P = Type.pick(R, .b);", .line = 3, .col = 22 },
+        .{ .src = "import {compiler.Type} from \"std\";\ntype R(a: i32)\nval P = Type.merge(R, R);", .line = 3, .col = 23 },
+        .{ .src = "import {compiler.Type} from \"std\";\ntype E { A, B }\nval P = Type.partial(E);", .line = 3, .col = 22 },
+        .{ .src = "import {compiler.Type} from \"std\";\ntype R(a: i32)\nfn f() { val P = Type.partial(R); }", .line = 3, .col = 23 },
+        .{ .src = "import {compiler.Type as T} from \"std\";\ntype R(a: i32)\nval P = T.omit(R, .a);", .line = 3, .col = 11 },
     };
     for (cases) |cs| {
         const r = try expand(arena, try parseProgram(arena, cs.src), null);
@@ -637,7 +637,7 @@ test "derived types: `Type.keys` names `Type.Field<T>` — an alias, not a recor
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const program = try parseProgram(arena,
-        \\import {types.Type as Ty} from "std";
+        \\import {compiler.Type as Ty} from "std";
         \\pub type Recipe(title: string, servings: i32)
         \\pub val RecipeKey = Ty.keys(Recipe);
     );
@@ -649,7 +649,7 @@ test "derived types: `Type.keys` names `Type.Field<T>` — an alias, not a recor
     try std.testing.expectEqualStrings("Recipe", key.target.generic.args[0].named);
 
     const enum_src = try parseProgram(arena,
-        \\import {types.Type} from "std";
+        \\import {compiler.Type} from "std";
         \\type Fish { Cod, Eel }
         \\val FishKey = Type.keys(Fish);
     );

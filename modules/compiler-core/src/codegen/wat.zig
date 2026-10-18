@@ -12622,8 +12622,8 @@ const Emitter = struct {
             // `@println` is `@print`: both end the line on every target.
             // Marks the print helper group even for `@print()` with no
             // arguments, matching the historical `uses_print` flag.
-            _ = self.builder().helper(.print_nl);
-            if (cc.args.len == 0) return;
+            // `print()` with no value is an empty line, as on every target.
+            if (cc.args.len == 0) return self.emit(self.builder().helper(.print_nl));
             // `@print(a, b, c)` is one line with the parts space-separated, the
             // shape node and erlang print. Only the first argument used to be
             // emitted at all.

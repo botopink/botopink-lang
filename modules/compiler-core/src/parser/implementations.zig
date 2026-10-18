@@ -29,9 +29,14 @@ const Token = token.Token;
 /// `#[@external(…)]` outside std).
 pub const annotation_name = "external";
 
-/// True when `a` is `#[external(…)]` / `#[@external(…)]`.
+/// The spelling decision 606 (4) gives it: a member of `compiler`, written
+/// `#[compiler.external(…)]` with `import {compiler} from "std"`.
+pub const member_annotation_name = "compiler.external";
+
+/// True when `a` is `#[compiler.external(…)]` (or the older
+/// `#[external(…)]` / `#[@external(…)]`).
 pub fn isSourceAnnotation(a: ast.Annotation) bool {
-    return std.mem.eql(u8, a.name, annotation_name);
+    return std.mem.eql(u8, a.name, annotation_name) or std.mem.eql(u8, a.name, member_annotation_name);
 }
 
 /// Each variant's fields in declaration order (`libs/std/src/external.bp`,

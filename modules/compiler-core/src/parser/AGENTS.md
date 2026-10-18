@@ -43,8 +43,8 @@ parser/
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
 ├── syntax_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `syntax` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `syntax` is the declaration handle (`declHandle`); decision 370 (1): a record field's `syntax x: T` likewise (`Field.exprWrapped`)
-├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `members` — the `Compiler` table
-├── implementations.zig ← decision 575 (6): each declaration's `#[external(…)]` sources read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
+├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `comptime compiler.typeInfo(T)…` in any body — a run-time one included — is the read the checker answers at build, the `comptime` it is written under dropped (decision 606 (3)); `members` — the `Compiler` table
+├── implementations.zig ← decision 575 (6): each declaration's `#[compiler.external(…)]` sources (decision 606 (4); `#[external(…)]` / `#[@external(…)]` read alike until the codemod) read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
 ├── template_markers.zig ← decision 5: an implementation's template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
@@ -344,6 +344,14 @@ the suffix; never re-add a wrap loop to an arm.**
 `fn(…) -> R` function types, `@Name<…>` builtins, `type` meta-kinds, plain names
 with `<…>` wraps, and two additions for record/builder ergonomics:
 
+- **A prelude wrapper written bare is the builtin generic** (decision 606 (1)) —
+  `Result<…>`, `Task<…>`, `Component<…>`, `Iterator<…>`, `Stream<…>` and the
+  marker `Renderable` (`prelude_wrapper_names`) parse as `@Name` did
+  (`parseBuiltinTypeTail`, its refusals included), `generic.bare` set so the
+  formatter and `TypeRef.format` print them as written — unless the file
+  declares or imports one of that name (`preludeNameShadowed`: a `type` /
+  `behavior` / `val` / `var` of that name, or the name inside an
+  `import { … }`), when it is the module's own.
 - **`(T)` is a grouping, not a node** — it returns the inner `TypeRef` unchanged.
   `|` binds looser than every other type operator, so `decision-8:141` writes
   `(i32 | string)[]` for an array of a union: the parentheses are what make the

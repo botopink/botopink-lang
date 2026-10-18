@@ -914,6 +914,16 @@ pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?
 
 pub type Failure(message: string, kind: string)
 
+// Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+// with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+// Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+// inside std); `panic("not implemented")` is what `todo` was.
+#[external(
+    .Erlang("erlang:error({panic, $0})"),
+    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+)]
+pub declare fn panic(message: string = "panic") -> noreturn;
+
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
 // every one it raises — `@panic`, `@todo`, an integer overflow or division
 // by zero, a failed `assert` (whose mark carries its message) — or a test
@@ -969,7 +979,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
 ----- ERLANG -- std/failure.erl
 ```erlang
 -module(std@failure).
--export([attempt/1, attemptTask/1, '__bp_priv__attemptOnWasm'/1, '__bp_priv__attemptTaskOnWasm'/1]).
+-export([panic/1, attempt/1, attemptTask/1, '__bp_priv__attemptOnWasm'/1, '__bp_priv__attemptTaskOnWasm'/1]).
 
 %%% std/failure — the two records a failure that is not a typed error carries
 
@@ -1055,6 +1065,18 @@ fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
 %% type HostError: message, kind, name, detail
 
 %% type Failure: message, kind
+
+% Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+
+% with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+
+% Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+
+% inside std); `panic("not implemented")` is what `todo` was.
+
+%% external fn panic -> erlang template
+panic(Message) ->
+    erlang:error({panic, Message}).
 
 % The Node forms read an abort by the `__bp_panic` mark the backend puts on
 

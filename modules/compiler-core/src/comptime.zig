@@ -10,6 +10,8 @@ const context_lower = @import("comptime/context_lower.zig");
 const typeIdentity = @import("comptime/type_identity.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
+const std_calls = @import("./comptime/std_calls.zig");
+const parserTypes = @import("./parser/types.zig");
 const mod_tree = @import("./comptime/mod_tree.zig");
 const levelB = @import("./comptime/level_b.zig");
 /// The code cache's level B inside a compile (144 B-60): `compileWith`'s store.
@@ -1985,7 +1987,7 @@ fn analyzeSource(
     // Decision 297: a `comptime x: V | type T` parameter's two forms.
     // Decision 330 (7): a type declared in a type's body is a top-level type
     // under its owner's path.
-    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted))));
+    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_calls.expand(arena, try std_namespace.expand(arena, defaulted), stdKeyOf(mod.path)))));
     // Decision 298: a module that reads a catalogue entry's typed meta
     // (`d.meta(T)`) declares the function the read calls, inferred with it.
     // Decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` is the
@@ -2536,6 +2538,12 @@ fn isStdPkgPath(path: []const u8) bool {
     return std.mem.startsWith(u8, path, "std/");
 }
 
+/// The std key of a std module's path (`std/io/terminal` → `io/terminal`),
+/// null for any other module.
+fn stdKeyOf(path: []const u8) ?[]const u8 {
+    return if (isStdPkgPath(path)) path["std/".len..] else null;
+}
+
 /// Scans `modules` for `import {…} from "std"` declarations and returns the
 /// module list with the required embedded std modules prepended (dependency
 /// order, deduplicated). Modules that fail to parse pass through untouched —
@@ -2643,6 +2651,13 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
         var lx = Lexer.init(mod.source);
         const tokens = lx.scanAll(scratch) catch break :collect;
         var p = Parser.init(tokens);
+        // Decision 606 (1) — `Component<R>` written bare is the prelude's
+        // unless the module declares or imports its own.
+        if (!isStdPkgPath(mod.path) and std.mem.indexOf(u8, mod.source, "Component<") != null and
+            !parserTypes.preludeNameShadowed(&p, "Component"))
+        {
+            if (stdIndex("std/context")) |i| needed[i] = true;
+        }
         // The same rewrite `analyzeSource` makes, so a module reached only
         // through a folder namespace (`io.fs.f()`) or a module's type
         // (`collections.Dict.empty()`) is embedded like any imported one.
@@ -2659,6 +2674,9 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
                     // its prefix names (`io.fs.readText`); a single segment is
                     // both spellings of `dict`. Whichever matches is needed.
                     const whole = try imp.fullPath(scratch);
+                    // Decision 606 (2) — `print` / `panic` is the call node
+                    // (`std_calls.zig`): its module is no dependency.
+                    if (std_calls.ofItemPath(whole) != null) continue;
                     const prefix = try imp.prefixPath(scratch);
                     for (std_pkg_modules, 0..) |spm, i| {
                         const key = spm.path["std/".len..];
@@ -2837,6 +2855,7 @@ fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
         if (!importsStd(u, true)) continue;
         for (u.imports) |imp| {
             const whole = try imp.fullPath(scratch);
+            if (std_calls.ofItemPath(whole) != null) continue;
             const prefix = try imp.prefixPath(scratch);
             for (std_pkg_modules, 0..) |spm, i| {
                 const key = spm.path["std/".len..];
@@ -2850,7 +2869,8 @@ fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
 }
 
 /// Every std module's index, each after the std modules it imports
-/// (`stdImportsOf`), otherwise in `std_pkg_modules` order. A cycle keeps the
+/// (`stdImportsOf`), `std/compiler` first (decision 608), otherwise in
+/// `std_pkg_modules` order. A cycle keeps the
 /// declaration order for the modules on it; checking the importer then reports
 /// the module it could not find.
 fn stdModuleOrder(arena: std.mem.Allocator) ![]const usize {
@@ -2867,6 +2887,10 @@ fn stdModuleOrder(arena: std.mem.Allocator) ![]const usize {
             try o.append(a, i);
         }
     };
+    // Decision 608 — `compiler.bp` is self-contained and std's first module:
+    // `primitives.bp` and every other module that names one of its types
+    // (`#[compiler.external(…)]`'s `Implementation`) is inferred after it.
+    if (stdIndex("std/compiler")) |c| try Visit.visit(arena, c, state, &out);
     for (0..n) |i| try Visit.visit(arena, i, state, &out);
     return out.toOwnedSlice(arena);
 }
@@ -3945,11 +3969,11 @@ fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
 /// Called for the global env and for every scratch env `registerStdlib` infers
 /// a std module in, so a std module's signature may name a prelude record.
 /// Whether `mod`'s bodyless declarations are the compiler's (`Env.compilerBodies`):
-/// std's `types.bp`, whose derived types the compiler
+/// std's `compiler.bp` (its `Type`, decision 624), whose derived types the compiler
 /// answers (`comptime/derived_types.zig`) until step B-140 writes them in
 /// botopink.
 fn declaresCompilerBodies(mod: Module) bool {
-    return mod.std_member and (std.mem.eql(u8, mod.path, "types") or std.mem.eql(u8, mod.path, "std/types"));
+    return mod.std_member and (std.mem.eql(u8, mod.path, "compiler") or std.mem.eql(u8, mod.path, "std/compiler"));
 }
 
 /// Decision 575 (6) — std's `external.bp` (`Implementation`, the enums its
@@ -4219,10 +4243,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         var env2 = Env.init(env.arena);
         // An embedded std module is std's (decision 445).
         env2.inStd = true;
-        // `types.bp`'s derived types: their bodies are the compiler's
+        // `compiler.bp`'s `Type` (decision 624): its derived types' bodies are the compiler's
         // (`comptime/derived_types.zig`) until step B-140 writes them in
         // botopink, so `declare-without-implementation` is not their rule.
-        env2.compilerBodies = std.mem.eql(u8, mod_name, "types");
+        env2.compilerBodies = std.mem.eql(u8, mod_name, "compiler");
         defer env2.deinit();
         try env2.registerBuiltins();
         env2.ambientBehaviorDecls = try env.ambientBehaviorDecls.clone(env.arena);
@@ -4260,7 +4284,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         }
         // Decision 330 (7): a std type's associated types are top-level types
         // of the module (`Type.Field` is `Type__Field`).
-        const parsed_std = try embeddedStdProgram(env.arena, try stripTestDecls(try parseEmbeddedStd(env.arena, spm.path, spm.source), env.arena));
+        const parsed_std = try std_calls.expand(env.arena, try embeddedStdProgram(env.arena, try stripTestDecls(try parseEmbeddedStd(env.arena, spm.path, spm.source), env.arena)), mod_name);
         // `Owner.Name` written in the module's own source — a member of
         // `Type` taking `Type.Field<T>` — names that one top-level type, as
         // `analyzeSource` rewrites it for a program's module; left dotted, an
@@ -4289,7 +4313,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         {
             var type_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
             // Decision 576 (13) — a type this module exports that names an
-            // alias it imports (`types.bp`'s `annotations: DeclAnnotation[]`,
+            // alias it imports (a std type's `annotations: DeclAnnotation[]`,
             // `import {compiler.DeclAnnotation};`) names the alias's target:
             // an importer of the type need not import the alias.
             var imported_aliases: std.ArrayListUnmanaged(ast.TypeAliasDecl) = .empty;
@@ -4998,6 +5022,29 @@ test "importsPackage: the `from` keyword and the quoted name, dotted or not" {
     try std.testing.expect(!importsPackage("//// like `import {x} from \"shapes\"`\nval y = 1;", "shapes"));
     try std.testing.expect(!importsPackage("val y = 1; // from \"shapes\"", "shapes"));
     try std.testing.expect(importsPackage("// a comment\nimport {x} from \"shapes\";", "shapes"));
+}
+
+test "stdModuleOrder: compiler is std's first module, and std admits no cycle (decision 608)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const order = try stdModuleOrder(a);
+    try std.testing.expectEqual(std_pkg_modules.len, order.len);
+    // `compiler.bp` imports no std module, and every module that names one of
+    // its types imports it: it is inferred before any other.
+    try std.testing.expectEqualStrings("std/compiler", std_pkg_modules[order[0]].path);
+    try std.testing.expectEqual(@as(usize, 0), (try stdImportsOf(a, std_pkg_modules[order[0]].source)).len);
+    // Each module comes after every std module it imports: no cycle.
+    const position = try a.alloc(usize, order.len);
+    for (order, 0..) |m, at| position[m] = at;
+    for (std_pkg_modules, 0..) |spm, i| {
+        for (try stdImportsOf(a, spm.source)) |dep| {
+            if (position[dep] >= position[i]) {
+                std.debug.print("std order: {s} is inferred before {s}, which it imports\n", .{ spm.path, std_pkg_modules[dep].path });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
 }
 
 test "stdImportsOf: a std module's brace import names its std sibling (decision 309)" {

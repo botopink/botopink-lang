@@ -156,6 +156,72 @@ pub type Method = __Decl__Method;
 
 pub type HookNode = __HookNode;
 
+// ── `Type` (decisions 307, 308, 624) ─────────────────────────────────────
+// std's `Type`, declared here beside the behavior whose members it names
+// (decision 624: `compiler.bp` incorporates what `types.bp` declared) — the
+// derived types: a compile-time function answers a NEW record type, bound by
+// a module-level `val` and named after it (`pub val RecipePatch =
+// Type.partial(Recipe);`), nominal, usable in every type position, exported
+// and imported like any type, and annotatable; the source fields' markers come
+// with them. A program imports it by its path, `import {compiler.Type} from
+// "std";`. Every function here runs only at compile time and takes every
+// parameter `comptime x: T`; the bodies are the compiler's
+// (`comptime/derived_types.zig`) until B-140 writes them in botopink.
+
+pub type Type {
+    // The field of `T` (decision 308): its name, its type as the source
+    // spells it and its annotations. Its values are the fields of `T`'s
+    // declaration; nobody constructs one (`.title` names it where a
+    // `Type.Field<T>` is expected). A key is also a run-time value: stored,
+    // passed, compared, matched by `case key { .title -> … }` exhaustively
+    // over `T`'s fields. The reflection record `decl.fields` hands out is
+    // still `builtins.d.bp`'s `Field` until `134` step 2 makes it
+    // `Type.Field<unknown>`.
+    pub type Field<T>(
+        name: string,
+        typeName: string,
+        annotations: DeclAnnotation[],
+    ) {
+        // The key named `text`, or `null` when `T` declares no such field.
+        pub declare fn of(text: string) -> ?Type.Field<T>;
+
+        // Every key of `T`, in declaration order.
+        pub declare fn all() -> Type.Field<T>[];
+    }
+
+    // The field key of `T`: `Type.Field<T>` itself, one value per field of
+    // `T`'s declaration (`.title`), never a second enum nor a copy — bound by a
+    // module-level `val`, the alias `K.of(text)` and `K.all()` are called
+    // through.
+    pub declare fn keys<T>(comptime source: type<T>) -> anytype;
+
+    // Every field `F` of `T` made `?F`.
+    pub declare fn partial<T>(comptime source: type<T>) -> anytype;
+
+    // Every field `?F` of `T` made `F` — every `?` goes: `required` does not
+    // know what was optional before a `partial`.
+    pub declare fn required<T>(comptime source: type<T>) -> anytype;
+
+    // The fields of `first`, then those of `second`; a field on both sides is
+    // an error (`omit` it first: nothing overrides silently).
+    pub declare fn merge<A, B>(
+        comptime first: type<A>,
+        comptime second: type<B>,
+    ) -> anytype;
+
+    // The fields of `T` named in `fields`, in the order `T` declares them.
+    pub declare fn pick<T>(
+        comptime source: type<T>,
+        comptime ..fields: Type.Field<T>[],
+    ) -> anytype;
+
+    // The fields of `T` but those named in `fields`.
+    pub declare fn omit<T>(
+        comptime source: type<T>,
+        comptime ..fields: Type.Field<T>[],
+    ) -> anytype;
+}
+
 ```
 
 ----- JAVASCRIPT -- std/compiler.js
@@ -285,6 +351,45 @@ pub type HookNode = __HookNode;
 // No prelude name: a file naming one imports it, `import {compiler.Span} from
 
 // "std";`. Each is the compiler's own type, written here under its name.
+
+// ── `Type` (decisions 307, 308, 624) ─────────────────────────────────────
+
+// std's `Type`, declared here beside the behavior whose members it names
+
+// (decision 624: `compiler.bp` incorporates what `types.bp` declared) — the
+
+// derived types: a compile-time function answers a NEW record type, bound by
+
+// a module-level `val` and named after it (`pub val RecipePatch =
+
+// Type.partial(Recipe);`), nominal, usable in every type position, exported
+
+// and imported like any type, and annotatable; the source fields' markers come
+
+// with them. A program imports it by its path, `import {compiler.Type} from
+
+// "std";`. Every function here runs only at compile time and takes every
+
+// parameter `comptime x: T`; the bodies are the compiler's
+
+// (`comptime/derived_types.zig`) until B-140 writes them in botopink.
+
+class Type {
+}
+Type.prototype.__bp = "Type";
+exports.Type = Type;
+
+class Type__Field {
+    constructor(name, typeName, annotations) {
+        this.name = name;
+        this.typeName = typeName;
+        this.annotations = annotations;
+    }
+}
+Type__Field.prototype.__bp = "Type.Field";
+exports.Type__Field = Type__Field;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { Type, Type__Field } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/compiler.d.ts
@@ -361,6 +466,19 @@ export declare type Method = __Decl__Method;
 
 
 export declare type HookNode = __HookNode;
+
+
+export declare class Type {
+    constructor();
+}
+
+
+export declare class Type__Field<T> {
+    readonly name: string;
+    readonly typeName: string;
+    readonly annotations: __Decl__Annotation[];
+    constructor(name: string, typeName: string, annotations: __Decl__Annotation[]);
+}
 
 
 declare class __Decl__Annotation {

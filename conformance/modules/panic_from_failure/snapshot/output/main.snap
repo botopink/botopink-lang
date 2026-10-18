@@ -1,0 +1,6 @@
+botopink-cell 1
+out 4
+out panic odd: 3
+out panic panic
+abort
+stderr panic: odd: 5

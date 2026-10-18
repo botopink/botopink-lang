@@ -57,6 +57,10 @@ fn audit(ar: std.mem.Allocator, tally: *Tally, where: []const u8, implementation
         }
         const template = impl.template orelse continue;
         if (ast.remoteCallOf(template, params.len) != null) continue;
+        // `io/terminal.bp`'s `print` (decision 606 (2)) names the
+        // `'__bp_print'/1` helper, which the beam backend writes as its own
+        // bytecode beside the module that calls it: no template to lower.
+        if (std.mem.indexOf(u8, template, "'__bp_print'") != null) continue;
         try lowerOne(ar, tally, where, template, has_recv, argc);
     }
 }

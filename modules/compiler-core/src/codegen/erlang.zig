@@ -3921,6 +3921,9 @@ const Emitter = struct {
     /// (`$N`, `$args`) nodes. `no_recv` is raised when the template names
     /// the receiver but the call has no receiver.
     fn templateNode(this: *Emitter, b: Ast.Builder, template: []const u8, recv: ?*const ast.Expr, cc: anytype, no_recv: anyerror) anyerror!Ast.Expr {
+        // A template that names the `'__bp_print'/1` helper pulls it in —
+        // `io/terminal.bp`'s `print` wrapper as much as a call (decision 606 (2)).
+        if (std.mem.indexOf(u8, template, "'__bp_print'") != null) this.needs_print_helper = true;
         const Ctx = struct {
             self: *Emitter,
             b: Ast.Builder,

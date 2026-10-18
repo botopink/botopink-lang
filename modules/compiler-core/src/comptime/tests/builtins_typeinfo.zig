@@ -179,7 +179,7 @@ test "comptimeError: string literal raises custom error" {
 // `Type.merge` / `partial` / `omit` / `pick` / `required` answer a NEW record
 // named after its `val` — `comptime/derived_types.zig`'s unit tests and
 // `conformance`'s `run/derived_type_*` and `reject/derived_type_*` cells
-// (a snapshot here would embed std's `types.bp`). The bare names the checker
+// (a snapshot here would embed std's `compiler.bp` (`Type`)). The bare names the checker
 // once intercepted (`mergeRecords`, `partial`, `omit`, `pick`) are unbound.
 
 test "Type: the bare `mergeRecords` is an unbound name" {
