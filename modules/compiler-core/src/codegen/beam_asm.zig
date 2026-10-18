@@ -2101,9 +2101,10 @@ fn emitBeamAsm(
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         defer seen.deinit(alloc);
         try seen.put(alloc, module_name, {});
-        // Decision 660 — every module of every declared dependency first,
+        // Decisions 660, 677 — every module of every declared dependency, then
+        // of the root package, first,
         // imported or not, each after what it imports.
-        try crossModule.dependencyClosure(alloc, all_outputs, xc, xc.packages, module_name, &seen, &closure);
+        try crossModule.programClosure(alloc, all_outputs, xc, xc.packages, module_name, &seen, &closure);
         try crossModule.importClosure(alloc, all_outputs, xc, program, &seen, &closure);
         for (closure.items) |dep| for (all_outputs) |*o| {
             if (!std.mem.eql(u8, o.name, dep)) continue;

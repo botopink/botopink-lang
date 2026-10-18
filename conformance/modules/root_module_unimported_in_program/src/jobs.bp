@@ -1,0 +1,8 @@
+//// A module no `mod` names and no module imports: it is in the program.
+
+import {marks.registered};
+
+#[registered]
+pub fn cleaner() -> string {
+    return "cleaner";
+}

@@ -1832,11 +1832,12 @@ codegen/
   runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
   `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
   before its own, which is the order `require` gives commonJS.
-  **Decision 660** puts every module of every declared dependency first,
-  imported or not (`crossModule.dependencyClosure`, over `dependencyModules`:
-  package by package in `Packages.deps` order — the CLI's level order —, each
-  package's modules in compile order, each after what it imports); the
-  entry's own `importClosure` follows. The root package's `Scopes` scope
+  **Decisions 660, 677** put every module of every declared dependency, then
+  every module of the root package (but the entry and the `test/` suite's),
+  first, imported or not (`crossModule.programClosure`, over
+  `programModules`: package by package in `Packages.deps` order — the CLI's
+  level order —, each package's modules in compile order, each after what it
+  imports); the entry's own `importClosure` follows. The root package's `Scopes` scope
   holds every package of `Packages.deps` for it. commonJS `require`s those
   modules with a body at the top of a program entry (a `main/0`, or `test`
   blocks; `emitProgramOptsX`'s `dep_inits`), and wasm links them into the

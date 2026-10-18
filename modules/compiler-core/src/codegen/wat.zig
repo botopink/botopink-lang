@@ -390,13 +390,14 @@ pub fn codegenEmit(
                 defer visited.deinit();
                 try visited.put(ct.name, {});
                 const scope = try scopes.forModule(ct.name);
-                // Decision 660 — a program entry links every module of every
-                // declared dependency that has a body first, imported or not,
+                // Decisions 660, 677 — a program entry links every module of every
+                // declared dependency, then of the root package, that has a body
+                // first, imported or not,
                 // each after what it imports.
                 if (programEntry(ok.transformed, config.test_mode)) |entry| {
                     var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
                     defer dep_mods.deinit(alloc);
-                    try crossModule.dependencyModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
+                    try crossModule.programModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
                     for (dep_mods.items) |o| {
                         const dok = &o.outcome.ok;
                         if (visited.contains(o.name) or !erlangBackend.moduleHasInit(dok.transformed)) continue;
@@ -556,8 +557,8 @@ fn testProgram(arena: std.mem.Allocator, program: ast.Program, src_file: []const
 
 /// A module one refused module links, and the import item of that module
 /// that reaches it (`Linked.via`).
-/// `declared`: linked because its package is a declared dependency
-/// (decision 660), `via` the program's entry rather than an import.
+/// `declared`: linked because it is a module of the program (decisions 660,
+/// 677), `via` the program's entry rather than an import.
 const LinkVia = struct { name: []const u8, via: ast.Loc, declared: bool = false };
 
 /// A refused module's entry in the results, and what it links.
@@ -580,7 +581,7 @@ fn relocateLinkedRefusals(
         const why = refusals.get(l.name) orelse continue;
         const d = &(results[rl.result].result.diagnostic orelse break);
         const message = if (l.declared)
-            try std.fmt.allocPrint(alloc, "{s} — in `{s}`, a module of a declared dependency, which the program links (decision 660)", .{ why, l.name })
+            try std.fmt.allocPrint(alloc, "{s} — in `{s}`, a module of the program, which its entry links (decisions 660, 677)", .{ why, l.name })
         else
             try std.fmt.allocPrint(alloc, "{s} — in `{s}`, which this import links", .{ why, l.name });
         alloc.free(d.type.message);
@@ -604,7 +605,7 @@ const Linked = struct {
     /// import, or the one whose module imports this one in turn. Where the
     /// consumer reports a refusal of this module (`relocateLinkedRefusals`).
     via: ast.Loc,
-    /// Linked because its package is a declared dependency (decision 660):
+    /// Linked because it is a module of the program (decisions 660, 677):
     /// `via` is then the program's entry, no import of it.
     declared: bool = false,
 };

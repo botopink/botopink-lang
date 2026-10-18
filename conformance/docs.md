@@ -4139,14 +4139,28 @@ joins the build, and its executors join the init list whether or not
 anything imports it; `import` brings names into scope and nothing else. The
 init list runs package by package in dependency order: a package that
 depends on nothing first, a package after every package it depends on, the
-ones with the most levels of dependencies last; two packages of one level in
-the order their dependant's `botopink.json` lists them; inside a package,
-modules in dependency order and declarations in source order. Every
-dependency's executors run before the program's own.
+one with the deepest chain of dependencies last — the depth, not the count
+(decision 676); two packages of one level in the depth-first order the
+manifests give, which for two packages of one dependant is the order its
+`botopink.json` lists them; inside a package, modules in dependency order
+and declarations in source order. Every dependency's executors run before
+the program's own.
 
 <!-- example: modules/decisions-taken/declared_dependency_modules_join_program-660/cases/dependency_init_without_import -->
 
 <!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cases/init_order_packages -->
+
+<!-- example: modules/init_order_depth_not_count -->
+
+The root package is a package like any other (decision 677): every module
+under its `src/` is in the program, imported or not, and its executors run
+in the order above, after every dependency's. A module no `mod` names and
+no module imports
+is checked, compiled and linked, so a type error in it refuses the build.
+
+<!-- example: modules/root_module_unimported_in_program -->
+
+<!-- example: modules/root_module_unimported_type_error -->
 
 An executor is a statement of its module's body at the annotated
 declaration's position (decision 580): a module's `val`s, `var`s, `_`
@@ -5720,7 +5734,9 @@ Every project carries a `botopink.json` at its root:
 ```
 
 Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
-else `root.bp`). `dependencies` is an object — one entry per import name, each
+else `root.bp`); every module under `src/` is in the program, imported or not
+(decision 677).
+`dependencies` is an object — one entry per import name, each
 with exactly one source: `{ "path": "…" }`, `{ "git": "…", "branch"|"tag"|"rev":
 "…" }` or `{ "workspace": true }` (the sibling member of the enclosing
 workspace). A manifest with `"workspaces": ["modules/*", "examples/*"]` is a
@@ -5788,9 +5804,9 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `version` | string | `"0.1.0"`; a workspace member's: the workspace's | compiler, `bpmp` (`pack`, the auto-tag) | The package version. A member writes it only when it differs from its workspace's (decision 512). |
 | `description` | string | — | — (documentation) | One line. |
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
-| `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
+| `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. Every module under `src` is in the program whether a `mod` path reaches it or not (decision 677) — checked, compiled, linked, its executors run (§ Decorators) — so a file no module names or imports is no longer left out, and a type error in it refuses the build; `test/` is not `src` and keeps its own rule. |
 | `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
-| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[compiler.external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). A declared dependency's `targets` hold every target of the package that declares it (decision 676): one that lacks a target is refused at the dependant's manifest, on the dependency's line, whatever target the build is for — `error[dependency-target-missing]: kit declares no erlang target` —, and each dependency's own dependencies answer to its targets, so the whole graph builds for every target of the root. A package that writes no `targets` holds the intersection of its dependencies' (and of its workspace's, when it inherits them; every target when nothing narrows it) and is never refused for them (decision 770); a build for a target one of its dependencies does not hold is refused on that dependency's line, `holds no <target> target`, so no dependency is compiled for a target it does not hold. Either refusal also stands an exclusion: no build passes it. |
+| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[compiler.external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). A declared dependency's `targets` hold every target of the package that declares it (decision 676): one that lacks a target is refused at the dependant's manifest, on the dependency's line, whatever target the build is for — `error[dependency-target-missing]: kit declares no erlang, beam, wasm targets` —, and each dependency's own dependencies answer to its targets, so the whole graph builds for every target of the root. |
 | `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
 | `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
@@ -5798,6 +5814,12 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "jhonstart"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "jhonstart"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `typings` | bool | `false` | `botopink build` (`compiler-cli/src/cli/build.zig`) | `true`: a commonJS build writes a `.d.ts` beside each `.js` (decisions 619, 620), each typing derived from the botopink declaration — no source of `Implementation` is a typing. `botopink build --typescript` turns the same emission on for one build; either one turns it on, and neither turns it off (there is no `"typings": false` the flag overrides, and no `--no-typescript`). A value that is not `true` / `false` is refused at the key. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `botopink`, `requires` | string · object | — | `bpmp` only | `botopink`: the compiler-version constraint. `requires`: the per-dependency version constraint `bpmp install <name>@<spec>` records. The compiler passes both through unread. |
+
+A dependency that lacks one of its dependant's targets (decision 676):
+
+<!-- example: modules/dependency_target_missing -->
+
+<!-- example: modules/dependency_target_missing_transitive -->
 
 Unknown fields are preserved by `bpmp` (it rewrites the file) and not read by
 anyone else.

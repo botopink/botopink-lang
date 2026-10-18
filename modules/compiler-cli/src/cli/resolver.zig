@@ -173,7 +173,41 @@ pub fn resolveWith(
     var work: std.ArrayListUnmanaged(WorkItem) = .empty;
     try work.append(sa, .{ .logical = try sa.dupe(u8, root_logical), .file = root_file });
 
-    while (work.items.len > 0) {
+    // Decision 677 — the root package is a package like any other: every
+    // module under its `src/` is in the program, imported or not. A file no
+    // `mod` path reaches joins the tree once the root's tree is walked,
+    // shallowest first, as
+    // a `pub mod` of the root would (its own `mod`s followed from it).
+    // A file another file's `mod` names is reached through that file, never
+    // adopted on its own first (a cycle of unreached files is adopted last).
+    const unreached = try sourceFiles(sa, io, src_dir_path);
+    var mod_targets = std.StringHashMapUnmanaged(void){};
+    for (unreached) |file| {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, file, sa, .unlimited) catch continue;
+        var named: std.ArrayListUnmanaged(WorkItem) = .empty;
+        collectChildren(sa, diag_arena, io, text, "_", std.fs.path.dirname(file) orelse src_dir_path, root_logical, 0, &named, null) catch {};
+        for (named.items) |n| try mod_targets.put(sa, n.file, {});
+    }
+    var adopt_pass: u8 = 0;
+    var next_unreached: usize = 0;
+
+    while (true) {
+        if (work.items.len == 0) {
+            const pick: ?[]const u8 = while (adopt_pass < 2) {
+                while (next_unreached < unreached.len) : (next_unreached += 1) {
+                    const f = unreached[next_unreached];
+                    if (visited.contains(f)) continue;
+                    if (adopt_pass == 0 and mod_targets.contains(f)) continue;
+                    break;
+                }
+                if (next_unreached < unreached.len) break unreached[next_unreached];
+                adopt_pass += 1;
+                next_unreached = 0;
+            } else null;
+            const file = pick orelse break;
+            next_unreached += 1;
+            try work.append(sa, .{ .logical = try unreachedLogical(sa, src_dir_path, file), .file = file, .parent = 0 });
+        }
         const item = work.orderedRemove(0);
 
         if (visited.contains(item.file)) {
@@ -263,6 +297,48 @@ pub fn resolveWith(
 
     const owned_modules = try modules.toOwnedSlice(gpa);
     return .{ .modules = owned_modules, .orphans = orphans };
+}
+
+/// Every module file of the package's own source tree (`collectOrphans`'s
+/// walk), as `<src_dir_path>/<rel>`, shallowest first, then by path.
+fn sourceFiles(sa: std.mem.Allocator, io: std.Io, src_dir_path: []const u8) Error![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    const dir = std.Io.Dir.cwd().openDir(io, src_dir_path, .{ .iterate = true, .access_sub_paths = true }) catch
+        return out.toOwnedSlice(sa);
+    var d = dir;
+    defer d.close(io);
+    var walker = try d.walk(sa);
+    defer walker.deinit();
+    while (walker.next(io) catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!isSource(entry.basename)) continue;
+        if (!inOwnTree(io, src_dir_path, entry.path)) continue;
+        try out.append(sa, try std.fs.path.join(sa, &.{ src_dir_path, entry.path }));
+    }
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            const da = std.mem.count(u8, a, "/") + std.mem.count(u8, a, "\\");
+            const db = std.mem.count(u8, b, "/") + std.mem.count(u8, b, "\\");
+            if (da != db) return da < db;
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    return out.toOwnedSlice(sa);
+}
+
+/// The logical path of a file no `mod` path reached (decision 677): its
+/// path under `src_dir_path` without the extension, `/`-separated, a folder
+/// index `x/mod.bp` being `x`.
+fn unreachedLogical(sa: std.mem.Allocator, src_dir_path: []const u8, file: []const u8) Error![]const u8 {
+    var rel = file;
+    if (!std.mem.eql(u8, src_dir_path, ".") and std.mem.startsWith(u8, rel, src_dir_path)) {
+        rel = rel[src_dir_path.len..];
+        while (rel.len > 0 and (rel[0] == '/' or rel[0] == '\\')) rel = rel[1..];
+    }
+    const out = try sa.dupe(u8, stripBpExt(rel));
+    std.mem.replaceScalar(u8, out, '\\', '/');
+    if (std.mem.endsWith(u8, out, "/mod")) return out[0 .. out.len - "/mod".len];
+    return out;
 }
 
 /// Parse `source`, resolve each `mod`/`pub mod` declaration to a file, and push
@@ -1641,39 +1717,35 @@ test "isDeclared matches a manifest `files` entry, separator-insensitively" {
     try std.testing.expect(!isDeclared("primitives.bp", &.{}));
 }
 
-test "a `files` entry is not an orphan; a module in neither `files` nor a `mod` chain still is" {
+test "every module under src is in the program, a `mod` path or not (decision 677)" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    // The shape `libs/std` has: a root whose `mod` chain reaches one module, an
-    // ambient module the manifest ships instead (`files`), and a real dangling
-    // file that nothing reaches at all.
+    // A root whose `mod` chain reaches one module, a module the manifest
+    // ships (`files`), a file nothing reaches, and an unreached file whose
+    // own `mod` names a sibling that sorts before it.
     test_scratch.remove(io, "resolver-declared");
     defer test_scratch.remove(io, "resolver-declared");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/root.bp"), "pub mod geometry;\n");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/geometry.bp"), "pub fn area() -> i32 { return 1; }\n");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/ambient.bp"), "pub fn ambient() -> i32 { return 2; }\n");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/dangling.bp"), "pub fn dangling() -> i32 { return 3; }\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/jobs.bp"), "pub mod cleaner;\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/cleaner.bp"), "pub fn clean() {}\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/deep/mod.bp"), "pub fn deep() {}\n");
 
     var da = std.heap.ArenaAllocator.init(gpa);
     defer da.deinit();
 
-    // Nothing declared: both the ambient module and the dangling one are orphans.
-    {
-        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, "", &.{}, da.allocator(), null);
-        defer freeModules(gpa, res.modules);
-        defer freeOrphans(gpa, res.orphans);
-        try std.testing.expectEqual(@as(usize, 2), res.orphans.len);
-    }
-
-    // `files` declares the ambient one: only the dangling one is left, which is
-    // the case the warning exists for.
-    {
-        const declared = [_][]const u8{"ambient.bp"};
-        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, "", &declared, da.allocator(), null);
-        defer freeModules(gpa, res.modules);
-        defer freeOrphans(gpa, res.orphans);
-        try std.testing.expectEqual(@as(usize, 1), res.orphans.len);
-        try std.testing.expect(std.mem.endsWith(u8, res.orphans[0].file, "dangling.bp"));
+    const declared = [_][]const u8{"ambient.bp"};
+    const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, "", &declared, da.allocator(), null);
+    defer freeModules(gpa, res.modules);
+    defer freeOrphans(gpa, res.orphans);
+    try std.testing.expectEqual(@as(usize, 0), res.orphans.len);
+    try std.testing.expectEqual(@as(usize, 7), res.modules.len);
+    for ([_][]const u8{ "root", "geometry", "ambient", "dangling", "jobs", "jobs/cleaner", "deep" }) |want| {
+        for (res.modules) |m| {
+            if (std.mem.eql(u8, m.path, want)) break;
+        } else return error.TestUnexpectedResult;
     }
 }

@@ -1,0 +1,10 @@
+//// Decision 677 — every module under `src/` is in the program, so a
+//// forgotten file is checked: `forgotten.bp`, which no `mod` names and no
+//// module imports, holds a type error, and the build is refused at it
+//// instead of the file vanishing.
+
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print("main");
+}

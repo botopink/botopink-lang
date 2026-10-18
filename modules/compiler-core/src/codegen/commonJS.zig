@@ -128,11 +128,11 @@ pub fn codegenEmit(
                 const scope = try scopes.forModule(ct.name);
                 // Decision 546 — a binding declared outside std marks its raise `host`.
                 const marks_host = !std.mem.eql(u8, config.packages.idOf(ct.name).package, crossModule.EMBEDDED_PACKAGE);
-                // Decision 660 — the dependency modules with a body, which a
+                // Decisions 660, 677 — the program modules with a body, which a
                 // program entry `require`s before anything of its own.
                 var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
                 defer dep_mods.deinit(alloc);
-                try crossModule.dependencyModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
+                try crossModule.programModules(alloc, scope.outputs, config.packages, ct.name, &dep_mods);
                 var dep_inits: std.ArrayListUnmanaged([]const u8) = .empty;
                 defer dep_inits.deinit(alloc);
                 for (dep_mods.items) |o| if (erlangBackend.moduleHasInit(o.outcome.ok.transformed)) try dep_inits.append(alloc, o.name);
@@ -195,7 +195,7 @@ fn emitJs(
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
     marks_host: bool,
-    /// Decision 660 — the dependency modules a program entry runs first.
+    /// Decisions 660, 677 — the program modules an entry runs first.
     dep_inits: []const []const u8,
 ) !Emitted {
     return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host, dep_inits);
@@ -491,7 +491,8 @@ fn emitProgramOptsX(
     missing: ?*?moduleOutput.MissingExternal,
     sync: SyncMarks,
     marks_host: bool,
-    /// Decision 660 — the modules of the declared dependencies with a body,
+    /// Decisions 660, 677 — the modules of the declared dependencies and of
+    /// the root package with a body,
     /// in init order: a program entry (a `main/0`, or `test` blocks) loads
     /// each before anything of its own, imported or not.
     dep_inits: []const []const u8,

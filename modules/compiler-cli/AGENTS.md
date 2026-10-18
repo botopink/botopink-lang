@@ -361,19 +361,19 @@ Cross-command rules:
   print them yet: `codegen.generateWith` drops the comptime session (and its
   `OkData.warnings`) before it returns, and `ModuleOutput` carries no warnings
   — a compiler-core field, not this package's.
-- **Orphans.** A `.bp` file that **nothing** reaches is warned per file and
-  counted once (`N module(s) not reached by any `mod` path were not compiled`).
-  A module has two routes into a build and reachability means either: a `mod`
-  path from the root, or the manifest's `files`, which ships it to a consumer
-  that is not this package's module tree. `libs/std` is the second kind —
-  `src/primitives.bp` is ambient, embedded into the global type env by
-  `build.zig`'s `std_core_files` and declared in `libs/std`'s `files`, never in
-  `root.bp`'s `pub mod` chain. Knowing only the first route, the check warned
-  about it on every gate run. A file in neither is still an orphan, which is the
-  case the warning exists for. The walk skips what is not this package's tree
-  (`resolver.inOwnTree`): a hidden directory, the flat `test/` suite when the
-  source root is the project root, and a directory holding its own
-  `botopink.json` (a nested package, such as a local `path` dependency).
+- **Every module under `src` is in the program** (decision 677: the root
+  package is a package like any other). The resolver follows the `mod` tree
+  from the entry, then adopts each module file no `mod` path reached —
+  shallowest first, a file another file's `mod` names left to that file —
+  as a `pub mod` of the root would be (`resolver.sourceFiles`,
+  `unreachedLogical`: its path under `src` without the extension, `x/mod.bp`
+  being `x`), so it is checked, compiled and linked and its executors run.
+  Nothing is an orphan any more
+  (the warning has nothing to report); the walk still skips what is not this
+  package's tree (`resolver.inOwnTree`): a hidden directory, the flat
+  `test/` suite when the source root is the project root, and a directory
+  holding its own `botopink.json` (a nested package, such as a local `path`
+  dependency).
 - **The source root is the manifest's `src`.** `build`, `check` and `test` load
   the project's modules from `ProjectConfig.srcDir()` — `"src/"` → `src`,
   `"."` → the project root. They used to read a hard-coded `src/`, so a package
