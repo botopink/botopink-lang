@@ -1,6 +1,8 @@
-#[@external(.JavaScript("$0.toUpperCase()"), .Erlang("string:uppercase($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("$0.toUpperCase()"), .Erlang("string:uppercase($0)"))]
 pub declare fn shout(text: string) -> string;
 
 pub fn main() {
-    @print(shout("hi")); // HI
+    print(shout("hi")); // HI
 }

@@ -6,6 +6,7 @@ pub mod marks;
 pub mod registry;
 import {marks.registered};
 import {registry.all};
+import {io.terminal.print} from "std";
 
 pub fn make() -> string {
     return "module make";
@@ -20,7 +21,7 @@ pub type Users() {
 
 pub fn main() {
     for (all()) { e ->
-        @print(e.name + " " + e.make());
+        print(e.name + " " + e.make());
     }
-    @print(make());
+    print(make());
 }

@@ -3,9 +3,11 @@
 //// the compiler passes through: it is refused at the argument on every
 //// target, naming the wasm cell to write.
 
-#[@external(.JavaScript("op:f64.floor"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("op:f64.floor"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
 pub declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {
-    @print(floorOf(2.5));
+    print(floorOf(2.5));
 }

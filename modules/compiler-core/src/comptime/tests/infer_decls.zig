@@ -40,8 +40,10 @@ test "infer: record constructor" {
         \\val Point = type(x: i32, y: i32);
         \\val p = Point(x: 1, y: 2);
         \\fn main() {
-        \\    @print(p);
+        \\    print(p);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -65,8 +67,10 @@ test "infer: pub fn basic ---- greet returns string" {
         \\}
         \\val msg = greet("world");
         \\fn main() {
-        \\    @print(msg);
+        \\    print(msg);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -74,22 +78,26 @@ test "infer: pub fn with local val binding in body" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\pub fn compute(x: i32) -> i32 {
         \\    val doubled = x + x;
-        \\    @print(doubled);
+        \\    print(doubled);
         \\    return doubled;
         \\}
         \\val result = compute(21);
         \\fn main() {
-        \\    @print(result);
+        \\    print(result);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: pub fn with comptime params" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\pub fn repeat(s comptime: string, n comptime: i32) -> string {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\val r = repeat("hi", 3);
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -109,13 +117,15 @@ test "infer: pub fn using enum + case in body" {
         \\        West -> "W";
         \\        _ -> "?";
         \\    };
-        \\    @print(result);
+        \\    print(result);
         \\    return result;
         \\}
         \\val n = label(Direction.North);
         \\fn main() {
-        \\    @print(n);
+        \\    print(n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -153,10 +163,12 @@ test "infer: implement block lists with its interface, target and methods" {
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
-        \\        @todo();
+        \\        panic("not implemented");
         \\    }
         \\};
         \\val c = Circle(radius: 5.0);
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -199,9 +211,11 @@ test "infer: implement single interface for record" {
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
-        \\        @print("Drawing circle");
+        \\        print("Drawing circle");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -216,12 +230,14 @@ test "infer: implement two interfaces with qualified methods" {
         \\val SmartCamera = type(batteryLevel: i32);
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
         \\    fn UsbCharger.Connect(self: Self) {
-        \\        @print("Connected via USB");
+        \\        print("Connected via USB");
         \\    }
         \\    fn SolarCharger.Connect(self: Self) {
-        \\        @print("Connected via Solar");
+        \\        print("Connected via Solar");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -414,8 +430,10 @@ test "infer: import of a failed module ---- the importer names the module, not a
         .{ .path = "main", .source =
         \\import {user.describe};
         \\pub fn main() {
-        \\    @print(describe(2));
+        \\    print(describe(2));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
         },
     };
     const scratch = "comptime/import_of_failed_module";
@@ -448,8 +466,10 @@ test "infer: import of a failed module ---- a name missing from a module that ch
         .{ .path = "main", .source =
         \\import {shapes.perimeter};
         \\pub fn main() {
-        \\    @print(perimeter(2));
+        \\    print(perimeter(2));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
         },
     };
     const main = (try moduleTypeError(&modules, "main", "comptime/import_of_failed_module_missing")).?;
@@ -918,8 +938,10 @@ test "infer: an if whose branches end in assignments of different types" {
         \\    return out;
         \\}
         \\fn main() {
-        \\    @print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
+        \\    print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -952,7 +974,7 @@ test "infer: pub val ---- infers same as private val" {
 
 test "infer: star fn ---- async returns @Future is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> @Task<i32> {
+        \\fn fetch(x: i32) -> Task<i32> {
         \\    return x;
         \\}
     );
@@ -960,7 +982,7 @@ test "infer: star fn ---- async returns @Future is valid" {
 
 test "infer: star fn ---- generator returns @ResultGenerator is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn gen() -> @Iterator<i32> {
+        \\fn gen() -> Iterator<i32> {
         \\    yield 1;
         \\}
     );
@@ -993,12 +1015,14 @@ test "infer: anonymous test body typechecks" {
 // typechecks — is unchanged.
 test "infer: external ---- fn no body typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@external(.Erlang("string:length($0)"), .JavaScript("$0.length"))]
+        \\#[compiler.external(.Erlang("string:length($0)"), .JavaScript("$0.length"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
         \\    val n = str_length("hi");
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -1008,18 +1032,20 @@ test "infer: external ---- fn no body typechecks" {
 // `result: false`, the default, sits beside it on any variant.
 test "infer: external ---- inline on erlang typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@external(.Erlang("max($args)", inline: true))]
+        \\#[compiler.external(.Erlang("max($args)", inline: true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
         \\
-        \\#[@external(.Erlang("min($args)", inline: true, result: false))]
+        \\#[compiler.external(.Erlang("min($args)", inline: true, result: false))]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
         \\
-        \\#[@external(.JavaScript("Math.abs($0)", result: false))]
+        \\#[compiler.external(.JavaScript("Math.abs($0)", result: false))]
         \\pub declare fn magnitude(a: i32) -> i32;
         \\
         \\fn main() {
         \\    val n = biggest(1, 2);
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -1176,7 +1202,7 @@ test "infer: std package ---- a leaf the module does not declare is refused at t
 
 test "infer: a @Result's methods typecheck (decision 330: no `result` namespace)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;
         \\}
@@ -1194,11 +1220,13 @@ test "infer: a @Result's methods typecheck (decision 330: no `result` namespace)
 // refusal of `.unwrapOr` on a `?T`.
 test "infer: the nullish default answers the inner type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn firstChar(s: string) -> ?string { @todo(); }
+        \\fn firstChar(s: string) -> ?string { panic("not implemented"); }
         \\fn main() {
         \\    val s: string = firstChar("abc") ?? "";
-        \\    @print(s);
+        \\    print(s);
         \\}
+        \\
+        \\import {io.terminal.print, failure.panic} from "std";
     );
 }
 
@@ -1208,8 +1236,10 @@ test "infer: @Option<T> is rejected ---- the optional type is ?T" {
         \\    return x.unwrapOr(0);
         \\}
         \\fn main() {
-        \\    @print(takeOption(3));
+        \\    print(takeOption(3));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1219,8 +1249,10 @@ test "infer: @Optional<T> is rejected ---- the optional type is ?T" {
         \\    return x.unwrapOr(0);
         \\}
         \\fn main() {
-        \\    @print(takeOptional(3));
+        \\    print(takeOptional(3));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 

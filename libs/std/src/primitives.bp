@@ -8,6 +8,8 @@
 //// here). Method receivers are `self: Self`; free combinators live in the
 //// `Function` interface as associated functions.
 
+import {compiler};
+
 // ── numeric tower ─────────────────────────────────────────────────────────────
 // Capability interfaces shared by every numeric width. `Self` abstracts the
 // concrete type, so one signature serves all widths; concrete types inherit via
@@ -22,13 +24,13 @@
 // the two kinds), answering an operand as it came, and keep `Math.*`'s
 // answers on numbers: a `NaN` operand is `NaN`, `-0` is below `0`.
 behavior Number {
-    #[external(
+    #[compiler.external(
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
     fn min(self: Self, other: Self) -> Self;
 
-    #[external(
+    #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
@@ -40,17 +42,17 @@ behavior Number {
 }
 
 behavior Integer extends Number {
-    #[external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
     fn toString(self: Self) -> string;
 
-    #[external(
+    #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
     )]
     default fn isEven(self: Self) -> bool {
         return self % 2 == 0;
     }
 
-    #[external(
+    #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
     )]
     default fn isOdd(self: Self) -> bool {
@@ -66,25 +68,25 @@ behavior Integer extends Number {
     // `BigInt` and answer the canonical form (a `BigInt` only past
     // ±(2^53 − 1)).
 
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
     )]
     fn toI32(self: Self) -> i32;
 
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
     fn toI64(self: Self) -> i64;
 
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
     )]
     fn toU32(self: Self) -> u32;
 
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
     )]
@@ -92,7 +94,7 @@ behavior Integer extends Number {
 
     // The `f64` equal to the integer; an integer between two `f64`s (past
     // 2^53 an `f64` counts by two, then by four, …) aborts.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
@@ -100,7 +102,7 @@ behavior Integer extends Number {
 }
 
 behavior Signed extends Integer {
-    #[external(
+    #[compiler.external(
         .Erlang("erlang:abs($0)"),
         .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
     )]
@@ -114,7 +116,7 @@ behavior Float extends Number {
     // and the one a wasm program writes for a float anywhere — `@print`,
     // `"${x}"`. commonJS writes the same text through its `__bp_f64` helper
     // (a float receiver's `toString()` is lowered there, not by this binding).
-    #[external(
+    #[compiler.external(
         .Erlang("float_to_binary($0, [short])"),
         .JavaScript("toString"),
         .Wasm(std: "number.floatToString"),
@@ -122,24 +124,24 @@ behavior Float extends Number {
     fn toString(self: Self) -> string;
 
     // Patched on `Number.prototype` as `Signed`'s `abs` is: the same form.
-    #[external(
+    #[compiler.external(
         .Erlang("erlang:abs($0)"),
         .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
     )]
     fn abs(self: Self) -> Self;
 
-    #[external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+    #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
     fn floor(self: Self) -> Self;
 
-    #[external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
+    #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
     fn ceil(self: Self) -> Self;
 
     // OTP has no `math:round/1`; `floor(x + 0.5)` is `Math.round` (ties round
     // up) and keeps the float type `Self` promises.
-    #[external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
+    #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
     fn round(self: Self) -> Self;
 
-    #[external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
+    #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
     fn squareRoot(self: Self) -> Self;
 }
 
@@ -172,25 +174,25 @@ behavior F64 extends Float {}
 // last.
 behavior BigInt {
     // `bigint.of(n)` — the `bigint` equal to `n`.
-    #[external(.Erlang("$0"), .JavaScript("BigInt($0)"))]
+    #[compiler.external(.Erlang("$0"), .JavaScript("BigInt($0)"))]
     fn of(n: i64) -> bigint;
 
     // `bigint.parse(text)` — the integer a decimal numeral spells: an optional
     // `+` or `-`, then the digits `0`–`9` and nothing else, of any length (the
     // numerals `string.parseInt()` reads, with no range); anything else is an
     // `Error` naming the input.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__S) -> __D = case __S of <<"-", __R/binary>> -> __R; <<"+", __R/binary>> -> __R; _ -> __S end, case (__D =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__D)) of true -> {ok, binary_to_integer(__S)}; false -> {error, <<"bigint.parse: ", 34, __S/binary, 34, " is not an integer">>} end end)($0)"""),
         .JavaScript("""((__s) => /^[+-]?[0-9]+$/.test(__s) ? { ok: BigInt(__s) } : { error: 'bigint.parse: "' + __s + '" is not an integer' })($0)"""),
     )]
-    fn parse(text: string) -> @Result<bigint, string>;
+    fn parse(text: string) -> Result<bigint, string>;
 
-    #[external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
     fn toString(self: Self) -> string;
 
     // The `i64` equal to the value; past −2^63 … 2^63 − 1 an abort naming
     // the value (decision 264's text, as `Integer.toI64`).
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
@@ -198,7 +200,7 @@ behavior BigInt {
 
     // The `f64` equal to the value; one between two `f64`s aborts, never
     // rounds (decision 319's conversions).
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__V) -> case abs(__V) =< ((1 bsl 1024) - (1 bsl 971)) of true -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
@@ -221,25 +223,25 @@ behavior BigInt {
 // is decision 262's form, written through the type's own name.
 behavior Bytes {
     // `Bytes.fromUtf8(s)` — the UTF-8 bytes of `s`.
-    #[external(.Erlang("$0"), .JavaScript("""(new TextEncoder().encode($0))"""))]
+    #[compiler.external(.Erlang("$0"), .JavaScript("""(new TextEncoder().encode($0))"""))]
     fn fromUtf8(s: string) -> Bytes;
 
     // The text the bytes spell in UTF-8; anything else (a byte no UTF-8
     // sequence starts with, a sequence cut short, an overlong form, a
     // surrogate, a code point past U+10FFFF) is an `Error`. A byte order mark
     // is kept as U+FEFF.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)($0)"""),
         .JavaScript("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "Bytes.toUtf8: not valid UTF-8" })($0)"""),
     )]
-    fn toUtf8(self: Self) -> @Result<string, string>;
+    fn toUtf8(self: Self) -> Result<string, string>;
 
     // The number of bytes.
-    #[external(.Erlang("byte_size($0)"), .JavaScript("length"))]
+    #[compiler.external(.Erlang("byte_size($0)"), .JavaScript("length"))]
     fn length(self: Self) -> i32;
 
     // The bytes of `self`, then those of `other`.
-    #[external(
+    #[compiler.external(
         .Erlang("<<($0)/binary, ($1)/binary>>"),
         .JavaScript("""((__a, __b) => { const __r = new Uint8Array(__a.length + __b.length); __r.set(__a, 0); __r.set(__b, __a.length); return __r; })($0, $1)"""),
     )]
@@ -259,10 +261,10 @@ behavior Bytes {
 // ── boolean ───────────────────────────────────────────────────────────────────
 
 behavior Bool {
-    #[external(.Erlang("erlang:atom_to_binary($0)"), .JavaScript("toString"))]
+    #[compiler.external(.Erlang("erlang:atom_to_binary($0)"), .JavaScript("toString"))]
     fn toString(self: Self) -> string;
 
-    #[external(.Erlang("(not $0)"))]
+    #[compiler.external(.Erlang("(not $0)"))]
     default fn negate(self: Self) -> bool {
         return !self;
     }
@@ -295,7 +297,7 @@ behavior String {
     // Codepoints on every target (decision 320): erlang's `string:length/1`
     // counts grapheme clusters (`"e\u{301}"` is one there), so the erlang
     // form counts the binary's decoded codepoints.
-    #[external(
+    #[compiler.external(
         .Erlang("erlang:length(unicode:characters_to_list($0))"),
         .JavaScript("length"),
         .Wasm(std: "text.length"),
@@ -306,7 +308,7 @@ behavior String {
     // JS `split("")` answers one element per character. The erlang form
     // matches the empty separator first and cuts the binary into UTF-8
     // codepoints (`"".split("")` answers `[]`, as on JS).
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)($0, $1)"""),
         .JavaScript("split"),
         .Wasm(std: "text.split"),
@@ -317,20 +319,20 @@ behavior String {
     // (`"ß"` is `"SS"`). std-wasm's, which answers OTP's where a JS engine
     // differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`) — commonJS maps
     // through its helper over std-wasm's table, not this binding (decision 521).
-    #[external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(std: "text.toUpper"))]
+    #[compiler.external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(std: "text.toUpper"))]
     fn toUpper(self: Self) -> string;
 
-    #[external(.Erlang("string:lowercase($0)"), .JavaScript("toLowerCase"), .Wasm(std: "text.toLower"))]
+    #[compiler.external(.Erlang("string:lowercase($0)"), .JavaScript("toLowerCase"), .Wasm(std: "text.toLower"))]
     fn toLower(self: Self) -> string;
 
-    #[external(
+    #[compiler.external(
         .Erlang("(string:find($0, $1) =/= nomatch)"),
         .JavaScript("includes"),
         .Wasm(std: "text.contains"),
     )]
     fn contains(self: Self, sub: string) -> bool;
 
-    #[external(
+    #[compiler.external(
         .Erlang("(string:prefix($0, $1) =/= nomatch)"),
         .JavaScript("startsWith"),
         .Wasm(std: "text.startsWith"),
@@ -339,7 +341,7 @@ behavior String {
 
     // OTP has no `string:suffix/2`: the last `byte_size(suffix)` bytes are
     // compared with the suffix.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)($0, $1)"""),
         .JavaScript("endsWith"),
         .Wasm(std: "text.endsWith"),
@@ -348,23 +350,23 @@ behavior String {
 
     // std-wasm's set on every target (441, 521): space, tab, LF, CR, VT, FF —
     // a no-break space stays; commonJS trims through its helper, not this one.
-    #[external(.Erlang("string:trim($0)"), .JavaScript("trim"), .Wasm(std: "text.trim"))]
+    #[compiler.external(.Erlang("string:trim($0)"), .JavaScript("trim"), .Wasm(std: "text.trim"))]
     fn trim(self: Self) -> string;
 
     // `string:trim/1` strips both ends; `/2` takes the direction.
-    #[external(
+    #[compiler.external(
         .Erlang("string:trim($0, leading)"),
         .JavaScript("trimStart"),
         .Wasm(std: "text.trimStart"),
     )]
     fn trimStart(self: Self) -> string;
 
-    #[external(.Erlang("string:trim($0, trailing)"), .JavaScript("trimEnd"), .Wasm(std: "text.trimEnd"))]
+    #[compiler.external(.Erlang("string:trim($0, trailing)"), .JavaScript("trimEnd"), .Wasm(std: "text.trimEnd"))]
     fn trimEnd(self: Self) -> string;
 
     // Replaces the first occurrence, like JS `replace` with a string pattern.
     // `string:replace/3` returns an iolist, so it is flattened to a binary.
-    #[external(
+    #[compiler.external(
         .Erlang("iolist_to_binary(string:replace($0, $1, $2))"),
         .JavaScript("replace"),
         .Wasm(std: "text.replace"),
@@ -395,7 +397,7 @@ behavior String {
     //
     // The index counts codepoints (decision 320), so the erlang form reads the
     // decoded codepoint list, never `string:slice/3`'s grapheme clusters.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__S, __I) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> unicode:characters_to_binary([lists:nth(__J + 1, __L)]); false -> undefined end end)($0, $1)"""),
         .JavaScript("charAt"),
         .Wasm(std: "text.at"),
@@ -408,14 +410,14 @@ behavior String {
     // on every target (decisions 169, 320) — the codepoints of the text
     // before the match, not the match's byte offset — so `s.at(s.indexOf(x))`
     // reads the character the search found.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)($0, $1)"""),
         .JavaScript("indexOf"),
         .Wasm(std: "text.indexOf"),
     )]
     fn indexOf(self: Self, sub: string) -> i32;
 
-    #[external(.JavaScript("toString"))]
+    #[compiler.external(.JavaScript("toString"))]
     default fn toString(self: Self) -> string {
         return self;
     }
@@ -428,7 +430,7 @@ behavior String {
     // segment raises `badarg` for all three, the Node cell throws a
     // `RangeError` for all three (native `String.fromCodePoint` answers a lone
     // surrogate), and wasm's std-wasm's `text.fromCodepoint` traps.
-    #[external(
+    #[compiler.external(
         .Erlang("<<($0)/utf8>>"),
         .JavaScript("""((__c) => { if (!(__c >= 0 && __c <= 1114111) || (__c >= 55296 && __c <= 57343)) throw new RangeError('String.fromCodepoint: ' + __c + ' is not a Unicode scalar value'); return String.fromCodePoint(__c); })($0)"""),
         .Wasm(std: "text.fromCodepoint"),
@@ -440,45 +442,45 @@ behavior String {
     // shape that mirrors the semantic. `string:pad/3` is BIF on OTP 27+; we
     // gate behind `binary_to_list`/`list_to_binary` to keep the shape simple.
 
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__PadBin/binary, __S/binary>> end)($0, $1, $2)"),
         .JavaScript("padStart"),
         .Wasm(std: "text.padStart"),
     )]
     fn padStart(self: Self, length: i32, pad: string) -> string;
 
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($0, $1, $2)"),
         .JavaScript("padEnd"),
         .Wasm(std: "text.padEnd"),
     )]
     fn padEnd(self: Self, length: i32, pad: string) -> string;
 
-    #[external(.Erlang("binary:copy($0, $1)"), .JavaScript("repeat"), .Wasm(std: "text.repeat"))]
+    #[compiler.external(.Erlang("binary:copy($0, $1)"), .JavaScript("repeat"), .Wasm(std: "text.repeat"))]
     fn repeat(self: Self, times: i32) -> string;
 
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($0, $1, $2)"),
         .JavaScript("replaceAll"),
         .Wasm(std: "text.replaceAll"),
     )]
     fn replaceAll(self: Self, pattern: string, with: string) -> string;
 
-    #[external(
+    #[compiler.external(
         .Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"),
         .JavaScript("(Array.from($0))"),
         .Wasm(std: "text.chars"),
     )]
     fn chars(self: Self) -> string[];
 
-    #[external(
+    #[compiler.external(
         .Erlang("""binary:split($0, [<<"\r\n">>, <<"\n">>], [global])"""),
         .JavaScript("""$0.split(/\r?\n/)"""),
         .Wasm(std: "text.lines"),
     )]
     fn lines(self: Self) -> string[];
 
-    #[external(
+    #[compiler.external(
         .Erlang("""[__W || __W <- binary:split($0, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]"""),
         .JavaScript("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)"""),
         .Wasm(std: "text.words"),
@@ -486,7 +488,7 @@ behavior String {
     fn words(self: Self) -> string[];
 
     // `\r\n` -> `\n`: the text as a unix host writes it. A lone `\r` stays.
-    #[external(
+    #[compiler.external(
         .Erlang("""binary:replace($0, <<"\r\n">>, <<"\n">>, [global])"""),
         .JavaScript("""$0.replaceAll("\r\n", "\n")"""),
     )]
@@ -495,7 +497,7 @@ behavior String {
     // The text without its trailing `\n` characters - only newlines, not
     // spaces or tabs (`trimEnd` takes all whitespace): whitespace inside or
     // before them is kept. `"a\n\n"` is `"a"`, `"a \n"` is `"a "`.
-    #[external(
+    #[compiler.external(
         .Erlang("""re:replace($0, "\\n+\\z", "", [{return, binary}])"""),
         .JavaScript("""$0.replace(/\n+$/, "")"""),
     )]
@@ -504,7 +506,7 @@ behavior String {
     // The 1-based number of the first line (lines split on `\n`) where the
     // two texts differ, `0` when they are equal. A text that is a prefix of
     // the other, in whole lines, differs at the line after its last.
-    #[external(
+    #[compiler.external(
         .Erlang("""(fun(__A, __B) -> (fun __F([__H | __T1], [__H | __T2], __N) -> __F(__T1, __T2, __N + 1); __F([], [], _) -> 0; __F(_, _, __N) -> __N + 1 end)(binary:split(__A, <<"\n">>, [global]), binary:split(__B, <<"\n">>, [global]), 0) end)($0, $1)"""),
         .JavaScript("""((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })($0, $1)"""),
     )]
@@ -520,7 +522,7 @@ behavior String {
     // out of range it answers `undefined`, where `charCodeAt` answers `NaN`,
     // which `??` does not catch and `| 0` turned into `0`. It also answers the
     // CODE POINT, which is what the erlang form above answers.
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($0, $1)"),
         .JavaScript("""((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })($0, $1)"""),
         .Wasm(std: "text.charCodeAt"),
@@ -529,7 +531,7 @@ behavior String {
 
     // The last match is found over the bytes and answered in `indexOf`'s unit
     // (decisions 169, 320): the codepoints of the text before it.
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __I))); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)"),
         .JavaScript("lastIndexOf"),
         .Wasm(std: "text.lastIndexOf"),
@@ -549,7 +551,7 @@ behavior String {
     // The body calls a method on `self` only, and free cells for the rest —
     // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
     // that shape it.
-    default fn parseInt(self: Self) -> @Result<i64, string> {
+    default fn parseInt(self: Self) -> Result<i64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val digits = if (signed) stringSlice0(self, 1) else self;
         return if (stringIsDigits(digits))
@@ -566,7 +568,7 @@ behavior String {
     // the numeral rewritten as `<digits>.<digits>e<exponent>` (the one form
     // both hosts read), correctly rounded on both. A numeral too large for an
     // `f64` is an `Error`; one too small to tell from zero is `0.0`.
-    default fn parseFloat(self: Self) -> @Result<f64, string> {
+    default fn parseFloat(self: Self) -> Result<f64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val start = if (signed) 1 else 0;
         val lowerAt = self.indexOf("e");
@@ -621,14 +623,14 @@ behavior String {
 // `string:slice/3`, whose unit is the grapheme cluster — and normalise the
 // bounds as the Node forms do.
 
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__S, __A) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, unicode:characters_to_binary(lists:nthtail(__B, __L)) end)($0, $1)"""),
     .JavaScript("""((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })($0, $1)"""),
     .Wasm(std: "text.sliceFrom"),
 )]
 declare fn stringSlice0(s: string, start: i32) -> string;
 
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)($0, $1, $2)"""),
     .JavaScript("""((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)"""),
     .Wasm(std: "text.sliceBetween"),
@@ -640,13 +642,13 @@ declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 // `Uint8Array.prototype.slice` with `Bytes`' `default fn slice`, so the Node
 // templates cut with `subarray` and copy. wasm lowers `slice` itself.
 
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__B, __A) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, binary:part(__B, __S, __N - __S) end)($0, $1)"""),
     .JavaScript("""((__b, __a) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return new Uint8Array(__b.subarray(__s, __n)); })($0, $1)"""),
 )]
 declare fn bytesSlice0(b: Bytes, start: i32) -> Bytes;
 
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__B, __A, __E) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, binary:part(__B, __S, erlang:max(__F - __S, 0)) end)($0, $1, $2)"""),
     .JavaScript("""((__b, __a, __e) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return new Uint8Array(__b.subarray(__s, Math.max(__s, __f))); })($0, $1, $2)"""),
 )]
@@ -660,7 +662,7 @@ declare fn bytesSlice1(b: Bytes, start: i32, end: ?i32) -> Bytes;
 // the comptime runtime's are std-wasm's (`number.*`).
 
 // True when `s` is one or more of the digits `0`–`9` and nothing else.
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__S) -> (__S =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__S)) end)($0)"""),
     .JavaScript("""(/^[0-9]+$/.test($0))"""),
     .Wasm(std: "number.isDigits"),
@@ -670,18 +672,18 @@ declare fn stringIsDigits(s: string) -> bool;
 // The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
 // numeral, past the `i64` range. The Node form reads the digits as a `BigInt`
 // and answers 319's canonical form (a `number` within ±(2^53 − 1)).
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case (__N >= -9223372036854775807 - 1) andalso (__N =< 9223372036854775807) of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)"""),
     .JavaScript("""((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)"""),
     .Wasm(std: "number.toInteger"),
 )]
-declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
+declare fn stringToInteger(numeral: string) -> Result<i64, string>;
 
 // The `f64` the numeral `text` spells, read from its accepted pieces as
 // `<sign><whole>.<fraction>e<exponent>`; the overflow `Error`, naming `text`,
 // when it does not fit. `string:to_float/1` answers `{error, no_float}` on an
 // overflow and `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
-#[external(
+#[compiler.external(
     .Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, case string:to_float(binary_to_list(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)) of {__N, []} -> {ok, __N}; _ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)"""),
     .JavaScript("""((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })($0, $1, $2, $3)"""),
     .Wasm(std: "number.toFloat"),
@@ -691,10 +693,10 @@ declare fn stringToFloat(
     whole: string,
     fraction: string,
     exponent: string,
-) -> @Result<f64, string>;
+) -> Result<f64, string>;
 
 // `Error(<before><text><after>)`.
-#[external(
+#[compiler.external(
     .Erlang("""{error, <<($0)/binary, ($1)/binary, ($2)/binary>>}"""),
     .JavaScript("""({ error: $0 + $1 + $2 })"""),
     .Wasm(std: "number.numeralRefused"),
@@ -703,7 +705,7 @@ declare fn stringNumeralRefused<T>(
     before: string,
     text: string,
     after: string,
-) -> @Result<T, string>;
+) -> Result<T, string>;
 
 // ── function combinators ──────────────────────────────────────────────────────
 
@@ -788,16 +790,16 @@ behavior Array<T> {
     // A negative index counts from the end (decision 139): `xs.at(-1)` is
     // the last element, `xs.at(-xs.length)` the first, and past either end
     // is absent.
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)($0, $1)"),
         .JavaScript("at"),
     )]
     fn at(self: Self<T>, index: i32) -> ?T;
 
-    #[external(.Erlang("($0 ++ [$1])"), .JavaScript("push"))]
+    #[compiler.external(.Erlang("($0 ++ [$1])"), .JavaScript("push"))]
     fn push(self: Self<T>, item: T);
 
-    #[external(.Erlang("lists:last($0)"), .JavaScript("pop"))]
+    #[compiler.external(.Erlang("lists:last($0)"), .JavaScript("pop"))]
     fn pop(self: Self<T>) -> ?T;
 
     // `Slice<T[]>.slice` — `end` is `?i32` so an open-ended `xs[1..]` can pass
@@ -809,7 +811,7 @@ behavior Array<T> {
             return arraySlice0(self, start);
     }
 
-    #[external(
+    #[compiler.external(
         .Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, $0)))"""),
         .JavaScript("join"),
     )]
@@ -823,10 +825,10 @@ behavior Array<T> {
     // at exit 0. `toReversed` is the §A4 rename to the engine's own copying
     // reader (ES2023; node 20, which is the floor CI installs), so the answer
     // is the same shape with no prototype patch and no helper.
-    #[external(.Erlang("lists:reverse($0)"), .JavaScript("toReversed"))]
+    #[compiler.external(.Erlang("lists:reverse($0)"), .JavaScript("toReversed"))]
     fn reverse(self: Self<T>) -> Self<T>;
 
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)"),
         .JavaScript("indexOf"),
     )]
@@ -835,7 +837,7 @@ behavior Array<T> {
     // The last index of `item`, `-1` when absent — `indexOf` from the other
     // end, with `indexOf`'s equality on every target. erlang and node answer
     // natively; the other targets search the reversed copy.
-    #[external(
+    #[compiler.external(
         .Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T], __Last) -> __F(__I + 1, __T, case (__H =:= __X) of true -> __I; false -> __Last end); __F(_, [], __Last) -> __Last end, __Find(0, __L, -1) end)($0, $1)"),
         .JavaScript("lastIndexOf"),
     )]
@@ -844,13 +846,13 @@ behavior Array<T> {
         return if (fromEnd == -1) -1 else self.length - 1 - fromEnd;
     }
 
-    #[external(.Erlang("lists:foreach($1, $0)"), .JavaScript("forEach"))]
+    #[compiler.external(.Erlang("lists:foreach($1, $0)"), .JavaScript("forEach"))]
     fn forEach(self: Self<T>, action: fn(item: T));
 
-    #[external(.Erlang("lists:map($1, $0)"), .JavaScript("map"))]
+    #[compiler.external(.Erlang("lists:map($1, $0)"), .JavaScript("map"))]
     fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>;
 
-    #[external(.Erlang("lists:filter($1, $0)"), .JavaScript("filter"))]
+    #[compiler.external(.Erlang("lists:filter($1, $0)"), .JavaScript("filter"))]
     fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
 
     // `zip` pairs the receiver's items with `other`'s by index, truncating to
@@ -858,7 +860,7 @@ behavior Array<T> {
     // tuple constructor; node uses an inline `.map` with index lookup +
     // truncation. wat deferred — no native zip primitive (logged as a known
     // gap; falls through to the inline allow-list as today).
-    #[external(
+    #[compiler.external(
         .Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($0, length($1)), lists:sublist($1, length($0)))"),
         .JavaScript("$0.map((__x, __i) => [__x, ($1)[__i]]).slice(0, Math.min($0.length, ($1).length))"),
     )]
@@ -875,7 +877,7 @@ behavior Array<T> {
     // spills it to a stack slot — an x-register would be clobbered by the
     // recursive call. (No comments inside the bodies: the commonJS if-expr emits
     // as a one-line IIFE, where a `//` would swallow the rest of the block.)
-    #[external(
+    #[compiler.external(
         .JavaScript("((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))($0, $1)"),
     )]
     default fn range(start: i32, stop: i32) -> Array<i32> {
@@ -891,7 +893,7 @@ behavior Array<T> {
         };
     }
 
-    #[external(
+    #[compiler.external(
         .JavaScript("((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))($0, $1)"),
     )]
     default fn repeat<E>(value: E, times: i32) -> Array<E> {
@@ -905,12 +907,12 @@ behavior Array<T> {
     }
 
     // ── derived ops (default implementations over the primitives) ──
-    #[external(.Erlang("($0 =:= [])"))]
+    #[compiler.external(.Erlang("($0 =:= [])"))]
     default fn isEmpty(self: Self<T>) -> bool {
         return self.length == 0;
     }
 
-    #[external(.Erlang("lists:member($1, $0)"))]
+    #[compiler.external(.Erlang("lists:member($1, $0)"))]
     default fn contains(self: Self<T>, x: T) -> bool {
         return self.indexOf(x) != -1;
     }
@@ -943,7 +945,7 @@ behavior Array<T> {
         return acc;
     }
 
-    #[external(.JavaScript("find"))]
+    #[compiler.external(.JavaScript("find"))]
     default fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T {
         return self.filter(pred).at(0);
     }
@@ -960,14 +962,14 @@ behavior Array<T> {
         return self.filter(pred).length != 0;
     }
 
-    #[external(.Erlang("($0 ++ $1)"), .JavaScript("concat"))]
+    #[compiler.external(.Erlang("($0 ++ $1)"), .JavaScript("concat"))]
     default fn append(self: Self<T>, other: Self<T>) -> Self<T> {
         var out = self.slice(0, self.length);
         other.forEach({ y -> out.push(y) });
         return out;
     }
 
-    #[external(.Erlang("[$1 | $0]"))]
+    #[compiler.external(.Erlang("[$1 | $0]"))]
     default fn prepend(self: Self<T>, item: T) -> Self<T> {
         var out = [item];
         self.forEach({ x -> out.push(x) });
@@ -984,7 +986,7 @@ behavior Array<T> {
         return out;
     }
 
-    #[external(.JavaScript("flatMap"))]
+    #[compiler.external(.JavaScript("flatMap"))]
     default fn flatMap<U>(
         self: Self<T>,
         transform: fn(item: T) -> U,
@@ -1080,13 +1082,13 @@ behavior Array<T> {
 // itself) calls `.slice()` with no start and gets the whole array, as native
 // `slice` answers: a missing start is 0.
 
-#[external(
+#[compiler.external(
     .Erlang("lists:nthtail($1, $0)"),
     .JavaScript("""((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })($0, $1)"""),
 )]
 declare fn arraySlice0<T>(xs: Array<T>, start: i32) -> Array<T>;
 
-#[external(
+#[compiler.external(
     .Erlang("lists:sublist($0, ($1) + 1, (($2) - ($1)))"),
     .JavaScript("""((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })($0, $1, $2)"""),
 )]
@@ -1106,13 +1108,13 @@ declare fn arraySlice1<T>(xs: Array<T>, start: i32, end: ?i32) -> Array<T>;
 // CR, VT and FF only (decision 441), `padStart` / `padEnd` count and cycle
 // the pad in bytes.
 
-#[external(.Wasm(std: "text.byteLength"))]
+#[compiler.external(.Wasm(std: "text.byteLength"))]
 declare fn stringByteLength(s: string) -> i32;
 
-#[external(.Wasm(std: "text.byteAt"))]
+#[compiler.external(.Wasm(std: "text.byteAt"))]
 declare fn stringByteAt(s: string, i: i32) -> i32;
 
-#[external(.Wasm(std: "text.byteSlice"))]
+#[compiler.external(.Wasm(std: "text.byteSlice"))]
 declare fn stringByteSlice(s: string, a: i32, b: i32) -> string;
 
 fn textIsLead(b: i32) -> bool {

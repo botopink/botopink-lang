@@ -10,6 +10,8 @@
 //// beam asked the map for `element(1, V)` in both cases.
 //// Not scheduled on wasm: no host vocabulary builds this value there.
 
+import {compiler, io.terminal.print} from "std";
+
 behavior Greeter {
     fn greet(self: Self, who: string) -> string;
 }
@@ -20,7 +22,7 @@ type Echo(word: string) {
     }
 }
 
-#[@external(
+#[compiler.external(
     .JavaScript("({ greet: function (who) { return 'hi, ' + who; } })"),
     .Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}"),
 )]
@@ -32,9 +34,9 @@ fn welcome(g: Greeter) -> string {
 
 pub fn main() {
     val g = makeGreeter();
-    @print(g.greet("local"));
+    print(g.greet("local"));
     val a: Greeter = makeGreeter();
-    @print(a.greet("annotated"));
-    @print(welcome(g));
-    @print(Echo(word: "echo").greet("x"));
+    print(a.greet("annotated"));
+    print(welcome(g));
+    print(Echo(word: "echo").greet("x"));
 }

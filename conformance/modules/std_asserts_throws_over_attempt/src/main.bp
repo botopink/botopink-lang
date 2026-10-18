@@ -10,19 +10,19 @@
 //// reaches its private `canonical`, which has none (decision 146,
 //// `modules/std_asserts_on_every_target`).
 
-import {testing.asserts} from "std";
+import {testing.asserts, compiler, failure.panic, io.terminal.print} from "std";
 
-#[@external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+#[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn raiseBoom() -> i32;
 
 fn label(n: i32) -> string {
-    if (n < 0) @panic("a negative label");
+    if (n < 0) panic("a negative label");
     return "n" + n.toString();
 }
 
-fn shown(r: @Result<void, string>) {
+fn shown(r: Result<void, string>) {
     val text = asserts.errorText(r);
-    @print(if (text == "") "Ok" else text);
+    print(if (text == "") "Ok" else text);
 }
 
 pub fn main() {

@@ -1,9 +1,11 @@
 //// Decision 481 — `wasi:` names an adapter by its enum value (`.Delay`): a
 //// string is refused at the argument, on every target, naming the enum form.
 
-#[@external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(wasi: "RandomF64"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(wasi: "RandomF64"))]
 pub declare fn draw() -> f64;
 
 pub fn main() {
-    @print(draw() < 1.0);
+    print(draw() < 1.0);
 }

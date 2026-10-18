@@ -5,32 +5,34 @@
 //// machine alike — and nothing is printed after an `await` of a task still
 //// running (the order of effects between tasks is no target's contract).
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm(wasi: .Delay),
 )]
-declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
+declare fn delay<T>(millis: i32, value: T) -> Task<T>;
 
-fn work(label: string) -> @Task<string> {
-    @print("started " + label);
+fn work(label: string) -> Task<string> {
+    print("started " + label);
     val v = await delay(5, label);
     return v + "!";
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val t = work("a");
-    @print("made");
+    print("made");
     val first = await t;
     val again = await t;
-    @print(first + " " + again);
+    print(first + " " + again);
     val b = async {
-        @print("block started");
+        print("block started");
         val w = await work("b");
         return w;
     };
-    @print("block made");
-    @print(await b);
+    print("block made");
+    print(await b);
 }
 
 pub fn main() {

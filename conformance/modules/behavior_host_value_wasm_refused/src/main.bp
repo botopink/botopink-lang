@@ -4,13 +4,15 @@
 //// `#[@External.Wasm(…)]` cell, and says so: the missing host binding is the
 //// refusal, not an unresolved call.
 
+import {compiler, io.terminal.print} from "std";
+
 behavior Greeter {
     val tag: string;
 
     fn greet(self: Self, who: string) -> string;
 }
 
-#[@external(
+#[compiler.external(
     .JavaScript("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
     .Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}"),
 )]
@@ -25,5 +27,5 @@ fn greeter() -> Greeter {
 }
 
 pub fn main() {
-    @print(shout(greeter()));
+    print(shout(greeter()));
 }

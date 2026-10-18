@@ -2,12 +2,14 @@
 //// backend, positional `$0`/`$1` markers over the declared parameters
 //// (decision 5's numbering), and the same answer from every host.
 
+import {compiler} from "std";
+
 // wasm refuses this suite on a host binding: `hostMax` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
-#[@external(.JavaScript("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"))]
+#[compiler.external(.JavaScript("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"))]
 declare fn hostMax(a: i32, b: i32) -> i32;
 
-#[@external(.JavaScript("($0).toUpperCase()"), .Erlang("string:uppercase($0)"))]
+#[compiler.external(.JavaScript("($0).toUpperCase()"), .Erlang("string:uppercase($0)"))]
 declare fn hostUpper(s: string) -> string;
 
 test "§8 a two-target external answers the same on every backend" {

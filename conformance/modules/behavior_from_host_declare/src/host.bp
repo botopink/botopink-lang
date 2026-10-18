@@ -1,6 +1,7 @@
 import {greet.Greeter};
+import {compiler} from "std";
 
-#[@external(
+#[compiler.external(
     .JavaScript("(() => ({ greet: () => 'host' }))()"),
     .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
 )]

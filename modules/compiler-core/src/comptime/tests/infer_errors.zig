@@ -52,9 +52,11 @@ test "infer error: implement missing a required interface method" {
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
-        \\        @print("draw");
+        \\        print("draw");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -91,12 +93,14 @@ test "infer error: implement method not declared in the interface" {
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
-        \\        @print("draw");
+        \\        print("draw");
         \\    }
         \\    fn explode(self: Self) {
-        \\        @print("boom");
+        \\        print("boom");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -108,9 +112,11 @@ test "infer error: implement qualified prefix is not a declared interface" {
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn Renderable.draw(self: Self) {
-        \\        @print("draw");
+        \\        print("draw");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -125,9 +131,11 @@ test "infer error: duplicate method across interfaces without qualification" {
         \\val Camera = type(battery: i32);
         \\val CameraCharger = implement UsbCharger, SolarCharger for Camera {
         \\    fn connect(self: Self) {
-        \\        @print("connect");
+        \\        print("connect");
         \\    }
         \\};
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -178,9 +186,11 @@ test "infer error: negating a string" {
 test "infer error: type mismatch ---- function argument wrong type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub fn double(x: i32) -> i32 {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\val bad = double("hello");
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -202,18 +212,22 @@ test "infer error: arity mismatch ---- too many arguments" {
 test "infer error: arity mismatch ---- too few arguments" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub fn add(a: i32, b: i32) -> i32 {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\val bad = add(1);
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "infer error: arity mismatch ---- zero-param function called with argument" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub fn hello() -> string {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
         \\val bad = hello(42);
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -342,7 +356,7 @@ test "infer error: await outside an await channel" {
 
 test "infer error: await on a non-@Task value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> @Task<i32> {
+        \\fn bad() -> Task<i32> {
         \\    val x = await 5;
         \\    return x;
         \\}
@@ -351,7 +365,7 @@ test "infer error: await on a non-@Task value" {
 
 test "infer error: yield targets an unknown label" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn gen() -> @Iterator<i32> {
+        \\fn gen() -> Iterator<i32> {
         \\    yield :nope 1;
         \\}
     );
@@ -359,7 +373,7 @@ test "infer error: yield targets an unknown label" {
 
 test "infer error: for await on a non-@Stream value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> @Task<i32> {
+        \\fn bad() -> Task<i32> {
         \\    for await (5) { x ->
         \\        ping(x);
         \\    }
@@ -395,8 +409,10 @@ test "infer error: a method the receiver type does not declare" {
         \\type D(id: i32)
         \\fn main() {
         \\    val d = D(id: 1);
-        \\    @print(d.swim());
+        \\    print(d.swim());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -408,14 +424,16 @@ test "infer error: an unannotated method's return type comes from its body" {
         \\fn main() {
         \\    val d = D(id: 1);
         \\    val a: string = d.get();
-        \\    @print(a);
+        \\    print(a);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer error: @Task body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> @Task<i32> {
+        \\fn bad() -> Task<i32> {
         \\    yield 1;
         \\}
     );
@@ -447,8 +465,10 @@ test "infer error: test body type error" {
 
 test "infer error: external ---- builtin typechecks args" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Python("string", "length"))]
+        \\#[compiler.external(.Python("string", "length"))]
         \\pub declare fn str_length(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -456,8 +476,10 @@ test "infer error: external ---- wrong arity" {
     // Two strings where `.Erlang` takes one template: the second is an
     // unlabelled argument, refused naming the labels (decision 621).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("string", "length"))]
+        \\#[compiler.external(.Erlang("string", "length"))]
         \\pub declare fn str_length(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -468,8 +490,10 @@ test "infer error: external ---- wrong arity" {
 // ignored.
 test "infer error: external ---- inline on a variant that does not declare it" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("Math.max($args)", inline: true))]
+        \\#[compiler.external(.JavaScript("Math.max($args)", inline: true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -477,15 +501,19 @@ test "infer error: external ---- inline on a variant that does not declare it" {
 // is refused at the argument, naming the label (`result:`).
 test "infer error: external ---- a bare positional bool is refused" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("Math.max($args)", true))]
+        \\#[compiler.external(.JavaScript("Math.max($args)", true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "infer error: external ---- inline is a bool" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("max($args)", inline: 1))]
+        \\#[compiler.external(.Erlang("max($args)", inline: 1))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -495,15 +523,19 @@ test "infer error: external ---- inline is a bool" {
 // refused.
 test "infer error: external ---- result true on a plain return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("JSON.parse($0)", result: true))]
+        \\#[compiler.external(.JavaScript("JSON.parse($0)", result: true))]
         \\pub declare fn jsParse(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "infer error: external ---- result true on a Task of a plain value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("timer:sleep($0)", result: true))]
-        \\pub declare fn pause(ms: i32) -> @Task<i32>;
+        \\#[compiler.external(.Erlang("timer:sleep($0)", result: true))]
+        \\pub declare fn pause(ms: i32) -> Task<i32>;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -511,16 +543,20 @@ test "infer error: external ---- result true with a HostError of the module's ow
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub type HostError(message: string)
         \\
-        \\#[@external(.JavaScript("JSON.parse($0)", result: true))]
-        \\pub declare fn jsParse(s: string) -> @Result<i32, HostError>;
+        \\#[compiler.external(.JavaScript("JSON.parse($0)", result: true))]
+        \\pub declare fn jsParse(s: string) -> Result<i32, HostError>;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 // Decision 491 — an `op:` / `fn:` cell is wasm code, not a host call.
 test "infer error: external ---- result on a wasm op cell" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Wasm(op: "f64.floor", result: true))]
+        \\#[compiler.external(.Wasm(op: "f64.floor", result: true))]
         \\pub declare fn floor(x: f64) -> f64;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -528,24 +564,30 @@ test "infer error: external ---- result on a fn cell" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn absBody(x: i32) -> i32 { if (x < 0) { -x } else { x } }
         \\
-        \\#[@external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"))]
+        \\#[compiler.external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"))]
         \\pub declare fn magnitude(x: i32) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "infer error: external ---- result is a bool" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("JSON.parse($0)", result: 1))]
+        \\#[compiler.external(.JavaScript("JSON.parse($0)", result: 1))]
         \\pub declare fn jsParse(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "infer error: external ---- result true on a behavior method is checked the same way" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub behavior Shape {
-        \\    #[@external(.JavaScript("area", result: true))]
+        \\    #[compiler.external(.JavaScript("area", result: true))]
         \\    fn area(self: Self) -> i32;
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -553,17 +595,21 @@ test "infer error: external ---- result true on a behavior method is checked the
 // `@External.Erlang`, so the old variant binds no host.
 test "infer error: external ---- Beam binds no host" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Beam("math", "sqrt"))]
+        \\#[compiler.external(.Beam("math", "sqrt"))]
         \\pub declare fn root(x: f64) -> f64;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "infer error: external ---- inline on a behavior method is checked the same way" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub behavior Shape {
-        \\    #[@external(.Wasm("area", inline: true))]
+        \\    #[compiler.external(.Wasm("area", inline: true))]
         \\    fn area(self: Self) -> i32;
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -585,7 +631,7 @@ test "infer error: std package ---- member missing" {
 
 test "infer error: no builtin result namespace ---- `result` is unbound (decision 330)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    return n;
         \\}
         \\
@@ -603,25 +649,25 @@ test "infer error: still_reports_unbound ---- a genuinely undefined name still e
 
 test "infer error: RG3 ---- @Task<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> @Task<> { return 0; }
+        \\fn empty() -> Task<> { return 0; }
     );
 }
 
 test "infer error: RG3 ---- @Stream<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> @Stream<> { break; }
+        \\fn empty() -> Stream<> { break; }
     );
 }
 
 test "infer error: RG3 ---- @Result<i32> rejects (E is required, no default)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse() -> @Result<i32> { return 0; }
+        \\fn parse() -> Result<i32> { return 0; }
     );
 }
 
 test "infer error: R11 ---- return Result.Ok(...) inside @Result reds return-must-be-bare-R" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    return Result.Ok(result: n * 2);
         \\}
     );
@@ -629,7 +675,7 @@ test "infer error: R11 ---- return Result.Ok(...) inside @Result reds return-mus
 
 test "infer error: R11 mirror ---- throw Result.Error(...) inside @Result reds throw-must-be-bare-E" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    throw Result.Error(error: "boom");
         \\}
     );
@@ -637,7 +683,7 @@ test "infer error: R11 mirror ---- throw Result.Error(...) inside @Result reds t
 
 test "infer error: R12 ---- let-binding Result.Ok inside @Result reds result-manual-construction-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    val r = Result.Ok(result: n);
         \\    return n;
         \\}
@@ -646,7 +692,7 @@ test "infer error: R12 ---- let-binding Result.Ok inside @Result reds result-man
 
 test "infer error: decision 123 ---- yield and return <expr> in an @Iterator<@Result<…>> body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Iterator<i32> {
+        \\fn nums() -> Iterator<i32> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -655,7 +701,7 @@ test "infer error: decision 123 ---- yield and return <expr> in an @Iterator<@Re
 
 test "infer error: decision 123 ---- yield and return <expr> in a @Stream body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Stream<@Result<i32, string>> {
+        \\fn nums() -> Stream<Result<i32, string>> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -664,7 +710,7 @@ test "infer error: decision 123 ---- yield and return <expr> in a @Stream body r
 
 test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Iterator<@Result<i32, string>> :outer {
+        \\fn nums() -> Iterator<Result<i32, string>> :outer {
         \\    yield 1;
         \\    break :nonsense 42;
         \\}
@@ -676,7 +722,7 @@ test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
 // with the completion channel `C`).
 test "infer: decision 103 ---- break <expr> inside @Iterator-of-Result is the last item" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> @Iterator<@Result<i32, string>> {
+        \\fn nums() -> Iterator<Result<i32, string>> {
         \\    yield 1;
         \\    break 42;
         \\}
@@ -685,7 +731,7 @@ test "infer: decision 103 ---- break <expr> inside @Iterator-of-Result is the la
 
 test "infer error: RG5 ---- a second argument on @Task reds generic-arg-count-exceeded" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Task<i32, string> {
+        \\fn nums() -> Task<i32, string> {
         \\    return 1;
         \\}
     );
@@ -693,7 +739,7 @@ test "infer error: RG5 ---- a second argument on @Task reds generic-arg-count-ex
 
 test "infer error: RG5 ---- a third argument on @Result reds generic-arg-count-exceeded" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Result<i32, string, i32> {
+        \\fn nums() -> Result<i32, string, i32> {
         \\    return 1;
         \\}
     );
@@ -718,10 +764,10 @@ test "infer error: RG5 ---- a declared type written with more arguments than it 
 
 test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator and a Task of it on a stream" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn two() -> @Iterator<i32> {
+        \\fn two() -> Iterator<i32> {
         \\    yield 1;
         \\}
-        \\fn ticks() -> @Stream<i32> {
+        \\fn ticks() -> Stream<i32> {
         \\    yield 1;
         \\}
         \\fn first() -> i32 {
@@ -731,8 +777,8 @@ test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator a
         \\        Done -> 0;
         \\    };
         \\}
-        \\fn firstTick() -> @Task<i32> {
-        \\    val t: @Task<YieldStep<i32>> = ticks().next();
+        \\fn firstTick() -> Task<i32> {
+        \\    val t: Task<YieldStep<i32>> = ticks().next();
         \\    val s = await t;
         \\    return case s {
         \\        Yield(v) -> v;
@@ -746,7 +792,7 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
-        \\fn lookup() -> @Component<User> {
+        \\fn lookup() -> Component<User> {
         \\    val u = use plain();
         \\    return u;
         \\}
@@ -757,7 +803,7 @@ test "infer error: break <wrongType> in a generator reds a type mismatch against
     // `break v` emits `v` and ends the generator: `v` is an item, so it must
     // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> @Iterator<@Result<i32, string>> {
+        \\fn nums() -> Iterator<Result<i32, string>> {
         \\    yield 1;
         \\    break "not an i32";
         \\}
@@ -852,7 +898,7 @@ test "infer error: return ---- an anonymous fn returns a value that is not its d
 test "infer error: return ---- a result fn returns a value that is not R" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type Oops(msg: string)
-        \\fn f() -> @Result<i32, Oops> { return "s"; }
+        \\fn f() -> Result<i32, Oops> { return "s"; }
     );
 }
 
@@ -869,8 +915,8 @@ test "infer: return ---- a hook body returns the X of @Component<X>, or another 
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
-        \\fn state<T>(initial: T) -> @Component<Cell<T>> { return Cell(value: initial); }
-        \\fn counter(start: i32) -> @Component<Cell<i32>> { return state(start); }
+        \\fn state<T>(initial: T) -> Component<Cell<T>> { return Cell(value: initial); }
+        \\fn counter(start: i32) -> Component<Cell<i32>> { return state(start); }
     );
 }
 
@@ -943,7 +989,7 @@ test "infer error: pattern ---- a guarded binder is the subject type" {
 test "infer error: pattern ---- Ok binds the R of a @Result" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type Oops(msg: string)
-        \\fn parse(s: string) -> @Result<i32, Oops> { return 1; }
+        \\fn parse(s: string) -> Result<i32, Oops> { return 1; }
         \\fn f(s: string) -> string { return s; }
         \\fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
     );
@@ -1389,8 +1435,10 @@ test "val destructure: a one-variant type binds its payload typed" {
         \\    val s = Round.Circle(radius: 2);
         \\    val Circle(r) = s;
         \\    val n: i32 = r;
-        \\    @print(n);
+        \\    print(n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1402,9 +1450,11 @@ test "val destructure: a record's constructor binds its fields typed" {
         \\    val Person(name, age) = p;
         \\    val s: string = name;
         \\    val n: i32 = age;
-        \\    @print(s);
-        \\    @print(n);
+        \\    print(s);
+        \\    print(n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1420,9 +1470,11 @@ test "val destructure: a constructor nests when each covers its field (144 B-22 
         \\    val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: "x");
         \\    val b: i32 = q;
         \\    val c: string = k;
-        \\    @print(a + b);
-        \\    @print(c);
+        \\    print(a + b);
+        \\    print(c);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1432,8 +1484,10 @@ test "val destructure: a nested constructor that can fail is refused (144 B-22 s
         \\val Pair = type { Pair(s: Shape, n: i32) };
         \\fn main() {
         \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
-        \\    @print(r + n);
+        \\    print(r + n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
@@ -1447,7 +1501,9 @@ test "val destructure: a spread-only list binds the whole array (144 B-22 step 1
         \\    val all: i32[] = rest;
         \\    return all.length();
         \\}
-        \\fn main() { @print(count([1, 2])); }
+        \\fn main() { print(count([1, 2])); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1458,8 +1514,10 @@ test "val destructure: the bound name carries the payload's type" {
         \\    val s = Round.Circle(radius: 2);
         \\    val Circle(r) = s;
         \\    val t: string = r;
-        \\    @print(t);
+        \\    print(t);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "string") != null);
@@ -1472,8 +1530,10 @@ test "val destructure: a val-bound name cannot be assigned" {
         \\fn main() {
         \\    val Circle(r) = Round.Circle(radius: 2);
         \\    r = 3;
-        \\    @print(r);
+        \\    print(r);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`r` is a `val`") != null);
@@ -1485,8 +1545,10 @@ test "val destructure: a pattern that can fail is refused, naming val assert" {
         \\fn main() {
         \\    val s = Shape.Circle(radius: 2);
         \\    val Circle(r) = s;
-        \\    @print(r);
+        \\    print(r);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
@@ -1499,8 +1561,10 @@ test "val destructure: a list pattern with elements is refused" {
         \\fn main() {
         \\    val xs = [1, 2];
         \\    val [a, b] = xs;
-        \\    @print(a + b);
+        \\    print(a + b);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
@@ -1511,14 +1575,18 @@ test "val destructure: a list pattern with elements is refused" {
 test "chained call: calling what a call returned types by its return" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x: i32 = adder(3)(4); @print(x); }
+        \\fn main() { val x: i32 = adder(3)(4); print(x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "chained call: the result carries the returned fn's return type" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x: string = adder(3)(4); @print(x); }
+        \\fn main() { val x: string = adder(3)(4); print(x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected string, got i32") != null);
@@ -1527,7 +1595,9 @@ test "chained call: the result carries the returned fn's return type" {
 test "chained call: an argument count the returned fn does not take reds" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x = adder(3)(4, 5); @print(x); }
+        \\fn main() { val x = adder(3)(4, 5); print(x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expects 1 argument(s), got 2") != null);
@@ -1542,17 +1612,21 @@ test "leading-dot call: the expected type names the enum" {
         \\fn main() {
         \\    val s: Shape = .Circle(radius: 1);
         \\    val xs: Shape[] = [.Square(side: 2)];
-        \\    @print(area(.Circle(radius: 3)));
-        \\    @print(s);
-        \\    @print(xs);
+        \\    print(area(.Circle(radius: 3)));
+        \\    print(s);
+        \\    print(xs);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "leading-dot call: the payload is checked against the variant" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
-        \\fn main() { val s: Shape = .Circle(radius: "x"); @print(s); }
+        \\fn main() { val s: Shape = .Circle(radius: "x"); print(s); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
@@ -1561,7 +1635,9 @@ test "leading-dot call: the payload is checked against the variant" {
 test "leading-dot call: no expected type is a named refusal, not an empty name" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
-        \\fn main() { val s = .Circle(radius: 1); @print(s); }
+        \\fn main() { val s = .Circle(radius: 1); print(s); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`.Circle(…)` names a variant by its leading dot") != null);
@@ -1583,10 +1659,12 @@ test "behavior-typed field and parameter accept an implementer, through extends"
         \\fn nm(n: Named) -> string { return n.name(); }
         \\fn main() {
         \\    val x = Holder(h: H(id: 1));
-        \\    @print(use1(H(id: 2)));
-        \\    @print(nm(H(id: 3)));
-        \\    @print(x.h.run());
+        \\    print(use1(H(id: 2)));
+        \\    print(nm(H(id: 3)));
+        \\    print(x.h.run());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1595,7 +1673,9 @@ test "behavior-typed field rejects a record that does not implement it" {
         \\val Handler = behavior { fn run(self: Self) -> i32; };
         \\val Other = type(id: i32);
         \\val Holder = type(h: Handler);
-        \\fn main() { val x = Holder(h: Other(id: 1)); @print(x); }
+        \\fn main() { val x = Holder(h: Other(id: 1)); print(x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "Handler") != null);
@@ -1607,23 +1687,27 @@ test "behavior-typed field rejects a record that does not implement it" {
 test "ambient behavior: Closeable and Display name a parameter type with no import" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Door(name: string) implement Closeable {
-        \\    fn close(self: Self) { @print(self.name); }
+        \\    fn close(self: Self) { print(self.name); }
         \\}
         \\type Money(cents: i32) implement Display {
         \\    fn display(self: Self) -> string { return "$"; }
         \\}
         \\fn shut(c: Closeable) { c.close(); }
         \\fn show(d: Display) -> string { return d.display(); }
-        \\fn main() { shut(Door(name: "a")); @print(show(Money(cents: 1))); }
+        \\fn main() { shut(Door(name: "a")); print(show(Money(cents: 1))); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "ambient behavior: an inline implement of Closeable is checked against its declaration" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type Door(name: string) implement Closeable {
-        \\    fn shut(self: Self) { @print(self.name); }
+        \\    fn shut(self: Self) { print(self.name); }
         \\}
         \\fn main() { Door(name: "a").shut(); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "'Door' does not implement 'close' required by behavior 'Closeable'") != null);
@@ -1633,9 +1717,11 @@ test "ambient behavior: a program's own behavior of the name shadows the ambient
     try h.assertInfersOk(std.testing.allocator,
         \\behavior Closeable { fn shut(self: Self); }
         \\type Door(name: string) implement Closeable {
-        \\    fn shut(self: Self) { @print(self.name); }
+        \\    fn shut(self: Self) { print(self.name); }
         \\}
         \\fn main() { Door(name: "a").shut(); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1648,14 +1734,18 @@ test "type position: a val bound to a type is a type" {
         \\    val x: T = 1;
         \\    val U = T;
         \\    val y: U = 2;
-        \\    @print(x + y);
+        \\    print(x + y);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "type position: a val bound to a value is refused, located" {
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\fn main() { val n = 5; val x: n = 7; @print(x); }
+        \\fn main() { val n = 5; val x: n = 7; print(x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
@@ -1674,10 +1764,14 @@ test "type position: a module-level value is refused too" {
 
 test "associated fn: `Array.range` answers an array, so a method on it resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn main() { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); @print(xs); }
+        \\pub fn main() { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); print(xs); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\pub fn main() { val b: bool = Array.range(0, 3); @print(b); }
+        \\pub fn main() { val b: bool = Array.range(0, 3); print(b); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got i32[]") != null);
@@ -1712,7 +1806,9 @@ fn warningMessages(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
 
 test "warning: `is` on a value whose type is known is always false (§4.3)" {
     const msg = try warningMessages(std.testing.allocator,
-        \\pub fn main() { val a: i32 = 1; @print(a is string); }
+        \\pub fn main() { val a: i32 = 1; print(a is string); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "this `is string` test is always false: the value's type is `i32`") != null);
@@ -1727,12 +1823,14 @@ test "warning: `is` warns on nothing it can answer — numbers by range, unknown
         \\    val u: unknown = 1;
         \\    val v: i32 | string = 1;
         \\    val p = P(x: 1);
-        \\    @print(a is f64);
-        \\    @print(f is i32);
-        \\    @print(u is string);
-        \\    @print(v is string);
-        \\    @print(p is P);
+        \\    print(a is f64);
+        \\    print(f is i32);
+        \\    print(u is string);
+        \\    print(v is string);
+        \\    print(p is P);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expectEqualStrings("", msg);
@@ -1742,7 +1840,9 @@ test "warning: an unannotated `[]` names the annotation to write (§1.4)" {
     const msg = try warningMessages(std.testing.allocator,
         \\fn f() -> i32 { var out = []; out = [1]; return out.length; }
         \\fn g() -> i32 { val none = []; return 0; }
-        \\pub fn main() { val ok: i32[] = []; @print(f() + g() + ok.length); }
+        \\pub fn main() { val ok: i32[] = []; print(f() + g() + ok.length); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "annotate it: `var out: i32[] = [];`") != null);
@@ -1817,16 +1917,20 @@ test "generics: `Self<U>` is the declaration over another argument; A1 binds a b
         \\fn main() {
         \\    val b: Box<string> = Box(value: 1).map({ x -> "a" });
         \\    val p: Point = Point(x: 1).map({ x -> x + 1 });
-        \\    @print(b.value);
-        \\    @print(p.x);
+        \\    print(b.value);
+        \\    print(p.x);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
         \\behavior Mappable<T> { fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U>; }
         \\type Point(x: i32) implement Mappable<i32> {
         \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
         \\}
-        \\fn main() { val p = Point(x: 1).map({ x -> "a" }); @print(p.x); }
+        \\fn main() { val p = Point(x: 1).map({ x -> "a" }); print(p.x); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
@@ -1839,7 +1943,9 @@ test "variant table: a qualified constructor is the enum written, whatever else 
         \\type Shape { Circle(r: i32), Square(s: i32) }
         \\type Hole { Circle(r: i32), Slot(w: i32) }
         \\fn area(s: Shape) -> i32 { return 0; }
-        \\fn main() { @print(area(Shape.Circle(r: 3))); }
+        \\fn main() { print(area(Shape.Circle(r: 3))); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1847,12 +1953,16 @@ test "variant table: a leading dot takes the expected enum; a bare name is refus
     try h.assertInfersOk(std.testing.allocator,
         \\type Warm { Red, Orange }
         \\type Cold { Blue, Red }
-        \\fn main() { val w: Warm = .Red; val c: Cold = .Red; @print(0); }
+        \\fn main() { val w: Warm = .Red; val c: Cold = .Red; print(0); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type Warm { Red, Orange }
         \\type Cold { Blue, Red }
-        \\fn main() { val x = Red; @print(0); }
+        \\fn main() { val x = Red; print(0); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant, and a bare variant is no expression — write `Warm.Red` or `Cold.Red`, or `.Red` where the position expects the enum") != null);
@@ -1867,9 +1977,11 @@ test "integer literal: widens to the i64 its position asks for, and a mismatch i
         \\fn take(n: i64) -> i64 { return n; }
         \\fn main() {
         \\    val k: i64 = 1000;
-        \\    @print(shrink(k) + take(3 * 86400000) + wide(2) + (1000 - k));
-        \\    @print(k > 0);
+        \\    print(shrink(k) + take(3 * 86400000) + wide(2) + (1000 - k));
+        \\    print(k > 0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn f(x: i64, y: i32) -> i64 { return x + y; }
@@ -1894,13 +2006,17 @@ test "decision 44: `optional<T>` and `Option<T>` are refused naming `?T`" {
 test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type R(a: i32, b: string)
-        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0).b); }
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0).b); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`b` is read off an optional `?R` — write `?.b`") != null);
     try h.assertInfersOk(std.testing.allocator,
         \\type R(a: i32, b: string)
-        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0)?.b); }
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0)?.b); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1917,10 +2033,12 @@ test "decision 330: a field read after a `?.` link continues the chain, as a met
         \\    val a: ?i32 = p(true)?.me().x;
         \\    val c: ?i32 = p(true)?.inner.x;
         \\    val n: ?i32 = p(true)?.me().name.length();
-        \\    @print(a ?? 0);
-        \\    @print(c ?? 0);
-        \\    @print(n ?? 0);
+        \\    print(a ?? 0);
+        \\    print(c ?? 0);
+        \\    print(n ?? 0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1930,7 +2048,9 @@ test "decision 330: a field read after a `?.` link continues the chain, as a met
 test "a val's annotation pins a generic constructor's type parameters" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Box<T>(v: T)
-        \\fn main() { val b: Box<i64> = Box(v: 1); @print(b.v); }
+        \\fn main() { val b: Box<i64> = Box(v: 1); print(b.v); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1940,9 +2060,11 @@ test "decision 2: a fn that can fall off its end is refused; every exit form che
     try h.assertInfersOk(std.testing.allocator,
         \\fn a(c: bool) -> i32 { if (c) { return 1; } else { return 2; }; }
         \\fn b(c: i32) -> string { return case c { 0 { "z" } _ { "o" } }; }
-        \\fn d() -> i32 { @todo(); }
+        \\fn d() -> i32 { panic("not implemented"); }
         \\fn e(c: i32) -> i32 { return case c { 0 { 1 } _ { 2 } }; }
-        \\fn main() { @print(a(true)); }
+        \\fn main() { print(a(true)); }
+        \\
+        \\import {io.terminal.print, failure.panic} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn f(c: bool) -> i32 { if (c) { return 1; }; }
@@ -1958,7 +2080,9 @@ test "warning: a tuple variable whose name differs from the written label (decis
         \\    val pop = 12;
         \\    return #(city, pop);
         \\}
-        \\pub fn main() { @print(load().name); }
+        \\pub fn main() { print(load().name); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "the variable `city` fills the element labeled `name`") != null);
@@ -2100,11 +2224,13 @@ test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alo
         \\    val n: i32 = b.length();
         \\    val cut: Bytes = b.slice(1).concat(b[0..1]);
         \\    val same: bool = cut == b;
-        \\    @print(n);
-        \\    @print(same);
+        \\    print(n);
+        \\    print(same);
         \\    return cut.toUtf8().unwrapOr("");
         \\}
-        \\pub fn main() { @print(roundTrip("ab")); }
+        \\pub fn main() { print(roundTrip("ab")); }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     const cases = [_]struct { src: []const u8, want: []const u8 }{
         .{ .src = "pub fn main() { val b: Bytes = \"a\"; @print(b.length()); }", .want = "expected Bytes, got string" },

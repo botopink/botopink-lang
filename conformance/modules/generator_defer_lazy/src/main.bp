@@ -3,21 +3,23 @@
 //// the items, and the deferred statement runs when the sequence ends — at the
 //// body's end, or when the consumer leaves the `for` with `break`.
 
-iter fn counted() -> @Iterator<i32> {
-    defer @print("closed");
-    @print("before");
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iterator<i32> {
+    defer print("closed");
+    print("before");
     yield 1;
-    @print("after");
+    print("after");
     yield 2;
 }
 
 pub fn main() {
     for (counted()) { x ->
-        @print(x);
+        print(x);
     }
     for (counted()) { x ->
-        @print(x);
+        print(x);
         if (x == 1) break;
     }
-    @print("done");
+    print("done");
 }

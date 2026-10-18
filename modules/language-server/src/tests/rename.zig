@@ -136,9 +136,11 @@ test "rename: edit ranges cover the old identifier, not the new name" {
 test "rename: renaming a private fn renames its `body:` binding cells" {
     const gpa = std.testing.allocator;
     const source =
-        \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+        \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
         \\pub declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
+        \\
+        \\import {compiler} from "std";
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);

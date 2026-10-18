@@ -8,47 +8,47 @@
 //// commonJS only: `pending` asks the host whether a value is a `Promise`,
 //// and only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.RenderScope} from "std";
+import {context.RenderScope, compiler, io.terminal.print} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
-#[@external(.JavaScript("""($0 instanceof Promise)"""))]
+#[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
-fn loadComments() -> @Task<string> {
+fn loadComments() -> Task<string> {
     return "2 comments";
 }
 
 type Menu(title: string) {
-    fn render(self: Self) -> @Component<Element> {
+    fn render(self: Self) -> Component<Element> {
         return Element(text: "menu " + self.title);
     }
-    fn slow(self: Self) -> @Component<Element> {
+    fn slow(self: Self) -> Component<Element> {
         val t = await loadComments();
         return Element(text: t);
     }
 }
 
-fn Page() -> @Component<Element> {
+fn Page() -> Component<Element> {
     val m = Menu(title: "a");
     val a = await m.render();
     val b = await m.slow();
     return Element(text: a.text + " " + b.text);
 }
 
-fn Plain() -> @Component<Element> {
+fn Plain() -> Component<Element> {
     val m = Menu(title: "b");
     val a = await m.render();
     return Element(text: a.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val m = Menu(title: "a");
-    @print(pending(m.render().run(RenderScope.root())));
-    @print(pending(m.slow().run(RenderScope.root())));
-    @print(pending(Plain().run(RenderScope.root())));
+    print(pending(m.render().run(RenderScope.root())));
+    print(pending(m.slow().run(RenderScope.root())));
+    print(pending(Plain().run(RenderScope.root())));
     val p = await Page().run(RenderScope.root());
-    @print(p.value.text);
+    print(p.value.text);
     val q = await Plain().run(RenderScope.root());
-    @print(q.value.text);
+    print(q.value.text);
 }

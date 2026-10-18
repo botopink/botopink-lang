@@ -6,19 +6,21 @@
 //// as 0, and so does the patch now. jhonstart's sidecar `arr.slice()` copy is
 //// the finding. `.targets` is `commonJS`: the patch is that backend's alone.
 
-#[@external(.JavaScript("$0.slice()"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("$0.slice()"))]
 declare fn copyAll(xs: i32[]) -> i32[];
 
-#[@external(.JavaScript("$0.slice()"))]
+#[compiler.external(.JavaScript("$0.slice()"))]
 declare fn copyText(s: string) -> string;
 
-#[@external(.JavaScript("$0.slice(undefined, 2)"))]
+#[compiler.external(.JavaScript("$0.slice(undefined, 2)"))]
 declare fn headTwo(xs: i32[]) -> i32[];
 
 pub fn main() {
     val xs: i32[] = [1, 2, 3];
-    @print(copyAll(xs));
-    @print(copyText("abc"));
-    @print(headTwo(xs));
-    @print(xs.slice(1));
+    print(copyAll(xs));
+    print(copyText("abc"));
+    print(headTwo(xs));
+    print(xs.slice(1));
 }

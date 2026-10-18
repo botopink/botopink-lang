@@ -1,9 +1,10 @@
 import {m as mark} from "frame";
+import {compiler} from "std";
 
 // Passes a value through the host. It has no wasm binding, which keeps this cell off wasm: the
 // wasm backend cannot yet place a field of a record the module does not declare (`frame`'s
 // `show` reads `Declared`'s fields).
-#[@external(.JavaScript("""$0"""), .Erlang("""$0"""))]
+#[compiler.external(.JavaScript("""$0"""), .Erlang("""$0"""))]
 declare fn through(s: string) -> string;
 
 #[mark]

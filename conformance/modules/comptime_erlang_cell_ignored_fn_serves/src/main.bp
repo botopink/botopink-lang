@@ -4,9 +4,9 @@
 //// Erlang cell binds the erlang and beam targets alone, and is never run by
 //// the compiler).
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
-#[@external(
+#[compiler.external(
     .JavaScript("""$0.replace(/a/g, "b")"""),
     .Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))"""),
     .Wasm(body: tidyBody),
@@ -27,5 +27,5 @@ fn sized(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(summary());
+    print(summary());
 }

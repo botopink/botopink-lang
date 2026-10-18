@@ -5,27 +5,29 @@
 //// real timer) are resumed where they stopped. The answers equal commonJS's,
 //// erlang's and beam's.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm(wasi: .Delay),
 )]
-declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
+declare fn delay<T>(millis: i32, value: T) -> Task<T>;
 
 type Counter(base: i32) {
-    fn bump(self: Self, by: i32) -> @Task<i32> {
+    fn bump(self: Self, by: i32) -> Task<i32> {
         val step = await delay(1, by);
         return self.base + step;
     }
 }
 
-fn check(n: i32) -> @Task<@Result<i32, string>> {
+fn check(n: i32) -> Task<Result<i32, string>> {
     val v = await delay(1, n);
     if (v < 0) throw "negative " + v.toString();
     return v * 10;
 }
 
-fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> @Task<i32>) -> @Task<i32> {
+fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> Task<i32>) -> Task<i32> {
     var total = 0;
     for (xs) { x ->
         val got = await f(x);
@@ -34,7 +36,7 @@ fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> @Task<i32>) -> @Task<i32> {
     return total;
 }
 
-fn classify(n: i32) -> @Task<string> {
+fn classify(n: i32) -> Task<string> {
     if (n == 1) {
         val w = await delay(2, "one");
         return w + "!";
@@ -46,7 +48,7 @@ fn classify(n: i32) -> @Task<string> {
     return label;
 }
 
-fn loopy() -> @Task<string> {
+fn loopy() -> Task<string> {
     var out = "";
     var i = 0;
     while (i < 3) {
@@ -63,44 +65,44 @@ fn loopy() -> @Task<string> {
     return out;
 }
 
-fn fallible() -> @Task<@Result<string, string>> {
+fn fallible() -> Task<Result<string, string>> {
     val a = try await check(2);
     val b = try await check(-3);
     return "unreachable " + a.toString() + b.toString();
 }
 
-fn recovered() -> @Task<i32> {
+fn recovered() -> Task<i32> {
     val r = try await check(-1) catch 7;
     return r;
 }
 
-fn show(r: @Result<string, string>) {
+fn show(r: Result<string, string>) {
     case r {
-        Ok(v) -> @print("ok " + v);
-        Error(e) -> @print("error " + e);
+        Ok(v) -> print("ok " + v);
+        Error(e) -> print("error " + e);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     val c = Counter(base: 40);
-    @print(await c.bump(2));
+    print(await c.bump(2));
     val checked = await check(4);
     case checked {
-        Ok(v) -> @print("ok " + v.toString());
-        Error(e) -> @print("error " + e);
+        Ok(v) -> print("ok " + v.toString());
+        Error(e) -> print("error " + e);
     }
     show(await fallible());
-    @print(await recovered());
-    @print(await sumTo([1, 2, 3], { x -> delay(1, x * 2) }));
-    @print(await classify(0));
-    @print(await classify(1));
-    @print(await classify(5));
-    @print(await loopy());
+    print(await recovered());
+    print(await sumTo([1, 2, 3], { x -> delay(1, x * 2) }));
+    print(await classify(0));
+    print(await classify(1));
+    print(await classify(5));
+    print(await loopy());
     val t = async {
         val x = await delay(3, 5);
         return x + 1;
     };
-    @print(await t);
+    print(await t);
 }
 
 pub fn main() {

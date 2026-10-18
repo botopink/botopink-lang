@@ -2,7 +2,9 @@
 //// never a string: `fn: "tanBody"` is refused at the argument, on every
 //// target, naming the form to write.
 
-#[@external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm(body: "tanBody"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm(body: "tanBody"))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: f64) -> f64 {
@@ -10,5 +12,5 @@ fn tanBody(x: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(tanOf(0.0));
+    print(tanOf(0.0));
 }

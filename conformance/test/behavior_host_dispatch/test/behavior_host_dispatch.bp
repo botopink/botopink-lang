@@ -12,6 +12,8 @@
 //// to a bare LOCAL call `greet(G, <<"ana">>)`, which no module defines —
 //// `erlc` refused the whole file with `function greet/2 undefined`.
 
+import {compiler} from "std";
+
 // wasm refuses this suite on a host binding: `makeGreeter` builds the value and has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 behavior Greeter {
@@ -20,7 +22,7 @@ behavior Greeter {
     fn greet(self: Self, who: string) -> string;
 }
 
-#[@external(
+#[compiler.external(
     .JavaScript("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
     .Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}"),
 )]

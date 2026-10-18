@@ -4,16 +4,16 @@
 //// and `needs` from their defaults, on every target, in a library's source
 //// annotation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn floorOp(syntax decl: unknown) {
     compiler.implement(Implementation.Wasm(op: "f64.floor"));
 }
 
 #[floorOp]
-#[@external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+#[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
 declare fn floor(x: f64) -> f64;
 
 pub fn main() {
-    @print(floor(2.5).toString());
+    print(floor(2.5).toString());
 }

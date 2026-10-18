@@ -8,7 +8,7 @@
 
 import {compiler} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
 // Renders `decl.hooks` into one meta string `main` prints: each node as
 // `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
@@ -40,11 +40,11 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-#[@external(.JavaScript("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]
-declare fn session() -> @Component<string>;
+#[compiler.external(.JavaScript("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]
+declare fn session() -> Component<string>;
 
 #[graph]
-pub fn Page() -> @Component<Element> {
+pub fn Page() -> Component<Element> {
     val user = use session();
     return Element(text: user);
 }

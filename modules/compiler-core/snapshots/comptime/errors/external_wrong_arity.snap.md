@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 ----- ERROR
 error: external-field-unlabelled: a cell's field is written by its label — write it by one of `.Erlang`'s labels: `body:`, `inline:`, `result:`
-  ┌─ main.bp:1:31
+  ┌─ main.bp:1:39
   │
 1 │ #[compiler.external(.Erlang("string", "length"))]
   │                                       ^

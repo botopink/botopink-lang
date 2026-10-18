@@ -3,7 +3,7 @@
 //// two `@emit` calls make one declaration, so the module is re-analysed on its
 //// source with the text spliced in, and `#[bif]` keeps its implementation.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn bif(syntax decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
@@ -18,7 +18,7 @@ fn greeting(syntax decl: unknown) {
 fn anchor() {}
 
 #[bif("lists")]
-#[@external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
+#[compiler.external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
 declare fn backwards(xs: i32[]) -> i32[];
 
 fn reverseBody(xs: i32[]) -> i32[] {
@@ -26,6 +26,6 @@ fn reverseBody(xs: i32[]) -> i32[] {
 }
 
 pub fn main() {
-    @print(greeted());
-    @print(backwards([1, 2, 3]));
+    print(greeted());
+    print(backwards([1, 2, 3]));
 }

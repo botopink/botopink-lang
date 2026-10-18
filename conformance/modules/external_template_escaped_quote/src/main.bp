@@ -5,17 +5,19 @@
 //// into the `.js`, backslash and all — `SyntaxError: Invalid or unexpected
 //// token` before anything ran. Not scheduled on wasm: no host binding there.
 
-#[@external(.JavaScript("(\"say \" + $0)"), .Erlang("<<\"say \", $0/binary>>"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("(\"say \" + $0)"), .Erlang("<<\"say \", $0/binary>>"))]
 declare fn say(s: string) -> string;
 
-#[@external(
+#[compiler.external(
     .JavaScript("JSON.stringify({ k: $0 })"),
     .Erlang("<<\"{\", 34, \"k\", 34, \":\", 34, $0/binary, 34, \"}\">>"),
 )]
 declare fn enc(s: string) -> string;
 
 type Box(label: string) {
-    #[@external(
+    #[compiler.external(
         .JavaScript("(\"[\" + $0.label + \"]\")"),
         .Erlang("<<\"[\", (element(2, $0))/binary, \"]\">>"),
     )]
@@ -23,8 +25,8 @@ type Box(label: string) {
 }
 
 pub fn main() {
-    @print(say("hi"));
-    @print(enc("v"));
-    @print(say("a \"quoted\" word"));
-    @print(Box(label: "b").framed());
+    print(say("hi"));
+    print(enc("v"));
+    print(say("a \"quoted\" word"));
+    print(Box(label: "b").framed());
 }

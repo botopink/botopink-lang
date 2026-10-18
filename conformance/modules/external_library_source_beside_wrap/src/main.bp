@@ -2,7 +2,7 @@
 //// re-analysis: a decorator of the same module that wraps a function
 //// (`compiler.wrapWith`) does not lose the implementation `#[bif]` gave.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
 fn bif(syntax decl: unknown, comptime module: string) {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
@@ -18,7 +18,7 @@ fn hello() -> string {
 }
 
 #[bif("lists")]
-#[@external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
+#[compiler.external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
 declare fn backwards(xs: i32[]) -> i32[];
 
 fn reverseBody(xs: i32[]) -> i32[] {
@@ -26,6 +26,6 @@ fn reverseBody(xs: i32[]) -> i32[] {
 }
 
 pub fn main() {
-    @print(hello());
-    @print(backwards([1, 2, 3]));
+    print(hello());
+    print(backwards([1, 2, 3]));
 }

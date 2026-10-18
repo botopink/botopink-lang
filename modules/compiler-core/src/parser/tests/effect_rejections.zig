@@ -80,19 +80,21 @@ test "effect-annotation-removed — each of the six, located on the name" {
 test "effect-annotation-removed — on a declare fn, a behavior method and a type method" {
     try expectKind(
         \\#[@future]
-        \\#[@external(.JavaScript("fetch($0)"))]
-        \\pub declare fn fetch(url: string) -> @Task<i32>;
+        \\#[compiler.external(.JavaScript("fetch($0)"))]
+        \\pub declare fn fetch(url: string) -> Task<i32>;
+        \\
+        \\import {compiler} from "std";
     , .effectAnnotationRemoved);
     try expectKind(
         \\val AsyncSource = behavior {
         \\    #[@future]
-        \\    fn next(self: Self) -> @Task<i32>;
+        \\    fn next(self: Self) -> Task<i32>;
         \\}
     , .effectAnnotationRemoved);
     try expectKind(
         \\type Box(n: i32) {
         \\    #[@generator]
-        \\    fn each(self: Self) -> @Iterator<i32> { yield self.n; }
+        \\    fn each(self: Self) -> Iterator<i32> { yield self.n; }
         \\}
     , .effectAnnotationRemoved);
 }
@@ -100,8 +102,10 @@ test "effect-annotation-removed — on a declare fn, a behavior method and a typ
 test "effect-annotation-removed — in a list with another annotation" {
     try expectKind(
         \\#[@result]
-        \\#[@external(.JavaScript("x"))]
-        \\declare fn f() -> @Result<i32, string>;
+        \\#[compiler.external(.JavaScript("x"))]
+        \\declare fn f() -> Result<i32, string>;
+        \\
+        \\import {compiler} from "std";
     , .effectAnnotationRemoved);
 }
 
@@ -149,11 +153,11 @@ test "iterator-error-param-removed — located on the error argument" {
 
 test "the new surface parses — the five wrappers with no annotation" {
     try expectParses(
-        \\fn a() -> @Result<i32, string> { return 1; }
-        \\fn b() -> @Task<@Result<i32, string>> { return 1; }
-        \\fn c() -> @Component<i32> { return 1; }
-        \\fn d() -> @Iterator<@Result<i32, string>> { yield 1; }
-        \\fn e() -> @Stream<i32> { yield 1; }
+        \\fn a() -> Result<i32, string> { return 1; }
+        \\fn b() -> Task<Result<i32, string>> { return 1; }
+        \\fn c() -> Component<i32> { return 1; }
+        \\fn d() -> Iterator<Result<i32, string>> { yield 1; }
+        \\fn e() -> Stream<i32> { yield 1; }
     );
 }
 
@@ -162,10 +166,10 @@ test "the return is the effect — FnDecl.effect, and a factory has none" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\fn a() -> @Task<i32> { return 0; }
-        \\fn b() -> @Iterator<i32> { yield 0; }
-        \\fn c(xs: i32[]) -> @Iterator<i32> { return iter for (xs) { x -> yield x; }; }
-        \\fn d() -> @Component<i32> { return 0; }
+        \\fn a() -> Task<i32> { return 0; }
+        \\fn b() -> Iterator<i32> { yield 0; }
+        \\fn c(xs: i32[]) -> Iterator<i32> { return iter for (xs) { x -> yield x; }; }
+        \\fn d() -> Component<i32> { return 0; }
         \\fn e() -> i32 { return 0; }
     ;
     var lx = Lexer.init(src);
@@ -194,7 +198,7 @@ test "`iter` / `stream` prefix the three loops, as a value and as an argument" {
 
 test "`iter` / `stream` / `try await` — contextual words stay identifiers" {
     try expectParses(
-        \\fn f(g: Grid, http: Http) -> @Task<@Result<i32, string>> {
+        \\fn f(g: Grid, http: Http) -> Task<Result<i32, string>> {
         \\    val it = g.iter();
         \\    val stream = 1;
         \\    val iter = 2;
@@ -229,7 +233,7 @@ test "`try await x` is `try (await x)`" {
 
 test "decision 137: `try` / `await` parse wherever an expression begins" {
     try expectParses(
-        \\fn f(xs: i32[]) -> @Task<@Result<i32, string>> {
+        \\fn f(xs: i32[]) -> Task<Result<i32, string>> {
         \\    try g();
         \\    val a = try g();
         \\    var b = try await h();
@@ -247,7 +251,7 @@ test "decision 137: `try` / `await` parse wherever an expression begins" {
         \\    k(try g() catch 0);
         \\    return try g();
         \\}
-        \\fn it() -> @Iterator<@Result<i32, string>> { yield try g(); }
+        \\fn it() -> Iterator<Result<i32, string>> { yield try g(); }
     );
 }
 
@@ -313,7 +317,7 @@ test "decision 537: `catch` is infix with the lowest precedence" {
 
 test "decision 537: `try` and `await` stand as an operand, no refusal remains" {
     try expectParses(
-        \\fn f() -> @Task<@Result<i32, string>> {
+        \\fn f() -> Task<Result<i32, string>> {
         \\    val a = total + try r();
         \\    val b = -try r();
         \\    val c = (try r()).length;
@@ -344,7 +348,7 @@ test "an `if` expression stands where an expression begins" {
 
 test "RI6 — legacy `yield break <expr>` is rejected at parse" {
     try expectKind(
-        \\fn it() -> @Iterator<@Result<i32, string>> {
+        \\fn it() -> Iterator<Result<i32, string>> {
         \\    yield break 0;
         \\}
     , .yieldBreakRemoved);
@@ -352,7 +356,7 @@ test "RI6 — legacy `yield break <expr>` is rejected at parse" {
 
 test "RI6 — bare `yield break` is also rejected" {
     try expectKind(
-        \\fn g() -> @Iterator<i32> {
+        \\fn g() -> Iterator<i32> {
         \\    yield break;
         \\}
     , .yieldBreakRemoved);
@@ -400,13 +404,13 @@ test "RG1 — every parameter defaulted is accepted" {
 
 test "RG4 — `@Result<i32, , i64>` rejected at parse" {
     try expectKind(
-        \\fn middle() -> @Result<i32, , i64> { return 0; }
+        \\fn middle() -> Result<i32, , i64> { return 0; }
     , .genericArgSkipForbidden);
 }
 
 test "RG4 — trailing `,>` is also a skipped slot" {
     try expectKind(
-        \\fn trail() -> @Result<i32, > { return 0; }
+        \\fn trail() -> Result<i32, > { return 0; }
     , .genericArgSkipForbidden);
 }
 
@@ -483,13 +487,13 @@ test "decision 553: a marker before `fn` on a declaration sets the marker and th
     defer arena.deinit();
     const alloc = arena.allocator();
     const prog = try parseOk(alloc,
-        \\async fn a() -> @Task<i32> { return 1; }
-        \\iter fn b() -> @Iterator<i32> { yield 1; }
-        \\async iter fn c() -> @Stream<i32> { yield 1; }
-        \\component fn D() -> @Component<i32> { return 1; }
-        \\pub async fn e() -> @Task<i32> { return 1; }
-        \\pub default async fn f() -> @Task<i32> { return 1; }
-        \\iter fn g() -> @Iterator<i32> { return [1].iter(); }
+        \\async fn a() -> Task<i32> { return 1; }
+        \\iter fn b() -> Iterator<i32> { yield 1; }
+        \\async iter fn c() -> Stream<i32> { yield 1; }
+        \\component fn D() -> Component<i32> { return 1; }
+        \\pub async fn e() -> Task<i32> { return 1; }
+        \\pub default async fn f() -> Task<i32> { return 1; }
+        \\iter fn g() -> Iterator<i32> { return [1].iter(); }
     );
     const want = [_]ast.EffectKind{ .task, .iterator, .stream, .component, .task, .task, .iterator };
     for (want, 0..) |k, i| {
@@ -507,8 +511,8 @@ test "decision 553: an unmarked body keeps today's effect" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const prog = try parseOk(alloc,
-        \\fn b() -> @Iterator<i32> { yield 1; }
-        \\fn g() -> @Iterator<i32> { return [1].iter(); }
+        \\fn b() -> Iterator<i32> { yield 1; }
+        \\fn g() -> Iterator<i32> { return [1].iter(); }
     );
     try std.testing.expectEqual(@as(?ast.EffectKind, null), prog.decls[0].@"fn".marker);
     try std.testing.expectEqual(@as(?ast.EffectKind, .iterator), prog.decls[0].@"fn".effect);
@@ -522,12 +526,12 @@ test "decision 553: markers on a type's method, a behavior's default and an impl
     const alloc = arena.allocator();
     const prog = try parseOk(alloc,
         \\type Grid(cells: i32[]) {
-        \\    iter fn each(self: Self) -> @Iterator<i32> { yield 1; }
-        \\    pub async fn total(self: Self) -> @Task<i32> { return 1; }
+        \\    iter fn each(self: Self) -> Iterator<i32> { yield 1; }
+        \\    pub async fn total(self: Self) -> Task<i32> { return 1; }
         \\}
         \\behavior Source {
         \\    fn base(self: Self) -> i32;
-        \\    default async fn scaled(self: Self) -> @Task<i32> { return 1; }
+        \\    default async fn scaled(self: Self) -> Task<i32> { return 1; }
         \\}
         \\Loud implement Speak for Grid {
         \\    async fn say(self: Self) { }
@@ -552,7 +556,7 @@ test "decision 553: marker-type-mismatch — located at the marker" {
     try expectKindAt("async fn f() { }", .markerTypeMismatch, 1, 1);
     try expectKindAt(
         \\type Grid(n: i32) {
-        \\    async fn each(self: Self) -> @Iterator<i32> { yield 1; }
+        \\    async fn each(self: Self) -> Iterator<i32> { yield 1; }
         \\}
     , .markerTypeMismatch, 2, 5);
     try expectKindAt("fn f() { val g = async fn(x: i32) -> i32 { x }; }", .markerTypeMismatch, 1, 18);
@@ -563,12 +567,12 @@ test "decision 553: marker-on-declaration — a bodyless declaration takes no ma
     try expectKindAt("pub declare async fn f() -> @Task<i32>;", .markerOnDeclaration, 1, 13);
     try expectKindAt(
         \\behavior Source {
-        \\    async fn next(self: Self) -> @Task<i32>;
+        \\    async fn next(self: Self) -> Task<i32>;
         \\}
     , .markerOnDeclaration, 2, 5);
     try expectKindAt(
         \\type Box(n: i32) {
-        \\    declare async fn next(self: Self) -> @Task<i32>;
+        \\    declare async fn next(self: Self) -> Task<i32>;
         \\}
     , .markerOnDeclaration, 2, 13);
 }
@@ -628,8 +632,8 @@ test "decision 537: a body's tail `await e` / `try e` is its value" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const prog = try parseOk(alloc,
-        \\fn f() -> @Task<i32> { await g() }
-        \\fn h() -> @Result<i32, string> { try k() }
+        \\fn f() -> Task<i32> { await g() }
+        \\fn h() -> Result<i32, string> { try k() }
     );
     try std.testing.expect(prog.decls[0].@"fn".body[0].tail == .returned);
     try std.testing.expect(prog.decls[1].@"fn".body[0].tail == .returned);

@@ -7,9 +7,11 @@
 //// BEAM comptime (`x:erlang`) and refused it on the wat runtime with another
 //// message (decision 341's).
 
-#[@external(.JavaScript("""($0 + ":node")"""), .Erlang("""<<($0)/binary, ":erlang">>"""))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""($0 + ":node")"""), .Erlang("""<<($0)/binary, ":erlang">>"""))]
 declare fn tag(value: string) -> string;
 
 pub fn main() {
-    @print(comptime tag("x"));
+    print(comptime tag("x"));
 }

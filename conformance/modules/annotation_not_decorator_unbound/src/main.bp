@@ -2,11 +2,13 @@
 //// dropped without a word, and the program built. `nope` is declared nowhere:
 //// the annotation is refused where it is written, naming that it is nothing.
 
+import {io.terminal.print} from "std";
+
 #[nope]
 pub fn run() -> i32 {
     return 1;
 }
 
 pub fn main() {
-    @print(run());
+    print(run());
 }

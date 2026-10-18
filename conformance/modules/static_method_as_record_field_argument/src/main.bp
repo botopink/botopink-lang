@@ -1,6 +1,8 @@
 //// A type's static method handed as a record constructor's argument is the
 //// type's method, never the module's own `fn` of the same name beside it.
 
+import {io.terminal.print} from "std";
+
 pub type Entry(name: string, make: fn() -> string)
 
 var entries: Entry[] = [];
@@ -23,7 +25,7 @@ val _x = exec();
 
 pub fn main() {
     for (entries) { e ->
-        @print(e.name + " " + e.make());
+        print(e.name + " " + e.make());
     }
-    @print(make());
+    print(make());
 }

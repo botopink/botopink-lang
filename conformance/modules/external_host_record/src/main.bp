@@ -16,19 +16,21 @@
 //// and decision 67 makes the compiler refuse the program there rather than run
 //// it — which `run/external_erlang_only` already pins. beam reads the erlang row.
 
+import {compiler, io.terminal.print} from "std";
+
 pub type Point(x: i32, y: i32)
 
 // A record answered directly.
-#[@external(.JavaScript("""({ x: 7, y: 9 })"""), .Erlang("""#{x => 7, y => 9}"""))]
+#[compiler.external(.JavaScript("""({ x: 7, y: 9 })"""), .Erlang("""#{x => 7, y => 9}"""))]
 declare fn hostPoint() -> Point;
 
 // A record answered through `?T` — the absent case is not a map and has to
 // survive adoption unchanged.
-#[@external(.JavaScript("""({ x: 5, y: 6 })"""), .Erlang("""#{x => 5, y => 6}"""))]
+#[compiler.external(.JavaScript("""({ x: 5, y: 6 })"""), .Erlang("""#{x => 5, y => 6}"""))]
 declare fn hostMaybePoint() -> ?Point;
 
 // A list of records: every element is adopted, not the list.
-#[@external(
+#[compiler.external(
     .JavaScript("""[{ x: 1, y: 2 }, { x: 3, y: 4 }]"""),
     .Erlang("""[#{x => 1, y => 2}, #{x => 3, y => 4}]"""),
 )]
@@ -36,7 +38,7 @@ declare fn hostPoints() -> Point[];
 
 // A host that already builds decision 21's shape: adopting it again must be
 // adopting it once.
-#[@external(
+#[compiler.external(
     .JavaScript("""({ x: 10, y: 20 })"""),
     .Erlang("""{'external_host_record@main@@Point', 10, 20}"""),
 )]
@@ -49,22 +51,22 @@ fn sum(p: Point) -> i32 {
 }
 
 pub fn main() {
-    @print(sum(hostPoint()));
-    @print(hostPoint().x);
+    print(sum(hostPoint()));
+    print(hostPoint().x);
 
     val m = hostMaybePoint();
     if (m) {
         q ->
-        @print(sum(q));
+        print(sum(q));
     }
 
     val ps = hostPoints();
-    @print(ps.length);
+    print(ps.length);
     var total = 0;
     for (ps) { q ->
         total = total + sum(q);
     }
-    @print(total);
+    print(total);
 
-    @print(sum(hostTaggedPoint()));
+    print(sum(hostTaggedPoint()));
 }

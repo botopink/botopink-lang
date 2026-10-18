@@ -14,8 +14,10 @@
 //// `.targets` is `commonJS erlang beam`, as `run/external_host_record`'s:
 //// wasm has no host.
 
+import {compiler, io.terminal.print} from "std";
+
 pub type Pair(a: i32, b: i32) {
-    #[@external(.JavaScript("""($1 === 0 ? $0.a : $0.b)"""), .Erlang("""element($1 + 2, $0)"""))]
+    #[compiler.external(.JavaScript("""($1 === 0 ? $0.a : $0.b)"""), .Erlang("""element($1 + 2, $0)"""))]
     pub declare fn at(self: Self, i: i32) -> i32;
 }
 
@@ -23,26 +25,26 @@ pub fn at(xs: i32[], i: i32) -> i32 {
     return xs.length + i;
 }
 
-#[@external(.JavaScript("""({ a: $0, b: $1 })"""), .Erlang("""#{a => $0, b => $1}"""))]
+#[compiler.external(.JavaScript("""({ a: $0, b: $1 })"""), .Erlang("""#{a => $0, b => $1}"""))]
 declare fn hostPair(a: i32, b: i32) -> Pair;
 
-#[@external(.JavaScript("""({ ok: { a: $0, b: $1 } })"""), .Erlang("""{ok, #{a => $0, b => $1}}"""))]
-declare fn hostPairResult(a: i32, b: i32) -> @Result<Pair, string>;
+#[compiler.external(.JavaScript("""({ ok: { a: $0, b: $1 } })"""), .Erlang("""{ok, #{a => $0, b => $1}}"""))]
+declare fn hostPairResult(a: i32, b: i32) -> Result<Pair, string>;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""[{ a: 1, b: 2 }, { a: 3, b: 4 }]"""),
     .Erlang("""[#{a => 1, b => 2}, #{a => 3, b => 4}]"""),
 )]
 declare fn hostPairs() -> Pair[];
 
 pub fn main() {
-    @print(hostPair(5, 6).at(1));
-    @print(hostPairResult(7, 8).map({ p -> p.at(0) }).unwrapOr(-1));
+    print(hostPair(5, 6).at(1));
+    print(hostPairResult(7, 8).map({ p -> p.at(0) }).unwrapOr(-1));
     var total = 0;
     for (hostPairs()) { p ->
         total = total + p.at(1);
     }
-    @print(total);
-    @print(at([1, 2], 10));
-    @print(hostPair(1, 2));
+    print(total);
+    print(at([1, 2], 10));
+    print(hostPair(1, 2));
 }

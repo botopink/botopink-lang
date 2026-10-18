@@ -1244,7 +1244,7 @@ function _botopink_main() {
 }
 if (require.main === module) _botopink_main();
 
-Object.defineProperty(exports, "__bp_priv__", { value: { port, Service, collect, main, compiler, wireService } });
+Object.defineProperty(exports, "__bp_priv__", { value: { port, Service, collect, main, wireService } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

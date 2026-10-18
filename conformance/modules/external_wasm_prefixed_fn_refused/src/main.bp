@@ -1,4 +1,6 @@
-#[@external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm("fn:tanBody"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm("fn:tanBody"))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: f64) -> f64 {
@@ -6,5 +8,5 @@ fn tanBody(x: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(tanOf(0.0));
+    print(tanOf(0.0));
 }

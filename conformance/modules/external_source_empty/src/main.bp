@@ -2,9 +2,11 @@
 //// (`.Erlang()`) gives its target no code: it is refused at the argument,
 //// `external-source-empty`.
 
-#[@external(.Erlang(), .JavaScript("Math.abs($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang(), .JavaScript("Math.abs($0)"))]
 declare fn magnitude(x: f64) -> f64;
 
 pub fn main() {
-    @print(magnitude(-2.5));
+    print(magnitude(-2.5));
 }

@@ -2,9 +2,11 @@
 //// second binding naming one host would bind that host twice. Refused at the
 //// second annotation.
 
-#[@external(.JavaScript("Math.floor($0)"), .Wasm(op: "f64.floor"), .Wasm(op: "f64.ceil", host: .Browser))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.floor($0)"), .Wasm(op: "f64.floor"), .Wasm(op: "f64.ceil", host: .Browser))]
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {
-    @print(roundOf(2.5));
+    print(roundOf(2.5));
 }

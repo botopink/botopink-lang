@@ -2,6 +2,7 @@
 //// declares no such name is refused at the annotation.
 
 import {jwt} from "sec";
+import {io.terminal.print} from "std";
 
 #[jwt.missing]
 fn Signed() -> string {
@@ -9,5 +10,5 @@ fn Signed() -> string {
 }
 
 pub fn main() {
-    @print(Signed());
+    print(Signed());
 }

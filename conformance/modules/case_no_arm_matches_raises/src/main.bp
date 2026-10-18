@@ -7,9 +7,11 @@
 //// printed `'Square'` at exit 0; commonJS answered `undefined`. wasm refuses the
 //// program — the host binding has no wasm form.
 
+import {compiler, io.terminal.print} from "std";
+
 type Shape { Dot, Circle(r: i32) }
 
-#[@external(.JavaScript("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
+#[compiler.external(.JavaScript("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
 declare fn shapeNamed(name: string) -> Shape;
 
 fn area(s: Shape) -> i32 {
@@ -24,7 +26,7 @@ fn area(s: Shape) -> i32 {
 }
 
 pub fn main() {
-    @print("before");
-    @print(area(shapeNamed("Square")));
-    @print("after");
+    print("before");
+    print(area(shapeNamed("Square")));
+    print("after");
 }

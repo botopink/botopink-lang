@@ -10,8 +10,9 @@ pub mod greet;
 pub mod host;
 import {host.fromHost};
 import {greet.Greeter, greet.Bob, greet.useIt};
+import {compiler, io.terminal.print} from "std";
 
-#[@external(
+#[compiler.external(
     .JavaScript("(() => ({ greet: () => 'host' }))()"),
     .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
 )]
@@ -22,8 +23,8 @@ fn make() -> Greeter {
 }
 
 pub fn main() {
-    @print(useIt(Bob(name: "a")));
-    @print(useIt(make()));
-    @print(useIt(hostGreeter()));
-    @print(useIt(fromHost()));
+    print(useIt(Bob(name: "a")));
+    print(useIt(make()));
+    print(useIt(hostGreeter()));
+    print(useIt(fromHost()));
 }

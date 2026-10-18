@@ -1,9 +1,9 @@
 //// A host function with both cells, and a function others import that
 //// calls it and a std host function.
 
-import {hash} from "std";
+import {hash, compiler} from "std";
 
-#[@external(.JavaScript("""($0 + "!")"""), .Erlang("""<<($0)/binary, "!">>"""), .Wasm(body: bangBody))]
+#[compiler.external(.JavaScript("""($0 + "!")"""), .Erlang("""<<($0)/binary, "!">>"""), .Wasm(body: bangBody))]
 declare fn bang(value: string) -> string;
 
 fn bangBody(value: string) -> string {

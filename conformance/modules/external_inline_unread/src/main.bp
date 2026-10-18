@@ -7,9 +7,11 @@
 //// dispatch table and does not. It is refused at the annotation, naming the
 //// variant that declares the flag.
 
-#[@external(.JavaScript("Math.max($args)", inline: true))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.max($args)", inline: true))]
 declare fn biggest(a: i32, b: i32) -> i32;
 
 pub fn main() {
-    @print(biggest(1, 2));
+    print(biggest(1, 2));
 }

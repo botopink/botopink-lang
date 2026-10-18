@@ -400,32 +400,38 @@ test "surface: a behavior member separated by a comma is member-comma-separator"
 test "surface: $self in an External template is template-self-marker" {
     try expectError(
         \\behavior S {
-        \\    #[@external(.Erlang("string:trim($self)"))]
+        \\    #[compiler.external(.Erlang("string:trim($self)"))]
         \\    fn trim(self: Self) -> Self;
         \\}
-    , .templateSelfMarker, 2, 25);
+        \\
+        \\import {compiler} from "std";
+    , .templateSelfMarker, 2, 33);
 }
 
 test "surface: a marker past the declared parameters is template-marker-out-of-range" {
     try expectError(
-        \\#[@external(.JavaScript("f($0, $1)"))]
+        \\#[compiler.external(.JavaScript("f($0, $1)"))]
         \\declare fn one(x: i32) -> i32;
-    , .templateMarkerOutOfRange, 1, 25);
+        \\
+        \\import {compiler} from "std";
+    , .templateMarkerOutOfRange, 1, 33);
 }
 
 test "surface: $stringify in an External template is template-stringify-marker (decision 239)" {
     try expectError(
         \\behavior S {
-        \\    #[@external(.Erlang("iolist_to_binary($stringify($0))"))]
+        \\    #[compiler.external(.Erlang("iolist_to_binary($stringify($0))"))]
         \\    fn show(self: Self) -> string;
         \\}
-    , .templateStringifyMarker, 2, 25);
+        \\
+        \\import {compiler} from "std";
+    , .templateStringifyMarker, 2, 33);
 }
 
 test "surface: a method's $0 is self and $1 its first argument" {
     var parsed = try parse(
         \\behavior S {
-        \\    #[@external(.Erlang("lists:member($1, $0)"))]
+        \\    #[compiler.external(.Erlang("lists:member($1, $0)"))]
         \\    fn has(self: Self, x: i32) -> bool;
         \\}
     );

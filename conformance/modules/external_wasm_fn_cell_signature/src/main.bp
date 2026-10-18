@@ -2,7 +2,9 @@
 //// against the declaration: a body taking an `i32` cannot serve a declaration
 //// over `f64`, refused at the annotation on every target.
 
-#[@external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm(body: tanBody))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm(body: tanBody))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: i32) -> f64 {
@@ -10,5 +12,5 @@ fn tanBody(x: i32) -> f64 {
 }
 
 pub fn main() {
-    @print(tanOf(0.0));
+    print(tanOf(0.0));
 }

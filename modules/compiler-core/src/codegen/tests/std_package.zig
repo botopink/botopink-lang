@@ -19,15 +19,17 @@ const h = @import("helpers.zig");
 
 test "js: a @Result's methods lower inline (decision 330: no `result` namespace)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\fn parse(n: i32) -> Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;
         \\}
         \\
         \\fn main() {
         \\    val r = parse(21).map({ x -> x * 2 });
-        \\    @print(r.unwrapOr(0));
+        \\    print(r.unwrapOr(0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -47,9 +49,11 @@ test "js: std package ---- a dotted path and a group bind leaves of std modules"
         \\
         \\fn main() {
         \\    val d: Dict<string, i32> = Dict.empty();
-        \\    @print(d.insert("a", 1).size());
-        \\    @print(rank(reverse(gt())));
+        \\    print(d.insert("a", 1).size());
+        \\    print(rank(reverse(gt())));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -65,10 +69,12 @@ test "js: std package ---- env template externals resolve through the module obj
         \\
         \\fn main() {
         \\    env.write("BOTOPINK_F8_ENV", "hi");
-        \\    @print(env.read("BOTOPINK_F8_ENV"));
+        \\    print(env.read("BOTOPINK_F8_ENV"));
         \\    env.clear("BOTOPINK_F8_ENV");
-        \\    @print(env.read("BOTOPINK_F8_ENV"));
+        \\    print(env.read("BOTOPINK_F8_ENV"));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "hi\nnull\n");
 }
 
@@ -88,13 +94,15 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {math} from "std";
         \\
-        \\#[@external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
+        \\#[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
         \\declare fn otpSqrt(x: f64) -> f64;
         \\
         \\fn main() {
-        \\    @print(math.ceil(1.2));
-        \\    @print(otpSqrt(16.0));
+        \\    print(math.ceil(1.2));
+        \\    print(otpSqrt(16.0));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "2.0\n4.0\n", &.{
         // the std module reached by its atom, and OTP's own `math` beside it
         "std@math:ceil(1.2)",
@@ -120,8 +128,10 @@ test "erlang: std package ---- a qualified std host call reaches its owner's wra
         \\import {erlang} from "std";
         \\
         \\fn main() {
-        \\    @print(erlang.node());
+        \\    print(erlang.node());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "nonode@nohost\n", &.{
         "std@erlang:node()",
     });
@@ -141,9 +151,11 @@ test "js: std package ---- order enum module with type export" {
         \\}
         \\
         \\fn main() {
-        \\    @print(collections.toInt(collections.lt()));
-        \\    @print(describe(collections.reverse(collections.lt())));
+        \\    print(collections.toInt(collections.lt()));
+        \\    print(describe(collections.reverse(collections.lt())));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -177,9 +189,11 @@ test "js: std package ---- methods of a type answered by an imported module reso
         \\
         \\fn main() {
         \\    val d = Dict.empty().insert("a", 1);
-        \\    @print(d.at("a") ?? 0);
-        \\    @print(d.insert("b", 2).size());
+        \\    print(d.at("a") ?? 0);
+        \\    print(d.insert("b", 2).size());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -203,8 +217,10 @@ test "erlang: std package ---- a String.slice default fn inside a std module" {
         \\import {querystring} from "std";
         \\
         \\fn main() {
-        \\    @print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
+        \\    print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "2\n", &.{
         "std@querystring:parse(<<\"?a=1&b=2\">>)",
     });
@@ -283,8 +299,10 @@ test "js: std package ---- a std module imports failure.HostError by path for re
         .{ .path = "io/probe", .source =
         \\import {failure, failure.HostError};
         \\
-        \\#[@external(.JavaScript("JSON.parse($0)", result: true))]
-        \\declare fn probeHost(s: string) -> @Task<@Result<i32, HostError>>;
+        \\#[compiler.external(.JavaScript("JSON.parse($0)", result: true))]
+        \\declare fn probeHost(s: string) -> Task<Result<i32, HostError>>;
+        \\
+        \\import {compiler} from "std";
         },
     });
 }

@@ -1185,7 +1185,7 @@ Decisions 610 and 621 (144 B-138, a source's fields) add the refusals `modules/e
 (`.Erlang("…", f)`, `external-field-unlabelled` at the argument); `external_flag_bare_bool_refused` answers
 `external-field-unlabelled` on `.JavaScript`; `external_wasm_fn_cell_string` and `external_wasm_fn_cell_signature` answer
 `external-body-not-a-fn` at the argument; `external_fn_body_every_target` and `external_result_on_fn_cell` write a
-template on one target beside their `body:` cells, so neither is all bodies. Decision 618 renamed `.Node` to
+template on one target beside their `body:` cells, so neither is all bodies. Decision 618 renamed `.JavaScript` to
 `.JavaScript` in every cell (`scripts/codemod/implementation_javascript.py`).
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every

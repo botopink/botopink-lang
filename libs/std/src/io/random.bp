@@ -17,7 +17,9 @@
 //// read the host's cryptographic source (`crypto.randomBytes`,
 //// `crypto:strong_rand_bytes/1`) — or `crypto.randomBytes` for hex.
 
-#[external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(std: "random.float"))]
+import {compiler};
+
+#[compiler.external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(std: "random.float"))]
 pub declare fn float() -> f64;
 
 // Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
@@ -29,7 +31,7 @@ pub declare fn float() -> f64;
 // shipper copies the `.mjs` next to the emitted module.
 // Erlang: `rand:seed/2` with the `exsplus` algorithm + a `{S, S, S}`
 // triple. `S` is folded to an integer via the i64 input.
-#[external(
+#[compiler.external(
     .JavaScript("""require('./sidecars/random.mjs').seed($0)"""),
     .Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)"""),
     .Wasm(std: "random.seed"),
@@ -41,7 +43,7 @@ pub declare fn seed(s: i32) -> void;
 // module reads from the process dictionary's seed state directly, so
 // the same `rand:uniform/0` call after `seed` produces the reproducible
 // stream automatically.
-#[external(
+#[compiler.external(
     .JavaScript("""require('./sidecars/random.mjs').seededFloat()"""),
     .Erlang("rand:uniform()"),
     .Wasm(std: "random.seededFloat"),
@@ -114,7 +116,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 // `Math.random` equivalent in wat3); the matrix will report
 // `MissingExternalTarget` on a `shuffle(...)` call from those backends
 // until the corresponding shim lands.
-#[external(
+#[compiler.external(
     .JavaScript("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)"""),
     .Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]"""),
     .Wasm(body: shuffleBody),
@@ -133,7 +135,7 @@ pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 // Node: `crypto.randomBytes(n).toString('base64url')`.
 // Erlang: `crypto:strong_rand_bytes/1` + `base64:encode/2` in `urlsafe`
 // mode without padding (OTP 26+).
-#[external(
+#[compiler.external(
     .JavaScript("""require('crypto').randomBytes($0).toString('base64url')"""),
     .Erlang("""base64:encode(crypto:strong_rand_bytes($0), #{mode => urlsafe, padding => false})"""),
     .Wasm(body: secureTokenBody),
@@ -146,7 +148,7 @@ pub declare fn secureToken(bytes: i32) -> string;
 // Erlang: 16 strong random bytes, the version/variant bits rewritten in the
 // binary pattern — the bit work lives in the template because botopink has
 // no bitwise operators (`language-gaps.md`).
-#[external(
+#[compiler.external(
     .JavaScript("""require('crypto').randomUUID()"""),
     .Erlang("""(fun() -> <<__A:32, __B:16, _:4, __C:12, _:2, __D:14, __E:48>> = crypto:strong_rand_bytes(16), iolist_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", [__A, __B, __C, __D bor 16#8000, __E])) end)()"""),
     .Wasm(body: uuidV4Body),
@@ -276,7 +278,7 @@ test "random.uuidV4 has the version 4 layout" {
 // Node: `require('crypto').randomBytes(n).toString('hex')`.
 // Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
 // string used by the hashes above.
-#[external(
+#[compiler.external(
     .JavaScript("""require('crypto').randomBytes($0).toString('hex')"""),
     .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])"""),
     .Wasm(body: randomBytesBody),

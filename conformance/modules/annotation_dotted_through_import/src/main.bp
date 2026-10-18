@@ -3,6 +3,7 @@
 //// `sec`'s `jwt`, and the program builds.
 
 import {jwt} from "sec";
+import {io.terminal.print} from "std";
 
 #[jwt.stamped]
 fn Signed() -> string {
@@ -10,5 +11,5 @@ fn Signed() -> string {
 }
 
 pub fn main() {
-    @print(Signed());
+    print(Signed());
 }

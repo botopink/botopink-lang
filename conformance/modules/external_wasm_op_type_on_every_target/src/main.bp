@@ -3,9 +3,11 @@
 //// declaration over `i32` is refused on erlang, beam and commonJS too, whose
 //// own bindings would run it. Only a wasm build read the binding before.
 
-#[@external(.JavaScript("Math.floor($0)"), .Erlang("erlang:floor($0)"), .Wasm(op: "f64.floor"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.floor($0)"), .Erlang("erlang:floor($0)"), .Wasm(op: "f64.floor"))]
 pub declare fn floorOf(x: i32) -> i32;
 
 pub fn main() {
-    @print(floorOf(2));
+    print(floorOf(2));
 }

@@ -2,6 +2,8 @@
 //// used to be dropped without a word. `limit` is a `val`: the annotation is
 //// refused where it is written, naming that it is a value.
 
+import {io.terminal.print} from "std";
+
 val limit = 3;
 
 #[limit]
@@ -10,5 +12,5 @@ pub fn run() -> i32 {
 }
 
 pub fn main() {
-    @print(run());
+    print(run());
 }

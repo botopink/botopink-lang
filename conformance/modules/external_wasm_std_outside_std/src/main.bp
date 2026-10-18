@@ -3,9 +3,11 @@
 //// the std function to call instead: std-wasm's export names stay internal to
 //// std, whose botopink API is the public contract.
 
-#[@external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
 declare fn digest(x: string) -> string;
 
 pub fn main() {
-    @print(digest("Point"));
+    print(digest("Point"));
 }

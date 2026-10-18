@@ -24,7 +24,7 @@
 //// `decodeUrlSafe` are `base64Encode`/`base64Decode`/`base64UrlEncode`/
 //// `base64UrlDecode` here, and its four tests sit at the foot of this file.
 
-import {failure, failure.HostError, failure.HostErrorName};
+import {failure, failure.HostError, failure.HostErrorName, compiler};
 
 // What a decoder refuses (decision 486): the text is not in the codec's form.
 pub type EncodingError {
@@ -34,7 +34,7 @@ pub type EncodingError {
 }
 
 // Standard base64 (RFC 4648 §4) of the UTF-8 bytes of `s`, with `=` padding.
-#[external(
+#[compiler.external(
     .JavaScript("""Buffer.from($0, 'utf8').toString('base64')"""),
     .Erlang("base64:encode($0)"),
     .Wasm(body: base64EncodeBody),
@@ -45,14 +45,14 @@ pub declare fn base64Encode(s: string) -> string;
 // `Buffer.from(_, 'base64')` silently drops what it cannot read, so the
 // template re-encodes and compares to detect it; Erlang's `base64:decode/1`
 // raises, and the template catches.
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); if (__b.toString('base64').replace(/=+$/, '') !== __s) throw new Error('not base64'); return __b.toString('utf8') })()""", result: true),
     .Erlang("""base64:decode($0)""", result: true),
     .Wasm(body: base64DecodeBody),
 )]
-declare fn base64DecodeHost(b: string) -> @Result<string, HostError>;
+declare fn base64DecodeHost(b: string) -> Result<string, HostError>;
 
-pub fn base64Decode(b: string) -> @Result<string, EncodingError> {
+pub fn base64Decode(b: string) -> Result<string, EncodingError> {
     case base64DecodeHost(b) {
         Ok(v) -> return v;
         Error(_) -> throw EncodingError.NotBase64;
@@ -71,7 +71,7 @@ pub fn base64UrlEncode(s: string) -> string {
 
 // The inverse of `base64UrlEncode`: restore the `+/` alphabet, re-pad to a
 // multiple of four, decode.
-pub fn base64UrlDecode(b: string) -> @Result<string, EncodingError> {
+pub fn base64UrlDecode(b: string) -> Result<string, EncodingError> {
     val noDash = b.replaceAll("-", "+");
     val noUnder = noDash.replaceAll("_", "/");
     val padded = padToMultipleOfFour(noUnder);
@@ -86,7 +86,7 @@ fn padToMultipleOfFour(s: string) -> string {
 }
 
 // Lowercase hex of the UTF-8 bytes of `s`: `"hi"` → `6869`.
-#[external(
+#[compiler.external(
     .JavaScript("""Buffer.from($0, 'utf8').toString('hex')"""),
     .Erlang("""string:lowercase(binary:encode_hex($0))"""),
     .Wasm(body: hexEncodeBody),
@@ -97,14 +97,14 @@ pub declare fn hexEncode(s: string) -> string;
 // is an `Error` (Node's `Buffer.from(_, 'hex')` truncates silently at the
 // first bad digit, so the template validates first; Erlang's
 // `binary:decode_hex/1` raises `badarg`, caught).
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __s = String($0); if (!/^([0-9a-fA-F]{2})*$/.test(__s)) throw new Error('not hex'); return Buffer.from(__s, 'hex').toString('utf8') })()""", result: true),
     .Erlang("""binary:decode_hex($0)""", result: true),
     .Wasm(body: hexDecodeBody),
 )]
-declare fn hexDecodeHost(s: string) -> @Result<string, HostError>;
+declare fn hexDecodeHost(s: string) -> Result<string, HostError>;
 
-pub fn hexDecode(s: string) -> @Result<string, EncodingError> {
+pub fn hexDecode(s: string) -> Result<string, EncodingError> {
     case hexDecodeHost(s) {
         Ok(v) -> return v;
         Error(_) -> throw EncodingError.NotHex;
@@ -121,7 +121,7 @@ pub fn hexDecode(s: string) -> @Result<string, EncodingError> {
 // that is not one, and the public function makes it the `Error`.
 
 // Standard base64 (RFC 4648 §4) of `b`, with `=` padding.
-#[external(
+#[compiler.external(
     .JavaScript("""Buffer.from($0).toString('base64')"""),
     .Erlang("base64:encode($0)"),
     .Wasm(std: "encoding.base64EncodeBytes"),
@@ -130,13 +130,13 @@ pub declare fn base64EncodeBytes(b: Bytes) -> string;
 
 // The bytes the base64 text `s` spells; anything `base64Decode` refuses is
 // the same `Error`.
-pub fn base64DecodeBytes(s: string) -> @Result<Bytes, EncodingError> {
+pub fn base64DecodeBytes(s: string) -> Result<Bytes, EncodingError> {
     val b = base64BytesOf(s);
     if (b == null) throw EncodingError.NotBase64;
     return b;
 }
 
-#[external(
+#[compiler.external(
     .JavaScript("""((__s) => { const __t = __s.replace(/=+$/, ''); if (__t.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(__t)) return null; const __b = Buffer.from(__t, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __t ? new Uint8Array(__b) : null; })($0)"""),
     .Erlang("""(fun(__S) -> __T = string:trim(__S, trailing, [61]), __N = byte_size(__T), case (__N rem 4 =/= 1) andalso lists:all(fun(__C) -> ((__C >= 65) andalso (__C =< 90)) orelse ((__C >= 97) andalso (__C =< 122)) orelse ((__C >= 48) andalso (__C =< 57)) orelse (__C =:= 43) orelse (__C =:= 47) end, binary_to_list(__T)) of false -> undefined; true -> __P = <<__T/binary, (binary:copy(<<61>>, (4 - __N rem 4) rem 4))/binary>>, __B = base64:decode(__P), case base64:encode(__B) =:= __P of true -> __B; false -> undefined end end end)($0)"""),
     .Wasm(std: "encoding.base64DecodeBytes"),
@@ -144,7 +144,7 @@ pub fn base64DecodeBytes(s: string) -> @Result<Bytes, EncodingError> {
 declare fn base64BytesOf(s: string) -> ?Bytes;
 
 // Lowercase hex of `b`: the bytes `0x68 0x69` are `6869`.
-#[external(
+#[compiler.external(
     .JavaScript("""Buffer.from($0).toString('hex')"""),
     .Erlang("""string:lowercase(binary:encode_hex($0))"""),
     .Wasm(std: "encoding.hexEncodeBytes"),
@@ -153,13 +153,13 @@ pub declare fn hexEncodeBytes(b: Bytes) -> string;
 
 // The bytes the hex text `s` spells, either case; an odd length or a non-hex
 // digit is `hexDecode`'s `Error`.
-pub fn hexDecodeBytes(s: string) -> @Result<Bytes, EncodingError> {
+pub fn hexDecodeBytes(s: string) -> Result<Bytes, EncodingError> {
     val b = hexBytesOf(s);
     if (b == null) throw EncodingError.NotHex;
     return b;
 }
 
-#[external(
+#[compiler.external(
     .JavaScript("""(/^([0-9a-fA-F]{2})*$/.test($0) ? new Uint8Array(Buffer.from($0, 'hex')) : null)"""),
     .Erlang("""(fun(__H) -> case (byte_size(__H) rem 2 =:= 0) andalso lists:all(fun(__C) -> ((__C >= 48) andalso (__C =< 57)) orelse ((__C >= 65) andalso (__C =< 70)) orelse ((__C >= 97) andalso (__C =< 102)) end, binary_to_list(__H)) of true -> binary:decode_hex(__H); false -> undefined end end)($0)"""),
     .Wasm(std: "encoding.hexDecodeBytes"),
@@ -171,7 +171,7 @@ declare fn hexBytesOf(s: string) -> ?Bytes;
 // `uri_string:quote/1` is exactly that; `encodeURIComponent` leaves
 // `! ' ( ) *` unencoded (RFC 2396's mark set), so the Node template encodes
 // those five too — the two targets answer the same bytes for the same input.
-#[external(
+#[compiler.external(
     .JavaScript("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())"""),
     .Erlang("uri_string:quote($0)"),
     .Wasm(body: percentEncodeBody),
@@ -181,14 +181,14 @@ pub declare fn percentEncode(s: string) -> string;
 // The inverse of `percentEncode`. A `%` not followed by two hex digits, or a
 // sequence that is not UTF-8, is an `Error`. `+` is left as `+` — the form
 // codec below is what reads `+` as a space.
-#[external(
+#[compiler.external(
     .JavaScript("""decodeURIComponent($0)""", result: true),
     .Erlang("""(fun(__S) -> case unicode:characters_to_binary(uri_string:unquote(__S)) of __V when is_binary(__V) -> __V; _ -> erlang:error(badarg) end end)($0)""", result: true),
     .Wasm(body: percentDecodeBody),
 )]
-declare fn percentDecodeHost(s: string) -> @Result<string, HostError>;
+declare fn percentDecodeHost(s: string) -> Result<string, HostError>;
 
-pub fn percentDecode(s: string) -> @Result<string, EncodingError> {
+pub fn percentDecode(s: string) -> Result<string, EncodingError> {
     case percentDecodeHost(s) {
         Ok(v) -> return v;
         Error(_) -> throw EncodingError.NotPercentEncoded;
@@ -256,7 +256,7 @@ fn refused(message: string) -> HostError {
 // The Node cell's rule: strip trailing `=`, decode, and accept only what
 // re-encodes to the same text — the `+/` alphabet only, no length of the form
 // 4k + 1, zero bits after the last whole byte.
-fn base64DecodeBody(b: string) -> @Result<string, HostError> {
+fn base64DecodeBody(b: string) -> Result<string, HostError> {
     val cs = b.chars();
     var n = cs.length;
     while (n > 0 && (cs.at(n - 1) ?? "") == "=") {
@@ -293,7 +293,7 @@ fn hexEncodeBody(s: string) -> string {
     return utf8Of(s).map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
 }
 
-fn hexDecodeBody(s: string) -> @Result<string, HostError> {
+fn hexDecodeBody(s: string) -> Result<string, HostError> {
     val cs = s.chars();
     if (cs.length % 2 != 0) throw refused("not hex");
     var bytes: Array<i32> = [];
@@ -330,7 +330,7 @@ fn percentEncodeBody(s: string) -> string {
 // character, a lead byte takes the continuation escapes its length says, and
 // the sequence must be well-formed UTF-8 (no overlong form, no surrogate,
 // nothing past U+10FFFF) — anything else is the `Error`. Other text passes.
-fn percentDecodeBody(s: string) -> @Result<string, HostError> {
+fn percentDecodeBody(s: string) -> Result<string, HostError> {
     val cs = s.chars();
     var out: Array<string> = [];
     var i = 0;

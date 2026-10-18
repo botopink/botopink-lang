@@ -6,10 +6,12 @@
 //// wasm has no host, so it refuses the program where the host function is
 //// first called — `variadic_parameter_host.wasm.expect`.
 
-#[@external(.JavaScript("Math.max($args)"), .Erlang("lists:max($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.max($args)"), .Erlang("lists:max($0)"))]
 pub declare fn largest(..values: i32[]) -> i32;
 
 pub fn main() {
-    @print(largest(3, 9, 4));
-    @print(largest(7));
+    print(largest(3, 9, 4));
+    print(largest(7));
 }

@@ -24,7 +24,7 @@
 //// templates around the value+offset extraction so the result shape
 //// matches across backends.
 
-import {failure, failure.HostError};
+import {failure, failure.HostError, compiler};
 
 // True when `pattern` matches anywhere in `input`. Named `matches`
 // rather than the spec's `test` because `test` is a reserved keyword
@@ -32,14 +32,14 @@ import {failure, failure.HostError};
 // Node: `new RegExp($0).test($1)`.
 // Erlang: `re:run/2` returns `{match, _}` or `nomatch`; the template
 // pattern-matches the result against `nomatch`.
-#[external(.JavaScript("""(new RegExp($0).test($1))"""), .Erlang("""(re:run($1, $0) =/= nomatch)"""))]
+#[compiler.external(.JavaScript("""(new RegExp($0).test($1))"""), .Erlang("""(re:run($1, $0) =/= nomatch)"""))]
 pub declare fn matches(pattern: string, input: string) -> bool;
 
 // Replace the FIRST occurrence of `pattern` in `input` with `replacement`.
 // Node: `$1.replace(new RegExp($0), $2)` (no `g` flag → first only).
 // Erlang: `re:replace/4` with no `global` option → first match only;
 // `{return, binary}` keeps the output a binary.
-#[external(
+#[compiler.external(
     .JavaScript("""($1.replace(new RegExp($0), $2))"""),
     .Erlang("""re:replace($1, $0, $2, [{return, binary}])"""),
 )]
@@ -52,7 +52,7 @@ pub declare fn replace(
 // Replace EVERY occurrence of `pattern` in `input` with `replacement`.
 // Node: `new RegExp($0, 'g')` for global flag.
 // Erlang: `re:replace/4` with the `global` option.
-#[external(
+#[compiler.external(
     .JavaScript("""($1.replace(new RegExp($0, 'g'), $2))"""),
     .Erlang("""re:replace($1, $0, $2, [global, {return, binary}])"""),
 )]
@@ -67,7 +67,7 @@ pub declare fn replaceAll(
 // Node: `$1.split(new RegExp($0))`.
 // Erlang: `re:split/2` returns a list of binaries with the matches
 // removed — `{return, binary}` keeps the output a binary list.
-#[external(
+#[compiler.external(
     .JavaScript("""($1.split(new RegExp($0)))"""),
     .Erlang("""re:split($1, $0, [{return, binary}])"""),
 )]
@@ -86,7 +86,7 @@ pub type Match(
 // template projects that into the `Match` record's run-time shape —
 // the tagged tuple `{'std@regex@@Match', Value, Index}` decision 21
 // gives every record on this backend.
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __m = $1.match(new RegExp($0)); return __m ? { value: __m[0], index: __m.index } : null })()"""),
     .Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> {'std@regex@@Match', binary:part($1, __O, __L), __O}; nomatch -> undefined end end)()"""),
 )]
@@ -95,7 +95,7 @@ pub declare fn match(pattern: string, input: string) -> ?Match;
 // Every non-overlapping match. Node uses the `g` flag + `matchAll`;
 // Erlang uses `[global, {capture, first, index}]` and projects each
 // `{Offset, Len}` into the same tagged tuple.
-#[external(
+#[compiler.external(
     .JavaScript("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))"""),
     .Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [{'std@regex@@Match', binary:part($1, __O, __L), __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()"""),
 )]
@@ -116,7 +116,7 @@ pub type Regex(handle: unknown) {
     // state carried between calls).
     // Erlang: `re:run/2` over the compiled form (a record crosses into a cell
     // as its tagged tuple, so the handle is `element(2, R)`).
-    #[external(
+    #[compiler.external(
         .JavaScript("""($0.handle.test($1))"""),
         .Erlang("""(re:run($1, element(2, $0)) =/= nomatch)"""),
     )]
@@ -130,18 +130,18 @@ pub type Regex(handle: unknown) {
 // refuses for the whole module.
 // Node: `new RegExp(pattern)` throws a `SyntaxError`.
 // Erlang: `re:compile/1` answers `{error, {Reason, Offset}}`.
-#[external(
+#[compiler.external(
     .JavaScript("""({ handle: new RegExp($0) })""", result: true),
     .Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-pub declare fn compile(pattern: string) -> @Result<Regex, HostError>;
+pub declare fn compile(pattern: string) -> Result<Regex, HostError>;
 
 // Every group of the first match, group 0 (the whole match) first; a group
 // that did not take part is `""`. `null` when the pattern does not match —
 // "no match" is not "matched with empty groups".
 // Node: `String#match` without `g`.
 // Erlang: `re:run/3` with `{capture, all, binary}`.
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __m = $1.match(new RegExp($0)); return __m ? Array.from(__m).map(__g => __g ?? '') : null })()"""),
     .Erlang("""(fun() -> case re:run($1, $0, [{capture, all, binary}]) of {match, __G} -> __G; nomatch -> undefined end end)()"""),
 )]
@@ -153,7 +153,7 @@ pub declare fn captures(pattern: string, input: string) -> ?Array<string>;
 // Node: `match.groups`.
 // Erlang: `re:inspect(_, namelist)` + `{capture, all_names, binary}` — both
 // in name order, zipped.
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __m = $1.match(new RegExp($0)); return __m && __m.groups ? Object.entries(__m.groups).map(([__k, __v]) => [__k, __v ?? '']).sort((__a, __b) => __a[0] < __b[0] ? -1 : (__a[0] > __b[0] ? 1 : 0)) : [] })()"""),
     .Erlang("""(fun() -> {ok, __M} = re:compile($0), {namelist, __N} = re:inspect(__M, namelist), case __N of [] -> []; _ -> case re:run($1, __M, [{capture, all_names, binary}]) of {match, __V} -> lists:zip(__N, __V); nomatch -> [] end end end)()"""),
 )]

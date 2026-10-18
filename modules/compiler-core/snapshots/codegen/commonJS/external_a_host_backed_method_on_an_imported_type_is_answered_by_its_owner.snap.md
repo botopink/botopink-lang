@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- hostlib.bp
 ```botopink
 pub type Meter(base: i32) {
-    #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
+    #[compiler.external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 }
 

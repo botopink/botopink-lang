@@ -32,14 +32,16 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read in
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
         \\fn main() {
         \\    val s = "héllo, 日本";
-        \\    @print(s.length());
-        \\    @print("".length());
-        \\    @print(s.charCodeAt(1));
-        \\    @print(s.charCodeAt(8));
-        \\    @print(s.charCodeAt(9));
-        \\    @print(s.charCodeAt(-1));
-        \\    @print("\u{1F600}".charCodeAt(0));
+        \\    print(s.length());
+        \\    print("".length());
+        \\    print(s.charCodeAt(1));
+        \\    print(s.charCodeAt(8));
+        \\    print(s.charCodeAt(9));
+        \\    print(s.charCodeAt(-1));
+        \\    print("\u{1F600}".charCodeAt(0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -63,23 +65,25 @@ test "wat: front 164 s2 P4 ---- tasks and their frames are GC structs" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
-        \\fn twice(n: i32) -> @Task<i32> {
+        \\fn twice(n: i32) -> Task<i32> {
         \\    return n * 2;
         \\}
-        \\fn greet(name: string) -> @Task<string> {
+        \\fn greet(name: string) -> Task<string> {
         \\    val n = await twice(21);
         \\    return name + " " + n.toString();
         \\}
-        \\fn run() -> @Task<void> {
+        \\fn run() -> Task<void> {
         \\    val b = async {
         \\        val g = await greet("hi");
         \\        return g;
         \\    };
-        \\    @print(await b);
+        \\    print(await b);
         \\}
         \\fn main() {
         \\    run();
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -111,12 +115,14 @@ test "wat: front 164 s2 ---- a tuple in a type parameter's slot, and a structura
         \\    return x;
         \\}
         \\fn main() {
-        \\    @print(Box(value: #(1, 2)));
-        \\    @print(id(#(3, "x")));
-        \\    @print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "a"), right: [1, 2]));
-        \\    @print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "b"), right: [1, 2]));
-        \\    @print(Pair(left: [1.5, 2.5], right: Box(value: "x")) == Pair(left: [1.5, 2.5], right: Box(value: "x")));
+        \\    print(Box(value: #(1, 2)));
+        \\    print(id(#(3, "x")));
+        \\    print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "a"), right: [1, 2]));
+        \\    print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "b"), right: [1, 2]));
+        \\    print(Pair(left: [1.5, 2.5], right: Box(value: "x")) == Pair(left: [1.5, 2.5], right: Box(value: "x")));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -147,42 +153,44 @@ test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC mo
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
-        \\#[@external(.Wasm(std: "text.byteLength"))]
+        \\#[compiler.external(.Wasm(std: "text.byteLength"))]
         \\declare fn byteLength(s: string) -> i32;
-        \\#[@external(.Wasm(std: "text.byteAt"))]
+        \\#[compiler.external(.Wasm(std: "text.byteAt"))]
         \\declare fn byteAt(s: string, i: i32) -> i32;
-        \\#[@external(.Wasm(std: "text.byteSlice"))]
+        \\#[compiler.external(.Wasm(std: "text.byteSlice"))]
         \\declare fn byteSlice(s: string, a: i32, b: i32) -> string;
-        \\#[@external(.Wasm(std: "text.fromCodepoint"))]
+        \\#[compiler.external(.Wasm(std: "text.fromCodepoint"))]
         \\declare fn fromCodepoint(cp: i32) -> string;
         \\fn main() {
         \\    val s = "aé日😀";
-        \\    @print(byteLength(s));
-        \\    @print(byteLength(""));
-        \\    @print(byteAt(s, 1));
-        \\    @print(byteAt(s, 2));
-        \\    @print(byteAt(s, 10));
-        \\    @print(byteAt(s, 11));
-        \\    @print(byteAt(s, -1));
-        \\    @print(byteSlice(s, 1, 3));
-        \\    @print(byteSlice(s, 3, 6));
-        \\    @print(byteSlice(s, -4, 1));
-        \\    @print(byteSlice(s, 3, 1).length());
-        \\    @print(byteSlice(s, 6, 99));
-        \\    @print(byteSlice(s, 50, 99).length());
-        \\    @print(fromCodepoint(97));
-        \\    @print(fromCodepoint(233));
-        \\    @print(fromCodepoint(26085));
-        \\    @print(fromCodepoint(128512));
-        \\    @print(byteLength(fromCodepoint(128512)));
-        \\    @print(byteLength(fromCodepoint(127)));
-        \\    @print(byteLength(fromCodepoint(128)));
-        \\    @print(byteLength(fromCodepoint(2047)));
-        \\    @print(byteLength(fromCodepoint(2048)));
-        \\    @print(byteLength(fromCodepoint(65535)));
-        \\    @print(byteLength(fromCodepoint(65536)));
-        \\    @print(byteLength(fromCodepoint(1114111)));
+        \\    print(byteLength(s));
+        \\    print(byteLength(""));
+        \\    print(byteAt(s, 1));
+        \\    print(byteAt(s, 2));
+        \\    print(byteAt(s, 10));
+        \\    print(byteAt(s, 11));
+        \\    print(byteAt(s, -1));
+        \\    print(byteSlice(s, 1, 3));
+        \\    print(byteSlice(s, 3, 6));
+        \\    print(byteSlice(s, -4, 1));
+        \\    print(byteSlice(s, 3, 1).length());
+        \\    print(byteSlice(s, 6, 99));
+        \\    print(byteSlice(s, 50, 99).length());
+        \\    print(fromCodepoint(97));
+        \\    print(fromCodepoint(233));
+        \\    print(fromCodepoint(26085));
+        \\    print(fromCodepoint(128512));
+        \\    print(byteLength(fromCodepoint(128512)));
+        \\    print(byteLength(fromCodepoint(127)));
+        \\    print(byteLength(fromCodepoint(128)));
+        \\    print(byteLength(fromCodepoint(2047)));
+        \\    print(byteLength(fromCodepoint(2048)));
+        \\    print(byteLength(fromCodepoint(65535)));
+        \\    print(byteLength(fromCodepoint(65536)));
+        \\    print(byteLength(fromCodepoint(1114111)));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -218,13 +226,13 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
         \\behavior String {
-        \\    #[@external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(body: shoutBody))]
+        \\    #[compiler.external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(body: shoutBody))]
         \\    fn shout(self: Self) -> string;
-        \\    #[@external(.Erlang("($0 =:= $1)"), .JavaScript("startsWith"), .Wasm(body: sameBody))]
+        \\    #[compiler.external(.Erlang("($0 =:= $1)"), .JavaScript("startsWith"), .Wasm(body: sameBody))]
         \\    fn same(self: Self, other: string) -> bool;
-        \\    #[@external(.Erlang("$0"), .JavaScript("at"), .Wasm(body: pickBody))]
+        \\    #[compiler.external(.Erlang("$0"), .JavaScript("at"), .Wasm(body: pickBody))]
         \\    fn pick(self: Self, i: i32) -> ?string;
-        \\    #[@external(.Erlang("[$0, $0]"), .JavaScript("split"), .Wasm(body: twiceBody))]
+        \\    #[compiler.external(.Erlang("[$0, $0]"), .JavaScript("split"), .Wasm(body: twiceBody))]
         \\    fn twice(self: Self) -> string[];
         \\}
         \\fn shoutBody(s: string) -> string {
@@ -245,16 +253,18 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
         \\}
         \\fn main() {
         \\    val s = "hi";
-        \\    @print(s.shout());
-        \\    @print(s.shout().length());
-        \\    @print(s.same("hi"));
-        \\    @print(s.same("ho"));
-        \\    @print(s.pick(0));
-        \\    @print(s.pick(-1));
-        \\    @print(s.pick(-1) ?? "none");
-        \\    @print(s.twice());
-        \\    @print(s.twice().join("+"));
+        \\    print(s.shout());
+        \\    print(s.shout().length());
+        \\    print(s.same("hi"));
+        \\    print(s.same("ho"));
+        \\    print(s.pick(0));
+        \\    print(s.pick(-1));
+        \\    print(s.pick(-1) ?? "none");
+        \\    print(s.twice());
+        \\    print(s.twice().join("+"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -301,18 +311,20 @@ test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC modu
         \\    val mid: u64 = 9223372036854775808;
         \\    val z: i64 = 0;
         \\    val one: i64 = -1;
-        \\    @print(lo);
-        \\    @print(hi);
-        \\    @print(big);
-        \\    @print(mid);
-        \\    @print(z);
-        \\    @print(one);
-        \\    @print(lo.toString());
-        \\    @print(big.toString());
+        \\    print(lo);
+        \\    print(hi);
+        \\    print(big);
+        \\    print(mid);
+        \\    print(z);
+        \\    print(one);
+        \\    print(lo.toString());
+        \\    print(big.toString());
         \\    val n: i32 = -2147483648;
-        \\    @print(n.toString());
-        \\    @print(n);
+        \\    print(n.toString());
+        \\    print(n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     }}, io, h.configs[3]);
     defer {
         for (outputs.items) |*o| o.result.deinit(alloc);
@@ -352,8 +364,10 @@ test "wat: tuple construct then destructure" {
         \\fn main() {
         \\    val t = #(10, 20);
         \\    val #(a, b) = t;
-        \\    @print(a + b);
+        \\    print(a + b);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -415,8 +429,10 @@ test "wat: string slice without end arg slices to source length" {
         \\fn main() {
         \\    val s = "hello";
         \\    val tail = s.slice(2);
-        \\    @print(tail.len);
+        \\    print(tail.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -424,8 +440,10 @@ test "wat: string len participates in arithmetic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "hello";
-        \\    @print(s.len + 1);
+        \\    print(s.len + 1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -434,8 +452,10 @@ test "wat: string slice result length is readable" {
         \\fn main() {
         \\    val s = "abcdef";
         \\    val mid = s.slice(1, 5);
-        \\    @print(mid.len);
+        \\    print(mid.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -496,8 +516,10 @@ test "wat: record field access by name loads at declared offset" {
         \\type R(a: i32, b: i32)
         \\fn main() {
         \\    val r = R(a: 7, b: 11);
-        \\    @print(r.b);
+        \\    print(r.b);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -523,8 +545,10 @@ test "wat: anon record let-bound then field read by name" {
         \\    val code = 7;
         \\    val kind = 11;
         \\    val r = #(code, kind);
-        \\    @print(r.kind);
+        \\    print(r.kind);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -540,8 +564,10 @@ test "wat: nested anon record chained field read" {
         \\    val span = #(start, end);
         \\    val kind = 3;
         \\    val outer = #(span, kind);
-        \\    @print(outer.span.start);
+        \\    print(outer.span.start);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -561,11 +587,13 @@ test "wat: optional local equals null" {
         \\fn main() {
         \\    val x: ?i32 = null;
         \\    if (x == null) {
-        \\        @print(1);
+        \\        print(1);
         \\    } else {
-        \\        @print(0);
+        \\        print(0);
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -581,8 +609,10 @@ test "wat: optional fn return null path" {
         \\    }
         \\}
         \\fn main() {
-        \\    @print(choose(false)?.kind);
+        \\    print(choose(false)?.kind);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -598,8 +628,10 @@ test "wat: optional fn return present path with optional chaining" {
         \\    }
         \\}
         \\fn main() {
-        \\    @print(choose(true)?.kind);
+        \\    print(choose(true)?.kind);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -611,11 +643,13 @@ test "wat: optional branch on equality and chained deref" {
         \\    val r = R(kind: 11);
         \\    val maybe: ?R = r;
         \\    if (maybe == null) {
-        \\        @print(0);
+        \\        print(0);
         \\    } else {
-        \\        @print(maybe.kind);
+        \\        print(maybe.kind);
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -630,8 +664,10 @@ test "wat: string concat of two literals" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "hi " + "there";
-        \\    @print(s.len);
+        \\    print(s.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -645,16 +681,18 @@ test "wat: string equality compares content not identity" {
         \\    val same = left == "foo";
         \\    val diff = "foo" == "bar";
         \\    if (same) {
-        \\        @print(1);
+        \\        print(1);
         \\    } else {
-        \\        @print(0);
+        \\        print(0);
         \\    };
         \\    if (diff) {
-        \\        @print(1);
+        \\        print(1);
         \\    } else {
-        \\        @print(0);
+        \\        print(0);
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -664,8 +702,10 @@ test "wat: string slice both bounds" {
         \\fn main() {
         \\    val s = "hello";
         \\    val mid = s.slice(1, 4);
-        \\    @print(mid.len);
+        \\    print(mid.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -674,8 +714,10 @@ test "wat: string length after concat" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "ab" + "cdef";
-        \\    @print(s.len);
+        \\    print(s.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -687,11 +729,13 @@ test "wat: string equality drives if branch" {
         \\fn main() {
         \\    val s = "ye" + "s";
         \\    if (s == "yes") {
-        \\        @print(42);
+        \\        print(42);
         \\    } else {
-        \\        @print(0);
+        \\        print(0);
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -704,8 +748,10 @@ test "wat: list literal len reads length prefix" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3];
-        \\    @print(xs.len);
+        \\    print(xs.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -714,8 +760,10 @@ test "wat: empty list literal len is zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs: i32[] = [];
-        \\    @print(xs.len);
+        \\    print(xs.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -724,8 +772,10 @@ test "wat: list literal of strings len" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val labels = ["a", "bb", "ccc"];
-        \\    @print(labels.len);
+        \\    print(labels.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -735,8 +785,10 @@ test "wat: list literal of records len" {
         \\type P(x: i32, y: i32)
         \\fn main() {
         \\    val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
-        \\    @print(pts.len);
+        \\    print(pts.len);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -749,7 +801,7 @@ test "wat: list literal of records len" {
 // F5.1 — try a `#[@result]` fn, catch the error and yield a default.
 test "wat: try catch on result with default fallback" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn maybeFail(should_fail: bool) -> @Result<i32, string> {
+        \\fn maybeFail(should_fail: bool) -> Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "boom";
         \\    } else {
@@ -758,15 +810,17 @@ test "wat: try catch on result with default fallback" {
         \\}
         \\fn main() {
         \\    val v = try maybeFail(false) catch -1;
-        \\    @print(v);
+        \\    print(v);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 // F5.2 — try expression with catch handler — the error path runs.
 test "wat: try catch returns handler value on error" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn maybeFail(should_fail: bool) -> @Result<i32, string> {
+        \\fn maybeFail(should_fail: bool) -> Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "boom";
         \\    } else {
@@ -775,31 +829,35 @@ test "wat: try catch returns handler value on error" {
         \\}
         \\fn main() {
         \\    val v = try maybeFail(true) catch -1;
-        \\    @print(v);
+        \\    print(v);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 // F5.3 — `try` propagation: the inner Error variant propagates up.
 test "wat: try propagation in result fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn inner(should_fail: bool) -> @Result<i32, string> {
+        \\fn inner(should_fail: bool) -> Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "inner-fail";
         \\    } else {
         \\        return 7;
         \\    }
         \\}
-        \\fn outer(should_fail: bool) -> @Result<i32, string> {
+        \\fn outer(should_fail: bool) -> Result<i32, string> {
         \\    val v = try inner(should_fail);
         \\    return v + 1;
         \\}
         \\fn main() {
         \\    val r = try outer(false) catch -1;
-        \\    @print(r);
+        \\    print(r);
         \\    val r2 = try outer(true) catch -1;
-        \\    @print(r2);
+        \\    print(r2);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -825,15 +883,17 @@ test "wat: case ---- a variant pattern written as a dotted path" {
         \\fn main() {
         \\    val c = Shape.Circle(radius: 7);
         \\    case c {
-        \\        Shape.Circle(r) { @print(r); }
-        \\        _ { @print(0); }
+        \\        Shape.Circle(r) { print(r); }
+        \\        _ { print(0); }
         \\    };
         \\    val q = Shape.Rect(width: 2, height: 5);
         \\    case q {
-        \\        Shape.Circle(r) { @print(r); }
-        \\        _ { @print(0); }
+        \\        Shape.Circle(r) { print(r); }
+        \\        _ { print(0); }
         \\    };
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -850,10 +910,12 @@ test "wat: case ---- the dot-shorthand variant pattern" {
         \\fn main() {
         \\    val c = Shape.Circle(radius: 7);
         \\    case c {
-        \\        .Circle(r) { @print(r); }
-        \\        _ { @print(0); }
+        \\        .Circle(r) { print(r); }
+        \\        _ { print(0); }
         \\    };
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -871,10 +933,12 @@ test "wat: case ---- an arm body's statements run and its last expression is its
         \\fn main() {
         \\    val s = Shape.Circle(radius: 3);
         \\    case s {
-        \\        Circle(r) { @print("circle"); }
-        \\        Rect(w, h) { @print("rect"); }
+        \\        Circle(r) { print("circle"); }
+        \\        Rect(w, h) { print("rect"); }
         \\    };
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -886,10 +950,12 @@ test "wat: case ---- a one-parameter arm binder binds the matched value" {
         \\fn main() {
         \\    val v = 7;
         \\    case v {
-        \\        0 { @print("zero"); }
-        \\        _ { n -> @print(n); }
+        \\        0 { print("zero"); }
+        \\        _ { n -> print(n); }
         \\    };
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -907,10 +973,12 @@ test "wat: case ---- a failing guard falls through to the next arm" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(classify(5));
-        \\    @print(classify(0));
-        \\    @print(classify(-3));
+        \\    print(classify(5));
+        \\    print(classify(0));
+        \\    print(classify(-3));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -956,16 +1024,18 @@ test "wat: index ---- an array element, a string character and a slice" {
         \\fn main() {
         \\    val xs = [10, 20, 30];
         \\    val i = 1;
-        \\    @print(xs[0]);
-        \\    @print(xs[i + 1]);
+        \\    print(xs[0]);
+        \\    print(xs[i + 1]);
         \\    val names = ["ana", "bo"];
-        \\    @print(names[1]);
+        \\    print(names[1]);
         \\    val s = "hello";
-        \\    @print(s[1]);
-        \\    @print(s[1..3]);
-        \\    @print(s[3..]);
-        \\    @print(xs[1..]);
+        \\    print(s[1]);
+        \\    print(s[1..3]);
+        \\    print(s[3..]);
+        \\    print(xs[1..]);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -977,8 +1047,10 @@ test "wat: index ---- an index past the end answers zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [10, 20, 30];
-        \\    @print(xs[9]);
+        \\    print(xs[9]);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -991,9 +1063,11 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val fs = [1.5, 2.5];
-        \\    @print(fs[0]);
-        \\    @print(fs.at(0));
+        \\    print(fs[0]);
+        \\    print(fs.at(0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1013,18 +1087,20 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val rows = [[1, 2], [3, 4]];
-        \\    @print(rows);
-        \\    @print(rows[1]);
+        \\    print(rows);
+        \\    print(rows[1]);
         \\    val r1: i32[] = rows[1] ?? [];
-        \\    @print(r1[0]);
-        \\    @print(rows[0]?.length);
+        \\    print(r1[0]);
+        \\    print(rows[0]?.length);
         \\    val xs = [10, 20, 30];
-        \\    @print(xs[0..2].length);
+        \\    print(xs[0..2].length);
         \\    val sl = xs[0..2];
-        \\    @print(sl.length);
+        \\    print(sl.length);
         \\    val ps = [#(1, "a"), #(2, "b")];
-        \\    @print(ps[1]);
+        \\    print(ps[1]);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1049,8 +1125,10 @@ test "wat: index ---- a string slice's length" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "hello";
-        \\    @print(s[1..3].length);
+        \\    print(s[1..3].length);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1066,15 +1144,17 @@ test "wat: loop ---- a search leaves its answer in a var and ends at break" {
         \\    var k = 0;
         \\    var r = 0;
         \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
-        \\    @print(r);
+        \\    print(r);
         \\    var i = 0;
         \\    var found = 0;
         \\    while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
-        \\    @print(found);
+        \\    print(found);
         \\    var m = 0;
         \\    while (m < 3) { m = m + 1; };
-        \\    @print(m);
+        \\    print(m);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "3\n8\n3\n");
 }
 
@@ -1090,26 +1170,28 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
         \\fn main() {
         \\    val a = #(1, "a");
         \\    val b = #(1, "a");
-        \\    @print(a == b);
-        \\    @print(a != b);
+        \\    print(a == b);
+        \\    print(a != b);
         \\    val c = #(1, "b");
-        \\    @print(a == c);
+        \\    print(a == c);
         \\    val name = "SP";
         \\    val pop = 12;
         \\    val labeled = #(name, pop);
         \\    val plain = #("SP", 12);
-        \\    @print(labeled == plain);
+        \\    print(labeled == plain);
         \\    val n1 = #(#(1, 2), "x");
         \\    val n2 = #(#(1, 2), "x");
         \\    val n3 = #(#(1, 3), "x");
-        \\    @print(n1 == n2);
-        \\    @print(n1 == n3);
+        \\    print(n1 == n2);
+        \\    print(n1 == n3);
         \\    val f1 = #(1.5, true);
         \\    val f2 = #(1.5, true);
         \\    val f3 = #(1.5, false);
-        \\    @print(f1 == f2);
-        \\    @print(f1 == f3);
+        \\    print(f1 == f2);
+        \\    print(f1 == f3);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1137,22 +1219,24 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
         \\}
         \\fn main() {
         \\    val t = #(#(1, 2), "x");
-        \\    @print(t.1);
-        \\    @print(t.0.1);
+        \\    print(t.1);
+        \\    print(t.0.1);
         \\    val row = load();
-        \\    @print(row.name);
-        \\    @print(row.pop + 1);
+        \\    print(row.name);
+        \\    print(row.pop + 1);
         \\    val a = "RJ";
         \\    val b = 7;
         \\    val local = #(a, b);
-        \\    @print(local.a);
+        \\    print(local.a);
         \\    val s = t.1;
-        \\    @print(s + "!");
-        \\    @print(t.1 == "x");
+        \\    print(s + "!");
+        \\    print(t.1 == "x");
         \\    val u = #(["a", "b"], 3);
-        \\    @print(t.0);
-        \\    @print(u.0);
+        \\    print(t.0);
+        \\    print(u.0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "x\n2\nSP\n13\nRJ\nx!\ntrue\n#(1, 2)\n[\"a\", \"b\"]\n");
 }
 
@@ -1167,9 +1251,11 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("aB".toUpper());
-        \\    @print("aB".toLower());
+        \\    print("aB".toUpper());
+        \\    print("aB".toLower());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1190,14 +1276,16 @@ test "wat: print ---- a record and a variant print their names and fields" {
         \\type Point(x: i32, y: i32)
         \\type Shape { Square(side: i32), Nothing }
         \\fn main() {
-        \\    @print("hi");
-        \\    @print([1, 2]);
-        \\    @print(#(1, "a"));
-        \\    @print(Point(x: 1, y: 2));
-        \\    @print(Shape.Square(side: 4));
-        \\    @print(Shape.Nothing);
-        \\    @print([Point(x: 1, y: 2)]);
+        \\    print("hi");
+        \\    print([1, 2]);
+        \\    print(#(1, "a"));
+        \\    print(Point(x: 1, y: 2));
+        \\    print(Shape.Square(side: 4));
+        \\    print(Shape.Nothing);
+        \\    print([Point(x: 1, y: 2)]);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1245,20 +1333,22 @@ test "wat: option ---- a value assigned into a declared `?T` is boxed like one" 
         \\fn main() {
         \\    var seen = 0;
         \\    [1, 2].forEach({ n -> seen = n });
-        \\    @print(seen);
+        \\    print(seen);
         \\    val b = Box(items: [3, 4]);
-        \\    @print(b.total());
+        \\    print(b.total());
         \\    var h: ?i32 = null;
-        \\    @print(h);
+        \\    print(h);
         \\    h = 5;
-        \\    @print(h);
+        \\    print(h);
         \\    var acc: ?i32 = null;
         \\    [7, 8].forEach({ n -> acc = n });
-        \\    @print(acc);
-        \\    @print(b.isBig());
-        \\    @print(b.doubled());
-        \\    @print(b.label());
+        \\    print(acc);
+        \\    print(b.isBig());
+        \\    print(b.doubled());
+        \\    print(b.label());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1295,13 +1385,15 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
         \\}
         \\fn main() {
         \\    val c = mk();
-        \\    @print(c.value);
-        \\    @print(c.set(9));
+        \\    print(c.value);
+        \\    print(c.set(9));
         \\    val t = #(1, { n -> return n + 100; });
-        \\    @print(t._1(2));
+        \\    print(t._1(2));
         \\    val o = Ops(step: { n -> return n - 1; });
-        \\    @print(o.step(10));
+        \\    print(o.step(10));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1329,13 +1421,15 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "abc";
-        \\    @print(s.at(0));
-        \\    @print(s.at(2));
-        \\    @print(s.at(3));
-        \\    @print(s.at(0 - 1));
-        \\    @print(s.at(0 - 4));
-        \\    @print("hello world".at(6));
+        \\    print(s.at(0));
+        \\    print(s.at(2));
+        \\    print(s.at(3));
+        \\    print(s.at(0 - 1));
+        \\    print(s.at(0 - 4));
+        \\    print("hello world".at(6));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "a\nc\nnull\nc\nnull\nw\n");
 }
 
@@ -1362,9 +1456,11 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
         \\    return sumTo(n - 1, acc + n);
         \\}
         \\fn main() {
-        \\    @print(count(1000000, 0));
-        \\    @print(sumTo(1000, 0));
+        \\    print(count(1000000, 0));
+        \\    print(sumTo(1000, 0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "1000000\n500500\n");
 }
 
@@ -1379,23 +1475,25 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    val f = 2.5;
-        \\    @print(f.toString());
+        \\    print(f.toString());
         \\    val g = 5.0;
-        \\    @print(g.toString());
-        \\    @print("abc".charCodeAt(1));
-        \\    @print("abc".charCodeAt(7));
-        \\    @print("a-b-c".lastIndexOf("-"));
-        \\    @print("a-b-c".lastIndexOf("z"));
-        \\    @print("ab".padStart(5, "*-"));
-        \\    @print("ab".padEnd(5, "*-"));
-        \\    @print("abcdef".padStart(3, "*"));
-        \\    @print("a-b-c".replace("-", "+"));
-        \\    @print("a-b-c".replaceAll("-", "+="));
-        \\    @print("ab".replaceAll("", "-"));
-        \\    @print("xy".chars());
-        \\    @print([1, 2, 3].find({ x -> x > 1 }));
-        \\    @print([1, 2, 3].find({ x -> x > 5 }));
+        \\    print(g.toString());
+        \\    print("abc".charCodeAt(1));
+        \\    print("abc".charCodeAt(7));
+        \\    print("a-b-c".lastIndexOf("-"));
+        \\    print("a-b-c".lastIndexOf("z"));
+        \\    print("ab".padStart(5, "*-"));
+        \\    print("ab".padEnd(5, "*-"));
+        \\    print("abcdef".padStart(3, "*"));
+        \\    print("a-b-c".replace("-", "+"));
+        \\    print("a-b-c".replaceAll("-", "+="));
+        \\    print("ab".replaceAll("", "-"));
+        \\    print("xy".chars());
+        \\    print([1, 2, 3].find({ x -> x > 1 }));
+        \\    print([1, 2, 3].find({ x -> x > 5 }));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\2.5
         \\5.0
@@ -1426,18 +1524,20 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print("a b\tc\n d".words());
-        \\    @print("a\nb\r\nc\r".lines());
-        \\    @print([3, 1, 1, 3].unique());
-        \\    @print(["a", "a", "b"].unique());
-        \\    @print([true, true, false].unique());
-        \\    @print([[1], [2, 3]].flatten());
-        \\    @print([["a"], ["b"]].flat());
-        \\    @print([1, 2].flatMap({ x -> [x, x] }));
-        \\    @print([1, 2, 3].chunked(2));
-        \\    @print([1, 2, 3].sliding(2));
-        \\    @print([1, 2].fill(0));
+        \\    print("a b\tc\n d".words());
+        \\    print("a\nb\r\nc\r".lines());
+        \\    print([3, 1, 1, 3].unique());
+        \\    print(["a", "a", "b"].unique());
+        \\    print([true, true, false].unique());
+        \\    print([[1], [2, 3]].flatten());
+        \\    print([["a"], ["b"]].flat());
+        \\    print([1, 2].flatMap({ x -> [x, x] }));
+        \\    print([1, 2, 3].chunked(2));
+        \\    print([1, 2, 3].sliding(2));
+        \\    print([1, 2].fill(0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\["a", "b", "c", "d"]
         \\["a", "b", "c\r"]
@@ -1464,19 +1564,25 @@ test "wat: prim method ---- unique over records, flatMap over a scalar and flatt
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\type P(x: i32)
         \\fn main() {
-        \\    @print([P(x: 1), P(x: 1)].unique().length);
+        \\    print([P(x: 1), P(x: 1)].unique().length);
         \\}
-    , "`unique` on the wasm backend compares", 3, 31);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "`unique` on the wasm backend compares", 3, 30);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\fn main() {
-        \\    @print([1, 2].flatMap({ x -> x + 1 }));
+        \\    print([1, 2].flatMap({ x -> x + 1 }));
         \\}
-    , "`flatMap` on the wasm backend: nothing shows that its function answers an array", 2, 19);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "`flatMap` on the wasm backend: nothing shows that its function answers an array", 2, 18);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\fn main() {
-        \\    @print([1, 2].flatten());
+        \\    print([1, 2].flatten());
         \\}
-    , "`flatten` on the wasm backend: nothing shows", 2, 19);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "`flatten` on the wasm backend: nothing shows", 2, 18);
 }
 
 // A prelude `default fn` (`primitives.bp`'s `parseInt`, `parseFloat`) is
@@ -1489,10 +1595,12 @@ test "wat: prim method ---- unique over records, flatMap over a scalar and flatt
 test "wat: prim method ---- a prelude default's host helpers are std-wasm's, its @Result read whole" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print("12".parseInt().unwrapOr(0l));
-        \\    @print("-2.5e-1".parseFloat().unwrapOr(0.0));
-        \\    @print("1.".parseFloat().isError());
+        \\    print("12".parseInt().unwrapOr(0l));
+        \\    print("-2.5e-1".parseFloat().unwrapOr(0.0));
+        \\    print("1.".parseFloat().isError());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\12
         \\-0.25
@@ -1510,11 +1618,13 @@ test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches f
         \\fn main() {
         \\    var xs = [1, 2, 3];
         \\    val p = xs.pop();
-        \\    @print(p);
-        \\    @print(xs);
-        \\    @print([1, 2, 1].lastIndexOf(1));
-        \\    @print(["a", "b"].lastIndexOf("z"));
+        \\    print(p);
+        \\    print(xs);
+        \\    print([1, 2, 1].lastIndexOf(1));
+        \\    print(["a", "b"].lastIndexOf("z"));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\3
         \\[1, 2]
@@ -1548,12 +1658,14 @@ test "wat: unknown ---- a type parameter's slot matched out of an unknown is an 
         \\}
         \\fn main() {
         \\    val x: unknown = 1;
-        \\    @print(innerLength(x));
+        \\    print(innerLength(x));
         \\    val s: unknown = Maybe.Some(value: "abc");
-        \\    @print(innerLength(s));
+        \\    print(innerLength(s));
         \\    val n: unknown = Maybe.Some(value: 5);
-        \\    @print(innerLength(n));
+        \\    print(innerLength(n));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\-2
         \\1
@@ -1579,8 +1691,10 @@ test "wat: unknown ---- a field read on a guard-narrowed type parameter's slot" 
         \\}
         \\fn main() {
         \\    val s: unknown = Maybe.Some(value: "abc");
-        \\    @print(innerLength(s));
+        \\    print(innerLength(s));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -1595,11 +1709,13 @@ test "wat: slice ---- a null end, written or at run time, is the end" {
         \\    return s.slice(1, end);
         \\}
         \\fn main() {
-        \\    @print("abcdef".slice(2, null));
-        \\    @print([1, 2, 3, 4].slice(1, null));
-        \\    @print(cut("abcdef", 3));
-        \\    @print(cut("abcdef", null));
+        \\    print("abcdef".slice(2, null));
+        \\    print([1, 2, 3, 4].slice(1, null));
+        \\    print(cut("abcdef", 3));
+        \\    print(cut("abcdef", null));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\cdef
         \\[2, 3, 4]
@@ -1642,14 +1758,16 @@ test "wat: case ---- a tuple pattern tests its literals and binds its elements" 
         \\    };
         \\}
         \\fn main() {
-        \\    @print(classify(#(0, "a")));
-        \\    @print(classify(#(7, "x")));
-        \\    @print(classify(#(7, "y")));
-        \\    @print(capital(#("SP", 12)));
-        \\    @print(capital(#("Rio", 6)));
-        \\    @print(nested(#(#(0, 7), "z")));
-        \\    @print(nested(#(#(5, 7), "z")));
+        \\    print(classify(#(0, "a")));
+        \\    print(classify(#(7, "x")));
+        \\    print(classify(#(7, "y")));
+        \\    print(capital(#("SP", 12)));
+        \\    print(capital(#("Rio", 6)));
+        \\    print(nested(#(#(0, 7), "z")));
+        \\    print(nested(#(#(5, 7), "z")));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\zero a
         \\x 7
@@ -1699,15 +1817,17 @@ test "wat: case ---- `..` skips the rest and a bool literal in a tuple pattern i
         \\    };
         \\}
         \\fn main() {
-        \\    @print(first(#(4, 5, 6)));
-        \\    @print(width(Shape.Rect(w: 4, h: 5)));
-        \\    @print(width(Shape.Circle(radius: 1)));
-        \\    @print(width(Shape.Dot));
-        \\    @print(px(Point(x: 0, y: 1)));
-        \\    @print(px(Point(x: 3, y: 1)));
-        \\    @print(names(#("a", "b", true)));
-        \\    @print(names(#("a", "b", false)));
+        \\    print(first(#(4, 5, 6)));
+        \\    print(width(Shape.Rect(w: 4, h: 5)));
+        \\    print(width(Shape.Circle(radius: 1)));
+        \\    print(width(Shape.Dot));
+        \\    print(px(Point(x: 0, y: 1)));
+        \\    print(px(Point(x: 3, y: 1)));
+        \\    print(names(#("a", "b", true)));
+        \\    print(names(#("a", "b", false)));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\4
         \\4
@@ -1743,13 +1863,15 @@ test "wat: case ---- a type pattern is chosen by the value" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(kind(1));
-        \\    @print(kind("a"));
-        \\    @print(kind(true));
-        \\    @print(kind(Point(x: 1, y: 2)));
-        \\    @print(kind(Shape.Rect(w: 1, h: 1)));
-        \\    @print(kind(2.5));
+        \\    print(kind(1));
+        \\    print(kind("a"));
+        \\    print(kind(true));
+        \\    print(kind(Point(x: 1, y: 2)));
+        \\    print(kind(Shape.Rect(w: 1, h: 1)));
+        \\    print(kind(2.5));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\int 1
         \\string a
@@ -1782,13 +1904,15 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
         \\    };
         \\}
         \\fn main() {
-        \\    @print(head([]));
-        \\    @print(head(["x"]));
-        \\    @print(head(["x", "y", "z"]));
-        \\    @print(pick([1, 9]));
-        \\    @print(pick([2, 9]));
-        \\    @print(pick([5, 6, 7, 8]));
+        \\    print(head([]));
+        \\    print(head(["x"]));
+        \\    print(head(["x", "y", "z"]));
+        \\    print(pick([1, 9]));
+        \\    print(pick([2, 9]));
+        \\    print(pick([5, 6, 7, 8]));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\none
         \\x+0
@@ -1819,15 +1943,17 @@ test "wat: scope ---- a lambda's binding shadows the outer one only inside it" {
         \\    val k = 5;
         \\    [1].forEach({ e ->
         \\        val k = "lambda";
-        \\        @print(k);
+        \\        print(k);
         \\    });
-        \\    @print(k);
+        \\    print(k);
         \\    val e = 5;
-        \\    [1, 2].forEach({ e -> @print(e) });
-        \\    @print(e);
-        \\    if (true) { val t = 1; @print(t); }
-        \\    if (true) { val t = "two"; @print(t); }
+        \\    [1, 2].forEach({ e -> print(e) });
+        \\    print(e);
+        \\    if (true) { val t = 1; print(t); }
+        \\    if (true) { val t = "two"; print(t); }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\lambda
         \\5
@@ -1858,20 +1984,22 @@ test "wat: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\fn main() {
         \\    val z = zero();
         \\    val nan = z / z;
-        \\    @print(nan == nan);
-        \\    @print(nan != nan);
-        \\    @print(nan == 1.0);
-        \\    @print(nan < 1.0);
-        \\    @print(F(x: nan) == F(x: z / z));
+        \\    print(nan == nan);
+        \\    print(nan != nan);
+        \\    print(nan == 1.0);
+        \\    print(nan < 1.0);
+        \\    print(F(x: nan) == F(x: z / z));
         \\    val ta = #(nan, 1);
         \\    val tb = #(z / z, 1);
-        \\    @print(ta == tb);
+        \\    print(ta == tb);
         \\    val xs = [nan];
         \\    val ys = [z / z];
-        \\    @print(xs == ys);
-        \\    @print(V.W(x: nan) == V.W(x: z / z));
-        \\    @print(F(x: nan) == F(x: 1.0));
+        \\    print(xs == ys);
+        \\    print(V.W(x: nan) == V.W(x: z / z));
+        \\    print(F(x: nan) == F(x: 1.0));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }
 
@@ -1897,8 +2025,10 @@ test "wat: behavior ---- a primitive method on a default's result inside an adop
         \\    }
         \\}
         \\fn main() {
-        \\    @print(Sq(s: 3).label());
+        \\    print(Sq(s: 3).label());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "area 18\n");
 }
 
@@ -1919,10 +2049,12 @@ test "wat: behavior ---- a program's default fn on a primitive behavior is calle
         \\    }
         \\}
         \\fn main() {
-        \\    @print("hi".shout());
+        \\    print("hi".shout());
         \\    val n: i32 = 21;
-        \\    @print(n.twice());
+        \\    print(n.twice());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "hi!\n42\n");
 }
 
@@ -1941,10 +2073,12 @@ test "wat: behavior ---- a program's default fn on Array<T> is called with its e
         \\    }
         \\}
         \\fn main() {
-        \\    @print([1, 2].tag());
-        \\    @print([1].pairUp(7));
-        \\    @print(["a"].pairUp("b"));
+        \\    print([1, 2].tag());
+        \\    print([1].pairUp(7));
+        \\    print(["a"].pairUp("b"));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "arr\n[7, 7]\n[\"b\", \"b\"]\n");
 }
 
@@ -1966,8 +2100,10 @@ test "wat: function value ---- a lambda in a generic field that nothing types is
         \\fn main() {
         \\    val esc = keep(Box(value: { s -> s + "%" }));
         \\    val ef = esc.value;
-        \\    @print(ef("x"));
+        \\    print(ef("x"));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "lambda parameter `s`: nothing gives it a type the wasm backend can see", 6, 31);
 }
 
@@ -1989,9 +2125,11 @@ test "wat: refusal ---- is over a type with no descriptor is refused at the test
         \\type Color { Red, Green }
         \\pub fn main() {
         \\    val c: unknown = 1;
-        \\    @print(c is Color);
+        \\    print(c is Color);
         \\}
-    , "`is Color`: the wasm backend has no run-time test for this type", 4, 14);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "`is Color`: the wasm backend has no run-time test for this type", 4, 13);
 }
 
 // A decorator / template builtin written in a program body: nothing on wasm
@@ -2014,16 +2152,20 @@ test "wat: refusal ---- pop on a call's result is refused, pop on a record field
         \\    return [1, 2];
         \\}
         \\pub fn main() {
-        \\    @print(xs().pop());
+        \\    print(xs().pop());
         \\}
-    , "`pop` on the wasm backend rebinds its receiver", 5, 17);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "`pop` on the wasm backend rebinds its receiver", 5, 16);
     try h.assertWasmRunLog(std.testing.allocator,
         \\type Stack(items: Array<i32>)
         \\pub fn main() {
         \\    val s = Stack(items: [1, 2, 3]);
-        \\    @print(s.items.pop());
-        \\    @print(s.items);
+        \\    print(s.items.pop());
+        \\    print(s.items);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\3
         \\[1, 2]
@@ -2057,9 +2199,11 @@ test "wat: refusal ---- dispatch by value over an all-unit enum implementer is r
         \\    return n.name();
         \\}
         \\pub fn main() {
-        \\    @print(show(P(x: 1)));
-        \\    @print(show(Color.Red));
+        \\    print(show(P(x: 1)));
+        \\    print(show(Color.Red));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "`Color` is an all-unit enum", 18, 14);
 }
 
@@ -2074,7 +2218,7 @@ test "wat: behavior ---- a method with no return dispatched by value as a body's
         \\}
         \\type Door(name: string) implement Shuttable {
         \\    fn shut(self: Self) {
-        \\        @print("shut " + self.name);
+        \\        print("shut " + self.name);
         \\    }
         \\}
         \\fn doShut(c: Shuttable) {
@@ -2083,6 +2227,8 @@ test "wat: behavior ---- a method with no return dispatched by value as a body's
         \\pub fn main() {
         \\    doShut(Door(name: "front"));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\shut front
         \\
@@ -2100,10 +2246,12 @@ test "wat: refusal ---- is over a type parameter specialises the generic fn per 
         \\    return "n";
         \\}
         \\pub fn main() {
-        \\    @print(shown(1));
-        \\    @print(shown("s"));
-        \\    @print(shown(true));
+        \\    print(shown(1));
+        \\    print(shown("s"));
+        \\    print(shown(true));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\n
         \\q
@@ -2129,9 +2277,11 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
         \\    }
         \\}
         \\pub fn main() {
-        \\    @print(Box(value: 1));
+        \\    print(Box(value: 1));
         \\}
-    , "cannot call the generic `Box.display` here", 11, 12);
+        \\
+        \\import {io.terminal.print} from "std";
+    , "cannot call the generic `Box.display` here", 11, 11);
 }
 
 // Decision 238 — what a `#[@External.Wasm("…")]` binding names: `op:` one
@@ -2141,27 +2291,29 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
 // function of the declared name and signature, so a call is an ordinary call.
 test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\#[@external(.Wasm(op: "f64.floor"))]
+        \\#[compiler.external(.Wasm(op: "f64.floor"))]
         \\declare fn down(x: f64) -> f64;
-        \\#[@external(.Wasm(op: "i32.add"))]
+        \\#[compiler.external(.Wasm(op: "i32.add"))]
         \\declare fn plus(a: i32, b: i32) -> i32;
-        \\#[@external(.Wasm(op: "f64.lt"))]
+        \\#[compiler.external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> bool;
-        \\#[@external(.JavaScript("(\"hi \" + $0)"), .Wasm(body: greetBody))]
+        \\#[compiler.external(.JavaScript("(\"hi \" + $0)"), .Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string {
         \\    return "hi " + name;
         \\}
-        \\#[@external(.Wasm(wasi: .RandomF64))]
+        \\#[compiler.external(.Wasm(wasi: .RandomF64))]
         \\declare fn draw() -> f64;
         \\fn main() {
-        \\    @print(down(2.75) == 2.0);
-        \\    @print(plus(40, 2));
-        \\    @print(below(1.0, 2.0));
-        \\    @print(greet("wasm"));
+        \\    print(down(2.75) == 2.0);
+        \\    print(plus(40, 2));
+        \\    print(below(1.0, 2.0));
+        \\    print(greet("wasm"));
         \\    val r = draw();
-        \\    @print(r >= 0.0 && r < 1.0);
+        \\    print(r >= 0.0 && r < 1.0);
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     ,
         \\true
         \\42
@@ -2183,13 +2335,15 @@ test "wat: std-wasm ---- seed and seededFloat draw the sidecar's Mulberry32 stre
         \\import {io} from "std";
         \\fn main() {
         \\    val before = io.random.seededFloat();
-        \\    @print(before >= 0.0 && before < 1.0);
+        \\    print(before >= 0.0 && before < 1.0);
         \\    io.random.seed(42);
-        \\    @print((io.random.seededFloat() * 65536.0).floor());
-        \\    @print((io.random.seededFloat() * 65536.0).floor());
+        \\    print((io.random.seededFloat() * 65536.0).floor());
+        \\    print((io.random.seededFloat() * 65536.0).floor());
         \\    io.random.seed(0 - 7);
-        \\    @print((io.random.seededFloat() * 65536.0).floor());
+        \\    print((io.random.seededFloat() * 65536.0).floor());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\true
         \\39393.0
@@ -2209,9 +2363,11 @@ test "wat: an integer if-expression inside a float function" {
         \\    return if (big) d * 1.0 else 0.0 - d;
         \\}
         \\fn main() {
-        \\    @print(digitOf(55) == 0.0 - 7.0);
-        \\    @print(digitOf(102) == 15.0);
+        \\    print(digitOf(55) == 0.0 - 7.0);
+        \\    print(digitOf(102) == 15.0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\true
         \\true
@@ -2224,47 +2380,63 @@ test "wat: an integer if-expression inside a float function" {
 // declaration's types at the argument (`external-body-not-a-fn`, decision 610).
 test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(op: "f64.flor"))]
+        \\#[compiler.external(.Wasm(op: "f64.flor"))]
         \\declare fn down(x: f64) -> f64;
-        \\fn main() { @print(down(1.5)); }
+        \\fn main() { print(down(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "`f64.flor` is not a wasm numeric instruction", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(op: "f64.min"))]
+        \\#[compiler.external(.Wasm(op: "f64.min"))]
         \\declare fn least(x: f64) -> f64;
-        \\fn main() { @print(least(1.5)); }
+        \\fn main() { print(least(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "`f64.min` is `(f64, f64) -> f64`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(op: "f64.lt"))]
+        \\#[compiler.external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> f64;
-        \\fn main() { @print(below(1.0, 2.0)); }
+        \\fn main() { print(below(1.0, 2.0)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "`f64.lt` is `(f64, f64) -> bool`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(body: greetBdy))]
+        \\#[compiler.external(.Wasm(body: greetBdy))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string { return name; }
-        \\fn main() { @print(greet("x")); }
-    , "unbound variable 'greetBdy'", 1, 25);
+        \\fn main() { print(greet("x")); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    , "unbound variable 'greetBdy'", 1, 33);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(body: greetBody))]
+        \\#[compiler.external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\pub fn greetBody(name: string) -> string { return name; }
-        \\fn main() { @print(greet("x")); }
-    , "`greetBody` is `pub`", 1, 19);
+        \\fn main() { print(greet("x")); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    , "`greetBody` is `pub`", 1, 27);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(body: greetBody))]
+        \\#[compiler.external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string, n: i32) -> string { return name; }
-        \\fn main() { @print(greet("x")); }
-    , "must take the same parameter types in the same order", 1, 19);
+        \\fn main() { print(greet("x")); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    , "must take the same parameter types in the same order", 1, 27);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm(wasi: .ClockTimeGet))]
+        \\#[compiler.external(.Wasm(wasi: .ClockTimeGet))]
         \\declare fn now() -> f64;
-        \\fn main() { @print(now()); }
-    , "unbound variable 'ClockTimeGet'", 1, 25);
+        \\fn main() { print(now()); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    , "unbound variable 'ClockTimeGet'", 1, 33);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\#[@external(.Wasm("""(f64.floor $0)"""))]
+        \\#[compiler.external(.Wasm("""(f64.floor $0)"""))]
         \\declare fn down(x: f64) -> f64;
-        \\fn main() { @print(down(1.5)); }
+        \\fn main() { print(down(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "is none of the four cells", 1, 3);
 }
 
@@ -2515,12 +2687,14 @@ test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm
     try h.assertWasmRunLog(std.testing.allocator,
         \\import {hash} from "std";
         \\fn main() {
-        \\    @print(hash.contentHash("Point"));
-        \\    @print("[" + " \t\na b\r ".trim() + "]");
-        \\    @print("[" + " a ".trimStart() + "]");
-        \\    @print("[" + " a ".trimEnd() + "]");
-        \\    @print("${2.5} ${100.0} ${1e22}");
+        \\    print(hash.contentHash("Point"));
+        \\    print("[" + " \t\na b\r ".trim() + "]");
+        \\    print("[" + " a ".trimStart() + "]");
+        \\    print("[" + " a ".trimEnd() + "]");
+        \\    print("${2.5} ${100.0} ${1e22}");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\de553cf
         \\[a b]
@@ -2542,8 +2716,10 @@ test "wat: fn ---- an empty body is emitted and called, never taken for a declar
         \\fn nothing() {}
         \\fn main() {
         \\    nothing();
-        \\    @print("after");
+        \\    print("after");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\after
         \\
@@ -2560,8 +2736,10 @@ test "wat: std ---- testing.mocks is refused on wasm for its own host cell, neve
     var outputs = try codegen.generateWith(std.testing.allocator, &.{.{ .path = "", .source =
         \\import {testing.mocks} from "std";
         \\fn main() {
-        \\    @print(0);
+        \\    print(0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     }}, std.testing.io, h.configs[3], .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
@@ -2585,9 +2763,11 @@ test "wat: std ---- testing.mocks is refused on wasm for its own host cell, neve
 test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
-        \\    @print("straße é ǆ ﬁ".toUpper());
-        \\    @print("ΟΔΟΣ ÉCOLE".toLower());
+        \\    print("straße é ǆ ﬁ".toUpper());
+        \\    print("ΟΔΟΣ ÉCOLE".toLower());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\STRASSE É Ǆ FI
         \\οδοσ école
@@ -2603,25 +2783,31 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
 test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {
     const a = std.testing.allocator;
     try h.assertJsRefusedAt(a,
-        \\#[@external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
+        \\#[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digest(x: string) -> string;
         \\fn main() {
-        \\    @print(digest("Point"));
+        \\    print(digest("Point"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@external(.JavaScript("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
+        \\#[compiler.external(.JavaScript("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
         \\declare fn floorOf(x: f64) -> f64;
         \\fn main() {
-        \\    @print(floorOf(2.5));
+        \\    print(floorOf(2.5));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "std-wasm implements no `math.floorOf`", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
+        \\#[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digestOf(x: i32) -> string;
         \\fn main() {
-        \\    @print(digestOf(7));
+        \\    print(digestOf(7));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     , "std-wasm's `hash.contentHash` is `(string) -> string`, and `digestOf` is declared `(i32) -> string`", 1, 3);
 }
 
@@ -2652,20 +2838,22 @@ test "wat: print ---- a float prints std-wasm's text, as erlang does (decision 4
         \\    return x;
         \\}
         \\fn main() {
-        \\    @print(1e21);
-        \\    @print(1.7976931348623157e308);
-        \\    @print(5e-324);
-        \\    @print(1e-7);
-        \\    @print(0.000001);
-        \\    @print(1152921504606846976.0);
-        \\    @print(100000000000000000000.0);
-        \\    @print(id(1.0) / 0.0);
-        \\    @print(id(-1.0) / 0.0);
-        \\    @print(id(0.0) / 0.0);
-        \\    @print(5.0.toString());
-        \\    @print("x" + 0.000001);
-        \\    @print("x" + 1e300);
+        \\    print(1e21);
+        \\    print(1.7976931348623157e308);
+        \\    print(5e-324);
+        \\    print(1e-7);
+        \\    print(0.000001);
+        \\    print(1152921504606846976.0);
+        \\    print(100000000000000000000.0);
+        \\    print(id(1.0) / 0.0);
+        \\    print(id(-1.0) / 0.0);
+        \\    print(id(0.0) / 0.0);
+        \\    print(5.0.toString());
+        \\    print("x" + 0.000001);
+        \\    print("x" + 1e300);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\1.0e21
         \\1.7976931348623157e308
@@ -2692,12 +2880,14 @@ test "wat: arithmetic ---- an integer that leaves its width traps instead of wra
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    val big: i32 = 2147483647;
-        \\    @print(big - 1);
-        \\    @print(-big);
+        \\    print(big - 1);
+        \\    print(-big);
         \\    val wide: i64 = 9223372036854775807;
-        \\    @print(wide);
-        \\    @print(big + 1);
+        \\    print(wide);
+        \\    print(big + 1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\2147483646
         \\-2147483647
@@ -2728,16 +2918,18 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
         \\}
         \\fn main() {
         \\    val t = #(1, [7].at(5));
-        \\    @print(t);
-        \\    @print(t._1 ?? 4);
-        \\    @print(mixed());
+        \\    print(t);
+        \\    print(t._1 ?? 4);
+        \\    print(mixed());
         \\    val m = mixed();
-        \\    @print(m._0);
-        \\    @print(m._1);
-        \\    @print(m._3);
+        \\    print(m._0);
+        \\    print(m._1);
+        \\    print(m._3);
         \\    val q: Q<i32> = Q(items: [5, 6]);
-        \\    @print(q.pop()._1 ?? -1);
+        \\    print(q.pop()._1 ?? -1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\#(1, null)
         \\4
@@ -2755,17 +2947,19 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
 // string element as an integer at exit 0.
 test "wat: the nullish default ---- the answer keeps the payload's tuple shape" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn rows() -> @Result<Array<#(string, string)>, string> {
+        \\fn rows() -> Result<Array<#(string, string)>, string> {
         \\    val xs = [#("a", "b"), #("c", "d")];
         \\    if (xs.length > 5) throw "too many";
         \\    return xs;
         \\}
         \\fn main() {
         \\    val rs = rows().unwrapOr([]);
-        \\    @print(rs);
-        \\    @print((rs.at(1) ?? #("", ""))._1);
-        \\    @print(rs.map({ r -> r._0 }).join(","));
+        \\    print(rs);
+        \\    print((rs.at(1) ?? #("", ""))._1);
+        \\    print(rs.map({ r -> r._0 }).join(","));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\[#("a", "b"), #("c", "d")]
         \\d
@@ -2805,13 +2999,15 @@ test "wat: case ---- a `_` and a nested variant in a payload pattern" {
         \\    };
         \\}
         \\fn main() {
-        \\    @print(widthOf(Shape.Rect(4, 5)));
-        \\    @print(widthOf(Shape.Circle(3)));
-        \\    @print(leftWidth(Pair.Two(Shape.Rect(9, 1), Shape.Dot)));
-        \\    @print(leftWidth(Pair.Two(Shape.Circle(2), Shape.Rect(6, 7))));
-        \\    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Circle(8))));
-        \\    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Dot)));
+        \\    print(widthOf(Shape.Rect(4, 5)));
+        \\    print(widthOf(Shape.Circle(3)));
+        \\    print(leftWidth(Pair.Two(Shape.Rect(9, 1), Shape.Dot)));
+        \\    print(leftWidth(Pair.Two(Shape.Circle(2), Shape.Rect(6, 7))));
+        \\    print(leftWidth(Pair.Two(Shape.Dot, Shape.Circle(8))));
+        \\    print(leftWidth(Pair.Two(Shape.Dot, Shape.Dot)));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\4
         \\-1
@@ -2834,17 +3030,19 @@ test "wat: arithmetic ---- a `u64` past 2^63 is unsigned in its `i64` carrier" {
         \\    val w: u64 = 10000000000000000000;
         \\    val v: u64 = 3000000000000000000;
         \\    val m: u64 = 18446744073709551615;
-        \\    @print(w);
-        \\    @print(w > v);
-        \\    @print(v >= w);
-        \\    @print(w / v);
-        \\    @print(w % v);
-        \\    @print(w - v);
-        \\    @print(v + v + v);
-        \\    @print(m.toString());
-        \\    @print("${m / 2}");
-        \\    @print(v - w);
+        \\    print(w);
+        \\    print(w > v);
+        \\    print(v >= w);
+        \\    print(w / v);
+        \\    print(w % v);
+        \\    print(w - v);
+        \\    print(v + v + v);
+        \\    print(m.toString());
+        \\    print("${m / 2}");
+        \\    print(v - w);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\10000000000000000000
         \\true
@@ -2872,12 +3070,14 @@ test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prin
         \\    val top = 18446744073709551615ul;
         \\    val hex = 0xFFFF_FFFF_FFFF_FFFFul;
         \\    val sum = 18446744073709551614ul + 1ul;
-        \\    @print(top);
-        \\    @print(hex);
-        \\    @print(sum);
-        \\    @print(top == hex);
-        \\    @print(top + 1ul);
+        \\    print(top);
+        \\    print(hex);
+        \\    print(sum);
+        \\    print(top == hex);
+        \\    print(top + 1ul);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\18446744073709551615
         \\18446744073709551615
@@ -2893,8 +3093,10 @@ test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prin
 test "wat: print ---- @println lowers as @print does, with its newline" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @println("a", 1);
+        \\    print("a", 1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -2905,11 +3107,13 @@ test "wat: template ---- a lone float hole is a string, as a val, an element and
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "${5.5}";
-        \\    @print(s + "!");
+        \\    print(s + "!");
         \\    val xs: string[] = ["${2.5}", "a"];
-        \\    @print(xs.length);
-        \\    @print("${1.5}" + "${2.25}");
+        \\    print(xs.length);
+        \\    print("${1.5}" + "${2.25}");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ,
         \\5.5!
         \\2
@@ -2930,10 +3134,12 @@ test "wat: print ---- a bool element of a module-level tuple prints true / false
         \\val a = 3;
         \\val t = #(a, flag, off);
         \\fn main() {
-        \\    @print(t.flag);
-        \\    @print(t.2);
-        \\    @print(t.0);
+        \\    print(t.flag);
+        \\    print(t.2);
+        \\    print(t.0);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "true\nfalse\n3\n");
 }
 
@@ -2965,9 +3171,11 @@ test "wat: a package template's answer is its library's record, its field read a
         \\
         \\pub fn main() {
         \\    val built = shelf @`built`;
-        \\    @print(built.text);
-        \\    @print(built.size.toString());
+        \\    print(built.text);
+        \\    print(built.size.toString());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
         },
     }, "built\n5\n");
 }
@@ -2977,13 +3185,15 @@ test "wat: a package template's answer is its library's record, its field read a
 const bytes_src =
     \\pub fn main() {
     \\    val b = Bytes.fromUtf8("héllo");
-    \\    @print(b.length());
-    \\    @print(b.slice(1, 3).toUtf8().unwrapOr("?"));
-    \\    @print(b.slice(1, 2).toUtf8().isError());
+    \\    print(b.length());
+    \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
+    \\    print(b.slice(1, 2).toUtf8().isError());
     \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
-    \\    @print(j[2..].toUtf8().unwrapOr("?"));
-    \\    @print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j[2..].toUtf8().unwrapOr("?"));
+    \\    print(j == Bytes.fromUtf8("abcd"));
     \\}
+    \\
+    \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
@@ -3021,11 +3231,13 @@ test "wat: decision 330 ---- recv?.m() over a record's or an all-unit enum's met
         \\    return C.Red;
         \\}
         \\fn main() {
-        \\    @print(p(true)?.twice() ?? -1);
-        \\    @print(p(false)?.twice() ?? -1);
-        \\    @print(col(1)?.n() ?? -1);
-        \\    @print(col(0)?.n() ?? -1);
+        \\    print(p(true)?.twice() ?? -1);
+        \\    print(p(false)?.twice() ?? -1);
+        \\    print(col(1)?.n() ?? -1);
+        \\    print(col(0)?.n() ?? -1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     , "0\n-1\n0\n-1\n");
 }
 
@@ -3052,8 +3264,10 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
     const needs = try wasmNeedsOfSource(std.testing.allocator,
         \\import {failure} from "std";
         \\fn main() {
-        \\    @print("no attempt");
+        \\    print("no attempt");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     try std.testing.expect(!needs.contains(.exceptions));
     try std.testing.expect(needs.contains(.gc));
@@ -3066,8 +3280,10 @@ test "wat: needs ---- a call of attempt asks for Exceptions" {
         \\import {failure} from "std";
         \\fn main() {
         \\    val r = failure.attempt({ -> 6 * 7 });
-        \\    @print("done");
+        \\    print("done");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
     try std.testing.expect(needs.contains(.exceptions));
 }
@@ -3293,17 +3509,19 @@ test "wat: gc ---- a record, its fields, a nested record and its structural equa
         \\
         \\pub fn main() {
         \\    val p = Point(x: 1, y: 2);
-        \\    @print(sum(p));
-        \\    @print(p);
+        \\    print(sum(p));
+        \\    print(p);
         \\    val q = Person(name: "Ana", age: 30, tall: true, h: 1.75, home: p);
-        \\    @print(greet(q));
-        \\    @print(q);
-        \\    @print(q.home.y);
-        \\    @print(q.h);
-        \\    @print(q.tall);
-        \\    @print(p == Point(x: 1, y: 2));
-        \\    @print(p == Point(x: 1, y: 3));
+        \\    print(greet(q));
+        \\    print(q);
+        \\    print(q.home.y);
+        \\    print(q.h);
+        \\    print(q.tall);
+        \\    print(p == Point(x: 1, y: 2));
+        \\    print(p == Point(x: 1, y: 3));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3326,12 +3544,14 @@ test "wat: gc ---- a record's methods answering a number, a string and a record"
         \\
         \\pub fn main() {
         \\    val c = Counter(n: 4, label: "ctr");
-        \\    @print(c.bump());
-        \\    @print(c.name());
-        \\    @print(c.scaled(3));
-        \\    @print(c.twice());
-        \\    @print(c.twice().twice().n);
+        \\    print(c.bump());
+        \\    print(c.name());
+        \\    print(c.scaled(3));
+        \\    print(c.twice());
+        \\    print(c.twice().twice().n);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3362,16 +3582,18 @@ test "wat: gc ---- an enum with payloads, a case over its variants, its printed 
         \\pub fn main() {
         \\    val a = Shape.Circle(r: 2);
         \\    val b = Shape.Rect(w: 3, h: 4);
-        \\    @print(area(a));
-        \\    @print(area(b));
-        \\    @print(area(Shape.Dot));
-        \\    @print(name(b));
-        \\    @print(a);
-        \\    @print(b);
-        \\    @print(Shape.Dot);
-        \\    @print(a == Shape.Circle(r: 2));
-        \\    @print(a == b);
+        \\    print(area(a));
+        \\    print(area(b));
+        \\    print(area(Shape.Dot));
+        \\    print(name(b));
+        \\    print(a);
+        \\    print(b);
+        \\    print(Shape.Dot);
+        \\    print(a == Shape.Circle(r: 2));
+        \\    print(a == b);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3402,14 +3624,16 @@ test "wat: gc ---- an enum with float payloads inside a record, an all-unit enum
         \\}
         \\
         \\pub fn main() {
-        \\    @print(area(Shape.Square(side: 2.0)));
-        \\    @print(area(Shape.Circle(radius: 1.0)));
+        \\    print(area(Shape.Square(side: 2.0)));
+        \\    print(area(Shape.Circle(radius: 1.0)));
         \\    val it = Item(shape: Shape.Square(side: 3.0), color: Color.Green, label: "x");
-        \\    @print(it);
-        \\    @print(warm(it.color));
-        \\    @print(it.color);
-        \\    @print(area(it.shape));
+        \\    print(it);
+        \\    print(warm(it.color));
+        \\    print(it.color);
+        \\    print(area(it.shape));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3429,26 +3653,28 @@ test "wat: gc ---- arrays: a literal, an index, a loop, push, length and equalit
         \\
         \\pub fn main() {
         \\    val xs = [3, 1, 2];
-        \\    @print(xs);
-        \\    @print(total(xs));
-        \\    @print(xs[1]);
-        \\    @print(xs.length);
-        \\    @print(xs.length());
+        \\    print(xs);
+        \\    print(total(xs));
+        \\    print(xs[1]);
+        \\    print(xs.length);
+        \\    print(xs.length());
         \\    var ys = [10, 20];
         \\    ys.push(30);
-        \\    @print(ys);
+        \\    print(ys);
         \\    val names = ["ann", "bobby"];
-        \\    @print(names);
-        \\    @print(longest(names));
-        \\    @print(names[1]);
+        \\    print(names);
+        \\    print(longest(names));
+        \\    print(names[1]);
         \\    val fs = [1.5, 2.5];
-        \\    @print(fs);
-        \\    @print(xs == [3, 1, 2]);
-        \\    @print(xs == ys);
+        \\    print(fs);
+        \\    print(xs == [3, 1, 2]);
+        \\    print(xs == ys);
         \\    val e: i32[] = [];
-        \\    @print(e.length());
-        \\    @print(e);
+        \\    print(e.length());
+        \\    print(e);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3456,31 +3682,33 @@ test "wat: gc ---- arrays: the operations that were std-wasm's, now the module's
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() {
         \\    val xs = [3, 1, 2];
-        \\    @print(xs.reverse());
-        \\    @print(xs.slice(1));
-        \\    @print(xs.slice(0, 2));
-        \\    @print(xs.take(2));
-        \\    @print(xs.drop(1));
-        \\    @print(xs.rest());
-        \\    @print(xs.append([9, 8]));
-        \\    @print(xs.prepend(7));
-        \\    @print(xs.indexOf(2));
-        \\    @print(xs.indexOf(5));
-        \\    @print(xs.lastIndexOf(1));
-        \\    @print(xs.contains(1));
-        \\    @print(xs.contains(8));
-        \\    @print(xs.join("-"));
+        \\    print(xs.reverse());
+        \\    print(xs.slice(1));
+        \\    print(xs.slice(0, 2));
+        \\    print(xs.take(2));
+        \\    print(xs.drop(1));
+        \\    print(xs.rest());
+        \\    print(xs.append([9, 8]));
+        \\    print(xs.prepend(7));
+        \\    print(xs.indexOf(2));
+        \\    print(xs.indexOf(5));
+        \\    print(xs.lastIndexOf(1));
+        \\    print(xs.contains(1));
+        \\    print(xs.contains(8));
+        \\    print(xs.join("-"));
         \\    val ws = ["a", "b", "c"];
-        \\    @print(ws.reverse());
-        \\    @print(ws.join(", "));
-        \\    @print(ws.indexOf("c"));
-        \\    @print(ws.contains("z"));
+        \\    print(ws.reverse());
+        \\    print(ws.join(", "));
+        \\    print(ws.indexOf("c"));
+        \\    print(ws.contains("z"));
         \\    val ns = [-5, 0, 123];
-        \\    @print(ns.join("|"));
+        \\    print(ns.join("|"));
         \\    val fs = [1.5, 2.5];
-        \\    @print(fs.reverse());
-        \\    @print(fs.indexOf(2.5));
+        \\    print(fs.reverse());
+        \\    print(fs.indexOf(2.5));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3490,20 +3718,22 @@ test "wat: gc ---- tuples: their elements, their printed text, an array of them 
         \\
         \\pub fn main() {
         \\    val t = #(1, "x", 2.5, true);
-        \\    @print(t);
-        \\    @print(t.0);
-        \\    @print(t.1);
-        \\    @print(t._2);
-        \\    @print(t._3);
+        \\    print(t);
+        \\    print(t.0);
+        \\    print(t.1);
+        \\    print(t._2);
+        \\    print(t._3);
         \\    val u = #(1, "x", 2.5, true);
-        \\    @print(t == u);
+        \\    print(t == u);
         \\    val rs = [Pair(a: 1, b: "p"), Pair(a: 2, b: "q")];
-        \\    @print(rs);
-        \\    for (rs) { r -> @print(r.b); }
+        \\    print(rs);
+        \\    for (rs) { r -> print(r.b); }
         \\    val ts = [#(1, "a"), #(2, "b")];
-        \\    @print(ts);
-        \\    @print(ts[0]);
+        \\    print(ts);
+        \\    print(ts[0]);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3528,26 +3758,28 @@ test "wat: gc ---- optionals: at, null, a boxed scalar, ??, a narrowing binding 
         \\
         \\pub fn main() {
         \\    val xs = [7, 8];
-        \\    @print(xs.at(1));
-        \\    @print(xs.at(5));
-        \\    @print(first(xs));
-        \\    @print(pick(true));
-        \\    @print(pick(false));
-        \\    @print(show(pick(true)));
-        \\    @print(show(pick(false)));
+        \\    print(xs.at(1));
+        \\    print(xs.at(5));
+        \\    print(first(xs));
+        \\    print(pick(true));
+        \\    print(pick(false));
+        \\    print(show(pick(true)));
+        \\    print(show(pick(false)));
         \\    val b = Box(n: 3, s: "x");
-        \\    @print(b);
+        \\    print(b);
         \\    val c = Box(n: null, s: null);
-        \\    @print(c);
-        \\    if (b.n) { v -> @print(v + 1); }
+        \\    print(c);
+        \\    if (b.n) { v -> print(v + 1); }
         \\    val words = ["a", "b"];
-        \\    @print(words.at(0));
-        \\    @print(words.at(9));
-        \\    @print(words[1] ?? "z");
-        \\    @print(xs[0]);
-        \\    @print(b.n == null);
-        \\    @print(c.n == null);
+        \\    print(words.at(0));
+        \\    print(words.at(9));
+        \\    print(words[1] ?? "z");
+        \\    print(xs[0]);
+        \\    print(b.n == null);
+        \\    print(c.n == null);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3566,33 +3798,35 @@ test "wat: gc ---- optionals: a field read through ?. and an optional record fie
         \\pub fn main() {
         \\    val a = User(name: "ann", age: 3, next: null);
         \\    val b = User(name: "bob", age: 4, next: a);
-        \\    @print(nameOf(a));
-        \\    @print(nameOf(null));
-        \\    @print(ageOf(b));
-        \\    @print(b.next?.name);
-        \\    @print(a.next?.name);
-        \\    @print(b.next?.age ?? 0);
-        \\    @print(a == b);
-        \\    @print(b.next == a);
+        \\    print(nameOf(a));
+        \\    print(nameOf(null));
+        \\    print(ageOf(b));
+        \\    print(b.next?.name);
+        \\    print(a.next?.name);
+        \\    print(b.next?.age ?? 0);
+        \\    print(a == b);
+        \\    print(b.next == a);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn half(n: i32) -> @Result<i32, string> {
+        \\fn half(n: i32) -> Result<i32, string> {
         \\    if (n % 2 == 0) {
         \\        return n / 2;
         \\    }
         \\    throw "odd";
         \\}
         \\
-        \\fn twice(n: i32) -> @Result<i32, string> {
+        \\fn twice(n: i32) -> Result<i32, string> {
         \\    val h = try half(n);
         \\    return try half(h);
         \\}
         \\
-        \\fn show(r: @Result<i32, string>) -> string {
+        \\fn show(r: Result<i32, string>) -> string {
         \\    return case r {
         \\        Ok(v) -> "ok " + v;
         \\        Error(e) -> "err " + e;
@@ -3600,16 +3834,18 @@ test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr
         \\}
         \\
         \\pub fn main() {
-        \\    @print(half(4));
-        \\    @print(half(3));
-        \\    @print(twice(8));
-        \\    @print(twice(6));
-        \\    @print(show(half(10)));
-        \\    @print(show(half(7)));
-        \\    @print(half(6).unwrapOr(0));
-        \\    @print(half(5).unwrapOr(0));
-        \\    @print(half(6).isOk());
+        \\    print(half(4));
+        \\    print(half(3));
+        \\    print(twice(8));
+        \\    print(twice(6));
+        \\    print(show(half(10)));
+        \\    print(show(half(7)));
+        \\    print(half(6).unwrapOr(0));
+        \\    print(half(5).unwrapOr(0));
+        \\    print(half(6).isOk());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3617,18 +3853,20 @@ test "wat: gc ---- Bytes, and the string arrays and optional strings std-wasm an
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() {
         \\    val b = Bytes.fromUtf8("hello");
-        \\    @print(b.length());
-        \\    @print(b.slice(1, 3).length());
+        \\    print(b.length());
+        \\    print(b.slice(1, 3).length());
         \\    val c = b.concat(Bytes.fromUtf8("!"));
-        \\    @print(c.length());
-        \\    @print(b == Bytes.fromUtf8("hello"));
+        \\    print(c.length());
+        \\    print(b == Bytes.fromUtf8("hello"));
         \\    val r = b.toUtf8();
-        \\    @print(r);
+        \\    print(r);
         \\    val parts = "a,b,c".split(",");
-        \\    @print(parts);
-        \\    @print("hello".at(1));
-        \\    @print("hello".at(9));
+        \\    print(parts);
+        \\    print("hello".at(1));
+        \\    print("hello".at(9));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3642,13 +3880,15 @@ test "wat: gc ---- assert and panic messages, a folded comptime string val" {
         \\}
         \\
         \\pub fn main() {
-        \\    @print(GREETING);
-        \\    @print(check(3));
+        \\    print(GREETING);
+        \\    print(check(3));
         \\    if (check(1) < 0) {
-        \\        @panic("negative");
+        \\        panic("negative");
         \\    }
-        \\    @print("done");
+        \\    print("done");
         \\}
+        \\
+        \\import {io.terminal.print, failure.panic} from "std";
     );
 }
 
@@ -3657,8 +3897,10 @@ test "wat: gc ---- a linked module no function of the program names does not kee
         \\import {collections} from "std";
         \\
         \\pub fn main() {
-        \\    @print("x");
+        \\    print("x");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3691,20 +3933,22 @@ test "wat: gc ---- an unknown boxed by its value, its is tests, narrowing, equal
         \\}
         \\
         \\pub fn main() {
-        \\    @print(describe(3));
-        \\    @print(describe("a"));
-        \\    @print(describe(true));
-        \\    @print(show(1), show(2.5), show("s"), show(false));
+        \\    print(describe(3));
+        \\    print(describe("a"));
+        \\    print(describe(true));
+        \\    print(show(1), show(2.5), show("s"), show(false));
         \\    val two: unknown = 2.0;
-        \\    @print(two == 2, two == 3);
+        \\    print(two == 2, two == 3);
         \\    val t: unknown = "hi";
-        \\    @print(t == "hi", t);
+        \\    print(t == "hi", t);
         \\    val b: unknown = true;
-        \\    @print(b);
-        \\    @print(300 is i8, 100 is i8, 2 is f64);
+        \\    print(b);
+        \\    print(300 is i8, 100 is i8, 2 is f64);
         \\    val xs = [1, "a", true];
-        \\    @print(xs);
+        \\    print(xs);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3734,14 +3978,16 @@ test "wat: gc ---- a generic record and enum as one struct per declaration, boxe
         \\
         \\pub fn main() {
         \\    val b = Box(value: 41);
-        \\    @print(b.value + 1);
-        \\    @print(b.get());
-        \\    @print(Box(value: "s"));
-        \\    @print(Box(value: true));
-        \\    @print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
-        \\    @print(Maybe.Some(value: "x"));
-        \\    @print(ident(3) + 1);
+        \\    print(b.value + 1);
+        \\    print(b.get());
+        \\    print(Box(value: "s"));
+        \\    print(Box(value: true));
+        \\    print(orZero(Maybe.Some(value: 7)), orZero(Maybe.None));
+        \\    print(Maybe.Some(value: "x"));
+        \\    print(ident(3) + 1);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -3749,24 +3995,26 @@ test "wat: gc ---- unique, flatten, chunked, sliding, zip and the array walks wi
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() {
         \\    val xs = [3, 1, 3, 2, 1];
-        \\    @print(xs.unique());
-        \\    @print(["a", "b", "a"].unique());
-        \\    @print([[1, 2], [3]].flatten());
-        \\    @print(xs.chunked(2));
-        \\    @print(xs.sliding(3));
-        \\    @print(xs.map({ x -> x * 2 }));
-        \\    @print(xs.filter({ x -> x > 1 }));
-        \\    @print(xs.fold(0, { acc, x -> acc + x }));
-        \\    @print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
-        \\    @print(["a", "bb"].map({ s -> s.length() }));
-        \\    @print(xs.zip(["a", "b"]));
+        \\    print(xs.unique());
+        \\    print(["a", "b", "a"].unique());
+        \\    print([[1, 2], [3]].flatten());
+        \\    print(xs.chunked(2));
+        \\    print(xs.sliding(3));
+        \\    print(xs.map({ x -> x * 2 }));
+        \\    print(xs.filter({ x -> x > 1 }));
+        \\    print(xs.fold(0, { acc, x -> acc + x }));
+        \\    print(xs.any({ x -> x == 2 }), xs.all({ x -> x > 0 }), xs.count({ x -> x == 3 }));
+        \\    print(["a", "bb"].map({ s -> s.length() }));
+        \\    print(xs.zip(["a", "b"]));
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and flatMap" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn evens(n: i32) -> @Iterator<i32> {
+        \\fn evens(n: i32) -> Iterator<i32> {
         \\    var i = 0;
         \\    while (i < n) {
         \\        if (i % 2 == 0) yield i;
@@ -3774,17 +4022,19 @@ test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and 
         \\    }
         \\}
         \\
-        \\fn parse(s: string) -> @Result<i32, string> {
+        \\fn parse(s: string) -> Result<i32, string> {
         \\    if (s == "") throw "empty";
         \\    return s.length();
         \\}
         \\
         \\pub fn main() {
-        \\    for (evens(7)) { v -> @print(v); }
-        \\    @print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
-        \\    @print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
-        \\    @print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
-        \\    @print(parse("ab").flatMap({ n -> parse("") }).isError());
+        \\    for (evens(7)) { v -> print(v); }
+        \\    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
+        \\    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
+        \\    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));
+        \\    print(parse("ab").flatMap({ n -> parse("") }).isError());
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }

@@ -3,7 +3,9 @@
 //// `"fn:mixBody"` binds nothing. It is refused at the argument on every
 //// target, naming the labelled form.
 
-#[@external(.JavaScript(body: mixBody), .Erlang("fn:mixBody"), .Wasm(body: mixBody))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript(body: mixBody), .Erlang("fn:mixBody"), .Wasm(body: mixBody))]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {
@@ -11,5 +13,5 @@ fn mixBody(a: f64, b: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(mix(1.5, 2.0));
+    print(mix(1.5, 2.0));
 }

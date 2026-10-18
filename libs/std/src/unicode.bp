@@ -26,7 +26,7 @@
 //// composite is not excluded. Hangul syllables decompose and compose by the
 //// algorithm of Unicode §3.12, not by the tables.
 
-import {unicode_tables as tables};
+import {unicode_tables as tables, compiler};
 
 // The one-character string of the scalar value `cp` (decision 262): every
 // target runs this body, a call of the primitive `String.fromCodepoint`, so a
@@ -36,7 +36,7 @@ pub fn fromCodepoint(cp: i32) -> string {
     return String.fromCodepoint(cp);
 }
 
-#[external(
+#[compiler.external(
     .JavaScript("($0.codePointAt(0) ?? 0)"),
     .Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)"""),
     .Wasm(body: firstCodepointOrZeroBody),
@@ -66,7 +66,7 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 // operator inside the arrow body keeps the expression a single template
 // substitution. Erlang: `unicode:characters_to_list/2` returns an
 // integer list of codepoints when given a UTF-8 binary.
-#[external(
+#[compiler.external(
     .JavaScript("""(Array.from($0).map((__c) => __c.codePointAt(0)))"""),
     .Erlang("unicode:characters_to_list($0, utf8)"),
     .Wasm(body: codepointsBody),

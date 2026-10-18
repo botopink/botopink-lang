@@ -3,16 +3,18 @@
 //// comes out between the items, and `some` / `every` take no step past the item
 //// that answered.
 
-iter fn counted() -> @Iterator<i32> {
-    @print("before");
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iterator<i32> {
+    print("before");
     yield 1;
-    @print("after");
+    print("after");
     yield 2;
 }
 
 pub fn main() {
-    counted().forEach({ x -> @print(x); });
-    @print(counted().some({ x -> x == 1 }));
-    @print(counted().every({ x -> x == 2 }));
-    @print(counted().reduce({ acc, x -> acc + x }, 0));
+    counted().forEach({ x -> print(x); });
+    print(counted().some({ x -> x == 1 }));
+    print(counted().every({ x -> x == 2 }));
+    print(counted().reduce({ acc, x -> acc + x }, 0));
 }

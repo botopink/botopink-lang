@@ -11,22 +11,24 @@
 //// erlang, beam and wasm run a Task's failure as its value, which
 //// `task_result_rejects` reads on every target.
 
-fn check(n: i32) -> @Task<@Result<i32, string>> {
+import {io.terminal.print, compiler} from "std";
+
+fn check(n: i32) -> Task<Result<i32, string>> {
     if (n < 0) throw "negative";
     return n;
 }
 
 fn resolved(v: i32) {
-    @print("resolved " + v.toString());
+    print("resolved " + v.toString());
 }
 
 fn rejected(e: string) {
-    @print("rejected " + e);
+    print("rejected " + e);
 }
 
-#[@external(.JavaScript("""$0.then((__v) => $1(__v), (__e) => $2(__e))"""))]
+#[compiler.external(.JavaScript("""$0.then((__v) => $1(__v), (__e) => $2(__e))"""))]
 declare fn observe(
-    t: @Task<@Result<i32, string>>,
+    t: Task<Result<i32, string>>,
     onResolve: fn(v: i32),
     onReject: fn(e: string),
 );

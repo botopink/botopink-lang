@@ -11,7 +11,7 @@ first, then the labelled ones as written — with two rewrites:
 - `fn: <name>` → `body: <name>` (`fn` is a reserved word, no field's name);
 - the two-string form `("<module>", "<symbol>")` → one template over the
   declared parameters, the receiver first on a method:
-  `.Erlang("<module>:<symbol>($0, $1)")`, `.Node("<module>.<symbol>($0)")`.
+  `.Erlang("<module>:<symbol>($0, $1)")`, `.JavaScript("<module>.<symbol>($0)")`.
 
 A `.bp` file is rewritten in place. A `.zig` file's `\\\\` line strings are
 rewritten as the `.bp` text they hold, each run of them one document; a `.snap`

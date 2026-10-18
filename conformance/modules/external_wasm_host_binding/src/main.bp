@@ -5,7 +5,9 @@
 //// binding names; the `.Browser` binding (a private botopink body) is the
 //// browser host's. Every target prints the same.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("Math.floor($0)"),
     .Erlang("math:floor($0)"),
     .Wasm(op: "f64.floor", host: .Wasi),
@@ -18,6 +20,6 @@ fn floorBody(x: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(floorOf(2.5));
-    @print(floorOf(-1.5));
+    print(floorOf(2.5));
+    print(floorOf(-1.5));
 }

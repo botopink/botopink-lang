@@ -3,6 +3,7 @@
 //// decorator and uses it: the reading module is no reader of the program.
 
 import {marks.counted} from "lib";
+import {io.terminal.print} from "std";
 
 #[counted]
 pub fn job() -> i32 {
@@ -10,5 +11,5 @@ pub fn job() -> i32 {
 }
 
 pub fn main() {
-    @print(job());
+    print(job());
 }

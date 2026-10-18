@@ -15,68 +15,68 @@
 //// none of today's adapters fails. Each binding here is a private fn on wasm
 //// that answers the value the other hosts answer.
 
-import {failure, failure.HostError} from "std";
+import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(($0 >= 0) ? $0 * 2 : (() => { throw new Error("negative"); })())""", result: true),
     .Erlang("""(case $0 >= 0 of true -> $0 * 2; false -> erlang:error(negative) end)""", result: true),
     .Wasm(body: doubleBody),
 )]
-declare fn double(n: i32) -> @Result<i32, HostError>;
+declare fn double(n: i32) -> Result<i32, HostError>;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(($0 > 0) ? $0 : (() => { throw "refused"; })())""", result: true),
     .Erlang("""(case $0 > 0 of true -> $0; false -> throw(refused) end)""", result: true),
     .Wasm(body: thrownBody),
 )]
-declare fn thrown(n: i32) -> @Result<i32, HostError>;
+declare fn thrown(n: i32) -> Result<i32, HostError>;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(($0 > 0) ? $0 + 1 : (() => { throw new Error("refused"); })())""", result: true),
     .Erlang("""(case $0 > 0 of true -> {ok, $0 + 1}; false -> {error, refused} end)""", result: true),
     .Wasm(body: answeredBody),
 )]
-declare fn answered(n: i32) -> @Result<i32, HostError>;
+declare fn answered(n: i32) -> Result<i32, HostError>;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(($0 > 0) ? Promise.resolve($0 * 3) : Promise.reject(new Error("late")))""", result: true),
     .Erlang("""(case $0 > 0 of true -> $0 * 3; false -> erlang:error(late) end)""", result: true),
     .Wasm(body: laterBody),
 )]
-declare fn later(n: i32) -> @Task<@Result<i32, HostError>>;
+declare fn later(n: i32) -> Task<Result<i32, HostError>>;
 
 fn hostError(message: string, name: failure.HostErrorName) -> HostError {
     return HostError(message: message, kind: "host", name: name, detail: null);
 }
 
-fn doubleBody(n: i32) -> @Result<i32, HostError> {
+fn doubleBody(n: i32) -> Result<i32, HostError> {
     if (n < 0) throw hostError("negative", failure.HostErrorName.Error);
     return n * 2;
 }
 
-fn thrownBody(n: i32) -> @Result<i32, HostError> {
+fn thrownBody(n: i32) -> Result<i32, HostError> {
     if (n <= 0) throw hostError("refused", failure.HostErrorName.Throw);
     return n;
 }
 
-fn answeredBody(n: i32) -> @Result<i32, HostError> {
+fn answeredBody(n: i32) -> Result<i32, HostError> {
     if (n <= 0) throw hostError("refused", failure.HostErrorName.Error);
     return n + 1;
 }
 
-fn laterBody(n: i32) -> @Task<@Result<i32, HostError>> {
+fn laterBody(n: i32) -> Task<Result<i32, HostError>> {
     if (n <= 0) throw hostError("late", failure.HostErrorName.Error);
     return n * 3;
 }
 
-fn show(r: @Result<i32, HostError>) {
+fn show(r: Result<i32, HostError>) {
     case r {
-        Ok(v) -> @print("ok", v);
-        Error(e) -> @print("error", e.message, e.kind, e.name);
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e.message, e.kind, e.name);
     }
 }
 
-fn run() -> @Task<void> {
+fn run() -> Task<void> {
     show(double(21));
     show(double(-1));
     show(thrown(5));
@@ -87,7 +87,7 @@ fn run() -> @Task<void> {
     show(await later(0));
     val a = try double(-4) catch 7;
     val b = try await later(-1) catch 100;
-    @print(a + b);
+    print(a + b);
 }
 
 pub fn main() {

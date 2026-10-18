@@ -12,35 +12,35 @@
 //// `hostStash` keeps the last one and `main` runs it twice after every
 //// render has returned. Nothing is captured: the scope travels explicitly.
 
-import {context.createContext, context.provide, context.context, context.RenderScope, context.Rendered} from "std";
+import {context.createContext, context.provide, context.context, context.RenderScope, context.Rendered, compiler, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
-type View(text: string, kids: @Component<View>[]) implement @Renderable
+type View(text: string, kids: Component<View>[]) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-#[@external(.JavaScript("""($0)()"""), .Erlang("""($0)()"""))]
-declare fn hostNow(f: fn() -> @Task<Rendered<View>>) -> @Task<Rendered<View>>;
+#[compiler.external(.JavaScript("""($0)()"""), .Erlang("""($0)()"""))]
+declare fn hostNow(f: fn() -> Task<Rendered<View>>) -> Task<Rendered<View>>;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(globalThis.__bpScopeStash = $0, undefined)"""),
     .Erlang("""persistent_term:put(bp_scope_stash, $0)"""),
 )]
-declare fn hostStash(f: fn() -> @Task<Rendered<View>>) -> void;
+declare fn hostStash(f: fn() -> Task<Rendered<View>>) -> void;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""globalThis.__bpScopeStash"""),
     .Erlang("""persistent_term:get(bp_scope_stash)"""),
 )]
-declare fn hostStashed() -> fn() -> @Task<Rendered<View>>;
+declare fn hostStashed() -> fn() -> Task<Rendered<View>>;
 
-fn Label(prefix: string) -> @Component<View> {
+fn Label(prefix: string) -> Component<View> {
     val t = use context(Theme);
     return View(text: prefix + t.mode, kids: []);
 }
 
-fn Page(title: string) -> @Component<View> {
+fn Page(title: string) -> Component<View> {
     val above = use context(Theme);
     use provide(createContext(Theme(mode: "dark")));
     return View(
@@ -49,7 +49,7 @@ fn Page(title: string) -> @Component<View> {
     );
 }
 
-fn Root() -> @Component<View> {
+fn Root() -> Component<View> {
     use provide(createContext(Theme(mode: "light")));
     val own = Label("root:");
     return View(text: own.text, kids: ["page"].map(Page));
@@ -57,7 +57,7 @@ fn Root() -> @Component<View> {
 
 // The library: run `c` with `scope`, then each child with the scope `c`'s
 // run answered.
-fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
+fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
     hostStash({ -> c.run(scope) });
     val r = await hostNow({ -> c.run(scope) });
     var out = r.value.text;
@@ -68,10 +68,10 @@ fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
     return out;
 }
 
-pub fn main() -> @Task<void> {
-    @print(await render(Root(), RenderScope.root()));
+pub fn main() -> Task<void> {
+    print(await render(Root(), RenderScope.root()));
     val later = hostStashed();
     val first = await later();
     val second = await later();
-    @print(first.value.text + " " + second.value.text);
+    print(first.value.text + " " + second.value.text);
 }

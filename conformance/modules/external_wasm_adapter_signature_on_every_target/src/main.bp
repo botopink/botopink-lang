@@ -4,9 +4,11 @@
 //// refused on erlang, beam and commonJS too, whose own bindings would run
 //// it. Only a wasm build read the binding before.
 
-#[@external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(wasi: .RandomF64))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(wasi: .RandomF64))]
 pub declare fn draw(seed: i32) -> f64;
 
 pub fn main() {
-    @print(draw(1) >= 0.0);
+    print(draw(1) >= 0.0);
 }

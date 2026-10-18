@@ -12,12 +12,14 @@ const parserMod = @import("../../parser.zig");
 // builtin `node:path`, OTP's `filename`), so the RUN LOG is the call's value.
 test "js: external ---- call emits module symbol" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("filename:basename($0)"), .JavaScript("""require("node:path").basename($0)"""))]
+        \\#[compiler.external(.Erlang("filename:basename($0)"), .JavaScript("""require("node:path").basename($0)"""))]
         \\pub declare fn basename(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(basename("/tmp/notes.txt"));
+        \\    print(basename("/tmp/notes.txt"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -25,23 +27,27 @@ test "js: external ---- global math" {
     // `Math` is a JS global, not a module — the node target must reference
     // it directly (`const floor = Math.floor;`), never `require("Math")`.
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+        \\#[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
         \\fn main() {
-        \\    @print(floor(1.7));
+        \\    print(floor(1.7));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
 test "js: external ---- import binds symbol" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("filename:extension($0)"), .JavaScript("""require("node:path").extname($0)"""))]
+        \\#[compiler.external(.Erlang("filename:extension($0)"), .JavaScript("""require("node:path").extname($0)"""))]
         \\pub declare fn extname(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(extname("docs/readme.md"));
+        \\    print(extname("docs/readme.md"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -51,24 +57,28 @@ test "js: external ---- import binds symbol" {
 
 test "js: External.<Target> ---- one decl binds a module function per target" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("filename:dirname($0)"), .JavaScript("""require("node:path").dirname($0)"""))]
+        \\#[compiler.external(.Erlang("filename:dirname($0)"), .JavaScript("""require("node:path").dirname($0)"""))]
         \\pub declare fn dirname(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(dirname("/tmp/notes.txt"));
+        \\    print(dirname("/tmp/notes.txt"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
 test "js: External.<Target> ---- one decl binds a global function per target" {
     // One decl carries one annotation per target; the active backend reads its own.
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+        \\#[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
         \\fn main() {
-        \\    @print(floor(1.7));
+        \\    print(floor(1.7));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -81,12 +91,14 @@ test "js: External.<Target> ---- one decl binds a global function per target" {
 test "js: external ---- net-new: no target for the active backend errors" {
     const io = std.testing.io;
     const src =
-        \\#[@external(.Erlang("string:length($0)"))]
+        \\#[compiler.external(.Erlang("string:length($0)"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
-        \\    @print(str_length("hello"));
+        \\    print(str_length("hello"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     ;
     // configs[0] is the commonJS/node target.
     // `generate` drops a module carrying a diagnostic; `generateWith` is the
@@ -125,13 +137,15 @@ test "erlang: external ---- a refused module frees the type units it rendered" {
         \\    }
         \\}
         \\
-        \\#[@external(.JavaScript("""globalThis.nodeOnly($0)"""))]
+        \\#[compiler.external(.JavaScript("""globalThis.nodeOnly($0)"""))]
         \\declare fn nodeOnly(n: i32) -> i32;
         \\
         \\fn main() {
         \\    val acc = Account(id: 10);
-        \\    @print(nodeOnly(acc.load(5)));
+        \\    print(nodeOnly(acc.load(5)));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     ;
     // configs[1] is the erlang target.
     var outputs = try codegen.generateWith(
@@ -157,12 +171,14 @@ test "erlang: external ---- a refused module frees the type units it rendered" {
 // inline (mirrors the erlang backend's existing template path).
 test "js: external ---- A2 chained host call renders verbatim" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("base64:encode($0)"), .JavaScript("""Buffer.from($0, 'utf8').toString('base64')"""))]
+        \\#[compiler.external(.Erlang("base64:encode($0)"), .JavaScript("""Buffer.from($0, 'utf8').toString('base64')"""))]
         \\pub declare fn b64encode(s: string) -> string;
         \\
         \\fn main() {
-        \\    @print(b64encode("hi"));
+        \\    print(b64encode("hi"));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -174,12 +190,14 @@ test "js: external ---- A2 chained host call renders verbatim" {
 // run-log captures a deterministic value.
 test "js: external ---- A2 method-on-global template keeps receiver bound" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .JavaScript("JSON.stringify($0)"))]
+        \\#[compiler.external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .JavaScript("JSON.stringify($0)"))]
         \\declare fn stringify(value: i32) -> string;
         \\
         \\fn main() {
-        \\    @print(stringify(42));
+        \\    print(stringify(42));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -190,16 +208,18 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
 // on Erlang. Without §A3 this declare reds at R1 (effect on declare).
 test "js: external ---- A3 result-template-owned declare fn" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(
+        \\#[compiler.external(
         \\    .Erlang("""(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
         \\    .JavaScript("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()"""),
         \\)]
-        \\pub declare fn parseInt(s: string) -> @Result<i32, string>;
+        \\pub declare fn parseInt(s: string) -> Result<i32, string>;
         \\
         \\fn main() {
         \\    val r = parseInt("42");
-        \\    @print(r.unwrapOr(-1));
+        \\    print(r.unwrapOr(-1));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -207,12 +227,14 @@ test "js: external ---- A3 result-template-owned declare fn" {
 // at each call site — no import binding, no `require(…)`.
 test "js: external ---- template declare fn emits no require" {
     const src =
-        \\#[@external(.JavaScript("""Math.max($0, $1)"""))]
+        \\#[compiler.external(.JavaScript("""Math.max($0, $1)"""))]
         \\declare fn biggest(a: i32, b: i32) -> i32;
         \\
         \\fn main() {
-        \\    @print(biggest(3, 9));
+        \\    print(biggest(3, 9));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     ;
     // Decision 546: a binding outside std is a function of its module (it marks
     // its raise `host`), the template over its parameters; the call is a call.
@@ -226,12 +248,14 @@ test "js: external ---- template declare fn emits no require" {
 // import `const { process.pid: pid } = require("");`, a SyntaxError.
 test "js: external ---- 1-arg host expression declare fn emits no require" {
     const src =
-        \\#[@external(.JavaScript("process.pid"))]
+        \\#[compiler.external(.JavaScript("process.pid"))]
         \\declare fn pid() -> i32;
         \\
         \\fn main() {
-        \\    @print(pid() > 0);
+        \\    print(pid() > 0);
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{ "__bp_host_mark(() => process.pid)", "pid() > 0" });
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "require(", "const { process.pid" });
@@ -243,12 +267,14 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
 // `:expr()()`, which stopped std's env, os and process from compiling.
 test "js: external ---- 1-arg host expression declare fn renders at the call site" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
+        \\#[compiler.external(.JavaScript("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
         \\declare fn pid() -> i32;
         \\
         \\fn main() {
-        \\    @print(pid() > 0);
+        \\    print(pid() > 0);
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -270,14 +296,16 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
         .{
             .path = "hostlib",
             .source =
-            \\#[@external(.JavaScript("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
+            \\#[compiler.external(.JavaScript("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
             \\pub declare fn hostKey(v: i32) -> string;
             \\
-            \\#[@external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
+            \\#[compiler.external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
             \\pub declare fn hostLen(xs: Array<string>) -> i32;
             \\
-            \\#[@external(.JavaScript("console.log($0)"))]
+            \\#[compiler.external(.JavaScript("console.log($0)"))]
             \\pub declare fn nodeOnly(s: string) -> void;
+            \\
+            \\import {compiler} from "std";
             ,
         },
         .{
@@ -286,9 +314,11 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
             \\import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
             \\
             \\pub fn main() {
-            \\    @print(hostKey(42));
-            \\    @print(hostLen(["a", "b"]));
+            \\    print(hostKey(42));
+            \\    print(hostLen(["a", "b"]));
             \\}
+            \\
+            \\import {io.terminal.print} from "std";
             ,
         },
     }, .refused_on_wasm);
@@ -306,10 +336,10 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
 test "js: external ---- a host-backed method on a local type is a method of the type" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\pub type Meter(base: i32) {
-        \\    #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
+        \\    #[compiler.external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
         \\    pub declare fn plus(self: Self, n: i32) -> i32;
         \\
-        \\    #[@external(
+        \\    #[compiler.external(
         \\        .JavaScript("""[$0.base, $1, $2].join("-")"""),
         \\        .Erlang("""iolist_to_binary(lists:join(<<"-">>, [integer_to_binary(element(2, $0)), integer_to_binary($1), $2]))"""),
         \\    )]
@@ -324,7 +354,7 @@ test "js: external ---- a host-backed method on a local type is a method of the 
         \\    Low,
         \\    High,
         \\
-        \\    #[@external(
+        \\    #[compiler.external(
         \\        .JavaScript("""($0.tag === "High" ? $1 * 10 : $1)"""),
         \\        .Erlang("""case $0 of 'test@main@@Level__v__high' -> $1 * 10; _ -> $1 end"""),
         \\    )]
@@ -333,12 +363,14 @@ test "js: external ---- a host-backed method on a local type is a method of the 
         \\
         \\pub fn main() {
         \\    val m = Meter(base: 3);
-        \\    @print(m.plus(4));
-        \\    @print(m.twice());
-        \\    @print(m.label(5, "x"));
-        \\    @print(Level.High.scale(2));
-        \\    @print(Level.Low.scale(2));
+        \\    print(m.plus(4));
+        \\    print(m.twice());
+        \\    print(m.label(5, "x"));
+        \\    print(Level.High.scale(2));
+        \\    print(Level.Low.scale(2));
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -351,9 +383,11 @@ test "js: external ---- a host-backed method on an imported type is answered by 
             .path = "hostlib",
             .source =
             \\pub type Meter(base: i32) {
-            \\    #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
+            \\    #[compiler.external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
             \\    pub declare fn plus(self: Self, n: i32) -> i32;
             \\}
+            \\
+            \\import {compiler} from "std";
             ,
         },
         .{
@@ -362,8 +396,10 @@ test "js: external ---- a host-backed method on an imported type is answered by 
             \\import { hostlib.Meter };
             \\
             \\pub fn main() {
-            \\    @print(Meter(base: 40).plus(2));
+            \\    print(Meter(base: 40).plus(2));
             \\}
+            \\
+            \\import {io.terminal.print} from "std";
             ,
         },
     }, .refused_on_wasm);
@@ -375,13 +411,15 @@ test "js: external ---- a host-backed method on an imported type is answered by 
 test "js: external ---- a host-backed method with no binding for the backend is refused at the call" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
         \\pub type Probe(n: i32) {
-        \\    #[@external(.Erlang("""element(2, $0)"""))]
+        \\    #[compiler.external(.Erlang("""element(2, $0)"""))]
         \\    pub declare fn raw(self: Self) -> i32;
         \\}
         \\
         \\pub fn main() {
-        \\    @print(Probe(n: 1).raw());
+        \\    print(Probe(n: 1).raw());
         \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
     );
 }
 
@@ -390,12 +428,14 @@ test "js: external ---- a host-backed method with no binding for the backend is 
 test "js: external ---- a host-backed method is declared in the .d.ts when node binds it" {
     try h.assertDtsContains(std.testing.allocator,
         \\pub type Meter(base: i32) {
-        \\    #[@external(.JavaScript("""($0.base + $1)"""))]
+        \\    #[compiler.external(.JavaScript("""($0.base + $1)"""))]
         \\    pub declare fn plus(self: Self, n: i32) -> i32;
         \\
-        \\    #[@external(.Erlang("""element(2, $0)"""))]
+        \\    #[compiler.external(.Erlang("""element(2, $0)"""))]
         \\    pub declare fn raw(self: Self) -> i32;
         \\}
+        \\
+        \\import {compiler} from "std";
     , &.{"plus(n: number): number;"}, &.{"raw("});
 }
 
@@ -461,20 +501,21 @@ test "js: external ---- no prelude template calls the method it patches" {
 // `fn` (`external-all-bodies`), so each program splits: the backend under test
 // runs the body, another target a template.
 fn fnBindingProgram(comptime js: []const u8, comptime erl: []const u8, comptime js_greet: []const u8, comptime erl_greet: []const u8) []const u8 {
-    return "#[@external(.JavaScript(" ++ js ++ "), .Erlang(" ++ erl ++ "), .Wasm(body: mixBody))]\n" ++
+    return "#[compiler.external(.JavaScript(" ++ js ++ "), .Erlang(" ++ erl ++ "), .Wasm(body: mixBody))]\n" ++
         "pub declare fn mix(x: f64, y: f64) -> f64;\n" ++
         "fn mixBody(a: f64, b: f64) -> f64 {\n" ++
         "    return a * 2.0 + b;\n" ++
         "}\n" ++
-        "#[@external(.JavaScript(" ++ js_greet ++ "), .Erlang(" ++ erl_greet ++ "), .Wasm(body: greetBody))]\n" ++
+        "#[compiler.external(.JavaScript(" ++ js_greet ++ "), .Erlang(" ++ erl_greet ++ "), .Wasm(body: greetBody))]\n" ++
         "declare fn greet(name: string) -> string;\n" ++
         "fn greetBody(name: string) -> string {\n" ++
         "    return \"hi \" + name;\n" ++
         "}\n" ++
         "fn main() {\n" ++
-        "    @print(mix(1.5, 0.25) == 3.25);\n" ++
-        "    @print(greet(\"host\"));\n" ++
-        "}\n";
+        "    print(mix(1.5, 0.25) == 3.25);\n" ++
+        "    print(greet(\"host\"));\n" ++
+        "}\n" ++
+        "\nimport {io.terminal.print, compiler} from \"std\";\n";
 }
 /// The body on `.JavaScript`, a template on `.Erlang`.
 const fn_binding_program_js = fnBindingProgram("body: mixBody", "\"($0 * 2.0 + $1)\"", "body: greetBody", "\"<<\\\"hi \\\", ($0)/binary>>\"");
@@ -508,33 +549,41 @@ test "beam: external ---- fn: binds a declare fn to a private body" {
 test "host backends: external ---- a body: cell that names no private fn of the same signature is refused at the argument" {
     const cases = [_]struct { src: []const u8, needle: []const u8 }{
         .{ .src =
-        \\#[@external(.JavaScript(body: mixBodx), .Erlang(body: mixBodx))]
+        \\#[compiler.external(.JavaScript(body: mixBodx), .Erlang(body: mixBodx))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
-        \\fn main() { @print(mix(1.5)); }
+        \\fn main() { print(mix(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
         , .needle = "unbound variable 'mixBodx'" },
         .{ .src =
-        \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
+        \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
-        \\#[@external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
+        \\#[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
         \\declare fn mixBody(x: f64) -> f64;
-        \\fn main() { @print(mix(1.5)); }
+        \\fn main() { print(mix(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
         , .needle = "`mixBody` has no body of its own to run" },
         .{ .src =
-        \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
+        \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\pub fn mixBody(x: f64) -> f64 { return x; }
-        \\fn main() { @print(mix(1.5)); }
+        \\fn main() { print(mix(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
         , .needle = "`mixBody` is `pub`" },
         .{ .src =
-        \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
+        \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64, y: f64) -> f64 { return x + y; }
-        \\fn main() { @print(mix(1.5)); }
+        \\fn main() { print(mix(1.5)); }
+        \\
+        \\import {io.terminal.print, compiler} from "std";
         , .needle = "must take the same parameter types in the same order" },
     };
     for (cases, 0..) |c, i| {
-        const col: usize = if (i == 0) 31 else 25;
+        const col: usize = if (i == 0) 39 else 33;
         try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);

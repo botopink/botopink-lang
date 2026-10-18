@@ -1,5 +1,7 @@
+import {compiler, io.terminal.print} from "std";
+
 pub type Meter(base: i32) {
-    #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
+    #[compiler.external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 
     pub fn twice(self: Self) -> i32 {
@@ -9,6 +11,6 @@ pub type Meter(base: i32) {
 
 fn main() {
     val m = Meter(base: 3);
-    @print(m.plus(4)); // 7 on every backend that has a host
-    @print(m.twice()); // 6
+    print(m.plus(4)); // 7 on every backend that has a host
+    print(m.twice()); // 6
 }

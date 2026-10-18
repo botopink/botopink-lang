@@ -218,7 +218,7 @@ test "format: pub fn ---- type meta-kind multiple pipe constraints" {
 
 test "format: generic ---- @Result<D, E> in signature" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn parse(s: string) -> @Result<i32, string> {
+        \\pub fn parse(s: string) -> Result<i32, string> {
         \\    todo;
         \\}
     );
@@ -226,7 +226,7 @@ test "format: generic ---- @Result<D, E> in signature" {
 
 test "format: generic ---- nested ?T in @Result" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn lookup(k: string) -> @Result<?i32, string> {
+        \\pub fn lookup(k: string) -> Result<?i32, string> {
         \\    todo;
         \\}
     );
@@ -234,7 +234,7 @@ test "format: generic ---- nested ?T in @Result" {
 
 test "format: pub fn ---- comptime param with generic constraint" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn run(comptime ctx: @Component<string>) {
+        \\pub fn run(comptime ctx: Component<string>) {
         \\    todo;
         \\}
     );
@@ -406,7 +406,7 @@ test "format: const tuple ---- with comments" {
 
 test "format: star fn ---- async function" {
     try h.assertFormat(std.testing.allocator,
-        \\fn fetch(url: string) -> @Task<Response> {
+        \\fn fetch(url: string) -> Task<Response> {
         \\    return download(url);
         \\}
     );
@@ -414,7 +414,7 @@ test "format: star fn ---- async function" {
 
 test "format: star fn ---- generator with label" {
     try h.assertFormat(std.testing.allocator,
-        \\fn gen() -> @Iterator<Int> :gen {
+        \\fn gen() -> Iterator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );
@@ -448,16 +448,20 @@ test "format: test ---- named block with assert message" {
 test "format: template ---- round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
         \\pub fn html(syntax template: string) -> Component {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "format: template ---- anyvalue answer round-trip (decision 578)" {
     try h.assertFormat(std.testing.allocator,
         \\fn yaml(syntax template: string) -> anyvalue {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -491,8 +495,10 @@ test "format: type (enum) ---- nested sections with numeric leaves are preserved
 
 test "format: declare fn ---- external declaration keeps `declare` and stays bodyless" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@external(.Erlang("string:length($0)"))]
+        \\#[compiler.external(.Erlang("string:length($0)"))]
         \\pub declare fn length(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -872,8 +878,10 @@ test "format: fn ---- a signature with no return type breaks on the body's brace
         \\    secondParameter: string,
         \\    third: bool,
         \\) {
-        \\    @print(secondParameter);
+        \\    print(secondParameter);
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -925,15 +933,19 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@external(.Erlang("string:slice($0, 0, 1)", inline: true))]
+        \\#[compiler.external(.Erlang("string:slice($0, 0, 1)", inline: true))]
         \\pub declare fn f(s: string) -> string;
+        \\
+        \\import {compiler} from "std";
     );
     try h.assertIdempotent(std.testing.allocator,
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@external(.JavaScript(body: fBody), .Erlang(body: fBody))]
+        \\#[compiler.external(.JavaScript(body: fBody), .Erlang(body: fBody))]
         \\pub declare fn f(s: string) -> string;
+        \\
+        \\import {compiler} from "std";
     );
     // Decorators (`check`) print theirs the same way, mixed in one list.
     try h.assertFormat(std.testing.allocator,
@@ -947,17 +959,19 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
 
 test "format: a wasm cell prints as its labelled argument (decision 481)" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@external(.Wasm(body: tanBody))]
+        \\#[compiler.external(.Wasm(body: tanBody))]
         \\pub declare fn tan(x: f64) -> f64;
         \\
-        \\#[@external(.Wasm(op: "f64.floor", host: .Wasi))]
+        \\#[compiler.external(.Wasm(op: "f64.floor", host: .Wasi))]
         \\pub declare fn floorOf(x: f64) -> f64;
         \\
-        \\#[@external(.Wasm(wasi: .Delay))]
-        \\declare fn later<T>(millis: i32, value: T) -> @Task<T>;
+        \\#[compiler.external(.Wasm(wasi: .Delay))]
+        \\declare fn later<T>(millis: i32, value: T) -> Task<T>;
         \\
-        \\#[@external(.Wasm(std: "hash.contentHash"))]
+        \\#[compiler.external(.Wasm(std: "hash.contentHash"))]
         \\pub declare fn contentHash(value: string) -> string;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -965,7 +979,7 @@ test "format: type alias ---- plain, generic and pub round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
         \\type Id = i32;
         \\
-        \\pub type Parser<T> = @Result<T, ParseError>;
+        \\pub type Parser<T> = Result<T, ParseError>;
         \\
         \\type Pair<A, B> = #(A, B);
         \\
@@ -1171,7 +1185,7 @@ test "format: annotations ---- two blocks and one list on a function" {
 
 test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@external(
+        \\#[compiler.external(
         \\    .JavaScript("mixBody", inline: true),
         \\    .Erlang("mixBody", inline: true),
         \\    .Beam("mixBody", inline: true),
@@ -1179,12 +1193,16 @@ test "format: annotations ---- builtin and custom mixed, on a declare fn" {
         \\fn mix(a: i32) -> i32 {
         \\    return a;
         \\}
+        \\
+        \\import {compiler} from "std";
     );
     try h.assertFormat(std.testing.allocator,
         \\#[check("m", rule, at: .confirm)]
-        \\#[@external(.JavaScript("a"))]
+        \\#[compiler.external(.JavaScript("a"))]
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -1214,8 +1232,10 @@ test "format: annotations ---- round trips, idempotent, lossless, order kept" {
         \\#[a, b]
         \\fn f() {}
         ,
-        \\#[@external(.JavaScript("mixBody", inline: true), .Erlang("mixBody", inline: true))]
+        \\#[compiler.external(.JavaScript("mixBody", inline: true), .Erlang("mixBody", inline: true))]
         \\fn mix() {}
+        \\
+        \\import {compiler} from "std";
         ,
         \\#[mark, sql "a ${b}"]
         \\#[check("m", rule)]
@@ -1298,7 +1318,7 @@ test "format: fn ---- a tail keeps no `;`, a statement keeps its `;`" {
         \\    n
         \\}
         \\
-        \\fn log(x: i32) { @print(x) }
+        \\fn log(x: i32) { print(x) }
         \\
         \\fn semi(x: i32) -> i32 {
         \\    x + 1;
@@ -1307,6 +1327,8 @@ test "format: fn ---- a tail keeps no `;`, a statement keeps its `;`" {
         \\fn old(x: i32) -> i32 {
         \\    return x;
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     ;
     try h.assertFormat(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);

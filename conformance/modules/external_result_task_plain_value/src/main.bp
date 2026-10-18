@@ -3,11 +3,13 @@
 //// `@Task<T>` never fails, so a host that answers later and can fail has
 //// nowhere to put the error. `-> @Task<i32>` is refused at the annotation.
 
-#[@external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", result: true))]
-declare fn later(n: i32) -> @Task<i32>;
+import {compiler, io.terminal.print} from "std";
 
-fn run() -> @Task<void> {
-    @print(await later(1));
+#[compiler.external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", result: true))]
+declare fn later(n: i32) -> Task<i32>;
+
+fn run() -> Task<void> {
+    print(await later(1));
 }
 
 pub fn main() {

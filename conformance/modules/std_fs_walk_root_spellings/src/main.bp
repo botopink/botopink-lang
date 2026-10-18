@@ -11,11 +11,11 @@
 //// Refused on wasm (`.wasm.expect`): std's `io/fs` and `io/process` host cells have no wasm
 //// binding.
 
-import {io.fs, path} from "std";
+import {io.fs, path, compiler, io.terminal.print} from "std";
 import {io.process as host} from "std";
 
 // A symbolic link `link` -> `target`: std has no public cell that makes one.
-#[@external(
+#[compiler.external(
     .JavaScript("""require('fs').symlinkSync($0, $1)"""),
     .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
 )]
@@ -48,16 +48,16 @@ pub fn main() {
     fs.writeText("walkroot/root.bp", "root");
     fs.writeText("walkroot/app/layout.bp", "layout");
     fs.writeText("walkroot/app/blog/page.bp", "page");
-    @print(walked("walkroot"));
-    @print(walked("walkroot/"));
-    @print(walked("walkroot/."));
-    @print(walked(path.join(["walkroot", "."])));
-    @print(walked("./walkroot"));
-    @print(walked("walkroot/app/.."));
-    @print(walked(path.join([host.cwd(), "walkroot"])));
-    @print(walked(path.join([host.cwd(), "walkroot", "."])));
-    @print(walked("walkroot/app/."));
+    print(walked("walkroot"));
+    print(walked("walkroot/"));
+    print(walked("walkroot/."));
+    print(walked(path.join(["walkroot", "."])));
+    print(walked("./walkroot"));
+    print(walked("walkroot/app/.."));
+    print(walked(path.join([host.cwd(), "walkroot"])));
+    print(walked(path.join([host.cwd(), "walkroot", "."])));
+    print(walked("walkroot/app/."));
     linkTo("missing.bp", "walkroot/app/gone.bp");
-    @print(walked("walkroot"));
-    @print(walked("walkroot/app/."));
+    print(walked("walkroot"));
+    print(walked("walkroot/app/."));
 }

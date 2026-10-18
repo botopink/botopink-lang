@@ -3,7 +3,9 @@
 //// Http }`. A value outside it names no feature, and is refused at the
 //// annotation on every target, not on a wasm build alone (decision 516).
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("Math.abs($0)"),
     .Erlang("erlang:abs($0)"),
     .Wasm(body: absBody, needs: [.Threads]),
@@ -16,5 +18,5 @@ fn absBody(n: i32) -> i32 {
 }
 
 pub fn main() {
-    @print(hostAbs(-3));
+    print(hostAbs(-3));
 }

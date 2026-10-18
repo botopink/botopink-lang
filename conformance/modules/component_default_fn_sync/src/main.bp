@@ -8,24 +8,24 @@
 //// commonJS only: `pending` asks the host whether a value is a `Promise`,
 //// and only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.RenderScope} from "std";
+import {context.RenderScope, compiler, io.terminal.print} from "std";
 
-type Element(text: string) implement @Renderable
+type Element(text: string) implement Renderable
 
-#[@external(.JavaScript("""($0 instanceof Promise)"""))]
+#[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
-fn loadComments() -> @Task<string> {
+fn loadComments() -> Task<string> {
     return "2 comments";
 }
 
 behavior Widget {
     fn name(self: Self) -> string;
 
-    default fn badge(self: Self) -> @Component<Element> {
+    default fn badge(self: Self) -> Component<Element> {
         return Element(text: "badge " + self.name());
     }
-    default fn later(self: Self) -> @Component<Element> {
+    default fn later(self: Self) -> Component<Element> {
         val t = await loadComments();
         return Element(text: t);
     }
@@ -41,37 +41,37 @@ type Tone {
     Warm,
     Cold,
 
-    fn swatch(self: Self) -> @Component<Element> {
+    fn swatch(self: Self) -> Component<Element> {
         return Element(text: "swatch");
     }
 }
 
-fn Plain() -> @Component<Element> {
+fn Plain() -> Component<Element> {
     val b = Box(n: "x");
     val a = await b.badge();
     return Element(text: a.text);
 }
 
-fn Tinted() -> @Component<Element> {
+fn Tinted() -> Component<Element> {
     val s = await Tone.Warm.swatch();
     return Element(text: s.text);
 }
 
-fn Slow() -> @Component<Element> {
+fn Slow() -> Component<Element> {
     val b = Box(n: "y");
     val a = await b.later();
     return Element(text: a.text);
 }
 
-pub fn main() -> @Task<void> {
+pub fn main() -> Task<void> {
     val b = Box(n: "z");
-    @print(pending(b.badge().run(RenderScope.root())));
-    @print(pending(b.later().run(RenderScope.root())));
-    @print(pending(Plain().run(RenderScope.root())));
-    @print(pending(Slow().run(RenderScope.root())));
-    @print(pending(Tinted().run(RenderScope.root())));
+    print(pending(b.badge().run(RenderScope.root())));
+    print(pending(b.later().run(RenderScope.root())));
+    print(pending(Plain().run(RenderScope.root())));
+    print(pending(Slow().run(RenderScope.root())));
+    print(pending(Tinted().run(RenderScope.root())));
     val p = await Plain().run(RenderScope.root());
-    @print(p.value.text);
+    print(p.value.text);
     val q = await Slow().run(RenderScope.root());
-    @print(q.value.text);
+    print(q.value.text);
 }

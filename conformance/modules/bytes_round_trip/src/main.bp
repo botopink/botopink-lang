@@ -4,7 +4,9 @@
 //// `length`, `slice` (and `b[a..e]`), `concat` and `==` count and compare bytes. A host cell
 //// takes and answers `Bytes` as its target holds it. The parent binary knew no `Bytes`.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("""Uint8Array.from($0).reverse()"""),
     .Erlang("""list_to_binary(lists:reverse(binary_to_list($0)))"""),
     .Wasm(body: reversedBody),
@@ -30,25 +32,25 @@ fn show(b: Bytes) -> string {
 
 pub fn main() {
     val hello = Bytes.fromUtf8("héllo");
-    @print(hello.length());
-    @print(show(hello));
-    @print(show(reversed(Bytes.fromUtf8("abc"))));
-    @print(show(reversed(Bytes.fromUtf8("é"))));
-    @print(show(hello.slice(1, 2)));
-    @print(show(hello.slice(1, 3)));
+    print(hello.length());
+    print(show(hello));
+    print(show(reversed(Bytes.fromUtf8("abc"))));
+    print(show(reversed(Bytes.fromUtf8("é"))));
+    print(show(hello.slice(1, 2)));
+    print(show(hello.slice(1, 3)));
     val joined = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
-    @print(joined.length());
-    @print(show(joined.slice(1)));
-    @print(show(joined.slice(-1)));
-    @print(show(joined.slice(-3, -1)));
-    @print(show(joined.slice(3, 1)));
-    @print(show(joined.slice(1, 99)));
-    @print(show(joined[1..3]));
-    @print(show(joined[2..]));
-    @print(joined == Bytes.fromUtf8("abcd"));
-    @print(joined != Bytes.fromUtf8("abcd"));
-    @print(joined == hello);
-    @print(Bytes.fromUtf8("").length());
-    @print(show(reversed(reversed(hello))));
-    @print(reversed(hello) == hello);
+    print(joined.length());
+    print(show(joined.slice(1)));
+    print(show(joined.slice(-1)));
+    print(show(joined.slice(-3, -1)));
+    print(show(joined.slice(3, 1)));
+    print(show(joined.slice(1, 99)));
+    print(show(joined[1..3]));
+    print(show(joined[2..]));
+    print(joined == Bytes.fromUtf8("abcd"));
+    print(joined != Bytes.fromUtf8("abcd"));
+    print(joined == hello);
+    print(Bytes.fromUtf8("").length());
+    print(show(reversed(reversed(hello))));
+    print(reversed(hello) == hello);
 }

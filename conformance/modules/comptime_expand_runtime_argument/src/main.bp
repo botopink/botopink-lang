@@ -2,7 +2,9 @@
 //// `comptime` values and constants alone: a field of a run-time variable
 //// passed to it is `comptime-arg-not-known` at the variable (417).
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("""console.log($0)"""),
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
@@ -10,7 +12,7 @@
 declare fn say(line: string);
 
 fn sayBody(line: string) {
-    @print(line);
+    print(line);
 }
 
 type Box(n: i32)

@@ -3,6 +3,7 @@
 //// module declares: `Lifecycle` here has `Slow`, the decorator's has not.
 
 import {kit} from "lib";
+import {io.terminal.print} from "std";
 
 type Lifecycle {
     Slow,
@@ -14,5 +15,5 @@ pub fn first() -> i32 {
 }
 
 pub fn main() {
-    @print(first());
+    print(first());
 }

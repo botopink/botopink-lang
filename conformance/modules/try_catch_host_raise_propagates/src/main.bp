@@ -7,42 +7,42 @@
 ////
 //// wasm never imitates a host raise (527 (0)): the cell runs where a host does.
 
-import {failure, failure.Failure, failure.HostError} from "std";
+import {failure, failure.Failure, failure.HostError, compiler, failure.panic, io.terminal.print} from "std";
 
-#[@external(.JavaScript("""(() => { throw new Error("signal"); })()"""), .Erlang("""erlang:throw($0)"""))]
+#[compiler.external(.JavaScript("""(() => { throw new Error("signal"); })()"""), .Erlang("""erlang:throw($0)"""))]
 declare fn sig(r: string) -> i32;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(() => { throw new Error("signal"); })()""", result: true),
     .Erlang("""erlang:throw($0)""", result: true),
 )]
-declare fn sigResult(r: string) -> @Result<i32, HostError>;
+declare fn sigResult(r: string) -> Result<i32, HostError>;
 
-fn raising(s: string) -> @Result<string, string> {
+fn raising(s: string) -> Result<string, string> {
     val _n = sig("nav:x");
     return s;
 }
 
-fn panicking(s: string) -> @Result<string, string> {
-    @panic("inside the operand");
+fn panicking(s: string) -> Result<string, string> {
+    panic("inside the operand");
 }
 
-fn failing(s: string) -> @Result<string, string> {
+fn failing(s: string) -> Result<string, string> {
     throw "bad";
 }
 
-fn answering(s: string) -> @Result<string, string> {
+fn answering(s: string) -> Result<string, string> {
     return s;
 }
 
-fn bound(s: string) -> @Result<i32, HostError> {
+fn bound(s: string) -> Result<i32, HostError> {
     return sigResult(s);
 }
 
-fn show(r: @Result<string, Failure>) {
+fn show(r: Result<string, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v);
-        Error(f) -> @print("Error " + f.kind);
+        Ok(v) -> print("Ok " + v);
+        Error(f) -> print("Error " + f.kind);
     }
 }
 
@@ -52,6 +52,6 @@ pub fn main() {
     show(failure.attempt({ -> try failing("a") catch "fallback" }));
     show(failure.attempt({ -> try answering("a") catch "fallback" }));
     val b = try bound("a") catch -1;
-    @print(b.toString());
-    @print("after");
+    print(b.toString());
+    print("after");
 }

@@ -6,11 +6,13 @@
 ////
 //// wasm never imitates a host raise (527 (0)): the binding has no wasm form.
 
-#[@external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn explode() -> i32;
 
 pub fn main() {
-    @print("before");
-    @print(explode());
-    @print("after");
+    print("before");
+    print(explode());
+    print("after");
 }

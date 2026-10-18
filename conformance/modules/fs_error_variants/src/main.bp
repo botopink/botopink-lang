@@ -5,10 +5,10 @@
 //// A dangling link under `walk` is `Other` (decision 178's text is its `message`); text that is
 //// not UTF-8 is `InvalidUtf8`, at the byte where the first invalid sequence starts.
 
-import {io.fs} from "std";
+import {io.fs, compiler, io.terminal.print} from "std";
 
 // A symbolic link `link` -> `target`: std has no public cell that makes one.
-#[@external(
+#[compiler.external(
     .JavaScript("""require('fs').symlinkSync($0, $1)"""),
     .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
 )]
@@ -29,10 +29,10 @@ fn describe(e: fs.FsError) -> string {
     };
 }
 
-fn show<T>(label: string, r: @Result<T, fs.FsError>) {
+fn show<T>(label: string, r: Result<T, fs.FsError>) {
     case r {
-        Ok(_) -> @print(label + ": ok");
-        Error(e) -> @print(label + ": " + describe(e));
+        Ok(_) -> print(label + ": ok");
+        Error(e) -> print(label + ": " + describe(e));
     }
 }
 

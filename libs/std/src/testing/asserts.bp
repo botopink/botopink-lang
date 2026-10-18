@@ -44,19 +44,19 @@
 //// `deepEquals` is the cross-target answer (both sides are rendered by the
 //// same host, so key order agrees).
 
-import {failure, failure.Failure};
+import {failure, failure.Failure, failure.panic, compiler};
 
 // ── boolean ──────────────────────────────────────────────────────────────────
 
 // Fails when `condition` is false.
-pub fn isTrue(condition: bool) -> @Result<void, string> {
+pub fn isTrue(condition: bool) -> Result<void, string> {
     if (condition == false) throw "asserts.isTrue: condition was false";
     return;
 }
 
 // Fails when `condition` is true — the dual of `isTrue`, for "this must not
 // happen" branches you would otherwise spell as `isTrue(!cond)`.
-pub fn isFalse(condition: bool) -> @Result<void, string> {
+pub fn isFalse(condition: bool) -> Result<void, string> {
     if (condition) throw "asserts.isFalse: condition was true";
     return;
 }
@@ -64,13 +64,13 @@ pub fn isFalse(condition: bool) -> @Result<void, string> {
 // ── equality ─────────────────────────────────────────────────────────────────
 
 // Fails when `actual != expected` (the language's `==`; see the docblock).
-pub fn equals<T>(actual: T, expected: T) -> @Result<void, string> {
+pub fn equals<T>(actual: T, expected: T) -> Result<void, string> {
     if (actual != expected) throw "asserts.equals: values differ";
     return;
 }
 
 // Fails when `actual == expected`.
-pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
+pub fn notEquals<T>(actual: T, expected: T) -> Result<void, string> {
     if (actual == expected) throw "asserts.notEquals: values match";
     return;
 }
@@ -82,7 +82,7 @@ pub fn approxEquals(
     actual: f64,
     expected: f64,
     tolerance: f64,
-) -> @Result<void, string> {
+) -> Result<void, string> {
     val diff = actual - expected;
     val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
     if (absDiff > tolerance)
@@ -94,7 +94,7 @@ pub fn approxEquals(
 // Node, `io_lib:format("~0tp")` on Erlang. Lifted from the old onze's
 // `onzeKey`, where it keyed the call log for the same reason: two values that
 // render the same are structurally equal on that host.
-#[external(
+#[compiler.external(
     .JavaScript("""JSON.stringify($0)"""),
     .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""),
 )]
@@ -102,7 +102,7 @@ declare fn canonical<T>(v: T) -> string;
 
 // Fails when the two values differ structurally — arrays and records by
 // content, on every target. Needs Node or Erlang at run time (`canonical`).
-pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
+pub fn deepEquals<T>(actual: T, expected: T) -> Result<void, string> {
     if (canonical(actual) != canonical(expected))
         throw "asserts.deepEquals: values differ structurally";
     return;
@@ -112,13 +112,13 @@ pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
 
 // Fails when the optional holds a value. `!= null`, never truthiness — on
 // commonJS `if (x)` is false for `0`.
-pub fn isNil<T>(value: ?T) -> @Result<void, string> {
+pub fn isNil<T>(value: ?T) -> Result<void, string> {
     if (value != null) throw "asserts.isNil: value was present";
     return;
 }
 
 // Fails when the optional is absent.
-pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
+pub fn isNotNil<T>(value: ?T) -> Result<void, string> {
     if (value == null) throw "asserts.isNotNil: value was null";
     return;
 }
@@ -127,14 +127,14 @@ pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
 
 // Fails when `result` is `Error`. Read the payload at the call site with the
 // builtin methods (`try equals(r.unwrapOr(0), 42);`).
-pub fn isOk<T, E>(result: @Result<T, E>) -> @Result<void, string> {
+pub fn isOk<T, E>(result: Result<T, E>) -> Result<void, string> {
     if (result.isError()) throw "asserts.isOk: result was Error";
     return;
 }
 
 // Fails when `result` is `Ok`. To assert that a `@Result`-returning body
 // fails, this is the tool — `throws` is for a `@panic` or a host throw.
-pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
+pub fn isError<T, E>(result: Result<T, E>) -> Result<void, string> {
     if (result.isOk()) throw "asserts.isError: result was Ok";
     return;
 }
@@ -142,28 +142,28 @@ pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
 // ── string ───────────────────────────────────────────────────────────────────
 
 // Fails when `needle` is not a substring of `actual`.
-pub fn contains(actual: string, needle: string) -> @Result<void, string> {
+pub fn contains(actual: string, needle: string) -> Result<void, string> {
     if (actual.contains(needle) == false)
         throw "asserts.contains: needle not in actual";
     return;
 }
 
 // Fails when `needle` is a substring of `actual`.
-pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
+pub fn notContains(actual: string, needle: string) -> Result<void, string> {
     if (actual.contains(needle))
         throw "asserts.notContains: needle found in actual";
     return;
 }
 
 // Fails when `actual` does not start with `prefix`.
-pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
+pub fn startsWith(actual: string, prefix: string) -> Result<void, string> {
     if (actual.startsWith(prefix) == false)
         throw "asserts.startsWith: prefix does not match";
     return;
 }
 
 // Fails when `actual` does not end with `suffix`.
-pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
+pub fn endsWith(actual: string, suffix: string) -> Result<void, string> {
     if (actual.endsWith(suffix) == false)
         throw "asserts.endsWith: suffix does not match";
     return;
@@ -172,13 +172,13 @@ pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
 // Private `regex.matches` twin, actual-first: inlined here rather than via a
 // cross-module call so this file stays self-contained (std-internal modules
 // do not import each other). PCRE-ish on both hosts.
-#[external(.JavaScript("""(new RegExp($1).test($0))"""), .Erlang("""(re:run($0, $1) =/= nomatch)"""))]
+#[compiler.external(.JavaScript("""(new RegExp($1).test($0))"""), .Erlang("""(re:run($0, $1) =/= nomatch)"""))]
 declare fn regexMatches(actual: string, pattern: string) -> bool;
 
 // Fails when the regular expression `pattern` (the host's native flavour)
 // does not match `actual`. Use `contains` for a literal needle. Needs Node or
 // Erlang at run time (`regexMatches`).
-pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
+pub fn matches(actual: string, pattern: string) -> Result<void, string> {
     if (regexMatches(actual, pattern) == false)
         throw "asserts.matches: pattern did not match";
     return;
@@ -187,33 +187,33 @@ pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
 // ── collection ───────────────────────────────────────────────────────────────
 
 // Fails when the array has elements.
-pub fn isEmpty<T>(actual: T[]) -> @Result<void, string> {
+pub fn isEmpty<T>(actual: T[]) -> Result<void, string> {
     if (actual.length != 0) throw "asserts.isEmpty: array was not empty";
     return;
 }
 
 // Fails when the array is empty.
-pub fn isNotEmpty<T>(actual: T[]) -> @Result<void, string> {
+pub fn isNotEmpty<T>(actual: T[]) -> Result<void, string> {
     if (actual.length == 0) throw "asserts.isNotEmpty: array was empty";
     return;
 }
 
 // Fails when the array's length is not `expected`.
-pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
+pub fn lengthIs<T>(actual: T[], expected: i32) -> Result<void, string> {
     if (actual.length != expected) throw "asserts.lengthIs: length differs";
     return;
 }
 
 // Fails when no element `==` `element` (`Array.indexOf` — reference equality
 // for records on commonJS; extract with `.at(i)` and `deepEquals` instead).
-pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
+pub fn includes<T>(actual: T[], element: T) -> Result<void, string> {
     if (actual.indexOf(element) < 0)
         throw "asserts.includes: element not found";
     return;
 }
 
 // Fails when some element `==` `element`.
-pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
+pub fn notIncludes<T>(actual: T[], element: T) -> Result<void, string> {
     if (actual.indexOf(element) >= 0)
         throw "asserts.notIncludes: element found";
     return;
@@ -224,7 +224,7 @@ pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
 // Fails when `actual` is outside `[low, high]` (both ends included). `i32`
 // only: a generic `T` cannot be compared with `<`, and `f64` callers have
 // `approxEquals`. `positive`/`negative` are `greaterThan(x, 0)`/`lessThan(x, 0)`.
-pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
+pub fn between(actual: i32, low: i32, high: i32) -> Result<void, string> {
     // Bound first: an `if (a < b || c > d)` condition does not parse today
     // (the condition grammar stops at `||`; a `val` initialiser takes the
     // whole expression) — a parser gap, recorded by the front that owns it.
@@ -234,13 +234,13 @@ pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
 }
 
 // Fails when `actual <= bound`.
-pub fn greaterThan(actual: i32, bound: i32) -> @Result<void, string> {
+pub fn greaterThan(actual: i32, bound: i32) -> Result<void, string> {
     if (actual <= bound) throw "asserts.greaterThan: value not greater";
     return;
 }
 
 // Fails when `actual >= bound`.
-pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
+pub fn lessThan(actual: i32, bound: i32) -> Result<void, string> {
     if (actual >= bound) throw "asserts.lessThan: value not less";
     return;
 }
@@ -249,7 +249,7 @@ pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
 
 // Private: the message `failure.attempt` caught, or `""` for a body that
 // completed.
-fn caughtMessage<T>(r: @Result<T, Failure>) -> string {
+fn caughtMessage<T>(r: Result<T, Failure>) -> string {
     val text = case r {
         Ok(v) -> "";
         Error(f) -> f.message;
@@ -261,7 +261,7 @@ fn caughtMessage<T>(r: @Result<T, Failure>) -> string {
 // code whose return carries no `@Result` (a failing `@Result` is `isError`).
 // Generic over the body's own type and run under `failure.attempt` (decisions
 // 431, 493), so it needs Node or Erlang at run time.
-pub fn throws<T>(body: fn() -> T) -> @Result<void, string> {
+pub fn throws<T>(body: fn() -> T) -> Result<void, string> {
     val r = failure.attempt(body);
     if (r.isOk()) throw "asserts.throws: body did not raise";
     return;
@@ -273,7 +273,7 @@ pub fn throws<T>(body: fn() -> T) -> @Result<void, string> {
 // byte — a needle with a `"`, a `\` or a non-ASCII character matches alike;
 // any other host raise is its JS `message` (else `String(e)`) on Node and
 // the reason by `~tp` on Erlang (`badarg`).
-pub fn throwsWith<T>(body: fn() -> T, needle: string) -> @Result<void, string> {
+pub fn throwsWith<T>(body: fn() -> T, needle: string) -> Result<void, string> {
     val r = failure.attempt(body);
     if (r.isOk()) throw "asserts.throwsWith: body did not raise";
     if (caughtMessage(r).contains(needle) == false)
@@ -285,7 +285,7 @@ pub fn throwsWith<T>(body: fn() -> T, needle: string) -> @Result<void, string> {
 
 // Always `Error("asserts.fail: <message>")` — the one function whose message
 // carries caller text; the escape for a branch the test asserts is unreachable.
-pub fn fail(message: string) -> @Result<void, string> {
+pub fn fail(message: string) -> Result<void, string> {
     throw "asserts.fail: " + message;
 }
 
@@ -293,7 +293,7 @@ pub fn fail(message: string) -> @Result<void, string> {
 // a `-> @Result` fn: it is how a test reads a failure message to compare or
 // snapshot it (`test-snap.md`), matching over the builtin `Result` enum in a
 // function the manual-construction rule does not apply to.
-pub fn errorText(r: @Result<void, string>) -> string {
+pub fn errorText(r: Result<void, string>) -> string {
     val text = case r {
         Ok(v) -> "";
         Error(e) -> e;
@@ -306,13 +306,13 @@ pub fn errorText(r: @Result<void, string>) -> string {
 // `isError` over the assertion's own result and pins the literal message
 // through `errorText` (no host cell, no panic).
 
-fn parsePort(s: string) -> @Result<i32, string> {
+fn parsePort(s: string) -> Result<i32, string> {
     if (s == "") throw "empty input";
     return 8080;
 }
 
 fn explode() -> i32 {
-    @panic("boom: the widget is on fire");
+    panic("boom: the widget is on fire");
     return 0;
 }
 
@@ -583,7 +583,7 @@ test "asserts: throwsWith checks the message" {
 }
 
 fn quoteRaiser() -> i32 {
-    @panic("withHeader(\"Set-Cookie\", v) \\ twice");
+    panic("withHeader(\"Set-Cookie\", v) \\ twice");
     return 0;
 }
 

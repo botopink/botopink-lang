@@ -136,7 +136,7 @@ test "parser error: retired @[ annotation block" {
         \\2 | @[external(node, "m.mjs", "f")]
         \\  | ^^ write `#[…]` instead
         \\  |
-        \\  = hint: An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.JavaScript("f($0)"))]`.
+        \\  = hint: An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[compiler.external(.JavaScript("f($0)"))]`.
         \\
         \\
     ,
@@ -154,7 +154,7 @@ test "parser error: removed error union syntax T!E" {
         \\1 | fn foo() -> i32!Error { }
         \\  |                ^ Error union syntax `T!E` has been removed
         \\  |
-        \\  = hint: Use `@Result<D, E>` instead, e.g. `fn fetch() -> @Result<i32, MyError>`
+        \\  = hint: Use `Result<D, E>` instead, e.g. `fn fetch() -> Result<i32, MyError>`
         \\
         \\
     , "fn foo() -> i32!Error { }");
@@ -168,7 +168,7 @@ test "parser error: deprecated *fn prefix" {
         \\error[deprecated-star-fn]: the `*fn` prefix was removed in v0.beta.19
         \\ --> <test>:1:1
         \\  |
-        \\1 | *fn parse(n: i32) -> @Result<i32, string> { return n; }
+        \\1 | *fn parse(n: i32) -> Result<i32, string> { return n; }
         \\  | ^^^ write a plain `fn` whose return type is the effect wrapper
         \\  |
         \\  = note: the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect
@@ -291,16 +291,18 @@ test "lexer: lexicalErrorMessage for InvalidUnicodeEscape InvalidCodepoint" {
 test "parser: $self in an External template names the positional marker" {
     try h.expectParseError(std.testing.allocator,
         \\error[template-self-marker]: `$self` is not a template marker
-        \\ --> <test>:1:25
+        \\ --> <test>:1:33
         \\  |
-        \\1 | #[@external(.JavaScript("$self.trim()"))]
-        \\  |                         ^^^^^^^^^^^^^^ use `$0`
+        \\1 | #[compiler.external(.JavaScript("$self.trim()"))]
+        \\  |                                 ^^^^^^^^^^^^^^ use `$0`
         \\  |
         \\  = hint: Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.
         \\
         \\
     ,
-        \\#[@external(.JavaScript("$self.trim()"))]
+        \\#[compiler.external(.JavaScript("$self.trim()"))]
         \\declare fn trim(s: string) -> string;
+        \\
+        \\import {compiler} from "std";
     );
 }

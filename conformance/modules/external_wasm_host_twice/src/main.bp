@@ -2,7 +2,9 @@
 //// one `declare fn` would leave the compiler reading one and dropping the
 //// other; the second is refused at its annotation.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("Math.floor($0)"),
     .Wasm(op: "f64.floor", host: .Wasi),
     .Wasm(op: "f64.ceil", host: .Wasi),
@@ -10,5 +12,5 @@
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {
-    @print(roundOf(2.5));
+    print(roundOf(2.5));
 }

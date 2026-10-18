@@ -9,27 +9,27 @@
 //// raises, so the cell runs where a host does — each binding has no wasm
 //// form, and the wasm build is refused on it.
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, compiler, io.terminal.print} from "std";
 
-#[@external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+#[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn raiseError() -> i32;
 
-#[@external(.JavaScript("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
+#[compiler.external(.JavaScript("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
 declare fn raiseThrow() -> i32;
 
-#[@external(.JavaScript("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
+#[compiler.external(.JavaScript("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
 declare fn raiseExit() -> i32;
 
-#[@external(
+#[compiler.external(
     .JavaScript("""(() => { throw new Error("{bad_input,7}"); })()"""),
     .Erlang("""erlang:error({bad_input, $0})"""),
 )]
 declare fn raiseReason(n: i32) -> i32;
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind + ": " + f.message);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
@@ -38,5 +38,5 @@ pub fn main() {
     show(failure.attempt({ -> raiseThrow() }));
     show(failure.attempt({ -> raiseExit() }));
     show(failure.attempt({ -> raiseReason(7) }));
-    @print("after");
+    print("after");
 }

@@ -87,7 +87,7 @@ test "parser: implement generic interface for type" {
     // for a builtin generic (`@Renderable`) and a user generic (`Foo<A, B>`).
     try h.assertParser(std.testing.allocator, @src(),
         \\type E(tag: string)
-        \\val C = implement @Renderable for E {}
+        \\val C = implement Renderable for E {}
         \\val D = implement Foo<E, E> for E {}
     );
 }
@@ -201,9 +201,11 @@ test "parser: implement single interface with method body" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
-        \\        @print("Drawing circle");
+        \\        print("Drawing circle");
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -211,12 +213,14 @@ test "parser: implement two interfaces, qualified methods calling a builtin" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
         \\    fn UsbCharger.Connect(self: Self) {
-        \\        @print("Connected via USB. Battery level: " + self.batteryLevel);
+        \\        print("Connected via USB. Battery level: " + self.batteryLevel);
         \\    }
         \\    fn SolarCharger.Connect(self: Self) {
-        \\        @print("Connected via Solar Panel. Battery level: " + self.batteryLevel);
+        \\        print("Connected via Solar Panel. Battery level: " + self.batteryLevel);
         \\    }
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -395,19 +399,23 @@ test "parser: annotation ---- interface shorthand" {
 
 test "parser: annotation block ---- hash bracket builtin" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("string:length($0)"), .JavaScript("./gleam_stdlib.mjs", "string_length"))]
+        \\#[compiler.external(.Erlang("string:length($0)"), .JavaScript("./gleam_stdlib.mjs", "string_length"))]
         \\pub declare fn length(s: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "parser: annotation block ---- external decl then next decl" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("erlang:abs($0)"))]
+        \\#[compiler.external(.Erlang("erlang:abs($0)"))]
         \\pub declare fn absoluteValue(n: i32) -> i32;
         \\
         \\fn main() {
         \\    absoluteValue(-5);
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -450,32 +458,40 @@ test "parser: val top-level constant ---- comptime block" {
 test "parser: pub fn ---- comptime params" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn repeat(s comptime: string, n comptime: int) -> string {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "parser: pub fn ---- type meta-kind no constraint" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn wrap(comptime T: anytype) -> anytype {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "parser: pub fn ---- type meta-kind single constraint" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn render(comptime tag: type<string>, props: i32) -> string {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "parser: pub fn ---- type meta-kind multiple pipe constraints" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -541,24 +557,30 @@ test "parser: test rejects in fn body" {
 test "parser: template ---- its text parameter and its answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub fn html(syntax template: string) -> Component {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "parser: template ---- anyvalue answer (decision 578)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn yaml(syntax template: string) -> anyvalue {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "parser: expr parameter ---- composed type position" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn collect(syntax first: ?Element) -> i32 {
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -568,9 +590,11 @@ test "parser: interface with default method and external declare member" {
         \\    default fn isEmpty(self: Self) -> bool {
         \\        return self.length == 0;
         \\    }
-        \\    #[@external(.Erlang("lists:reverse($0)"), .JavaScript("./bp_stdlib.mjs", "list_reverse"))]
+        \\    #[compiler.external(.Erlang("lists:reverse($0)"), .JavaScript("./bp_stdlib.mjs", "list_reverse"))]
         \\    declare fn reverse(self: Self) -> Array<T>;
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -578,22 +602,28 @@ test "parser: interface with default method and external declare member" {
 
 test "parser: external ---- qualified enum target and call template" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("lists:zip($1, $0)"), .JavaScript("./gleam_stdlib.mjs", "zip"))]
+        \\#[compiler.external(.Erlang("lists:zip($1, $0)"), .JavaScript("./gleam_stdlib.mjs", "zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "parser: external ---- keyword-argument form" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang(module: "lists", method: "reverse(xs)"))]
+        \\#[compiler.external(.Erlang(module: "lists", method: "reverse(xs)"))]
         \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
 test "parser: external ---- node prototype shorthand (module omitted)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("reverse"), .Erlang("lists:reverse($0)"))]
+        \\#[compiler.external(.JavaScript("reverse"), .Erlang("lists:reverse($0)"))]
         \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -603,8 +633,10 @@ test "parser: external ---- node prototype shorthand (module omitted)" {
 // variant becomes a separate decorator sig keyed `"External.<Variant>"`.
 test "parser: external ---- qualified enum variant with inline: true flag" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("lists:search($0, $1)", inline: true), .JavaScript("./gleam_stdlib.mjs", "index_of"))]
+        \\#[compiler.external(.Erlang("lists:search($0, $1)", inline: true), .JavaScript("./gleam_stdlib.mjs", "index_of"))]
         \\pub declare fn indexOf(xs: Array<i32>, item: i32) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -613,10 +645,12 @@ test "parser: external ---- qualified enum variant with inline: true flag" {
 test "ast: externalFor reads a declaration's implementations" {
     const alloc = std.testing.allocator;
     const src =
-        \\#[@external(.Erlang("lists:zip($1, $0)"), .JavaScript("zip"))]
+        \\#[compiler.external(.Erlang("lists:zip($1, $0)"), .JavaScript("zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
-        \\#[@external(.Erlang("lists:reverse($0)"))]
+        \\#[compiler.external(.Erlang("lists:reverse($0)"))]
         \\pub declare fn rev(xs: Array<i32>) -> Array<i32>;
+        \\
+        \\import {compiler} from "std";
     ;
     var l = Lexer.init(src);
     const tokens = try l.scanAll(alloc);
@@ -715,10 +749,12 @@ test "parser: enum variant field default" {
 
 test "parser: fn-decl param default + External.<Target> annotation" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("erlang:error({todo, $0})"), .JavaScript("(() => { throw new Error($0) })()"))]
+        \\#[compiler.external(.Erlang("erlang:error({todo, $0})"), .JavaScript("(() => { throw new Error($0) })()"))]
         \\fn todo(message: string = "not implemented") -> bool {
         \\    return true;
         \\}
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -842,8 +878,10 @@ test "parser: delegate ---- bodyless declare fn multiple trailing defaults" {
 
 test "parser: declare fn ---- external + param default" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("string:slice($0, $1, $2)"))]
+        \\#[compiler.external(.Erlang("string:slice($0, $1, $2)"))]
         \\pub declare fn slice(s: string, start: i32, end: i32 = -1) -> string;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -885,7 +923,7 @@ test "parser: type guard ---- snapshot round-trip" {
 
 test "parser: effect fn ---- @Task declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn fetch(url: string) -> @Task<Response> {
+        \\fn fetch(url: string) -> Task<Response> {
         \\    return download(url);
         \\}
     );
@@ -893,7 +931,7 @@ test "parser: effect fn ---- @Task declaration" {
 
 test "parser: effect fn ---- @Iterator-of-Result declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn fib() -> @Iterator<Int> {
+        \\fn fib() -> Iterator<Int> {
         \\    yield 1;
         \\}
     );
@@ -901,7 +939,7 @@ test "parser: effect fn ---- @Iterator-of-Result declaration" {
 
 test "parser: effect fn ---- @Stream declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn stream() -> @Stream<@Result<Int, Error>> {
+        \\pub fn stream() -> Stream<Result<Int, Error>> {
         \\    yield 1;
         \\}
     );
@@ -909,7 +947,7 @@ test "parser: effect fn ---- @Stream declaration" {
 
 test "parser: effect fn ---- @Iterator-of-Result label after return type" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn gen() -> @Iterator<Int> :gen {
+        \\fn gen() -> Iterator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );
@@ -944,8 +982,10 @@ test "parser: comments ---- doc, module and normal comments attach to decls" {
         \\/// documents the fn
         \\fn go() {
         \\    // inside the body
-        \\    @todo();
+        \\    panic("not implemented");
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -999,8 +1039,10 @@ test "parser: `#[@external(…)]`'s sources are the declaration's implementation
     defer arena.deinit();
     const alloc = arena.allocator();
     var lx = Lexer.init(
-        \\#[@external(.Wasm(body: tanBody, host: .Wasi), .Wasm(wasi: .RaceOf, host: .Browser))]
+        \\#[compiler.external(.Wasm(body: tanBody, host: .Wasi), .Wasm(wasi: .RaceOf, host: .Browser))]
         \\pub declare fn tan(x: f64) -> f64;
+        \\
+        \\import {compiler} from "std";
     );
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
@@ -1044,8 +1086,10 @@ test "parser: declare fn ---- unannotated with a discard param and a generic ret
 
 test "parser: declare fn ---- annotated with a discard param" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.JavaScript("f"))]
+        \\#[compiler.external(.JavaScript("f"))]
         \\pub declare fn f(_: i32, _: string) -> i32;
+        \\
+        \\import {compiler} from "std";
     );
 }
 
@@ -1110,10 +1154,12 @@ test "parser: a tail with `;` is a statement; a void fn's tail stays as written 
     defer arena.deinit();
     const program = try parseTailProgram(arena.allocator(),
         \\fn semi(x: i32) -> i32 { x + 1; }
-        \\fn log(x: i32) { @print(x) }
+        \\fn log(x: i32) { print(x) }
         \\fn sign(n: i32) -> i32 { if (n < 0) return -1; n }
         \\fn both(c: bool) -> i32 { if (c) return 1 else return 2 }
         \\fn braced(c: bool) -> i32 { if (c) { return 1; } else { return 2; } }
+        \\
+        \\import {io.terminal.print} from "std";
     );
     try std.testing.expectEqual(ast.Tail.none, program.decls[0].@"fn".body[0].tail);
     try std.testing.expectEqual(ast.Tail.value, program.decls[1].@"fn".body[0].tail);

@@ -1,10 +1,12 @@
 //// Decision 575 (6) — one implementation per target: a second `.JavaScript(…)` for
 //// a declaration that has one is refused where it is written.
 
-#[@external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
-#[@external(.JavaScript("Math.floor($0)"))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
+#[compiler.external(.JavaScript("Math.floor($0)"))]
 declare fn magnitude(x: f64) -> f64;
 
 pub fn main() {
-    @print(magnitude(-2.5));
+    print(magnitude(-2.5));
 }

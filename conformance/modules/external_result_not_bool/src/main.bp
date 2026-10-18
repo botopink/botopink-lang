@@ -2,11 +2,11 @@
 //// call can fail, `result: false` (the default) that it cannot. Any other
 //// value is refused at the annotation.
 
-import {failure, failure.HostError} from "std";
+import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 
-#[@external(.JavaScript("JSON.parse($0)", result: 1), .Erlang("json:decode($0)", result: 1))]
-declare fn jsParse(s: string) -> @Result<i32, HostError>;
+#[compiler.external(.JavaScript("JSON.parse($0)", result: 1), .Erlang("json:decode($0)", result: 1))]
+declare fn jsParse(s: string) -> Result<i32, HostError>;
 
 pub fn main() {
-    @print(jsParse("1").isOk());
+    print(jsParse("1").isOk());
 }

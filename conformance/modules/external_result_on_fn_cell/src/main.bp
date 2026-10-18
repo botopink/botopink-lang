@@ -2,13 +2,15 @@
 //// cell binds a botopink function, which fails only through its own
 //// `@Result`, so `result:` beside `fn:` is refused at the annotation.
 
+import {compiler, io.terminal.print} from "std";
+
 fn absBody(x: i32) -> i32 {
     return if (x < 0) -x else x;
 }
 
-#[@external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"), .Wasm(body: absBody))]
+#[compiler.external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"), .Wasm(body: absBody))]
 declare fn magnitude(x: i32) -> i32;
 
 pub fn main() {
-    @print(magnitude(-3));
+    print(magnitude(-3));
 }

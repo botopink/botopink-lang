@@ -7,11 +7,11 @@
 //// The cell claims the kind alone: the message's text is not fixed yet
 //// (question 546-a).
 
-import {failure, failure.Failure} from "std";
+import {failure, failure.Failure, compiler, io.terminal.print} from "std";
 
 type Shape { Dot, Circle(r: i32) }
 
-#[@external(.JavaScript("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
+#[compiler.external(.JavaScript("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
 declare fn shapeNamed(name: string) -> Shape;
 
 fn area(s: Shape) -> i32 {
@@ -25,14 +25,14 @@ fn area(s: Shape) -> i32 {
     };
 }
 
-fn show(r: @Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) {
     case r {
-        Ok(v) -> @print("Ok " + v.toString());
-        Error(f) -> @print("Error " + f.kind);
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind);
     }
 }
 
 pub fn main() {
     show(failure.attempt({ -> area(shapeNamed("Square")) }));
-    @print("after");
+    print("after");
 }

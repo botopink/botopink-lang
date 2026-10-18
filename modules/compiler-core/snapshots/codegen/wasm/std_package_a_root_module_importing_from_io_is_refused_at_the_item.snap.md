@@ -2173,6 +2173,8 @@ test "path.isInside treats a name starting with two dots as a name" {
 //// fault) is no exception and is not caught. `attemptTask` contains what
 //// the thunk raises before the task's first `await`.
 
+import {compiler};
+
 pub type HostErrorName {
     Error,
     Throw,
@@ -2187,9 +2189,9 @@ pub type Failure(message: string, kind: string)
 // with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
 // Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
 // inside std); `panic("not implemented")` is what `todo` was.
-#[external(
+#[compiler.external(
     .Erlang("erlang:error({panic, $0})"),
-    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+    .JavaScript("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
 )]
 pub declare fn panic(message: string = "panic") -> noreturn;
 
@@ -2202,32 +2204,32 @@ pub declare fn panic(message: string = "panic") -> noreturn;
 // (decision 432): marked `__bp_fails`, resolved with the value, rejected with
 // the `Failure` (`__bp_failure`); a failing task `f` answers is read as
 // `await` reads it.
-#[external(
+#[compiler.external(
     .JavaScript("""((__f, __k) => { try { return { ok: __f() }; } catch (__e) { return { error: __k(__e) }; } })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))"""),
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptOnWasm),
 )]
-pub declare fn attempt<T>(f: fn() -> T) -> @Result<T, Failure>;
+pub declare fn attempt<T>(f: fn() -> T) -> Result<T, Failure>;
 
-#[external(
+#[compiler.external(
     .JavaScript("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))"""),
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptTaskOnWasm),
 )]
-pub declare fn attemptTask<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>>;
+pub declare fn attemptTask<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>>;
 
 // wasm's form (decision 518): the thunk's value, or the message of the abort
 // it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
 // The bodies over it are compiled on every target, so it has a form on each;
 // only wasm calls it (`attempt`'s own forms answer elsewhere).
-#[external(
+#[compiler.external(
     .JavaScript("""((__f) => { try { return { ok: __f() }; } catch (__e) { return { error: (__e instanceof Error) ? __e.message : String(__e) }; } })($0)"""),
     .Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)"""),
     .Wasm(wasi: .Attempt, needs: [.Exceptions]),
 )]
-declare fn caught<T>(f: fn() -> T) -> @Result<T, string>;
+declare fn caught<T>(f: fn() -> T) -> Result<T, string>;
 
-fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
+fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
     case caught(f) {
         Ok(v) -> return v;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -2236,7 +2238,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> @Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> @Task<T>) -> @Task<@Result<T, Failure>> {
+fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");

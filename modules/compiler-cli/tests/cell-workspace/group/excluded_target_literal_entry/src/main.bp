@@ -5,11 +5,12 @@
 //// not on the entry the scratch copy lacks.
 
 import {word} from "shared";
+import {compiler, io.terminal.print} from "std";
 
-#[@external(.JavaScript("'host'"), .Erlang("<<\"host\">>"))]
+#[compiler.external(.JavaScript("'host'"), .Erlang("<<\"host\">>"))]
 declare fn host() -> string;
 
 pub fn main() {
-    @print(word());
-    @print(host());
+    print(word());
+    print(host());
 }

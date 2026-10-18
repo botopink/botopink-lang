@@ -5,9 +5,9 @@
 //// at comptime — so the call is refused when the package is compiled, naming
 //// the function and both cells, whatever the build's target.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
-#[@external(.JavaScript("""($0 + "!")"""))]
+#[compiler.external(.JavaScript("""($0 + "!")"""))]
 declare fn bang(value: string) -> string;
 
 fn sized(syntax decl: unknown) {
@@ -20,5 +20,5 @@ fn sized(syntax decl: unknown) {
 type Point(x: i32, y: i32)
 
 pub fn main() {
-    @print(summary());
+    print(summary());
 }

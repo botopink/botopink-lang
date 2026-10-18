@@ -1,4 +1,6 @@
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("""String($0.length)"""),
     .Erlang("""integer_to_binary(string:length($0))"""),
     .Wasm("std:hash.contentHash"),
@@ -6,5 +8,5 @@
 pub declare fn contentHash(value: string) -> string;
 
 pub fn main() {
-    @print(contentHash("a"));
+    print(contentHash("a"));
 }

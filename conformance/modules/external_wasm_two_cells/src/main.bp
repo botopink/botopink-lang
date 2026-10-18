@@ -1,7 +1,9 @@
 //// Decision 481 — a wasm binding is one cell: an `op:` beside a `fn:` is
 //// refused at the second, on every target.
 
-#[@external(
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
     .JavaScript("Math.floor($0)"),
     .Erlang("math:floor($0)"),
     .Wasm(op: "f64.floor", body: floorBody),
@@ -13,5 +15,5 @@ fn floorBody(x: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(floorOf(2.7));
+    print(floorOf(2.7));
 }

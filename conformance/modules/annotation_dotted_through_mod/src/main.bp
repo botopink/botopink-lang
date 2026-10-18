@@ -1,6 +1,8 @@
 //// A dotted annotation path through a `pub mod` namespace names the decorator
 //// its last segment declares in that module: `#[marks.tagged]` builds.
 
+import {io.terminal.print} from "std";
+
 pub mod marks;
 
 #[marks.tagged]
@@ -9,5 +11,5 @@ fn Marked() -> string {
 }
 
 pub fn main() {
-    @print(Marked());
+    print(Marked());
 }

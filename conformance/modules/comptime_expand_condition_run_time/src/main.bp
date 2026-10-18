@@ -3,9 +3,9 @@
 //// run-time value — here an entry's `value`, the declaration itself, never
 //// read at build (356) — is refused at it, naming the value.
 
-import {compiler} from "std";
+import {compiler, io.terminal.print} from "std";
 
-#[@external(
+#[compiler.external(
     .JavaScript("""console.log($0)"""),
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
@@ -13,7 +13,7 @@ import {compiler} from "std";
 declare fn say(line: string);
 
 fn sayBody(line: string) {
-    @print(line);
+    print(line);
 }
 
 pub fn module(syntax decl: unknown) {

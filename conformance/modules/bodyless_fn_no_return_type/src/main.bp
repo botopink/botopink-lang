@@ -1,7 +1,9 @@
 //// Decision 33 — `fn f(x: string)` with no body and no return type is a parse
 //// error, and it is the named one, not the catch-all.
 
-#[@external(.JavaScript("console.log($0)"))]
+import {compiler} from "std";
+
+#[compiler.external(.JavaScript("console.log($0)"))]
 fn hostLog(msg: string);
 
 pub fn main() { hostLog("hi"); }

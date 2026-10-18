@@ -37,7 +37,7 @@
 //// external diagnostic at codegen time, matching the spec wave's
 //// scope.
 
-import {failure, failure.HostError};
+import {failure, failure.HostError, compiler};
 
 pub type Response(
     status: i32,
@@ -102,11 +102,11 @@ pub type HttpError {
 // `content-type` header (else `application/octet-stream`).
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
 // `{error, Reason}`, whose message is the reason formatted (decision 490).
-#[external(
+#[compiler.external(
     .JavaScript("""((__m, __u, __n, __v, __hb, __b) => globalThis.fetch(__u, { method: __m, headers: Object.fromEntries(__n.map((__k, __i) => [__k, __v[__i]])), body: (__hb && __m !== "GET" && __m !== "HEAD") ? __b : undefined }).then(__r => __r.text().then(__t => ({ status: __r.status, body: __t }))))($0, $1, $2, $3, $4, $5)""", result: true),
     .Erlang("""(fun(__M, __U, __Ns, __Vs, __Hb, __B) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), __Hs = lists:zipwith(fun(__N, __V) -> {binary_to_list(__N), binary_to_list(__V)} end, __Ns, __Vs), __A = list_to_atom(string:lowercase(binary_to_list(__M))), __Rq = case __Hb andalso lists:member(__A, [post, put, patch]) of true -> __Ct = case [__C || {__K, __C} <- __Hs, string:lowercase(__K) =:= "content-type"] of [__C1 | _] -> __C1; [] -> "application/octet-stream" end, {binary_to_list(__U), __Hs, __Ct, __B}; false -> {binary_to_list(__U), __Hs} end, case httpc:request(__A, __Rq, [], []) of {ok, {{_, __Code, _}, _, __Rb}} -> {ok, #{status => __Code, body => iolist_to_binary(__Rb)}}; {error, __R} -> {error, __R} end end)($0, $1, $2, $3, $4, $5)""", result: true),
 )]
-declare fn fetchHost(method: string, url: string, names: string[], values: string[], hasBody: bool, body: Bytes) -> @Task<@Result<Response, HostError>>;
+declare fn fetchHost(method: string, url: string, names: string[], values: string[], hasBody: bool, body: Bytes) -> Task<Result<Response, HostError>>;
 
 // A host text that names a timeout is `Timeout`, any other `Network`.
 fn hostFailure(e: HostError) -> HttpError {
@@ -120,7 +120,7 @@ fn hostFailure(e: HostError) -> HttpError {
 // Issue the request and resolve with the response, or fail with the
 // `HttpError` (`await` answers `Error(httpError)`, decision 432):
 // `fetchHost`'s `HostError` mapped to a variant (decision 486).
-pub fn fetch(req: Request) -> @Task<@Result<Response, HttpError>> {
+pub fn fetch(req: Request) -> Task<Result<Response, HttpError>> {
     val names = req.headers.map({ h -> h.name });
     val values = req.headers.map({ h -> h.value });
     val r = await fetchHost(req.method.verb(), req.url, names, values, req.body
@@ -144,7 +144,7 @@ pub fn fetch(req: Request) -> @Task<@Result<Response, HttpError>> {
 // at test time (its `await` would issue a network call), but the fixture
 // type-checks at compile time.
 
-pub fn fetchStatus(url: string) -> @Task<@Result<i32, HttpError>> {
+pub fn fetchStatus(url: string) -> Task<Result<i32, HttpError>> {
     val resp = try await fetch(Request(method: .Get, url: url));
     return resp.status;
 }

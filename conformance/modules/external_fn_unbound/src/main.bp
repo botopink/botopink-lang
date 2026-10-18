@@ -2,7 +2,9 @@
 //// resolved in the module like any other name: a misspelt one is the ordinary
 //// unbound-name error, at the argument.
 
-#[@external(.JavaScript(body: tanBdy), .Erlang(body: tanBdy), .Wasm(body: tanBdy))]
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript(body: tanBdy), .Erlang(body: tanBdy), .Wasm(body: tanBdy))]
 pub declare fn tanOf(x: f64) -> f64;
 
 fn tanBody(x: f64) -> f64 {
@@ -10,5 +12,5 @@ fn tanBody(x: f64) -> f64 {
 }
 
 pub fn main() {
-    @print(tanOf(0.0));
+    print(tanOf(0.0));
 }

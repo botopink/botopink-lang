@@ -19,10 +19,12 @@
 //// host's temp directory; `userInfo()` returns the calling user's uid
 //// + username; `eol()` is the platform line-terminator.
 
+import {compiler};
+
 // Host hostname.
 // Node: `require('os').hostname()` (re-require'd inline per call).
 // Erlang: `inet:gethostname()` returns `{ok, Name}` (charlist).
-#[external(
+#[compiler.external(
     .JavaScript("""require('os').hostname()"""),
     .Erlang("""(fun() -> {ok, __H} = inet:gethostname(), list_to_binary(__H) end)()"""),
 )]
@@ -33,7 +35,7 @@ pub declare fn hostname() -> string;
 // folded here.
 // Node: `require('os').arch()`.
 // Erlang: `erlang:system_info(system_architecture)`.
-#[external(
+#[compiler.external(
     .JavaScript("""require('os').arch()"""),
     .Erlang("list_to_binary(erlang:system_info(system_architecture))"),
 )]
@@ -43,7 +45,7 @@ pub declare fn arch() -> string;
 // Node: `require('os').cpus().length`.
 // Erlang: `erlang:system_info(schedulers_online)` returns the count
 // of online schedulers — the BEAM analogue of "available cores".
-#[external(
+#[compiler.external(
     .JavaScript("""require('os').cpus().length"""),
     .Erlang("erlang:system_info(schedulers_online)"),
 )]
@@ -54,7 +56,7 @@ pub declare fn cpuCount() -> i32;
 // Erlang: best-effort via the `TMPDIR` env var with a fallback to
 // `/tmp` — matches the POSIX convention; on Windows the BEAM-side
 // fallback would need `os:getenv("TEMP")` (deferred).
-#[external(
+#[compiler.external(
     .JavaScript("""require('os').tmpdir()"""),
     .Erlang("""(fun() -> case os:getenv("TMPDIR") of false -> <<"/tmp">>; __V -> list_to_binary(__V) end end)()"""),
 )]
@@ -73,7 +75,7 @@ pub type UserInfo(
     username: string,
 )
 
-#[external(
+#[compiler.external(
     .JavaScript("""(() => { const __u = require('os').userInfo(); return { uid: __u.uid, username: __u.username } })()"""),
     .Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, {'std@io@os@@UserInfo', 0, __U} end)()"""),
 )]
@@ -81,7 +83,7 @@ pub declare fn userInfo() -> UserInfo;
 
 // Platform line terminator — `"\n"` on POSIX, `"\r\n"` on Windows.
 // Node reads `require('os').EOL`; Erlang branches on `os:type/0`.
-#[external(
+#[compiler.external(
     .JavaScript("""require('os').EOL"""),
     .Erlang("""(fun() -> case os:type() of {win32, _} -> <<"\r\n">>; _ -> <<"\n">> end end)()"""),
 )]

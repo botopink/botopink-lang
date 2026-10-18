@@ -4,17 +4,17 @@
 //// is labelled and sits anywhere among the arguments, beside `inline:`. No
 //// binding is called: what the cell claims is that the program checks.
 
-import {failure, failure.HostError} from "std";
+import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 
-#[@external(.JavaScript("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
-declare fn jsParse(s: string) -> @Result<i32, HostError>;
+#[compiler.external(.JavaScript("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
+declare fn jsParse(s: string) -> Result<i32, HostError>;
 
-#[@external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", inline: true, result: true))]
-declare fn later(n: i32) -> @Task<@Result<i32, failure.HostError>>;
+#[compiler.external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", inline: true, result: true))]
+declare fn later(n: i32) -> Task<Result<i32, failure.HostError>>;
 
-#[@external(.JavaScript("Math.abs($0)", result: false), .Erlang("abs($0)", result: false))]
+#[compiler.external(.JavaScript("Math.abs($0)", result: false), .Erlang("abs($0)", result: false))]
 declare fn magnitude(n: i32) -> i32;
 
 pub fn main() {
-    @print("checked");
+    print("checked");
 }
