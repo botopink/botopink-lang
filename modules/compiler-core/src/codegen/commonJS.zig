@@ -498,10 +498,11 @@ fn emitProgramOptsX(
     try em.collectExternals(program);
     try em.collectClassNames(program);
     try em.collectDeclIndexes(program);
-    em.pruneShapeFns();
     // The dispatch scan first: it parses the embedded std registry and fills
     // `ambiguous_prim_renames`, which the rename collector consults.
     try em.collectBuiltinNodeDispatch();
+    // After it: the scan reads which callees' Node cell is the print helper.
+    em.pruneShapeFns();
     try em.collectPrimNodeRenames(program);
 
     const arena_alloc = arena.allocator();
