@@ -4,7 +4,7 @@
 //// template, beside `template-self-marker`. The parent binary rendered it
 //// (`JSON.stringify(…)` on Node, `io_lib:format("~p", …)` on erlang).
 
-#[@external(.Node("String($stringify($0))"), .Erlang("iolist_to_binary($stringify($0))"))]
+#[@external(.JavaScript("String($stringify($0))"), .Erlang("iolist_to_binary($stringify($0))"))]
 declare fn show(x: i32) -> string;
 
 pub fn main() {

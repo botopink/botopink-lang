@@ -3,7 +3,7 @@
 //// `PREFIX` is written into each emitted `say` while the call is expanded.
 
 #[@external(
-    .Node("""console.log($0)"""),
+    .JavaScript("""console.log($0)"""),
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]

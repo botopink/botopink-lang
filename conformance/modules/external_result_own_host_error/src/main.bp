@@ -5,7 +5,7 @@
 
 pub type HostError(message: string)
 
-#[@external(.Node("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
+#[@external(.JavaScript("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
 declare fn jsParse(s: string) -> @Result<i32, HostError>;
 
 pub fn main() {

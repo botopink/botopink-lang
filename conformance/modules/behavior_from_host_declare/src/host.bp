@@ -1,7 +1,7 @@
 import {greet.Greeter};
 
 #[@external(
-    .Node("(() => ({ greet: () => 'host' }))()"),
+    .JavaScript("(() => ({ greet: () => 'host' }))()"),
     .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
 )]
 pub declare fn fromHost() -> Greeter;

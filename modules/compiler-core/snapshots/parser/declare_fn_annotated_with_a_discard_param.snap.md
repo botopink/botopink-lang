@@ -16,7 +16,7 @@
           {
             "name": "external",
             "args": [
-              ".Node(\"f\")"
+              ".JavaScript(\"f\")"
             ],
             "is_builtin": true
           }

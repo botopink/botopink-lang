@@ -17,7 +17,7 @@
             "name": "external",
             "args": [
               ".Erlang(\"string:length($0)\")",
-              ".Node(\"./gleam_stdlib.mjs\", \"string_length\")"
+              ".JavaScript(\"./gleam_stdlib.mjs\", \"string_length\")"
             ],
             "is_builtin": true
           }

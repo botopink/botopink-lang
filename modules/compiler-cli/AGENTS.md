@@ -530,7 +530,7 @@ Cross-command rules:
   with no enclosing checkout, and with a dependency the checkout does not hold
   (named, located, nothing linked), exits 1.
 - **A host sidecar ships through the resolved dependency, or the build fails.**
-  The `.mjs` a `#[@external(.Node("./x.mjs", …))]` requires is copied from the
+  The `.mjs` a `#[@external(.JavaScript("./x.mjs", …))]` requires is copied from the
   directory the dependency resolved to — a `{ "workspace": true }` member, a
   `{ "path": … }` package outside every library root, a name a second checkout
   also declares — and never from whichever entry of that name the roots happen

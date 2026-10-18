@@ -2,7 +2,7 @@
 //// second binding naming one host would bind that host twice. Refused at the
 //// second annotation.
 
-#[@external(.Node("Math.floor($0)"), .Wasm(op: "f64.floor"), .Wasm(op: "f64.ceil", host: .Browser))]
+#[@external(.JavaScript("Math.floor($0)"), .Wasm(op: "f64.floor"), .Wasm(op: "f64.ceil", host: .Browser))]
 declare fn roundOf(x: f64) -> f64;
 
 pub fn main() {

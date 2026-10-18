@@ -3,7 +3,7 @@
 
 #[@external(
     .Wasm(op: "f64.floor", result: true),
-    .Node("Math.floor($0)"),
+    .JavaScript("Math.floor($0)"),
     .Erlang("float(floor($0))"),
 )]
 declare fn floor(x: f64) -> f64;

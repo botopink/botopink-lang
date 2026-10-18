@@ -9,11 +9,11 @@
 
 import {failure, failure.Failure, failure.HostError} from "std";
 
-#[@external(.Node("""(() => { throw new Error("signal"); })()"""), .Erlang("""erlang:throw($0)"""))]
+#[@external(.JavaScript("""(() => { throw new Error("signal"); })()"""), .Erlang("""erlang:throw($0)"""))]
 declare fn sig(r: string) -> i32;
 
 #[@external(
-    .Node("""(() => { throw new Error("signal"); })()""", result: true),
+    .JavaScript("""(() => { throw new Error("signal"); })()""", result: true),
     .Erlang("""erlang:throw($0)""", result: true),
 )]
 declare fn sigResult(r: string) -> @Result<i32, HostError>;

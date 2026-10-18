@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub type Meter(base: i32) {
-    #[@external(.Node("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
+    #[@external(.JavaScript("""($0.base + $1)"""), .Erlang("""(element(2, $0) + $1)"""))]
     pub declare fn plus(self: Self, n: i32) -> i32;
 
     #[@external(
-        .Node("""[$0.base, $1, $2].join("-")"""),
+        .JavaScript("""[$0.base, $1, $2].join("-")"""),
         .Erlang("""iolist_to_binary(lists:join(<<"-">>, [integer_to_binary(element(2, $0)), integer_to_binary($1), $2]))"""),
     )]
     pub declare fn label(self: Self, n: i32, tail: string) -> string;
@@ -20,7 +20,7 @@ pub type Level {
     High,
 
     #[@external(
-        .Node("""($0.tag === "High" ? $1 * 10 : $1)"""),
+        .JavaScript("""($0.tag === "High" ? $1 * 10 : $1)"""),
         .Erlang("""case $0 of 'test@main@@Level__v__high' -> $1 * 10; _ -> $1 end"""),
     )]
     pub declare fn scale(self: Self, n: i32) -> i32;

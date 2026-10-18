@@ -6,7 +6,7 @@ fn absBody(x: i32) -> i32 {
     return if (x < 0) -x else x;
 }
 
-#[@external(.Node(body: absBody, result: true), .Erlang(body: absBody), .Wasm(body: absBody))]
+#[@external(.JavaScript(body: absBody, result: true), .Erlang(body: absBody), .Wasm(body: absBody))]
 declare fn magnitude(x: i32) -> i32;
 
 pub fn main() {

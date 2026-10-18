@@ -13,4 +13,4 @@ error: declare-without-implementation: `Money.show` is a bodyless `declare fn`, 
 5 │     declare fn show(self: Self) -> string;
   │                ^
 
-  hint: Name its host code on each target: `#[@external(.Erlang("…"), .Node("…"), .Wasm(…))]`, or give it a body (`fn`).
+  hint: Name its host code on each target: `#[@external(.Erlang("…"), .JavaScript("…"), .Wasm(…))]`, or give it a body (`fn`).

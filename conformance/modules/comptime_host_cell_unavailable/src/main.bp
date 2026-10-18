@@ -7,7 +7,7 @@
 
 import {compiler} from "std";
 
-#[@external(.Node("""($0 + "!")"""))]
+#[@external(.JavaScript("""($0 + "!")"""))]
 declare fn bang(value: string) -> string;
 
 fn sized(syntax decl: unknown) {

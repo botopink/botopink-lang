@@ -15,7 +15,7 @@
 //// wasm has no host.
 
 pub type Pair(a: i32, b: i32) {
-    #[@external(.Node("""($1 === 0 ? $0.a : $0.b)"""), .Erlang("""element($1 + 2, $0)"""))]
+    #[@external(.JavaScript("""($1 === 0 ? $0.a : $0.b)"""), .Erlang("""element($1 + 2, $0)"""))]
     pub declare fn at(self: Self, i: i32) -> i32;
 }
 
@@ -23,14 +23,14 @@ pub fn at(xs: i32[], i: i32) -> i32 {
     return xs.length + i;
 }
 
-#[@external(.Node("""({ a: $0, b: $1 })"""), .Erlang("""#{a => $0, b => $1}"""))]
+#[@external(.JavaScript("""({ a: $0, b: $1 })"""), .Erlang("""#{a => $0, b => $1}"""))]
 declare fn hostPair(a: i32, b: i32) -> Pair;
 
-#[@external(.Node("""({ ok: { a: $0, b: $1 } })"""), .Erlang("""{ok, #{a => $0, b => $1}}"""))]
+#[@external(.JavaScript("""({ ok: { a: $0, b: $1 } })"""), .Erlang("""{ok, #{a => $0, b => $1}}"""))]
 declare fn hostPairResult(a: i32, b: i32) -> @Result<Pair, string>;
 
 #[@external(
-    .Node("""[{ a: 1, b: 2 }, { a: 3, b: 4 }]"""),
+    .JavaScript("""[{ a: 1, b: 2 }, { a: 3, b: 4 }]"""),
     .Erlang("""[#{a => 1, b => 2}, #{a => 3, b => 4}]"""),
 )]
 declare fn hostPairs() -> Pair[];

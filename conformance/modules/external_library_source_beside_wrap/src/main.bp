@@ -18,7 +18,7 @@ fn hello() -> string {
 }
 
 #[bif("lists")]
-#[@external(.Node("[...$0].reverse()"), .Wasm(body: reverseBody))]
+#[@external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
 declare fn backwards(xs: i32[]) -> i32[];
 
 fn reverseBody(xs: i32[]) -> i32[] {

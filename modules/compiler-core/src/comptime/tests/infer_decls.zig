@@ -993,7 +993,7 @@ test "infer: anonymous test body typechecks" {
 // typechecks — is unchanged.
 test "infer: external ---- fn no body typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@external(.Erlang("string:length($0)"), .Node("$0.length"))]
+        \\#[@external(.Erlang("string:length($0)"), .JavaScript("$0.length"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
@@ -1014,7 +1014,7 @@ test "infer: external ---- inline on erlang typechecks" {
         \\#[@external(.Erlang("min($args)", inline: true, result: false))]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
         \\
-        \\#[@external(.Node("Math.abs($0)", result: false))]
+        \\#[@external(.JavaScript("Math.abs($0)", result: false))]
         \\pub declare fn magnitude(a: i32) -> i32;
         \\
         \\fn main() {

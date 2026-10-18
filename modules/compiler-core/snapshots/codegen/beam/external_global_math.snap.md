@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
+#[@external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
 pub declare fn floor(n: f64) -> f64;
 
 fn main() {

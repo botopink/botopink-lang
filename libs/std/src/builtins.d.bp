@@ -6,13 +6,13 @@
 // (decision 575 (6)); no backend but wasm lowers them by name. On erlang and beam the
 // template names the `'__bp_print'/1` helper the backend emits once per module
 // (it prints a binary with `~ts` and any other value with `~p`).
-#[external(.Node("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
+#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn print(..values: unknown[]);
 
-#[external(.Node("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
+#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn println(..values: unknown[]);
 
-#[external(.Node("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
+#[external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
 pub declare fn debug(..values: unknown[]);
 
 // ── result type ──────────────────────────────────────────────────────────────

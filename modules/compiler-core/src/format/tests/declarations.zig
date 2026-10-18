@@ -932,7 +932,7 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@external(.Node(body: fBody), .Erlang(body: fBody))]
+        \\#[@external(.JavaScript(body: fBody), .Erlang(body: fBody))]
         \\pub declare fn f(s: string) -> string;
     );
     // Decorators (`check`) print theirs the same way, mixed in one list.
@@ -1172,7 +1172,7 @@ test "format: annotations ---- two blocks and one list on a function" {
 test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     try h.assertFormat(std.testing.allocator,
         \\#[@external(
-        \\    .Node("mixBody", inline: true),
+        \\    .JavaScript("mixBody", inline: true),
         \\    .Erlang("mixBody", inline: true),
         \\    .Beam("mixBody", inline: true),
         \\)]
@@ -1182,7 +1182,7 @@ test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     );
     try h.assertFormat(std.testing.allocator,
         \\#[check("m", rule, at: .confirm)]
-        \\#[@external(.Node("a"))]
+        \\#[@external(.JavaScript("a"))]
         \\#[@BeamMemory.Ets(keyed: true)]
         \\var cache: i32 = 0;
     );
@@ -1214,7 +1214,7 @@ test "format: annotations ---- round trips, idempotent, lossless, order kept" {
         \\#[a, b]
         \\fn f() {}
         ,
-        \\#[@external(.Node("mixBody", inline: true), .Erlang("mixBody", inline: true))]
+        \\#[@external(.JavaScript("mixBody", inline: true), .Erlang("mixBody", inline: true))]
         \\fn mix() {}
         ,
         \\#[mark, sql "a ${b}"]

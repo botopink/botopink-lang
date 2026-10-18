@@ -94,7 +94,7 @@ that kind is gone.
 `??` lexes as `questionQuestion`, tried after `?.` and before the bare `?`, the
 way `..` is tried before `.`. So an optional type `?i32` and optional chaining
 `?.` are untouched, and the only source that writes `??` today does it inside
-`.Node` template strings, which are string literals and never lexed as
+`.JavaScript` template strings, which are string literals and never lexed as
 botopink tokens.
 
 The parser **desugars** it (`parseNullishExpr`) rather than mapping it to a

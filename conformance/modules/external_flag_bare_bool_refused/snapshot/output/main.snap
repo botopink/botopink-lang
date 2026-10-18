@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `.Node` on `biggest` writes a second cell, `body:` — a binding is one cell (decision 481)
-at src/main.bp:6:39
+refused error: `.JavaScript` on `biggest` writes a second cell, `body:` — a binding is one cell (decision 481)
+at src/main.bp:6:45

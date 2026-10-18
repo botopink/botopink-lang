@@ -23,7 +23,7 @@ std/
     ├── root.bp              ← module-tree root: twenty-two `pub mod` lines — the twenty root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`). `Array.lastIndexOf` is a `default fn` over `reverse` + `indexOf` (beam's path) with an erlang and a node cell; wasm lowers it to std-wasm's `array.lastIndexOf*` (decision 442 (2)); every other `String` member but `toUpper` / `toLower` carries a `#[@external(.Wasm(std: "text.…"))]` cell naming the std-wasm function the wasm codegen calls (144 B-00g). Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global. A trailing section `// ── the wasm bodies (front 164 s3)` holds the private `text<Name>OnWasm` bodies of `split`, `chars`, `lines`, `words`, `contains`, `startsWith`, `endsWith`, `indexOf`, `lastIndexOf`, `at`, `padStart`, `padEnd`, `repeat`, `replace`, `replaceAll`, `trim`, `trimStart`, `trimEnd` over the leaves `stringByteLength` / `stringByteAt` / `stringByteSlice` (`std: "text.byteLength"` …); each answers std-wasm's `text.zig` (decisions 441, 565). A private bodied `fn` here is the prelude's own: `registerStdlib` infers it with the prelude (`true` / `false` bound first) and then takes it out of the global environment (`hidePreludeBodies`), so no program calls or collides with it; the wasm codegen adopts it when a `String` method's `#[@external(.Wasm(body: …))]` cell names it. Nothing binds them until a `fn:` cell replaces a method's `std:` cell (s3 P1-d, decision 566). `String.parseInt()` / `String.parseFloat()` (1.0.11-beta front 97) are `default fn`s over four free cells — see *String numerals* below
-    ├── external.bp          ← decision 575 (6): `WasmNeed`, `WasmHost`, `WasiAdapter`, the enum `Implementation` (`Erlang(template, body, inline, result)`, `Node(template, body, result)`, `Typescript(template, result)`, `Wasm(template, op, std, wasi, body, host, needs, result)`) and `external(syntax decl: unknown, comptime ..sources: Implementation[])`, the annotation a bodyless `declare fn` names its sources with — `#[external(…)]` inside std, `#[@external(…)]` outside; a core file registered into every environment before the prelude (`comptime.zig` `registerExternalPrelude`), its variants reached through their type only; the parser reads its sources (`parser/implementations.zig`) until `#[builtin]` (B-139) marks it
+    ├── external.bp          ← decision 575 (6): `WasmNeed`, `WasmHost`, `WasiAdapter`, the enum `Implementation` (`Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`, `Typescript(template, result)`, `Wasm(template, op, std, wasi, body, host, needs, result)`) and `external(syntax decl: unknown, comptime ..sources: Implementation[])`, the annotation a bodyless `declare fn` names its sources with — `#[external(…)]` inside std, `#[@external(…)]` outside; a core file registered into every environment before the prelude (`comptime.zig` `registerExternalPrelude`), its variants reached through their type only; the parser reads its sources (`parser/implementations.zig`) until `#[builtin]` (B-139) marks it
     ├── builtins.d.bp        ← builtin surface: every `@name` builtin fn declared (decision 252 — `comptime/builtins.zig`'s table is held to it by a unit test, and a call to it is checked against it), @Result/@Task/@Component/@Iterator/@Stream (`YieldStep`)…, `Display` (decision 8 §7), `Closeable` (decision 539 (6), ambient), `Index`/`Slice` (decision 63, amended), `Target`, the checker's internal tree and declaration-handle forms (`__Expr`, `__ExprContext`, `__CustomNode`, `__Decl`, …) — what `compiler.bp`'s members read and answer —, `TypeInfo<T>` with its static `all` and `RecordField`, effect-wrapper rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — the PURE root: same input, same output; imports nothing from `io/` (`std-root-imports-io`)
@@ -194,20 +194,20 @@ an annotation whose every variant carries a payload the compiler reads (front
 - **Module + symbol** — `#[@external(.Erlang("erlang", "abs"))]`: call
   `module:symbol(args)` with args in declaration order.
 - **Single string** — `module` comes back empty from `externalFor` (`ast.zig`).
-  On a behavior method it names the native method (`#[@external(.Node("toReversed"))]`
+  On a behavior method it names the native method (`#[@external(.JavaScript("toReversed"))]`
   for `Array.reverse`, a call-site rename when it differs from the method name,
   never a prototype patch). The native method it names has to MATCH the
   signature: `Array.reverse` answers a reversed array and leaves the receiver
   alone on erlang and wasm, and named native `reverse`, which reverses in
   place, so commonJS alone also reversed the receiver — `toReversed` is the
   copying reader that answers what the signature says. On a `declare fn` it is a host expression
-  (`#[@external(.Node("process.cwd()"))]`) that commonJS renders verbatim at each
+  (`#[@external(.JavaScript("process.cwd()"))]`) that commonJS renders verbatim at each
   call site, and the erlang backend renders the same way — the `:expr()()`
   lowering that used to keep `env`, `os` and `process` off erlang is gone
   (`botopink test --target erlang` in `libs/std`: `process.pid is positive`,
   `os.hostname is non-empty` and `env.write + env.read round-trips a value` all
   pass).
-- **Relative module file** — `#[@external(.Node("./file.mjs", "symbol"))]` is
+- **Relative module file** — `#[@external(.JavaScript("./file.mjs", "symbol"))]` is
   **not a supported form in `libs/std`**. On a behavior method both inference
   and the commonJS emitter skip it and the native JS method of the same name
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
@@ -232,7 +232,7 @@ an annotation whose every variant carries a payload the compiler reads (front
 | anything else | passthrough target syntax |
 
 ```bp
-#[.Node("""(process.env[$0] ?? null)"""),
+#[.JavaScript("""(process.env[$0] ?? null)"""),
   .Erlang("""(fun(__N) -> case os:getenv(binary_to_list(__N)) of false -> undefined; __V -> list_to_binary(__V) end end)($0)""")]
 pub declare fn read(name: string) -> ?string;
 ```
@@ -446,7 +446,7 @@ Host code that does not fit a one-line template lives at
 `libs/std/src/sidecars/<m>.{mjs,erl}` and is required from the annotation:
 
 ```bp
-#[.Node("""require('./sidecars/random.mjs').seed($0)"""),
+#[.JavaScript("""require('./sidecars/random.mjs').seed($0)"""),
   .Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
 pub declare fn seed(s: i32) -> unit;
 ```

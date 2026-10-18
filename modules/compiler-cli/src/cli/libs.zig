@@ -1164,7 +1164,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
 
 // ── runtime `.mjs` sidecar shipping (G2) ───────────────────────────────────────
 //
-// A `#[@external(.Node("""require("../../src/x.mjs")…"""))]` lowers to a top-level
+// A `#[@external(.JavaScript("""require("../../src/x.mjs")…"""))]` lowers to a top-level
 // `require("../../src/x.mjs")` in the emitted module. The path is authored
 // relative to the lib's OWN build output, so it resolves for the lib's own
 // `botopink test`/`build`; but when the lib is loaded as a *dependency* its
@@ -1218,7 +1218,7 @@ pub fn shipMjsSidecars(
 
         var search: usize = 0;
         const js = o.result.js;
-        // Probe both quote styles — `#[@external(.Node(…))]` templates rendered
+        // Probe both quote styles — `#[@external(.JavaScript(…))]` templates rendered
         // verbatim by the §A2 path may emit either `require("…")` (the legacy
         // codegen-side form) or `require('…')` (when the template body itself
         // chose single quotes, e.g. `require('./sidecars/random.mjs')`).
@@ -1264,7 +1264,7 @@ pub fn shipMjsSidecars(
             if (fileExists(io, target)) continue;
 
             // std-tail F2: when a sidecar lives under `<lib>/<src>/sidecars/<base>`
-            // (the convention for std's `#[@external(.Node(…))]` adapters that
+            // (the convention for std's `#[@external(.JavaScript(…))]` adapters that
             // need a sibling `.mjs`/`.erl` file), the search also probes that
             // subdirectory before falling back to the flat `<lib>/<src>/<base>`.
             //

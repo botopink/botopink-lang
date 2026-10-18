@@ -2759,7 +2759,7 @@ takes an existing array declares `values: T[]`, not `..values`:
 The checker packs the arguments into one array, so erlang and beam receive one
 list argument and wasm one array; commonJS writes the function with a rest
 parameter (`function total(label, ...values)`) and the call with the arguments
-one by one, so a host function bound by `#[@external(.Node(…))]` receives them as
+one by one, so a host function bound by `#[@external(.JavaScript(…))]` receives them as
 JavaScript does (`Math.max(3, 9, 4)`), and `#[@external(.Erlang(…))]` one list
 (`lists:max([3, 9, 4])`).
 
@@ -4406,7 +4406,7 @@ or the botopink function its `.Wasm(body: …)` binding names (an `op:`
 or `wasi:` binding does not run there, but `wasi: .Attempt`, which runs as
 `attempt` answers in a wasm program). A std function is served by std-wasm
 only where its `std:` cell says so; there is no match by name.
-`.Node` never serves: there is no Node at compile time. An
+`.JavaScript` never serves: there is no Node at compile time. An
 `.Erlang` cell never runs at build either (decision 452): it binds
 the erlang and beam targets alone, and beam-to-wasm — a standalone utility
 that translates any `.beam` set to wasm — is no part of the compiler.
@@ -4442,12 +4442,12 @@ A bodyless `declare fn` — top-level or a type's, static included — names the
 code each target runs in its place with `#[@external(…)]` (decision 575 (6)):
 one std function, `external(syntax decl: unknown, comptime ..sources:
 Implementation[])`, whose sources are values of std's enum `Implementation` —
-`Erlang(template, body, inline, result)`, `Node(template, body, result)`,
+`Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`,
 `Typescript(template, result)` and `Wasm(template | op | std | wasi | body,
 host, needs, result)`:
 
 ```
-#[@external(.Erlang("lists:member($1, $0)"), .Node("$0.includes($1)"), .Wasm(op: "f64.floor"))]
+#[@external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"), .Wasm(op: "f64.floor"))]
 ```
 
 Inside std the annotation is written `#[external(…)]`. A source is checked as
@@ -4590,7 +4590,7 @@ table so the backend's hand-coded shape keeps emitting. That variant alone
 declares it, because the erlang and beam emitters, which both read
 `.Erlang`, alone read it. Written on `Node`, `Wasm` or `Typescript`, or
 with a value that is not a bool, it would be a switch nothing reads, so it is
-refused at the argument (`` `Implementation.Node` has no parameter named `inline` ``).
+refused at the argument (`` `Implementation.JavaScript` has no parameter named `inline` ``).
 
 <!-- example: modules/external_inline_unread -->
 
@@ -4718,7 +4718,7 @@ error: `listToBinary` has no `#[@external(.<Target>(…))]` for the wasm backend
 
 | Target | Reads | A call with no binding for it |
 |---|---|---|
-| `commonJS` | `.Node` | refused at compile time — "for the node backend" |
+| `commonJS` | `.JavaScript` | refused at compile time — "for the node backend" |
 | `erlang` | `.Erlang` | refused at compile time — "for the erlang backend" |
 | `beam` | `.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
 | `wasm` | `.Wasm` — the closed vocabulary below | refused at compile time — "for the wasm backend" |
@@ -4839,7 +4839,7 @@ is host code, always:
 <!-- example: modules/external_wasm_prefixed_std_refused -->
 
 `op:` and `wasi:` are `.Wasm`'s cells alone: written as a prefixed
-string on `.Node` or `.Erlang`, the refusal names the wasm
+string on `.JavaScript` or `.Erlang`, the refusal names the wasm
 cell to write (`#[@external(.Wasm(op: "f64.floor"))]`):
 
 <!-- example: modules/external_node_prefixed_op_refused -->
@@ -4989,7 +4989,7 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 answers differ.
 
 **A private fn binds a declaration on every target** (decisions 238, 263, 305). On
-`.Node` and `.Erlang` (which the beam target reads) the
+`.JavaScript` and `.Erlang` (which the beam target reads) the
 labelled cell `body: <name>` (`#[@external(.Erlang(body: powBody))]`) binds what
 wasm's `body: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
@@ -5618,7 +5618,7 @@ row says otherwise):
 
 #### Host sidecars
 
-A `#[@external(.Node("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
+A `#[@external(.JavaScript("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
 in the emitted module. The file is the library's, not the consumer's, so
 `botopink build` and `botopink test` copy it next to the emitted JS —
 `<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's

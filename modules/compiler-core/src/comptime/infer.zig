@@ -4360,7 +4360,7 @@ fn refuseUnimplemented(env: *Env, name: []const u8, loc: ?ast.Loc) InferError {
         env.arena,
         "{s}: `{s}` is a bodyless `declare fn`, and no annotation implements it",
         .{ diagnostics.declare_without_implementation, name },
-    ), "Name its host code on each target: `#[@external(.Erlang(\"…\"), .Node(\"…\"), .Wasm(…))]`, or give it a body (`fn`).");
+    ), "Name its host code on each target: `#[@external(.Erlang(\"…\"), .JavaScript(\"…\"), .Wasm(…))]`, or give it a body (`fn`).");
 }
 
 /// Whether this pass's decorators contributed text the module is re-analysed
@@ -4857,7 +4857,7 @@ fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const as
                 try std.fmt.allocPrint(env.arena, "{s}: `#[@Host]` is gone (decision 575 (6))", .{diagnostics.unknown_annotation})
             else
                 try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` is gone — a `declare fn` names its sources with `#[@external(.{s}(…))]` (decision 575 (6))", .{ diagnostics.unknown_annotation, a.name, if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[i + 1 ..] else "<Target>" });
-            var e = TypeError.custom(msg, "Each source is a value of std's `Implementation`: `#[@external(.Erlang(\"lists:member($1, $0)\"), .Node(\"$0.includes($1)\"), .Wasm(op: \"f64.floor\"))]`.");
+            var e = TypeError.custom(msg, "Each source is a value of std's `Implementation`: `#[@external(.Erlang(\"lists:member($1, $0)\"), .JavaScript(\"$0.includes($1)\"), .Wasm(op: \"f64.floor\"))]`.");
             if (a.loc) |l| e = e.withLoc(l);
             env.lastError = e;
             return error.TypeError;
@@ -19268,7 +19268,7 @@ fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
     return null;
 }
 
-/// JS prototype-method rename driven by the bare-symbol `.Node("X")`
+/// JS prototype-method rename driven by the bare-symbol `.JavaScript("X")`
 /// implementation of a primitive-receiver interface method. Returns the host
 /// symbol `X` when it differs from `callee` (the call site emits
 /// `recv.X(args)` instead of `recv.callee(args)`); returns null when there is
@@ -19372,7 +19372,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
                 // commonJS prototype patcher (§F1) renders the template into a
                 // `Owner.prototype.<m>` body, so dispatch resolution should run
                 // here too (marks the interface used so codegen walks it). A
-                // bare symbol (`.Node("X")`) names a native prototype method —
+                // bare symbol (`.JavaScript("X")`) names a native prototype method —
                 // the prim-block rename's, NOT here.
                 if (primOpTemplate.looksLikeTemplate(ref.text)) {
                     return .{ .method = m, .owner = cname };

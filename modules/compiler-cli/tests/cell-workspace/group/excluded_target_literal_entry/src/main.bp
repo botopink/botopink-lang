@@ -6,7 +6,7 @@
 
 import {word} from "shared";
 
-#[@external(.Node("'host'"), .Erlang("<<\"host\">>"))]
+#[@external(.JavaScript("'host'"), .Erlang("<<\"host\">>"))]
 declare fn host() -> string;
 
 pub fn main() {

@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: std-unsupported-on-target: std/erlang.node has no `.Node(…)` implementation for target 'commonJS'
+refused error: std-unsupported-on-target: std/erlang.node has no `.JavaScript(…)` implementation for target 'commonJS'
 at src/main.bp:20:19

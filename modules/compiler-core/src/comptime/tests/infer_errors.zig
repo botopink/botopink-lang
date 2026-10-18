@@ -467,7 +467,7 @@ test "infer error: external ---- wrong arity" {
 // ignored.
 test "infer error: external ---- inline on a variant that does not declare it" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Node("Math.max($args)", inline: true))]
+        \\#[@external(.JavaScript("Math.max($args)", inline: true))]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
     );
 }
@@ -494,7 +494,7 @@ test "infer error: external ---- inline is a bool" {
 // refused.
 test "infer error: external ---- result true on a plain return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Node("JSON.parse($0)", result: true))]
+        \\#[@external(.JavaScript("JSON.parse($0)", result: true))]
         \\pub declare fn jsParse(s: string) -> i32;
     );
 }
@@ -510,7 +510,7 @@ test "infer error: external ---- result true with a HostError of the module's ow
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub type HostError(message: string)
         \\
-        \\#[@external(.Node("JSON.parse($0)", result: true))]
+        \\#[@external(.JavaScript("JSON.parse($0)", result: true))]
         \\pub declare fn jsParse(s: string) -> @Result<i32, HostError>;
     );
 }
@@ -527,14 +527,14 @@ test "infer error: external ---- result on a fn cell" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn absBody(x: i32) -> i32 { if (x < 0) { -x } else { x } }
         \\
-        \\#[@external(.Node(body: absBody, result: true))]
+        \\#[@external(.JavaScript(body: absBody, result: true))]
         \\pub declare fn magnitude(x: i32) -> i32;
     );
 }
 
 test "infer error: external ---- result is a bool" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@external(.Node("JSON.parse($0)", result: 1))]
+        \\#[@external(.JavaScript("JSON.parse($0)", result: 1))]
         \\pub declare fn jsParse(s: string) -> i32;
     );
 }
@@ -542,7 +542,7 @@ test "infer error: external ---- result is a bool" {
 test "infer error: external ---- result true on a behavior method is checked the same way" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub behavior Shape {
-        \\    #[@external(.Node("area", result: true))]
+        \\    #[@external(.JavaScript("area", result: true))]
         \\    fn area(self: Self) -> i32;
         \\}
     );

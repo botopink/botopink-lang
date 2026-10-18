@@ -35,19 +35,19 @@ pub val log10e: f64 = 0.4342944819032518;
 // (`primitives.bp` Signed). `minF`/`maxF` are the float variants — the
 // generic ones live on `Number`.
 
-#[external(.Node("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(op: "f64.abs"))]
+#[external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(op: "f64.abs"))]
 #[@Stage.Any]
 pub declare fn abs(x: f64) -> f64;
 
-#[external(.Node("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
+#[external(.JavaScript("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
 #[@Stage.Any]
 pub declare fn floor(x: f64) -> f64;
 
-#[external(.Node("Math.round($0)"), .Erlang("erlang:round($0)"), .Wasm(body: roundHalfUp))]
+#[external(.JavaScript("Math.round($0)"), .Erlang("erlang:round($0)"), .Wasm(body: roundHalfUp))]
 #[@Stage.Any]
 pub declare fn round(x: f64) -> f64;
 
-#[external(.Node("Math.trunc($0)"), .Erlang("erlang:trunc($0)"), .Wasm(op: "f64.trunc"))]
+#[external(.JavaScript("Math.trunc($0)"), .Erlang("erlang:trunc($0)"), .Wasm(op: "f64.trunc"))]
 #[@Stage.Any]
 pub declare fn trunc(x: f64) -> f64;
 
@@ -63,11 +63,11 @@ pub fn sign(x: f64) -> f64 {
     return if (x > 0.0) 1.0 else if (x < 0.0) 0.0 - 1.0 else 0.0;
 }
 
-#[external(.Node("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"), .Wasm(op: "f64.min"))]
+#[external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"), .Wasm(op: "f64.min"))]
 #[@Stage.Any]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
-#[external(.Node("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"), .Wasm(op: "f64.max"))]
+#[external(.JavaScript("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"), .Wasm(op: "f64.max"))]
 #[@Stage.Any]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
@@ -77,11 +77,11 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 
 // ── powers + roots + exp/log ─────────────────────────────────────────────────
 
-#[external(.Node("Math.sqrt($0)"), .Erlang("math:sqrt($0)"), .Wasm(op: "f64.sqrt"))]
+#[external(.JavaScript("Math.sqrt($0)"), .Erlang("math:sqrt($0)"), .Wasm(op: "f64.sqrt"))]
 #[@Stage.Any]
 pub declare fn sqrt(x: f64) -> f64;
 
-#[external(.Node(body: powBody), .Erlang(body: powBody), .Wasm(body: powBody))]
+#[external(.JavaScript(body: powBody), .Erlang(body: powBody), .Wasm(body: powBody))]
 #[@Stage.Any]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
@@ -94,19 +94,19 @@ pub fn cbrt(x: f64) -> f64 {
         0.0 - pow(0.0 - x, 0.3333333333333333);
 }
 
-#[external(.Node("Math.exp($0)"), .Erlang(body: expBody), .Wasm(body: expBody))]
+#[external(.JavaScript("Math.exp($0)"), .Erlang(body: expBody), .Wasm(body: expBody))]
 #[@Stage.Any]
 pub declare fn exp(x: f64) -> f64;
 
-#[external(.Node("Math.log($0)"), .Erlang(body: lnBody), .Wasm(body: lnBody))]
+#[external(.JavaScript("Math.log($0)"), .Erlang(body: lnBody), .Wasm(body: lnBody))]
 #[@Stage.Any]
 pub declare fn ln(x: f64) -> f64;
 
-#[external(.Node("Math.log2($0)"), .Erlang(body: log2Body), .Wasm(body: log2Body))]
+#[external(.JavaScript("Math.log2($0)"), .Erlang(body: log2Body), .Wasm(body: log2Body))]
 #[@Stage.Any]
 pub declare fn log2(x: f64) -> f64;
 
-#[external(.Node("Math.log10($0)"), .Erlang(body: log10Body), .Wasm(body: log10Body))]
+#[external(.JavaScript("Math.log10($0)"), .Erlang(body: log10Body), .Wasm(body: log10Body))]
 #[@Stage.Any]
 pub declare fn log10(x: f64) -> f64;
 
@@ -117,43 +117,43 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 
 // ── trigonometry ─────────────────────────────────────────────────────────────
 
-#[external(.Node("Math.sin($0)"), .Erlang(body: sinBody), .Wasm(body: sinBody))]
+#[external(.JavaScript("Math.sin($0)"), .Erlang(body: sinBody), .Wasm(body: sinBody))]
 #[@Stage.Any]
 pub declare fn sin(x: f64) -> f64;
 
-#[external(.Node("Math.cos($0)"), .Erlang(body: cosBody), .Wasm(body: cosBody))]
+#[external(.JavaScript("Math.cos($0)"), .Erlang(body: cosBody), .Wasm(body: cosBody))]
 #[@Stage.Any]
 pub declare fn cos(x: f64) -> f64;
 
-#[external(.Node("Math.tan($0)"), .Erlang(body: tanBody), .Wasm(body: tanBody))]
+#[external(.JavaScript("Math.tan($0)"), .Erlang(body: tanBody), .Wasm(body: tanBody))]
 #[@Stage.Any]
 pub declare fn tan(x: f64) -> f64;
 
-#[external(.Node("Math.asin($0)"), .Erlang(body: asinBody), .Wasm(body: asinBody))]
+#[external(.JavaScript("Math.asin($0)"), .Erlang(body: asinBody), .Wasm(body: asinBody))]
 #[@Stage.Any]
 pub declare fn asin(x: f64) -> f64;
 
-#[external(.Node("Math.acos($0)"), .Erlang(body: acosBody), .Wasm(body: acosBody))]
+#[external(.JavaScript("Math.acos($0)"), .Erlang(body: acosBody), .Wasm(body: acosBody))]
 #[@Stage.Any]
 pub declare fn acos(x: f64) -> f64;
 
-#[external(.Node("Math.atan($0)"), .Erlang(body: atanBody), .Wasm(body: atanBody))]
+#[external(.JavaScript("Math.atan($0)"), .Erlang(body: atanBody), .Wasm(body: atanBody))]
 #[@Stage.Any]
 pub declare fn atan(x: f64) -> f64;
 
-#[external(.Node("Math.atan2($0, $1)"), .Erlang(body: atan2Body), .Wasm(body: atan2Body))]
+#[external(.JavaScript("Math.atan2($0, $1)"), .Erlang(body: atan2Body), .Wasm(body: atan2Body))]
 #[@Stage.Any]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
-#[external(.Node("Math.sinh($0)"), .Erlang(body: sinhBody), .Wasm(body: sinhBody))]
+#[external(.JavaScript("Math.sinh($0)"), .Erlang(body: sinhBody), .Wasm(body: sinhBody))]
 #[@Stage.Any]
 pub declare fn sinh(x: f64) -> f64;
 
-#[external(.Node("Math.cosh($0)"), .Erlang(body: coshBody), .Wasm(body: coshBody))]
+#[external(.JavaScript("Math.cosh($0)"), .Erlang(body: coshBody), .Wasm(body: coshBody))]
 #[@Stage.Any]
 pub declare fn cosh(x: f64) -> f64;
 
-#[external(.Node("Math.tanh($0)"), .Erlang(body: tanhBody), .Wasm(body: tanhBody))]
+#[external(.JavaScript("Math.tanh($0)"), .Erlang(body: tanhBody), .Wasm(body: tanhBody))]
 #[@Stage.Any]
 pub declare fn tanh(x: f64) -> f64;
 

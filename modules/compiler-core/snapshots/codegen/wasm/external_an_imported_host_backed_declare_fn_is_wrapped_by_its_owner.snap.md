@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- hostlib.bp
 ```botopink
-#[@external(.Node("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
+#[@external(.JavaScript("String($0)"), .Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))"""))]
 pub declare fn hostKey(v: i32) -> string;
 
-#[@external(.Node("$0.length"), .Erlang("erlang:length($0)"))]
+#[@external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
 pub declare fn hostLen(xs: Array<string>) -> i32;
 
-#[@external(.Node("console.log($0)"))]
+#[@external(.JavaScript("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;
 ```
 

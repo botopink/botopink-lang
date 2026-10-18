@@ -21,7 +21,7 @@ type Echo(word: string) {
 }
 
 #[@external(
-    .Node("({ greet: function (who) { return 'hi, ' + who; } })"),
+    .JavaScript("({ greet: function (who) { return 'hi, ' + who; } })"),
     .Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}"),
 )]
 declare fn makeGreeter() -> Greeter;

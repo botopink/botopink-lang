@@ -4,10 +4,10 @@
 
 // wasm refuses this suite on a host binding: `biggest` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
-#[@external(.Node("Math.max($args)"), .Erlang("erlang:max($args)"))]
+#[@external(.JavaScript("Math.max($args)"), .Erlang("erlang:max($args)"))]
 declare fn biggest(a: i32, b: i32) -> i32;
 
-#[@external(.Node("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
+#[@external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
 declare fn smallest(a: i32, b: i32) -> i32;
 
 test "§8 $args expands to the declared parameter list" {

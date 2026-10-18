@@ -13,12 +13,12 @@
 
 #[external(
     .Erlang("erlang:error({todo, $0})"),
-    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+    .JavaScript("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
 )]
 pub declare fn todo(message: string = "not implemented") -> noreturn;
 
 #[external(
     .Erlang("erlang:error({panic, $0})"),
-    .Node("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+    .JavaScript("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
 )]
 pub declare fn panic(message: string = "panic") -> noreturn;

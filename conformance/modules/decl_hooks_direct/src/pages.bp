@@ -40,7 +40,7 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-#[@external(.Node("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]
+#[@external(.JavaScript("""Promise.resolve("alice")"""), .Erlang("""<<"alice">>"""))]
 declare fn session() -> @Component<string>;
 
 #[graph]

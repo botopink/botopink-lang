@@ -4,7 +4,7 @@
 //// annotation on every target, not on a wasm build alone (decision 516).
 
 #[@external(
-    .Node("Math.abs($0)"),
+    .JavaScript("Math.abs($0)"),
     .Erlang("erlang:abs($0)"),
     .Wasm(body: absBody, needs: [.Threads]),
 )]

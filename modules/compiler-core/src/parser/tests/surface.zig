@@ -408,9 +408,9 @@ test "surface: $self in an External template is template-self-marker" {
 
 test "surface: a marker past the declared parameters is template-marker-out-of-range" {
     try expectError(
-        \\#[@external(.Node("f($0, $1)"))]
+        \\#[@external(.JavaScript("f($0, $1)"))]
         \\declare fn one(x: i32) -> i32;
-    , .templateMarkerOutOfRange, 1, 19);
+    , .templateMarkerOutOfRange, 1, 25);
 }
 
 test "surface: $stringify in an External template is template-stringify-marker (decision 239)" {

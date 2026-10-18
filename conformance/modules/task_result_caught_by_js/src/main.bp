@@ -28,12 +28,12 @@ fn propagate(n: i32) -> @Task<@Result<i32, string>> {
 }
 
 #[@external(
-    .Node("""(async (__f, __n) => { try { return 'resolved ' + (await __f(__n)); } catch (__e) { return 'caught ' + __e; } })($0, $1)"""),
+    .JavaScript("""(async (__f, __n) => { try { return 'resolved ' + (await __f(__n)); } catch (__e) { return 'caught ' + __e; } })($0, $1)"""),
 )]
 declare fn callFromJs(f: fn(n: i32) -> @Task<@Result<i32, string>>, n: i32) -> @Task<string>;
 
 #[@external(
-    .Node("""(async (__t) => { try { return 'resolved ' + (await __t); } catch (__e) { return 'caught ' + __e; } })($0)"""),
+    .JavaScript("""(async (__t) => { try { return 'resolved ' + (await __t); } catch (__e) { return 'caught ' + __e; } })($0)"""),
 )]
 declare fn awaitFromJs(t: @Task<@Result<i32, string>>) -> @Task<string>;
 

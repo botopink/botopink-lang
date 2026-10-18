@@ -1,5 +1,5 @@
 #[@external(
-    .Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)"""),
+    .JavaScript("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)"""),
     .Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)"""),
     .Wasm(std: "hash.contentHash"),
 )]

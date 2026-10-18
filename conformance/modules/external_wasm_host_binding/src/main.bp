@@ -6,7 +6,7 @@
 //// browser host's. Every target prints the same.
 
 #[@external(
-    .Node("Math.floor($0)"),
+    .JavaScript("Math.floor($0)"),
     .Erlang("math:floor($0)"),
     .Wasm(op: "f64.floor", host: .Wasi),
     .Wasm(body: floorBody, host: .Browser),

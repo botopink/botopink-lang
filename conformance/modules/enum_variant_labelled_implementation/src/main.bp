@@ -11,7 +11,7 @@ fn floorOp(syntax decl: unknown) {
 }
 
 #[floorOp]
-#[@external(.Erlang("math:floor($0)"), .Node("Math.floor($0)"))]
+#[@external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
 declare fn floor(x: f64) -> f64;
 
 pub fn main() {

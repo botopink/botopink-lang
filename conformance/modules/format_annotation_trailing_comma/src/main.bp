@@ -4,7 +4,7 @@
 
 #[@external(
     .Erlang("lists:reverse($0)"),
-    .Node("[...$0].reverse()"),
+    .JavaScript("[...$0].reverse()"),
     .Wasm(body: reverseBody),
 )]
 declare fn backwards(xs: i32[]) -> i32[];

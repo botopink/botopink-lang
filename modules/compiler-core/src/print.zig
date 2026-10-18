@@ -398,7 +398,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .retiredAnnotationBlock => .{
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",
-            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.Node(\"f($0)\"))]`.",
+            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@external(.JavaScript(\"f($0)\"))]`.",
         },
         .removedKeywordRecord => .{
             .code = "removed-keyword-record",
@@ -434,7 +434,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "removed-delegate",
             .message = "`val x = declare fn(…)` does not exist (decision 575 (6))",
             .caretCaption = "declare the function by its name",
-            .hint = "A host function is a named `declare fn` its annotation implements: `#[@external(.Node(\"…\"))] declare fn log(message: string);`. A function type is written `fn(message: string)`.",
+            .hint = "A host function is a named `declare fn` its annotation implements: `#[@external(.JavaScript(\"…\"))] declare fn log(message: string);`. A function type is written `fn(message: string)`.",
         },
         .removedLoopParenthesised => .{
             .code = "removed-loop-parenthesised",

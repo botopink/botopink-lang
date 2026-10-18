@@ -16,7 +16,7 @@
           {
             "name": "external",
             "args": [
-              ".Node(\"reverse\")",
+              ".JavaScript(\"reverse\")",
               ".Erlang(\"lists:reverse($0)\")"
             ],
             "is_builtin": true

@@ -3,7 +3,7 @@
 //// other; the second is refused at its annotation.
 
 #[@external(
-    .Node("Math.floor($0)"),
+    .JavaScript("Math.floor($0)"),
     .Wasm(op: "f64.floor", host: .Wasi),
     .Wasm(op: "f64.ceil", host: .Wasi),
 )]

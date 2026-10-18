@@ -1,4 +1,4 @@
-#[@external(.Node(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {

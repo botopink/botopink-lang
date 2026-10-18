@@ -185,10 +185,10 @@ parameter as the source, an overridden labelled value dropped unevaluated and un
 Decision 305 (an annotation speaks botopink, 144 B-02) adds `modules/annotation_label_equals` (`keyed = true`
 on `@BeamMemory.Ets`, `annotation-label-equals` at the label, naming `keyed:`), `modules/external_fn_unbound`
 (a misspelt `fn: <name>` is the unbound-name error at the argument) and `modules/external_prefixed_fn_refused`
-(`.Node("fn:mixBody")` refused, naming `fn: mixBody`); its Conformance step adds
+(`.JavaScript("fn:mixBody")` refused, naming `fn: mixBody`); its Conformance step adds
 `modules/annotation_label_equals_decorator` (the same refusal on a decorator's `at = .confirm`),
 `modules/external_erlang_prefixed_fn_refused` (`.Erlang("fn:mixBody")`, the cell the erlang and beam
-targets read) and `modules/external_node_prefixed_op_refused` (`.Node("op:f64.floor")` names the wasm
+targets read) and `modules/external_node_prefixed_op_refused` (`.JavaScript("op:f64.floor")` names the wasm
 cell `#[@external(.Wasm(op: "f64.floor"))]`) — each red on B-02's parent, which ran the `=` label's program,
 refused `fn: mixBody` beside the prefixed string and passed `"op:f64.floor"` to node as host code.
 Decision 308 (a field key at run time, 144 B-16) adds `modules/field_key_runtime` (`Type.keys(Recipe)` exported
@@ -1096,7 +1096,7 @@ over unit variants, numbers, strings, payload variants with a wildcard, a litera
 behavior, called through a value of the behavior — commonJS, erlang and beam),
 `modules/behavior_method_result_chained` and `modules/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
-wasm trapped), `modules/external_template_escaped_quote` (a `\"` in an `.Node` template is a
+wasm trapped), `modules/external_template_escaped_quote` (a `\"` in an `.JavaScript` template is a
 quote of the JavaScript; `"targets"` without wasm), `modules/std_path_relative` (a std module calling an
 `Array` `default fn` — commonJS had no prototype method), `modules/if_value_float` (an `f64` value `if`
 outside an `f64` function — wasm refused the module, commonJS printed `0`) and

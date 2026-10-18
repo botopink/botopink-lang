@@ -121,7 +121,7 @@ codegen/
   `pub fn` is (decision 140): the importer's `require` destructures it by
   name, and read `undefined` before.
 - **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) are no
-  backend's by name (decision 575 (6)): the declarations' `.Node("__bp_print($args)")` cell lowers
+  backend's by name (decision 575 (6)): the declarations' `.JavaScript("__bp_print($args)")` cell lowers
   (the cell naming the helper is what `renderDispatch` hands to `buildPrintCall`, which adds the static
   print shapes; a template that names a prelude helper pulls it in, `renderTemplate`) to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
@@ -352,7 +352,7 @@ codegen/
   SIGNATURE**, not one that shares the botopink name: `Array.reverse` answers a
   reversed array and leaves the receiver alone (`lists:reverse/1` on erlang, a
   fresh array on wasm), and native `Array.prototype.reverse` reverses in place,
-  so while the annotation read `#[@external(.Node("reverse"))]` commonJS alone
+  so while the annotation read `#[@external(.JavaScript("reverse"))]` commonJS alone
   also reversed the receiver — a fold that read it again answered one thing
   there and another everywhere else, at exit 0. It names `toReversed`
   (ES2023, in node since 20; the floor is node 22 — std's `fs.glob` calls
@@ -368,12 +368,12 @@ codegen/
   host-less — every backend then reports the fn as unbound. Turning the
   lowercase spelling into a located parse error is a parser change and belongs
   to front 06; until then, the form is inert, not supported.
-- **Externals**: `#[@external(.Node("module", "symbol"))]` fns (`collectExternals`)
+- **Externals**: `#[@external(.JavaScript("module", "symbol"))]` fns (`collectExternals`)
   lower to `const { symbol: name } = require("module");` (a JS global such as
   `Math` is referenced directly). A symbol carrying `$` markers or
   `when($argc == N)` branches is a template rendered inline at each call site
   (`user_node_templates`); so is a 1-arg form without markers
-  (`#[@external(.Node("process.cwd()"))]`), a bare host expression rendered
+  (`#[@external(.JavaScript("process.cwd()"))]`), a bare host expression rendered
   verbatim — neither emits an import binding or a `require(…)`. A `pub`
   template fn is also emitted as a real function whose `$N` holes are its
   parameters (`buildTemplateWrapper`; an arity-branched one tests
@@ -461,7 +461,7 @@ codegen/
   (`selfPrimitive`): the prelude helper (`self.at(0)` on `Array` is
   `__bp_array_at(this, 0)`, `null` past the end — `Array.first` and
   `Array.unique` returned JavaScript's `undefined`) and the method's plain
-  `#[@external(.Node("<symbol>"))]` as its rename, read from the patched
+  `#[@external(.JavaScript("<symbol>"))]` as its rename, read from the patched
   behavior or the std prelude's behavior of the same name (`selfHostMember`:
   `self.length()` is the `length` PROPERTY — it was `self.length is not a
   function`). And a bare `Ok(v)` / `Error(e)` (`Err(e)`) with no variant or
@@ -535,7 +535,7 @@ codegen/
   on JS-global-backed primitives (`isJsGlobalNamespace(jsPrototypeOwner(name))`:
   `Array`/`String`/numeric/`Bool`), where they become statics on the existing
   global (`Array.range = function…`) — `const Array = {}` would shadow the
-  global. An associated fn carrying a template-form `#[@external(.Node("… $0 …"))]`
+  global. An associated fn carrying a template-form `#[@external(.JavaScript("… $0 …"))]`
   emits the template as its body: the prelude copy is not inferred, so an integer
   `/` in a body there would stay a float division (`Array.range` / `Array.repeat`
   use it; their bodies double an array on the other targets).
@@ -711,7 +711,7 @@ codegen/
   `modules/behavior_default_awaits`).
   A module that redeclares a primitive interface (`behavior Number { fn
   max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
-  declaration; a bodyless member without its own `.Node` takes the
+  declaration; a bodyless member without its own `.JavaScript` takes the
   prelude's (`prelude_iface_externals`), so `Number.prototype.max` is still
   patched.
 - **Builtin dispatch is for free calls**: `builtin_node_dispatch` (`print`,
@@ -723,7 +723,7 @@ codegen/
   `builtins.d.bp` did not parse at all. `codegen/tests/builtins.zig` pins that both parse.
   What the parseable file adds, measured when front 20 made it parse: on commonJS nothing
   observable (the free-call entries `print`/`println`/`debug` are read from the prelude like any other,
-  its behaviors carry no `.Node`, and `ambiguous_prim_renames` is the same set,
+  its behaviors carry no `.JavaScript`, and `ambiguous_prim_renames` is the same set,
   `at` and `contains`); on erlang the three `'__bp_print'([$args])` templates, which
   `builtinAnnotationNode` renders (and marks the `'__bp_print'/1` helper needed); on beam the same cell
   lowers through `lowerHostCall`, whose `'__bp_print'([$args])` template is the module's own helper
@@ -2941,7 +2941,7 @@ first three are now enforced by the model, not by discipline:
   listed since `01-compiler/05-wasm` step 1; what still traps does so by name
   (`unique` over records, `flatMap` over a function answering no array).
   `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
-  `toUpper` / `toLower` through `#[@external(.Node(…))]` — are not lowered: the
+  `toUpper` / `toLower` through `#[@external(.JavaScript(…))]` — are not lowered: the
   checker refuses a method the primitive's interface does not declare
   (`unknown-primitive-method`, pending 0203-a answered (b)).
   **string `at`** left it on 2026-09-21: it is the reader decision 63's
@@ -3739,7 +3739,7 @@ array parameter and the call passes one. commonJS lowers it as a rest
 parameter: `buildParam` sets `js.Param.rest` (`function total(label,
 ...values)`) and `buildExpr` writes a `variadicPacked` call back with the
 array's elements as its arguments (`unpackVariadic`), before any other call
-arm — so a host function bound by `#[@external(.Node(…))]` receives them one by
+arm — so a host function bound by `#[@external(.JavaScript(…))]` receives them one by
 one (`Math.max(3, 9, 4)`). The `.d.ts` writes `...values: T[]`
 (`typescript.zig` `params` / `delegate`, `TsParam.rest`).
 

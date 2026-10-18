@@ -17,7 +17,7 @@
             "name": "external",
             "args": [
               ".Erlang(\"lists:search($0, $1)\", inline: true)",
-              ".Node(\"./gleam_stdlib.mjs\", \"index_of\")"
+              ".JavaScript(\"./gleam_stdlib.mjs\", \"index_of\")"
             ],
             "is_builtin": true
           }

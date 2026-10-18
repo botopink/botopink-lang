@@ -5,7 +5,7 @@
 //// refuses. Not scheduled on wasm: no host binding there.
 
 #[@external(
-    .Node("""((s) => (s.match(new RegExp("q=\\"([^\\"]+)\\"", "g")) || []).length)($0)"""),
+    .JavaScript("""((s) => (s.match(new RegExp("q=\\"([^\\"]+)\\"", "g")) || []).length)($0)"""),
     .Erlang("""(fun(__B) -> case re:run(__B, "q=\\"([^\\"]+)\\"", [{capture, all_but_first, binary}, global]) of {match, __Ms} -> length(__Ms); _ -> 0 end end)($0)"""),
 )]
 declare fn quoted(text: string) -> i32;

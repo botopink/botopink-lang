@@ -1,7 +1,7 @@
 //// Decision 575 (6) — an implementation takes the place of a body: on a
 //// function that has one it is refused at the annotation.
 
-#[@external(.Node("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
+#[@external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
 fn magnitude(x: f64) -> f64 {
     return x;
 }

@@ -29,7 +29,7 @@ import {failure};
 // base64url (no padding) of the raw HMAC-SHA256 of `data` under `key` —
 // the JWS HS256 signature (RFC 7515 §3) and a session-cookie MAC.
 #[external(
-    .Node("""require('crypto').createHmac('sha256', $0).update($1).digest('base64url')"""),
+    .JavaScript("""require('crypto').createHmac('sha256', $0).update($1).digest('base64url')"""),
     .Erlang("""base64:encode(crypto:mac(hmac, sha256, $0, $1), #{mode => urlsafe, padding => false})"""),
     .Wasm(body: hmacSha256Base64UrlBody),
 )]
@@ -39,7 +39,7 @@ pub declare fn hmacSha256Base64Url(key: string, data: string) -> string;
 // `Sec-WebSocket-Accept` value of RFC 6455 §1.3. SHA-1 is here for that
 // handshake only; it is not a signature primitive.
 #[external(
-    .Node("""require('crypto').createHash('sha1').update($0).digest('base64')"""),
+    .JavaScript("""require('crypto').createHash('sha1').update($0).digest('base64')"""),
     .Erlang("""base64:encode(crypto:hash(sha, $0))"""),
     .Wasm(body: sha1Base64Body),
 )]
@@ -47,7 +47,7 @@ pub declare fn sha1Base64(data: string) -> string;
 
 // base64url (no padding) of the raw SHA-256 of `data` — 43 characters.
 #[external(
-    .Node("""require('crypto').createHash('sha256').update($0).digest('base64url')"""),
+    .JavaScript("""require('crypto').createHash('sha256').update($0).digest('base64url')"""),
     .Erlang("""base64:encode(crypto:hash(sha256, $0), #{mode => urlsafe, padding => false})"""),
     .Wasm(body: sha256Base64UrlBody),
 )]
@@ -60,7 +60,7 @@ pub declare fn sha256Base64Url(data: string) -> string;
 // `crypto:hash_equals/2` both raise on a length mismatch, so each template
 // checks the byte length first (the length of a MAC is not secret).
 #[external(
-    .Node("""(() => { const __a = Buffer.from($0, 'utf8'); const __b = Buffer.from($1, 'utf8'); return __a.length === __b.length && require('crypto').timingSafeEqual(__a, __b) })()"""),
+    .JavaScript("""(() => { const __a = Buffer.from($0, 'utf8'); const __b = Buffer.from($1, 'utf8'); return __a.length === __b.length && require('crypto').timingSafeEqual(__a, __b) })()"""),
     .Erlang("""(fun(__A, __B) -> byte_size(__A) =:= byte_size(__B) andalso crypto:hash_equals(__A, __B) end)($0, $1)"""),
     .Wasm(body: equalsConstantTimeBody),
 )]
@@ -72,7 +72,7 @@ pub declare fn equalsConstantTime(a: string, b: string) -> bool;
 // Node: `crypto.pbkdf2Sync(password, salt, iterations, length, 'sha256')`.
 // Erlang: `crypto:pbkdf2_hmac(sha256, Password, Salt, Iterations, Length)`.
 #[external(
-    .Node("""require('crypto').pbkdf2Sync($0, $1, $2, $3, 'sha256').toString('base64url')"""),
+    .JavaScript("""require('crypto').pbkdf2Sync($0, $1, $2, $3, 'sha256').toString('base64url')"""),
     .Erlang("""base64:encode(crypto:pbkdf2_hmac(sha256, $0, $1, $2, $3), #{mode => urlsafe, padding => false})"""),
     .Wasm(body: pbkdf2DeriveBody),
 )]
@@ -216,21 +216,21 @@ test "hash.equalsConstantTime is false for a different value and never throws" {
 // ── hex digests (was `crypto`) ───────────────────────────────────────────────
 
 #[external(
-    .Node("""require('crypto').createHash('sha256').update($0).digest('hex')"""),
+    .JavaScript("""require('crypto').createHash('sha256').update($0).digest('hex')"""),
     .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])"""),
     .Wasm(body: sha256Body),
 )]
 pub declare fn sha256(data: string) -> string;
 
 #[external(
-    .Node("""require('crypto').createHash('sha512').update($0).digest('hex')"""),
+    .JavaScript("""require('crypto').createHash('sha512').update($0).digest('hex')"""),
     .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])"""),
     .Wasm(body: sha512Body),
 )]
 pub declare fn sha512(data: string) -> string;
 
 #[external(
-    .Node("""require('crypto').createHash('md5').update($0).digest('hex')"""),
+    .JavaScript("""require('crypto').createHash('md5').update($0).digest('hex')"""),
     .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])"""),
     .Wasm(body: md5Body),
 )]
@@ -241,7 +241,7 @@ pub declare fn md5(data: string) -> string;
 // `crypto.createHmac('sha256', key).update(data).digest('hex')` and
 // Erlang's `crypto:mac(hmac, sha256, key, data)`.
 #[external(
-    .Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')"""),
+    .JavaScript("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')"""),
     .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])"""),
     .Wasm(body: hmacSha256Body),
 )]
@@ -307,14 +307,14 @@ test "hash.hmacSha256 produces a 64-hex-char digest" {
 // decision 440): its `std:` cell is the one implementation both read.
 
 #[external(
-    .Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)"""),
+    .JavaScript("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)"""),
     .Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)"""),
     .Wasm(std: "hash.contentHash"),
 )]
 pub declare fn contentHash(value: string) -> string;
 
 #[external(
-    .Node("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)"""),
+    .JavaScript("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)"""),
     .Erlang("""binary:part(string:lowercase(binary:encode_hex(crypto:hash(sha256, $0))), 0, 32)"""),
     .Wasm(body: strongHashBody),
 )]

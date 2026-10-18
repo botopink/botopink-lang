@@ -3,7 +3,7 @@
 //// `"fn:mixBody"` binds nothing. It is refused at the argument on every
 //// target, naming the labelled form.
 
-#[@external(.Node(body: mixBody), .Erlang("fn:mixBody"), .Wasm(body: mixBody))]
+#[@external(.JavaScript(body: mixBody), .Erlang("fn:mixBody"), .Wasm(body: mixBody))]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {

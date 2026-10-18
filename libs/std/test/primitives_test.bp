@@ -606,7 +606,7 @@ test "string parseFloat rounds to the nearest f64 and refuses an overflow" {
 // erlang's characters are the same count.
 
 #[@external(
-    .Node("""String.fromCodePoint($0)"""),
+    .JavaScript("""String.fromCodePoint($0)"""),
     .Erlang("""unicode:characters_to_binary([$0])"""),
 )]
 declare fn codepointText(cp: i32) -> string;

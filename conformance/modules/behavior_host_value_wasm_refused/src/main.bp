@@ -11,7 +11,7 @@ behavior Greeter {
 }
 
 #[@external(
-    .Node("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
+    .JavaScript("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
     .Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}"),
 )]
 declare fn makeGreeter(tag: string) -> Greeter;

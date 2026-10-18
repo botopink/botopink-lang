@@ -395,7 +395,7 @@ test "parser: annotation ---- interface shorthand" {
 
 test "parser: annotation block ---- hash bracket builtin" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("string:length($0)"), .Node("./gleam_stdlib.mjs", "string_length"))]
+        \\#[@external(.Erlang("string:length($0)"), .JavaScript("./gleam_stdlib.mjs", "string_length"))]
         \\pub declare fn length(s: string) -> i32;
     );
 }
@@ -568,7 +568,7 @@ test "parser: interface with default method and external declare member" {
         \\    default fn isEmpty(self: Self) -> bool {
         \\        return self.length == 0;
         \\    }
-        \\    #[@external(.Erlang("lists:reverse($0)"), .Node("./bp_stdlib.mjs", "list_reverse"))]
+        \\    #[@external(.Erlang("lists:reverse($0)"), .JavaScript("./bp_stdlib.mjs", "list_reverse"))]
         \\    declare fn reverse(self: Self) -> Array<T>;
         \\}
     );
@@ -578,7 +578,7 @@ test "parser: interface with default method and external declare member" {
 
 test "parser: external ---- qualified enum target and call template" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("lists:zip($1, $0)"), .Node("./gleam_stdlib.mjs", "zip"))]
+        \\#[@external(.Erlang("lists:zip($1, $0)"), .JavaScript("./gleam_stdlib.mjs", "zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
     );
 }
@@ -592,7 +592,7 @@ test "parser: external ---- keyword-argument form" {
 
 test "parser: external ---- node prototype shorthand (module omitted)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Node("reverse"), .Erlang("lists:reverse($0)"))]
+        \\#[@external(.JavaScript("reverse"), .Erlang("lists:reverse($0)"))]
         \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
     );
 }
@@ -603,7 +603,7 @@ test "parser: external ---- node prototype shorthand (module omitted)" {
 // variant becomes a separate decorator sig keyed `"External.<Variant>"`.
 test "parser: external ---- qualified enum variant with inline: true flag" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("lists:search($0, $1)", inline: true), .Node("./gleam_stdlib.mjs", "index_of"))]
+        \\#[@external(.Erlang("lists:search($0, $1)", inline: true), .JavaScript("./gleam_stdlib.mjs", "index_of"))]
         \\pub declare fn indexOf(xs: Array<i32>, item: i32) -> i32;
     );
 }
@@ -613,7 +613,7 @@ test "parser: external ---- qualified enum variant with inline: true flag" {
 test "ast: externalFor reads a declaration's implementations" {
     const alloc = std.testing.allocator;
     const src =
-        \\#[@external(.Erlang("lists:zip($1, $0)"), .Node("zip"))]
+        \\#[@external(.Erlang("lists:zip($1, $0)"), .JavaScript("zip"))]
         \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
         \\#[@external(.Erlang("lists:reverse($0)"))]
         \\pub declare fn rev(xs: Array<i32>) -> Array<i32>;
@@ -715,7 +715,7 @@ test "parser: enum variant field default" {
 
 test "parser: fn-decl param default + External.<Target> annotation" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Erlang("erlang:error({todo, $0})"), .Node("(() => { throw new Error($0) })()"))]
+        \\#[@external(.Erlang("erlang:error({todo, $0})"), .JavaScript("(() => { throw new Error($0) })()"))]
         \\fn todo(message: string = "not implemented") -> bool {
         \\    return true;
         \\}
@@ -1018,7 +1018,7 @@ test "parser: an unlabelled annotation argument has no label" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("#[@external(.Node(\"charAt\"))]\npub declare fn f(s: string) -> string;");
+    var lx = Lexer.init("#[@external(.JavaScript(\"charAt\"))]\npub declare fn f(s: string) -> string;");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
@@ -1044,7 +1044,7 @@ test "parser: declare fn ---- unannotated with a discard param and a generic ret
 
 test "parser: declare fn ---- annotated with a discard param" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@external(.Node("f"))]
+        \\#[@external(.JavaScript("f"))]
         \\pub declare fn f(_: i32, _: string) -> i32;
     );
 }

@@ -4,7 +4,7 @@
 //// refused on erlang, beam and commonJS too, whose own bindings would run
 //// it. Only a wasm build read the binding before.
 
-#[@external(.Node("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(wasi: .RandomF64))]
+#[@external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(wasi: .RandomF64))]
 pub declare fn draw(seed: i32) -> f64;
 
 pub fn main() {

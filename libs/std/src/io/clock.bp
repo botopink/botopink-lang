@@ -50,7 +50,7 @@
 // Internal: read the host's current millisecond clock. The `unit`
 // argument is `1000` for millis; Node `Date.now` ignores it, Erlang
 // `erlang:system_time/1` uses it as the divisor selector.
-#[external(.Node("Date.now($0)"), .Erlang("erlang:system_time($0)"))]
+#[external(.JavaScript("Date.now($0)"), .Erlang("erlang:system_time($0)"))]
 declare fn systemTimeWithUnit(unit: i32) -> i64;
 
 // Milliseconds since the Unix epoch. Monotonic across reasonable clock
@@ -69,7 +69,7 @@ pub fn nowMillis() -> i64 {
 // renders inline at every call to `monotonicTimeWithUnit(N)`.
 // The answer is an `i64`: `performance.now()` is a fractional millisecond
 // count, truncated to its whole milliseconds (decision 319's canonical form).
-#[external(.Node("Math.floor(performance.now($0))"), .Erlang("erlang:monotonic_time($0)"))]
+#[external(.JavaScript("Math.floor(performance.now($0))"), .Erlang("erlang:monotonic_time($0)"))]
 declare fn monotonicTimeWithUnit(unit: i32) -> i64;
 
 // Monotonic milliseconds — the host's monotonic clock, suitable for
@@ -93,7 +93,7 @@ pub fn monotonicMillis() -> i64 {
 // Its domain is RFC 3339's (decision 497): past it the call aborts,
 // naming the value, on every target (`checkRfc3339Domain`).
 #[external(
-    .Node("""(new Date($0).toISOString())"""),
+    .JavaScript("""(new Date($0).toISOString())"""),
     .Erlang("""(fun(__M) -> list_to_binary(calendar:system_time_to_rfc3339((__M - (((__M rem 1000) + 1000) rem 1000)) div 1000, [{unit, second}, {offset, "Z"}])) end)($0)"""),
 )]
 declare fn formatIso8601Host(epochMillis: i64) -> string;
@@ -179,7 +179,7 @@ import {failure, failure.HostError};
 // Both run under `result: true` (decisions 431, 490); `parseIso8601` makes
 // the host's raise `ClockError.NotRfc3339` (decision 486).
 #[external(
-    .Node("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; if (Number.isNaN(__t)) throw new Error('not an RFC 3339 timestamp'); return __t })()""", result: true),
+    .JavaScript("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; if (Number.isNaN(__t)) throw new Error('not an RFC 3339 timestamp'); return __t })()""", result: true),
     .Erlang("""calendar:rfc3339_to_system_time(binary_to_list($0), [{unit, millisecond}])""", result: true),
 )]
 declare fn parseIso8601Host(s: string) -> @Result<i64, HostError>;
@@ -202,7 +202,7 @@ pub fn parseIso8601(s: string) -> @Result<i64, ClockError> {
 // Erlang: `calendar:system_time_to_universal_time/2` + `day_of_the_week/3`
 // (already Monday = 1).
 #[external(
-    .Node("""(() => { const __d = new Date($0); return { year: __d.getUTCFullYear(), month: __d.getUTCMonth() + 1, day: __d.getUTCDate(), hour: __d.getUTCHours(), minute: __d.getUTCMinutes(), second: __d.getUTCSeconds(), weekday: ((__d.getUTCDay() + 6) % 7) + 1 } })()"""),
+    .JavaScript("""(() => { const __d = new Date($0); return { year: __d.getUTCFullYear(), month: __d.getUTCMonth() + 1, day: __d.getUTCDate(), hour: __d.getUTCHours(), minute: __d.getUTCMinutes(), second: __d.getUTCSeconds(), weekday: ((__d.getUTCDay() + 6) % 7) + 1 } })()"""),
     .Erlang("""(fun(__M) -> {{__Y, __Mo, __D}, {__H, __Mi, __S}} = calendar:system_time_to_universal_time(__M, millisecond), #{year => __Y, month => __Mo, day => __D, hour => __H, minute => __Mi, second => __S, weekday => calendar:day_of_the_week(__Y, __Mo, __D)} end)($0)"""),
 )]
 declare fn toCivilHost(epochMillis: i64) -> Civil;
@@ -220,7 +220,7 @@ pub fn toCivil(epochMillis: i64) -> Civil {
 // earlier instant is read at 1902-01-01T00:00:00Z — the zone's offset there,
 // its local mean time in most zones.
 #[external(
-    .Node("""(0 - new Date($0).getTimezoneOffset())"""),
+    .JavaScript("""(0 - new Date($0).getTimezoneOffset())"""),
     .Erlang("""(fun(__M) -> __U = calendar:system_time_to_universal_time(erlang:max(__M, -2145916800000), millisecond), __L = calendar:universal_time_to_local_time(__U), (calendar:datetime_to_gregorian_seconds(__L) - calendar:datetime_to_gregorian_seconds(__U)) div 60 end)($0)"""),
 )]
 declare fn offsetMinutesHost(epochMillis: i64) -> i32;
@@ -349,7 +349,7 @@ pub fn parseDuration(text: string) -> @Result<i64, string> {
 // changes, so the wait always times out).
 // Erlang: `timer:sleep/1` — parks the calling process only.
 #[external(
-    .Node("""(Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number($0)), undefined)"""),
+    .JavaScript("""(Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number($0)), undefined)"""),
     .Erlang("""(fun(__T) -> timer:sleep(__T), undefined end)($0)"""),
 )]
 pub declare fn sleep(ms: i32) -> void;

@@ -4,7 +4,7 @@
 import {hash.contentHash, compiler} from "std";
 
 #[@external(
-    .Node("""("<" + $0 + ">")"""),
+    .JavaScript("""("<" + $0 + ">")"""),
     .Erlang("""<<"<", ($0)/binary, ">">>"""),
     .Wasm(body: wrapBody),
 )]

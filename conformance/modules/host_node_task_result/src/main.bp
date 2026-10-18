@@ -12,7 +12,7 @@
 import {failure, failure.HostError} from "std";
 
 #[@external(
-    .Node("""(($0 > 0) ? Promise.resolve($0 * 2) : Promise.reject('refused ' + $0))""", result: true),
+    .JavaScript("""(($0 > 0) ? Promise.resolve($0 * 2) : Promise.reject('refused ' + $0))""", result: true),
 )]
 declare fn hostDouble(n: i32) -> @Task<@Result<i32, HostError>>;
 

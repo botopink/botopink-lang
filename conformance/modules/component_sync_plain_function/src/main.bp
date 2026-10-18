@@ -15,7 +15,7 @@ import {context.RenderScope, context.Rendered} from "std";
 
 type Element(text: string) implement @Renderable
 
-#[@external(.Node("""($0 instanceof Promise)"""))]
+#[@external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
 fn loadComments() -> @Task<string> {

@@ -7,7 +7,7 @@
 //// dispatch table and does not. It is refused at the annotation, naming the
 //// variant that declares the flag.
 
-#[@external(.Node("Math.max($args)", inline: true))]
+#[@external(.JavaScript("Math.max($args)", inline: true))]
 declare fn biggest(a: i32, b: i32) -> i32;
 
 pub fn main() {

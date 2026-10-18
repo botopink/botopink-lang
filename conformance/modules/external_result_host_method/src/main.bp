@@ -11,13 +11,13 @@ import {failure, failure.HostError} from "std";
 
 type Meter(base: i32) {
     #[@external(
-        .Node("""(($1 >= 0) ? $0.base + $1 : (() => { throw new Error("negative"); })())""", result: true),
+        .JavaScript("""(($1 >= 0) ? $0.base + $1 : (() => { throw new Error("negative"); })())""", result: true),
         .Erlang("""(case $1 >= 0 of true -> element(2, $0) + $1; false -> erlang:error(negative) end)""", result: true),
     )]
     declare fn plus(self: Self, n: i32) -> @Result<i32, HostError>;
 
     #[@external(
-        .Node("""(($1 > 0) ? Promise.resolve($0.base * $1) : Promise.reject(new Error("late")))""", result: true),
+        .JavaScript("""(($1 > 0) ? Promise.resolve($0.base * $1) : Promise.reject(new Error("late")))""", result: true),
         .Erlang("""(case $1 > 0 of true -> element(2, $0) * $1; false -> erlang:error(late) end)""", result: true),
     )]
     declare fn later(self: Self, n: i32) -> @Task<@Result<i32, HostError>>;

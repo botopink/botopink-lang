@@ -17,13 +17,13 @@
 // wasm refuses this suite on a host binding: `mark` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[@external(
-    .Node("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)"),
+    .JavaScript("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)"),
     .Erlang("(begin erlang:put(bp_marks, (case erlang:get(bp_marks) of undefined -> []; L -> L end) ++ [$0]), erlang:length(erlang:get(bp_marks)) end)"),
 )]
 declare fn mark(tag: string) -> i32;
 
 #[@external(
-    .Node("((globalThis.__bpMarks || []).join(','))"),
+    .JavaScript("((globalThis.__bpMarks || []).join(','))"),
     .Erlang("(iolist_to_binary(lists:join($,, case erlang:get(bp_marks) of undefined -> []; L -> L end)))"),
 )]
 declare fn marks() -> string;

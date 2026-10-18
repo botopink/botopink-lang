@@ -80,7 +80,7 @@ test "effect-annotation-removed — each of the six, located on the name" {
 test "effect-annotation-removed — on a declare fn, a behavior method and a type method" {
     try expectKind(
         \\#[@future]
-        \\#[@external(.Node("fetch($0)"))]
+        \\#[@external(.JavaScript("fetch($0)"))]
         \\pub declare fn fetch(url: string) -> @Task<i32>;
     , .effectAnnotationRemoved);
     try expectKind(
@@ -100,7 +100,7 @@ test "effect-annotation-removed — on a declare fn, a behavior method and a typ
 test "effect-annotation-removed — in a list with another annotation" {
     try expectKind(
         \\#[@result]
-        \\#[@external(.Node("x"))]
+        \\#[@external(.JavaScript("x"))]
         \\declare fn f() -> @Result<i32, string>;
     , .effectAnnotationRemoved);
 }

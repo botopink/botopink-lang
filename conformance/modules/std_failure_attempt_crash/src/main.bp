@@ -11,7 +11,7 @@ import {failure, failure.Failure} from "std";
 
 type Shape { Dot, Circle(r: i32) }
 
-#[@external(.Node("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
+#[@external(.JavaScript("""({ tag: "Square" })"""), .Erlang("erlang:binary_to_atom($0)"))]
 declare fn shapeNamed(name: string) -> Shape;
 
 fn area(s: Shape) -> i32 {

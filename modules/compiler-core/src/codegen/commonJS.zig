@@ -1784,7 +1784,7 @@ const Emitter = struct {
     /// `assert`'s `<file>:<line>` names; `<module>.bp` when the driver gave
     /// none (the snapshot harness).
     src_file: []const u8 = "main.bp",
-    /// Implemented fns with no `.Node` implementation — calling one is an error.
+    /// Implemented fns with no `.JavaScript` implementation — calling one is an error.
     externals_missing: std.StringHashMap(void),
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
@@ -1833,7 +1833,7 @@ const Emitter = struct {
     /// Enums this module imports by name (`import {Shape} from "shapes"`):
     /// their methods take the receiver first too, in the owner module.
     imported_enums: std.StringHashMap(void),
-    /// `Iface.method` → its `.Node(…)` implementation in the std prelude
+    /// `Iface.method` → its `.JavaScript(…)` implementation in the std prelude
     /// (`primitives.bp`), for every prelude interface method that carries one.
     /// A module that redeclares a primitive interface (`interface Number { fn
     /// max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
@@ -2074,7 +2074,7 @@ const Emitter = struct {
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
     /// erlang's: the top-level fns of the std prelude (`builtins.d.bp`,
     /// `primitives.bp`, parsed once per process, `prelude_cache`) with a
-    /// `.Node(…)` implementation, indexed by callee name.
+    /// `.JavaScript(…)` implementation, indexed by callee name.
     ///
     /// The arity-branched entries (`panic`/`todo`) are registered inline
     /// first; the prelude then adds the rest and skips a name already
@@ -2085,7 +2085,7 @@ const Emitter = struct {
         try self.scanPreludeImplementations(prelude_cache.primitives());
     }
 
-    /// Registers `program`'s (a std prelude file's) `.Node` implementations:
+    /// Registers `program`'s (a std prelude file's) `.JavaScript` implementations:
     /// a top-level fn's in `builtin_node_dispatch`, a behavior member's in
     /// `prelude_iface_externals` (and an associated template's in
     /// `prelude_assoc_templates`).
@@ -2133,7 +2133,7 @@ const Emitter = struct {
             .{ .argc = 1, .template = "(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()" },
         });
         // `print` / `println` / `debug` are no backend's by name (decision
-        // 575 (6)): their `.Node` implementations, read from the prelude.
+        // 575 (6)): their `.JavaScript` implementations, read from the prelude.
     }
 
     fn putInlineBuiltin(self: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
@@ -2153,7 +2153,7 @@ const Emitter = struct {
 
     /// §A4: build the type-naive prim-method rename map from interface
     /// implementations. For each interface method whose bare-symbol
-    /// `.Node("X")` implementation names an `X` that differs from the
+    /// `.JavaScript("X")` implementation names an `X` that differs from the
     /// method name, register `name → X` — UNLESS a record/struct in the program
     /// declares a method with the same name (a collision would silently rename
     /// the record call, e.g. `Set.contains` → `Set.includes`). The per-loc
@@ -2197,7 +2197,7 @@ const Emitter = struct {
         }
     }
 
-    /// Indexes every implemented fn by name: with a `.Node` implementation it
+    /// Indexes every implemented fn by name: with a `.JavaScript` implementation it
     /// goes to `user_node_templates` (rendered at each call site); without
     /// one it goes to `externals_missing` (so a call can fail with a clear
     /// error instead of an undefined identifier).
@@ -3579,7 +3579,7 @@ const Emitter = struct {
         }
     }
 
-    /// The std prelude's `.Node` implementation of `iface.method`, if any.
+    /// The std prelude's `.JavaScript` implementation of `iface.method`, if any.
     fn preludeIfaceExternal(self: *Emitter, iface: []const u8, method: []const u8) !?[]const u8 {
         const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface, method });
         return self.prelude_iface_externals.get(key);
@@ -6784,7 +6784,7 @@ const Emitter = struct {
     }
 
     /// The host member a call on `self` reaches in a prototype patch: the
-    /// plain `.Node("<symbol>")` of the behavior's own method — what
+    /// plain `.JavaScript("<symbol>")` of the behavior's own method — what
     /// inference's per-loc rename answers for the same call on a typed
     /// receiver (`length` is then the property, `buildCallRaw`). Null for a
     /// template or a method with no node binding.
@@ -6888,7 +6888,7 @@ const Emitter = struct {
     fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         if (try self.paramShapeToString(cc)) |text| return text;
-        // builtin_node_dispatch: a prelude `declare fn` with a `.Node`
+        // builtin_node_dispatch: a prelude `declare fn` with a `.JavaScript`
         // implementation (`primitives.bp`, `builtins.d.bp`). Those are free functions: their templates have
         // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.

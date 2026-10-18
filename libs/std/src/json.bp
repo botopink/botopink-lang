@@ -35,7 +35,7 @@ import {failure, failure.HostError, failure.HostErrorName};
 // this cell would be a body calling a cell with no wasm binding, which wasm
 // refuses for the whole module — `json.quote` would stop importing there.
 #[external(
-    .Node("""JSON.stringify(JSON.parse($0))""", result: true),
+    .JavaScript("""JSON.stringify(JSON.parse($0))""", result: true),
     .Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true),
 )]
 pub declare fn parse(s: string) -> @Result<string, HostError>;
@@ -45,7 +45,7 @@ pub declare fn parse(s: string) -> @Result<string, HostError>;
 // the surface matches the spec's eventual `parse -> JsonValue` +
 // `stringify(JsonValue) -> string` split.
 #[external(
-    .Node("""JSON.stringify(JSON.parse($0))""", result: true),
+    .JavaScript("""JSON.stringify(JSON.parse($0))""", result: true),
     .Erlang("""iolist_to_binary(json:encode(json:decode($0)))""", result: true),
 )]
 pub declare fn stringify(s: string) -> @Result<string, HostError>;
@@ -65,7 +65,7 @@ pub declare fn stringify(s: string) -> @Result<string, HostError>;
 // Erlang: a byte walk — `json:encode/1` writes `\u001F` in UPPERCASE hex, so
 // the two targets would disagree; bytes of U+0080 and above pass through.
 #[external(
-    .Node("""JSON.stringify(String($0))"""),
+    .JavaScript("""JSON.stringify(String($0))"""),
     .Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)"""),
     .Wasm(body: quoteBody),
 )]
@@ -75,7 +75,7 @@ pub declare fn quote(s: string) -> string;
 // whitespace allowed) and answer its text. Anything else — a bare word, a
 // number, a missing quote, trailing text — is an `Error`.
 #[external(
-    .Node("""(() => { const __v = JSON.parse(String($0)); if (typeof __v !== 'string') throw new Error('json.unquote: not a JSON string literal'); return __v })()""", result: true),
+    .JavaScript("""(() => { const __v = JSON.parse(String($0)); if (typeof __v !== 'string') throw new Error('json.unquote: not a JSON string literal'); return __v })()""", result: true),
     .Erlang("""(fun(__S) -> case json:decode(__S) of __V when is_binary(__V) -> __V; _ -> erlang:error(<<"json.unquote: not a JSON string literal">>) end end)($0)""", result: true),
     .Wasm(body: unquoteBody),
 )]
@@ -98,7 +98,7 @@ pub fn object(fields: Array<#(string, string)>) -> string {
 // Internal: the UTF-8 text of one code point. The tests build every
 // non-ASCII string with it (see `cp`), and `decode` writes `\u` escapes.
 #[external(
-    .Node("""String.fromCodePoint($0)"""),
+    .JavaScript("""String.fromCodePoint($0)"""),
     .Erlang("""unicode:characters_to_binary([$0])"""),
     .Wasm(body: codepointTextBody),
 )]
@@ -223,14 +223,14 @@ pub fn decode(s: string) -> @Result<Json, string> {
 // imports `json` from "std" does not load that prelude — `s.chars is not a
 // function` (measured by `validation`'s tests under `zig build test-libs`).
 #[external(
-    .Node("""Array.from($0, (__c) => __c.codePointAt(0))"""),
+    .JavaScript("""Array.from($0, (__c) => __c.codePointAt(0))"""),
     .Erlang("""unicode:characters_to_list($0, utf8)"""),
     .Wasm(body: codePointsOfBody),
 )]
 declare fn codePointsOf(s: string) -> Array<i32>;
 
 #[external(
-    .Node("""Array.from($0)"""),
+    .JavaScript("""Array.from($0)"""),
     .Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"""),
     .Wasm(body: textsOfBody),
 )]

@@ -465,7 +465,7 @@ fn writeOutputs(
     }
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every
-    // `#[@external(.Node(…))]` `require("…/x.mjs")` — including a dependency's, whose
+    // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — including a dependency's, whose
     // emitted module sits a directory deeper than in its own build.
     if (target == .commonJS) {
         try libs.shipMjsSidecars(gpa, io, outputs, packages, out_dir, ext, env_map);

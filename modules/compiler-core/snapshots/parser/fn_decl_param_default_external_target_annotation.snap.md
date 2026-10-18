@@ -17,7 +17,7 @@
             "name": "external",
             "args": [
               ".Erlang(\"erlang:error({todo, $0})\")",
-              ".Node(\"(() => { throw new Error($0) })()\")"
+              ".JavaScript(\"(() => { throw new Error($0) })()\")"
             ],
             "is_builtin": true
           }

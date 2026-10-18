@@ -12,7 +12,7 @@
 
 import {testing.asserts} from "std";
 
-#[@external(.Node("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+#[@external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn raiseBoom() -> i32;
 
 fn label(n: i32) -> string {

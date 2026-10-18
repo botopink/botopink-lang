@@ -1,5 +1,5 @@
 #[@external(
-    .Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
+    .JavaScript("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm("wasi:delay"),
 )]

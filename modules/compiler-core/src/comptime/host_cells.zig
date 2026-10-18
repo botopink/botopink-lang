@@ -28,7 +28,7 @@
 //!   program.
 //!   `.Erlang` never runs at build: the cell binds the erlang and
 //!   beam targets only, and nothing in botopink calls beam-to-wasm (452).
-//!   `.Node` never serves: there is no Node at comptime.
+//!   `.JavaScript` never serves: there is no Node at comptime.
 //!
 //! What a decorator may call is decided when its package is compiled
 //! (`checkDecorators`, decisions 341, 434, 452): a host function it reaches
@@ -626,7 +626,7 @@ fn paramNamed(f: ast.FnDecl, name: []const u8) bool {
 }
 
 fn located(msg: []const u8, loc: ast.Loc) validation.TypeError {
-    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decisions 434, 452): give it an `.Wasm(std: \"…\")` cell (std-wasm) or an `.Wasm(body: …)` cell naming a botopink body. An `.Erlang` cell never runs at build. `.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
+    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decisions 434, 452): give it an `.Wasm(std: \"…\")` cell (std-wasm) or an `.Wasm(body: …)` cell naming a botopink body. An `.Erlang` cell never runs at build. `.JavaScript` never serves a decorator: there is no Node at comptime.").withLoc(loc);
 }
 
 /// The std function `name` (carried) and every one it reaches: the reason

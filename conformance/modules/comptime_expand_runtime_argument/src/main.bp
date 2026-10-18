@@ -3,7 +3,7 @@
 //// passed to it is `comptime-arg-not-known` at the variable (417).
 
 #[@external(
-    .Node("""console.log($0)"""),
+    .JavaScript("""console.log($0)"""),
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]

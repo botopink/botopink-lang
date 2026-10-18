@@ -20,17 +20,17 @@ type View(text: string, kids: @Component<View>[]) implement @Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-#[@external(.Node("""($0)()"""), .Erlang("""($0)()"""))]
+#[@external(.JavaScript("""($0)()"""), .Erlang("""($0)()"""))]
 declare fn hostNow(f: fn() -> @Task<Rendered<View>>) -> @Task<Rendered<View>>;
 
 #[@external(
-    .Node("""(globalThis.__bpScopeStash = $0, undefined)"""),
+    .JavaScript("""(globalThis.__bpScopeStash = $0, undefined)"""),
     .Erlang("""persistent_term:put(bp_scope_stash, $0)"""),
 )]
 declare fn hostStash(f: fn() -> @Task<Rendered<View>>) -> void;
 
 #[@external(
-    .Node("""globalThis.__bpScopeStash"""),
+    .JavaScript("""globalThis.__bpScopeStash"""),
     .Erlang("""persistent_term:get(bp_scope_stash)"""),
 )]
 declare fn hostStashed() -> fn() -> @Task<Rendered<View>>;

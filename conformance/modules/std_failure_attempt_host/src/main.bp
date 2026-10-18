@@ -11,17 +11,17 @@
 
 import {failure, failure.Failure} from "std";
 
-#[@external(.Node("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+#[@external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn raiseError() -> i32;
 
-#[@external(.Node("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
+#[@external(.JavaScript("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
 declare fn raiseThrow() -> i32;
 
-#[@external(.Node("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
+#[@external(.JavaScript("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
 declare fn raiseExit() -> i32;
 
 #[@external(
-    .Node("""(() => { throw new Error("{bad_input,7}"); })()"""),
+    .JavaScript("""(() => { throw new Error("{bad_input,7}"); })()"""),
     .Erlang("""erlang:error({bad_input, $0})"""),
 )]
 declare fn raiseReason(n: i32) -> i32;

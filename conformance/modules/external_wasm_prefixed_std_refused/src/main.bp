@@ -1,5 +1,5 @@
 #[@external(
-    .Node("""String($0.length)"""),
+    .JavaScript("""String($0.length)"""),
     .Erlang("""integer_to_binary(string:length($0))"""),
     .Wasm("std:hash.contentHash"),
 )]

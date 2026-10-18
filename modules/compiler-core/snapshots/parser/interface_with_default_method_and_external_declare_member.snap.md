@@ -110,7 +110,7 @@
                 "name": "external",
                 "args": [
                   ".Erlang(\"lists:reverse($0)\")",
-                  ".Node(\"./bp_stdlib.mjs\", \"list_reverse\")"
+                  ".JavaScript(\"./bp_stdlib.mjs\", \"list_reverse\")"
                 ],
                 "is_builtin": true
               }

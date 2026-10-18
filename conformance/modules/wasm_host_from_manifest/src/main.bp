@@ -6,7 +6,7 @@
 //// and beam, which read no `"wasm"`, run it.
 
 #[@external(
-    .Node("Math.floor($0)"),
+    .JavaScript("Math.floor($0)"),
     .Erlang("math:floor($0)"),
     .Wasm(op: "f64.floor", host: .Wasi),
 )]

@@ -68,7 +68,7 @@ a `commonJS`-only cell reaches the erlang backend and is refused there each time
 `externals.zig` closes with the one test here that has no fixture of its own:
 **`no prelude template calls the method it patches`** lexes and parses the
 prelude the compiler EMBEDS (`@import("std_prelude").primitives`, not the file
-on disk) and fails on any behavior method whose `.Node(…)` template
+on disk) and fails on any behavior method whose `.JavaScript(…)` template
 calls the method it is about to become a `<Owner>.prototype.<m>` patch for.
 `String.charCodeAt` was exactly that, and it made every `.charCodeAt(…)` in any
 program that installed the `String` prelude — one `s.slice(…)` is enough — blow

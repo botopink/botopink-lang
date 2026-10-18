@@ -238,7 +238,7 @@ BP
 # bothbound: the same cell, given a node binding too — it builds on commonJS.
 mkaudit bothbound
 cat >"$AUDWORK/bothbound/src/cell.bp" <<'BP'
-#[@external(.Erlang("erlang:system_time()"), .Node("Date.now()"))]
+#[@external(.Erlang("erlang:system_time()"), .JavaScript("Date.now()"))]
 declare fn now() -> i64;
 
 pub fn stamp() -> i64 {

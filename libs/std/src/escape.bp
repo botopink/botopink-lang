@@ -78,7 +78,7 @@ pub fn scriptJson(json: string) -> string {
 
 // Internal: U+2028 LINE SEPARATOR, built on the host (see the module doc).
 #[external(
-    .Node("""String.fromCharCode(8232)"""),
+    .JavaScript("""String.fromCharCode(8232)"""),
     .Erlang("""<<226, 128, 168>>"""),
     .Wasm(body: lineSeparatorText),
 )]
@@ -86,7 +86,7 @@ declare fn lineSeparator() -> string;
 
 // Internal: U+2029 PARAGRAPH SEPARATOR, built on the host.
 #[external(
-    .Node("""String.fromCharCode(8233)"""),
+    .JavaScript("""String.fromCharCode(8233)"""),
     .Erlang("""<<226, 128, 169>>"""),
     .Wasm(body: paragraphSeparatorText),
 )]

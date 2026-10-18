@@ -17,7 +17,7 @@
             "name": "external",
             "args": [
               ".Erlang(\"lists:zip($1, $0)\")",
-              ".Node(\"./gleam_stdlib.mjs\", \"zip\")"
+              ".JavaScript(\"./gleam_stdlib.mjs\", \"zip\")"
             ],
             "is_builtin": true
           }

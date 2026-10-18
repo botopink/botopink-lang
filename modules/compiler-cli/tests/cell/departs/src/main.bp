@@ -1,7 +1,7 @@
 //// `magnitude` is bound for node and for the BEAM, not for wasm: three
 //// targets print, and wasm departs — it refuses the call, located.
 
-#[@external(.Node("""Math.abs($0)"""), .Erlang("erlang:abs($0)"))]
+#[@external(.JavaScript("""Math.abs($0)"""), .Erlang("erlang:abs($0)"))]
 declare fn magnitude(n: i32) -> i32;
 
 pub fn main() {

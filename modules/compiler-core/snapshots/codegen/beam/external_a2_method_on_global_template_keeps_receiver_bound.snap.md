@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .Node("JSON.stringify($0)"))]
+#[@external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .JavaScript("JSON.stringify($0)"))]
 declare fn stringify(value: i32) -> string;
 
 fn main() {

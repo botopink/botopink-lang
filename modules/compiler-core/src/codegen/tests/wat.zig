@@ -218,13 +218,13 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
         \\behavior String {
-        \\    #[@external(.Erlang("string:uppercase($0)"), .Node("toUpperCase"), .Wasm(body: shoutBody))]
+        \\    #[@external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(body: shoutBody))]
         \\    fn shout(self: Self) -> string;
-        \\    #[@external(.Erlang("($0 =:= $1)"), .Node("startsWith"), .Wasm(body: sameBody))]
+        \\    #[@external(.Erlang("($0 =:= $1)"), .JavaScript("startsWith"), .Wasm(body: sameBody))]
         \\    fn same(self: Self, other: string) -> bool;
-        \\    #[@external(.Erlang("$0"), .Node("at"), .Wasm(body: pickBody))]
+        \\    #[@external(.Erlang("$0"), .JavaScript("at"), .Wasm(body: pickBody))]
         \\    fn pick(self: Self, i: i32) -> ?string;
-        \\    #[@external(.Erlang("[$0, $0]"), .Node("split"), .Wasm(body: twiceBody))]
+        \\    #[@external(.Erlang("[$0, $0]"), .JavaScript("split"), .Wasm(body: twiceBody))]
         \\    fn twice(self: Self) -> string[];
         \\}
         \\fn shoutBody(s: string) -> string {
@@ -2602,21 +2602,21 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
 test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {
     const a = std.testing.allocator;
     try h.assertJsRefusedAt(a,
-        \\#[@external(.Node("String"), .Wasm(std: "hash.contentHash"))]
+        \\#[@external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digest(x: string) -> string;
         \\fn main() {
         \\    @print(digest("Point"));
         \\}
     , "a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@external(.Node("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
+        \\#[@external(.JavaScript("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
         \\declare fn floorOf(x: f64) -> f64;
         \\fn main() {
         \\    @print(floorOf(2.5));
         \\}
     , "std-wasm implements no `math.floorOf`", 1, 3);
     try h.assertStdModuleRefusedAt(a,
-        \\#[@external(.Node("String"), .Wasm(std: "hash.contentHash"))]
+        \\#[@external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digestOf(x: i32) -> string;
         \\fn main() {
         \\    @print(digestOf(7));

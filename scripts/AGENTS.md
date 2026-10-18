@@ -36,6 +36,7 @@ scripts/
 ├── codemod/
 │   ├── compiler_keyword.py      ← 144 B-136's migration (decisions 575 (4), (5), 576, 577, 578): `@Expr<T>` parameters → `comptime` / `expr`, `@Decl` → `expr d: unknown`, `x.text()` / `.fail` / the template model / a handle's reads and outputs → `compiler.*`, `@expr(v)` → `v`, `-> @Expr<T>` / `-> @ExprCustom<T>` → `-> T`, `type T` → `type<T>`, a bare `type` → `anytype`, a template's calls → `` name @`…` `` (§ below)
 │   ├── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
+│   ├── implementation_javascript.py ← decision 618's migration: `Implementation.JavaScript` → `JavaScript` — a source `.JavaScript(…)` → `.JavaScript(…)`, `Implementation.JavaScript` and a `.JavaScript` mention in prose or a cell's answer follow; a name ending in `Node` (`ast.Node`), the old `External.Node` and the word Node are left alone; `.bp`, `.zig`, `.md`, `.sh`, `.snap` and `.json` in place, `--check` lists each file and its count (`scripts/codemod/implementation_javascript.py libs conformance modules scripts`; the libraries rerun it over their own trees)
 │   └── syntax_modifier.py       ← decision 616's migration: the parameter modifier `expr` → `syntax` (`expr decl: unknown` → `syntax decl: unknown`, `expr ..xs: T[]` too); in prose `` `expr` `` / `` `expr decl` `` / `-> expr T` follow, the article agreeing; `.bp`, `.md`, `.sh` and `.snap` in place, a `.zig` file's modifier only; `--check` lists each file and its count (`scripts/codemod/syntax_modifier.py libs conformance modules`)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
@@ -194,7 +195,7 @@ reds `pub_val_across_modules` and `pub_val_in_a_test`; the `libs/` rows were
 added after std's `testing/snapshots.d.ts` named the undeclared prelude record
 `SourceLocation` (6 × `TS2304`) with no stage to see it — the six libraries
 cost ~1.5 s of the stage's ~12 s. A planted host template that is not
-JavaScript (`#[@external(.Node("($0 +* 1"))]`) reds its project with node's
+JavaScript (`#[@external(.JavaScript("($0 +* 1"))]`) reds its project with node's
 `SyntaxError` and the file. Since every cell has its own manifest (144 B-29 step H) the walk
 reaches the former single-file cells too: 474 projects and 854 modules, every one accepted.
 

@@ -1,6 +1,6 @@
 type Point(x: i32, y: i32)
 
-#[@external(.Node("({ x: 7, y: 9 })"), .Erlang("#{x => 7, y => 9}"))]
+#[@external(.JavaScript("({ x: 7, y: 9 })"), .Erlang("#{x => 7, y => 9}"))]
 declare fn hostPoint() -> Point;
 
 fn distance(p: Point) -> i32 {

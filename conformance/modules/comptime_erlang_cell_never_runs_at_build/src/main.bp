@@ -13,7 +13,7 @@
 import {compiler} from "std";
 
 #[@external(
-    .Node("""($0 + ":node")"""),
+    .JavaScript("""($0 + ":node")"""),
     .Erlang("""<<($0)/binary, ":erlang">>"""),
     .Wasm(body: tagBody),
 )]

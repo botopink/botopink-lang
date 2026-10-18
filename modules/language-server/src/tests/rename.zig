@@ -136,7 +136,7 @@ test "rename: edit ranges cover the old identifier, not the new name" {
 test "rename: renaming a private fn renames its `body:` binding cells" {
     const gpa = std.testing.allocator;
     const source =
-        \\#[@external(.Node(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+        \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
         \\pub declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
     ;

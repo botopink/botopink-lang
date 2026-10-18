@@ -9,10 +9,10 @@
 
 // wasm refuses this suite on a host binding: `hostMin` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
-#[@external(.Node("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
+#[@external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
 declare fn hostMin(a: i32, b: i32) -> i32;
 
-#[@external(.Node("console.log($0)"), .Erlang("io:put_chars($0)"))]
+#[@external(.JavaScript("console.log($0)"), .Erlang("io:put_chars($0)"))]
 declare fn hostWrite(s: string) -> void;
 
 test "a bodyless fn with a value return type binds its host" {

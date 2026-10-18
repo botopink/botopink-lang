@@ -2,7 +2,7 @@
 //// that are not UTF-8 (a lone 0xFF) answer their count, and UTF-8 text answers bytes, not characters.
 
 #[@external(
-    .Node("""Uint8Array.from([104, 255, 200])"""),
+    .JavaScript("""Uint8Array.from([104, 255, 200])"""),
     .Erlang("""<<104, 255, 200>>"""),
     .Wasm(body: rawBody),
 )]

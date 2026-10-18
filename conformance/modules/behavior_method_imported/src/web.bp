@@ -6,7 +6,7 @@ pub behavior Request {
 }
 
 #[@external(
-    .Node("({ header: function (n) { return 'h:' + n; } })"),
+    .JavaScript("({ header: function (n) { return 'h:' + n; } })"),
     .Erlang("#{header => fun(_S, N) -> iolist_to_binary([<<\"h:\">>, N]) end}"),
 )]
 pub declare fn hostRequest() -> Request;

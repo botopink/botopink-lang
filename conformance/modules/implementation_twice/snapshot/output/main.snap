@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: implementation-twice: `magnitude` is implemented twice for `.Node` — one implementation per target
+refused error: implementation-twice: `magnitude` is implemented twice for `.JavaScript` — one implementation per target
 at src/main.bp:5:3

@@ -12,7 +12,7 @@ import {host.fromHost};
 import {greet.Greeter, greet.Bob, greet.useIt};
 
 #[@external(
-    .Node("(() => ({ greet: () => 'host' }))()"),
+    .JavaScript("(() => ({ greet: () => 'host' }))()"),
     .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
 )]
 declare fn hostGreeter() -> Greeter;

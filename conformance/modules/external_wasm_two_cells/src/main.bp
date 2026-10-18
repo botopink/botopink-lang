@@ -2,7 +2,7 @@
 //// refused at the second, on every target.
 
 #[@external(
-    .Node("Math.floor($0)"),
+    .JavaScript("Math.floor($0)"),
     .Erlang("math:floor($0)"),
     .Wasm(op: "f64.floor", body: floorBody),
 )]

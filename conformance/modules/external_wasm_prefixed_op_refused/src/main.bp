@@ -1,4 +1,4 @@
-#[@external(.Node("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm("op:f64.floor"))]
+#[@external(.JavaScript("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm("op:f64.floor"))]
 pub declare fn floorOf(x: f64) -> f64;
 
 pub fn main() {

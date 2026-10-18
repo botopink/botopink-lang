@@ -687,7 +687,7 @@ printf 'import { greet } from "sidelib";\n\npub fn main() {\n    @print(greet())
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
 # Authored relative to the lib's own build output, like a library's `../../src/<lib>.mjs`.
-printf '#[@external(.Node("""require("../../src/side.mjs").greet()"""))]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
+printf '#[@external(.JavaScript("""require("../../src/side.mjs").greet()"""))]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
 printf 'export function greet() {\n    return "from the sidecar";\n}\n' >"$LIBROOT/sidelib/src/side.mjs"
 OUTDIR="$WORK/sidecar-build/out"; mkdir -p "$WORK/sidecar-build"
 set +e
@@ -1152,7 +1152,7 @@ else
 fi
 
 # ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
-# A `#[@external(.Node("""require("./x.mjs")…"""))]` lowers to a relative `require` in the
+# A `#[@external(.JavaScript("""require("./x.mjs")…"""))]` lowers to a relative `require` in the
 # emitted module, and the CLI copies the source `.mjs` next to it. The owner of
 # that file is the dependency the build RESOLVED — not the first directory of
 # that name across the library roots — and a sidecar that cannot be shipped is
@@ -1165,7 +1165,7 @@ sidecar_lib() { # <dir> <marker>
   cat >"$1/botopink.json" <<'JSON'
 { "name": "side", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"] }
 JSON
-  printf '#[@external(.Node("""require("./side.mjs").mark()"""))]\npub declare fn mark() -> string;\n' >"$1/src/root.bp"
+  printf '#[@external(.JavaScript("""require("./side.mjs").mark()"""))]\npub declare fn mark() -> string;\n' >"$1/src/root.bp"
   printf 'module.exports = { mark: () => "%s" };\n' "$2" >"$1/src/side.mjs"
 }
 sidecar_app() { # <dir> <dependency-json>
