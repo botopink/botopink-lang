@@ -23599,8 +23599,11 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     };
     {
         var tailTy: ?*T.Type = null;
-        for (func.kind.body, fnTyped.function.kind.body) |s, t| if (s.tail == .value) {
-            tailTy = t.expr.getType();
+        // The typed body may end with one statement the written one lacks (the
+        // bare `return` that discards a `;`-ended tail, decision 541): pair by
+        // index over the written statements.
+        for (func.kind.body, 0..) |s, k| if (s.tail == .value) {
+            tailTy = fnTyped.function.kind.body[k].expr.getType();
         };
         try refuseValueTailInVoid(env, "the executor", func.kind.body, tailTy);
     }
