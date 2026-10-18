@@ -2326,6 +2326,8 @@ fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) 
     wrapped.* = .{ .jump = .{ .loc = c.loc, .kind = .{ .await_ = inner } } };
     try env.indexRewrites.put(c.loc, wrapped);
     var out = typed;
+    env.renderedCallAt = c.loc;
+    env.renderedCallType = ty;
     out.call.type_ = ty.named.args[0];
     return out;
 }
@@ -9685,7 +9687,16 @@ fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Ty
     // module's functions build their inline parameter types, as the written
     // ones do (`inline_types.zig` ran before the code existed).
     const expansion = try inlineTypes.rewriteBuilt(env.arena, expansion_in, &env.fnDecls);
+    env.renderedCallAt = null;
     const typed = try inferExprTyped(env, expansion.*);
+    // Built code that is a component call, inside a component body, renders
+    // implicitly and is typed by its `R` (`inferComponentCall`); the bound
+    // compares the type as written, `@Component<R>`, with the answer.
+    const builtType: *T.Type = if (expansion.* == .call and typed == .call and env.renderedCallAt != null and
+        std.meta.eql(env.renderedCallAt.?, expansion.call.loc) and env.renderedCallType != null)
+        env.renderedCallType.?
+    else
+        typed.getType();
 
     // The expansion carries only the executable `code` half (the `ast` tree is
     // stored separately for tooling). Verify it against the declared bound for
@@ -9696,10 +9707,10 @@ fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Ty
         (std.mem.eql(u8, rDeref.named.name, ast.expr_type_name) or std.mem.eql(u8, rDeref.named.name, "CustomExpr")))
     {
         const bound = rDeref.named.args[0];
-        unifyUnlocated(env, bound, typed.getType()) catch |err| {
+        unifyUnlocated(env, bound, builtType) catch |err| {
             if (err != error.TypeError) return err;
             const want = try errorMod.typeLabelAlloc(env.arena, bound);
-            const got = try errorMod.typeLabelAlloc(env.arena, typed.getType());
+            const got = try errorMod.typeLabelAlloc(env.arena, builtType);
             const callee = if (built.callee.len > 0) built.callee else "the template";
             const at = built.at orelse loc;
             if (built.file) |file| if (built.at) |b| {

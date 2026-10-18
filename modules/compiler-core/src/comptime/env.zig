@@ -1667,6 +1667,11 @@ pub const Env = struct {
     /// The location of the call written as `await`'s operand: a component call
     /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
     awaitOperandLoc: ?ast.Loc = null,
+    /// The last call `inferComponentCall` rendered implicitly, with the
+    /// `@Component<R>` type it was written with: a template's built code that
+    /// is such a call meets its answer's bound as written (`finishExpansionBuilt`).
+    renderedCallAt: ?ast.Loc = null,
+    renderedCallType: ?*T.Type = null,
     /// Decision 110 — an imported type's `as` name → the declared name
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.

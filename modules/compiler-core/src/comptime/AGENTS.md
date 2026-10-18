@@ -429,7 +429,7 @@ like `code`, tree via `template.parseCustomNodeFromTree` into
 caller's env — the call's type is the built code's, decision 426 (1) —, unifies
 the template's `T` (`__Expr<T>` / `CustomExpr<T>` internally) bound with it (a free `T` takes the built
 type; `unknown` holds anything), and records it in `env.templateExpansions`;
-transform substitutes it and drops the template fns. A built type outside the
+transform substitutes it and drops the template fns. Built code that is a component call in a component body renders implicitly (`inferComponentCall`, typed by its `R`); the bound compares the `@Component<R>` as written (`Env.renderedCallType`), so `-> @Component<X>` holds it. A built type outside the
 bound is `template-build-outside-bound` at the template's `build`: the run
 replies which build it answered (`template_eval.numberBuilds` numbers each `compiler.build(q, src)` as the prelude's `q.build(src,
 i)`, the prelude's `build/3` records `i`, `Extras.build`), located there for a

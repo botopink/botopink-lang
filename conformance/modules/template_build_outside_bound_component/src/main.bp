@@ -1,0 +1,26 @@
+//// Decision 426 (2) — a template answering `Component<Styled>` refuses
+//// built code of a `Component<Other>` function: the bound compares the
+//// types as written (`template-build-outside-bound`).
+
+import {compiler, io.terminal.print} from "std";
+
+type Styled(text: string) implement Renderable
+
+type Other(text: string) implement Renderable
+
+fn mk() -> Component<Other> {
+    return Other(text: "other");
+}
+
+fn view(syntax q: string) -> Component<Styled> {
+    return compiler.build("mk()");
+}
+
+pub fn Page() -> Component<Styled> {
+    return view @`a`;
+}
+
+pub fn main() -> Task<void> {
+    val page = await Page();
+    print(page.text);
+}

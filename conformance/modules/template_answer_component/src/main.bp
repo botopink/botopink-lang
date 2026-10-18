@@ -1,0 +1,17 @@
+//// Decision 578, 426 (2) — a template answering `Component<Styled>` is
+//// bounded by that type as written: built code that is a call of a
+//// `Component<Styled>` function is inside the answer, also where the call
+//// stands in a component body and renders there.
+
+import {io.terminal.print} from "std";
+mod shown;
+import {shown.view, shown.Styled};
+
+pub fn Page() -> Component<Styled> {
+    return view @`a`;
+}
+
+pub fn main() -> Task<void> {
+    val page = await Page();
+    print(page.text);
+}
