@@ -260,6 +260,8 @@ pub fn main() {
     br $__continue
       )
     )
+    local.get $__gfor0
+    call $__gen_close ;; the consumer is done with it
     i32.const 0
     drop
     global.get $__s4
@@ -539,6 +541,34 @@ pub fn main() {
       )
     )
     unreachable
+  )
+  (func $__gen_close (param $g (ref null $gen))
+    local.get $g
+    ref.is_null
+    (if
+      (then
+    return
+      )
+    )
+    local.get $g
+    struct.get $gen $kind
+    i32.const 4
+    i32.lt_u
+    (if
+      (then
+    local.get $g
+    struct.get $gen $src
+    call $__gen_close ;; its source
+      )
+      (else
+      )
+    )
+    local.get $g
+    i32.const 1
+    struct.set $gen $state ;; ended
+    local.get $g
+    ref.null struct
+    struct.set $gen $frame ;; its frame dropped
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

@@ -26,9 +26,10 @@ fn parse(n: i32) -> @Result<i32, string> {
     (type $box_i32 (struct (field $v i32)))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $frame1 (struct (field $resume (mut i32))))
-    (type $arr_any (array (mut anyref)))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $frame2 (struct (field $resume (mut i32))))
     (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
+    (type $arr_any (array (mut anyref)))
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
@@ -193,20 +194,77 @@ fn parse(n: i32) -> @Result<i32, string> {
     )
     i32.const 0 ;; the sequence ended
   )
-  ;; @Stream — eager lowering
-  (func $stream (result (ref null $arr_any))
-    (local $__yield_fn (ref null $arr_any))
+  ;; @Stream — a generator state machine (decision 105)
+  (func $stream (result (ref null $gen))
+    (local $__fr (ref null $frame2))
+    struct.new_default $frame2 ;; the frame: the resume index, then every local
+    local.set $__fr
+    i32.const 0 ;; live
+    i32.const 5 ;; stream__body
+    local.get $__fr
+    ref.null any
+    ref.null $gen
+    ref.null any ;; the environment
     i32.const 0
-    array.new_default $arr_any
-    local.set $__yield_fn
-    local.get $__yield_fn
+    struct.new $gen ;; runs nothing until its first next
+  )
+  (func $stream__body (param $__gen (ref null $gen)) (result i32)
+    (local $__frame (ref null $frame2))
+    (local $__seek i32)
+    (local $__state i32)
+    local.get $__gen
+    struct.get $gen $frame
+    ref.cast (ref null $frame2)
+    local.set $__frame
+    local.get $__frame
+    struct.get $frame2 $resume ;; the resume index
+    local.tee $__state
+    i32.const 0
+    i32.ne
+    local.set $__seek
+    local.get $__seek
+    i32.eqz
+    local.get $__state
+    i32.const 1
+    i32.ge_u
+    local.get $__state
+    i32.const 1
+    i32.le_u
+    i32.and
+    i32.or
+    (if
+      (then
+    (block $__yd1
+    local.get $__seek
+    (if
+      (then
+    local.get $__state
+    i32.const 1
+    i32.eq
+    (if
+      (then
+    i32.const 0
+    local.set $__seek
+      )
+    )
+    br $__yd1 ;; resumed after this yield, or seeking past it
+      )
+    )
+    local.get $__gen
     i32.const 0
     i32.const 1
     struct.new $box_i32
     struct.new $result
-    call $__arr_push_any
-    local.set $__yield_fn
-    local.get $__yield_fn ;; everything the body yielded
+    struct.set $gen $value ;; the yitem
+    local.get $__frame
+    i32.const 1
+    struct.set $frame2 $resume ;; the resume index
+    i32.const 1
+    return ;; an yitem
+    )
+      )
+    )
+    i32.const 0 ;; the sequence ended
   )
   (func $parse (param $n i32) (result (ref null $result))
     local.get $n
@@ -361,30 +419,17 @@ fn parse(n: i32) -> @Result<i32, string> {
     return
       )
     )
+    local.get $k
+    i32.const 5
+    i32.eq
+    (if
+      (then
+    local.get $g
+    call $stream__body
+    return
+      )
+    )
     unreachable
-  )
-  (func $__arr_push_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
-    (local $n i32)
-    (local $r (ref null $arr_any))
-    local.get $xs
-    array.len
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.add
-    array.new_default $arr_any
-    local.set $r
-    local.get $r
-    i32.const 0
-    local.get $xs
-    i32.const 0
-    local.get $n
-    array.copy $arr_any $arr_any
-    local.get $r
-    local.get $n
-    local.get $x
-    array.set $arr_any
-    local.get $r
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)

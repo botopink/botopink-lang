@@ -1,0 +1,48 @@
+//// Decision 105 — a stream's body runs one step per item asked for, as an
+//// iterator's does: nothing of it runs when the stream is made, and a print before
+//// and after the first `yield` comes out between the items a `for await` reads —
+//// a `@Stream` fn, one whose items are awaited, and a `stream loop` over a
+//// captured `var`.
+
+fn counted() -> @Stream<i32> {
+    @print("before");
+    yield 1;
+    @print("after");
+    yield 2;
+}
+
+fn tick(n: i32) -> @Task<i32> {
+    return n * 10;
+}
+
+fn ticks() -> @Stream<i32> {
+    @print("ticks before");
+    yield await tick(1);
+    @print("ticks after");
+    yield await tick(2);
+}
+
+fn run() -> @Task<void> {
+    val s = counted();
+    @print("made");
+    for await (s) { x ->
+        @print(x);
+    }
+    for await (ticks()) { x ->
+        @print(x);
+    }
+    var k = 0;
+    val looped = stream loop {
+        @print("loop " + k.toString());
+        k = k + 1;
+        if (k > 2) break;
+        yield k;
+    };
+    for await (looped) { x ->
+        @print(x);
+    }
+}
+
+pub fn main() {
+    run();
+}

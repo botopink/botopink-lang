@@ -98,9 +98,9 @@ The array walks with a closure written at the call (`map`, `filter`, `forEach`, 
 `findIndex`, `fold`; P2b) inline the closure's body into a loop over the GC array (`gcArrayHof`), `map`'s
 answer an array of the class of what the body answers (`gcMapTail`, which `wasmTypeOf` reads too);
 `r.map(f)` / `r.flatMap(f)` over a `@Result` inline `f` the same way (`gcResultMap`). An `@Iterator<T>` is a
-generator handle, its body a resumable state machine (§ Generators as state machines). A `stream` loop or a
-`@Stream` fn collects its `yield`s into a GC array (`gen_repr`: the declared result's class, or
-`yieldElemKind`'s for a loop), `$__arr_push_<class>` each one; a `try` inside one whose item is a `@Result` (decision 122) pushes the `Error` as the last item and ends the sequence (`gcTryPropagate`); over any other item it is not lowered.
+generator handle, its body a resumable state machine (§ Generators as state machines), and so is a `@Stream<T>`
+and a `stream` loop (144 B-142). A `try` inside a generator machine whose item is a `@Result` (decision 122) answers
+the `Error` as the last item and ends the handle (`gcTryPropagate`); over any other item it is not lowered.
 
 Every other value — `bigint` — is still a word in
 linear memory (`alloc`, the bump heap, exhaustion a trap — decision 448 (4)), and a module holding one is
@@ -376,7 +376,7 @@ gives it back (`gc_task_host_poll_wasi`). `try r catch h` over a `$result` is `g
   answers a task says so (`Adapter.answers_task`, checked against the
   declared `@Task`).
 
-## Generators as state machines (decisions 105, 125, 392; 144 B-128)
+## Generators as state machines (decisions 105, 125, 392; 144 B-128, B-142)
 
 **The choice: a generator reuses the `@Task` machine, its `yield`s the suspension points.** In a GC module
 an `@Iterator<T>` is `Repr.ref(.gen)`, a `$gen` struct (`GcTy.gen`: `state` 0 live / 1 ended, `kind`, `frame`,
@@ -408,10 +408,29 @@ stateful (a second `for` over an exhausted one reads nothing).
   `$gen` over `src`: `left` the count, `aux` the closure, called as `(closure, anyref) -> anyref`).
   `$__gen_next(g)` answers `0` once the sequence ended and drops the frame; `$__gen_resume` (`genResumeFunc`)
   dispatches by `kind`: `0`–`3` the derived iterators, `gen_body_base` + i each body of `gen_kinds`.
-- **What keeps a module in linear memory**, where an iterator is still the eager array: an item that is a
-  `@Result` (decision 122's `try` / `throw` sugar), a `defer` in the body, a `yield :l` naming an enclosing
-  generator scope, an item whose type nothing here tells, a method over a handle not listed above (printing
-  a handle's `toArray()` directly included). A `@Stream` stays the eager array on both lowerings.
+- **The walks** (144 B-142): `forEach(f)`, `some(f)`, `every(f)` and `reduce(f, init)` step the handle in
+  place (`lowerGenWalk`), the closure called on each item through the table; `some` / `every` stop at the item
+  that answered. `g.toArray()` printed directly prints by its item's shape (`printShapeOf`).
+- **A `@Result` item** (decision 122): the transform already wrote `yield v` as `yield __bp_ok(v)` and
+  `throw e` as `break __bp_error(e)`; a failing `try` stores its `Error` in `value`, runs the defers, marks
+  the handle ended and answers `1` — no resume point, so the expression holding the `try` is never entered
+  again. An `iter` loop's `@Result` item is read off its first `__bp_ok(v)` and `__bp_error(e)`
+  (`genResultItem`); a `for` binder the first `yield` reads is typed by what its loop walks while the item
+  is read (`installGenBinders`).
+- **`defer` and closing** (144 B-142): a `defer` runs at the sequence's end (`emitGenMachineEnd`, the body's
+  close) and when a consumer leaves before it: each `yield` records the defers pending there
+  (`gen_close_arms`), and the body, entered with `left` at -1, runs the arm of the point it rests on and
+  answers `0`. `$__gen_close(g)` (`genCloseFunc`) closes a derived iterator's source, enters a live body
+  that way, and ends the handle; a `for` and a walk call it once they are done (`emitGenClose`), a no-op
+  on an exhausted handle. A `return` or a `break :outer` out of the `for` does not close it.
+- **A `@Stream<T>`** (144 B-142) is the same handle (`reprOf`, `isIteratorTypeRef`): a `@Stream` fn, a
+  method answering one, a `stream` loop; `for await` steps it as `for` does. An `await` in its body runs the
+  task to its end where the step is taken (`$__task_block_on`, `lowerAwait`): the machine suspends at its
+  `yield`s only.
+- **What keeps a module in linear memory**, where an iterator is still the eager array: an item whose type
+  nothing here tells, a method over a handle not listed above (`find`, `flatMap`, …). A `yield :l` naming an
+  enclosing generator scope still has no machine (`genLabelsOwn`); the checker refuses every such program
+  today (`yield-label-unbound`), so no module reaches it.
 
 ## Components (decisions 388, 504)
 
