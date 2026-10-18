@@ -379,6 +379,15 @@ pub const implement_with_body: []const u8 = "implement-with-body";
 /// Decision 621 — a second unlabelled argument of a cell of
 /// `Implementation`: only the `template` is positional.
 pub const external_field_unlabelled: []const u8 = "external-field-unlabelled";
+/// Decision 610 (1) — `body:` that is no bare identifier naming a private
+/// bodied `fn` of the module with the declaration's types.
+pub const external_body_not_a_fn: []const u8 = "external-body-not-a-fn";
+/// Decision 610 (2) — a source naming neither a template nor a cell
+/// (`.Erlang()`).
+pub const external_source_empty: []const u8 = "external-source-empty";
+/// Decision 610 (3) — every implementation of a declaration a `body:` cell:
+/// the function is a bodied `fn`.
+pub const external_all_bodies: []const u8 = "external-all-bodies";
 
 /// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<R>` (a
 /// component, or no `@Component` at all).

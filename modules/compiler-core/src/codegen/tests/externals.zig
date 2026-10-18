@@ -452,27 +452,34 @@ test "js: external ---- no prelude template calls the method it patches" {
     try std.testing.expect(seen >= 5);
 }
 
-// Decisions 238, 263, 437 — `fn:<name>` on `@External.Node` and
-// `@External.Erlang` (which the beam target reads too): the declared fn runs `<name>`, a private bodied fn of
-// the same module with the same signature, the parameters passed in order
-// (`hostFnBinding.zig`). It is an ordinary function on each backend, so a
-// call, its value and a `pub` export behave like any other function's.
-const fn_binding_program =
-    \\#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
-    \\pub declare fn mix(x: f64, y: f64) -> f64;
-    \\fn mixBody(a: f64, b: f64) -> f64 {
-    \\    return a * 2.0 + b;
-    \\}
-    \\#[@external(.JavaScript(body: greetBody), .Erlang(body: greetBody), .Wasm(body: greetBody))]
-    \\declare fn greet(name: string) -> string;
-    \\fn greetBody(name: string) -> string {
-    \\    return "hi " + name;
-    \\}
-    \\fn main() {
-    \\    @print(mix(1.5, 0.25) == 3.25);
-    \\    @print(greet("host"));
-    \\}
-;
+// Decisions 238, 263, 437, 610 — `body: <name>` on `.JavaScript` and
+// `.Erlang` (which the beam target reads too): the declared fn runs `<name>`,
+// a private bodied fn of the same module with the same signature, the
+// parameters passed in order (`hostFnBinding.zig`). It is an ordinary function
+// on each backend, so a call, its value and a `pub` export behave like any
+// other function's. A declaration whose every source is a `body:` is a bodied
+// `fn` (`external-all-bodies`), so each program splits: the backend under test
+// runs the body, another target a template.
+fn fnBindingProgram(comptime js: []const u8, comptime erl: []const u8, comptime js_greet: []const u8, comptime erl_greet: []const u8) []const u8 {
+    return "#[@external(.JavaScript(" ++ js ++ "), .Erlang(" ++ erl ++ "), .Wasm(body: mixBody))]\n" ++
+        "pub declare fn mix(x: f64, y: f64) -> f64;\n" ++
+        "fn mixBody(a: f64, b: f64) -> f64 {\n" ++
+        "    return a * 2.0 + b;\n" ++
+        "}\n" ++
+        "#[@external(.JavaScript(" ++ js_greet ++ "), .Erlang(" ++ erl_greet ++ "), .Wasm(body: greetBody))]\n" ++
+        "declare fn greet(name: string) -> string;\n" ++
+        "fn greetBody(name: string) -> string {\n" ++
+        "    return \"hi \" + name;\n" ++
+        "}\n" ++
+        "fn main() {\n" ++
+        "    @print(mix(1.5, 0.25) == 3.25);\n" ++
+        "    @print(greet(\"host\"));\n" ++
+        "}\n";
+}
+/// The body on `.JavaScript`, a template on `.Erlang`.
+const fn_binding_program_js = fnBindingProgram("body: mixBody", "\"($0 * 2.0 + $1)\"", "body: greetBody", "\"<<\\\"hi \\\", ($0)/binary>>\"");
+/// The body on `.Erlang`, a template on `.JavaScript`.
+const fn_binding_program_erl = fnBindingProgram("\"($0 * 2.0 + $1)\"", "body: mixBody", "\"(\\\"hi \\\" + $0)\"", "body: greetBody");
 const fn_binding_out =
     \\true
     \\hi host
@@ -480,24 +487,25 @@ const fn_binding_out =
 ;
 
 test "js: external ---- fn: binds a declare fn to a private body" {
-    try h.assertJsRunLog(std.testing.allocator, fn_binding_program, fn_binding_out);
+    try h.assertJsRunLog(std.testing.allocator, fn_binding_program_js, fn_binding_out);
 }
 
 test "erlang: external ---- fn: binds a declare fn to a private body" {
-    try h.assertErlangRunLog(std.testing.allocator, fn_binding_program, fn_binding_out, &.{"mixBody(A, B)"});
+    try h.assertErlangRunLog(std.testing.allocator, fn_binding_program_erl, fn_binding_out, &.{"mixBody(A, B)"});
 }
 
-// beam reads the `@External.Erlang` binding (decision 437).
+// beam reads the `.Erlang` binding (decision 437).
 test "beam: external ---- fn: binds a declare fn to a private body" {
-    try h.assertBeamRunLog(std.testing.allocator, fn_binding_program, fn_binding_out, &.{});
+    try h.assertBeamRunLog(std.testing.allocator, fn_binding_program_erl, fn_binding_out, &.{});
 }
 
-// The four refusals of a `fn:` cell, on each host backend: a name the module
-// does not bind is the ordinary unbound-name error at the argument (decision
+// The four refusals of a `body:` cell, on each host backend: a name the module
+// does not bind is the ordinary unbound-name error at the value (decision
 // 305); a fn with no body, a `pub` fn and a fn of another signature are
-// refused at the annotation. The checker reads every `@External` annotation on
-// every target, so the first one written (`Node`'s) is the one refused.
-test "host backends: external ---- a fn: binding that names no private fn of the same signature is refused at the annotation" {
+// `external-body-not-a-fn` at the argument (decision 610 (1)). The checker
+// reads every source on every target, so the first one written
+// (`.JavaScript`'s) is the one refused.
+test "host backends: external ---- a body: cell that names no private fn of the same signature is refused at the argument" {
     const cases = [_]struct { src: []const u8, needle: []const u8 }{
         .{ .src =
         \\#[@external(.JavaScript(body: mixBodx), .Erlang(body: mixBodx))]
@@ -526,7 +534,7 @@ test "host backends: external ---- a fn: binding that names no private fn of the
         , .needle = "must take the same parameter types in the same order" },
     };
     for (cases, 0..) |c, i| {
-        const col: usize = if (i == 0) 31 else 3;
+        const col: usize = if (i == 0) 31 else 25;
         try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
         try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);

@@ -1,0 +1,16 @@
+//// Decision 610 (3) — an annotation in which every source is a `body:` runs
+//// the botopink body on every target it names: that is a bodied `fn`, one
+//// form, so the annotation is refused, `external-all-bodies`. The cell exists
+//// for the per-target split (a template on one target beside
+//// `.Wasm(body: f)`).
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+#[@external(.Erlang(body: reverseBody), .JavaScript(body: reverseBody), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+pub fn main() {
+    @print(backwards([1, 2, 3]));
+}

@@ -81,9 +81,11 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 #[@Stage.Any]
 pub declare fn sqrt(x: f64) -> f64;
 
-#[external(.JavaScript(body: powBody), .Erlang(body: powBody), .Wasm(body: powBody))]
-#[@Stage.Any]
-pub declare fn pow(x: f64, y: f64) -> f64;
+// Every target runs std's body (decision 610: a function whose every target
+// runs botopink is a bodied `fn`).
+pub fn pow(x: f64, y: f64) -> f64 {
+    return powBody(x, y);
+}
 
 // `cbrt(x)` via `pow(x, 1/3)`, honouring sign for negatives. Pure-botopink;
 // node has `Math.cbrt` but the erlang side has no BIF — composition is uniform.

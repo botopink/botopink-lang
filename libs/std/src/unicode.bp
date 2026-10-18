@@ -29,17 +29,10 @@
 import {unicode_tables as tables};
 
 // The one-character string of the scalar value `cp` (decision 262): every
-// target runs `fromCodepointBody`, a call of the primitive
-// `String.fromCodepoint`, so a `cp` that is no Unicode scalar value — negative,
-// a surrogate, past U+10FFFF — aborts the program the same way everywhere.
-#[external(
-    .JavaScript(body: fromCodepointBody),
-    .Erlang(body: fromCodepointBody),
-    .Wasm(body: fromCodepointBody),
-)]
-pub declare fn fromCodepoint(cp: i32) -> string;
-
-fn fromCodepointBody(cp: i32) -> string {
+// target runs this body, a call of the primitive `String.fromCodepoint`, so a
+// `cp` that is no Unicode scalar value — negative, a surrogate, past U+10FFFF —
+// aborts the program the same way everywhere.
+pub fn fromCodepoint(cp: i32) -> string {
     return String.fromCodepoint(cp);
 }
 

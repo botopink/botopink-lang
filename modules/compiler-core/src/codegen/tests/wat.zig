@@ -2147,7 +2147,7 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
         \\declare fn plus(a: i32, b: i32) -> i32;
         \\#[@external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> bool;
-        \\#[@external(.Wasm(body: greetBody))]
+        \\#[@external(.JavaScript("(\\"hi \\" + $0)"), .Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string {
         \\    return "hi " + name;
@@ -2220,7 +2220,8 @@ test "wat: an integer if-expression inside a float function" {
 }
 
 // Anything outside the vocabulary is refused at the annotation — never read
-// as text, never lowered to a guess.
+// as text, never lowered to a guess; a `body:` naming no private fn of the
+// declaration's types at the argument (`external-body-not-a-fn`, decision 610).
 test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[@external(.Wasm(op: "f64.flor"))]
@@ -2248,13 +2249,13 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\declare fn greet(name: string) -> string;
         \\pub fn greetBody(name: string) -> string { return name; }
         \\fn main() { @print(greet("x")); }
-    , "`greetBody` is `pub`", 1, 3);
+    , "`greetBody` is `pub`", 1, 19);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[@external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string, n: i32) -> string { return name; }
         \\fn main() { @print(greet("x")); }
-    , "must take the same parameter types in the same order", 1, 3);
+    , "must take the same parameter types in the same order", 1, 19);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[@external(.Wasm(wasi: .ClockTimeGet))]
         \\declare fn now() -> f64;

@@ -4777,7 +4777,7 @@ Each cell holds a value of the kind it names (decision 481): `op:` and `std:` a 
 `WasiAdapter`, as `Implementation.Wasm` declares them, so a value of another kind is the
 constructor's refusal at the argument — `op: floor`, `std: hash.contentHash` (a name no module
 binds), `wasi: "RandomF64"` (a string where a `WasiAdapter` goes); `body:` names a private fn by its
-identifier, and `body: "tanBody"` is refused naming that form:
+identifier, and `body: "tanBody"` is `external-body-not-a-fn` at the argument, naming that form:
 
 <!-- example: modules/external_wasm_fn_cell_string -->
 <!-- example: modules/external_wasm_op_cell_not_string -->
@@ -4785,9 +4785,9 @@ identifier, and `body: "tanBody"` is refused naming that form:
 <!-- example: modules/external_wasm_std_cell_not_string -->
 
 A binding is **one** cell, beside `host:` (and `inline:`): a label outside the four and a second
-cell are refused at the argument that writes them. A cell naming what does not exist — an opcode
-the table does not hold, an adapter that is none of the list —, and a `body:` whose body takes
-other types than the declaration's, are refused at the annotation:
+cell are refused at the argument that writes them, as is a `body:` whose body takes other types
+than the declaration's (`external-body-not-a-fn`). A cell naming what does not exist — an opcode
+the table does not hold, an adapter that is none of the list — is refused at the annotation:
 
 <!-- example: modules/external_wasm_unknown_label -->
 <!-- example: modules/external_wasm_two_cells -->
@@ -4999,17 +4999,41 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 `conformance` runs its wasm column under both and fails a cell whose
 answers differ.
 
-**A private fn binds a declaration on every target** (decisions 238, 263, 305). On
+**A private fn binds a declaration on a target** (decisions 238, 263, 305, 610). On
 `.JavaScript` and `.Erlang` (which the beam target reads) the
-labelled cell `body: <name>` (`#[@external(.Erlang(body: powBody))]`) binds what
+labelled cell `body: <name>` (`#[@external(.Erlang(body: sinBody))]`) binds what
 wasm's `body: <name>` cell binds — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
-checked the same way, at the annotation. One algorithm written in botopink then
-answers the same bits on every target, instead of each host's own library
-(`std/math`'s `sin`, `pow`, … run std's bodies on erlang and beam, and `pow` on
-commonJS too).
+checked the same way, at the argument. One algorithm written in botopink then
+answers the same bits on the targets that name it, instead of each host's own
+library (`std/math`'s `sin`, … run std's bodies on erlang and beam, beside
+V8's `Math.*` on commonJS).
 
 <!-- example: modules/external_fn_body_every_target -->
+
+**The `body:` cell's rule** (decision 610), beside `op:`, `std:` and `wasi:`'s:
+`body:` is the one name of the botopink-body cell, on `.Erlang`,
+`.JavaScript` and `.Wasm` alike, and the template is optional only beside it.
+`body:` is a bare identifier naming a private bodied `fn` of the same module
+whose parameters and return are the declaration's; anything else — `body:
+"x"`, `body: 1`, a `pub` or bodiless function, other types — is refused at the
+argument, `external-body-not-a-fn`:
+
+<!-- example: modules/external_body_not_a_fn -->
+
+A source naming neither a template nor a cell (`.Erlang()`) is refused at the
+argument, `external-source-empty`:
+
+<!-- example: modules/external_source_empty -->
+
+The cell exists for the per-target split — `.Erlang("lists:reverse($0)")`
+beside `.Wasm(body: reverseBody)`. A declaration whose every source is a
+`body:` — on every target, or `.Wasm(body: f)` alone on a wasm-only function —
+runs the botopink body wherever it runs, so it is a bodied `fn`, one form:
+the annotation is refused, `external-all-bodies`, "write the function with
+that body" (std's `pow` is such a `fn`):
+
+<!-- example: modules/external_all_bodies -->
 
 `<name>` is a botopink identifier, resolved in the module like any other name:
 a misspelt one is the ordinary unbound-name error, at the argument, and

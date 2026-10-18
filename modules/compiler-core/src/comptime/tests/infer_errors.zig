@@ -527,7 +527,7 @@ test "infer error: external ---- result on a fn cell" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn absBody(x: i32) -> i32 { if (x < 0) { -x } else { x } }
         \\
-        \\#[@external(.JavaScript(body: absBody, result: true))]
+        \\#[@external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"))]
         \\pub declare fn magnitude(x: i32) -> i32;
     );
 }

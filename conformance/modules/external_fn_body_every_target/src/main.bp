@@ -1,4 +1,9 @@
-#[@external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+//// Decisions 238, 263, 305, 610 — `body: <name>` binds a target to a private
+//// bodied `fn` of the module on `.Erlang` (which beam reads) as on `.Wasm`,
+//// beside a template on another target: the per-target split the cell exists
+//// for. Every target answers the same.
+
+#[@external(.JavaScript("($0 * 2.0 + $1)"), .Erlang(body: mixBody), .Wasm(body: mixBody))]
 pub declare fn mix(x: f64, y: f64) -> f64;
 
 fn mixBody(a: f64, b: f64) -> f64 {

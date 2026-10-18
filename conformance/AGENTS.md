@@ -1179,6 +1179,14 @@ refusals `init_executor_captures_build` (`compiler` inside an executor, `syntax-
 `compile` was no member of `Compiler`. Decision 615 renamed the member `compiler.init` and these cells, and their
 siblings, from `compile_executor_*` / `compile_init_order_modules` / `compile_output_outside_decorator` to
 `init_executor_*` / `init_order_modules` / `init_output_outside_decorator`.
+Decisions 610 and 621 (144 B-138, a source's fields) add the refusals `modules/external_body_not_a_fn`
+(`.Wasm(body: f)` naming a `pub` fn, at the argument), `external_source_empty` (`.Erlang()`, at the argument),
+`external_all_bodies` (every source a `body:`, at the annotation) and `external_flag_bare_fn_refused`
+(`.Erlang("…", f)`, `external-field-unlabelled` at the argument); `external_flag_bare_bool_refused` answers
+`external-field-unlabelled` on `.JavaScript`; `external_wasm_fn_cell_string` and `external_wasm_fn_cell_signature` answer
+`external-body-not-a-fn` at the argument; `external_fn_body_every_target` and `external_result_on_fn_cell` write a
+template on one target beside their `body:` cells, so neither is all bodies. Decision 618 renamed `.Node` to
+`.JavaScript` in every cell (`scripts/codemod/implementation_javascript.py`).
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds
@@ -2505,8 +2513,8 @@ refused — a pin) for B-26; `modules/comptime_integer_division_by_zero` (`7 / 0
 `modules/external_wasm_fn_cell_string`, `external_wasm_op_cell_not_string`,
 `external_wasm_wasi_cell_not_enum`, `external_wasm_std_cell_not_string` (a value of another kind, at
 the argument), `external_wasm_unknown_label`, `external_wasm_two_cells` (at the argument),
-`external_wasm_op_unknown`, `external_wasm_wasi_unknown` and `external_wasm_fn_cell_signature` (at
-the annotation); and `modules/if_binding_before_loop_closure` (an explicit `if (x) { v -> … }`
+`external_wasm_op_unknown` and `external_wasm_wasi_unknown` (at the annotation),
+`external_wasm_fn_cell_signature` (at the argument, decision 610); and `modules/if_binding_before_loop_closure` (an explicit `if (x) { v -> … }`
 before a `for` body binding `v` again — the OTP compiler refused beam's `make_fun3` on B-34's base).
 
 144 B-10 (decision 430, the gaps a library works around) adds `modules/two_modules_one_type_name` —

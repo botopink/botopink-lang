@@ -3965,7 +3965,7 @@ fn checkImplementations(env: *Env, program: ast.Program, d: ImplDecl, annotation
         for (a.args, 0..) |arg, i| {
             const at = a.argLoc(i) orelse a.loc orelse ast.Loc{ .line = 0, .col = 0 };
             const src = (try implementationsParse.parseSource(env.arena, arg, at)) orelse continue;
-            try checkSourceCells(env, src, d);
+            try checkSourceCells(env, program, src, d);
         }
     }
     if (impls.len == 0) return;
@@ -3976,6 +3976,7 @@ fn checkImplementations(env: *Env, program: ast.Program, d: ImplDecl, annotation
             .{ diagnostics.implement_with_body, d.name, impls[0].target.variant() },
         ), "Delete the body and write `declare fn`, or delete the annotation: a function with a body is its own implementation on every target.");
     }
+    try refuseAllBodies(env, d, impls);
     try refuseImplementationTwice(env, d, impls);
     for (impls) |impl| try checkImplementation(env, program, d, impl);
 }
@@ -4020,11 +4021,33 @@ fn refuseUnlabelledField(env: *Env, src: implementationsParse.Source) InferError
     }
 }
 
+/// Decision 610 (3) — a declaration whose every implementation is a `body:`
+/// cell runs the botopink body on every target it names: it is a bodied
+/// `fn`, one form, and the annotation is refused. The cell exists for the
+/// per-target split (`.Erlang("lists:reverse($0)")` beside
+/// `.Wasm(body: reverseBody)`).
+fn refuseAllBodies(env: *Env, d: ImplDecl, impls: []const ast.Implementation) InferError!void {
+    for (impls) |impl| {
+        const cell = impl.cell orelse return;
+        if (cell.kind != .body) return;
+    }
+    const body = impls[0].cell.?.value;
+    return implError(env, impls[0].loc, try std.fmt.allocPrint(
+        env.arena,
+        "{s}: every source of `{s}` is a `body:` cell — write the function with that body",
+        .{ diagnostics.external_all_bodies, d.name },
+    ), try std.fmt.allocPrint(
+        env.arena,
+        "A function every target runs in botopink is a bodied `fn`: give `{s}` the body of `{s}` and delete the annotation. `body:` is for the per-target split — a template on one target beside `.Wasm(body: {s})` (decision 610).",
+        .{ d.name, body, body },
+    ));
+}
+
 /// Decisions 305 and 481 — each source's cell, as written: one at most
 /// (a template, `body:`, and on `.Wasm` also `op:`, `std:` and `wasi:`), at
 /// least one, `body:` an identifier, and a template that is no prefixed
 /// cell (`"fn:tanBody"`).
-fn checkSourceCells(env: *Env, src: implementationsParse.Source, d: ImplDecl) InferError!void {
+fn checkSourceCells(env: *Env, program: ast.Program, src: implementationsParse.Source, d: ImplDecl) InferError!void {
     const target = src.target orelse return;
     const wasm = target == .wasm;
     const variant = target.variant();
@@ -4041,11 +4064,18 @@ fn checkSourceCells(env: *Env, src: implementationsParse.Source, d: ImplDecl) In
             .{ variant, d.name, field, if (wasm) "wasm " else "" },
         ), cell_hint);
         if (std.mem.eql(u8, field, "body")) {
-            if (implementationsParse.identOf(arg.tokens) == null) return implError(env, arg.loc, try std.fmt.allocPrint(
+            // Decision 610 (1) — a bare identifier naming a private bodied
+            // `fn` of this module with the declaration's types; anything
+            // else is refused at the argument.
+            const name = implementationsParse.identOf(arg.tokens) orelse return implError(env, arg.loc, try std.fmt.allocPrint(
                 env.arena,
-                "`.{s}(body: {s})` on `{s}`: `body:` names a private fn of this module by its identifier, not {s} (decisions 305, 481) — write `body: <name>`",
-                .{ variant, try tokensText(env, arg.tokens), d.name, if (implementationsParse.stringOf(arg.tokens) != null) "a string" else "a value" },
+                "{s}: `.{s}(body: {s})` on `{s}`: `body:` names a private fn of this module by its identifier, not {s} (decisions 305, 481) — write `body: <name>`",
+                .{ diagnostics.external_body_not_a_fn, variant, try tokensText(env, arg.tokens), d.name, if (implementationsParse.stringOf(arg.tokens) != null) "a string" else "a value" },
             ), cell_hint);
+            if (d.fnDecl) |fd| if (moduleBinds(env, program, name)) switch (try hostFnBinding.resolve(env.arena, fd, name, program, "", variant)) {
+                .ok => {},
+                .refused => |msg| return implError(env, arg.loc, try std.fmt.allocPrint(env.arena, "{s}: {s}", .{ diagnostics.external_body_not_a_fn, msg }), cell_hint),
+            };
         }
         if (std.mem.eql(u8, field, "template")) if (implementationsParse.stringOf(arg.tokens)) |raw| {
             const inner = unquotedString(raw) orelse continue;
@@ -4070,10 +4100,11 @@ fn checkSourceCells(env: *Env, src: implementationsParse.Source, d: ImplDecl) In
             }
         };
     }
+    // Decision 610 (2) — a source naming neither a template nor a cell.
     if (cells == 0) return implError(env, src.variantLoc, try std.fmt.allocPrint(
         env.arena,
-        "`.{s}` on `{s}` names no code — {s}",
-        .{ variant, d.name, if (wasm) "a wasm binding is one cell: `op:`, `std:`, `wasi:`, `body:` or a template" else "write its template, or `body:` naming a private fn of this module" },
+        "{s}: `.{s}` on `{s}` names no code — {s}",
+        .{ diagnostics.external_source_empty, variant, d.name, if (wasm) "a wasm binding is one cell: `op:`, `std:`, `wasi:`, `body:` or a template" else "write its template, or `body:` naming a private fn of this module" },
     ), cell_hint);
 }
 
@@ -4136,7 +4167,7 @@ fn checkImplementation(env: *Env, program: ast.Program, d: ImplDecl, impl: ast.I
             }
             if (d.fnDecl) |fd| switch (try hostFnBinding.resolve(env.arena, fd, cell.value, program, "", variant)) {
                 .ok => {},
-                .refused => |msg| return implError(env, impl.loc, msg, cell_hint),
+                .refused => |msg| return implError(env, impl.loc, try std.fmt.allocPrint(env.arena, "{s}: {s}", .{ diagnostics.external_body_not_a_fn, msg }), cell_hint),
             };
         },
         .op => if (wasmHostBinding.findOp(cell.value) == null) return implError(env, impl.loc, try std.fmt.allocPrint(
