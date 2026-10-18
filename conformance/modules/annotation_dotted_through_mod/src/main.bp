@@ -1,0 +1,13 @@
+//// A dotted annotation path through a `pub mod` namespace names the decorator
+//// its last segment declares in that module: `#[marks.tagged]` builds.
+
+pub mod marks;
+
+#[marks.tagged]
+fn Marked() -> string {
+    return "a";
+}
+
+pub fn main() {
+    @print(Marked());
+}

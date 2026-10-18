@@ -1,0 +1,14 @@
+//// A dotted annotation path through an imported module namespace names the
+//// decorator its last segment declares there: `#[jwt.stamped]` is `stamped` of
+//// `sec`'s `jwt`, and the program builds.
+
+import {jwt} from "sec";
+
+#[jwt.stamped]
+fn Signed() -> string {
+    return "a";
+}
+
+pub fn main() {
+    @print(Signed());
+}

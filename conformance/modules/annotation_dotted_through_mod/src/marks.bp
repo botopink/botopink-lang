@@ -1,0 +1,7 @@
+//// A module of the package whose decorator is reached through its namespace.
+
+import {compiler} from "std";
+
+pub fn tagged(expr decl: unknown) {
+    val _n = compiler.name(decl)!;
+}

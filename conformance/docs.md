@@ -5326,6 +5326,11 @@ annotation and naming what `name` is: nothing (`#[nope]`), a namespace (`#[check
 where `check` is a module), or a value (`#[limit]` where `limit` is a `val` or a
 function that is no decorator). It used to be dropped without a word and the
 program built (`modules/annotation_not_decorator_{unbound,namespace,value}`).
+A dotted path through a namespace (`#[local.mark]` for a `pub mod local;`, `#[jwt.stamped]` for
+an imported module) names the decorator its last segment declares in that module, and builds; through an
+imported module whose exports lack the segment it is the same error, naming the module
+(`modules/annotation_dotted_{through_mod,through_import,missing_in_import}`). A `pub mod` of the package
+publishes no export list to the checker, so a missing name there is not yet refused.
 
 <!-- example: test/mocks_decorator_double -->
 

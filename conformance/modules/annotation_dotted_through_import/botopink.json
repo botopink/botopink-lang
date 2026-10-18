@@ -1,0 +1,1 @@
+{ "name": "annotation_dotted_through_import", "dependencies": { "sec": { "path": "deps/sec" } } }

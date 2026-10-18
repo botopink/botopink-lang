@@ -4803,6 +4803,19 @@ fn refuseAnnotationNotDecorator(env: *Env, program: ast.Program, a: ast.Annotati
         },
         else => {},
     };
+    // A dotted path through a namespace (`#[local.serverOnly]`, `#[m.deco]`)
+    // resolves its last segment in that module: it passes unless the module's
+    // published exports are known and lack the name.
+    if (namespace and std.mem.indexOfScalar(u8, a.name, '.') != null) {
+        const dot = std.mem.indexOfScalar(u8, a.name, '.').?;
+        const exports = env.namespaces.modules.get(head) orelse return;
+        if (exports.contains(a.name[dot + 1 ..])) return;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` names nothing — `{s}` has no `{s}`", .{ diagnostics.annotation_not_a_decorator, a.name, head, a.name[dot + 1 ..] });
+        var err = TypeError.custom(msg, "An annotation names a decorator of the module, a `pub fn` whose first parameter is `comptime decl` of the declaration handle type.");
+        if (a.loc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
+    }
     const what: []const u8 = if (namespace)
         "a namespace"
     else if (value or env.lookup(a.name) != null)
