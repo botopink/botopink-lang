@@ -95,8 +95,9 @@ test "beam: every Erlang template std and the bundled libraries ship compiles at
     }
     // The audit is worthless if it stopped finding templates.
     try std.testing.expect(tally.lowered >= 150);
-    // std/math binds fifteen functions on Erlang through `body:`.
-    try std.testing.expect(tally.bound >= 15);
+    // std/math binds fourteen functions on Erlang through `body:` (`pow` and
+    // `fromCodepoint` are plain fns since decision 610's `external-all-bodies`).
+    try std.testing.expect(tally.bound >= 14);
 }
 
 test "a result: true binding's wrap lowers for the beam backend (decisions 431, 489, 490)" {

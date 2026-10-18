@@ -2147,7 +2147,7 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
         \\declare fn plus(a: i32, b: i32) -> i32;
         \\#[@external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> bool;
-        \\#[@external(.JavaScript("(\\"hi \\" + $0)"), .Wasm(body: greetBody))]
+        \\#[@external(.JavaScript("(\"hi \" + $0)"), .Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string {
         \\    return "hi " + name;
