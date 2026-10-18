@@ -3923,8 +3923,6 @@ is the checker's own refusal at the annotation, the `compiler.init` call its
 
 <!-- example: modules/init_executor_handle_on_type_as_value -->
 
-<!-- example: modules/init_executor_handle_not_module_name -->
-
 A `compiler.*` call inside the executor is evaluated at build and enters the
 executor as a literal, exactly as a `val` read before it does (decision 614):
 `compiler.init({ -> register(compiler.name(decl)) })` and `val name =
