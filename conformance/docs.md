@@ -3576,6 +3576,11 @@ there (638):
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_text_of_expression -->
 
+A call through the module's name — `snap.matches(render(page))` after `import {snap} from "snap"`, `probe.matches(…)`
+for a `mod probe` of the package — is expanded as the bare call is:
+
+<!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_called_through_module -->
+
 Such a function answers `anyvalue` (the built code, typed at the call) or
 `anytype` (a built type); a run-time return (`-> i32`, none) is refused at the
 declaration (`template-signature`) — a build body returns code, never a

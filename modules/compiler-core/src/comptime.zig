@@ -2918,6 +2918,14 @@ fn resolveImports(
                                     // Decision 757 — `ns.f(T, …)` of a function copied per type.
                                     if (try type_token.copiedPerType(env.arena, pfn)) try env.tokenImports.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), .{ .decl = pfn, .owner = path });
                                 }
+                                // Decision 719 — `ns.f(…)` of a template (a function with a
+                                // `syntax` parameter) expands at its call as `f(…)` imported by
+                                // name does: bound under `<ns>.<name>`.
+                                if (templateRegistry.get(try comptimeRegistryKey(env.arena, path, fname.*))) |tfn| if (isTemplateFn(tfn) and ast.syntaxExprIndex(tfn.params) != null) {
+                                    try infer.registerImportedTemplateFn(env, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), tfn, path);
+                                    try importTemplateSupport(env, decoratorRegistry, path, fname.*, tfn);
+                                    if (registry.getPtr(path)) |ex| try env.templateOwnerExports.put(env.arena, path, ex);
+                                };
                                 // Decision 386 — the module's body-carrying
                                 // decorators travel with the namespace, under
                                 // `<ns>.<name>` (as a std module's do,

@@ -19690,6 +19690,58 @@ fn planPipelineFill(
     return f.ret;
 }
 
+/// Decision 719 — `ns.f(…)`, `f` a function of the module `ns` with a `syntax`
+/// expression parameter (bound under `<ns>.<f>` by the namespace import): the
+/// call is expanded where it is written, as the bare `f(…)` of a leaf import
+/// is — each `syntax` argument captured as written, every other one a
+/// literal, the body run at build and the code it answers typed here.
+fn expandQualifiedSyntaxCall(
+    env: *Env,
+    ns: []const u8,
+    tfn: ast.FnDecl,
+    call: anytype,
+    params: []const *T.Type,
+    ret: *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+    trailing: usize,
+    loc: ast.Loc,
+) InferError!TypedExpr {
+    const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ ns, call.callee });
+    if (params.len != typedArgs.len + trailing) {
+        env.lastError = TypeError.arityMismatch(qn, params.len, typedArgs.len + trailing).withLoc(loc);
+        return error.TypeError;
+    }
+    if (call.templateText != null) {
+        const si = ast.syntaxExprIndex(tfn.params).?;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the expression `{s}` between parentheses, `{s}(…)`, and is called here with a template text", .{ diagnostics.syntax_call_outside_syntax, qn, tfn.params[si].name, qn });
+        env.lastError = TypeError.custom(msg, "A `syntax` parameter of a type other than `string` takes the expression written between the call's parentheses; only `syntax q: string` takes a template text `` f @`…` `` (decisions 578 (1), 719).").withLoc(loc);
+        return error.TypeError;
+    }
+    const exprParams = env.lookupExprParams(qn);
+    var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
+    var plainArgs: std.ArrayListUnmanaged(template.PlainArg) = .empty;
+    for (typedArgs, params[0..typedArgs.len], 0..) |ta, paramType, i| {
+        if (exprParams) |eps| if (exprParamAt(eps, i)) |ep| {
+            try captures.append(env.arena, try captureExprArg(env, qn, ep, call.args[i].value, ta, paramType, call.templateText));
+            continue;
+        };
+        try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
+        if (i < tfn.params.len) {
+            const jsVal = try literalSourceAlloc(env.arena, call.args[i].value) orelse {
+                env.lastError = TypeError.custom(
+                    "non-`@Expr` parameter of a template function must receive a literal value at the call site",
+                    "Pass a string, integer, or boolean literal directly; runtime values have no compile-time meaning (V1).",
+                ).withLoc(ta.value.getLoc());
+                return error.TypeError;
+            };
+            try plainArgs.append(env.arena, .{ .paramName = tfn.params[i].name, .source = jsVal });
+        }
+    }
+    const capturedSlice: []const template.CapturedExpr = try captures.toOwnedSlice(env.arena);
+    if (capturedSlice.len > 0) try env.exprCaptures.put(loc, capturedSlice);
+    return expandTemplateCall(env, tfn, capturedSlice, try plainArgs.toOwnedSlice(env.arena), ret, loc);
+}
+
 /// A qualified call's plan (a namespace import's `ns.f(…)`, a `"std"`
 /// module's `bool.negate(…)`): the reorder a complete labelled call needs, or
 /// the fill of a short one, against the parameters as written. `null` when
@@ -24140,6 +24192,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                 return error.TypeError;
                             },
                         };
+                        // Decision 719 — `ns.f(…)` of a function with a `syntax`
+                        // expression parameter expands at its call as `f(…)` does.
+                        if (env.templateFns.get(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ ns, call.callee }))) |tfn| {
+                            return expandQualifiedSyntaxCall(env, ns, tfn, call, f.params, f.ret, typedArgs, typedTrailing.len, loc);
+                        }
                         const total = typedArgs.len + typedTrailing.len;
                         // The parameters as written travel with the export:
                         // a label names the one it fills (01) and a short call

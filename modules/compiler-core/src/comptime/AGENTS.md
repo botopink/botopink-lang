@@ -445,9 +445,12 @@ caller and captured **unevaluated**:
   (`unifyArgument`, 716) and captures it unevaluated (720) — `text` the expression as the formatter prints
   it (`defaultLexeme`, as a template method's receiver), `loc` the argument's, so `compiler.text(v)` /
   `compiler.source(v)` read it through `captureToTerm` as a template text's. The call expands as any
-  template call. Cells `syntax_fn_expanded_at_call`, `syntax_fn_text_of_expression`,
-  `syntax_fn_string_param_needs_template_text`, `syntax_fn_expression_param_given_template_text`,
-  `syntax_fn_run_time_return`.
+  template call. A call through the module's name (`snap.matches(x)`, `probe.matches(x)`) expands the same
+  way: a namespace import binds each such function of the module under `<ns>.<name>`
+  (`registerImportedTemplateFn`, `comptime.zig`), and the namespace branch of `inferCallExprWith` hands the
+  call to `expandQualifiedSyntaxCall`. Cells `syntax_fn_expanded_at_call`, `syntax_fn_text_of_expression`,
+  `syntax_fn_called_through_module`, `syntax_fn_string_param_needs_template_text`,
+  `syntax_fn_expression_param_given_template_text`, `syntax_fn_run_time_return`.
 
 Call-site expansion (`expandTemplateCall`, from `inferCallExpr`):
 `classifyTemplateBody` reduces `return <tree param>`, `return @expr(E)` (E must

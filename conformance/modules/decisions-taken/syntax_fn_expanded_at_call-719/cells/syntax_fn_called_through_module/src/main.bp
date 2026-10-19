@@ -1,0 +1,16 @@
+//// Decision 719 — a function with a `syntax` expression parameter is expanded
+//// where it is called, and a call through its module's name — `probe.matches(…)`,
+//// as a test writes `snap.matches(…)` — is that call: the body runs at build
+//// with the expression as written, and the code it answers stands at the call.
+
+import {io.terminal.print} from "std";
+pub mod probe;
+
+fn render(name: string) -> string {
+    return "<p>" + name + "</p>";
+}
+
+pub fn main() {
+    val ok = probe.matches(render("page"));
+    print(ok.toString());
+}
