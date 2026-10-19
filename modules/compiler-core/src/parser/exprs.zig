@@ -1431,6 +1431,15 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         else
             .{ .await_ = operandPtr } } };
     }
+    // `use` as an operand (`ready && use flag()`): read like `try`, so the
+    // checker refuses it where it stands — `use-not-top-level`, at the `use`
+    // (decisions 357, 410) — instead of a parse error that names no rule.
+    if (this.check(.use)) {
+        const useTok = this.advance();
+        const operand = try this.parsePrimary(alloc);
+        const operandPtr = try this.boxExpr(alloc, operand);
+        return Expr{ .useHook = .{ .loc = locFromToken(useTok), .kind = .{ .inner = operandPtr } } };
+    }
     // An `if` expression begins an expression too (`parseExpr`), and is never
     // an operand for the same reason: `1 + if (c) { 2 } else { 3 }`.
     if (this.check(.@"if")) {
