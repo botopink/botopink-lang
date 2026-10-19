@@ -668,9 +668,20 @@ fn emitProgramOptsX(
         const depth = std.mem.count(u8, module_name, "/");
         var prefix: std.ArrayListUnmanaged(u8) = .empty;
         if (depth == 0) try prefix.appendSlice(arena_alloc, "./") else for (0..depth) |_| try prefix.appendSlice(arena_alloc, "../");
-        for (dep_inits, 0..) |dep, i| try items.insert(arena_alloc, i, .{ .stmt = .{
-            .expr = try em.requireCall(try std.fmt.allocPrint(arena_alloc, "{s}{s}.js", .{ prefix.items, dep })),
-        } });
+        // A program entry (`fn main`) is required by nobody: its dependencies'
+        // bodies run first (decision 660). Any other module is required by the
+        // modules it names — a dependency that imports this one back is a
+        // cycle, and requiring it ahead of this module's own exports hands it
+        // an empty `exports` (`Right-hand side of 'instanceof' is not an
+        // object`). So the requires follow the declarations, exports bound,
+        // and only the auto-invoke of `main` comes after.
+        const front = has_main_0;
+        for (dep_inits, 0..) |dep, i| {
+            const stmt: js.Item = .{ .stmt = .{
+                .expr = try em.requireCall(try std.fmt.allocPrint(arena_alloc, "{s}{s}.js", .{ prefix.items, dep })),
+            } };
+            if (front) try items.insert(arena_alloc, i, stmt) else try items.append(arena_alloc, stmt);
+        }
     }
     const bound = try boundNames(arena_alloc, items.items);
     if (try privExportSource(arena_alloc, bound)) |line| try items.append(arena_alloc, .{ .runtime = line });

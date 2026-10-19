@@ -1839,8 +1839,11 @@ codegen/
   level order —, each package's modules in compile order, each after what it
   imports); the entry's own `importClosure` follows. The root package's `Scopes` scope
   holds every package of `Packages.deps` for it. commonJS `require`s those
-  modules with a body at the top of a program entry (a `main/0`, or `test`
-  blocks; `emitProgramOptsX`'s `dep_inits`), and wasm links them into the
+  modules with a body at the top of a program entry (a `main/0`) and, for a
+  module with `test` blocks and no `main/0`, after its declarations and exports —
+  a dependency that imports the module back (a cycle) then reads a whole
+  `exports`, not an empty one (`emitProgramOptsX`'s `dep_inits`; cell
+  `conformance/test/module_init_requires_its_importer`), and wasm links them into the
   entry (`programEntry`; `Linked.declared`, whose refusal says the module is
   a declared dependency's rather than "this import").
   The body is lowered BEFORE the runtime helpers are chosen (and written after

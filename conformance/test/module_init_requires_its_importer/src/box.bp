@@ -1,0 +1,12 @@
+// `seen` imports `Box` and runs at load; `box` declares a test, so its unit
+// is the first thing loaded under `botopink test`. `Box` must already be
+// exported when `seen` reads it.
+pub type Box(n: i32)
+
+pub fn wrap(n: i32) -> Box {
+    return Box(n: n);
+}
+
+test "a module a later module imports still loads whole" {
+    assert(wrap(2).n == 2);
+}
