@@ -122,7 +122,7 @@ class ApplyTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def apply(self, **kw):
-        a = dict(root=str(self.root), group=None, all=False, range=None, drop_star=False, dry_run=False)
+        a = dict(root=str(self.root), group=None, all=False, range=None, drop_star=False, dry_run=False, commit=False)
         a.update(kw)
         return cc.cmd_apply(type("A", (), a))
 

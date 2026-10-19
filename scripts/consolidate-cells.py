@@ -530,13 +530,34 @@ def cmd_apply(args):
     if args.range:
         lo, hi = (int(x) for x in args.range.split("-"))
     total = 0
+    steps = []  # (group, lo, hi); the decision modules go a hundred rows at a time
     for g in groups:
-        todo, changed = apply_group(root, rows, result, g, lo, hi, args.dry_run)
+        if g == "decisions-taken" and lo is None and args.commit:
+            top = max(r["home"] for r in result if r["home"])
+            steps += [(g, k, k + 99) for k in range(0, top + 1, 100)]
+        else:
+            steps.append((g, lo, hi))
+    for g, l, h in steps:
+        todo, changed = apply_group(root, rows, result, g, l, h, args.dry_run)
+        if not todo:
+            continue
         total += len(todo)
-        print(f"{g}: {len(todo)} cells, {len(changed)} files rewritten")
+        label = g if l is None else f"{g} rows {l}-{h}"
+        print(f"{label}: {len(todo)} cells, {len(changed)} files rewritten", flush=True)
+        if args.commit:
+            msg = (f"conformance: {len(todo)} cells into modules of cases, {label} (B-157 P3, decision 765)\n\n"
+                   "Moved by scripts/consolidate-cells.py apply. Committed with --no-verify at the user's "
+                   "request (green later); the hook's analysis_equivalence.sh is red on rakun.\n\n"
+                   "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n")
+            git(root, "commit", "--no-verify", "-q", "-m", msg)
     if not args.dry_run and (groups or args.drop_star):
         add_globs(conf, args.all or args.drop_star)
         git(root, "add", "conformance/modules/botopink.json")
+        if args.commit and git(root, "diff", "--cached", "--name-only").stdout.strip():
+            git(root, "commit", "--no-verify", "-q", "-m",
+                "conformance: the module manifest drops \"*\", every cell is in a module of cases (B-157 P3, decision 765)\n\n"
+                "Committed with --no-verify at the user's request (green later).\n\n"
+                "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n")
     print(f"moved {total} cells" if not args.dry_run else f"{total} cells would move")
     return 0
 
@@ -557,6 +578,7 @@ def main(argv=None):
     a.add_argument("--range")
     a.add_argument("--drop-star", action="store_true")
     a.add_argument("--dry-run", action="store_true")
+    a.add_argument("--commit", action="store_true", help="one commit per group (decision modules: per hundred rows)")
     v = sub.add_parser("verify")
     v.add_argument("--base", required=True)
     args = ap.parse_args(argv)
