@@ -9107,7 +9107,13 @@ const Emitter = struct {
             return b.call("__bp_slice", &.{
                 recv,
                 try this.exprNode(b, r.start.*),
-                if (r.end) |end| try this.exprNode(b, end.*) else Ast.Expr.a("infinity"),
+                // `xs[a...b]` (decisions 53, 105) includes `b`: one more.
+                if (r.end) |end| (if (r.inclusive) Ast.Expr{ .binop = .{
+                    .op = "+",
+                    .lhs = try b.ptr(try b.paren(try this.exprNode(b, end.*))),
+                    .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
+                    .parens = false,
+                } } else try this.exprNode(b, end.*)) else Ast.Expr.a("infinity"),
             });
         }
         this.needs_index_helper = true;

@@ -9914,7 +9914,15 @@ const Emitter = struct {
             const r = idx.collection.kind.range;
             if (r.end) |end| {
                 const st = try self.stageOperands(&.{ recv.*, r.start.*, end.* }, no_trailing);
-                try self.emitParallelMove(&.{ st.ops[0], st.ops[1], st.ops[2] }, &.{ 0, 1, 2 });
+                if (r.inclusive) {
+                    // `xs[a...b]` (decisions 53, 105) includes `b`: one more.
+                    const live = @max(self.min_live, st.x_top);
+                    const spare = @max(live, 3);
+                    try beamEmitter.writeGcBif(self.out, .add, live, &.{ st.ops[2], Op.int(1) }, Dst.xr(spare));
+                    try self.emitParallelMove(&.{ st.ops[0], st.ops[1], Op.xr(spare) }, &.{ 0, 1, 2 });
+                } else {
+                    try self.emitParallelMove(&.{ st.ops[0], st.ops[1], st.ops[2] }, &.{ 0, 1, 2 });
+                }
             } else {
                 const st = try self.stageOperands(&.{ recv.*, r.start.* }, no_trailing);
                 try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });

@@ -12818,6 +12818,14 @@ const Emitter = struct {
         return if (inner[0] == '[' or inner[0] == '(') inner else null;
     }
 
+    /// `xs[a...b]` (decisions 53, 105) includes `b`: the slice's end on the
+    /// stack is one more.
+    fn sliceInclusiveEnd(self: *Emitter, inclusive: bool) anyerror!void {
+        if (!inclusive) return;
+        try self.emit(try self.constInt(1));
+        try self.emit(opOf(.i32, "add"));
+    }
+
     fn lowerIndex(self: *Emitter, cc: anytype) anyerror!void {
         const b = self.builder();
         const recv = cc.args[0].value.*;
@@ -12842,13 +12850,17 @@ const Emitter = struct {
                 if (!ar.isArrRef()) return self.gcFail("a slice of a value of no known array type");
                 try self.lowerCoerced(recv, ar);
                 try self.lowerCoerced(r.start.*, .i32);
-                if (r.end) |e| try self.lowerCoerced(e.*, .i32) else try self.emit(try self.constInt(std.math.maxInt(i32)));
+                if (r.end) |e| {
+                    try self.lowerCoerced(e.*, .i32);
+                    try self.sliceInclusiveEnd(r.inclusive);
+                } else try self.emit(try self.constInt(std.math.maxInt(i32)));
                 return self.emit(.{ .call = try self.gcArrOp("slice", ar.ref.arr) });
             }
             try self.lowerCoerced(recv, .i32);
             try self.lowerCoerced(r.start.*, .i32);
             if (r.end) |e| {
                 try self.lowerCoerced(e.*, .i32);
+                try self.sliceInclusiveEnd(r.inclusive);
             } else {
                 // std-wasm's `text.slice` and `array.slice` clamp, so "to the end"
                 // is the largest i32

@@ -7404,7 +7404,12 @@ const Emitter = struct {
             const slice = try self.b.member(recv, "slice");
             const start = try self.buildExpr(r.start.*);
             const end = r.end orelse return self.b.call(slice, &.{start});
-            return self.b.call(slice, &.{ start, try self.buildExpr(end.*) });
+            // `xs[a...b]` (decisions 53, 105) includes `b`: one more.
+            const stop = if (r.inclusive)
+                try self.b.binaryBare("+", try self.b.paren(try self.buildExpr(end.*)), .{ .number = "1" })
+            else
+                try self.buildExpr(end.*);
+            return self.b.call(slice, &.{ start, stop });
         }
         return self.b.index(recv, try self.buildExpr(idx), false);
     }

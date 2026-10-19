@@ -22066,11 +22066,25 @@ fn inferIndexExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
         const r = idxExpr.collection.kind.range;
         const args = try env.arena.alloc(ast.CallArgOf(.untyped), 2);
         args[0] = .{ .label = null, .value = r.start };
-        args[1] = .{ .label = null, .value = r.end orelse blk: {
-            const nullLit = try env.arena.create(ast.Expr);
-            nullLit.* = .{ .literal = .{ .loc = idxExpr.collection.loc, .kind = .null_ } };
-            break :blk nullLit;
-        } };
+        args[1] = .{
+            .label = null,
+            .value = if (r.end) |end| blk: {
+                if (!r.inclusive) break :blk end;
+                // `xs[a...b]` (decisions 53, 105) includes `b`: `slice` stops
+                // before its end, so the end is `b + 1`.
+                const one = try env.arena.create(ast.Expr);
+                // Located inside the `...` token: no written node shares it.
+                const oneLoc: ast.Loc = .{ .line = idxExpr.collection.loc.line, .col = idxExpr.collection.loc.col + 1, .expansion = idxExpr.collection.loc.expansion };
+                one.* = .{ .literal = .{ .loc = oneLoc, .kind = .{ .numberLit = "1" } } };
+                const sum = try env.arena.create(ast.Expr);
+                sum.* = .{ .binaryOp = .{ .loc = idxExpr.collection.loc, .op = .add, .lhs = end, .rhs = one } };
+                break :blk sum;
+            } else blk: {
+                const nullLit = try env.arena.create(ast.Expr);
+                nullLit.* = .{ .literal = .{ .loc = idxExpr.collection.loc, .kind = .null_ } };
+                break :blk nullLit;
+            },
+        };
         rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
             .receiver = recvExpr,
             .callee = index_slice_method,
