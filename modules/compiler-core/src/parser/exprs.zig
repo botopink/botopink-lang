@@ -467,11 +467,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return .{ .loop = try this.parseGenLoopExpr(alloc, kind) };
     }
 
-    // #(e1, e2, ...) ---- tuple literal
-    if (this.check(.hash) and this.peekAt(1).kind == .leftParenthesis) {
-        return .{ .collection = try this.parseTupleLitExpr(alloc) };
-    }
-
     // val/var binding (local or destructuring)
     if (this.check(.val) or this.check(.@"var")) {
         return try this.parseLocalBindExpr(alloc);
@@ -1802,9 +1797,11 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return parsePostfixChain(this, alloc, head);
     }
 
-    // #(e1, e2, ...) ---- a tuple literal as an operand (T11): the right side
-    // of `??` (`hit.at(0) ?? #("", "")`), an operator's operand. The
-    // statement-start position reads it in `parseExpr` first.
+    // #(e1, e2, ...) ---- a tuple literal, wherever an operand stands: the
+    // right side of `??` (`hit.at(0) ?? #("", "")`), and the left operand of
+    // an operator (`#(1, [a]) == other`, decision 348), which is why the
+    // statement start reads it here too rather than ending the expression
+    // after the literal.
     if (this.check(.hash) and this.peekAt(1).kind == .leftParenthesis) {
         const lit = Expr{ .collection = try this.parseTupleLitExpr(alloc) };
         return parsePostfixChain(this, alloc, lit);
