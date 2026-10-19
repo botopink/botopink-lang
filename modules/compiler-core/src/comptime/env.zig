@@ -12,6 +12,18 @@ const template = @import("./template.zig");
 const trace = @import("./trace.zig");
 const hostCells = @import("./host_cells.zig");
 
+/// Decision 757 — a call that passes types to `comptime t: type<T>`
+/// parameters (`Env.typeTokenCalls`).
+pub const TypeTokenCall = struct {
+    /// The positions of the type arguments among the call's written ones.
+    at: []const usize,
+    /// Per position, the name written: a type, or a `comptime t: type<T>`
+    /// parameter of the body the call sits in, handed on.
+    names: []const []const u8,
+    /// A method's owner type; null for a function.
+    owner: ?[]const u8 = null,
+};
+
 // ── type definitions ──────────────────────────────────────────────────────────
 
 /// What `Env.aliasedWrapper` answers: the alias the source wrote and the
@@ -1328,6 +1340,9 @@ pub const Env = struct {
     /// `val` annotation's name lookup (`refuseUnknownName`) which names are
     /// type parameters in scope.
     methodGenericMap: ?*const std.StringHashMap(*T.Type) = null,
+    /// Decision 667 — the parameters of the function or method body being
+    /// inferred: a `comptime t: type<T>` among them is the type `v is t` tests.
+    bodyParams: []const ast.Param = &.{},
     /// Decision 525 — where the statement being inferred is a `case` or a
     /// block `{ … }` written as a whole statement (its value discarded). Set
     /// by the statement loops (`inferStmtsTyped`, `inferBodyStmts`) per
@@ -1495,6 +1510,14 @@ pub const Env = struct {
     /// function with `comptime` parameters hidden by a local keeps every
     /// argument of the call (`transform.localFnOf`).
     localCalleeCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 757 — the calls that pass a type to a `comptime t: type<T>`
+    /// parameter of an ordinary function or method, by the call's loc
+    /// (`infer.noteTypeTokenArgs`); `type_token.zig` drops those arguments and
+    /// calls the copy specialised for the types.
+    typeTokenCalls: std.AutoHashMapUnmanaged(ast.Loc, TypeTokenCall) = .empty,
+    /// Decision 757 — the reads `t.value` of a type token handed on as a call's
+    /// argument (`self.count(t)`), by the read's loc: the type, not refused.
+    typeTokenHandOns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 308 — a field key at run time: the expression each written
     /// node means, keyed by the node's own loc — a `.title` against a
     /// `Type.Field<T>` (the `Type.Field<T>` record), a `case` over one (the

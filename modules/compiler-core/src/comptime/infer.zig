@@ -8850,6 +8850,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedFnGenericMap = env.fnGenericMap;
     env.fnGenericMap = &genericMap;
     defer env.fnGenericMap = savedFnGenericMap;
+    const savedBodyParams = env.bodyParams;
+    env.bodyParams = f.params;
+    defer env.bodyParams = savedBodyParams;
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
     try refuseInlineParamRules(env, f);
@@ -8983,6 +8986,9 @@ fn inferTypeMethods(
         const savedMethodGenericMap = env.methodGenericMap;
         env.methodGenericMap = &genericMap;
         defer env.methodGenericMap = savedMethodGenericMap;
+        const savedBodyParams = env.bodyParams;
+        env.bodyParams = m.params;
+        defer env.bodyParams = savedBodyParams;
 
         // Bind parameters — a `self` receiver resolves through `Self`.
         for (m.params) |p| {
@@ -14521,6 +14527,137 @@ fn runtimeNameIn(env: *Env, e: ast.Expr) ?RuntimeName {
     }
 }
 
+/// Decision 667 — `ref`, the type an `is` tests, when it names a `comptime t:
+/// type<T>` parameter of the body being inferred: the `T` it stands for. Null
+/// for anything else.
+fn typeTokenRef(env: *const Env, ref: ast.TypeRef) ?ast.TypeRef {
+    if (ref != .named) return null;
+    const p = typeTokenParam(env.bodyParams, ref.named) orelse return null;
+    return p.typeRef.typeparam[0];
+}
+
+/// The parameter `name` of `params` when it is a `comptime t: type<T>` one.
+fn typeTokenParam(params: []const ast.Param, name: []const u8) ?ast.Param {
+    for (params) |p| {
+        if (!std.mem.eql(u8, p.name, name)) continue;
+        if (p.modifier == .@"comptime" and p.typeRef == .typeparam and p.typeRef.typeparam.len == 1) return p;
+        return null;
+    }
+    return null;
+}
+
+/// Decision 757 — a call of an ordinary function or method (one with a body:
+/// no decorator, no template) that passes a type to a `comptime t: type<T>`
+/// parameter: the arguments' positions and the names they write (a type, or
+/// a `comptime t: type<T>` parameter of the body the call sits in, handed
+/// on), recorded under the call's loc for `type_token.zig`, which drops them
+/// from the call and calls the copy of the callee specialised for those
+/// types. A type token never reaches run time.
+fn noteTypeTokenArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    if (c.kind != .call) return;
+    const call = c.kind.call;
+    var owner: ?[]const u8 = null;
+    const params: []const ast.Param = typeTokenCalleeParams(env, call, typed, &owner) orelse &.{};
+    var at: std.ArrayListUnmanaged(usize) = .empty;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (call.args, 0..) |arg, i| {
+        const handed = typeTokenHandOn(env, arg.value.*);
+        const isToken = arg.label == null and i < params.len and typeTokenParam(params, params[i].name) != null;
+        if (!isToken) {
+            // A type token is a type at build: only another call's token
+            // takes it.
+            if (handed) |n| {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type, handed on only to a `comptime t: type<T>` parameter", .{ diagnostics.expr_value_of_type, n });
+                env.lastError = TypeError.custom(msg, "A `comptime t: type<T>` parameter is the type its copy of the function is specialised for (decision 757): test with `v is t`, or hand it to another `comptime` type parameter.").withLoc(arg.value.getLoc());
+                return error.TypeError;
+            }
+            continue;
+        }
+        const written: []const u8 = handed orelse switch (arg.value.*) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => continue,
+            },
+            else => continue,
+        };
+        try at.append(env.arena, i);
+        try names.append(env.arena, written);
+    }
+    if (at.items.len == 0) return;
+    try env.typeTokenCalls.put(env.arena, c.loc, .{
+        .at = try at.toOwnedSlice(env.arena),
+        .names = try names.toOwnedSlice(env.arena),
+        .owner = owner,
+    });
+}
+
+/// The parameters (after `self`) of the ordinary function or method `call`
+/// calls when it takes type tokens, its owner type in `owner` for a method;
+/// null for any other callee.
+fn typeTokenCalleeParams(env: *Env, call: anytype, typed: TypedExpr, owner: *?[]const u8) ?[]const ast.Param {
+    if (call.is_builtin or call.args.len == 0) return null;
+    if (call.receiver) |recv| {
+        if (recv.* == .identifier and recv.identifier.kind == .ident and env.namespaces.paths.contains(recv.identifier.kind.ident)) {
+            const key = std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recv.identifier.kind.ident, call.callee }) catch return null;
+            const f = env.importedFnDecls.get(key) orelse return null;
+            if (!isTypeTokenCallee(f)) return null;
+            return f.params;
+        }
+        // A std module's function through its namespace, `async.failed(…)`.
+        if (recv.* == .identifier and recv.identifier.kind == .ident) if (env.stdImports.get(recv.identifier.kind.ident)) |key| {
+            const fns = env.stdModuleFns.get(key) orelse return null;
+            for (fns) |f| if (f.isPub and std.mem.eql(u8, f.name, call.callee)) {
+                if (!isTypeTokenCallee(f)) return null;
+                return f.params;
+            };
+            return null;
+        };
+        if (typed != .call or typed.call.kind != .call) return null;
+        const recvTyped = typed.call.kind.call.receiver orelse return null;
+        const tn = nominalName(recvTyped.getType().deref()) orelse return null;
+        const m = env.getInherentMethodDecl(tn, call.callee) orelse return null;
+        if (m.body == null) return null;
+        owner.* = tn;
+        return if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) m.params[1..] else m.params;
+    }
+    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse return null;
+    if (!isTypeTokenCallee(f)) return null;
+    return f.params;
+}
+
+/// `t.value` — the parser's read of a `comptime` parameter — where `t` is a
+/// `comptime t: type<T>` parameter of the body being inferred: its name.
+fn typeTokenHandOn(env: *const Env, e: ast.Expr) ?[]const u8 {
+    if (e != .identifier or e.identifier.kind != .identAccess) return null;
+    const ia = e.identifier.kind.identAccess;
+    if (!std.mem.eql(u8, ia.member, "value")) return null;
+    if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+    const n = ia.receiver.identifier.kind.ident;
+    _ = typeTokenParam(env.bodyParams, n) orelse return null;
+    return n;
+}
+
+/// Decision 757 — each argument of `c` that hands on a type token of the
+/// body (`self.count(t)`): its read is the type, not refused as an `@Expr`'s
+/// value (`refuseExprValueRead`); `noteTypeTokenArgs` checks that a token
+/// takes it.
+fn noteTypeTokenHandOns(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    if (c.kind != .call) return;
+    for (c.kind.call.args) |a| if (typeTokenHandOn(env, a.value.*) != null)
+        try env.typeTokenHandOns.put(env.arena, a.value.getLoc(), {});
+}
+
+/// Whether `f` is an ordinary function whose `comptime t: type<T>` parameters
+/// specialise it (decision 757): it has a body, and is neither a decorator nor
+/// a template.
+fn isTypeTokenCallee(f: ast.FnDecl) bool {
+    if (f.body.len == 0) return false;
+    if (memberFn.declParamName(f) != null) return false;
+    if (f.returnType) |rt| if (rt.isTemplateReturnType()) return false;
+    for (f.params) |p| if (p.arrival == .syntax) return false;
+    return true;
+}
+
 fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
     switch (ref) {
         .generic => |g| {
@@ -15836,9 +15973,11 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             // Decision 379 (3) — `context(T)` names a type: the call answers
             // `@Component<T>`, typed here (its argument is no value).
             if (try contextReadCall(env, c)) |typed| break :blk typed;
+            try noteTypeTokenHandOns(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
             try noteComponentCall(env, c, typedCall);
             try noteHostCall(env, c);
+            try noteTypeTokenArgs(env, c, typedCall);
             try noteAsyncCall(env, c, typedCall);
             try noteStageCall(env, c, typedCall);
             break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
@@ -16525,6 +16664,8 @@ fn typedIdentName(e: ast.TypedExpr) ?[]const u8 {
 /// the function's body is not called and the type not inspected while the
 /// program compiles. Refused at the read.
 fn refuseExprValueRead(env: *Env, receiver: ast.Expr, inner: *T.Type, loc: ast.Loc) InferError!void {
+    // Decision 757 — a type token handed on to another call's token.
+    if (env.typeTokenHandOns.contains(loc)) return;
     const name: []const u8 = if (receiver == .identifier and receiver.identifier.kind == .ident) receiver.identifier.kind.ident else "the expression";
     if (exprParamNamed(env, receiver)) |p| if (p.typeRef == .typeparam) {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr` of a type, which has no `.value`", .{ diagnostics.expr_value_of_type, name });
@@ -17468,7 +17609,7 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 // `narrowings` rather than growing a second narrowing
                 // mechanism — and so does the null test below it.
                 if (isNarrowingOf(i.cond.*)) |n| {
-                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, n.ref) });
+                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse n.ref) });
                 }
                 // The null test: `if (x != null)` rebinds `x` to the `?T`'s
                 // payload inside the branch, `if (x == null)` rebinds it in the
@@ -22898,7 +23039,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         ).withLoc(loc);
                         return error.TypeError;
                     };
-                    if (call.isType) |tested| {
+                    // Decision 757 — `v is t`, `t` a `comptime t: type<T>`
+                    // parameter: the function is specialised per type
+                    // argument (`type_token.zig`), so in each copy the test
+                    // is the concrete type's; here it narrows `v` to `T`.
+                    const tokenRef = typeTokenRef(env, call.isType.?);
+                    if (tokenRef orelse call.isType) |tested| {
                         // Decision 332 (question 139-a) — no run-time test
                         // tells a `bigint` from another integer: `is` neither
                         // tests for one nor tests one.
@@ -22934,7 +23080,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                     .trailing = typedTrailing,
                                     // The tested type is what the backends lower the run-time
                                     // test from; dropping it here left them nothing to read.
-                                    .isType = call.isType,
+                                    .isType = typeTokenRef(env, call.isType.?) orelse call.isType,
                                 },
                             },
                         },

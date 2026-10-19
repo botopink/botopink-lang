@@ -1469,6 +1469,20 @@ test; what it answers is the caller's to trust.
 
 <!-- example: modules/is_function_type -->
 
+A type to test against travels as a `comptime t: type<T>` parameter — `fn
+count<T>(self: Registry, comptime t: type<T>) -> i32 { … if (e is t) … }`, called
+`r.count(Users)`, `T` inferred from `t`. The parameter is the function's
+specialisation (decisions 417, 757): the call compiles to the function's copy for
+`Users`, where `t` is `Users` — `v is t` is `v is Users`, an ordinary run-time test
+with one answer on every target, narrowing `v` to `T` in its branch — and `t`
+handed on to another call (`self.count(t)`) is a `comptime` argument known at
+build, the call of the copy for the same type. The type itself never reaches run
+time. Never a comparison by name.
+
+<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/is_comptime_type_parameter -->
+
+<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/comptime_type_token_handed_on -->
+
 The elements of an array literal that disagree make the union of their types
 (`[3, "abcd"]` is `(i32 | string)[]`), and each element read back — printed,
 iterated, by index or `at`, passed to a parameter of the union — is the member it
