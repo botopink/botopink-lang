@@ -1,0 +1,17 @@
+//// Decision 383 — `#[emilia(…)]` records `styled`'s `StyledMeta(layer: Layer, className: string, rules: string)`, one per tag.
+
+import {comptime.emilia.emilia, comptime.emilia.StyledMeta};
+import {compiler, io.terminal.print} from "std";
+
+#[emilia(.Pad.All.4, .Bg.White)]
+pub type Card()
+
+#[emilia(.Pad.All.8)]
+#[emilia(.Bg.Black)]
+pub type Banner()
+
+pub fn main() -> void {
+    val meta = comptime compiler.typeInfo(Card).meta(StyledMeta);
+    print(meta?.className ?? "none");
+    print(meta?.rules ?? "none");
+}

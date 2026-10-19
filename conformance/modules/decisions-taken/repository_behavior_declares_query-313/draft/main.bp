@@ -1,0 +1,27 @@
+//// Decision 313 — A repository is a `behavior` annotated `#[repository]`; each method declares its query — erika's or native SQL
+
+import {comptime.store.repository, comptime.store.query, comptime.store.nativeQuery, comptime.store.Statements};
+import {compiler, io.terminal.print} from "std";
+
+pub type User(id: i32, name: string)
+
+pub type StoreError {
+    Unavailable,
+    Timeout,
+}
+
+#[repository]
+pub behavior Users {
+    #[query @`select * from User where id = ${id} limit 1`]
+    fn find(self: Self, id: i32) -> Result<?User, StoreError>;
+
+    #[nativeQuery("select * from users where name = :name")]
+    fn named(self: Self, name: string) -> Result<User[], StoreError>;
+}
+
+pub fn main() -> void {
+    val lines: string[] = comptime compiler.typeInfo(Users).meta(Statements)?.lines ?? [];
+    for (lines) { line ->
+        print(line);
+    }
+}

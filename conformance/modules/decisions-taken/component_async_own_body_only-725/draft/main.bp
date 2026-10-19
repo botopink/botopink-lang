@@ -1,0 +1,11 @@
+//// Decision 725 — A component is never asynchronous because of its children: 375's mark counts the node's own body only.
+
+import {pages.Page, comptime.marks.Marks};
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val nodes: string[] = comptime compiler.typeInfo(Page).meta(Marks)?.nodes ?? [];
+    for (nodes) { line ->
+        print(line);
+    }
+}

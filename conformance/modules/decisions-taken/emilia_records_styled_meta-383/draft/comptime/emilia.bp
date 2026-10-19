@@ -1,0 +1,47 @@
+import {compiler, hash} from "std";
+
+pub type Layer {
+    Base,
+    Components,
+    Utilities,
+}
+
+pub type StyledMeta(layer: Layer, className: string, rules: string)
+
+pub type Token {
+    Pad {
+        All {
+            4,
+            8,
+        }
+    }
+    Bg {
+        White,
+        Black,
+    }
+}
+
+fn declaration(t: Token) -> string {
+    return case t {
+        Pad(p) -> case p {
+            All(a) -> case a {
+                __4 -> "padding:1rem;";
+                __8 -> "padding:2rem;";
+            };
+        };
+        Bg(b) -> case b {
+            White -> "background:#ffffff;";
+            Black -> "background:#000000;";
+        };
+    };
+}
+
+pub fn emilia(syntax decl: unknown, comptime ..tokens: Token[]) -> void {
+    val body = tokens.map({ t -> declaration(t) }).join("");
+    val className = "e_" + hash.contentHash(body);
+    compiler.setMeta(StyledMeta(layer: .Utilities, className: className, rules: "."
+        + className
+        + "{"
+        + body
+        + "}"));
+}

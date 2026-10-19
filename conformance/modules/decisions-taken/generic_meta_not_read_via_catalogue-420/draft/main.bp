@@ -1,0 +1,25 @@
+//// Decision 420 — A generic meta record is not read through a catalogue entry.
+
+import {comptime.rules.rule, comptime.rules.Rule};
+import {compiler, io.terminal.print} from "std";
+
+fn positive(o: Order) -> bool {
+    return o.total > 0;
+}
+
+fn small(o: Order) -> bool {
+    return o.total < 100;
+}
+
+#[rule("positive", positive), rule("small", small)]
+pub type Order(total: i32)
+
+fn failing(o: Order) -> string[] {
+    val rules: Rule<Order>[] = comptime compiler.typeInfo(Order).metaAll(Rule);
+    return rules.filter({ r -> !r.holds(o) }).map({ r -> r.name });
+}
+
+pub fn main() -> void {
+    print(failing(Order(total: 5)));
+    print(failing(Order(total: 500)));
+}

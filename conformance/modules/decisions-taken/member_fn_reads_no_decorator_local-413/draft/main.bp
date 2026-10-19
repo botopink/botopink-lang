@@ -1,0 +1,11 @@
+//// Decision 413 — For now, a member function reads only the decorator's parameters, its own locals and `@typeInfo(T)` — never a local of the decorator's body nor the `@Decl` handle.
+
+import {comptime.describe.describe};
+import {io.terminal.print} from "std";
+
+#[describe("record")]
+pub type City(name: string, people: i32)
+
+pub fn main() -> void {
+    print(City(name: "Lisbon", people: 545000).describe());
+}

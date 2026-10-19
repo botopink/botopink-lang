@@ -1,0 +1,30 @@
+import {compiler} from "std";
+import {comptime.registry};
+
+pub type Scope {
+    Singleton,
+    Request,
+}
+
+pub fn component(syntax decl: unknown, comptime scope: Scope = .Singleton) -> void {
+    val name = compiler.name(decl)!;
+    val kind = if (scope == .Singleton) "singleton" else "request";
+    compiler.init({ ->
+        registry.add("component " + name + " (" + kind + ")");
+    });
+}
+
+pub fn provides(syntax decl: unknown) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ ->
+        registry.add("provider " + name);
+    });
+}
+
+pub fn listen(syntax decl: unknown, comptime destination: string) -> void {
+    val owner = compiler.name(compiler.owner(decl)!)!;
+    val name = compiler.name(decl)!;
+    compiler.init({ ->
+        registry.add("listener " + owner + "." + name + " on " + destination);
+    });
+}

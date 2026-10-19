@@ -1,0 +1,15 @@
+//// Decision 753 — (a): `Node` grows `Fn(params, ret, body)` — a typed parameter list, a return type, a statement body — and the type nodes, one record per kind of the parser's type grammar, measured off 644's mock member and the forms `code` must build.
+
+import {comptime.greeter.greeter};
+import {io.terminal.print} from "std";
+
+#[greeter("Hello")]
+pub type English()
+
+#[greeter("Olá")]
+pub type Portuguese()
+
+pub fn main() -> void {
+    print(English().greet("Ana"));
+    print(Portuguese().greet("Bia"));
+}

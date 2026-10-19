@@ -1,0 +1,11 @@
+//// Decision 190 — The library decides which types an embedded expression may have: the template function accepts or refuses it with a comp
+
+import {comptime.money.money};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val price = 1250;
+    print(money @`${price}`);
+    val label = "ten";
+    print(money @`${label}`);
+}
