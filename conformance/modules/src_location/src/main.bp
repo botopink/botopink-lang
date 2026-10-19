@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 fn where() -> SourceLocation {
-    return comptime compiler.src;
+    return comptime compiler.src();
 }
 
 pub fn main() {
@@ -15,5 +15,5 @@ pub fn main() {
         loc.column,
         loc.fnName,
     ); // src/main.bp 7 21 where
-    print(comptime compiler.src.fnName); // main
+    print(comptime compiler.src().fnName); // main
 }

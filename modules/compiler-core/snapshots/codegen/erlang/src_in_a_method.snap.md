@@ -2,7 +2,7 @@
 ```botopink
 type Stub(n: i32) {
     fn where(self: Self) -> SourceLocation {
-        return comptime compiler.src;
+        return comptime compiler.src();
     }
 }
 fn main() {

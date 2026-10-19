@@ -2,11 +2,11 @@
 ```botopink
 fn helper() -> i32 { return 1; }
 test "src: in a test" {
-    val loc = comptime compiler.src;
+    val loc = comptime compiler.src();
     print(loc.file, loc.line, loc.column, loc.fnName);
 }
 test {
-    print(comptime compiler.src.fnName);
+    print(comptime compiler.src().fnName);
 }
 
 import {io.terminal.print, compiler} from "std";

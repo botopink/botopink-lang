@@ -562,11 +562,11 @@ test "js: src ---- in a test" {
     try h.assertJsTestMode(std.testing.allocator, @src(),
         \\fn helper() -> i32 { return 1; }
         \\test "src: in a test" {
-        \\    val loc = comptime compiler.src;
+        \\    val loc = comptime compiler.src();
         \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
         \\test {
-        \\    print(comptime compiler.src.fnName);
+        \\    print(comptime compiler.src().fnName);
         \\}
         \\
         \\import {io.terminal.print, compiler} from "std";
@@ -576,7 +576,7 @@ test "js: src ---- in a test" {
 test "js: src ---- in a fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn locate() -> SourceLocation {
-        \\    return comptime compiler.src;
+        \\    return comptime compiler.src();
         \\}
         \\fn main() {
         \\    val loc = locate();
@@ -592,7 +592,7 @@ test "js: src ---- in a method" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Stub(n: i32) {
         \\    fn where(self: Self) -> SourceLocation {
-        \\        return comptime compiler.src;
+        \\        return comptime compiler.src();
         \\    }
         \\}
         \\fn main() {
@@ -607,7 +607,7 @@ test "js: src ---- in a method" {
 test "js: src ---- at module level" {
     // `fnName` is `""` outside any declaration.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val top = comptime compiler.src;
+        \\val top = comptime compiler.src();
         \\fn main() {
         \\    print(top.file, top.line, top.column);
         \\    print(top.fnName == "");
@@ -623,7 +623,7 @@ test "js: src ---- equals a hand-written constructor" {
     // Their generated JS is the same text — the rewrite is the constructor.
     const with_builtin =
         \\fn locate() -> SourceLocation {
-        \\    return comptime compiler.src;
+        \\    return comptime compiler.src();
         \\}
         \\fn main() {
         \\    print(locate().fnName);
@@ -654,8 +654,8 @@ test "js: src ---- run log" {
     // literal line of the `@`.
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
-        \\    print(comptime compiler.src.line);
-        \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
+        \\    print(comptime compiler.src().line);
+        \\    print(comptime compiler.src().column, comptime compiler.src().fnName);
         \\}
         \\
         \\import {io.terminal.print, compiler} from "std";
@@ -665,12 +665,12 @@ test "js: src ---- run log" {
 test "erlang: src ---- run log" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
-        \\    print(comptime compiler.src.line);
-        \\    print(comptime compiler.src.column, comptime compiler.src.fnName);
+        \\    print(comptime compiler.src().line);
+        \\    print(comptime compiler.src().column, comptime compiler.src().fnName);
         \\}
         \\
         \\import {io.terminal.print, compiler} from "std";
-    , "2\n20 main\n", &.{ ", 2, 20, <<\"main\">>}", ", 3, 20, <<\"main\">>}", ", 3, 50, <<\"main\">>}" });
+    , "2\n20 main\n", &.{ ", 2, 20, <<\"main\">>}", ", 3, 20, <<\"main\">>}", ", 3, 52, <<\"main\">>}" });
 }
 
 test "js: unknown builtin ---- is refused" {
@@ -731,11 +731,11 @@ test "js: src ---- in a test run log" {
     // evidence; the commonJS one agrees with `src_in_a_test.snap.md`.)
     try h.assertTestModeRunLog(std.testing.allocator,
         \\test "src: in a test" {
-        \\    val loc = comptime compiler.src;
+        \\    val loc = comptime compiler.src();
         \\    print(loc.file, loc.line, loc.column, loc.fnName);
         \\}
         \\test {
-        \\    print(comptime compiler.src.fnName);
+        \\    print(comptime compiler.src().fnName);
         \\}
         \\
         \\import {io.terminal.print, compiler} from "std";

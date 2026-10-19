@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return comptime compiler.src;
+    return comptime compiler.src();
 }
 fn main() {
     print(locate().fnName);

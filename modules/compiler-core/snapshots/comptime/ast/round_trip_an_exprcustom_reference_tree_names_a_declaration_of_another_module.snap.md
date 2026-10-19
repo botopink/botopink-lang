@@ -22,7 +22,7 @@
 //// argument, a lambda —, `comptime` a value known at build, the rest a plain
 //// value.
 ////
-//// - The point: `src`, `module`, `package`, `isStd`.
+//// - The point: `src()`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
 ////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
 ////   `implement`.
@@ -43,13 +43,16 @@
 
 pub behavior Compiler {
     // ── The point ─────────────────────────────────────────────────────────
-    // Where the point is: the annotated declaration in a decorator, the call
-    // site elsewhere.
-    val src: SourceLocation;
     // The module and the package the point is written in; whether it is std.
     val module: string;
     val package: string;
     val isStd: bool;
+
+    // Where the point is: the annotated declaration in a decorator, the call
+    // site elsewhere — always called, `comptime compiler.src()`; a run-time
+    // function that needs its caller's place takes it as an argument the
+    // caller writes (decision 718).
+    fn src(self: Self) -> SourceLocation;
 
     // ── Reporting ─────────────────────────────────────────────────────────
     // An error at the argument or the declaration `at` holds (at `span`
@@ -217,12 +220,21 @@ pub type HookNode = __HookNode;
       "ast": "interface_def",
       "name": "Compiler",
       "fields": {
-        "src": "SourceLocation",
         "module": "string",
         "package": "string",
         "isStd": "bool"
       },
       "methods": [
+        {
+          "name": "src",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "SourceLocation"
+        },
         {
           "name": "fail",
           "params": [

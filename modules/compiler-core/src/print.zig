@@ -223,7 +223,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "there is no `@name`: std's functions are imported and what the compiler does is a member of `compiler`",
             .caretCaption = "no builtin of this name",
             .lexemeInCaption = true,
-            .hint = "`print(…)` with `import {io.terminal.print} from \"std\";`, `panic(…)` with `import {failure.panic} from \"std\";` (`@todo()` is `panic(\"not implemented\")`), `comptime compiler.typeInfo(T)` and `comptime compiler.src` with `import {compiler} from \"std\";`, `#[compiler.external(…)]` (decision 606).",
+            .hint = "`print(…)` with `import {io.terminal.print} from \"std\";`, `panic(…)` with `import {failure.panic} from \"std\";` (`@todo()` is `panic(\"not implemented\")`), `comptime compiler.typeInfo(T)` and `comptime compiler.src()` with `import {compiler} from \"std\";`, `#[compiler.external(…)]` (decision 606).",
         },
         .inlineTypeOutsideParameter => .{
             .code = "inline-type-outside-parameter",

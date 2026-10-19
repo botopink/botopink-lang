@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val top = comptime compiler.src;
+val top = comptime compiler.src();
 fn main() {
     print(top.file, top.line, top.column);
     print(top.fnName == "");

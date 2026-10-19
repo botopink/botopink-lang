@@ -5,5 +5,5 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    print(compiler.src.line);
+    print(compiler.src().line);
 }

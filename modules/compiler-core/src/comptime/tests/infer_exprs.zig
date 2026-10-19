@@ -338,11 +338,11 @@ test "infer: src types as SourceLocation" {
     // call, so the typed AST carries the record type and the four literals.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn locate() -> SourceLocation {
-        \\    return comptime compiler.src;
+        \\    return comptime compiler.src();
         \\}
-        \\val loc = comptime compiler.src;
+        \\val loc = comptime compiler.src();
         \\test "src: in a test" {
-        \\    val here = comptime compiler.src;
+        \\    val here = comptime compiler.src();
         \\}
         \\
         \\import {compiler} from "std";

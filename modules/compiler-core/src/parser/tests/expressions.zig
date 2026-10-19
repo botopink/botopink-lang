@@ -246,7 +246,7 @@ test "parser: builtin ---- zero-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
         \\    default fn run() {
-        \\        comptime compiler.src;
+        \\        comptime compiler.src();
         \\    }
         \\}
         \\
@@ -292,7 +292,7 @@ test "parser: builtin ---- as val initializer" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val size = @sizeOf(Float);
         \\val name = @typeName(String);
-        \\val src = comptime compiler.src;
+        \\val src = comptime compiler.src();
         \\
         \\import {compiler} from "std";
     );

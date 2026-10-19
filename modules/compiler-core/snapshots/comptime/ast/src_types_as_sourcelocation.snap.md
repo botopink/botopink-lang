@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn locate() -> SourceLocation {
-    return comptime compiler.src;
+    return comptime compiler.src();
 }
-val loc = comptime compiler.src;
+val loc = comptime compiler.src();
 test "src: in a test" {
-    val here = comptime compiler.src;
+    val here = comptime compiler.src();
 }
 
 import {compiler} from "std";
@@ -23,7 +23,7 @@ import {compiler} from "std";
       "return_type": "SourceLocation",
       "body": [
         {
-          "source": "return comptime compiler.src;"
+          "source": "return comptime compiler.src();"
         }
       ]
     },

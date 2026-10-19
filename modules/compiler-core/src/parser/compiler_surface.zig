@@ -33,8 +33,11 @@ pub const refusal_builtin = "__compilerRefusal";
 
 /// What a member is, for the table test and the mapping below.
 pub const Kind = enum {
-    /// A read of the point: `compiler.src`.
+    /// A read of the point: `compiler.module`.
     property,
+    /// A call of the point, taking no argument: `compiler.src()` (decision
+    /// 718).
+    point,
     /// An output of a decorator: `compiler.setMeta(v)`.
     output,
     /// A read taking an `expr` (or a declaration handle) first.
@@ -59,7 +62,7 @@ const W: ast.Arrival = .written;
 /// members.zig` holds it to `libs/std/src/compiler.bp`, member for member and
 /// arrival for arrival (decision 616).
 pub const members = [_]Member{
-    .{ .name = "src", .kind = .property },
+    .{ .name = "src", .kind = .point },
     .{ .name = "module", .kind = .property },
     .{ .name = "package", .kind = .property },
     .{ .name = "isStd", .kind = .property },
@@ -447,7 +450,16 @@ fn positional(ctx: *Ctx, args: []ast.CallArg) error{OutOfMemory}![]ast.CallArg {
 fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     const name = c.callee;
     const member = memberOf(name) orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`Compiler` has no member `{s}`", .{name}), "The members of `compiler` are declared by the behavior `Compiler` in std's `compiler.bp` (decision 575 (3)).");
-    if (member.kind == .property) return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` is read, not called", .{name}), "Write `compiler.src`, without parentheses (decision 575 (3)).");
+    if (member.kind == .property) return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` is read, not called", .{name}), try std.fmt.allocPrint(ctx.alloc, "Write `compiler.{s}`, without parentheses (decision 575 (3)).", .{name}));
+    // Decision 718 — `compiler.src()` is the place it is written, located
+    // where `compiler` is written.
+    if (member.kind == .point) {
+        ctx.changed = true;
+        const at = c.receiver.?.getLoc();
+        // The call replaced the node: its `compiler` is no one's.
+        ctx.alloc.destroy(c.receiver.?);
+        return builtinCall(at, "src", &.{}, &[_]ast.TrailingLambda{});
+    }
     ctx.changed = true;
     const args = c.args;
     if (member.kind == .output) {
@@ -557,12 +569,11 @@ fn executorOf(ctx: *Ctx, e: *ast.Expr) error{OutOfMemory}!*ast.Expr {
     return box(ctx, .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } } });
 }
 
-/// `compiler.<p>` read without a call.
-/// `compiler.src` is located where `compiler` is written: the place it reads.
+/// `compiler.<p>` read without a call; `compiler.src` is a call (decision
+/// 718), refused here as any member that is one.
 fn mapProperty(ctx: *Ctx, loc: ast.Loc, name: []const u8) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
     ctx.mapped += 1;
-    if (std.mem.eql(u8, name, "src")) return builtinCall(loc, "src", &.{}, &[_]ast.TrailingLambda{});
     if (std.mem.eql(u8, name, "module")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "module");
     if (std.mem.eql(u8, name, "package")) if (ctx.decl) |d| return fieldRead(ctx, loc, try ident(ctx, d, loc), "package");
     // Whether the annotated declaration is std's: its module is `std/…`.
@@ -839,7 +850,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     if (e == .identifier) switch (e.identifier.kind) {
         .ident => |n| {
             if (compiler_name != null and std.mem.eql(u8, n, compiler_name.?)) {
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src`, `compiler.fail(…)` (decision 579 (3)).");
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, loc) else try refusal(ctx, loc, diagnostics.compiler_escapes, "`compiler` is the compiler at this point, read through its members: it is never passed nor stored", "Write `compiler.<member>` — `compiler.src()`, `compiler.fail(…)` (decision 579 (3)).");
                 return;
             }
             if (!ctx.inTree and contains(ctx.values, n) and !contains(ctx.shadow.items, n)) {
@@ -855,7 +866,7 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
             }
             if (isCompiler(ia.receiver.*)) {
                 const at = ia.receiver.getLoc();
-                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else try mapProperty(ctx, if (std.mem.eql(u8, ia.member, "src")) at else loc, ia.member);
+                p.* = if (ctx.runTime) try runTimeRefusal(ctx, at) else try mapProperty(ctx, loc, ia.member);
                 // The read replaced the node: its `compiler` is no one's.
                 ctx.alloc.destroy(ia.receiver);
                 return;
