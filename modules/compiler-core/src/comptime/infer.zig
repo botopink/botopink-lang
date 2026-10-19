@@ -9824,8 +9824,8 @@ fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Ty
         const bound = rDeref.named.args[0];
         unifyUnlocated(env, bound, builtType) catch |err| {
             if (err != error.TypeError) return err;
-            const want = try errorMod.typeLabelAlloc(env.arena, bound);
-            const got = try errorMod.typeLabelAlloc(env.arena, builtType);
+            const want = try errorMod.typeLabelFullAlloc(env.arena, bound);
+            const got = try errorMod.typeLabelFullAlloc(env.arena, builtType);
             const callee = if (built.callee.len > 0) built.callee else "the template";
             const at = built.at orelse loc;
             if (built.file) |file| if (built.at) |b| {

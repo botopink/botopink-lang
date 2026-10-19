@@ -1935,7 +1935,9 @@ payload and a union value in an `unknown` slot); erlang, beam and commonJS ignor
 `error.zig` `typeLabelAlloc` spells a type as a source writes it in a mismatch message: a union as
 `A | B`, an optional as `?T` (decision 2 — `optional` is the checker's internal name and no
 spelling), an array as `T[]`, a section as its path (`Token.Text`, not `__Token__Text`); every
-other kind is `typeLabel`'s own text. The snapshot renderer's `expected:` / `found:` lines are
+other kind is `typeLabel`'s own text. `typeLabelFullAlloc` is the same with a generic named type written with its
+arguments (`Component<Styled>`), for a refusal that names two types told apart by them alone
+(`template-build-outside-bound`). The snapshot renderer's `expected:` / `found:` lines are
 `snapshot.zig`'s and keep their frozen spelling.
 
 **Gap, not owned here:** `(i32 | string)[]` does not parse — a parenthesised type is not in the

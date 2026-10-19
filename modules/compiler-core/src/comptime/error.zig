@@ -628,6 +628,17 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
 /// Every other kind is `typeLabel`'s own text, duplicated, so a message that
 /// goes through this renders byte-identically to one that does not.
 pub fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    return typeLabelImpl(gpa, ty, false);
+}
+
+/// `typeLabelAlloc`, with a generic named type written with its arguments
+/// (`Component<Styled>`, not `Component`): for a refusal that names two types
+/// told apart by their arguments alone.
+pub fn typeLabelFullAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    return typeLabelImpl(gpa, ty, true);
+}
+
+fn typeLabelImpl(gpa: std.mem.Allocator, ty: *T.Type, full: bool) ![]const u8 {
     const t = ty.deref();
     if (t.* == .named) {
         const n = t.named;
@@ -635,17 +646,31 @@ pub fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
         // `?T` (decision 2 — "optional" is no spelling), `T[]`, and a
         // section's path (`Token.Text`, not `__Token__Text`).
         if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
-            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            const inner = try typeLabelImpl(gpa, n.args[0], full);
             defer gpa.free(inner);
             return std.fmt.allocPrint(gpa, "?{s}", .{inner});
         }
         if (std.mem.eql(u8, n.name, "array") and n.args.len == 1 and n.args[0].deref().* == .named) {
-            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            const inner = try typeLabelImpl(gpa, n.args[0], full);
             defer gpa.free(inner);
             return std.fmt.allocPrint(gpa, "{s}[]", .{inner});
         }
         if (std.mem.startsWith(u8, n.name, "__") and n.name.len > 2) {
             return std.mem.replaceOwned(u8, gpa, n.name[2..], "__", ".");
+        }
+        if (full and n.args.len > 0) {
+            var buf: std.ArrayList(u8) = .empty;
+            errdefer buf.deinit(gpa);
+            try buf.appendSlice(gpa, n.name);
+            try buf.append(gpa, '<');
+            for (n.args, 0..) |arg, i| {
+                if (i > 0) try buf.appendSlice(gpa, ", ");
+                const label = try typeLabelImpl(gpa, arg, full);
+                defer gpa.free(label);
+                try buf.appendSlice(gpa, label);
+            }
+            try buf.append(gpa, '>');
+            return buf.toOwnedSlice(gpa);
         }
     }
     if (t.* != .union_) return gpa.dupe(u8, typeLabel(t));
@@ -653,7 +678,7 @@ pub fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
     errdefer buf.deinit(gpa);
     for (t.union_, 0..) |member, i| {
         if (i > 0) try buf.appendSlice(gpa, " | ");
-        const label = try typeLabelAlloc(gpa, member);
+        const label = try typeLabelImpl(gpa, member, full);
         defer gpa.free(label);
         try buf.appendSlice(gpa, label);
     }
