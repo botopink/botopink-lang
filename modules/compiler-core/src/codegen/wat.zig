@@ -26478,8 +26478,8 @@ const Emitter = struct {
                 // A `+` with a string operand is a concatenation — a string
                 // address — whatever the other operand holds: a template is
                 // `"" + hole`, and a lone float hole made it an `f64` (B-31).
-                .add => if (self.isStringExpr(e)) .i32 else self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
-                else => self.unifyNum(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*)),
+                .add => if (self.isStringExpr(e)) .i32 else self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc),
+                else => self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc),
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.wasmTypeOf(inner.*),
@@ -26543,6 +26543,21 @@ const Emitter = struct {
                 else => .i32,
             },
             else => .i32,
+        };
+    }
+
+    /// `unifyNum` of the operands of the operator at `loc`, widened to `i64`
+    /// when inference typed that operator a 64-bit integer: a suffixed literal
+    /// (`1l`) is spelled with no suffix by now and reads as `i32` when it fits,
+    /// so `1l + 2147483647l` added in an `i32` and aborted (decisions 319, 442).
+    fn unifyNumAt(self: *Emitter, a: Repr, b: Repr, loc: ast.Loc) Repr {
+        const t = self.unifyNum(a, b);
+        if (t != .i32) return t;
+        const il = self.instance_lowerings.get(loc) orelse return t;
+        if (il != .division) return t;
+        return switch (il.division) {
+            .i64, .u64, .isize, .usize => .i64,
+            else => t,
         };
     }
 
@@ -27719,7 +27734,7 @@ const Emitter = struct {
                 try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = short_seq }, .@"else" = .{ .seq = rhs_seq } } });
             return;
         }
-        const t0 = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
+        const t0 = self.unifyNumAt(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs), loc);
         // Every float is compared as the `f64` the language gives it.
         const t = t0;
         try self.lowerCoerced(lhs, t);
