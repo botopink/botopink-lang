@@ -5363,7 +5363,7 @@ inside its scope and reads as the local; the import still binds `print` outside 
 
 <!-- example: modules/terminal_namespace_import_print -->
 <!-- example: modules/print_from_io_terminal -->
-<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/print_local_shadows_import -->
+<!-- example: modules/print_local_shadows_import -->
 <!-- example: modules/panic_from_failure -->
 
 There is no `@name`: `@print(…)`, `@panic(…)`, `@todo(…)`, `@typeInfo(…)`, `@src()` and
