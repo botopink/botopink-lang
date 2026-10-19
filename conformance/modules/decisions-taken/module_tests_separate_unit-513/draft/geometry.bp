@@ -1,0 +1,14 @@
+pub type Rect(width: i32, height: i32)
+
+// Private: no other module reaches it, yet this module's test does.
+fn area(r: Rect) -> i32 {
+    return r.width * r.height;
+}
+
+pub fn describe(r: Rect) -> string {
+    return [r.width.toString(), "x", r.height.toString(), "=", area(r).toString()].join(" ");
+}
+
+test "the area of a 3 by 4 rectangle" {
+    assert area(Rect(width: 3, height: 4)) == 12;
+}

@@ -1,0 +1,21 @@
+//// Decision 342 — `@embedFile(comptime path: @Expr<string>) -> string` reads a file at compile time, in any context
+
+import {compiler, io.terminal} from "std";
+import {asset.Asset} from "std";
+import {failure.panic} from "std";
+
+// The link is made at build; the path is relative to this package's
+// `botopink.json` and the file becomes an input of the build.
+val greeting = comptime Asset(compiler.embed("src/greeting.txt"));
+
+pub fn main() -> void {
+    val atBuild = comptime {
+        val f = try greeting.open() catch panic("greeting");
+        try f.text() catch panic("greeting")
+    };
+    terminal.print(atBuild);
+    terminal.print(greeting.link.path);
+    val f = try greeting.open() catch panic("greeting");
+    val atRun = try f.text() catch panic("greeting");
+    terminal.print(atRun == atBuild);
+}

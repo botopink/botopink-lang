@@ -1,0 +1,2 @@
+// The alias another module imports under a name of its own.
+pub type Pair<A, B> = #(A, B);

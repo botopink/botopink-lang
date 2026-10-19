@@ -1,0 +1,8 @@
+//// Decision 513 — A module's tests are a unit of their own; its production unit is the same in `build`, `run` and `test`.
+
+import {io.terminal} from "std";
+import {geometry.Rect, geometry.describe};
+
+pub fn main() -> void {
+    terminal.print(describe(Rect(width: 3, height: 4)));
+}

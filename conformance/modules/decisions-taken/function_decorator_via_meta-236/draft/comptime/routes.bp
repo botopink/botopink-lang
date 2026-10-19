@@ -1,0 +1,30 @@
+// The run-time registry `#[page]`'s executors fill, and the generic code that
+// reads it: no page has code of its own beyond its body.
+pub type Entry(pattern: string, render: fn(segments: string[]) -> string)
+
+var entries: Entry[] = [];
+
+pub fn register(pattern: string, render: fn(segments: string[]) -> string) -> void {
+    entries = entries.append([Entry(pattern: pattern, render: render)]);
+}
+
+fn matches(pattern: string[], path: string[]) -> bool {
+    if (pattern.length != path.length) return false;
+    return pattern
+        .zip(path)
+        .every({ p -> p._0.startsWith("[") || p._0 == p._1 });
+}
+
+fn segments(pattern: string[], path: string[]) -> string[] {
+    return pattern
+        .zip(path)
+        .filter({ p -> p._0.startsWith("[") })
+        .map({ p -> p._1 });
+}
+
+pub fn dispatch(url: string) -> string {
+    val path = url.split("/");
+    val hit = entries.find({ e -> matches(e.pattern.split("/"), path) });
+    if (hit == null) return "404 " + url;
+    return hit.render(segments(hit.pattern.split("/"), path));
+}

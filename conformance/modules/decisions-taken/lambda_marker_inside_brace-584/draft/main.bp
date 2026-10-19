@@ -1,0 +1,38 @@
+//// Decision 584 — A lambda's marker is written inside the brace, before the parameters; a marked lambda's body is a function body; `async fn f()` with no return type is refused.
+
+import {io.terminal} from "std";
+
+async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+fn twice(start: i32, step: fn(x: i32) -> Async<i32>) -> Async<i32> {
+    return async { await step(await step(start)) };
+}
+
+fn launch(n: i32, steps: fn(n: i32) -> Iter<i32, string>) -> void {
+    val it = steps(n);
+    loop {
+        case it.next() {
+            Step.Item(value: k) -> terminal.print(k);
+            Step.Done(value: word) -> {
+                terminal.print(word);
+                break;
+            }
+        }
+    }
+}
+
+pub async fn main() -> Async<void> {
+    val inc: fn(x: i32) -> Async<i32> = { async x -> await double(x) + 1 };
+    terminal.print(await inc(4));
+    terminal.print(await twice(1) { async x -> await double(x) + 1 });
+    launch(3) { iter n ->
+        var k = n;
+        while (k > 0) {
+            yield k;
+            k = k - 1;
+        }
+        return "liftoff";
+    };
+}

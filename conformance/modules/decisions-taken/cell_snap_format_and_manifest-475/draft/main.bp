@@ -1,0 +1,11 @@
+//// Decision 475 — A cell's snapshot format and its manifest.
+
+import {io.terminal} from "std";
+import {failure.panic} from "std";
+
+pub fn main() -> void {
+    terminal.print("first line");
+    terminal.print("");
+    terminal.print("last line before the abort");
+    panic("the cell ends here");
+}

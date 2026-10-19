@@ -1,0 +1,10 @@
+//// Decision 446 — A codegen snapshot shows a transpiled std-wasm function as one line, never its body.
+
+import {hash, io.terminal} from "std";
+
+pub fn main() -> void {
+    val digest = hash.contentHash("botopink");
+    terminal.print(digest.length);
+    terminal.print(digest == hash.contentHash("botopink"));
+    terminal.print(digest == hash.contentHash("botopink "));
+}

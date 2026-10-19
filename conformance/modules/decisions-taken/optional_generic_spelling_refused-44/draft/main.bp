@@ -1,0 +1,15 @@
+//// Decision 44 — `optional<i32>` is not a valid spelling
+
+import {io.terminal} from "std";
+
+fn half(n: i32) -> ?i32 {
+    if (n % 2 != 0) return null;
+    return n / 2;
+}
+
+pub fn main() -> void {
+    val even: ?i32 = half(8);
+    terminal.print(even ?? -1);
+    val odd: optional<i32> = half(7);
+    terminal.print(odd ?? -1);
+}
