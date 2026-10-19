@@ -17,7 +17,7 @@ component fn Label() -> Component<Element> {
 }
 
 component fn App() -> Component<Element> {
-    val first = await Label();
+    val first = use Label();
     use provide(createContext(Theme(mode: "dark")));
     return first;
 }

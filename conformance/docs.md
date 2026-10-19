@@ -2599,8 +2599,8 @@ refused:
 decision 375 — it writes `await` or `async { … }`, or reaches an asynchronous
 hook, component or host task) is an `async function`, and a `use` or call of
 it is awaited (`await f(x)`); a synchronous one is a plain `function`, and a
-`use` or call of it is not awaited, written or not — `await` stays legal on
-any component, a no-op on a synchronous one. A method answering `Component`
+`use` or call of it is not awaited. `await` of a component is refused,
+`await-component` (decision 791 (4)): `await` takes an `Async<T>` alone. A method answering `Component`
 — a type's, an enum's, a behavior's `default fn` — is marked by its own body
 as a top-level function is, and a call of a `default fn` follows the adopting
 type's `implement` to the behavior's mark (decision 375, question 04s12-a); a
@@ -2734,14 +2734,22 @@ call answers `Component<R>` as anywhere else (decision 791 (1)):
 In the body, `use provide(ctx)` makes
 the scope its children receive, `use context(ctx)` finds the identity of
 `ctx`'s type in the scope the body received, else `ctx`'s own default, and `use c`
-(decision 791 (3)) or `await c` runs `c` with the children's scope:
+(decision 791 (3)) runs `c` with the children's scope:
 
 <!-- example: modules/component_use_in_body -->
 
-Outside every body — `main`, a test, a plain
-function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
-`c.run(scope)` answers the result and the children's scope, so a render
-library holds the scopes explicitly; `RenderScope(…)` is refused
+`await c` over a component is refused at the `await`, in a body or outside
+every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
+alone, and the message names `use c` and `c` placed in the tree as a child.
+
+<!-- example: modules/await_component_in_body -->
+
+<!-- example: modules/await_component_at_root -->
+
+Outside every body — `main`, a test, a plain function, a lambda — the root is
+run by the render library: `c.run(scope)` answers the result and the children's
+scope (`c.run(RenderScope.root())` for the root), so a render library holds the
+scopes explicitly; `RenderScope(…)` is refused
 (`comptime/context_lower.zig`). A `Context<T>` is its value at run time. A
 lambda written in a body is outside it: it takes the scope of the call that
 runs it. erlang, beam, commonJS and wasm run it — on wasm a value crosses the
@@ -4510,8 +4518,8 @@ to a listed node; a host function (`declare fn`, an implemented one) and std's
 `provide` / `context` get no node. Each node is recorded once, when its
 function's body is checked, and an importer reads the nodes of the functions
 it reaches in another module. A node is `async` when its body writes `await`
-or `async { … }`; when it `use`s an asynchronous hook or calls an asynchronous
-component, written `await` or not; when it calls a host function answering
+or `async { … }`; when it `use`s an asynchronous hook or component or calls an
+asynchronous component; when it calls a host function answering
 `Async` (or `Component`, which extends it); or when it calls what the checker
 cannot follow — a function value answering `Component<R>`, a `use` with
 `hook: null`; a call of a method it resolves (a type's, an enum's, a `default fn`

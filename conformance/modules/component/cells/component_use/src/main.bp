@@ -1,4 +1,4 @@
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -28,7 +28,7 @@ fn Loading() -> Element {
 }
 
 pub async fn main() -> Async<void> {
-    val w = await Widget(2);
+    val w = (await Widget(2).run(RenderScope.root())).value;
     print(w.count); // 6: state(2) is 2, counter(2) reads state(4)
     print(Loading().count); // 0
 }

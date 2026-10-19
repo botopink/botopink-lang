@@ -5,13 +5,16 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 > A component is a lambda over a render scope (decision 388): `fn C(…) ->
 > Component<R>` answers a function of std's opaque `RenderScope`, and calling
 > `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
-> the scope of the body that places them). In the body, `use provide(ctx)` makes
+> the scope of the body that places them) — in a component body too, where the
+> call answers `Component<R>` as anywhere else (decision 791 (1)). In the body, `use provide(ctx)` makes
 > the scope its children receive, `use context(ctx)` finds the identity of
-> `ctx`'s type in the scope the body received, else `ctx`'s own default, and `await c` runs `c`
-> with the children's scope. Outside every body — `main`, a test, a plain
-> function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
-> `c.run(scope)` answers the result and the children's scope, so a render
-> library holds the scopes explicitly; `RenderScope(…)` is refused
+> `ctx`'s type in the scope the body received, else `ctx`'s own default, and `use c`
+> (decision 791 (3)) runs `c` with the children's scope. `await c` over a component is refused at the `await`, in a body or outside
+> every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
+> alone, and the message names `use c` and `c` placed in the tree as a child. Outside every body — `main`, a test, a plain function, a lambda — the root is
+> run by the render library: `c.run(scope)` answers the result and the children's
+> scope (`c.run(RenderScope.root())` for the root), so a render library holds the
+> scopes explicitly; `RenderScope(…)` is refused
 > (`comptime/context_lower.zig`). A `Context<T>` is its value at run time. A
 > lambda written in a body is outside it: it takes the scope of the call that
 > runs it. erlang, beam, commonJS and wasm run it — on wasm a value crosses the

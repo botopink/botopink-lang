@@ -42,9 +42,9 @@ component fn Comments() -> Component<Element> {
 }
 
 component fn Post() -> Component<Element> {
-    val a = await Card("a");
-    val b = await Card("b");
-    val m = await Comments();
+    val a = use Card("a");
+    val b = use Card("b");
+    val m = use Comments();
     return Element(text: a.text + " " + b.text + " " + m.text);
 }
 

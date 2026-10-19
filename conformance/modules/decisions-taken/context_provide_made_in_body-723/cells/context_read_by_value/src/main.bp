@@ -8,7 +8,7 @@
 pub mod theme;
 
 import {theme.Theme, theme.themeContext};
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
@@ -19,13 +19,13 @@ component fn Label() -> Component<Element> {
 
 component fn Dark() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
-    val l = await Label();
+    val l = use Label();
     return Element(text: l.text);
 }
 
 pub async fn main() -> Async<void> {
-    val l = await Label();
+    val l = (await Label().run(RenderScope.root())).value;
     print(l.text);
-    val d = await Dark();
+    val d = (await Dark().run(RenderScope.root())).value;
     print(d.text);
 }

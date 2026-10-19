@@ -1,7 +1,7 @@
 //// Decision 375 (2), question 04s12-a's answer (1) — a method answering
 //// `Component<R>` is marked by its own body as a top-level function is:
 //// `Menu.render` awaits nothing, so its lambda answers its `Rendered` at once
-//// and `await m.render()` in a body runs it with no `await`; `Menu.slow`
+//// and `use m.render()` in a body runs it with no `await`; `Menu.slow`
 //// awaits, so its lambda answers a `Promise`. `Plain`, which renders only
 //// `render`, is synchronous; `Page`, which also renders `slow`, is not.
 ////
@@ -31,14 +31,14 @@ type Menu(title: string) {
 
 component fn Page() -> Component<Element> {
     val m = Menu(title: "a");
-    val a = await m.render();
-    val b = await m.slow();
+    val a = use m.render();
+    val b = use m.slow();
     return Element(text: a.text + " " + b.text);
 }
 
 component fn Plain() -> Component<Element> {
     val m = Menu(title: "b");
-    val a = await m.render();
+    val a = use m.render();
     return Element(text: a.text);
 }
 

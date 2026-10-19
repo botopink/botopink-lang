@@ -31,9 +31,9 @@
 //// — `c.run(scope)` answers a `Rendered`, the body's result and the scope its
 //// `use provide(…)`s made for its children. The library runs the root with
 //// `RenderScope.root()` and each child with the scope its parent answered;
-//// inside a component body `await c` runs `c` with the body's children scope,
-//// outside every body with `RenderScope.root()`. The scope travels
-//// explicitly: no "current context", on any target.
+//// inside a component body `use c` runs `c` with the body's children scope
+//// (decision 791 (3)), and an `await` of a component is refused (791 (4)).
+//// The scope travels explicitly: no "current context", on any target.
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
@@ -109,10 +109,9 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // children (a context is its value at run time: the compiler writes
 // `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
 // <ctx's type's identity>, ctx)`,
-// a `use` of a hook and an `await` of a component value run the lambda and
-// read `valueOf` of what it answers, and an `await` outside every body runs it
-// with `root()`. A context's identity is its value's type (379) — the
-// compiler writes it, never a program.
+// a `use` of a hook or of a component value runs the lambda and reads
+// `valueOf` of what it answers. A context's identity is its value's type
+// (379) — the compiler writes it, never a program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
@@ -148,7 +147,7 @@ pub fn valueOf(r: Rendered<unknown>) -> unknown {
     return r.value;
 }
 
-// The empty scope, for an `await` of a component value outside every body.
+// The empty scope, the root's (`RenderScope.root()`).
 pub fn root() -> RenderScope {
     return RenderScope.root();
 }
@@ -209,9 +208,9 @@ fn frameParent(f: Frame) -> unknown {
   ;; — `c.run(scope)` answers a `Rendered`, the body's result and the scope its
   ;; `use provide(…)`s made for its children. The library runs the root with
   ;; `RenderScope.root()` and each child with the scope its parent answered;
-  ;; inside a component body `await c` runs `c` with the body's children scope,
-  ;; outside every body with `RenderScope.root()`. The scope travels
-  ;; explicitly: no "current context", on any target.
+  ;; inside a component body `use c` runs `c` with the body's children scope
+  ;; (decision 791 (3)), and an `await` of a component is refused (791 (4)).
+  ;; The scope travels explicitly: no "current context", on any target.
   ;; 
   ;; The work is the compiler's: each `use provide(…)` / `use context(…)` is
   ;; lowered where it is written — `provide` makes the children's scope and
@@ -280,10 +279,9 @@ fn frameParent(f: Frame) -> unknown {
   ;; children (a context is its value at run time: the compiler writes
   ;; `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
   ;; <ctx's type's identity>, ctx)`,
-  ;; a `use` of a hook and an `await` of a component value run the lambda and
-  ;; read `valueOf` of what it answers, and an `await` outside every body runs it
-  ;; with `root()`. A context's identity is its value's type (379) — the
-  ;; compiler writes it, never a program.
+  ;; a `use` of a hook or of a component value runs the lambda and reads
+  ;; `valueOf` of what it answers. A context's identity is its value's type
+  ;; (379) — the compiler writes it, never a program.
   ;; One provided value over the frames it was provided in.
   ;; The children's scope: `value` provided for `key` over `scope`.
   (func $push (export "push") (param $scope (ref null $rec_RenderScope)) (param $key (ref null $str)) (param $value anyref) (result (ref null $rec_RenderScope))
@@ -376,7 +374,7 @@ fn frameParent(f: Frame) -> unknown {
     struct.get $rec_Rendered $f0
     return
   )
-  ;; The empty scope, for an `await` of a component value outside every body.
+  ;; The empty scope, the root's (`RenderScope.root()`).
   (func $root (export "root") (result (ref null $rec_RenderScope))
     call $RenderScope_root
     return

@@ -6,7 +6,7 @@
 //// so both fix the same anchor at their first activation and agree at every
 //// one after it.
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -35,5 +35,5 @@ component fn Widget(n: i32) -> Component<Element> {
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
 pub async fn main() -> Async<void> {
-    await Widget(10);
+    await Widget(10).run(RenderScope.root());
 }

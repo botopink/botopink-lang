@@ -1,0 +1,22 @@
+//// Decision 791 (4) — `await` is for `Async` alone: `await Label()` in
+//// `Page`, a component body, is refused at the `await`, `await-component`,
+//// the message naming `use c` (the way a component body resolves a
+//// component) and `c` placed in the tree as a child.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+component fn Label() -> Component<View> {
+    return View(text: "label");
+}
+
+component fn Page() -> Component<View> {
+    val l = await Label();
+    return View(text: "page " + l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Page().run(RenderScope.root());
+    print(r.value.text);
+}

@@ -48,18 +48,18 @@ type Tone {
 
 component fn Plain() -> Component<Element> {
     val b = Box(n: "x");
-    val a = await b.badge();
+    val a = use b.badge();
     return Element(text: a.text);
 }
 
 component fn Tinted() -> Component<Element> {
-    val s = await Tone.Warm.swatch();
+    val s = use Tone.Warm.swatch();
     return Element(text: s.text);
 }
 
 component fn Slow() -> Component<Element> {
     val b = Box(n: "y");
-    val a = await b.later();
+    val a = use b.later();
     return Element(text: a.text);
 }
 

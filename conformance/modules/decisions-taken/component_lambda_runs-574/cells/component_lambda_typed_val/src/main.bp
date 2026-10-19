@@ -27,7 +27,7 @@ pub async fn main() -> Async<void> {
     };
     val c = Card("a");
     print("made");
-    val v = await c;
+    val v = (await c.run(RenderScope.root())).value;
     print(v.text);
     val r = await Shell().run(RenderScope.root());
     val m = await Card("b").run(r.scope);

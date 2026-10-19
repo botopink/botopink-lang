@@ -1,9 +1,10 @@
-//// Decision 791 (1) — a call of a component only makes its lambda, in a
-//// component body too: `view(child: Element)` takes the `Element` a resolved
-//// `Title()` answers, never the call itself, and `slot.view` is a component
-//// lambda called through a record field.
+//// Decision 791 (1), (3) — a call of a component only makes its lambda, in a
+//// component body too, and the body resolves a component with `use`:
+//// `val tree = use view(props)` (jhonstart's layout chain) runs the lambda a
+//// record field's function answers, and `view(child: Element)` takes the
+//// `Element` a `use Title()` answered, never the call itself.
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
 pub type Element(tag: string, kids: Element[]) implement Renderable
 
@@ -22,10 +23,10 @@ pub component fn Wrap(child: Element) -> Component<Element> {
 pub type Slot(view: fn(child: Element) -> Component<Element>)
 
 pub component fn Page(slot: Slot) -> Component<Element> {
-    val direct = await Title();
+    val direct = use Title();
     val view = slot.view;
-    val title = await Title();
-    val wrapped = await view(title);
+    val title = use Title();
+    val wrapped = use view(title);
     return Element(tag: "page", kids: [direct, wrapped]);
 }
 
@@ -38,6 +39,6 @@ fn render(e: Element) -> string {
 }
 
 pub async fn main() -> Async<void> {
-    val page = await Page(Slot(view: { c -> Wrap(c) }));
+    val page = (await Page(Slot(view: { c -> Wrap(c) })).run(RenderScope.root())).value;
     print(render(page));
 }

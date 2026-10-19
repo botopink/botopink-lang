@@ -2,8 +2,8 @@
 //// result and the scope its `use provide`s made for its children. `Shell`
 //// provides `dark`; `Mode` run with the scope `Shell`'s run answered reads
 //// it, and a component that provides nothing answers the scope it received
-//// (`Mode` run again with it reads `dark`). Outside every body an `await c`
-//// runs `c` with `RenderScope.root()`, as `c.run(RenderScope.root())` does.
+//// (`Mode` run again with it reads `dark`). Outside every body the root is
+//// run with `c.run(RenderScope.root())` (791 (4): no `await c`).
 
 import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
 
@@ -28,6 +28,6 @@ pub async fn main() -> Async<void> {
     print(m.value.text);
     val again = await Mode().run(m.scope);
     print(again.value.text);
-    val v = await Shell();
+    val v = (await Shell().run(RenderScope.root())).value;
     print(v.text);
 }

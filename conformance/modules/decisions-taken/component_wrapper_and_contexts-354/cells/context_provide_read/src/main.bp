@@ -6,7 +6,7 @@
 //// received. `App` itself does not see its own provide — `Root` provides the
 //// one `App` reads.
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -25,24 +25,24 @@ component fn Label(prefix: string) -> Component<Element> {
 }
 
 component fn Page() -> Component<Element> {
-    val l = await Label("label:");
+    val l = use Label("label:");
     return Element(text: "page[" + l.text + "]");
 }
 
 component fn App() -> Component<Element> {
     val outer = use context(themeContext);
     use provide(createContext(Theme(mode: "dark")));
-    val p = await Page();
+    val p = use Page();
     return Element(text: outer.mode + " " + p.text);
 }
 
 component fn Root() -> Component<Element> {
     use provide(createContext(Theme(mode: "light")));
-    val a = await App();
+    val a = use App();
     return Element(text: a.text);
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Root();
+    val r = (await Root().run(RenderScope.root())).value;
     print(r.text);
 }

@@ -1887,8 +1887,9 @@ pub behavior Slice<V> {
 // at run time is a lambda over an opaque `RenderScope` (decision 388): a call
 // only makes it, and the render library runs it — `c.run(scope)` answers
 // `Async<Rendered<R>>` (std's `context`), the result and the scope the body's
-// `provide`s made for its children. In a body `await c` runs `c` with the
-// children's scope, outside every body with `RenderScope.root()`; `context`
+// `provide`s made for its children. In a body `use c` runs `c` with the
+// children's scope (decision 791 (3)), and the root runs with
+// `c.run(RenderScope.root())`; `context`
 // looks the received scope up, `context-unbound` at run time when no provider
 // is above.
 

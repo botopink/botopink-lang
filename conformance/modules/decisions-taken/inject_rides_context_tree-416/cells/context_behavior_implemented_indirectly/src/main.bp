@@ -3,7 +3,7 @@
 //// implement Cached`, `Cached extends Repository`), as a parameter typed `B`
 //// does; it is read back with `use context(repoContext)`.
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -42,13 +42,13 @@ component fn Lookup() -> Component<View> {
 
 component fn Root() -> Component<View> {
     use provide(createContext(Memory(tag: "mem"), Repository));
-    val l = await Lookup();
+    val l = use Lookup();
     return View(text: l.text);
 }
 
 pub async fn main() -> Async<void> {
-    val outside = await Lookup();
+    val outside = (await Lookup().run(RenderScope.root())).value;
     print(outside.text);
-    val inside = await Root();
+    val inside = (await Root().run(RenderScope.root())).value;
     print(inside.text);
 }

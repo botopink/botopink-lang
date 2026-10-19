@@ -4,7 +4,7 @@
 //// `Page`, `load("x")` the value. `load` reads a context before its `try`,
 //// so it runs with the scope `Page` received — the one `Root` provided.
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -32,13 +32,13 @@ component fn Page(s: string) -> Component<View> {
 
 component fn Root(s: string) -> Component<View> {
     use provide(createContext("kg"));
-    val p = await Page(s);
+    val p = use Page(s);
     return View(text: p.text);
 }
 
 pub async fn main() -> Async<void> {
-    val a = await Root("x");
+    val a = (await Root("x").run(RenderScope.root())).value;
     print(a.text);
-    val b = await Root("");
+    val b = (await Root("").run(RenderScope.root())).value;
     print(b.text);
 }

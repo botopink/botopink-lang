@@ -1,18 +1,19 @@
 //// Decision 578, 426 (2) — a template answering `Component<Styled>` is
 //// bounded by that type as written: built code that is a call of a
 //// `Component<Styled>` function is inside the answer, also where the call
-//// stands in a component body and renders there.
+//// stands in a component body, which resolves it with `use` (decision 791).
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 mod shown;
 import {shown.view, shown.Styled};
 
 pub component fn Page() -> Component<Styled> {
-    val s = await view @`a`;
+    val v = view @`a`;
+    val s = use v;
     return s;
 }
 
 pub async fn main() -> Async<void> {
-    val page = await Page();
+    val page = (await Page().run(RenderScope.root())).value;
     print(page.text);
 }

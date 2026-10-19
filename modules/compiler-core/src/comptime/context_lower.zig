@@ -16,7 +16,6 @@
 //! where a `Context<T>` is its value at run time: `createContext(v)` is `v`.
 //!   use h(…)             →  bpScopeValue__(await (h(…))(bpScope__))    — a hook is part of the body
 //!   use c                →  bpScopeValue__(await (c)(<kids>))          — a component resolved (791 (3))
-//!   await c              →  bpScopeValue__(await (c)(<kids>))          — a child placed in the tree
 //!   return v             →  return bpScopeRendered__(v, <kids>)
 //!
 //! and a body that ends without a `return` answers `rendered(null, <kids>)`.
@@ -33,17 +32,17 @@
 //! captures closed over by the inner lambda.
 //! A component call makes its lambda wherever it is written, a component body
 //! included (decision 791 (1)): it is run by the tree that holds it as a child,
-//! or by an `await` of it in a body, with the children's scope. Outside every
-//! body — `main`, a test, a plain function, a lambda — an `await c` runs `c`
-//! with `bpScopeRoot__()` (388 (4)), and `c.run(scope)` is the call of the
-//! lambda `c` is (`Env.componentRuns`): the render library holds the scopes
-//! explicitly. Nothing is captured: a lambda written in a body is outside it.
+//! or resolved by a `use` of it in a body, with the children's scope; an
+//! `await` of it is refused (791 (4)). The render library runs the root with
+//! `c.run(RenderScope.root())`, the call of the lambda `c` is
+//! (`Env.componentRuns`): it holds the scopes explicitly. Nothing is captured:
+//! a lambda written in a body is outside it.
 //!
 //! On commonJS the `await` is left out where the target's node is
 //! synchronous (`Env.syncCalls`, decision 375), so a synchronous component's
 //! lambda awaits nothing and stays a plain arrow. A host function answering
-//! `@Component<R>` (`Env.hostCalls`) answers the host's own value: a `use` or
-//! an `await` of it runs nothing.
+//! `@Component<R>` (`Env.hostCalls`) answers the host's own value: a `use` of
+//! it runs nothing.
 //!
 //! The `bpScope…__` functions are std's `context.push` / `find` / `rendered`
 //! / `valueOf` / `root`, imported under those names when the module needs
@@ -249,25 +248,10 @@ const Lowering = struct {
         return d.named.args[0];
     }
 
-    /// The component value an `await` at `loc` over `operand` runs, as its
-    /// `R`: a written `await` the checker recorded, or the `await` it spliced
-    /// around a component call it renders in a body (same location).
-    fn awaitedComponent(self: *Lowering, loc: ast.Loc, operand: *const ast.Expr) ?*T.Type {
-        if (operand.* == .call and operand.call.kind == .call) {
-            if (self.env.hostCalls.contains(operand.call.loc)) return null;
-        }
-        if (self.env.componentAwaits.get(loc)) |ty| return componentOf(ty);
-        if (operand.* == .call and operand.call.kind == .call and std.meta.eql(operand.call.loc, loc)) {
-            const ty = self.env.componentCalls.get(loc) orelse return null;
-            return componentOf(ty);
-        }
-        return null;
-    }
-
     /// Whether the call at `loc` runs a synchronous node (commonJS awaits it
     /// not, decision 375).
     fn syncAt(self: *Lowering, operand: *const ast.Expr, useLoc: ?ast.Loc) bool {
-        if (useLoc) |l| return self.env.syncCalls.contains(l);
+        if (useLoc) |l| if (self.env.syncCalls.contains(l)) return true;
         if (operand.* == .call) return self.env.syncCalls.contains(operand.call.loc);
         return false;
     }
@@ -359,22 +343,19 @@ const Lowering = struct {
                 }
                 const inner = uh.kind.inner;
                 if (inner.* == .call and inner.call.kind == .call and self.env.hostCalls.contains(inner.call.loc)) return false;
-                const renders = self.hookRenders(inner);
+                const renders = self.hookRenders(inner) orelse
+                    (if (self.env.useOperandTypes.get(uh.loc)) |t| componentOf(t) else null);
                 try self.walk(ast.Expr, inner);
                 // Decision 791 (3) — a component `use`d runs with the
                 // children's scope; a hook, part of the body, with the
                 // received one.
-                const scope = try self.scopeArg(self.env.componentUses.contains(uh.loc), uh.loc);
+                const component = self.env.componentUses.contains(uh.loc) or
+                    (if (renders) |r| isRenderable(self.env, r) else false);
+                const scope = try self.scopeArg(component, uh.loc);
                 e.* = try self.run(inner, scope, !self.syncAt(inner, uh.loc), renders, uh.loc);
                 return true;
             },
             .jump => |*j| switch (j.kind) {
-                .await_ => |operand| if (self.awaitedComponent(j.loc, operand)) |r| {
-                    try self.walk(ast.Expr, operand);
-                    const scope = try self.scopeArg(isRenderable(self.env, r), j.loc);
-                    e.* = try self.run(operand, scope, !self.syncAt(operand, null), r, j.loc);
-                    return true;
-                },
                 .@"return" => |value| if (self.current()) |f| if (f.wraps_returns) {
                     if (value) |v| try self.walk(ast.Expr, v);
                     const kids = self.current().?.kids;
@@ -645,9 +626,11 @@ pub fn deepCopy(comptime N: type, arena: std.mem.Allocator, v: N) anyerror!N {
     }
 }
 
+/// True when `r` resolved to a type that implements `Renderable`: the
+/// `Component<R>` a `use` runs is a component (791 (3)), not a hook.
 fn isRenderable(env: *Env, r: *T.Type) bool {
     const d = r.deref();
-    if (d.* != .named) return true; // an `R` still open renders, as a component's would
+    if (d.* != .named) return false;
     const td = env.lookupTypeDef(d.named.name) orelse return false;
     return td.isRenderable();
 }
@@ -693,7 +676,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentAwaits.count() > 0 or env.componentRuns.count() > 0 or
+        env.componentRuns.count() > 0 or
         env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,

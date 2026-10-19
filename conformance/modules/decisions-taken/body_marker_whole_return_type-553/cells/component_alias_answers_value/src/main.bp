@@ -1,12 +1,12 @@
 //// Decisions 388 and 118 — a function typed by an alias of `Component`
 //// (`-> StyledView`) is no component body: the alias types it and activates
 //// nothing, so it answers the lambda another body made (`styledView`'s), not
-//// a lambda of its own. `Render` awaits what a function value typed by the
+//// a lambda of its own. `Render` `use`s what a function value typed by the
 //// alias answers below its provider, so `styledView` reads `Render`'s sheet;
-//// `Outer` awaits `badge("blue")` in its own body, run with `Outer`'s
-//// children scope.
+//// `Outer` `use`s `badge("blue")` in its own body, run with `Outer`'s
+//// children scope (decision 791 (3)).
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Styled(className: string) implement Renderable
 
@@ -27,19 +27,19 @@ fn badge(c: string) -> StyledView {
 
 component fn Render(view: fn() -> StyledView) -> Component<Styled> {
     use provide(createContext(Sheet(name: "render")));
-    val out = await view();
+    val out = use view();
     return out;
 }
 
 component fn Outer() -> Component<Styled> {
     use provide(createContext(Sheet(name: "outer")));
-    val b = await badge("blue");
+    val b = use badge("blue");
     return b;
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Render({ -> badge("red") });
+    val r = (await Render({ -> badge("red") }).run(RenderScope.root())).value;
     print(r.className);
-    val o = await Outer();
+    val o = (await Outer().run(RenderScope.root())).value;
     print(o.className);
 }

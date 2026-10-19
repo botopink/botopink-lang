@@ -1,7 +1,7 @@
-//// `await e.view()` where `view` is a record field holding a component lambda:
+//// `use e.view()` where `view` is a record field holding a component lambda:
 //// the call applies the field's function, it is no method call, on every target.
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -12,12 +12,12 @@ component fn make(n: i32) -> Component<Element> {
 }
 
 component fn Run(e: Entry) -> Component<Element> {
-    val out = await e.view();
+    val out = use e.view();
     return Element(count: out.count + 1);
 }
 
 pub async fn main() -> Async<void> {
     val e = Entry(name: "a", view: { -> make(6) });
-    val r = await Run(e);
+    val r = (await Run(e).run(RenderScope.root())).value;
     print(r.count);
 }

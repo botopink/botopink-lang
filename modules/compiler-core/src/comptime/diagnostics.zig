@@ -67,6 +67,10 @@ pub const await_without_async: []const u8 = "await-without-async";
 
 /// Decision 122 — `await` in an `@Iter` body or an `iter` loop.
 pub const iter_await: []const u8 = "iter-await";
+/// Decision 791 (4) — `await` over a `Component<R>`: `await` is for `Async`
+/// alone; a component is resolved by `use c` in a component body or run by
+/// the tree as a child. Located at the `await`.
+pub const await_component: []const u8 = "await-component";
 
 /// Decision 123 — `yield` and `return <iterator>` in one body.
 pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
@@ -860,6 +864,7 @@ pub const all_codes = [_][]const u8{
     effect_try_without_fallible_channel,
     await_without_async,
     iter_await,
+    await_component,
     iter_mixed_yield_return,
     gen_infer_conflicting_errors,
     yield_without_iter,

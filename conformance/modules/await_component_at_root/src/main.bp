@@ -1,0 +1,17 @@
+//// Decision 791 (4) — 388 (4)'s `await c` outside every body is gone: an
+//// `await` of a component in `main` is refused at the `await`,
+//// `await-component`. The root is run by the render library,
+//// `Page().run(RenderScope.root())`.
+
+import {io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+component fn Page() -> Component<View> {
+    return View(text: "page");
+}
+
+pub async fn main() -> Async<void> {
+    val v = await Page();
+    print(v.text);
+}

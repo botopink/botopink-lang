@@ -2,7 +2,7 @@
 //// test's root swaps one: `FakeRoot` provides a fake `Mailer` above the same
 //// `Signup` the application renders, and `inject` reads the fake.
 
-import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -33,13 +33,13 @@ component fn Signup(email: string) -> Component<View> {
 
 component fn FakeRoot() -> Component<View> {
     use provide(createContext(FakeMailer(log: "fake:"), Mailer));
-    val v = await Signup("a@b.c");
+    val v = use Signup("a@b.c");
     return View(text: v.text);
 }
 
 pub async fn main() -> Async<void> {
-    val real = await Signup("x@y.z");
+    val real = (await Signup("x@y.z").run(RenderScope.root())).value;
     print(real.text);
-    val fake = await FakeRoot();
+    val fake = (await FakeRoot().run(RenderScope.root())).value;
     print(fake.text);
 }

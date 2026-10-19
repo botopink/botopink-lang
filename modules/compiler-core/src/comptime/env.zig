@@ -1260,16 +1260,14 @@ pub const Env = struct {
     /// `@Component<R>`, by location, with that type: a call makes the
     /// component's lambda and runs nothing (decision 791 (1)).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 388 — every written `await` whose operand is, or may resolve
-    /// to, a `@Component<R>`, by the `await`'s location, with the operand's
-    /// type: in a component body it runs the value with the children's scope,
-    /// outside every body with `RenderScope.root()` (`context_lower.zig`).
-    componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 791 (3) — every `use c` whose operand is a component, by the
     /// `use`'s location: in a component body it runs `c` with the body's
     /// children scope and answers its `R` (`context_lower.zig`), where a hook's
     /// `use` runs it with the scope the body received.
     componentUses: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Every `use`'s operand type, by the `use`'s location: the `R` a `use`
+    /// of a value that is no call (`use c`) runs, carried for wasm.
+    useOperandTypes: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 574 — every `{ component -> … }` lambda, by its location,
     /// with the `R` of the `@Component<R>` it answers: `context_lower.zig`
     /// lowers its body as a `component fn`'s, a lambda over the scope.

@@ -8,7 +8,7 @@
 //// no context (`constant`) registers nothing; one standing on its own
 //// (`alone`) registers itself.
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Rule(name: string, text: string) implement Renderable
 
@@ -35,7 +35,7 @@ component fn computed(name: string, parts: Rule[]) -> Component<Rule> {
 
 component fn quiet(view: fn() -> Component<Rule>) -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "", add: discard)));
-    val r = await view();
+    val r = use view();
     return r;
 }
 
@@ -45,17 +45,17 @@ component fn constant(name: string) -> Component<Rule> {
 
 component fn Root() -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "components", add: printed)));
-    val qa = await quiet({ -> computed("pad", []) });
-    val a = await computed("badge", [qa]);
-    val qb = await quiet({ -> computed("pad", []) });
-    val b = await computed("badge", [qb]);
-    val c = await constant("tab");
-    val d = await computed("alone", []);
+    val qa = use quiet({ -> computed("pad", []) });
+    val a = use computed("badge", [qa]);
+    val qb = use quiet({ -> computed("pad", []) });
+    val b = use computed("badge", [qb]);
+    val c = use constant("tab");
+    val d = use computed("alone", []);
     print(a.text + " " + b.text + " " + c.text + " " + d.text);
     return a;
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Root();
+    val r = (await Root().run(RenderScope.root())).value;
     print("root " + r.name);
 }

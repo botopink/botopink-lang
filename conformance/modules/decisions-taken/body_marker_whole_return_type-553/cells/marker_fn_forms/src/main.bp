@@ -4,7 +4,7 @@
 //// marker names. On a declaration and a type's method the marked body
 //// answers what the unmarked one answers.
 
-import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 pub val prefixContext = comptime createContext("");
 
@@ -35,7 +35,7 @@ component fn Label(text: string) -> Component<View> {
 
 component fn Page() -> Component<View> {
     use provide(createContext("> "));
-    val v = await Label("page");
+    val v = use Label("page");
     return View(text: v.text);
 }
 
@@ -63,7 +63,7 @@ pub async fn main() -> Async<void> {
     for await (doubled(3)) { x ->
         print(x);
     }
-    val page = await Page();
+    val page = (await Page().run(RenderScope.root())).value;
     print(page.text);
     val g = Grid(cells: [1, 2]);
     for (g.each()) { c ->

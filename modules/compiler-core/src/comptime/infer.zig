@@ -893,6 +893,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     // Decisions 378, 379 — each context read gets its type's declared default.
     try resolveContextReads(env);
+    try refuseComponentAwaits(env);
     try markHookAsync(env);
     // Decision 376 — every function's stage, before a `.hooks` reader reads it.
     try markStages(env, program);
@@ -1115,6 +1116,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     // Decisions 378, 379 — each context read gets its type's declared default.
     try resolveContextReads(env);
+    try refuseComponentAwaits(env);
     try markHookAsync(env);
     // Decision 376 — every function's stage, before a `.hooks` reader reads it.
     try markStages(env, program);
@@ -2463,6 +2465,26 @@ fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
         try unifyAt(env, want, resultTy, loc);
     }
     return typed;
+}
+
+/// Decision 791 (4) — `await c` over a `Component<R>`, refused at the
+/// `await`: the message names `use c` (inside a component body) and `c` as a
+/// child of the tree.
+fn refuseAwaitComponent(env: *Env, ty: *T.Type, loc: ast.Loc) InferError {
+    const shown = try snapshotMod.typeNameOf(env.arena, ty.deref());
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `await` takes an `Async<T>`, and this is a `{s}` — a component is resolved by `use c` inside a component body, or placed in the tree as a child `c` (decision 791 (4))", .{ diagnostics.await_component, shown });
+    env.lastError = TypeError.custom(msg, "In a component body write `val v = use c;`; elsewhere place `c` as a node's child, or run a root with `c.run(RenderScope.root())`.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 791 (4) — an `await` whose operand's type was still unresolved
+/// at the `await` and resolved to a `Component<R>` is refused at the `await`.
+fn refuseComponentAwaits(env: *Env) InferError!void {
+    var it = env.taskAwaits.iterator();
+    while (it.next()) |e| {
+        const d = e.value_ptr.*.deref();
+        if (d.* == .named and std.mem.eql(u8, d.named.name, "Component")) return refuseAwaitComponent(env, e.value_ptr.*, e.key_ptr.*);
+    }
 }
 
 /// True when `ty` is a component: `@Component<R>` whose `R` implements
@@ -18137,23 +18159,17 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const deref = rawTy.deref();
             if (deref.* == .named and unwrapTaskType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Async<_>` value (or a `@Component<T>`, which extends it)",
+                    "`await` expects a `@Task<_>` value",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            // Decision 388 (4) — an `await` of a component value runs it: in a
-            // component body with the children's scope, outside every body
-            // with `RenderScope.root()` (`context_lower.zig` reads the type
-            // once it is resolved).
-            switch (deref.*) {
-                .named => |n| if (std.mem.eql(u8, n.name, "Component")) {
-                    try env.componentAwaits.put(env.arena, loc, rawTy);
-                    // Decision 354 (2) — the body renders a child here.
-                    if (env.firstRenderAt == null and isComponentType(env, rawTy)) env.firstRenderAt = loc;
-                },
-                .typeVar => try env.componentAwaits.put(env.arena, loc, rawTy),
-                else => {},
+            // Decision 791 (4) — `await` is for `Async` alone: a component
+            // value is resolved by `use c` or run by the tree. An operand
+            // still unresolved here is checked once inference is done
+            // (`refuseComponentAwaits`).
+            if (deref.* == .named and std.mem.eql(u8, deref.named.name, "Component")) {
+                return refuseAwaitComponent(env, rawTy, loc);
             }
             // Decision 432 — read once inference is done (`taskLowerings`).
             try env.taskAwaits.put(env.arena, loc, rawTy);
@@ -21166,6 +21182,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     env.useOperandLoc = prevUseOperand;
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseOperand(env, valTyped.getType(), loc);
+    try env.useOperandTypes.put(env.arena, loc, valTyped.getType());
     // Decision 791 (3) — `use c` over a component resolves it: the body
     // renders a child here (354 (2)), run with its children's scope.
     if (isComponentType(env, valTyped.getType())) {
@@ -21174,7 +21191,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     }
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteMemoUse(env, uh.kind.inner.*, valTyped, loc);
-    try noteHookUse(env, uh.kind.inner.*, loc);
+    try noteHookUse(env, uh.kind.inner.*, valTyped, loc);
     // Decision 723 — `use context(ctx)` answers `T`, the type of the
     // `Context<T>` it names; `use inject(R)` answers `R` (416).
     const srcTy = if (env.contextUses.get(loc)) |cu| (if (cu.kind == .read or cu.kind == .inject) cu.value_type else bindingSourceType(valTyped.getType())) else bindingSourceType(valTyped.getType());
@@ -21759,15 +21776,22 @@ fn hookTypeArg(env: *Env, tr: ast.TypeRef) InferError!hooksMod.TypeArg {
 /// activates (null over a function value), the hook's annotations, the
 /// `use`'s explicit type arguments, and for std's `provide` / `context` the
 /// context object it names (decision 354 (4)).
-fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
+fn noteHookUse(env: *Env, operand: ast.Expr, typed: TypedExpr, loc: ast.Loc) InferError!void {
     const isCall = operand == .call and operand.call.kind == .call;
     const target: ?hooksMod.DeclRef = if (isCall) try hookCalleeDecl(env, operand.call) else null;
     if (target) |t| try env.hookTargets.put(env.arena, loc, .{ .ref = t, .type_ = null });
     const b = env.hookBuilder orelse return;
     // Decision 375 — a `use` the checker cannot follow (`hook: null`), or of
-    // a host hook (no node: a host's `@Component` extends `@Async`), makes
-    // the node asynchronous.
-    if (target == null) b.is_async = true;
+    // a host hook (no node: a host's `@Component` extends `@Task`), makes
+    // the node asynchronous. A `use` of a method's answer (791 (3): `use
+    // m.render()`) is followed through the method's own mark (04s12-a), as
+    // a call of it is.
+    if (target == null) {
+        if (isCall and operand.call.kind.call.receiver != null and try hostCallee(env, operand.call) == null) {
+            try noteMethodCallTarget(env, operand.call, typed);
+            try b.dynamicCalls.append(env.arena, .{ .type_ = typed.getType(), .at = operand.call.loc });
+        } else b.is_async = true;
+    }
     if (isCall) if (try hostCallee(env, operand.call) != null) {
         b.is_async = true;
     };

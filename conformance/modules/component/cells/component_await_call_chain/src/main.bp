@@ -1,8 +1,8 @@
-//// `await m.make()` in a component body, `make` a record field holding a component
-//// lambda and `m` the answer of a call: the component runs and the await answers its
-//// service, as it does when the call is bound to a typed `val` first.
+//// `use m.make()` in a component body, `make` a record field holding a component
+//// lambda and `m` the answer of a call: the component runs and the `use` answers its
+//// service, as it does when the call is bound to a typed `val` first (decision 791 (3)).
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
 type Service(name: string)
 
@@ -18,18 +18,18 @@ fn moduleNamed(name: string) -> Module {
 
 component fn Bound(name: string) -> Component<Service> {
     val c: Component<Service> = moduleNamed(name).make();
-    val s = await c;
+    val s = use c;
     return Service(name: s.name + "!");
 }
 
 component fn Direct(name: string) -> Component<Service> {
-    val s = await moduleNamed(name).make();
+    val s = use moduleNamed(name).make();
     return Service(name: s.name + "!");
 }
 
 pub async fn main() -> Async<void> {
-    val b = await Bound("card");
+    val b = (await Bound("card").run(RenderScope.root())).value;
     print(b.name);
-    val d = await Direct("card");
+    val d = (await Direct("card").run(RenderScope.root())).value;
     print(d.name);
 }
