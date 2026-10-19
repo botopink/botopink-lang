@@ -490,6 +490,32 @@ fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *con
     return .{ .decls = out.items };
 }
 
+/// A run-time `Source(file, line, col)` (`env.usesSourceRecord`): the prelude
+/// record `__Source` as a private declaration of the module, so every backend
+/// builds it through its record path. A module declaring its own keeps it.
+fn withSourceRecordDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesSourceRecord) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "__Source")) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(source_record_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    if (decl_prog.decls.len != 1) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, 1 + prog.decls.len);
+    new_decls[0] = decl_prog.decls[0];
+    @memcpy(new_decls[1..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declaration `withSourceRecordDecl` splices; keep it in sync with
+/// `__Source` in `primitives.bp`.
+pub const source_record_decl_src =
+    \\type __Source(file: string, line: i32, col: i32)
+;
+
 fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (!env.usesSourceLocation) return prog;
     for (prog.decls) |d| switch (d) {
@@ -1554,6 +1580,7 @@ fn analyzeMerged(
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesSourceRecord = false;
     env.usesAsset = false;
     env.usesYieldStep = false;
     env.templateEval = templateEvalCtx;
@@ -1726,6 +1753,7 @@ fn analyzeSource(
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesSourceRecord = false;
     env.usesAsset = false;
     env.usesYieldStep = false;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
@@ -4521,7 +4549,7 @@ pub fn compileTypesOnly(
                     const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true, program_for_transform.decls) catch break :blk_t t;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
-                    const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
+                    const with_src = withSourceRecordDecl(arena_alloc, withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums, &succ.env) catch with_enums;
                     const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
                     const with_asset = withEmbedParams(arena_alloc, withAssetDecl(arena_alloc, with_step, &succ.env) catch with_step, &succ.env) catch with_step;
                     const erased = alias_erase.erase(arena_alloc, with_asset, &succ.env.typeAliases) catch with_asset;
@@ -4856,11 +4884,11 @@ fn compileOnce(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
+                ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

@@ -1,0 +1,10 @@
+//// A `Source(file, line, col)` built at run time is an ordinary record: the
+//// same construction and field reads on every target.
+
+import {compiler.Source, io.terminal.print} from "std";
+
+pub fn main() {
+    val s = Source(file: "src/main.bp", line: 3, col: 7);
+    print(s.file);
+    print(s.line + s.col);
+}

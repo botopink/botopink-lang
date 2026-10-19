@@ -3837,3 +3837,5 @@ Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_lat
 `defer_return_value_before_defers`, `defer_in_loop_break_continue`, `defer_try_and_throw_propagate`,
 `defer_panic_attempt_catches`, `defer_async_after_awaits`, `defer_stream_consumer_stops`, and the five refusals
 (`comptime/AGENTS.md` § `defer`).
+
+- A run-time `Source(file, line, col)` (`compiler.Source`, the alias of the prelude record `__Source`): `infer.zig` marks `env.usesSourceRecord` at the call and `comptime.zig` `withSourceRecordDecl` splices a private `type __Source(file, line, col)` into the module, as `SourceLocation` is, so every backend builds it through its record path (beam reads a `__Name` callee as a constructor). Cell `run_time_source_constructed`.

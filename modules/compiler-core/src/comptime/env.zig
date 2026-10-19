@@ -1040,6 +1040,10 @@ pub const Env = struct {
     /// then prepends the record's declaration to the transformed program so the
     /// backends learn its field list the way they learn a user record's.
     usesSourceLocation: bool = false,
+    /// True once the module built the prelude record `__Source` at run time
+    /// (`Source(file: …, line: …, col: …)`); `comptime.zig` then splices its
+    /// declaration, as `usesSourceLocation` does for `SourceLocation`.
+    usesSourceRecord: bool = false,
     /// True once the module referenced the prelude enum `YieldStep<T>`
     /// (decision 122 — an annotation, or a `.next()` called by hand on an
     /// `@Iterator` / `@Stream`). `comptime.zig` then prepends the enum's

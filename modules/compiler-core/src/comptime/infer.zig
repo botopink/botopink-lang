@@ -12481,6 +12481,16 @@ fn editDistanceIsOne(a: []const u8, b: []const u8) bool {
     return true;
 }
 
+/// True when `name` is the prelude record `__Source` or an alias of it.
+fn callsSourceRecord(env: *Env, name: []const u8) bool {
+    if (std.mem.eql(u8, name, "__Source")) return true;
+    const alias = env.typeAliases.get(name) orelse return false;
+    return switch (alias.target) {
+        .named => |n| std.mem.eql(u8, n, "__Source"),
+        else => false,
+    };
+}
+
 /// `@src()` (1.0.10-beta front 01-std, decision 73): a `SourceLocation(file,
 /// line, column, fnName)` naming the call site, evaluated here and never at
 /// run time. The call is rewritten into the ordinary constructor call
@@ -23411,6 +23421,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // declaration spliced in exactly like the rewrite does.
             if (call.receiver == null and !call.is_builtin and std.mem.eql(u8, call.callee, source_location_type_name)) {
                 env.usesSourceLocation = true;
+            }
+            // A run-time `Source(file: …, line: …, col: …)` (`compiler.Source`,
+            // the alias of the prelude's `__Source`) builds the record the
+            // same way: its declaration is spliced into the module.
+            if (call.receiver == null and !call.is_builtin and callsSourceRecord(env, call.callee)) {
+                env.usesSourceRecord = true;
             }
             // Method calls carry a receiver expression — infer it first.
             // Exception: a `"std"` module receiver (`bool.negate(x)`) or the

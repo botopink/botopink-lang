@@ -8114,7 +8114,10 @@ const Emitter = struct {
         // A backtick type name (decision 561, `` `my point` ``) has no case to
         // read: it is a constructor when it names a known record, and never
         // takes the label-keyed fallback a function's labelled call would.
-        const pascal = cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0]);
+        // A prelude record under its internal name (`__Source`, spliced by
+        // `comptime.zig` `withSourceRecordDecl`) is a constructor too.
+        const pascal = cc.callee.len > 0 and (std.ascii.isUpper(cc.callee[0]) or
+            (std.mem.startsWith(u8, cc.callee, "__") and cc.callee.len > 2 and std.ascii.isUpper(cc.callee[2])));
         if ((pascal or lexerMod.isBacktickName(cc.callee)) and !names_imported_fn) {
             if (self.record_fields.get(cc.callee)) |fields| {
                 try self.lowerRecordConstruct(cc.args, fields, cc.callee);
