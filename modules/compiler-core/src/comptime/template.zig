@@ -155,6 +155,10 @@ pub const CapturedExpr = struct {
     loc: ast.Loc,
     /// Module path of the caller's file ("" for main).
     modulePath: []const u8,
+    /// The caller's file relative to the package root, as diagnostics print it
+    /// (`src/main.bp`, decision 756): what `compiler.source(x).file` answers.
+    /// Empty only in direct unit-test paths, which fall back to `modulePath`.
+    srcFile: []const u8 = "",
     /// Origin scope for `lookup`/`fail` resolution (V1: top-level decls +
     /// imports). Null only in direct unit-test paths that bypass
     /// `inferProgram*`.

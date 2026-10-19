@@ -112,9 +112,9 @@ val n = six @`ignored`;
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"t">>,
 ;;     text => <<"ignored">>,
-;;     source => #{file => <<"">>, line => 5, col => 13},
+;;     source => #{file => <<"main.bp">>, line => 5, col => 13},
 ;;     context => #{
-;;         source => #{file => <<"">>, line => 5, col => 13},
+;;         source => #{file => <<"main.bp">>, line => 5, col => 13},
 ;;         text => <<"ignored">>,
 ;;         multiline => false
 ;;     },

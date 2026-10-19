@@ -12,4 +12,4 @@ The reference text this cell shows (from `conformance/docs.md`, § Functions exp
 > the expression. The answer's code is spliced where the call stands and typed
 > there (638).
 
-`matches` writes the call's module and line into the run-time call `matchesAt` it answers: `main:32`, the line of `matches(render("page"))`, then the value `render` gave there.
+`matches` writes the call's file and line into the run-time call `matchesAt` it answers: `src/main.bp:32`, the line of `matches(render("page"))`, then the value `render` gave there.

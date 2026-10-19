@@ -1008,7 +1008,7 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     const text: struct { items: []const u8 } = .{ .items = text_bytes };
 
     const source_entries = try arena.alloc(Term.MapEntry, 3);
-    source_entries[0] = Term.field("file", Term.str(cap.modulePath));
+    source_entries[0] = Term.field("file", Term.str(if (cap.srcFile.len > 0) cap.srcFile else cap.modulePath));
     source_entries[1] = Term.field("line", Term.int(@intCast(cap.loc.line)));
     source_entries[2] = Term.field("col", Term.int(@intCast(cap.loc.col)));
     const source = Term.mapOf(source_entries);

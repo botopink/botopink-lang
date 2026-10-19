@@ -381,7 +381,8 @@ pub type __Span(
 )
 
 // Where an expression was written: the declaration position in the origin file.
-// `file` is the module path ("" for main); `line`/`col` point at the template
+// `file` is the file relative to the package root, as diagnostics print it
+// (`src/main.bp`), never the module path; `line`/`col` point at the template
 // literal's opening quote (1-based).
 pub type __Source(
     file: string,

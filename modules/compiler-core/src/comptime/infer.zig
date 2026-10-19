@@ -6312,6 +6312,7 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
         .templateText = a.templateText != null,
         .loc = at,
         .modulePath = env.modulePath,
+        .srcFile = env.srcPathOf(env.modulePath),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };
@@ -9493,6 +9494,7 @@ fn captureExprArg(
             .multiline = false,
             .loc = rawArg.getLoc(),
             .modulePath = env.modulePath,
+            .srcFile = env.srcPathOf(env.modulePath),
             .scope = env.scopeSnapshot,
         };
     }
@@ -9554,6 +9556,7 @@ fn captureExprArg(
         .templateText = templateText != null,
         .loc = litLoc,
         .modulePath = env.modulePath,
+        .srcFile = env.srcPathOf(env.modulePath),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };

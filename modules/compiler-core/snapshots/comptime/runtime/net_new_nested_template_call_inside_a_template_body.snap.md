@@ -100,9 +100,9 @@ import {compiler} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"x">>,
-;;     source => #{file => <<"">>, line => 7, col => 15},
+;;     source => #{file => <<"main.bp">>, line => 7, col => 15},
 ;;     context => #{
-;;         source => #{file => <<"">>, line => 7, col => 15},
+;;         source => #{file => <<"main.bp">>, line => 7, col => 15},
 ;;         text => <<"x">>,
 ;;         multiline => false
 ;;     },

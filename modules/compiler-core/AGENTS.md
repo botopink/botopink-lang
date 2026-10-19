@@ -70,6 +70,12 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   runner would ignore. A `try` inside a lambda is the lambda's. A bare
   `return;` is the `ok` position of a `-> @Result<void, E>` (parser +
   `transform.zig` `wrap_ok` over `null`).
+- **`compiler.source(value).file`** (decision 756) is the file relative to the package
+  root as diagnostics print it (`src/main.bp`), never the module path: each
+  `template.CapturedExpr` carries `srcFile` (`env.srcPathOf(env.modulePath)`, set at
+  its three construction sites in `infer.zig`) and `template_eval.zig`
+  `captureToTerm` writes it into the `Source` record, falling back to `modulePath`
+  only for a unit-test capture that has none. Cell `syntax_fn_source_file_is_path`.
 - **`@src()`** (1.0.10-beta decision 73) is a comptime builtin answering the
   prelude record `SourceLocation(file, line, column, fnName)`: `infer.zig`
   `inferSrcBuiltin` rewrites the call into the constructor call with four

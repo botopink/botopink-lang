@@ -277,7 +277,7 @@ test "template: context exposes declaration position and scope for second-layer 
     const term = term_out.written();
     const expected = [_][]const u8{
         "'__bp_capture' => <<\"template\">>",
-        "source => #{file => <<\"\">>, line => 7, col => 13}",
+        "source => #{file => <<\"main.bp\">>, line => 7, col => 13}",
         "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
         // Decision 237: only the scope entries the text names — `dsl` and `c`
         // are in scope but not words of `<Button/>`.
