@@ -12371,6 +12371,13 @@ const Emitter = struct {
     /// through `$__print_i32`, so a string printed as its *address* and a bool
     /// as `0`/`1`.
     fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
+        // A bare `null` carries no type to pick a printer by, and its word `0`
+        // went through the integer printer: it prints the word `null`.
+        if (isNullLit(arg)) {
+            if (self.mode == .gc) try self.gcPutStr("null") else try self.emit(self.builder().helper(.print_null));
+            if (last) try self.emit(self.builder().helper(.print_nl));
+            return;
+        }
         // Decision 332 — a `bigint` prints its digits (std-wasm's `bigint.toString`); a
         // `?bigint` has no reader here yet.
         if (self.isOptBigintExpr(arg)) {
