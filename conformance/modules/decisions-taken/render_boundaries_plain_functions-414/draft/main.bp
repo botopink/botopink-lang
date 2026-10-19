@@ -1,0 +1,47 @@
+//// Decision 414 — The render library holds every scope in plain functions: an error boundary, a not-found boundary and a `Suspense` fill are nodes of the tree holding a component value, and the renderer runs each inside its host's try with the scope its parent's `run` answered.
+
+import {io.terminal} from "std";
+import {failure.panic} from "std";
+import html, {Element, ErrorBoundary, ErrorInfo, NotFoundBoundary, notFound, renderToString} from "rakun-bpp";
+
+var runs = 0;
+
+pub component fn Price(cents: i32) -> Component<Element> {
+    runs = runs + 1;
+    if (cents < 0) panic("negative price");
+    return html @`<span>{cents / 100}.{cents % 100}</span>`;
+}
+
+pub component fn Product(id: string) -> Component<Element> {
+    if (id == "") notFound();
+    return html @`<h1>product {id}</h1>`;
+}
+
+fn missing() -> Component<Element> {
+    return html @`<p>no such product</p>`;
+}
+
+fn oops(info: ErrorInfo) -> Component<Element> {
+    return html @`<em>price unavailable ({info.digest.length()})</em>`;
+}
+
+pub component fn Page(cents: i32, id: string) -> Component<Element> {
+    // Nodes, not tries: each boundary holds a component value.
+    return html @`<main>
+        <NotFoundBoundary view={missing}>
+            <Product id={id}/>
+        </NotFoundBoundary>
+        <ErrorBoundary view={oops}>
+            <Price cents={cents}/>
+        </ErrorBoundary>
+    </main>`;
+}
+
+pub async fn main() -> Async<void> {
+    // Calling a component makes it and runs nothing.
+    val unrun = Price(cents: -1);
+    terminal.print(runs);
+    terminal.print(await renderToString(html @`<Page cents={1250} id="p-7"/>`));
+    terminal.print(await renderToString(html @`<Page cents={-1} id=""/>`));
+    terminal.print(runs);
+}

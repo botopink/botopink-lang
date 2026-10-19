@@ -1,0 +1,40 @@
+//// Decision 194 — One error-digest scheme with one implementation: the first 16 hex of `strongHash` over `module|errorClass|message|top
+
+import {io.terminal} from "std";
+import {digest.errorDigest, digest.topFramesOf} from "log";
+import {logging.Logger} from "log";
+
+pub fn main() -> void {
+    val module = "app/orders/page";
+    // The same fault reached twice: other line numbers, a fourth frame.
+    val first = errorDigest(
+        module,
+        "badarg",
+        "order has no lines",
+        "order.bp:12 render.bp:3 page.bp:8",
+    );
+    val again = errorDigest(
+        module,
+        "badarg",
+        "order has no lines",
+        "order.bp:15 render.bp:4 page.bp:8 server.bp:40",
+    );
+    // Another class: another fault.
+    val other = errorDigest(
+        module,
+        "badmatch",
+        "order has no lines",
+        "order.bp:12 render.bp:3 page.bp:8",
+    );
+    terminal.print(topFramesOf("order.bp:15 render.bp:4 page.bp:8 server.bp:40"));
+    terminal.print(first.length(), first == again, first == other);
+    // The one call that logs the fault answers the digest a fallback shows.
+    val shown = Logger(name: "app.orders").logError(
+        module,
+        "badarg",
+        "order has no lines",
+        "order.bp:12 render.bp:3 page.bp:8",
+        [#("order.id", "7")],
+    );
+    terminal.print(shown == first);
+}

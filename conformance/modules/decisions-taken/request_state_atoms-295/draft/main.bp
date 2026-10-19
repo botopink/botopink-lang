@@ -1,0 +1,37 @@
+//// Decision 295 — Request state is atoms, read and written through `use`
+
+import {io.terminal} from "std";
+import {atom} from "cardume";
+import {atomValue, atomSetter} from "rakun-cardume";
+import {Response, testing.fakeGet, testing.handleThrough} from "rakun";
+
+pub type User(name: string)
+
+// Two atoms of one type: each is its own declaration, no string key.
+pub val currentUser = atom<User>(null);
+
+pub val impersonator = atom<User>(null);
+
+// Middleware writes the request's atom.
+pub component fn authenticate() -> Component<Response> {
+    val setUser = use atomSetter(currentUser);
+    setUser(User(name: "ana"));
+    return Response.next();
+}
+
+// A handler reads both: only the one written holds a value.
+pub component fn whoami() -> Component<Response> {
+    val user = use atomValue(currentUser);
+    val other = use atomValue(impersonator);
+    return Response.ok((user?.name ?? "nobody")
+        + " / "
+        + (other?.name ?? "nobody"));
+}
+
+pub async fn main() -> Async<void> {
+    val first = await handleThrough([authenticate], whoami, fakeGet("/me"));
+    terminal.print(first.body);
+    // A second request starts from empty atoms: the state is per request.
+    val second = await handleThrough([], whoami, fakeGet("/me"));
+    terminal.print(second.body);
+}

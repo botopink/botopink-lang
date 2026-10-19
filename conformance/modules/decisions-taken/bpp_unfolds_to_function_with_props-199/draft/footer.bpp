@@ -1,0 +1,3 @@
+val year = 2026;
+---
+<footer>{year}</footer>

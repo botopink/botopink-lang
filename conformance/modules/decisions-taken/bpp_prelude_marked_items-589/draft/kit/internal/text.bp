@@ -1,0 +1,4 @@
+// Under `src/internal/`: private to the package, so never in the prelude.
+pub fn shout(s: string) -> string {
+    return s.toUpper();
+}

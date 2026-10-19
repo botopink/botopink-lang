@@ -1,0 +1,13 @@
+import html, {Element, client} from "rakun-bpp";
+
+// An island: hydrated in the browser when it comes into view.
+#[client]
+pub component fn Carousel(images: i32) -> Component<Element> {
+    return html @`<div class="carousel">{images} images</div>`;
+}
+
+// Rendered only in the browser: the server writes no call for it.
+#[client]
+pub component fn LocalClock() -> Component<Element> {
+    return html @`<time>now</time>`;
+}

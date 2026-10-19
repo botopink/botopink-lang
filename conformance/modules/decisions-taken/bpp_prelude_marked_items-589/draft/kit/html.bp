@@ -1,0 +1,7 @@
+import {bpp, compiler} from "std";
+
+// The package's unfold target: the markup's text, as written.
+#[bpp.html]
+pub default fn html(syntax t: string) -> string {
+    return compiler.text(t);
+}

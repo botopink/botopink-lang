@@ -1,0 +1,11 @@
+import {widgets.Carousel, widgets.LocalClock};
+
+val note = "<b>bold</b>";
+---
+<main>
+  <Carousel #[clientVisible("200px")] images={12} />
+  <LocalClock #[clientOnly] />
+  <div>{raw(note)}</div>
+  <p class={classList(["lead", "wide"])}>{note}</p>
+  <style #[isInline]>p { color: teal; }</style>
+</main>

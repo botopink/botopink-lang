@@ -1,0 +1,3 @@
+pub type Props(label: string)
+---
+<span class="badge">{props.label}</span>

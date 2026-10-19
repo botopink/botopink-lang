@@ -1,0 +1,14 @@
+pub type Props(title: string, tags: string[] = [])
+
+pub fn initial(s: string) -> string {
+    return s.slice(0, 1).toUpper();
+}
+
+val heading = props.title.toUpper();
+val count = props.tags.length;
+---
+<article>
+  <h2>{heading}</h2>
+  <p>{count} tags</p>
+  <Slot />
+</article>

@@ -1,0 +1,48 @@
+//// Decision 400 — A cookie's hooks are nouns in cardume's family — `cookieValue`, `cookieState`, `cookieSetter`, `cookieReset`.
+
+import {io.terminal} from "std";
+import {cookie.Cookie} from "http";
+import {Response, cookieValue, cookieState, cookieSetter, cookieReset} from "rakun";
+import {testing.fakeGet, testing.handle} from "rakun";
+import html, {Element, renderToString} from "rakun-bpp";
+
+pub type SessionId(value: string)
+
+pub val sessionCookie = Cookie<SessionId>("session", httpOnly: true, secure: true);
+
+// Middleware writes: the attributes are always the declaration's.
+pub component fn login() -> Component<Response> {
+    val set = use cookieSetter(sessionCookie);
+    set(SessionId(value: "s-42"));
+    return Response.ok("signed in");
+}
+
+pub component fn logout() -> Component<Response> {
+    val reset = use cookieReset(sessionCookie);
+    reset();
+    return Response.ok("signed out");
+}
+
+// A route handler may read and write through one state.
+pub component fn renew() -> Component<Response> {
+    val st = use cookieState(sessionCookie);
+    st.set(SessionId(value: (st.value?.value ?? "none") + "-renewed"));
+    return Response.ok("renewed");
+}
+
+// A page reads only: `?SessionId`, `null` when absent or undecodable.
+pub component fn Greeting() -> Component<Element> {
+    val id = use cookieValue(sessionCookie);
+    return html @`<p>{id?.value ?? "guest"}</p>`;
+}
+
+pub async fn main() -> Async<void> {
+    val signedIn = await handle(login, fakeGet("/login"));
+    terminal.print(signedIn.header("Set-Cookie") ?? "");
+    val renewed = await handle(renew, fakeGet("/renew").cookie("session", "s-42"));
+    terminal.print(renewed.header("Set-Cookie") ?? "");
+    val signedOut = await handle(logout, fakeGet("/logout").cookie("session", "s-42"));
+    terminal.print(signedOut.header("Set-Cookie") ?? "");
+    terminal.print(await renderToString(html @`<Greeting/>`, fakeGet("/").cookie("session", "s-42")));
+    terminal.print(await renderToString(html @`<Greeting/>`, fakeGet("/").cookie("session", "%zz")));
+}
