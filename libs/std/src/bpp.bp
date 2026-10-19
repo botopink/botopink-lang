@@ -8,9 +8,9 @@
 ////                         (exactly one in the package);
 ////   `#[bpp.style]`        the template function the style section unfolds
 ////                         onto (at most one);
-////   `#[bpp.htmlPrelude]`  the marker `val` of the markup's prelude module
-////                         (at most one): that module's imports are what a
-////                         `.bpp` file resolves without importing (270);
+////   `#[bpp.htmlPrelude]`  an item of the markup's prelude, marked where it is
+////                         declared (decision 589): a `.bpp` file's markup
+////                         sees it by its plain name without importing;
 ////   `#[bpp.stylePrelude]` the same for the style section (at most one).
 ////
 //// A module takes no annotation (315), so a prelude is marked by a `val` it
@@ -72,14 +72,16 @@ pub fn style(syntax decl: unknown) {
         );
 }
 
-// The markup's prelude: the marker `val` of the module whose imports a
-// `.bpp` file's markup and header resolve through.
+// The markup's prelude (decision 589): each item marked where it is declared
+// — a `val`, a `fn` or a `type` — is one name a `.bpp` file's markup sees
+// without importing it.
 pub fn htmlPrelude(syntax decl: unknown) {
-    if (compiler.kind(decl) != DeclKind.Val)
+    val kind = compiler.kind(decl);
+    if (kind != DeclKind.Val && kind != DeclKind.Fn && kind != DeclKind.Type)
         compiler.fail(
-            "#[bpp.htmlPrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
+            "#[bpp.htmlPrelude] marks a `val`, a `fn` or a `type` for the markup's prelude — `"
                 + compiler.name(decl)!
-                + "` is not a val",
+                + "` is none of them",
             at: decl,
         );
 }

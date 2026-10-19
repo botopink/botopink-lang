@@ -1,6 +1,6 @@
-//// Decision 361 — a prelude is a module, and a module takes no annotation
-//// (315): `#[bpp.htmlPrelude]` marks the marker `val` the prelude module
-//// declares, and on a function it is refused at the annotation.
+//// Decision 589 — the prelude is the items marked `#[bpp.htmlPrelude]`
+//// where they are declared, a `pub fn` among them: the mark on a function is
+//// accepted, and the program runs (361's marker `val` is retired).
 
 import {bpp, io.terminal.print} from "std";
 
