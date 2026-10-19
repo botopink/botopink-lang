@@ -1,7 +1,8 @@
 //! Decision 297 — a `comptime` parameter that takes a value or a type:
 //! `fn pick<T>(comptime source: Box<T> | type<T>) -> …`. An argument of type
 //! `Box<T>` binds `T` from it; a type argument (`pick(User)`) binds `T` to that
-//! type; the body tells them apart at comptime with `source is type`.
+//! type; the body tells them apart at comptime with `source is type<T>`
+//! (decision 736; the bare `source is type` / `source is anytype` too).
 //!
 //! Run on the parsed program (`analyzeSource`, before the checker), so the
 //! checker and every backend read one ordinary shape:
@@ -52,6 +53,9 @@ const Ctx = struct {
     arena: std.mem.Allocator,
     /// The parameter `x` of `x is type`.
     param: []const u8,
+    /// The type parameter `T` its `type<T>` member binds: `x is type<T>`
+    /// names it (decision 736).
+    typeParam: []const u8,
     /// What `x is type` answers in this copy.
     isType: bool,
 };
@@ -78,7 +82,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
         value.params = try arena.dupe(ast.Param, f.params);
         value.params[at].typeRef = sh.value;
         value.params[at].typeArgOf = sh.typeParam;
-        var vctx: Ctx = .{ .arena = arena, .param = pname, .isType = false };
+        var vctx: Ctx = .{ .arena = arena, .param = pname, .typeParam = sh.typeParam, .isType = false };
         value.body = try cloneValue([]ast.Stmt, &vctx, f.body);
         out.items[out.items.len - 1] = .{ .@"fn" = value };
 
@@ -92,7 +96,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
         @memcpy(tparams[0..at], f.params[0..at]);
         @memcpy(tparams[at..], f.params[at + 1 ..]);
         twin.params = tparams;
-        var tctx: Ctx = .{ .arena = arena, .param = pname, .isType = true };
+        var tctx: Ctx = .{ .arena = arena, .param = pname, .typeParam = sh.typeParam, .isType = true };
         twin.body = try cloneValue([]ast.Stmt, &tctx, f.body);
         try out.append(arena, .{ .@"fn" = twin });
         try blanks.append(arena, true);
@@ -163,13 +167,20 @@ fn endsInExit(e: ast.Expr) bool {
     };
 }
 
-/// `x is type` for the context's parameter `x`.
+/// `x is type<T>` for the context's parameter `x` and the type parameter `T`
+/// its `type<T>` member binds (decision 736), or the bare `x is type` /
+/// `x is anytype`.
 fn isTypeTest(ctx: *const Ctx, e: ast.Expr) bool {
     if (e != .call or e.call.kind != .call) return false;
     const c = e.call.kind.call;
     if (!c.is_builtin or !std.mem.eql(u8, c.callee, ast.is_builtin_name)) return false;
     const tested = c.isType orelse return false;
-    if (tested != .typeparam or tested.typeparam.len != 0) return false;
+    if (tested != .typeparam) return false;
+    switch (tested.typeparam.len) {
+        0 => {},
+        1 => if (tested.typeparam[0] != .named or !std.mem.eql(u8, tested.typeparam[0].named, ctx.typeParam)) return false,
+        else => return false,
+    }
     if (c.args.len != 1) return false;
     const subject = c.args[0].value.*;
     return subject == .identifier and subject.identifier.kind == .ident and
@@ -263,4 +274,30 @@ test "the value form folds `x is type` to false and keeps the else branch" {
     const twin = program.decls[2].@"fn";
     try std.testing.expectEqualStrings("pick__type", twin.name);
     try std.testing.expectEqual(@as(usize, 0), twin.params.len);
+}
+
+test "decision 736: `x is type<T>` naming the parameter's `T` folds as `x is type` does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\type Atom<T>(key: string)
+        \\fn pick<T, U>(comptime s: Atom<T> | type<T>) -> string {
+        \\    val a = s is type<T>;
+        \\    val b = s is type<U>;
+        \\    return "x";
+        \\}
+    );
+    const tokens = try lx.scanAll(arena);
+    var p = parser.Parser.init(tokens);
+    const program = try expand(arena, try p.parse(arena));
+    const value = program.decls[1].@"fn";
+    const twin = program.decls[2].@"fn";
+    // `s is type<T>` is the test: `false` in the value form, `true` in the twin.
+    try std.testing.expectEqualStrings("false", value.body[0].expr.binding.kind.localBind.value.identifier.kind.ident);
+    try std.testing.expectEqualStrings("true", twin.body[0].expr.binding.kind.localBind.value.identifier.kind.ident);
+    // `s is type<U>` names another type parameter: left for the checker.
+    try std.testing.expect(value.body[1].expr.binding.kind.localBind.value.* == .call);
 }

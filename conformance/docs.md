@@ -1270,15 +1270,18 @@ parameter is `expr-param-method`: its text is read with `compiler.text(x)`. `@Ex
 `@Decl`, `Decl<T>` and `Expr<E>` are not part of the language
 (`removed-expr-type`); the modifier is `syntax` (decision 616 renamed `expr`), and `expr` is an ordinary name.
 
-A `comptime` parameter may take **a value or a type** (decisions 297, 575 (5)):
-`comptime source: Box<T> | type<T>`. A `Box<T>` argument binds `T` from
-it; a type argument binds `T` to that type; the body tells them apart with
-`source is type`, decided while the program compiles — only the branch taken
-is emitted, and where `source is type` holds, reading `source` is
+A `comptime` parameter may take **a value or a type** (decisions 297, 575 (5), 736):
+`comptime source: Atom<T> | type<T>` — one function, one name, two forms. An
+`Atom<T>` argument binds `T` from it (or `T` is written, `atomKey<User>(currentUser)`,
+and checked); a type argument binds `T` to that type; the body tells them apart with
+`source is type<T>` (the bare `source is type` too), decided while the program compiles —
+only the branch taken is emitted, and where the test holds, reading `source` is
 `type-arg-read`. `type T` is written `type<T>`, the type of the type `T`
 (`removed-type-bare-param` refuses the bare form). The argument of an ordinary function's `comptime` parameter is
 known at compile time: a local or a non-`comptime` parameter is
 `comptime-arg-not-known` at the argument.
+
+<!-- example: modules/comptime_value_or_type_union -->
 
 <!-- example: modules/comptime_value_or_type_param -->
 

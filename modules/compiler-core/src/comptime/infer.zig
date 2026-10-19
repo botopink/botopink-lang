@@ -23145,10 +23145,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         ).withLoc(loc);
                         return error.TypeError;
                     }
-                    if (call.isType) |tested| if (tested == .typeparam and tested.typeparam.len == 0) {
-                        // Decision 297 — `x is type` is folded where `x` is a
-                        // `comptime x: V | type<T>` parameter (`value_or_type.zig`);
-                        // anything else reaching here tests nothing.
+                    if (call.isType) |tested| if (tested == .typeparam) {
+                        // Decisions 297, 736 — `x is type<T>` (or the bare
+                        // `x is type`) is folded where `x` is a `comptime x: V |
+                        // type<T>` parameter (`value_or_type.zig`); anything
+                        // else reaching here tests nothing.
                         env.lastError = TypeError.custom(
                             diagnostics.is_type_outside_value_or_type ++ ": `is type` tests a `comptime` parameter that takes a value or a type (`comptime x: V | type<T>`)",
                             "Declare the parameter `comptime x: V | type<T>`, or test a type with `x is T`.",
