@@ -1,0 +1,29 @@
+//// Decision 197 — † (1) erlang's `indexOf` / `lastIndexOf` count codepoints (320).
+
+import {async, failure, failure.Failure, failure.panic, hash, io.fs, io.terminal.print} from "std";
+
+fn show(r: Result<string, Failure>) -> void {
+    case r {
+        Ok(v) -> print("Ok " + v);
+        Error(f) -> print(f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() -> void {
+    print("👍x".indexOf("x"));
+    print("x👍x".lastIndexOf("x"));
+
+    val unusable = async.RetryPolicy(0, 10l, 2.0, 100l);
+    print(async.nextDelay(unusable, 1));
+
+    show(failure.attempt({ -> hash.pbkdf2Sha256("secret", "salt", 0, 16) }));
+
+    try fs.mkdirRecursive("tree/sub") catch panic("tree");
+    try fs.writeText("tree/a.txt", "a") catch panic("tree");
+    try fs.writeText("tree/sub/b.txt", "b") catch panic("tree");
+    print(try fs.glob("**", "tree") catch []);
+    print(try fs.glob("*/", "tree") catch []);
+    print(try fs.glob("{a.txt,sub/b.txt}", "tree") catch []);
+    print(try fs.glob("../tree/a.txt", "tree") catch []);
+    try fs.removeTree("tree") catch panic("tree");
+}

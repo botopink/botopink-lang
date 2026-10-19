@@ -1,0 +1,33 @@
+//// Decision 706 — No test lifecycle hook: nothing implicit runs around a `test` block; a test body calls its reset helper.
+
+import {io.terminal.print} from "std";
+
+var calls = 0;
+
+fn reset() -> void {
+    calls = 0;
+}
+
+fn record() -> i32 {
+    calls = calls + 1;
+    return calls;
+}
+
+test "each test calls its own reset" {
+    reset();
+    record();
+    record();
+    assert calls == 2;
+}
+
+test "nothing ran around this one either" {
+    reset();
+    assert record() == 1;
+}
+
+pub fn main() -> void {
+    print(record());
+    print(record());
+    reset();
+    print(record());
+}

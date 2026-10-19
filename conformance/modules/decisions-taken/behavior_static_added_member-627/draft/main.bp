@@ -1,0 +1,24 @@
+//// Decision 627 — (a): a `behavior` takes a static member through `compiler.addMember` as a type does, and inside an added member `decl` names the owner in a type position too — `fn() -> decl` is the annotated behavior.
+
+import {comptime.standard.standard};
+import {io.terminal.print} from "std";
+
+#[standard(English())]
+pub behavior Greeter {
+    fn greet(self: Self, name: string) -> string;
+}
+
+pub type English() implement Greeter {
+    pub fn greet(self: Self, name: string) -> string {
+        return "Hello, " + name;
+    }
+}
+
+fn welcome(g: Greeter, name: string) -> string {
+    return g.greet(name);
+}
+
+pub fn main() -> void {
+    val g: Greeter = Greeter.standard();
+    print(welcome(g, "Ana"));
+}

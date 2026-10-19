@@ -1,0 +1,21 @@
+//// Decision 702 — A `comptime` reaching a function declared after it whose body holds a template call is refused at the `comptime`, naming the call and the remedy, until 144 B-72 (B-55-a (e) (5)) analyses every body of a block before its decorators and `comptime` values; then the refusal goes with 419's, as 592 replaces both.
+
+import {comptime.tags.tag};
+import {io.terminal.print} from "std";
+
+fn early() -> string {
+    return tag @`a`;
+}
+
+pub val first = comptime early();
+
+pub val second = comptime late();
+
+fn late() -> string {
+    return tag @`b`;
+}
+
+pub fn main() -> void {
+    print(first);
+    print(second);
+}

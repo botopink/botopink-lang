@@ -1,0 +1,16 @@
+//// Decision 680 — Inside a decorator, `compiler.meta<T>(decl)` on its own handle is refused; a declaration's meta is read by the code that consumes it, after every annotation ran.
+
+import {comptime.entity.entity, comptime.entity.register, comptime.entity.peek, comptime.entity.Entity};
+import {compiler, io.terminal.print} from "std";
+
+#[register]
+#[entity("users")]
+pub type User(name: string)
+
+#[entity("orders")]
+#[peek]
+pub type Order(id: i32)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(User).meta(Entity)?.table ?? "none");
+}

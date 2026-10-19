@@ -1,0 +1,6 @@
+import {code, compiler} from "std";
+
+pub fn tag(syntax t: string) -> string {
+    val text = "<" + compiler.text(t) + ">";
+    return code @`${text}`;
+}
