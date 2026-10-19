@@ -5055,6 +5055,22 @@ the declaration it reaches, when that is another):
 
 <!-- example: modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_unsupported_refused_at_the_call -->
 
+<!-- example: modules/std_unbound_host_module_imports -->
+
+**A dependency's function the program never reaches stops nothing** (decision
+531). On wasm a function of a dependency — std or a `"dependencies"` package —
+whose body reaches a host declaration with no `.Wasm` cell is not lowered while
+the program does not reach it; a call that reaches it, or a method of it, is
+refused at that call, naming the function and the declaration it reaches. The
+root package keeps the rule above: its function is refused at the call it
+holds, called or not.
+
+<!-- example: modules/dependency_unbound_host_unreached -->
+
+<!-- example: modules/dependency_unbound_host_reached_refused -->
+
+<!-- example: modules/dependency_unbound_host_method_refused -->
+
 wasm has no host of its own, so `.Wasm` does not name a host symbol
 or carry target text: it is **one cell from a closed vocabulary of four**
 (decisions 238, 440, 481), each a labelled argument holding a value of the

@@ -359,6 +359,9 @@ pub fn codegenEmit(
     const outer_refused = refused_modules;
     refused_modules = &refusals;
     defer refused_modules = outer_refused;
+    const outer_packages = build_packages;
+    build_packages = config.packages;
+    defer build_packages = outer_packages;
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -1381,12 +1384,18 @@ fn anyMethodSeen(methods: anytype, seen: *const std.StringHashMapUnmanaged(void)
 /// when a string of a kept one names it, and an `implement` / `extend` / `behavior` block when
 /// it, or one of its methods, is named — `display` always, for `@print` calls it
 /// without naming it. Over-approximate, so what is dropped cannot be run. The
-/// linear pass links everything, as before.
+/// linear pass links everything, as before, unless the whole lowering refused
+/// the module: its retry lowers what is reached (`Plan.reached_only`, decision
+/// 531), and a dependency's own module then roots its `val`s alone.
 fn pruneUnreached(
     ar: std.mem.Allocator,
     decls: *std.ArrayListUnmanaged(ast.DeclKind),
     owner: *std.ArrayListUnmanaged(usize),
     own: usize,
+    /// Whether the module's own declarations are roots: not when the module
+    /// is a dependency's, whose functions the program reaches or not
+    /// (decision 531).
+    own_roots: bool,
 ) error{OutOfMemory}!void {
     const n = decls.items.len;
     const keep = try ar.alloc(bool, n);
@@ -1403,7 +1412,11 @@ fn pruneUnreached(
     for (decls.items, 0..) |d, i| {
         // A module's `val`s all run when it is loaded (`val _x = @print("boot")`),
         // whoever names them.
-        const root = owner.items[i] == own or declName(d) == null or d == .val;
+        // A dependency's `test` block is never run by the program that links it.
+        const root = if (owner.items[i] == own and !own_roots)
+            d == .val or (declName(d) == null and d != .@"test")
+        else
+            owner.items[i] == own or declName(d) == null or d == .val;
         if (root) {
             keep[i] = true;
             try queue.append(ar, i);
@@ -1454,6 +1467,9 @@ const gc_debug = false;
 /// The modules of the build this backend refused so far (`emitModules`):
 /// a GC pass that links one falls back (`emitWatPass`).
 threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) = null;
+/// The build's packages (`codegenEmit`): which modules are a dependency's
+/// (decision 531, `dropUnlowerableDependencyFns`).
+threadlocal var build_packages: ?crossModule.Packages = null;
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
 /// Decision 518 (2) — a second pass over the same program when the first one
@@ -1462,6 +1478,10 @@ const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 const Plan = struct {
     /// How the pass lowers the module (front 164 s2, `wat/repr.zig`).
     mode: reprMod.Mode = .linear,
+    /// Decision 531 — lower only what the program reaches of a dependency's
+    /// declarations, the module's own included when it is a dependency's
+    /// (`pruneUnreached`): the retry of a module the whole lowering refused.
+    reached_only: bool = false,
     forced: ?ast.WasmNeeds = null,
     skip: std.StringHashMapUnmanaged(void) = .empty,
 
@@ -1493,13 +1513,49 @@ fn emitWat(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
-    if (emitWatIn(.gc, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
+    if (emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
         return gc;
     } else |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => if (gc_debug) std.debug.print("GCERR {s} :: {s}\n", .{ module_name, @errorName(err) }),
     }
-    return emitWatIn(.linear, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
+    if (emitWatIn(.linear, false, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused)) |lin| {
+        return lin;
+    } else |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            // Decision 531 — a dependency's function the program never
+            // reaches is not lowered and stops nothing: the module is lowered
+            // again with only what it reaches of its dependencies (of its own
+            // declarations too, when it is a dependency's). Its own refusal
+            // stands when that refuses as well.
+            const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
+            if (linked_in.len == 0 and !own_dependency) return err;
+            if (emitWatIn(.gc, true, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
+                clearSlots(alloc, missing, refused);
+                return gc;
+            } else |e| if (e == error.OutOfMemory) return e;
+            var retry_missing: ?moduleOutput.MissingExternal = null;
+            var retry_refused: ?Emitter.Refusal = null;
+            if (emitWatIn(.linear, true, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, &retry_missing, &retry_refused)) |lin| {
+                clearSlots(alloc, missing, refused);
+                return lin;
+            } else |e| {
+                if (retry_refused) |r| alloc.free(r.message);
+                if (e == error.OutOfMemory) return e;
+            }
+            return err;
+        },
+    }
+}
+
+/// The refusal slots of a lowering that a later one answered for.
+fn clearSlots(alloc: std.mem.Allocator, missing: ?*?moduleOutput.MissingExternal, refused: ?*?Emitter.Refusal) void {
+    if (missing) |slot| slot.* = null;
+    if (refused) |slot| if (slot.*) |r| {
+        alloc.free(r.message);
+        slot.* = null;
+    };
 }
 
 /// The module in one lowering mode: lowered once; when the functions it
@@ -1508,6 +1564,7 @@ fn emitWat(
 /// runner enables) only what the program uses.
 fn emitWatIn(
     mode: reprMod.Mode,
+    reached_only: bool,
     alloc: std.mem.Allocator,
     module_name: []const u8,
     src_path: []const u8,
@@ -1522,7 +1579,7 @@ fn emitWatIn(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
-    var plan: Plan = .{ .mode = mode };
+    var plan: Plan = .{ .mode = mode, .reached_only = reached_only };
     defer plan.deinit(alloc);
     return emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
         error.Replan => emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
@@ -1773,6 +1830,7 @@ fn emitWatPass(
         }
     }
     try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
+    try em.dropUnlowerableDependencyFns(&decls, &owner, linked, module_name);
     if (plan.forced) |f| {
         em.needs = f;
         em.skip_wrappers = &plan.skip;
@@ -1784,7 +1842,12 @@ fn emitWatPass(
     // lowered in linear memory, which links everything, as it always did.
     if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
     try spliceNamedRecords(ar0, &decls, &owner, linked.len);
-    if (plan.mode == .gc) try pruneUnreached(ar0, &decls, &owner, linked.len);
+    // Decision 531 — a dependency's function the program never reaches is not
+    // lowered and stops nothing, in either lowering.
+    if (plan.mode == .gc or plan.reached_only) {
+        const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
+        try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency));
+    }
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -2896,6 +2959,15 @@ const Emitter = struct {
     /// Each maps to the named type its declaration answers (null when it answers
     /// none): a behavior value only a host builds (`lowerPlainCall`).
     external_missing: std.StringHashMap(?[]const u8),
+    /// Decision 531 — a dependency's bodied function that reaches a host
+    /// function with no wasm cell, by the host function it reaches: not
+    /// lowered (`dropUnlowerableDependencyFns`), and a call reaching it refused
+    /// at the call, naming both (`lowerPlainCall`). Each is in
+    /// `external_missing` too, which the lowering consults for a call.
+    unlowered_reach: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The same for a dependency type's method, by `Type.method`: dropped from
+    /// its type, a call of it refused naming both.
+    unlowered_methods: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 238 — the `declare fn`s whose `#[@External.Wasm("…")]` reads
     /// as one of the four forms (decisions 238, 440) (`checkHostBindings`), by the name the
     /// module emits them under. Each is registered and emitted like a bodied
@@ -3233,6 +3305,8 @@ const Emitter = struct {
         self.iface_assoc.deinit();
         self.host_fns.deinit();
         self.external_missing.deinit();
+        self.unlowered_reach.deinit(self.alloc);
+        self.unlowered_methods.deinit(self.alloc);
         self.host_bindings.deinit(self.alloc);
         self.wrapper_needs.deinit(self.alloc);
         self.host_generic_decls.deinit(self.alloc);
@@ -9195,6 +9269,169 @@ const Emitter = struct {
                 }
             }
         }
+    }
+
+    /// Decision 531 — a dependency's function the program never reaches is not
+    /// lowered on wasm and stops nothing; one it reaches is refused at the
+    /// call, never at the import. A bodied `fn` of a dependency module (std
+    /// included) whose body reaches — itself or through the module's other
+    /// functions — a host function with no wasm cell is dropped here, before
+    /// anything registers it, and recorded in `unlowered_reach`: a call that
+    /// still reaches it is refused where it is written (`lowerPlainCall`). The
+    /// root package's functions keep decision 146's rule: refused at the call
+    /// they hold, called or not.
+    fn dropUnlowerableDependencyFns(
+        self: *Emitter,
+        decls: *std.ArrayListUnmanaged(ast.DeclKind),
+        owner: *std.ArrayListUnmanaged(usize),
+        linked: []const Linked,
+        module_name: []const u8,
+    ) !void {
+        const packages = build_packages orelse return;
+        const ar = self.arena();
+        // The host functions with no cell for this build: named by nothing
+        // the module can call.
+        var missing_reach: std.StringHashMapUnmanaged([]const u8) = .empty;
+        for (decls.items) |d| switch (d) {
+            .@"fn" => |f| if (isBodyless(f) and !self.host_bindings.contains(f.name) and f.isExternal() and f.externalFor(self.external_lookup) == null)
+                try missing_reach.put(ar, f.name, f.name),
+            else => {},
+        };
+        if (missing_reach.count() == 0) return;
+        const dependency = try ar.alloc(bool, linked.len + 1);
+        for (dependency, 0..) |*dep, i| dep.* = packages.idOf(if (i < linked.len) linked[i].name else module_name).package_in_path;
+        const test_dropped = try ar.alloc(bool, decls.items.len);
+        @memset(test_dropped, false);
+        const names = try ar.alloc(?[]const []const u8, decls.items.len);
+        for (decls.items, owner.items, names) |d, from, *n| {
+            n.* = null;
+            const f = switch (d) {
+                .@"fn" => |f| f,
+                else => continue,
+            };
+            if (!dependency[from] or f.body.len == 0 or missing_reach.contains(f.name)) continue;
+            var list: std.ArrayListUnmanaged([]const u8) = .empty;
+            try ast.collectNames(ar, f.body, &list);
+            n.* = list.items;
+        }
+        var progressed = true;
+        while (progressed) {
+            progressed = false;
+            for (decls.items, names) |d, *n| {
+                const used = n.* orelse continue;
+                for (used) |u| if (missing_reach.get(u)) |host| {
+                    try missing_reach.put(ar, d.@"fn".name, host);
+                    n.* = null;
+                    progressed = true;
+                    break;
+                };
+            }
+        }
+        // A dependency's method — of a type, a behavior, an `implement` or an
+        // `extend` block — whose body names one of them, or a method of the
+        // same declaration dropped so, is dropped from it the same way; the
+        // declaration and its other methods stay.
+        for (decls.items, owner.items) |*d, from| {
+            if (!dependency[from]) continue;
+            switch (d.*) {
+                .type_ => |t| if (try self.dropUnloweredMethods(ast.BehaviorMethod, t.name, t.methods, &missing_reach)) |kept| {
+                    var u = t;
+                    u.methods = kept;
+                    d.* = .{ .type_ = u };
+                },
+                .behavior => |b| if (try self.dropUnloweredMethods(ast.BehaviorMethod, b.name, b.methods, &missing_reach)) |kept| {
+                    var u = b;
+                    u.methods = kept;
+                    d.* = .{ .behavior = u };
+                },
+                .implement => |im| if (try self.dropUnloweredMethods(ast.ImplementMethod, im.name, im.methods, &missing_reach)) |kept| {
+                    var u = im;
+                    u.methods = kept;
+                    d.* = .{ .implement = u };
+                },
+                .extend => |ex| if (try self.dropUnloweredMethods(ast.ImplementMethod, ex.name, ex.methods, &missing_reach)) |kept| {
+                    var u = ex;
+                    u.methods = kept;
+                    d.* = .{ .extend = u };
+                },
+                else => {},
+            }
+        }
+        // A dependency's `test` block is never run by the program that links
+        // it: one that names them is not lowered either.
+        for (decls.items, owner.items, 0..) |d, from, i| {
+            if (!dependency[from] or d != .@"test") continue;
+            var list: std.ArrayListUnmanaged([]const u8) = .empty;
+            try ast.collectNames(ar, d.@"test".body, &list);
+            for (list.items) |nm| if (missing_reach.contains(nm)) {
+                test_dropped[i] = true;
+                break;
+            };
+        }
+        var w: usize = 0;
+        for (decls.items, owner.items, 0..) |d, from, i| {
+            if (test_dropped[i]) continue;
+            const dropped = d == .@"fn" and dependency[from] and d.@"fn".body.len > 0 and missing_reach.contains(d.@"fn".name);
+            if (dropped) {
+                const f = d.@"fn";
+                try self.unlowered_reach.put(self.alloc, f.name, missing_reach.get(f.name).?);
+                try self.external_missing.put(f.name, if (f.returnType) |rt| (if (rt == .named) rt.named else null) else null);
+                continue;
+            }
+            decls.items[w] = decls.items[i];
+            owner.items[w] = owner.items[i];
+            w += 1;
+        }
+        decls.shrinkRetainingCapacity(w);
+        owner.shrinkRetainingCapacity(w);
+    }
+
+    /// The methods of one dependency declaration that `dropUnlowerableDependencyFns`
+    /// keeps, or null when it keeps them all: a method whose body names a
+    /// host function of `missing_reach` — or another method of the
+    /// declaration dropped so — is recorded in `unlowered_methods` and left out.
+    fn dropUnloweredMethods(
+        self: *Emitter,
+        comptime M: type,
+        owner_name: []const u8,
+        methods: []M,
+        missing_reach: *const std.StringHashMapUnmanaged([]const u8),
+    ) !?[]M {
+        const ar = self.arena();
+        const used = try ar.alloc(?[]const []const u8, methods.len);
+        const drop = try ar.alloc(?[]const u8, methods.len);
+        for (methods, used, drop) |m, *u, *dr| {
+            dr.* = null;
+            u.* = null;
+            const body: []const ast.Stmt = if (M == ast.BehaviorMethod) (m.body orelse continue) else m.body;
+            if (body.len == 0) continue;
+            var list: std.ArrayListUnmanaged([]const u8) = .empty;
+            try ast.collectNames(ar, body, &list);
+            u.* = list.items;
+        }
+        var dropped: std.StringHashMapUnmanaged([]const u8) = .empty;
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (methods, used, drop) |m, u, *dr| {
+                if (dr.* != null) continue;
+                const method_names = u orelse continue;
+                for (method_names) |nm| if (missing_reach.get(nm) orelse dropped.get(nm)) |h| {
+                    dr.* = h;
+                    try dropped.put(ar, m.name, h);
+                    grew = true;
+                    break;
+                };
+            }
+        }
+        if (dropped.count() == 0) return null;
+        var kept: std.ArrayListUnmanaged(M) = .empty;
+        for (methods, drop) |m, dr| {
+            if (dr) |h| {
+                try self.unlowered_methods.put(self.alloc, try std.fmt.allocPrint(ar, "{s}.{s}", .{ owner_name, m.name }), h);
+            } else try kept.append(ar, m);
+        }
+        return kept.items;
     }
 
     /// One `#[@External.Wasm(…)]` of `f`, read and checked (decisions 238 and 440:
@@ -15524,6 +15761,9 @@ const Emitter = struct {
         if (self.isTupleToString(cc)) return self.lowerCapturedPrint(cc.receiver.?.*);
         if (try self.lowerCollectionMethod(cc)) return;
         if (try self.lowerValueCall(cc)) return;
+        if (cc.receiver == null) if (self.unlowered_reach.get(cc.callee)) |host| {
+            return self.refuse(loc, "`{s}` reaches `{s}`, which has no implementation for the wasm backend", .{ cc.callee, host });
+        };
         if (cc.receiver == null and self.external_missing.contains(cc.callee)) {
             self.missing_external = .{ .name = cc.callee, .target = "wasm", .loc = loc };
             return error.MissingExternalTarget;
@@ -15541,6 +15781,18 @@ const Emitter = struct {
                 .result_err => return self.lowerResultOptionOp("__bp_error", cc.args, loc),
                 .user => {},
             };
+        }
+        // Decision 531 — a method of a dependency's declaration that was not
+        // lowered (`dropUnloweredMethods`): nothing else answered the call.
+        if (cc.receiver != null and self.unlowered_methods.count() > 0) {
+            var best: ?[]const u8 = null;
+            var it = self.unlowered_methods.keyIterator();
+            while (it.next()) |k| {
+                const dot = std.mem.lastIndexOfScalar(u8, k.*, '.') orelse continue;
+                if (!std.mem.eql(u8, k.*[dot + 1 ..], cc.callee)) continue;
+                if (best == null or std.mem.lessThan(u8, k.*, best.?)) best = k.*;
+            }
+            if (best) |m| return self.refuse(loc, "`{s}` reaches `{s}`, which has no implementation for the wasm backend", .{ m, self.unlowered_methods.get(m).? });
         }
         // A method on a behavior no type of the program implements: the value
         // is built by the host (`behavior_host_dispatch`), and the `declare fn`

@@ -3,9 +3,9 @@
 //// (Node and Erlang templates, no wasm binding). The program runs on
 //// commonJS, erlang and beam. On wasm the call of `deepEquals` reaches
 //// `canonical`, so STD-001 refuses it at the call, naming both (decision
-//// 518 (4), 503's direction); the module is still refused where it calls
-//// `canonical` — decision 146's rule, which `std_asserts_on_every_target`
-//// pins — until `canonical` gains a botopink body (503).
+//// 518 (4), 503's direction). The module itself builds on wasm: its
+//// functions that reach `canonical` are not lowered there (decision 531),
+//// until `canonical` gains a botopink body (503).
 
 import {testing.asserts, io.terminal.print} from "std";
 

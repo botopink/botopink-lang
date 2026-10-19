@@ -1,11 +1,10 @@
 //// 01-std step 2 — `import {testing.asserts} from "std"` builds and runs on
-//// commonJS, erlang and beam, where the module's pure assertions answer. The
-//// module's host-backed assertions (`deepEquals`, `matches`) reach private
-//// cells with Node and Erlang templates only (`throws` / `throwsWith` run under
-//// `failure.attempt`, decision 493), and a function whose body calls a host
-//// function with no binding for the target is refused called or not (decision
-//// 146): on wasm the module does not build, and the import that links it is
-//// refused, naming the cell. wasm used to drop those functions.
+//// every target, where the module's pure assertions answer. The module's
+//// host-backed assertions (`deepEquals`, `matches`) reach private cells with
+//// Node and Erlang templates only (`throws` / `throwsWith` run under
+//// `failure.attempt`, decision 493); the program never calls them, so on wasm
+//// they are not lowered and stop nothing (decision 531) — a call of one is
+//// refused at the call (decision 518 (4)).
 
 import {testing.asserts, io.terminal.print} from "std";
 

@@ -120,7 +120,8 @@ brings all of its own, and one without a GC form sent a module that never named 
 function a linked declaration brought that still touches linear memory (std's `Dict.fold`, over a closure)
 and that nothing reaches (`reach.zig`, no export) is a stub that traps (`finishGc`, `gc_linked_fns`); one of
 the module's own, or a reached one, sends the module to linear memory (P2b). The
-linear pass links everything, as it always did.
+linear pass links everything, as it always did, unless the whole lowering refused the module: its retry
+lowers what is reached (`Plan.reached_only`, decision 531, below).
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
 linear memory, so `emitStdCall` marshals a GC module's call — each string or `Bytes` argument copied into the
@@ -612,38 +613,62 @@ as that function's missing `#[@external(.Wasm(…))]`, not as an unresolved call
 narrowing (`conformance/test/behavior_host_dispatch/`) stands on a host binding as the runner's
 audit requires (`conformance/modules/behavior/cells/behavior_host_value_wasm_refused`).
 
-**A function that reaches such a cell is refused where the call is written,
-called or not** (decision 146 — "an error for whatever has no target"). Every
-bodied function is emitted — `emitDecl` lowers each `fn` and each method, and
-`registerSymbols` queues each behavior's associated `default fn` that has no
-type parameter — so a body that calls an `external_missing` cell meets
-`lowerPlainCall`'s refusal whether or not anything calls the function: the rule
-commonJS, erlang and beam hold by emitting every function, and the diagnostic
-they print (`conformance/modules/external/cells/external_wrapper_keeps_refusal`,
-`modules/external/cells/external_wrapper_associated_default`). wasm used to drop such a
-function and refuse only a call of it (`collectHostBound` / `host_bound` /
-`MissingExternal.via`, all gone), which let a module import on wasm when some
-of its functions needed a host; no module does now. **One shape is still lowered
-only when a call reaches it**: an associated `default fn` with a type parameter
-of its own or of its behavior (`behavior Probe<A> { default fn f(x: A) … }`),
-which commonJS refuses uncalled and wasm accepts. Queueing those too emits the
-primitive behaviors' (`Array.range`, `Array.repeat`, …) into every
-module that carries the behavior — measured: 14 wasm fixtures change and a
-two-line `flatMap` program's `.wat` goes from 12 to 17 functions — which is
-`05-wasm`'s to weigh.
+**A function of the root package that reaches such a cell is refused where the
+call is written, called or not** (decision 146 — "an error for whatever has no
+target"). Every bodied function of the root package is emitted — `emitDecl`
+lowers each `fn` and each method, and `registerSymbols` queues each behavior's
+associated `default fn` that has no type parameter — so a body that calls an
+`external_missing` cell meets `lowerPlainCall`'s refusal whether or not anything
+calls the function: the rule commonJS, erlang and beam hold by emitting every
+function, and the diagnostic they print
+(`conformance/modules/external/cells/external_wrapper_keeps_refusal`,
+`modules/external/cells/external_wrapper_associated_default`). wasm used to drop
+such a root-package function and refuse only a call of it (`collectHostBound` /
+`host_bound` / `MissingExternal.via`, all gone). **One shape is
+still lowered only when a call reaches it**: an associated `default fn` with a
+type parameter of its own or of its behavior (`behavior Probe<A> { default fn
+f(x: A) … }`), which commonJS refuses uncalled and wasm accepts. Queueing those
+too emits the primitive behaviors' (`Array.range`, `Array.repeat`, …)
+into every module that carries the behavior — measured: 14 wasm fixtures change
+and a two-line `flatMap` program's `.wat` goes from 12 to 17 functions — which
+is `05-wasm`'s to weigh.
+
+**A dependency's function the program never reaches is not lowered and stops
+nothing; one it reaches is refused at the call** (decision 531; std is a
+dependency — `crossModule.Packages.idOf(…).package_in_path`, read through
+`build_packages`). Two mechanisms:
+
+- `dropUnlowerableDependencyFns`, after `checkHostBindings`: a dependency's
+  bodied `fn` whose body reaches — itself or through the dependency's other
+  functions — a host function with no wasm cell is dropped from the
+  declarations, recorded in `unlowered_reach` (and `external_missing`); a
+  method of a dependency's type, behavior, `implement` or `extend` block the
+  same way (`dropUnloweredMethods`, `unlowered_methods`, by `Type.method`); a
+  dependency's `test` block that names one is dropped too. A call that still
+  reaches one is refused where it is written: `` `viaHost` reaches `host`,
+  which has no implementation for the wasm backend ``
+  (`conformance/modules/dependency_unbound_host_reached_refused`,
+  `dependency_unbound_host_method_refused`). For std the checker refuses the
+  call first (STD-001, `std-unsupported-on-target`, decision 518 (4)).
+- `emitWat`'s retry: when both lowerings refuse a module that links a
+  dependency or is one, it is lowered again with `Plan.reached_only` —
+  `pruneUnreached` in the linear pass too, and a dependency's own module
+  rooted at its `val`s alone, its `test` blocks never — first in GC form, then
+  in linear memory; the first refusal stands when the retry refuses too. A
+  dependency function wasm cannot lower for another reason (an unresolved call
+  in `std/io/clock`'s `durationCount`, a behavior no type implements in
+  `testing.mocks`' fixtures) stops nothing while the program does not reach it
+  (`conformance/modules/std_unbound_host_module_imports`,
+  `dependency_unbound_host_unreached`).
 
 **A refused module takes its consumers with it, each at its own import**
-(`codegenEmit`'s `relocateLinkedRefusals`). The linked declarations are emitted
-INTO the consumer, so the consumer meets the same refusal at a location of the
-linked module's file — which the driver would print against the consumer's
-(`src/main.bp:101:9` for a call at `std/testing/asserts.bp:101:9`). The refused
-module reports its own diagnostic in its own file; each consumer that links it
-(`Linked.via`: the consumer's import item the link walk came through) reports
-`` `canonical` has no `#[@external(.<Target>(…))]` for the wasm backend — in
-`std/testing/asserts`, which this import links `` at that import
-(`run/std_asserts_on_every_target.wasm.expect`,
-`run/std_asserts_host_cell_on_wasm.wasm.expect`,
-`modules/labelled/cells/labelled_call_by_label/wasm.expect`).
+(`codegenEmit`'s `relocateLinkedRefusals`) — now only a module that refuses
+what its consumer reaches. The linked declarations are emitted INTO the
+consumer, so the consumer meets the same refusal at a location of the linked
+module's file — which the driver would print against the consumer's. The
+refused module reports its own diagnostic in its own file; each consumer that
+links it (`Linked.via`: the consumer's import item the link walk came through)
+reports `` <message> — in `<module>`, which this import links `` at that import.
 
 A **bodyless `declare fn` with no `#[@external(.<Target>(…))]` at all** is
 refused at its call too (`lowerPlainCall`); it kept the old trap until

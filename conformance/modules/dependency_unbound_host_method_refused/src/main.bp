@@ -1,0 +1,14 @@
+//// Decision 531 — a dependency's method the program reaches, whose body wasm cannot lower, is
+//// refused at the call, located, naming the method and what it lacks — never at the import.
+//// `lib`'s `Counter.viaHost` reaches `host`, bound on commonJS and erlang alone: those targets
+//// answer `2` and `42`, and wasm refuses the call of `viaHost` in `main`. `plain`, which reaches
+//// no host function, is lowered on wasm as on every target.
+
+import {Counter} from "lib";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val c = Counter(n: 1);
+    print(c.plain());
+    print(c.viaHost());
+}

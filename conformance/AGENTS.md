@@ -927,9 +927,9 @@ called with labelled and positional arguments, on all four targets (beam built `
 record `#{n => 4}`).
 01-std step 2 adds `modules/decisions-taken/asserts_throws_generic-493/cells/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
 assertions on commonJS, erlang and beam — and `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
-on the same three. wasm refuses both at the import (`snapshot/targets/wasm/`): `deepEquals` calls `canonical`,
-which has no wasm binding, a function reaching such a cell is refused called or not (decision 146),
-so `testing.asserts` does not build there and the import that links it says so, naming the cell. The same front's `modules/result/refused/src/cases/result_field_read` and
+on the same three. On wasm the first runs too — the module's functions that reach `canonical`, which has no
+wasm binding, are not lowered and stop nothing while the program does not call them (decision 531) — and the
+second is refused at the call of `deepEquals` (STD-001, decision 518 (4); `snapshot/targets/wasm/`). The same front's `modules/result/refused/src/cases/result_field_read` and
 `modules/result/refused/src/cases/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
 (`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a

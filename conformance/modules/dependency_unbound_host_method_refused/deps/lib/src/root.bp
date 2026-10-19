@@ -1,0 +1,17 @@
+//// A dependency type whose method reaches a host function bound on commonJS and erlang alone:
+//// `Counter.viaHost` reaches it, `Counter.plain` does not.
+
+import {compiler} from "std";
+
+#[compiler.external(.JavaScript("41"), .Erlang("41"))]
+declare fn host() -> i32;
+
+pub type Counter(n: i32) {
+    pub fn viaHost(self: Self) -> i32 {
+        return host() + self.n;
+    }
+
+    pub fn plain(self: Self) -> i32 {
+        return self.n * 2;
+    }
+}

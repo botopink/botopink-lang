@@ -1,0 +1,11 @@
+//// Decision 531 — a dependency's function the program reaches, whose body wasm cannot lower, is
+//// refused at the call, located, naming the function and what it lacks — never at the import.
+//// `lib`'s `viaHost` reaches `host`, bound on commonJS and erlang alone: those targets answer
+//// `42`, and wasm refuses the call of `viaHost` in `main`.
+
+import {viaHost} from "lib";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(viaHost());
+}

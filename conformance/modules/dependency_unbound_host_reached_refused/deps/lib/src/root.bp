@@ -1,0 +1,15 @@
+//// A dependency with a host function bound on commonJS and erlang alone: `viaHost` reaches it,
+//// `seven` does not.
+
+import {compiler} from "std";
+
+#[compiler.external(.JavaScript("41"), .Erlang("41"))]
+declare fn host() -> i32;
+
+pub fn viaHost() -> i32 {
+    return host() + 1;
+}
+
+pub fn seven() -> i32 {
+    return 7;
+}

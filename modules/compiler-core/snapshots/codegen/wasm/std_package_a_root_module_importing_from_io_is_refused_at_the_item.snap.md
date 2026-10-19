@@ -2939,6 +2939,3961 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
 ```logs
 ```
 
+----- SOURCE CODE -- std/io/fs.bp
+```botopink
+//// std/io/fs — the file system, cross-backend (decision 540).
+////
+//// Reference:
+////   Rust     — https://doc.rust-lang.org/std/fs/ (`read`, `read_to_string`,
+////              `File`, `io::ErrorKind`)
+////   Java     — https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html
+////   Erlang   — https://www.erlang.org/doc/man/file.html
+////   Node.js  — https://nodejs.org/api/fs.html
+////
+//// Every function that can fail answers `Result<…, FsError>`: the same OS error is
+//// the same `FsError` variant on every target (`ENOENT`, `enoent` → `NotFound`),
+//// and `Other.message` is the host's own text. The whole-file shortcuts
+//// (`readBytes`, `readText`, `writeBytes`, `writeText`, `appendText`), `stat`, and
+//// the directory functions (`exists`, `list`, `mkdir`, `mkdirRecursive`, `rm`,
+//// `removeTree`, `copy`, `walk`, `glob`) are followed by the handle: `open`
+//// and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
+////
+//// The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
+//// `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+//// and `lift` reads that message as the `FsError` of the path the caller wrote
+//// (decision 486); no cell catches by hand. All operations are synchronous
+//// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
+//// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
+
+import {path.relative, failure, failure.HostError, compiler};
+
+// The error of every `io.fs` function (decision 540). `path` is the path the
+// caller wrote (for `copy`, the source; for `walk`, the root).
+pub type FsError {
+    NotFound(path: string),
+    PermissionDenied(path: string),
+    IsDirectory(path: string),
+    NotDirectory(path: string),
+    AlreadyExists(path: string),
+    // `readText` / `text` / `lines` on bytes that are not UTF-8: `offset` is
+    // the byte, in what was read, where the first invalid sequence starts.
+    InvalidUtf8(path: string, offset: i64),
+    // Any other host error; `message` is the host's text.
+    Other(path: string, message: string),
+
+    // The error's text (decision 563): `<what>: <path>`, the same on every target.
+    pub fn message(self: Self) -> string {
+        return case self {
+            NotFound(path: path) -> "not found: " + path;
+            PermissionDenied(path: path) -> "permission denied: " + path;
+            IsDirectory(path: path) -> "is a directory: " + path;
+            NotDirectory(path: path) -> "not a directory: " + path;
+            AlreadyExists(path: path) -> "already exists: " + path;
+            InvalidUtf8(path: path, offset: offset) -> "not UTF-8: "
+                + path
+                + " at byte "
+                + offset.toString();
+            Other(path: path, message: message) -> path + ": " + message;
+        };
+    }
+}
+
+pub type FileStat(
+    size: i64,
+    mtime: i64,
+    isDir: bool,
+)
+
+// Read the whole file as bytes.
+// Node: `readFileSync($0)` copied into a plain `Uint8Array`.
+// Erlang: `file:read_file/1`.
+#[compiler.external(
+    .JavaScript("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawReadBytes(path: string) -> Result<Bytes, HostError>;
+
+// Write `contents` to `path`, creating or truncating.
+// Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
+    .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+)]
+declare fn rawWriteBytes(path: string, contents: Bytes) -> Result<i32, HostError>;
+
+// Append `contents` to `path`, creating it when it is not there.
+// Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true),
+    .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+)]
+declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostError>;
+
+// The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
+// starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
+// or -1 when every byte is part of a valid sequence — the same offset on every target.
+// Node: a scan of the bytes. Erlang: `unicode:characters_to_binary/3`, whose `Good` prefix is the offset.
+#[compiler.external(
+    .JavaScript("""((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })($0)"""),
+    .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)($0)"""),
+)]
+declare fn utf8Offset(bytes: Bytes) -> i64;
+
+// `line` without its line terminator: one trailing `\n`, and the `\r` before it.
+// Node: `subarray`. Erlang: `binary:part/3`.
+#[compiler.external(
+    .JavaScript("""((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })($0)"""),
+    .Erlang("""(fun(__B) -> __N = byte_size(__B), if __N >= 2 -> case binary:part(__B, __N - 2, 2) of <<13, 10>> -> binary:part(__B, 0, __N - 2); <<_, 10>> -> binary:part(__B, 0, __N - 1); _ -> __B end; __N =:= 1 -> case __B of <<10>> -> <<>>; _ -> __B end; true -> __B end end)($0)"""),
+)]
+declare fn stripEol(line: Bytes) -> Bytes;
+
+// The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
+// (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
+// mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
+#[compiler.external(
+    .JavaScript("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:open(__P, [read, binary, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawOpen(path: string) -> Result<unknown, HostError>;
+
+// The handle of the file at `path`, open for writing: created, or truncated.
+#[compiler.external(
+    .JavaScript("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawCreate(path: string) -> Result<unknown, HostError>;
+
+// A handle over bytes held in memory — what an `Asset` opens as. The position is a field
+// on Node and a `counters` cell on Erlang.
+#[compiler.external(
+    .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
+    .Erlang("""{mem, $0, counters:new(1, [])}"""),
+)]
+declare fn memHandle(bytes: Bytes) -> unknown;
+
+// The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true),
+    .Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+)]
+declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
+
+// Up to `n` bytes (n > 0) from the handle's position; empty at the end.
+#[compiler.external(
+    .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true),
+    .Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+)]
+declare fn rawRead(handle: unknown, n: i32) -> Result<Bytes, HostError>;
+
+// Every byte from the handle's position to the end.
+#[compiler.external(
+    .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true),
+)]
+declare fn rawReadAll(handle: unknown) -> Result<Bytes, HostError>;
+
+// The next line, terminator included; empty at the end.
+#[compiler.external(
+    .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+)]
+declare fn rawReadLine(handle: unknown) -> Result<Bytes, HostError>;
+
+// The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
+// whatever the position, which it leaves where it was.
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true),
+)]
+declare fn rawHash(handle: unknown) -> Result<string, HostError>;
+
+// Write `bytes` at the handle's position; answers how many.
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true),
+    .Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+)]
+declare fn rawWrite(handle: unknown, bytes: Bytes) -> Result<i32, HostError>;
+
+// Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+)]
+declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
+
+// Write `contents` to `path`, creating or truncating. Reds with the
+// host's I/O error message.
+// Node: `require('fs').writeFileSync($0, $1)`.
+// Erlang: `file:write_file/2`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
+    .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+)]
+declare fn rawWriteText(
+    path: string,
+    contents: string,
+) -> Result<i32, HostError>;
+
+// Whether a path exists, of any kind: a regular file, a directory, a
+// character or block device (`/dev/null`), a FIFO or a socket. A symbolic
+// link is followed — one whose target is missing is `false`, the answer
+// every read through it would give.
+// Node: `require('fs').existsSync($0)` (a `stat`).
+// Erlang: `file:read_file_info/1` (a `stat`; `filelib:is_file/1`, which it
+// replaces, answers only regular files and directories, so `/dev/null`
+// was `false` on erlang and `true` on commonJS).
+#[compiler.external(
+    .JavaScript("""require('fs').existsSync($0)"""),
+    .Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)"""),
+)]
+pub declare fn exists(path: string) -> bool;
+
+// List the names of the directory entries at `path` (relative).
+// Node: `require('fs').readdirSync($0)`.
+// Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+#[compiler.external(
+    .JavaScript("""(() => { return require('fs').readdirSync($0) })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawList(path: string) -> Result<string[], HostError>;
+
+// Create directory at `path`. Use `mkdirRecursive` to create
+// intermediate parents.
+// Node: `require('fs').mkdirSync($0)`.
+// Erlang: `file:make_dir/1`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawMkdir(path: string) -> Result<i32, HostError>;
+
+// Create the directory at `path` and every missing directory above it. A
+// directory that is already there is `Ok` too; a path that exists as anything
+// else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+// directory of a `.snap` with (decision 391).
+// Node: `require('fs').mkdirSync($0, { recursive: true })`.
+// Erlang: `filelib:ensure_path/1`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true),
+    .Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
+
+// Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
+// both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
+// a `read_link_info`, so the variant is the same); `removeTree` removes one.
+// Node: `require('fs').rmSync($0)`.
+// Erlang: `file:delete/1`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').rmSync($0); return 0 })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+)]
+declare fn rawRm(path: string) -> Result<i32, HostError>;
+
+// Copy file from `src` to `dest`. Reds when `src` is missing or
+// `dest` already exists (Node's default `copyFileSync` semantics).
+// Node: `require('fs').copyFileSync($0, $1)`.
+// Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true),
+    .Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+)]
+declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
+
+// File metadata. Returns a `FileStat { size, mtime, isDir }` on
+// success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
+// `size` is in bytes.
+// Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
+// `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
+// seconds, × 1000, and both answer decision 319's canonical form (a `number`
+// within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
+// Erlang: `file:read_file_info/1` returns a `#file_info` record; the
+// template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
+// whole seconds × 1000. One value on every target: whole seconds (decision 499).
+#[compiler.external(
+    .JavaScript("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawStat(path: string) -> Result<FileStat, HostError>;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+
+// Every REGULAR FILE under `root`, recursively, as paths relative to `root`
+// with `/` separators, sorted — the same set on both targets (the two hosts
+// walk in different orders, so the list is sorted rather than left as found),
+// and the same paths however the root is spelled: `dir`, `dir/`, `dir/.`,
+// `./dir`, `dir/sub/..`, absolute or relative to the working directory.
+// Directories are not listed; a link is followed (a link to a file is listed
+// under its own name, a link to a directory is walked). An `Error`: a missing
+// or non-directory `root`, a directory under it that cannot be read, and a
+// DANGLING link (decision 178) — `fs.walk: dangling link "<relative path>"`,
+// the same text on both targets, naming the first one in sorted order.
+// Node: `readdirSync(root, { recursive: true })` answers files AND directories
+// relative to `root`; the template sorts them, keeps the entries `statSync`
+// says are files, and answers the dangling-link `Error` for the first entry
+// `statSync` cannot find (`throwIfNoEntry: false`).
+// Erlang: the template walks `file:list_dir/1` itself and BUILDS each relative
+// path from the names it descended through. It never cuts a prefix off a full
+// path: `filelib:fold_files/5` answers full paths `filename:join/2` has
+// normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
+// as written cut two characters too many when the root ended in `/.`.
+#[compiler.external(
+    .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true),
+    .Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true),
+)]
+declare fn rawWalk(root: string) -> Result<Walked, HostError>;
+
+// The entries under `root` matching the glob `pattern`, as paths relative to
+// `root` with `/` separators, sorted, each once. The pattern is read segment
+// by segment, by ONE rule on both targets (decision 177 — the narrower of what
+// the two hosts did):
+//   - `**` is zero or more directories; a segment with `*`, `?`, `[…]` or
+//     `{a,b}` matches the names of one directory; any other segment is a name.
+//   - `*` and `**` (and `?`, `[…]`, `{…}`) do NOT match a name that starts
+//     with `.` — a segment matches one only when the segment itself starts
+//     with the dot (`.*`, `.config/*.json`).
+//   - the walk does NOT descend through a link to a directory: `**` and a
+//     wildcard segment continue into real directories only. The link is still
+//     a NAME — `*` lists it — and a segment that names it (`linked/*.bp`) goes
+//     through it, because the pattern wrote it.
+//   - the last segment matches an entry of any kind (file, directory, link,
+//     dangling or not); a final `**` is every entry at every depth; a trailing
+//     `/` keeps real directories only.
+// An alternative of `{a,b}` cannot hold a `/` (the pattern is split first). A
+// root that does not exist answers `Ok([])`; so does a directory that cannot
+// be read. Both cells are the same walk; only the match of ONE segment against
+// ONE directory is the host's — `fs.globSync(segment, { cwd })` (Node 22+),
+// `filelib:wildcard/2` — with the dot rule applied over its answer, since
+// `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
+#[compiler.external(
+    .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() })()"""),
+    .Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))] end)($0, $1)"""),
+)]
+declare fn rawGlob(pattern: string, root: string) -> string[];
+
+// Remove `path` and everything under it: a file, a link (the link, never its
+// target) or a directory tree. A path that is not there is `Ok` too — the
+// caller wanted it gone. What a test fixture is cleared with, and what the
+// snapshot engine's tests clear their scratch directories with (1.0.11-beta
+// front 97).
+// Node: `rmSync(path, { recursive: true, force: true })`.
+// Erlang: `file:del_dir_r/1`.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true),
+    .Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+)]
+declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
+
+// Internal, test scaffolding: a fresh, unique, empty directory under the
+// host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
+// one of these and removes it with `removeTree`, so a run leaves nothing under
+// the host's tmpdir.
+#[compiler.external(
+    .JavaScript("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bp-std-fs-'))"""),
+    .Erlang("""(fun() -> __T = case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, __D = filename:join(__T, "bp-std-fs-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), unicode:characters_to_binary(__D) end)()"""),
+)]
+declare fn scratchDir() -> string;
+
+// Internal, test scaffolding: the working directory (what a relative root is
+// read against) and a symbolic link `link` → `target`.
+#[compiler.external(
+    .JavaScript("process.cwd()"),
+    .Erlang("""(fun() -> {ok, __D} = file:get_cwd(), unicode:characters_to_binary(__D) end)()"""),
+)]
+declare fn workingDir() -> string;
+
+#[compiler.external(
+    .JavaScript("""require('fs').symlinkSync($0, $1)"""),
+    .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
+)]
+declare fn linkTo(target: string, link: string) -> void;
+
+// ── the typed error ──────────────────────────────────────────────────────────
+
+// The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
+fn fsError(path: string, e: HostError) -> FsError {
+    val u = e.message.toUpper();
+    if (u.startsWith("ENOENT")) return FsError.NotFound(path: path);
+    if (u.startsWith("EACCES") || u.startsWith("EPERM"))
+        return FsError.PermissionDenied(path: path);
+    if (u.startsWith("EISDIR") || u.startsWith("PATH IS A DIRECTORY"))
+        return FsError.IsDirectory(path: path);
+    if (u.startsWith("ENOTDIR")) return FsError.NotDirectory(path: path);
+    if (u.startsWith("EEXIST")) return FsError.AlreadyExists(path: path);
+    return FsError.Other(path: path, message: e.message);
+}
+
+// A host cell's answer, its failure read as an `FsError` of `path`.
+fn lift<T>(path: string, r: Result<T, HostError>) -> Result<T, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+// The text of `b`, or `InvalidUtf8` at the first invalid byte.
+fn decode(path: string, b: Bytes) -> Result<string, FsError> {
+    val offset = utf8Offset(b);
+    if (offset >= 0l) throw FsError.InvalidUtf8(path: path, offset: offset);
+    return b.toUtf8().unwrapOr("");
+}
+
+// What `rawWalk` finds under a root: the regular files, and the links whose
+// target is missing, both as paths relative to the root, sorted.
+type Walked(
+    files: string[],
+    dangling: string[],
+)
+
+// Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
+#[compiler.external(
+    .JavaScript("""(($0).mem != null)"""),
+    .Erlang("""(case $0 of {mem, _, _} -> true; _ -> false end)"""),
+)]
+declare fn rawReadOnly(handle: unknown) -> bool;
+
+// ── whole-file shortcuts ─────────────────────────────────────────────────────
+
+// The file's bytes.
+pub fn readBytes(path: string) -> Result<Bytes, FsError> {
+    val b = try lift(path, rawReadBytes(path));
+    return b;
+}
+
+// The file as UTF-8 text. Bytes that are not UTF-8 are `InvalidUtf8` on every
+// target — never node's silent U+FFFD nor erlang's unchecked binary.
+pub fn readText(path: string) -> Result<string, FsError> {
+    val b = try readBytes(path);
+    val s = try decode(path, b);
+    return s;
+}
+
+// Write `contents` to `path`, creating or truncating.
+pub fn writeBytes(path: string, contents: Bytes) -> Result<i32, FsError> {
+    val n = try lift(path, rawWriteBytes(path, contents));
+    return n;
+}
+
+pub fn writeText(path: string, contents: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawWriteText(path, contents));
+    return n;
+}
+
+// Append `contents`, creating the file when it is not there.
+pub fn appendText(path: string, contents: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawAppendText(path, contents));
+    return n;
+}
+
+// ── metadata and directories ─────────────────────────────────────────────────
+
+pub fn stat(path: string) -> Result<FileStat, FsError> {
+    val s = try lift(path, rawStat(path));
+    return s;
+}
+
+pub fn list(path: string) -> Result<string[], FsError> {
+    val names = try lift(path, rawList(path));
+    return names;
+}
+
+pub fn mkdir(path: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawMkdir(path));
+    return n;
+}
+
+pub fn mkdirRecursive(path: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawMkdirRecursive(path));
+    return n;
+}
+
+pub fn rm(path: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawRm(path));
+    return n;
+}
+
+pub fn removeTree(path: string) -> Result<i32, FsError> {
+    val n = try lift(path, rawRemoveTree(path));
+    return n;
+}
+
+pub fn copy(src: string, dest: string) -> Result<i32, FsError> {
+    val n = try lift(src, rawCopy(src, dest));
+    return n;
+}
+
+pub fn walk(root: string) -> Result<string[], FsError> {
+    val found = try lift(root, rawWalk(root));
+    if (found.dangling.length > 0) {
+        val first = found.dangling.at(0) ?? "";
+        throw FsError.Other(path: root, message: ["fs.walk: dangling link \"", first, "\""].join(""));
+    }
+    return found.files;
+}
+
+pub fn glob(pattern: string, root: string) -> Result<string[], FsError> {
+    return rawGlob(pattern, root);
+}
+
+// The host's handle over embedded bytes: read like a file, never closed on disk.
+#[compiler.external(
+    .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
+    .Erlang("""{mem, $0, counters:new(1, [])}"""),
+)]
+declare fn memoryHandle(bytes: Bytes) -> unknown;
+
+// ── the handle ───────────────────────────────────────────────────────────────
+
+// An open file (decision 540 (3)). `location` is the path it was opened with and
+// `handle` the host's — opaque, never read by a program. Closed by the writer:
+// `val f = try fs.open(p); defer f.close();`.
+pub type File(location: string, handle: unknown) implement Closeable {
+    // The path the file was opened with.
+    pub fn path(self: Self) -> string {
+        return self.location;
+    }
+
+    // The file's size in bytes.
+    pub fn size(self: Self) -> Result<i64, FsError> {
+        val n = try lift(self.location, rawSize(self.handle, self.location));
+        return n;
+    }
+
+    // Up to `n` bytes from the position; empty at the end of the file.
+    pub fn read(self: Self, n: i32) -> Result<Bytes, FsError> {
+        if (n <= 0) return Bytes.fromUtf8("");
+        val b = try lift(self.location, rawRead(self.handle, n));
+        return b;
+    }
+
+    // Every byte from the position to the end.
+    pub fn bytes(self: Self) -> Result<Bytes, FsError> {
+        val b = try lift(self.location, rawReadAll(self.handle));
+        return b;
+    }
+
+    // The rest of the file as UTF-8 text (`InvalidUtf8` otherwise).
+    pub fn text(self: Self) -> Result<string, FsError> {
+        val b = try self.bytes();
+        val s = try decode(self.location, b);
+        return s;
+    }
+
+    // The rest of the file in pieces of at most `size` bytes. An error ends the stream.
+    pub fn chunks(self: Self, size: i32 = 65536) -> Stream<Result<Bytes, FsError>> {
+        while (true) {
+            val b = try self.read(size);
+            if (b.length == 0) break;
+            yield b;
+        }
+    }
+
+    // The rest of the file line by line, `\n` and `\r\n` stripped. A line that is not
+    // UTF-8 ends the stream with `InvalidUtf8`, its offset counted from the first
+    // line this call read.
+    pub fn lines(self: Self) -> Stream<Result<string, FsError>> {
+        var consumed = 0l;
+        while (true) {
+            val raw = try lift(self.location, rawReadLine(self.handle));
+            if (raw.length == 0) break;
+            val line = stripEol(raw);
+            val offset = utf8Offset(line);
+            if (offset >= 0l)
+                throw FsError.InvalidUtf8(path: self.location, offset: consumed
+                    + offset);
+            val width: i32 = raw.length;
+            consumed = consumed + width.toI64();
+            yield line.toUtf8().unwrapOr("");
+        }
+    }
+
+    // The SHA-256 of the whole file, lowercase hex.
+    pub fn hash(self: Self) -> Result<string, FsError> {
+        val h = try lift(self.location, rawHash(self.handle));
+        return h;
+    }
+
+    // Write `b` at the position; answers the number of bytes written.
+    pub fn write(self: Self, b: Bytes) -> Result<i32, FsError> {
+        if (rawReadOnly(self.handle))
+            throw FsError.Other(path: self.location, message: "the file is open for reading");
+        val n = try lift(self.location, rawWrite(self.handle, b));
+        return n;
+    }
+
+    // Close the file. Closing twice is harmless; a failure to close is not reported.
+    pub fn close(self: Self) {
+        val closed = rawClose(self.handle);
+    }
+}
+
+// Open the file at `path` for reading. A directory is `IsDirectory` on every target.
+pub fn open(path: string) -> Result<File, FsError> {
+    val h = try lift(path, rawOpen(path));
+    return File(location: path, handle: h);
+}
+
+// Open the file at `path` for writing: created, or truncated.
+pub fn create(path: string) -> Result<File, FsError> {
+    val h = try lift(path, rawCreate(path));
+    return File(location: path, handle: h);
+}
+
+// An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
+// like a file on disk — no `Result`, the build proved the file exists — and
+// closing it is a no-op.
+pub fn openAsset(asset: Asset) -> File {
+    return File(location: asset.path, handle: memoryHandle(asset.bytes));
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// (Inline tests are smoke-grade — they require the host filesystem to be
+// writable at the host's `tmpdir()`. The lib-test harness runs each
+// inline test as a separate process; the temp filenames are seeded with
+// `time.nowMillis()` for cross-run uniqueness.)
+
+test "fs.exists is false for a fixed-name path that doesn't exist" {
+    val e = exists("/__bp_std_fs_definitely_not_a_real_path_xyz__");
+    assert e.negate();
+}
+
+test "fs.exists is true for a path of any kind" {
+    assert exists("/");
+    assert exists("/dev/null");
+    val dir = scratchDir();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert exists([dir, "/file.txt"].join(""));
+    assert exists(dir);
+    removeTree(dir);
+    assert exists(dir).negate();
+}
+
+test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("blog", [dir, "/app/linked"].join(""));
+    assert removeTree([dir, "/app/linked"].join("")).isOk();
+    assert exists([dir, "/app/linked"].join("")).negate();
+    assert exists([dir, "/app/blog/page.bp"].join(""));
+    assert removeTree([dir, "/app/page.bp"].join("")).isOk();
+    assert exists([dir, "/app/page.bp"].join("")).negate();
+    assert removeTree([dir, "/app"].join("")).isOk();
+    assert exists([dir, "/app"].join("")).negate();
+    assert removeTree([dir, "/app"].join("")).isOk();
+    assert removeTree(dir).isOk();
+    assert exists(dir).negate();
+}
+
+test "fs.mkdirRecursive makes a directory with its parents and is Ok on one that is there" {
+    val dir = scratchDir();
+    val deep = [dir, "/a/b/c"].join("");
+    assert mkdirRecursive(deep).isOk();
+    assert stat(deep).unwrapOr(
+        FileStat(size: 0l, mtime: 0l, isDir: false),
+    ).isDir;
+    assert mkdirRecursive(deep).isOk();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert mkdirRecursive([dir, "/file.txt"].join("")).isError();
+    assert mkdirRecursive([dir, "/file.txt/sub"].join("")).isError();
+    removeTree(dir);
+}
+
+test "fs.list of the host '/' resolves Ok" {
+    val r = list("/");
+    assert r.isOk();
+}
+
+// Internal, test scaffolding: `stat(p)`, or a stat no file has.
+fn statOr(p: string) -> FileStat {
+    return case stat(p) {
+        Ok(s) -> s;
+        Error(_) -> FileStat(size: -1l, mtime: -1l, isDir: false);
+    };
+}
+
+test "fs.stat answers a file's size, a directory's kind and the mtime in epoch milliseconds" {
+    val dir = scratchDir();
+    writeText([dir, "/five.txt"].join(""), "12345");
+    val file = statOr([dir, "/five.txt"].join(""));
+    assert file.size == 5l;
+    assert file.isDir == false;
+    // After 2020-01-01T00:00:00Z and before 2100-01-01T00:00:00Z.
+    assert file.mtime > 1577836800000l;
+    assert file.mtime < 4102444800000l;
+    // Whole seconds on every target (decision 499).
+    assert file.mtime % 1000l == 0l;
+    assert statOr(dir).isDir;
+    assert stat([dir, "/missing.txt"].join("")).isError();
+    removeTree(dir);
+}
+
+// Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
+// `<dir>/app/blog/notes.md` — the fixture tree every walk/glob test reads.
+fn makeFixtureTree(dir: string) -> void {
+    mkdir([dir, "/app"].join(""));
+    mkdir([dir, "/app/blog"].join(""));
+    writeText([dir, "/app/page.bp"].join(""), "root page");
+    writeText([dir, "/app/blog/page.bp"].join(""), "blog page");
+    writeText([dir, "/app/blog/notes.md"].join(""), "notes");
+}
+
+// Internal, test scaffolding: what `walk` answers for the fixture tree when
+// its root is spelled `<scratch dir><suffix>` — every spelling of one root has
+// to answer the same three relative paths.
+fn walkFixture(suffix: string) -> string {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val walked = walk([dir, suffix].join("")).unwrapOr(["<error>"]);
+    removeTree(dir);
+    return walked.join(",");
+}
+
+// Internal, test scaffolding: the same, with the root spelled relative to the
+// working directory — `<prefix><path from the cwd to the fixture>`.
+fn walkFixtureFromCwd(prefix: string) -> string {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val root = [prefix, relative(workingDir(), dir), "/app"].join("");
+    val walked = walk(root).unwrapOr(["<error>"]);
+    removeTree(dir);
+    return walked.join(",");
+}
+
+test "fs.walk lists every regular file relative to the root, sorted" {
+    assert walkFixture("/app") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a trailing slash answers the same paths" {
+    assert walkFixture("/app/") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root ending in a dot segment answers the same paths" {
+    assert walkFixture("/app/.") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a dot segment inside answers the same paths" {
+    assert walkFixture("/./app") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a doubled separator answers the same paths" {
+    assert walkFixture("//app//") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root ending in a parent segment answers the same paths" {
+    assert walkFixture("/app/blog/..") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a relative root answers the same paths" {
+    assert walkFixtureFromCwd("") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a relative root spelled with a leading dot answers the same paths" {
+    assert walkFixtureFromCwd("./") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk follows a link to a file and a link to a directory" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("blog", [dir, "/app/linked"].join(""));
+    linkTo("page.bp", [dir, "/app/alias.bp"].join(""));
+    val walked = walk([dir, "/app"].join("")).unwrapOr(["<error>"]);
+    removeTree(dir);
+    assert walked.join(",")
+        == "alias.bp,blog/notes.md,blog/page.bp,linked/notes.md,linked/page.bp,page.bp";
+}
+
+// Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
+fn walkRefusal(root: string) -> string {
+    return case walk(root) {
+        Ok(_) -> "";
+        Error(e) -> describe(e);
+    };
+}
+
+// Internal, test scaffolding: an `FsError` as one line — the variant, the path
+// and the message where it holds one (a dangling link is `Other`, decision 178).
+fn describe(e: FsError) -> string {
+    return case e {
+        FsError.NotFound(p) -> "NotFound " + p;
+        FsError.PermissionDenied(p) -> "PermissionDenied " + p;
+        FsError.IsDirectory(p) -> "IsDirectory " + p;
+        FsError.NotDirectory(p) -> "NotDirectory " + p;
+        FsError.AlreadyExists(p) -> "AlreadyExists " + p;
+        FsError.InvalidUtf8(p, offset) -> "InvalidUtf8 "
+            + p
+            + " "
+            + offset.toString();
+        FsError.Other(p, message) -> message;
+    };
+}
+
+test "fs.walk of a tree with a dangling link is an Error naming the link" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("missing.bp", [dir, "/app/gone.bp"].join(""));
+    val refusal = walkRefusal([dir, "/app"].join(""));
+    val dotted = walkRefusal([dir, "/app/."].join(""));
+    removeTree(dir);
+    assert refusal == "fs.walk: dangling link \"gone.bp\"";
+    assert dotted == "fs.walk: dangling link \"gone.bp\"";
+}
+
+test "fs.walk names the first dangling link in sorted order, by its relative path" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("missing.bp", [dir, "/app/zz-gone.bp"].join(""));
+    linkTo("missing.md", [dir, "/app/blog/gone.md"].join(""));
+    val refusal = walkRefusal([dir, "/app"].join(""));
+    removeTree(dir);
+    assert refusal == "fs.walk: dangling link \"blog/gone.md\"";
+}
+
+test "fs.walk of a regular file is an Error" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val r = walk([dir, "/app/page.bp"].join(""));
+    removeTree(dir);
+    assert r.isError();
+}
+
+test "fs.walk of a missing root is an Error" {
+    val r = walk("/__bp_std_fs_definitely_not_a_real_path_xyz__");
+    assert r.isError();
+}
+
+test "fs.glob finds a nested file through a double-star pattern" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val found = glob("**/page.bp", [dir, "/app"].join("")).unwrapOr([]);
+    removeTree(dir);
+    assert found.join(",") == "blog/page.bp,page.bp";
+}
+
+test "fs.glob answers the empty list when nothing matches" {
+    val dir = scratchDir();
+    val found = glob("*.nothing", dir).unwrapOr(["x"]);
+    removeTree(dir);
+    assert found.length == 0;
+}
+
+// Internal, test scaffolding: the fixture tree plus the names decision 177 is
+// about — a dot file and a dot directory, a link to a directory, a link to a
+// file and a dangling link, all under `<dir>/app`.
+fn makeGlobTree(dir: string) -> void {
+    makeFixtureTree(dir);
+    mkdir([dir, "/app/.cache"].join(""));
+    writeText([dir, "/app/.cache/page.bp"].join(""), "cached");
+    writeText([dir, "/app/.hidden.bp"].join(""), "hidden");
+    writeText([dir, "/app/blog/.draft.md"].join(""), "draft");
+    linkTo("blog", [dir, "/app/linked"].join(""));
+    linkTo("page.bp", [dir, "/app/alias.bp"].join(""));
+    linkTo("missing.bp", [dir, "/app/gone.bp"].join(""));
+}
+
+// Internal, test scaffolding: what `glob(pattern, <dir>/app)` answers over
+// `makeGlobTree`, joined by `,`.
+fn globbed(pattern: string) -> string {
+    val dir = scratchDir();
+    makeGlobTree(dir);
+    val found = glob(pattern, [dir, "/app"].join("")).unwrapOr(["<error>"]);
+    removeTree(dir);
+    return found.join(",");
+}
+
+test "fs.glob star matches every name but one that starts with a dot" {
+    assert globbed("*") == "alias.bp,blog,gone.bp,linked,page.bp";
+    assert globbed("*.bp") == "alias.bp,gone.bp,page.bp";
+    assert globbed("blog/*") == "blog/notes.md,blog/page.bp";
+}
+
+test "fs.glob matches a dot name only when the segment writes the dot" {
+    assert globbed(".*") == ".cache,.hidden.bp";
+    assert globbed(".hidden.bp") == ".hidden.bp";
+    assert globbed(".cache/*.bp") == ".cache/page.bp";
+    assert globbed("blog/.*") == "blog/.draft.md";
+    assert globbed("?hidden.bp") == "";
+    assert globbed("[.]hidden.bp") == "";
+    assert globbed("{.hidden,page}.bp") == "page.bp";
+}
+
+test "fs.glob double star does not enter a directory that starts with a dot" {
+    assert globbed("**/page.bp") == "blog/page.bp,page.bp";
+    assert globbed("**/*.md") == "blog/notes.md";
+    assert globbed("**/.*") == ".cache,.hidden.bp,blog/.draft.md";
+    assert globbed(".cache/**/*.bp") == ".cache/page.bp";
+}
+
+test "fs.glob does not descend through a link to a directory" {
+    assert globbed("**/notes.md") == "blog/notes.md";
+    assert globbed("*/notes.md") == "blog/notes.md";
+    assert globbed("l*/notes.md") == "";
+    assert globbed("**/*/notes.md") == "blog/notes.md";
+}
+
+test "fs.glob goes through a link the pattern names, and lists a link as a name" {
+    assert globbed("linked/*.md") == "linked/notes.md";
+    assert globbed("linked/**/*.bp") == "linked/page.bp";
+    assert globbed("**/linked/*.md") == "linked/notes.md";
+    assert globbed("linked") == "linked";
+    assert globbed("l*") == "linked";
+    assert globbed("gone.bp") == "gone.bp";
+}
+
+test "fs.glob final double star is every entry at every depth" {
+    assert globbed("**")
+        == "alias.bp,blog,blog/notes.md,blog/page.bp,gone.bp,linked,page.bp";
+    assert globbed("blog/**") == "blog/notes.md,blog/page.bp";
+}
+
+test "fs.glob reads the classes, the alternatives and a trailing slash" {
+    assert globbed("blo?/[np]*.md") == "blog/notes.md";
+    assert globbed("{blog,nowhere}/page.bp") == "blog/page.bp";
+    assert globbed("**/{notes,page}.*") == "blog/notes.md,blog/page.bp,page.bp";
+    assert globbed("*/") == "blog";
+    assert globbed("./blog//page.bp") == "blog/page.bp";
+}
+
+test "fs.glob of a root that does not exist answers the empty list" {
+    val found = glob("**/*", "/__bp_std_fs_definitely_not_a_real_path_xyz__");
+    assert found.unwrapOr(["x"]).length == 0;
+}
+
+// ── FsError, readText and the handle ─────────────────────────────────────────
+
+// Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
+fn variantOf<T>(r: Result<T, FsError>) -> string {
+    return case r {
+        Ok(_) -> "ok";
+        Error(e) -> describe(e);
+    };
+}
+
+test "fs answers the same FsError variant for the same OS error" {
+    val dir = scratchDir();
+    writeText([dir, "/file.txt"].join(""), "x");
+    val missing = [dir, "/missing"].join("");
+    val file = [dir, "/file.txt"].join("");
+    assert variantOf(readText(missing)) == "NotFound " + missing;
+    assert variantOf(readText(dir)) == "IsDirectory " + dir;
+    assert variantOf(list(file)) == "NotDirectory " + file;
+    assert variantOf(mkdir(dir)) == "AlreadyExists " + dir;
+    assert variantOf(mkdir([dir, "/a/b"].join("")))
+        == "NotFound " + [dir, "/a/b"].join("");
+    assert variantOf(rm(dir)) == "IsDirectory " + dir;
+    assert variantOf(open(missing)) == "NotFound " + missing;
+    assert variantOf(open(dir)) == "IsDirectory " + dir;
+    assert variantOf(create(dir)) == "IsDirectory " + dir;
+    removeTree(dir);
+}
+
+test "fs.readText of bytes that are not UTF-8 is InvalidUtf8 at the first invalid byte" {
+    val dir = scratchDir();
+    val path = [dir, "/bad.bin"].join("");
+    // "ok", then the first byte of a two-byte sequence, then "z".
+    writeBytes(path, Bytes
+        .fromUtf8("ok")
+        .concat(Bytes.fromUtf8("é").slice(0, 1))
+        .concat(Bytes.fromUtf8("z")));
+    assert variantOf(readText(path)) == "InvalidUtf8 " + path + " 2";
+    assert readBytes(path).isOk();
+    // A sequence cut short at the end of the file.
+    writeBytes(path, Bytes.fromUtf8("é").slice(0, 1));
+    assert variantOf(readText(path)) == "InvalidUtf8 " + path + " 0";
+    // A well-formed multi-byte file reads back whole.
+    writeText(path, "héllo ✓");
+    assert readText(path).unwrapOr("") == "héllo ✓";
+    removeTree(dir);
+}
+
+test "fs.appendText adds to the end and creates the file" {
+    val dir = scratchDir();
+    val path = [dir, "/log.txt"].join("");
+    appendText(path, "a");
+    appendText(path, "b");
+    assert readText(path).unwrapOr("") == "ab";
+    removeTree(dir);
+}
+
+// Internal, test scaffolding: the file a failed `open` falls back to.
+fn noFile() -> File {
+    return File(location: "", handle: memHandle(Bytes.fromUtf8("")));
+}
+
+test "fs.File writes, then reads bytes, text, a size and a hash" {
+    val dir = scratchDir();
+    val path = [dir, "/data.txt"].join("");
+    val w = create(path).unwrapOr(noFile());
+    assert w.write(Bytes.fromUtf8("hello ")).unwrapOr(-1) == 6;
+    assert w.write(Bytes.fromUtf8("world")).unwrapOr(-1) == 5;
+    w.close();
+    val r = open(path).unwrapOr(w);
+    assert r.path() == path;
+    assert r.size().unwrapOr(-1l) == 11l;
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("")).toUtf8().unwrapOr("")
+        == "hello";
+    assert r.text().unwrapOr("") == " world";
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length == 0;
+    assert r.hash().unwrapOr("")
+        == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    r.close();
+    removeTree(dir);
+}
+
+// Internal, test scaffolding: take every permission from `path`; whether that
+// denies this user anything (root is denied nothing), and give them back.
+#[compiler.external(
+    .JavaScript("""(() => { require('fs').chmodSync($0, 0); return typeof process.getuid === 'function' ? process.getuid() !== 0 : false })()"""),
+    .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 0), string:trim(os:cmd("id -u")) =/= "0" end)($0)"""),
+)]
+declare fn denyAll(path: string) -> bool;
+
+#[compiler.external(
+    .JavaScript("""require('fs').chmodSync($0, 0o700)"""),
+    .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 8#700), ok end)($0)"""),
+)]
+declare fn allowAll(path: string) -> void;
+
+test "fs answers PermissionDenied for an OS permission error" {
+    val dir = scratchDir();
+    val locked = [dir, "/locked"].join("");
+    mkdir(locked);
+    writeText([locked, "/f.txt"].join(""), "x");
+    val denied = denyAll(locked);
+    val listed = variantOf(list(locked));
+    val read = variantOf(readText([locked, "/f.txt"].join("")));
+    allowAll(locked);
+    removeTree(dir);
+    // Run as root nothing is denied, and there is nothing to read.
+    if (denied) {
+        assert listed == "PermissionDenied " + locked;
+        assert read == "PermissionDenied " + [locked, "/f.txt"].join("");
+    }
+}
+
+```
+
+----- WASM TEXT -- std/io/fs.wat
+```wasm
+(module
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 256) "\01\00\00\00/")
+  (data (i32.const 264) "\01\00\00\00:")
+  (data (i32.const 272) "\00\00\00\00")
+  (data (i32.const 276) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:40:23")
+  (data (i32.const 328) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:50:33")
+  (data (i32.const 380) "\01\00\00\00.")
+  (data (i32.const 388) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:68:28")
+  (data (i32.const 440) "\31\00\00\00integer overflow: + on i32 at src/io/fs.bp:114:52")
+  (data (i32.const 496) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:120:42")
+  (data (i32.const 552) "\02\00\00\00..")
+  (data (i32.const 560) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:135:39")
+  (data (i32.const 616) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:159:63")
+  (data (i32.const 672) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
+  (data (i32.const 704) "\31\00\00\00integer overflow: + on i32 at src/io/fs.bp:175:35")
+  (data (i32.const 760) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:205:51")
+  (data (i32.const 816) "\03\00\00\00../")
+  (data (i32.const 824) "\19\00\00\00R\07Failure\02\07messages\04kinds")
+  (data (i32.const 856) "\05\00\00\00panic")
+  (data (i32.const 868) "\0b\00\00\00not found: ")
+  (data (i32.const 884) "\13\00\00\00permission denied: ")
+  (data (i32.const 908) "\10\00\00\00is a directory: ")
+  (data (i32.const 928) "\11\00\00\00not a directory: ")
+  (data (i32.const 952) "\10\00\00\00already exists: ")
+  (data (i32.const 972) "\0b\00\00\00not UTF-8: ")
+  (data (i32.const 988) "\09\00\00\00 at byte ")
+  (data (i32.const 1004) "\02\00\00\00: ")
+  (data (i32.const 1012) "\06\00\00\00ENOENT")
+  (data (i32.const 1024) "\19\00\00\00V\10FsError.NotFound\01\04paths")
+  (data (i32.const 1056) "\06\00\00\00EACCES")
+  (data (i32.const 1068) "\05\00\00\00EPERM")
+  (data (i32.const 1080) "\21\00\00\00V\18FsError.PermissionDenied\01\04paths")
+  (data (i32.const 1120) "\06\00\00\00EISDIR")
+  (data (i32.const 1132) "\13\00\00\00PATH IS A DIRECTORY")
+  (data (i32.const 1156) "\1c\00\00\00V\13FsError.IsDirectory\01\04paths")
+  (data (i32.const 1188) "\07\00\00\00ENOTDIR")
+  (data (i32.const 1200) "\1d\00\00\00V\14FsError.NotDirectory\01\04paths")
+  (data (i32.const 1236) "\06\00\00\00EEXIST")
+  (data (i32.const 1248) "\1e\00\00\00V\15FsError.AlreadyExists\01\04paths")
+  (data (i32.const 1284) "\1f\00\00\00V\rFsError.Other\02\04paths\07messages")
+  (data (i32.const 1320) "\09\00\00\00NotFound ")
+  (data (i32.const 1336) "\11\00\00\00PermissionDenied ")
+  (data (i32.const 1360) "\0c\00\00\00IsDirectory ")
+  (data (i32.const 1376) "\0d\00\00\00NotDirectory ")
+  (data (i32.const 1396) "\0e\00\00\00AlreadyExists ")
+  (data (i32.const 1416) "\0c\00\00\00InvalidUtf8 ")
+  (data (i32.const 1432) "\01\00\00\00 ")
+  (data (i32.const 1440) "\02\00\00\00ok")
+  (global $__heap_ptr (mut i32) (i32.const 2608))
+  (global $separator (mut i32) (i32.const 256))
+  (global $delimiter (mut i32) (i32.const 264))
+  (func $split (param $path i32) (result i32)
+    (local $raw i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $__out0 i32)
+    (local $p i32)
+    local.get $path
+    global.get $separator
+    call $__std_text_split
+    local.set $raw
+    local.get $raw
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    local.get $__len0
+    call $__arr_new
+    local.set $__out0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.const 272
+    call $__str_eq
+    i32.eqz
+    (if
+      (then
+    local.get $__out0
+    local.get $__acc0
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter0
+    local.get $__idx0
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc0
+    i32.const 1
+    i32.add
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__out0
+    local.get $__acc0
+    i32.store ;; kept count
+    local.get $__out0
+    return
+  )
+  (func $isAbsolute (param $path i32) (result i32)
+    local.get $path
+    global.get $separator
+    call $__std_text_startsWith
+    return
+  )
+  (func $basename (param $path i32) (result i32)
+    (local $parts i32)
+    (local $n i32)
+    (local $__bp_nullish i32)
+    (local $__opt0 i32)
+    local.get $path
+    call $split
+    local.set $parts
+    local.get $parts
+    i32.load ;; .length
+    local.set $n
+    local.get $n
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 272
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $parts
+    local.get $n
+    i32.const 1
+    i32.const 276
+    call $__i32_sub_chk
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    return
+  )
+  (func $dirname (param $path i32) (result i32)
+    (local $__mem0 i32)
+    (local $parts i32)
+    (local $n i32)
+    (local $head i32)
+    (local $joined i32)
+    local.get $path
+    call $split
+    local.set $parts
+    local.get $parts
+    i32.load ;; .length
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.le_s
+    (if (result i32)
+      (then
+    local.get $path
+    call $isAbsolute
+    (if (result i32)
+      (then
+    global.get $separator
+      )
+      (else
+    i32.const 272
+      )
+    )
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $parts
+    i32.const 0
+    local.get $n
+    i32.const 1
+    i32.const 328
+    call $__i32_sub_chk
+    call $__std_array_slice
+    local.set $head
+    local.get $head
+    global.get $separator
+    call $__std_array_joinStrings
+    local.set $joined
+    local.get $path
+    call $isAbsolute
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    global.get $separator
+    i32.store offset=4
+    local.get $__mem0
+    local.get $joined
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 272
+    call $__std_array_joinStrings
+      )
+      (else
+    local.get $joined
+      )
+    )
+    return
+  )
+  (func $extname (param $path i32) (result i32)
+    (local $__mem0 i32)
+    (local $base i32)
+    (local $pieces i32)
+    (local $n i32)
+    (local $head i32)
+    (local $__bp_nullish i32)
+    (local $tail i32)
+    (local $isDotfile i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
+    local.get $path
+    call $basename
+    local.set $base
+    local.get $base
+    i32.const 380
+    call $__std_text_split
+    local.set $pieces
+    local.get $pieces
+    i32.load ;; .length
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.le_s
+    (if (result i32)
+      (then
+    i32.const 272
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $pieces
+    i32.const 0
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $head
+    local.get $pieces
+    local.get $n
+    i32.const 1
+    i32.const 388
+    call $__i32_sub_chk
+    call $__arr_at
+    local.tee $__opt1
+    (if (result i32)
+      (then
+    local.get $__opt1
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $tail
+    local.get $head
+    i32.const 272
+    call $__str_eq
+    local.get $n
+    i32.const 2
+    i32.eq
+    i32.and
+    local.set $isDotfile
+    local.get $isDotfile
+    (if (result i32)
+      (then
+    i32.const 272
+      )
+      (else
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    i32.const 380
+    i32.store offset=4
+    local.get $__mem0
+    local.get $tail
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 272
+    call $__std_array_joinStrings
+      )
+    )
+    return
+  )
+  (func $join (param $parts i32) (result i32)
+    (local $__mem0 i32)
+    (local $isAbs i32)
+    (local $__bp_nullish i32)
+    (local $collapsed i32)
+    (local $joined i32)
+    (local $__opt0 i32)
+    (local $__iter1 i32)
+    (local $__idx1 i32)
+    (local $__len1 i32)
+    (local $__acc1 i32)
+    (local $__out1 i32)
+    (local $p i32)
+    (local $__iter2 i32)
+    (local $__idx2 i32)
+    (local $__len2 i32)
+    (local $__acc2 i32)
+    (local $__out2 i32)
+    local.get $parts
+    i32.load ;; .length
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0
+      )
+      (else
+    local.get $parts
+    i32.const 0
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    call $isAbsolute
+      )
+    )
+    local.set $isAbs
+    local.get $parts
+    local.set $__iter1
+    local.get $__iter1
+    i32.load ;; element count
+    local.set $__len1
+    i32.const 0
+    local.set $__idx1
+    local.get $__len1
+    call $__arr_new
+    local.set $__out1
+    i32.const 0
+    local.set $__acc1
+    (block $__break
+      (loop $__continue
+        local.get $__idx1
+        local.get $__len1
+        i32.ge_s
+        br_if $__break
+        local.get $__iter1
+        local.get $__idx1
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $__out1
+    local.get $__idx1
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $p
+    call $split
+    global.get $separator
+    call $__std_array_joinStrings
+    i32.store offset=4
+        local.get $__idx1
+        i32.const 1
+        i32.add
+        local.set $__idx1
+        br $__continue
+      )
+    )
+    local.get $__out1
+    local.set $collapsed
+    local.get $collapsed
+    local.set $__iter2
+    local.get $__iter2
+    i32.load ;; element count
+    local.set $__len2
+    i32.const 0
+    local.set $__idx2
+    local.get $__len2
+    call $__arr_new
+    local.set $__out2
+    i32.const 0
+    local.set $__acc2
+    (block $__break
+      (loop $__continue
+        local.get $__idx2
+        local.get $__len2
+        i32.ge_s
+        br_if $__break
+        local.get $__iter2
+        local.get $__idx2
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.const 272
+    call $__str_eq
+    i32.eqz
+    (if
+      (then
+    local.get $__out2
+    local.get $__acc2
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter2
+    local.get $__idx2
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc2
+    i32.const 1
+    i32.add
+    local.set $__acc2
+      )
+    )
+        local.get $__idx2
+        i32.const 1
+        i32.add
+        local.set $__idx2
+        br $__continue
+      )
+    )
+    local.get $__out2
+    local.get $__acc2
+    i32.store ;; kept count
+    local.get $__out2
+    global.get $separator
+    call $__std_array_joinStrings
+    local.set $joined
+    local.get $isAbs
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    global.get $separator
+    i32.store offset=4
+    local.get $__mem0
+    local.get $joined
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 272
+    call $__std_array_joinStrings
+      )
+      (else
+    local.get $joined
+      )
+    )
+    return
+  )
+  (func $normalize (param $path i32) (result i32)
+    (local $__mem0 i32)
+    (local $isAbs i32)
+    (local $pieces i32)
+    (local $joined i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $__out0 i32)
+    (local $p i32)
+    local.get $path
+    i32.const 272
+    call $__str_eq
+    (if (result i32)
+      (then
+    i32.const 380
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $path
+    call $isAbsolute
+    local.set $isAbs
+    local.get $path
+    call $split
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    local.get $__len0
+    call $__arr_new
+    local.set $__out0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.const 380
+    call $__str_eq
+    i32.eqz
+    (if
+      (then
+    local.get $__out0
+    local.get $__acc0
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter0
+    local.get $__idx0
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc0
+    i32.const 1
+    i32.add
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__out0
+    local.get $__acc0
+    i32.store ;; kept count
+    local.get $__out0
+    local.set $pieces
+    local.get $pieces
+    global.get $separator
+    call $__std_array_joinStrings
+    local.set $joined
+    local.get $isAbs
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    global.get $separator
+    i32.store offset=4
+    local.get $__mem0
+    local.get $joined
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 272
+    call $__std_array_joinStrings
+      )
+      (else
+    local.get $joined
+    i32.const 272
+    call $__str_eq
+    (if (result i32)
+      (then
+    i32.const 380
+      )
+      (else
+    local.get $joined
+      )
+    )
+      )
+    )
+    return
+  )
+  (func $commonPrefixCount (param $a i32) (param $b i32) (param $i i32) (result i32)
+    (local $ai i32)
+    (local $__bp_nullish i32)
+    (local $bi i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
+    local.get $i
+    local.get $a
+    i32.load ;; .length
+    i32.ge_s
+    (if (result i32)
+      (then
+    local.get $i
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $i
+    local.get $b
+    i32.load ;; .length
+    i32.ge_s
+    (if (result i32)
+      (then
+    local.get $i
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $a
+    local.get $i
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $ai
+    local.get $b
+    local.get $i
+    call $__arr_at
+    local.tee $__opt1
+    (if (result i32)
+      (then
+    local.get $__opt1
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $bi
+    local.get $ai
+    local.get $bi
+    call $__str_eq
+    (if (result i32)
+      (then
+    local.get $a
+    local.get $b
+    local.get $i
+    i32.const 1
+    i32.const 440
+    call $__i32_add_chk
+    call $commonPrefixCount
+      )
+      (else
+    local.get $i
+      )
+    )
+    return
+  )
+  (func $makeUps (param $n i32) (result i32)
+    (local $__mem0 i32)
+    local.get $n
+    i32.const 0
+    i32.le_s
+    (if (result i32)
+      (then
+    i32.const 4
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+      )
+      (else
+    local.get $n
+    i32.const 1
+    i32.const 496
+    call $__i32_sub_chk
+    call $makeUps
+    i32.const 552
+    call $__std_array_prepend
+      )
+    )
+    return
+  )
+  (func $relative (param $src i32) (param $dst i32) (result i32)
+    (local $srcParts i32)
+    (local $dstParts i32)
+    (local $common i32)
+    (local $ups i32)
+    (local $downs i32)
+    (local $combined i32)
+    (local $joined i32)
+    local.get $src
+    call $split
+    local.set $srcParts
+    local.get $dst
+    call $split
+    local.set $dstParts
+    local.get $srcParts
+    local.get $dstParts
+    i32.const 0
+    call $commonPrefixCount
+    local.set $common
+    local.get $srcParts
+    i32.load ;; .length
+    local.get $common
+    i32.const 560
+    call $__i32_sub_chk
+    call $makeUps
+    local.set $ups
+    local.get $dstParts
+    local.get $common
+    local.get $dstParts
+    i32.load ;; .length
+    call $__std_array_slice
+    local.set $downs
+    local.get $ups
+    local.get $downs
+    call $__std_array_concat
+    local.set $combined
+    local.get $combined
+    global.get $separator
+    call $__std_array_joinStrings
+    local.set $joined
+    local.get $joined
+    i32.const 272
+    call $__str_eq
+    (if (result i32)
+      (then
+    i32.const 380
+      )
+      (else
+    local.get $joined
+      )
+    )
+    return
+  )
+  (func $applyPieces (param $acc i32) (param $pieces i32) (result i32)
+    (local $__mem0 i32)
+    (local $p i32)
+    (local $__bp_nullish i32)
+    (local $rest i32)
+    (local $nextAcc i32)
+    (local $__opt0 i32)
+    (loop $__tail (result i32)
+    local.get $pieces
+    i32.load ;; .length
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $acc
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $pieces
+    i32.const 0
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $p
+    local.get $pieces
+    i32.const 1
+    local.get $pieces
+    i32.load ;; .length
+    call $__std_array_slice
+    local.set $rest
+    local.get $p
+    i32.const 552
+    call $__str_eq
+    (if (result i32)
+      (then
+    local.get $acc
+    i32.load ;; .length
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $acc
+      )
+      (else
+    local.get $acc
+    i32.const 0
+    local.get $acc
+    i32.load ;; .length
+    i32.const 1
+    i32.const 616
+    call $__i32_sub_chk
+    call $__std_array_slice
+      )
+    )
+      )
+      (else
+    local.get $acc
+    i32.const 8
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 1
+    i32.store
+    local.get $__mem0
+    local.get $p
+    i32.store offset=4
+    local.get $__mem0
+    call $__std_array_concat
+      )
+    )
+    local.set $nextAcc
+    local.get $nextAcc
+    local.get $rest
+    local.set $pieces
+    local.set $acc
+    br $__tail ;; tail call
+    )
+  )
+  (func $resolveStep (param $state i32) (param $seg i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $pieces i32)
+    (local $nextIsAbs i32)
+    (local $baseParts i32)
+    local.get $seg
+    call $split
+    local.set $pieces
+    local.get $seg
+    call $isAbsolute
+    local.get $state
+    i32.load ;; .isAbs
+    i32.or
+    local.set $nextIsAbs
+    local.get $seg
+    call $isAbsolute
+    (if (result i32)
+      (then
+    i32.const 4
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+      )
+      (else
+    local.get $state
+    i32.load offset=4 ;; .parts
+      )
+    )
+    local.set $baseParts
+    i32.const 12
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 676
+    i32.store
+    local.get $__mem1
+    local.get $nextIsAbs
+    i32.store offset=4
+    local.get $__mem1
+    local.get $baseParts
+    local.get $pieces
+    call $applyPieces
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    return
+  )
+  (func $resolveAll (param $segments i32) (param $i i32) (param $state i32) (result i32)
+    (local $seg i32)
+    (local $__bp_nullish i32)
+    (local $next i32)
+    (local $__opt0 i32)
+    (loop $__tail (result i32)
+    local.get $i
+    local.get $segments
+    i32.load ;; .length
+    i32.ge_s
+    (if (result i32)
+      (then
+    local.get $state
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $segments
+    local.get $i
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 272
+      )
+    )
+    local.set $seg
+    local.get $state
+    local.get $seg
+    call $resolveStep
+    local.set $next
+    local.get $segments
+    local.get $i
+    i32.const 1
+    i32.const 704
+    call $__i32_add_chk
+    local.get $next
+    local.set $state
+    local.set $i
+    local.set $segments
+    br $__tail ;; tail call
+    )
+  )
+  (func $resolve (param $segments i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $finalState i32)
+    (local $joined i32)
+    local.get $segments
+    i32.const 0
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 676
+    i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    call $resolveAll
+    local.set $finalState
+    local.get $finalState
+    i32.load offset=4 ;; .parts
+    global.get $separator
+    call $__std_array_joinStrings
+    local.set $joined
+    local.get $finalState
+    i32.load ;; .isAbs
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem2
+    local.get $__mem2
+    i32.const 2
+    i32.store
+    local.get $__mem2
+    global.get $separator
+    i32.store offset=4
+    local.get $__mem2
+    local.get $joined
+    i32.store offset=8
+    local.get $__mem2
+    i32.const 272
+    call $__std_array_joinStrings
+      )
+      (else
+    local.get $joined
+    i32.const 272
+    call $__str_eq
+    (if (result i32)
+      (then
+    i32.const 380
+      )
+      (else
+    local.get $joined
+      )
+    )
+      )
+    )
+    return
+  )
+  (func $withoutExtension (param $p i32) (result i32)
+    (local $ext i32)
+    (local $n i32)
+    (local $stem i32)
+    local.get $p
+    call $extname
+    local.set $ext
+    local.get $p
+    call $__std_text_length
+    local.set $n
+    local.get $ext
+    i32.const 272
+    call $__str_eq
+    (if (result i32)
+      (then
+    local.get $p
+      )
+      (else
+    local.get $p
+    i32.const 0
+    local.get $n
+    local.get $ext
+    call $__std_text_length
+    i32.const 760
+    call $__i32_sub_chk
+    call $__std_text_slice
+      )
+    )
+    local.set $stem
+    local.get $stem
+    return
+  )
+  (func $isInside (param $parent i32) (param $child i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $up i32)
+    (local $down i32)
+    (local $rel i32)
+    (local $escapes i32)
+    i32.const 8
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 1
+    i32.store
+    local.get $__mem0
+    local.get $parent
+    i32.store offset=4
+    local.get $__mem0
+    call $resolve
+    local.set $up
+    i32.const 12
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 2
+    i32.store
+    local.get $__mem1
+    local.get $parent
+    i32.store offset=4
+    local.get $__mem1
+    local.get $child
+    i32.store offset=8
+    local.get $__mem1
+    call $resolve
+    local.set $down
+    local.get $up
+    local.get $down
+    call $relative
+    local.set $rel
+    local.get $rel
+    i32.const 552
+    call $__str_eq
+    local.get $rel
+    i32.const 816
+    call $__std_text_startsWith
+    i32.or
+    local.set $escapes
+    local.get $escapes
+    i32.const 0
+    i32.eq
+    return
+  )
+  ;; declare fn panic — no wasm implementation (host-backed)
+  ;; attempt — .Wasm(body: attemptOnWasm)
+  ;; attemptTask — .Wasm(body: attemptTaskOnWasm)
+  (func $attemptTask (param $f i32) (result i32)
+    local.get $f
+    call $attemptTaskOnWasm
+  )
+  ;; @Task — a state machine (decision 392)
+  (func $attemptTaskOnWasm (param $f i32) (result i32)
+    (local $__fr i32)
+    i32.const 72 ;; the frame: the resume index, then every local
+    call $__alloc
+    local.set $__fr
+    local.get $__fr
+    local.get $f
+    i32.store offset=8
+    i32.const 0 ;; attemptTaskOnWasm__step
+    local.get $__fr
+    call $__task_start ;; runs to its first await
+  )
+  ;; std/io/fs — the file system, cross-backend (decision 540).
+  ;; 
+  ;; Reference:
+  ;;   Rust     — https://doc.rust-lang.org/std/fs/ (`read`, `read_to_string`,
+  ;;              `File`, `io::ErrorKind`)
+  ;;   Java     — https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html
+  ;;   Erlang   — https://www.erlang.org/doc/man/file.html
+  ;;   Node.js  — https://nodejs.org/api/fs.html
+  ;; 
+  ;; Every function that can fail answers `Result<…, FsError>`: the same OS error is
+  ;; the same `FsError` variant on every target (`ENOENT`, `enoent` → `NotFound`),
+  ;; and `Other.message` is the host's own text. The whole-file shortcuts
+  ;; (`readBytes`, `readText`, `writeBytes`, `writeText`, `appendText`), `stat`, and
+  ;; the directory functions (`exists`, `list`, `mkdir`, `mkdirRecursive`, `rm`,
+  ;; `removeTree`, `copy`, `walk`, `glob`) are followed by the handle: `open`
+  ;; and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
+  ;; 
+  ;; The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
+  ;; `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+  ;; and `lift` reads that message as the `FsError` of the path the caller wrote
+  ;; (decision 486); no cell catches by hand. All operations are synchronous
+  ;; (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
+  ;; (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
+  ;; The error of every `io.fs` function (decision 540). `path` is the path the
+  ;; caller wrote (for `copy`, the source; for `walk`, the root).
+  (func $FsError_message (param $self i32) (result i32)
+    (local $path i32)
+    (local $offset i64)
+    (local $message i32)
+    (local $__case_0 i32)
+    local.get $self
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; NotFound
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    i32.const 868
+    local.get $path
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; PermissionDenied
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    i32.const 884
+    local.get $path
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 2 ;; IsDirectory
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    i32.const 908
+    local.get $path
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 3 ;; NotDirectory
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    i32.const 928
+    local.get $path
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 4 ;; AlreadyExists
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    i32.const 952
+    local.get $path
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 5 ;; InvalidUtf8
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    local.get $__case_0
+    i32.load offset=8
+    i64.extend_i32_s
+    local.set $offset
+    i32.const 972
+    local.get $path
+    call $__str_concat
+    i32.const 988
+    call $__str_concat
+    local.get $offset
+    call $__std_number_i64ToString
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 6 ;; Other
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $path
+    local.get $__case_0
+    i32.load offset=8
+    local.set $message
+    local.get $path
+    i32.const 1004
+    call $__str_concat
+    local.get $message
+    call $__str_concat
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+    return
+  )
+  ;; Read the whole file as bytes.
+  ;; Node: `readFileSync($0)` copied into a plain `Uint8Array`.
+  ;; Erlang: `file:read_file/1`.
+  ;; declare fn rawReadBytes — no wasm implementation (host-backed)
+  ;; Write `contents` to `path`, creating or truncating.
+  ;; Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
+  ;; declare fn rawWriteBytes — no wasm implementation (host-backed)
+  ;; Append `contents` to `path`, creating it when it is not there.
+  ;; Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
+  ;; declare fn rawAppendText — no wasm implementation (host-backed)
+  ;; The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
+  ;; starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
+  ;; or -1 when every byte is part of a valid sequence — the same offset on every target.
+  ;; Node: a scan of the bytes. Erlang: `unicode:characters_to_binary/3`, whose `Good` prefix is the offset.
+  ;; declare fn utf8Offset — no wasm implementation (host-backed)
+  ;; `line` without its line terminator: one trailing `\n`, and the `\r` before it.
+  ;; Node: `subarray`. Erlang: `binary:part/3`.
+  ;; declare fn stripEol — no wasm implementation (host-backed)
+  ;; The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
+  ;; (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
+  ;; mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
+  ;; declare fn rawOpen — no wasm implementation (host-backed)
+  ;; The handle of the file at `path`, open for writing: created, or truncated.
+  ;; declare fn rawCreate — no wasm implementation (host-backed)
+  ;; A handle over bytes held in memory — what an `Asset` opens as. The position is a field
+  ;; on Node and a `counters` cell on Erlang.
+  ;; declare fn memHandle — no wasm implementation (host-backed)
+  ;; The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
+  ;; declare fn rawSize — no wasm implementation (host-backed)
+  ;; Up to `n` bytes (n > 0) from the handle's position; empty at the end.
+  ;; declare fn rawRead — no wasm implementation (host-backed)
+  ;; Every byte from the handle's position to the end.
+  ;; declare fn rawReadAll — no wasm implementation (host-backed)
+  ;; The next line, terminator included; empty at the end.
+  ;; declare fn rawReadLine — no wasm implementation (host-backed)
+  ;; The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
+  ;; whatever the position, which it leaves where it was.
+  ;; declare fn rawHash — no wasm implementation (host-backed)
+  ;; Write `bytes` at the handle's position; answers how many.
+  ;; declare fn rawWrite — no wasm implementation (host-backed)
+  ;; Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
+  ;; declare fn rawClose — no wasm implementation (host-backed)
+  ;; Write `contents` to `path`, creating or truncating. Reds with the
+  ;; host's I/O error message.
+  ;; Node: `require('fs').writeFileSync($0, $1)`.
+  ;; Erlang: `file:write_file/2`.
+  ;; declare fn rawWriteText — no wasm implementation (host-backed)
+  ;; Whether a path exists, of any kind: a regular file, a directory, a
+  ;; character or block device (`/dev/null`), a FIFO or a socket. A symbolic
+  ;; link is followed — one whose target is missing is `false`, the answer
+  ;; every read through it would give.
+  ;; Node: `require('fs').existsSync($0)` (a `stat`).
+  ;; Erlang: `file:read_file_info/1` (a `stat`; `filelib:is_file/1`, which it
+  ;; replaces, answers only regular files and directories, so `/dev/null`
+  ;; was `false` on erlang and `true` on commonJS).
+  ;; declare fn exists — no wasm implementation (host-backed)
+  ;; List the names of the directory entries at `path` (relative).
+  ;; Node: `require('fs').readdirSync($0)`.
+  ;; Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+  ;; declare fn rawList — no wasm implementation (host-backed)
+  ;; Create directory at `path`. Use `mkdirRecursive` to create
+  ;; intermediate parents.
+  ;; Node: `require('fs').mkdirSync($0)`.
+  ;; Erlang: `file:make_dir/1`.
+  ;; declare fn rawMkdir — no wasm implementation (host-backed)
+  ;; Create the directory at `path` and every missing directory above it. A
+  ;; directory that is already there is `Ok` too; a path that exists as anything
+  ;; else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+  ;; directory of a `.snap` with (decision 391).
+  ;; Node: `require('fs').mkdirSync($0, { recursive: true })`.
+  ;; Erlang: `filelib:ensure_path/1`.
+  ;; declare fn rawMkdirRecursive — no wasm implementation (host-backed)
+  ;; Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
+  ;; both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
+  ;; a `read_link_info`, so the variant is the same); `removeTree` removes one.
+  ;; Node: `require('fs').rmSync($0)`.
+  ;; Erlang: `file:delete/1`.
+  ;; declare fn rawRm — no wasm implementation (host-backed)
+  ;; Copy file from `src` to `dest`. Reds when `src` is missing or
+  ;; `dest` already exists (Node's default `copyFileSync` semantics).
+  ;; Node: `require('fs').copyFileSync($0, $1)`.
+  ;; Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
+  ;; declare fn rawCopy — no wasm implementation (host-backed)
+  ;; File metadata. Returns a `FileStat { size, mtime, isDir }` on
+  ;; success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
+  ;; `size` is in bytes.
+  ;; Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
+  ;; `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
+  ;; seconds, × 1000, and both answer decision 319's canonical form (a `number`
+  ;; within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
+  ;; Erlang: `file:read_file_info/1` returns a `#file_info` record; the
+  ;; template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
+  ;; whole seconds × 1000. One value on every target: whole seconds (decision 499).
+  ;; declare fn rawStat — no wasm implementation (host-backed)
+  ;; ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+  ;; Every REGULAR FILE under `root`, recursively, as paths relative to `root`
+  ;; with `/` separators, sorted — the same set on both targets (the two hosts
+  ;; walk in different orders, so the list is sorted rather than left as found),
+  ;; and the same paths however the root is spelled: `dir`, `dir/`, `dir/.`,
+  ;; `./dir`, `dir/sub/..`, absolute or relative to the working directory.
+  ;; Directories are not listed; a link is followed (a link to a file is listed
+  ;; under its own name, a link to a directory is walked). An `Error`: a missing
+  ;; or non-directory `root`, a directory under it that cannot be read, and a
+  ;; DANGLING link (decision 178) — `fs.walk: dangling link "<relative path>"`,
+  ;; the same text on both targets, naming the first one in sorted order.
+  ;; Node: `readdirSync(root, { recursive: true })` answers files AND directories
+  ;; relative to `root`; the template sorts them, keeps the entries `statSync`
+  ;; says are files, and answers the dangling-link `Error` for the first entry
+  ;; `statSync` cannot find (`throwIfNoEntry: false`).
+  ;; Erlang: the template walks `file:list_dir/1` itself and BUILDS each relative
+  ;; path from the names it descended through. It never cuts a prefix off a full
+  ;; path: `filelib:fold_files/5` answers full paths `filename:join/2` has
+  ;; normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
+  ;; as written cut two characters too many when the root ended in `/.`.
+  ;; declare fn rawWalk — no wasm implementation (host-backed)
+  ;; The entries under `root` matching the glob `pattern`, as paths relative to
+  ;; `root` with `/` separators, sorted, each once. The pattern is read segment
+  ;; by segment, by ONE rule on both targets (decision 177 — the narrower of what
+  ;; the two hosts did):
+  ;;   - `**` is zero or more directories; a segment with `*`, `?`, `[…]` or
+  ;;     `{a,b}` matches the names of one directory; any other segment is a name.
+  ;;   - `*` and `**` (and `?`, `[…]`, `{…}`) do NOT match a name that starts
+  ;;     with `.` — a segment matches one only when the segment itself starts
+  ;;     with the dot (`.*`, `.config/*.json`).
+  ;;   - the walk does NOT descend through a link to a directory: `**` and a
+  ;;     wildcard segment continue into real directories only. The link is still
+  ;;     a NAME — `*` lists it — and a segment that names it (`linked/*.bp`) goes
+  ;;     through it, because the pattern wrote it.
+  ;;   - the last segment matches an entry of any kind (file, directory, link,
+  ;;     dangling or not); a final `**` is every entry at every depth; a trailing
+  ;;     `/` keeps real directories only.
+  ;; An alternative of `{a,b}` cannot hold a `/` (the pattern is split first). A
+  ;; root that does not exist answers `Ok([])`; so does a directory that cannot
+  ;; be read. Both cells are the same walk; only the match of ONE segment against
+  ;; ONE directory is the host's — `fs.globSync(segment, { cwd })` (Node 22+),
+  ;; `filelib:wildcard/2` — with the dot rule applied over its answer, since
+  ;; `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
+  ;; declare fn rawGlob — no wasm implementation (host-backed)
+  ;; Remove `path` and everything under it: a file, a link (the link, never its
+  ;; target) or a directory tree. A path that is not there is `Ok` too — the
+  ;; caller wanted it gone. What a test fixture is cleared with, and what the
+  ;; snapshot engine's tests clear their scratch directories with (1.0.11-beta
+  ;; front 97).
+  ;; Node: `rmSync(path, { recursive: true, force: true })`.
+  ;; Erlang: `file:del_dir_r/1`.
+  ;; declare fn rawRemoveTree — no wasm implementation (host-backed)
+  ;; Internal, test scaffolding: a fresh, unique, empty directory under the
+  ;; host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
+  ;; one of these and removes it with `removeTree`, so a run leaves nothing under
+  ;; the host's tmpdir.
+  ;; declare fn scratchDir — no wasm implementation (host-backed)
+  ;; Internal, test scaffolding: the working directory (what a relative root is
+  ;; read against) and a symbolic link `link` → `target`.
+  ;; declare fn workingDir — no wasm implementation (host-backed)
+  ;; declare fn linkTo — no wasm implementation (host-backed)
+  ;; ── the typed error ──────────────────────────────────────────────────────────
+  ;; The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
+  (func $fsError (param $path i32) (param $e i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $__mem3 i32)
+    (local $__mem4 i32)
+    (local $__mem5 i32)
+    (local $u i32)
+    local.get $e
+    i32.load ;; .message
+    call $__std_text_toUpper
+    local.set $u
+    local.get $u
+    i32.const 1012
+    call $__std_text_startsWith
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem0
+    local.get $__mem0
+    i32.const 1028
+    i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem0
+    local.get $path
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $u
+    i32.const 1056
+    call $__std_text_startsWith
+    local.get $u
+    i32.const 1068
+    call $__std_text_startsWith
+    i32.or
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem1
+    local.get $__mem1
+    i32.const 1084
+    i32.store
+    local.get $__mem1
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem1
+    local.get $path
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $u
+    i32.const 1120
+    call $__std_text_startsWith
+    local.get $u
+    i32.const 1132
+    call $__std_text_startsWith
+    i32.or
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem2
+    local.get $__mem2
+    i32.const 1160
+    i32.store
+    local.get $__mem2
+    i32.const 2
+    i32.store offset=4
+    local.get $__mem2
+    local.get $path
+    i32.store offset=8
+    local.get $__mem2
+    i32.const 4
+    i32.add
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $u
+    i32.const 1188
+    call $__std_text_startsWith
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem3
+    local.get $__mem3
+    i32.const 1204
+    i32.store
+    local.get $__mem3
+    i32.const 3
+    i32.store offset=4
+    local.get $__mem3
+    local.get $path
+    i32.store offset=8
+    local.get $__mem3
+    i32.const 4
+    i32.add
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $u
+    i32.const 1236
+    call $__std_text_startsWith
+    (if (result i32)
+      (then
+    i32.const 12
+    call $__alloc
+    local.set $__mem4
+    local.get $__mem4
+    i32.const 1252
+    i32.store
+    local.get $__mem4
+    i32.const 4
+    i32.store offset=4
+    local.get $__mem4
+    local.get $path
+    i32.store offset=8
+    local.get $__mem4
+    i32.const 4
+    i32.add
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    i32.const 16
+    call $__alloc
+    local.set $__mem5
+    local.get $__mem5
+    i32.const 1288
+    i32.store
+    local.get $__mem5
+    i32.const 6
+    i32.store offset=4
+    local.get $__mem5
+    local.get $path
+    i32.store offset=8
+    local.get $__mem5
+    local.get $e
+    i32.load ;; .message
+    i32.store offset=12
+    local.get $__mem5
+    i32.const 4
+    i32.add
+    return
+  )
+  ;; A host cell's answer, its failure read as an `FsError` of `path`.
+  (func $lift (param $path i32) (param $r i32) (result i32)
+    (local $v i32)
+    (local $e i32)
+    (local $__case_0 i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
+    local.get $r
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $v
+    i32.const 8
+    call $__alloc
+    local.set $_res0
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
+    local.get $v
+    i32.store offset=4 ;; payload
+    local.get $_res0
+    return
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $e
+    i32.const 8
+    call $__alloc
+    local.set $_res1
+    local.get $_res1
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res1
+    local.get $path
+    local.get $e
+    call $fsError
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+  )
+  ;; The text of `b`, or `InvalidUtf8` at the first invalid byte.
+  ;; What `rawWalk` finds under a root: the regular files, and the links whose
+  ;; target is missing, both as paths relative to the root, sorted.
+  ;; Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
+  ;; declare fn rawReadOnly — no wasm implementation (host-backed)
+  ;; ── whole-file shortcuts ─────────────────────────────────────────────────────
+  ;; The file's bytes.
+  ;; The file as UTF-8 text. Bytes that are not UTF-8 are `InvalidUtf8` on every
+  ;; target — never node's silent U+FFFD nor erlang's unchecked binary.
+  ;; Write `contents` to `path`, creating or truncating.
+  ;; Append `contents`, creating the file when it is not there.
+  ;; ── metadata and directories ─────────────────────────────────────────────────
+  ;; The host's handle over embedded bytes: read like a file, never closed on disk.
+  ;; declare fn memoryHandle — no wasm implementation (host-backed)
+  ;; ── the handle ───────────────────────────────────────────────────────────────
+  ;; An open file (decision 540 (3)). `location` is the path it was opened with and
+  ;; `handle` the host's — opaque, never read by a program. Closed by the writer:
+  ;; `val f = try fs.open(p); defer f.close();`.
+  (func $File_path (param $self i32) (result i32)
+    local.get $self
+    i32.load ;; .location
+    return
+  )
+  ;; Open the file at `path` for reading. A directory is `IsDirectory` on every target.
+  ;; Open the file at `path` for writing: created, or truncated.
+  ;; An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
+  ;; like a file on disk — no `Result`, the build proved the file exists — and
+  ;; closing it is a no-op.
+  ;; ── tests ────────────────────────────────────────────────────────────────────
+  ;; (Inline tests are smoke-grade — they require the host filesystem to be
+  ;; writable at the host's `tmpdir()`. The lib-test harness runs each
+  ;; inline test as a separate process; the temp filenames are seeded with
+  ;; `time.nowMillis()` for cross-run uniqueness.)
+  ;; Internal, test scaffolding: `stat(p)`, or a stat no file has.
+  ;; Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
+  ;; `<dir>/app/blog/notes.md` — the fixture tree every walk/glob test reads.
+  ;; Internal, test scaffolding: what `walk` answers for the fixture tree when
+  ;; its root is spelled `<scratch dir><suffix>` — every spelling of one root has
+  ;; to answer the same three relative paths.
+  ;; Internal, test scaffolding: the same, with the root spelled relative to the
+  ;; working directory — `<prefix><path from the cwd to the fixture>`.
+  ;; Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
+  ;; Internal, test scaffolding: an `FsError` as one line — the variant, the path
+  ;; and the message where it holds one (a dangling link is `Other`, decision 178).
+  (func $describe (param $e i32) (result i32)
+    (local $p i32)
+    (local $offset i64)
+    (local $message i32)
+    (local $__case_0 i32)
+    local.get $e
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; NotFound
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    i32.const 1320
+    local.get $p
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; PermissionDenied
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    i32.const 1336
+    local.get $p
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 2 ;; IsDirectory
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    i32.const 1360
+    local.get $p
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 3 ;; NotDirectory
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    i32.const 1376
+    local.get $p
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 4 ;; AlreadyExists
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    i32.const 1396
+    local.get $p
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 5 ;; InvalidUtf8
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    local.get $__case_0
+    i32.load offset=8
+    i64.extend_i32_s
+    local.set $offset
+    i32.const 1416
+    local.get $p
+    call $__str_concat
+    i32.const 1432
+    call $__str_concat
+    local.get $offset
+    call $__std_number_i64ToString
+    call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 6 ;; Other
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $p
+    local.get $__case_0
+    i32.load offset=8
+    local.set $message
+    local.get $message
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+      )
+    )
+    return
+  )
+  ;; Internal, test scaffolding: the fixture tree plus the names decision 177 is
+  ;; about — a dot file and a dot directory, a link to a directory, a link to a
+  ;; file and a dangling link, all under `<dir>/app`.
+  ;; Internal, test scaffolding: what `glob(pattern, <dir>/app)` answers over
+  ;; `makeGlobTree`, joined by `,`.
+  ;; ── FsError, readText and the handle ─────────────────────────────────────────
+  ;; Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
+  (func $variantOf (param $r i32) (result i32)
+    (local $e i32)
+    (local $__case_0 i32)
+    local.get $r
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    i32.const 1440
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $e
+    local.get $e
+    call $describe
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+    return
+  )
+  ;; Internal, test scaffolding: the file a failed `open` falls back to.
+  ;; Internal, test scaffolding: take every permission from `path`; whether that
+  ;; denies this user anything (root is denied nothing), and give them back.
+  ;; declare fn denyAll — no wasm implementation (host-backed)
+  ;; declare fn allowAll — no wasm implementation (host-backed)
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
+  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if (result i32)
+      (then i32.const 0)
+      (else
+        local.get $xs
+        local.get $i
+        i32.const 1
+        i32.add
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+      )
+    )
+  )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    ;; allocate 4 (length prefix) + alen + blen
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    call $__alloc
+    local.set $base
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
+  )
+  (func $__str_eq (param $a i32) (param $b i32) (result i32)
+    (local $i i32) (local $alen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $alen
+    local.get $b
+    i32.load
+    i32.ne
+    (if
+      (then i32.const 0 return)
+    )
+    (block $done
+      (loop $cmp
+        local.get $i
+        local.get $alen
+        i32.ge_u
+        br_if $done
+        local.get $a
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        local.get $b
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        i32.ne
+        (if
+          (then i32.const 0 return)
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cmp
+      )
+    )
+    i32.const 1
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    local.get $p
+  )
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    i32.const 4
+    i32.add
+    local.get $msg
+    i32.load
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.add
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.sub
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.mul
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+    (local $r i64)
+    local.get $a
+    local.get $b
+    i64.add
+    local.set $r
+    local.get $a
+    local.get $r
+    i64.xor
+    local.get $b
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $r
+  )
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+    (local $r i64)
+    local.get $a
+    local.get $b
+    i64.sub
+    local.set $r
+    local.get $a
+    local.get $b
+    i64.xor
+    local.get $a
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $r
+  )
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+    (local $r i64)
+    local.get $a
+    i64.const -1
+    i64.eq
+    local.get $b
+    i64.const -9223372036854775808
+    i64.eq
+    i32.and
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $a
+    local.get $b
+    i64.mul
+    local.set $r
+    local.get $a
+    i64.eqz
+    i32.eqz
+    (if
+      (then
+        local.get $r
+        local.get $a
+        i64.div_s
+        local.get $b
+        i64.ne
+        (if
+          (then
+            local.get $site
+            call $__chk_fail
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $r
+  )
+  (global $__task_head (mut i32) (i32.const 0))
+  (global $__task_tail (mut i32) (i32.const 0))
+  (global $__task_suspended (mut i32) (i32.const 0))
+  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
+    (local $t i32)
+    i32.const 40
+    call $__alloc
+    local.set $t
+    local.get $t
+    local.get $kind
+    i32.store offset=20
+    local.get $t
+    local.get $frame
+    i32.store offset=16
+    local.get $t
+  )
+  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
+    (local $t i32)
+    local.get $kind
+    local.get $frame
+    call $__task_new
+    local.tee $t
+    call $__task_resume
+    local.get $t
+  )
+  (func $__task_pending (param $t i32) (result i32)
+    local.get $t
+    i32.load
+    i32.eqz
+  )
+  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
+    (local $n i32)
+    i32.const 16
+    call $__alloc
+    local.set $n
+    local.get $n
+    local.get $t
+    i32.load offset=4
+    i32.store
+    local.get $n
+    local.get $kind
+    i32.store offset=4
+    local.get $n
+    local.get $target
+    i32.store offset=8
+    local.get $n
+    local.get $index
+    i32.store offset=12
+    local.get $t
+    local.get $n
+    i32.store offset=4
+  )
+  (func $__task_wait (param $t i32) (param $w i32)
+    local.get $t
+    i32.const 0
+    local.get $w
+    i32.const 0
+    call $__task_listen
+  )
+  (func $__task_settle_i32 (param $t i32) (param $v i32)
+    local.get $t
+    local.get $v
+    i32.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_settle_i64 (param $t i32) (param $v i64)
+    local.get $t
+    local.get $v
+    i64.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_settle_f64 (param $t i32) (param $v f64)
+    local.get $t
+    local.get $v
+    f64.store offset=8
+    local.get $t
+    call $__task_wake
+  )
+  (func $__task_wake (param $t i32)
+    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
+    local.get $t
+    i32.load
+    (if
+      (then
+        return
+      )
+    )
+    local.get $t
+    i32.const 1
+    i32.store
+    local.get $t
+    i32.load offset=4
+    local.set $n
+    local.get $t
+    i32.const 0
+    i32.store offset=4
+    (block $brk
+      (loop $cont
+        local.get $n
+        i32.eqz
+        br_if $brk
+        local.get $n
+        i32.load
+        local.set $m
+        local.get $n
+        local.get $r
+        i32.store
+        local.get $n
+        local.set $r
+        local.get $m
+        local.set $n
+        br $cont
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $r
+        i32.eqz
+        br_if $brk
+        local.get $r
+        i32.load offset=4
+        local.set $k
+        local.get $r
+        i32.load offset=8
+        local.set $w
+        local.get $k
+        i32.eqz
+        (if
+          (then
+            local.get $w
+            call $__task_enqueue
+          )
+        )
+        local.get $k
+        i32.const 1
+        i32.eq
+        (if
+          (then
+            local.get $w
+            i32.load
+            i32.eqz
+            (if
+              (then
+                local.get $w
+                local.get $t
+                i64.load offset=8
+                i64.store offset=8
+                local.get $w
+                call $__task_wake
+              )
+            )
+          )
+        )
+        local.get $k
+        i32.const 2
+        i32.eq
+        (if
+          (then
+            local.get $w
+            i32.load offset=28
+            i32.const 4
+            i32.add
+            local.get $r
+            i32.load offset=12
+            i32.const 4
+            i32.mul
+            i32.add
+            local.get $t
+            i32.load offset=8
+            i32.store
+            local.get $w
+            local.get $w
+            i32.load offset=32
+            i32.const 1
+            i32.sub
+            i32.store offset=32
+            local.get $w
+            i32.load offset=32
+            i32.eqz
+            (if
+              (then
+                local.get $w
+                local.get $w
+                i32.load offset=28
+                i32.store offset=8
+                local.get $w
+                call $__task_wake
+              )
+            )
+          )
+        )
+        local.get $r
+        i32.load
+        local.set $r
+        br $cont
+      )
+    )
+  )
+  (func $__task_enqueue (param $t i32)
+    local.get $t
+    i32.const 0
+    i32.store offset=24
+    global.get $__task_tail
+    (if
+      (then
+        global.get $__task_tail
+        local.get $t
+        i32.store offset=24
+      )
+      (else
+        local.get $t
+        global.set $__task_head
+      )
+    )
+    local.get $t
+    global.set $__task_tail
+  )
+  (func $__task_drain
+    (local $t i32)
+    (block $brk
+      (loop $cont
+        global.get $__task_head
+        local.tee $t
+        i32.eqz
+        br_if $brk
+        local.get $t
+        i32.load offset=24
+        global.set $__task_head
+        global.get $__task_head
+        i32.eqz
+        (if
+          (then
+            i32.const 0
+            global.set $__task_tail
+          )
+        )
+        local.get $t
+        call $__task_resume
+        br $cont
+      )
+    )
+  )
+  (func $__task_block_on (param $t i32) (result i32)
+    (local $r i32)
+    (block $brk
+      (loop $cont
+        local.get $t
+        i32.load
+        br_if $brk
+        global.get $__task_head
+        local.tee $r
+        i32.eqz
+        (if
+          (then
+            unreachable
+          )
+        )
+        local.get $r
+        i32.load offset=24
+        global.set $__task_head
+        global.get $__task_head
+        i32.eqz
+        (if
+          (then
+            i32.const 0
+            global.set $__task_tail
+          )
+        )
+        local.get $r
+        call $__task_resume
+        br $cont
+      )
+    )
+    local.get $t
+  )
+  (func $__task_finish
+    (block $brk
+      (loop $cont
+        call $__task_drain
+        call $__task_host_poll
+        i32.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+  )
+  (func $__task_resume (param $t i32)
+    (local $k i32)
+    local.get $t
+    i32.load offset=20 ;; kind
+    local.set $k
+    local.get $k
+    i32.const 0
+    i32.eq
+    (if
+      (then
+    local.get $t
+    drop
+    return
+      )
+    )
+    unreachable
+  )
+  (func $__task_host_poll (result i32)
+    i32.const 0
+  )
+  (func $__chk_fail (param $site i32)
+    local.get $site
+    call $__panic_fail
+    unreachable
+  )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 2608))
+  (func $__std_sp_check (param $sp i32) (result i32)
+    local.get $sp
+    i32.const 1448
+    i32.lt_s
+    (if
+      (then unreachable)
+    )
+    local.get $sp
+  )
+  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
+  ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
+  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
+  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f88 — from std_wasm.wasm (sha256 59c161f4ae70)
+  ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
+  ;; __std_f120 — from std_wasm.wasm (sha256 bd4cb38df48b)
+  ;; __std_f129 — from std_wasm.wasm (sha256 67dbdd61ea9b)
+  ;; __std_f130 — from std_wasm.wasm (sha256 f15aa78ce6d6)
+  ;; __std_f131 — from std_wasm.wasm (sha256 2f81dc7302bb)
+  ;; __std_f132 — from std_wasm.wasm (sha256 38e98c1edeed)
+  ;; __std_f133 — from std_wasm.wasm (sha256 16c99e1a095a)
+  ;; __std_f134 — from std_wasm.wasm (sha256 30c514d3cfe8)
+  ;; __std_f264 — from std_wasm.wasm (sha256 fb869a9b574e)
+  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f267 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; __std_f433 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f445 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f446 — from std_wasm.wasm (sha256 659eed3cf104)
+  ;; __std_f447 — from std_wasm.wasm (sha256 0314fe5f477f)
+  ;; __std_f448 — from std_wasm.wasm (sha256 7b6ca0e01ee7)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 065d1c70efea)
+  ;; __std_f466 — from std_wasm.wasm (sha256 fbcbd5636368)
+  ;; std:array.concat — from std_wasm.wasm (sha256 3a3e9bf0ab95)
+  ;; std:array.prepend — from std_wasm.wasm (sha256 0d4bcf217c15)
+  ;; std:array.slice — from std_wasm.wasm (sha256 1e19bfacbc48)
+  ;; std:number.i64ToString — from std_wasm.wasm (sha256 01574c331d7e)
+  ;; std:text.slice — from std_wasm.wasm (sha256 2274e2b5ad65)
+  ;; __std_f498 — from std_wasm.wasm (sha256 60a80b3c5e19)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 a2fe58c08ea4)
+  ;; std:text.startsWith — from std_wasm.wasm (sha256 322b10039271)
+  ;; __std_f521 — from std_wasm.wasm (sha256 09eb0c4eb5a6)
+  ;; std:text.split — from std_wasm.wasm (sha256 2125a667c07e)
+  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
+)
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- std/probe.bp
 ```botopink
 import {path: {join}, io.fs.readText};

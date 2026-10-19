@@ -2834,7 +2834,10 @@ test "wat: fn ---- an empty body is emitted and called, never taken for a declar
 // `canonical` at `asserts.bp` instead of its own host cell, and every cell
 // pinning that refusal went red (`conformance/modules/std/{run,refused}/src/cases/std_decorator_*` and `modules/std/cells/std_decorator_*`). The
 // module is refused on wasm for one of ITS host cells, never a linked one's.
-test "wat: std ---- testing.mocks is refused on wasm for its own host cell, never a linked module's" {
+// Decision 531 — a dependency's function the program never reaches is not
+// lowered on wasm and stops nothing: `testing.mocks`' host cells have no wasm
+// binding, and neither the module nor the program importing it is refused.
+test "wat: std ---- testing.mocks imports on wasm, its unbound host cells unlowered (decision 531)" {
     var outputs = try codegen.generateWith(std.testing.allocator, &.{.{ .path = "", .source =
         \\import {testing.mocks} from "std";
         \\fn main() {
@@ -2847,16 +2850,15 @@ test "wat: std ---- testing.mocks is refused on wasm for its own host cell, neve
         for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
         outputs.deinit(std.testing.allocator);
     }
+    var seen = false;
     for (outputs.items) |o| {
-        if (!std.mem.eql(u8, o.name, "std/testing/mocks")) continue;
-        const d = o.result.diagnostic orelse return error.ExpectedRefusal;
-        const message = d.type.message;
-        try std.testing.expect(std.mem.indexOf(u8, message, "has no implementation for the wasm backend") != null);
-        try std.testing.expect(std.mem.indexOf(u8, message, "which this import links") == null);
-        try std.testing.expect(std.mem.indexOf(u8, message, "`canonical`") == null);
-        return;
+        if (o.result.diagnostic) |d| {
+            std.debug.print("{s}: {s}\n", .{ o.name, d.type.message });
+            return error.UnexpectedRefusal;
+        }
+        if (std.mem.eql(u8, o.name, "std/testing/mocks")) seen = true;
     }
-    return error.ModuleNotEmitted;
+    if (!seen) return error.ModuleNotEmitted;
 }
 
 // Decision 443 — case mapping over all of Unicode, std-wasm's: OTP's answer
