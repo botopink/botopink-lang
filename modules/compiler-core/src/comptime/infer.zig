@@ -25742,7 +25742,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {
-            if (try blockEval.badarithRefusal(env, msg, ct.kind.comptimeExpr.*)) |r| {
+            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, msg, tail) else null) |r| {
                 env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
                 return error.TypeError;
             }
@@ -25753,7 +25753,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         // file; every call of the chain is a `called from`, down to the
         // `comptime` that ran it.
         .raised => |r| {
-            if (try blockEval.badarithRefusal(env, r.message, ct.kind.comptimeExpr.*)) |br| {
+            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, r.message, tail) else null) |br| {
                 env.lastError = try blockEval.raisedError(env, br.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.", r.frames, loc);
                 return error.TypeError;
             }
@@ -25772,6 +25772,26 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         },
     };
     try env.srcRewrites.put(loc, lifted);
+}
+
+/// The expression a `comptime` answers, for naming it in a refusal: the
+/// expression of `comptime e`, the value of a block's last `break` (its tail,
+/// decision 525) — null for a block that answers none. A block is never read
+/// as an expression (decision 720's `comptime { val f = clock.nowMillis; f() }`).
+fn comptimeTail(ct: ast.ComptimeExprOf(.untyped)) ?ast.Expr {
+    return switch (ct.kind) {
+        .comptimeExpr => |e| e.*,
+        .comptimeBlock => |cb| blk: {
+            var i = cb.body.len;
+            while (i > 0) {
+                i -= 1;
+                const e = cb.body[i].expr;
+                if (e == .jump and e.jump.kind == .@"break") if (e.jump.kind.@"break".value) |v| break :blk v.*;
+            }
+            break :blk null;
+        },
+        else => null,
+    };
 }
 
 /// Infer type for comptime expressions (comptime, assert, assertPattern).

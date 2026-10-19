@@ -1916,6 +1916,18 @@ pub fn unseededDraw(text: []const u8) ?[]const u8 {
     return plain;
 }
 
+/// Decision 720 — the plain text of a `run-in-build` the comptime runtime
+/// raised (`host_cells.runInBuildStub`): the Erlang wrapper dropped, as for an
+/// unseeded draw. Null when `text` is any other raise.
+pub fn runInBuild(text: []const u8) ?[]const u8 {
+    const head = "{error,{bp_wat_runtime,<<\"";
+    const tail = "\">>}}";
+    if (!std.mem.startsWith(u8, text, head) or !std.mem.endsWith(u8, text, tail)) return null;
+    const plain = text[head.len .. text.len - tail.len];
+    if (!std.mem.startsWith(u8, plain, diagnostics.run_in_build ++ ":")) return null;
+    return plain;
+}
+
 /// Decision 533 — the plain cause of a comptime module's division by zero
 /// (`division_by_zero_raised`) when `text` is the reply of one, else null.
 pub fn divisionByZero(text: []const u8) ?[]const u8 {
@@ -1937,7 +1949,7 @@ fn parseReply(arena: std.mem.Allocator, stdout: []const u8) Error!Outcome {
     }
     const msg = parsed.object.get("message");
     const text = if (msg) |m| (if (m == .string) m.string else "") else "";
-    const message = if (unseededDraw(text) orelse divisionByZero(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
+    const message = if (unseededDraw(text) orelse runInBuild(text) orelse divisionByZero(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});
     const frames = try framesOf(arena, parsed.object.get("frames"));
     if (frames.len > 0) return .{ .raised = .{ .message = message, .frames = frames } };
     return .{ .err = message };
@@ -2816,6 +2828,12 @@ test "unseededDraw: the Erlang wrapper is dropped, other raises are left alone" 
     try std.testing.expectEqualStrings("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)", unseededDraw(wrapped).?);
     try std.testing.expect(unseededDraw("{error,badarith}") == null);
     try std.testing.expect(unseededDraw("{error,{bp_wat_runtime,<<\"integer beyond 64 bits (a bignum)\">>}}") == null);
+}
+
+test "runInBuild: the Erlang wrapper is dropped from a run-in-build raise alone" {
+    try std.testing.expectEqualStrings("run-in-build: `io_clock.nowMillis` runs only when the program runs, and the build reached it", runInBuild("{error,{bp_wat_runtime,<<\"run-in-build: `io_clock.nowMillis` runs only when the program runs, and the build reached it\">>}}").?);
+    try std.testing.expect(runInBuild("{error,{bp_wat_runtime,<<\"division by zero\">>}}") == null);
+    try std.testing.expect(runInBuild("{error,badarith}") == null);
 }
 
 test "divisionByZero: the cause is read from the reply of a comptime module's zero divisor alone" {

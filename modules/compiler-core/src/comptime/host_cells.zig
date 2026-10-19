@@ -394,6 +394,16 @@ pub fn hostSupport(env: *Env, local: anytype, fns: []const ast.FnDecl) Error![]c
                 const carried = env.stdCarried orelse continue;
                 const sf = carried.get(n.*) orelse continue;
                 try have.put(arena, n.*, {});
+                // Decision 720 — a std function that runs only when the program
+                // runs is carried as a raise: reached while the build runs (a
+                // call through a function value the checker cannot follow), it
+                // is `run-in-build` at that call; never reached, nothing.
+                if (try runsOnlyAtRunTime(arena, carried, n.*, 0)) {
+                    const raise = try runInBuildRaiser(arena, sf.decl);
+                    try out.append(arena, try callOf(arena, sf.decl, raise.name));
+                    try out.append(arena, raise);
+                    continue;
+                }
                 try out.append(arena, sf.decl);
                 try pending.append(arena, .{ .f = sf.decl, .bound = true });
                 continue;
@@ -431,6 +441,10 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
     for (out) |*d| {
         if (d.* != .@"fn" or !isHost(d.@"fn")) continue;
         const f = d.@"fn";
+        if (runInBuildRaise(f)) |raise| {
+            d.* = .{ .@"fn" = try withErlangTemplate(arena, f, raise) };
+            continue;
+        }
         if (stdCell(f)) |cell| switch (cell) {
             .ok => |e| {
                 d.* = .{ .@"fn" = try servedByStdWasm(arena, f, e) };
@@ -448,6 +462,60 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
         d.* = .{ .@"fn" = try callOf(arena, f, b.text["fn:".len..]) };
     }
     return .{ .ok = out };
+}
+
+/// Decision 720 — the `.Wasm` binding text of a std function carried as a
+/// raise (`runInBuildStub`): never written in a source, read by `forRuntime`.
+const run_in_build_binding = "build:run-in-build";
+
+/// Decisions 376 (4), 720 — whether the carried std function `name` runs only
+/// when the program runs: a host declared without `#[@Stage.Any]` that no
+/// comptime cell serves, or a body reaching one. A host one of the two cells
+/// serves (a seeded draw, decision 451) runs at build as it always did.
+fn runsOnlyAtRunTime(arena: std.mem.Allocator, carried: *const StdCarried, name: []const u8, depth: usize) Error!bool {
+    if (depth > 24) return false;
+    const sf = carried.get(name) orelse return false;
+    const f = sf.decl;
+    if (isHost(f)) {
+        for (f.annotations) |a| if (a.is_builtin and std.mem.eql(u8, a.name, "Stage.Any")) return false;
+        return try unservedReason(arena, f) != null;
+    }
+    for (sf.reaches) |r| {
+        if (std.mem.eql(u8, r, name)) continue;
+        if (try runsOnlyAtRunTime(arena, carried, r, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// Decision 720 — the host a std function `f` that runs only when the program
+/// runs is carried as a call of (`callOf`): its one cell raises
+/// `run-in-build`, naming `f`; the comptime runtime reports the raise at the
+/// call that reached `f` (decision 532), the frames down to the body the build
+/// was running. `f` keeps a body, so a value naming it is a function value.
+fn runInBuildRaiser(arena: std.mem.Allocator, f: ast.FnDecl) Error!ast.FnDecl {
+    const raise = try std.fmt.allocPrint(
+        arena,
+        "erlang:error({{bp_wat_runtime, <<\"{s}: `{s}` runs only when the program runs, and the build reached it\">>}})",
+        .{ diagnostics.run_in_build, try display(arena, f.name) },
+    );
+    const impl = try arena.alloc(ast.Implementation, 2);
+    impl[0] = .{ .target = .erlang, .template = raise, .text = raise };
+    impl[1] = .{ .target = .wasm, .text = run_in_build_binding };
+    var out = f;
+    out.name = try std.fmt.allocPrint(arena, "{s}__run_in_build", .{f.name});
+    out.body = &.{};
+    out.isDeclare = true;
+    out.annotations = &.{};
+    out.implementations = impl;
+    return out;
+}
+
+/// The raise a `runInBuildStub` carries, or null for any other function.
+fn runInBuildRaise(f: ast.FnDecl) ?[]const u8 {
+    const b = wasmBinding(f) orelse return null;
+    if (!std.mem.eql(u8, b.text, run_in_build_binding)) return null;
+    for (f.implementations) |i| if (i.target == .erlang) return i.template;
+    return null;
 }
 
 /// The refusal of a host function neither of the two comptime cells serves
@@ -555,6 +623,7 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
 /// its `.Wasm(body: …)` cell.
 /// The answer is one for every target.
 pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8 {
+    if (runInBuildRaise(f) != null) return null;
     if (stdCell(f)) |cell| switch (cell) {
         .ok => return null,
         .unknown => |name| return try noStdExport(arena, f, name),
