@@ -356,6 +356,21 @@ pub fn preRegisterStdImportAliases(env: *Env, program: ast.Program) InferError!v
                 try env.typeAliases.put(env.arena, d.typeAlias.name, d.typeAlias);
                 try bindAliasNamespace(env, d.typeAlias);
             };
+            // Decision 110 — `import {io.clock.Duration as D} from "std"`: the
+            // signatures register before the imports are marked, so a function
+            // declared after its caller would read `D` as a type of its own
+            // (`expected D, got Duration`). The alias enters the scope first;
+            // marking the import binds its constructor later.
+            if (imp.alias) |al| for (decls) |d| {
+                const type_name = switch (d) {
+                    .type_ => |t| t.name,
+                    .typeAlias => |a| a.name,
+                    else => continue,
+                };
+                if (!std.mem.eql(u8, type_name, imp.leaf())) continue;
+                try registerImportedTypeAlias(env, d, al, imp.loc);
+                break;
+            };
         }
     }
 }

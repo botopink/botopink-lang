@@ -1,0 +1,18 @@
+//// Decision 110 — `as` binds an imported type under the alias in the whole module: a
+//// function declared after the one that calls it names the alias in its signature, and
+//// the value the caller passes is of that type — `U` is `Url`, never a type of its own.
+
+import {url.Url as U, url.parse, io.terminal.print} from "std";
+
+pub fn main() {
+    print(hostOf(parse("https://example.com:8080/docs")));
+    print(sameHost(parse("http://a.org/x"), parse("https://a.org/y")));
+}
+
+fn hostOf(u: U) -> string {
+    return u.host;
+}
+
+fn sameHost(a: U, b: U) -> bool {
+    return a.host == b.host;
+}

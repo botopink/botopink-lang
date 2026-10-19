@@ -345,7 +345,13 @@ refused itself: every **use** of the name is, where it is written, naming both
 (`ambiguous-import-use`), and the item that names the module (`import
 {a.parse} from "kit"`) is the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
-own text — the emitted code keeps `Dict`. Two same-named types of two modules
+own text — the emitted code keeps `Dict`. The alias names the type in the whole module: a
+function declared after the one that calls it takes the alias in its signature
+(`fn hostOf(u: U)` below `main`, after `import {url.Url as U} from "std"`):
+
+<!-- example: modules/imported_type_alias_in_later_signature -->
+
+Two same-named types of two modules
 are two types when each is imported under an alias, or one of the two is
 (decision 310): `import {a.p.Policy as APolicy}; import {b.p.Policy as
 BPolicy};` — each alias names its own type in every type and value position,

@@ -1050,7 +1050,10 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   enters the imported aliases before the module's own types and
   signatures register, and `bindAliasNamespace` makes the alias the
   declared name at a call and a receiver as decision 110's `import {T as
-  A}` does (`Span(0, 1, 1)`, `DeclKind.Fn`). The comptime modules take the
+  A}` does (`Span(0, 1, 1)`, `DeclKind.Fn`). It enters a std import's `as`
+  alias the same way (`registerImportedTypeAlias`), so a function declared
+  after its caller names `import {url.Url as U}`'s `U` in its signature as
+  `Url` (cell `imported_type_alias_in_later_signature`). The comptime modules take the
   alias names beside the internal ones (`decorator_eval.zig` /
   `template_eval.zig` `host_enums`, `host_records`, `injected_names`).
   `env.zig` `sectionPathForFlatName` skips a one-segment internal name, so a
