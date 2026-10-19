@@ -4118,6 +4118,39 @@ test "wat: gc ---- indexOf, lastIndexOf and contains over a generic array" {
     );
 }
 
+// `r.unwrapOr(d)` answering an array (std's `querystring` tests), a lambda
+// written in a generic function (std's `functions`), and a call through the
+// function value a generic function answers, each in GC form.
+test "wat: gc ---- unwrapOr's array, a lambda in a generic fn and a call through what compose answers" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn parse(s: string) -> Result<Array<#(string, string)>, string> {
+        \\    if (s == "") throw "empty";
+        \\    return [#(s, s.toUpper())];
+        \\}
+        \\
+        \\fn pairsOf(r: Result<Array<#(string, string)>, string>) -> string {
+        \\    val none: Array<#(string, string)> = [];
+        \\    return r.unwrapOr(none).map({ p -> [p._0, "=>", p._1].join("") }).join("|");
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(pairsOf(parse("a")));
+        \\    print(pairsOf(parse("")).length);
+        \\    val double: fn(i32) -> i32 = { n -> n * 2 };
+        \\    val addOne: fn(i32) -> i32 = { n -> n + 1 };
+        \\    print(functions.compose(double, addOne)(3));
+        \\    val shout: fn(string) -> string = { s -> s + "!" };
+        \\    print(functions.compose(shout, shout)("hi"));
+        \\    val sub: fn(i32, i32) -> i32 = { a, b -> a - b };
+        \\    print(functions.flip(sub)(3, 10));
+        \\    print(functions.constant(42)("x"));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+        \\import {functions} from "std";
+    );
+}
+
 // ── front 164 s2 P2b: unknown, generic declarations, the array operations, generators ──
 //
 // Each program is lowered as a WasmGC module (`(rec`), its RUN LOG the language's own answer.

@@ -5766,6 +5766,23 @@ const Emitter = struct {
                     }
                     if (cc.is_builtin and (std.mem.eql(u8, cc.callee, "__bp_ok") or std.mem.eql(u8, cc.callee, "__bp_error")))
                         return .{ .ref = .result };
+                    // Front 164 s2 — `r.unwrapOr(d)` / `o.unwrapOr(d)`: the
+                    // payload and the default are one type, a reference the
+                    // `@Result`'s `Ok` type or the default names (`r.unwrapOr(
+                    // none).map(…)` in `std/querystring`'s tests).
+                    if (isUnwrapOr(cc) and cc.args.len == 2) {
+                        if (self.typeRefOf(cc.args[0].value.*)) |rt| if (eagerTypeRef(rt) == .generic) {
+                            const g = eagerTypeRef(rt).generic;
+                            if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) {
+                                const r = self.reprOf(g.args[0]);
+                                if (r.isRef() and !(r == .ref and r.ref == .unknown)) return r;
+                            }
+                        };
+                        if (!isEmptyArrayLit(cc.args[1].value.*)) {
+                            const dr = self.wasmTypeOf(cc.args[1].value.*);
+                            if (dr.isRef() and !(dr == .ref and dr.ref == .unknown)) return dr;
+                        }
+                    }
                     // A call through a function value answers its declared type.
                     if (!cc.is_builtin and (cc.calleeExpr != null or (cc.receiver == null and self.locals.contains(self.resolveName(cc.callee))))) {
                         if (self.gcValueCallRepr(cc)) |r| if (r.isRef()) return r;
@@ -18951,6 +18968,11 @@ const Emitter = struct {
         param_ft: []const ?ast.TypeRef = &.{},
         /// The type that function type answers.
         ret_ft: ?ast.TypeRef = null,
+        /// The type parameters in scope where the lambda is written (its
+        /// function's and its owner's): a `param_ft` naming one is an erased
+        /// slot (`{ a -> g(f(a)) }` in `compose<A, B, C>`).
+        fn_tparams: []const ast.GenericParam = &.{},
+        owner_tparams: []const ast.GenericParam = &.{},
         /// Per parameter, the repr of the argument a call through a closure
         /// local passed (a parameter nothing declared takes it).
         param_seen: []?Repr = &.{},
@@ -20248,6 +20270,8 @@ const Emitter = struct {
             .idx = idx,
             .param_ft = param_ft,
             .ret_ft = ret_ft,
+            .fn_tparams = self.fn_tparams,
+            .owner_tparams = self.owner_tparams,
             .param_seen = param_seen,
         });
         // Decision 504 — a component's lambda (the scope lowering's `{
@@ -20509,7 +20533,10 @@ const Emitter = struct {
         try self.emit(.{ .local_get = tmp });
         for (cc.args, 0..) |a, k| {
             const pdecl: ?ast.TypeRef = if (decl) |d| (if (k < d.ft.function.params.len) d.ft.function.params[k] else null) else null;
-            const pr: Repr = if (pdecl) |pt| (self.gcSigRepr(pt, decl.?.gps) orelse return self.gcFail("an argument against a parameter of no repr")) else self.wasmTypeOf(a.value.*);
+            // A parameter typed by a type parameter out of scope here (the
+            // `fn(A) -> C` `compose<A, B, C>` answers): the checker bound it
+            // to the argument's type, and the argument crosses boxed.
+            const pr: Repr = if (pdecl) |pt| (self.gcSigRepr(pt, decl.?.gps) orelse self.wasmTypeOf(a.value.*)) else self.wasmTypeOf(a.value.*);
             self.expected_fn = if (pdecl) |pt| (if (pt == .function and a.value.* == .function) pt else null) else null;
             defer self.expected_fn = null;
             if (pdecl == null) if (li) |i| {
@@ -20592,6 +20619,14 @@ const Emitter = struct {
         const ety = self.gcTyIndex(.{ .env = l.idx });
         const env_vt = ValType.def(ety);
         self.gc_env_ty = ety;
+        const outer_fn_tparams = self.fn_tparams;
+        const outer_owner_tparams = self.owner_tparams;
+        self.fn_tparams = l.fn_tparams;
+        self.owner_tparams = l.owner_tparams;
+        defer {
+            self.fn_tparams = outer_fn_tparams;
+            self.owner_tparams = outer_owner_tparams;
+        }
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         var reprs: std.ArrayListUnmanaged(Repr) = .empty;
         try params.append(ar, wat.Builder.param("__env", env_vt));

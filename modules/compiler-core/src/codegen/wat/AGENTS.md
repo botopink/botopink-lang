@@ -133,7 +133,10 @@ function answers the other kind (`gcCaseArmsType`); `try r` answers the `Ok` typ
 `sig_owner`); `indexOf`, `lastIndexOf` and `contains` over an array of class `any` whose elements are no
 strings (a type-parameter slot, std's `asserts.includes`) compare a number, a string or a bool by value and any
 other reference by identity (`$__unk_same`, `__arr_indexOfEq_any`), as the linear lowering's word compare
-and commonJS do. Measured by building every conformance unit for wasm with `gc_debug` on; the test
+and commonJS do; `r.unwrapOr(d)` answers the reference the `Result`'s `Ok` type or the default names
+(`gcReprOfExpr`); a lambda written in a generic function keeps its type parameters (`Lifted.fn_tparams`,
+`owner_tparams`, set by `gcEmitLifted`), and an argument against a parameter typed by a type parameter out of
+scope (the function value `compose<A, B, C>` answers) crosses boxed in its own repr (`gcValueCall`). Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
