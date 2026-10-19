@@ -5,6 +5,6 @@ import {registry.Entry};
 import {compiler} from "std";
 
 pub fn registered(syntax decl: unknown) {
-    val name = compiler.name(decl);
+    val name = compiler.name(decl)!;
     compiler.init({ -> add(Entry(name: name, make: decl)) });
 }

@@ -10,16 +10,16 @@ import {compiler, io.terminal.print} from "std";
 
 fn register(syntax decl: unknown) {
     val owner = compiler.owner(decl)!;
-    val reg = "reg_" + compiler.name(owner) + "_" + compiler.name(decl);
+    val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;
     @emit(
         "val "
             + reg
             + " = \""
             + compiler.moduleOf(owner)
             + "."
-            + compiler.name(owner)
+            + compiler.name(owner)!
             + "."
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "\";",
     );
     @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
@@ -27,11 +27,11 @@ fn register(syntax decl: unknown) {
 
 fn topLevel(syntax decl: unknown) {
     val owner = compiler.owner(decl)?.name ?? "null";
-    @emit("val top_" + compiler.name(decl) + " = \"" + owner + "\";");
+    @emit("val top_" + compiler.name(decl)! + " = \"" + owner + "\";");
     @emit("pub fn top_"
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + "Text() -> string { return top_"
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + "; }");
 }
 

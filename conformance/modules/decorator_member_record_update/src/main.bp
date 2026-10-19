@@ -8,18 +8,18 @@ import {compiler, io.terminal.print} from "std";
 fn flatten(syntax decl: unknown) {
     compiler.addMember(
         "pub fn flat(self: Self) -> "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + " { return "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "(..self, y: 0); }",
     );
     compiler.addMember(
         "pub fn rebuilt(v: "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + ", z: i32) -> "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + " { val __w = "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "(..v, z: z); return __w; }",
     );
 }

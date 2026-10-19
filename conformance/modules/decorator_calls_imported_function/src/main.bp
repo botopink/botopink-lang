@@ -13,7 +13,7 @@ import {compiler, io.terminal.print} from "std";
 
 fn tag(syntax decl: unknown) {
     @emit("pub fn tagged() -> string { return \""
-        + yell(compiler.name(decl))
+        + yell(compiler.name(decl)!)
         + "\"; }");
 }
 

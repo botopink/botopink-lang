@@ -139,6 +139,9 @@ const Ctx = struct {
     runTime: bool = false,
     /// Inside a tree a decorator writes (a member, a wrapper).
     inTree: bool = false,
+    /// Mapping the `compiler.name(d)` of a `compiler.name(d)!` (decision
+    /// 643): the handle's name read as the `string` it is.
+    unwrapName: bool = false,
     /// Names a lambda inside the body binds over a value parameter.
     shadow: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Whether the pass wrote anything.
@@ -507,12 +510,16 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     const rest = args[1..];
     if (handleField(name)) |field| {
         if (std.mem.eql(u8, name, "name")) {
-            // Decision 612 — an expression written right there that has no
-            // name is refused at it.
-            if (namelessKind(first.*)) |kind| return refusal(ctx, first.getLoc(), diagnostics.syntax_has_no_name, try std.fmt.allocPrint(ctx.alloc, "this argument is {s}: it has no name", .{kind}), "`compiler.name(e)` answers the name a declaration, a named function or a type is written as (decision 612); read the text with `compiler.text(e)`.");
+            // Decision 643 — an expression written right there that has no
+            // name answers `null`.
+            if (isNameless(first.*)) return .{ .literal = .{ .loc = loc, .kind = .null_ } };
             // The name a `syntax` argument is written as: in a decorator,
-            // refused at the annotation's argument when it has none.
+            // `null` when the annotation's argument has none.
             if (!isHandle(ctx, first.*)) return methodCall(ctx, loc, first, if (ctx.decl != null) "name" else "text", rest, c.trailing, null);
+            // A declaration's name, a `?string` that is never `null`
+            // (`ast.decl_name_method` to the checker); unwrapped, the `string`
+            // itself.
+            if (!ctx.unwrapName) return methodCall(ctx, loc, first, ast.decl_name_method, rest, c.trailing, null);
         }
         return fieldRead(ctx, loc, first, field);
     }
@@ -527,17 +534,21 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     return methodCall(ctx, loc, first, name, rest, c.trailing, c.typeArgs);
 }
 
-/// Decision 612 — what `e`, written as `compiler.name`'s argument, is when
-/// it has no name; null for a name or a path.
-fn namelessKind(e: ast.Expr) ?[]const u8 {
+/// Decision 643 — whether `e`, written as `compiler.name`'s argument, has no
+/// name: a lambda, a literal, an array, a call, an operator expression (a
+/// builtin call — a read this pass already mapped, `compiler.owner(d)!` — is
+/// the expression it reads).
+fn isNameless(e: ast.Expr) bool {
     return switch (e) {
-        .function => "a lambda",
-        .literal => "a literal",
-        .collection => "an array",
-        .call => "a call",
-        .binaryOp, .unaryOp => "an operator expression",
-        else => null,
+        .function, .literal, .collection, .binaryOp, .unaryOp => true,
+        .call => |c| !(c.kind == .call and c.kind.call.is_builtin),
+        else => false,
     };
+}
+
+/// Whether `e` is a name of a declaration handle (`isHandle`, a name).
+fn namesHandle(ctx: *Ctx, e: ast.Expr) bool {
+    return e == .identifier and e.identifier.kind == .ident and isHandle(ctx, e);
 }
 
 /// Whether `e` names a declaration handle rather than an `expr` parameter:
@@ -615,7 +626,7 @@ fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory
     // A `comptime e` in a tree is the build's own (the tree rule splices its
     // answer): `walkExpr` reads the compiler there, nothing is hoisted.
     if (e == .comptime_ and e.comptime_.kind == .comptimeExpr) return;
-    // `compiler.name(d)` is hoisted whole: the `!` reads the build's answer.
+    // `compiler.name(d)!` is hoisted whole: the `!` reads the build's answer.
     var read = false;
     if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
         if (compilerCall(e.call.kind.call.args[0].value.*) != null) read = true;
@@ -633,7 +644,7 @@ fn hoistIn(ctx: *Ctx, p: *ast.Expr, bound: []const []const u8) error{OutOfMemory
             return;
         }
         // A read over a name the tree binds is never hoisted: the decorator's
-        // body does not bind it (a nameless expression keeps its refusal).
+        // body does not bind it (a nameless expression answers `null`, 643).
         if (readCall(e)) |rc| if (rc.args.len == 1 and try readsTreeName(ctx, rc.args[0].value.*, bound)) return;
         const name = try std.fmt.allocPrint(ctx.alloc, "{s}{d}", .{ memberFn.build_read_prefix, ctx.hoistCount });
         ctx.hoistCount += 1;
@@ -762,10 +773,13 @@ fn nameOf(e: ast.Expr) ?[]const u8 {
 fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
     const e = p.*;
     const loc = e.getLoc();
-    // `compiler.name(d)` — the handle's name is a `string` to the machinery.
+    // Decision 643 — `compiler.name(d)!` on a declaration handle: the
+    // handle's name, a `string` (the unwrap cannot fail).
     if (e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, ast.non_null_builtin_name) and e.call.kind.call.args.len == 1) {
-        if (compilerCall(e.call.kind.call.args[0].value.*)) |inner| if (std.mem.eql(u8, inner.callee, "name") and inner.args.len == 1 and isHandle(ctx, inner.args[0].value.*)) {
+        if (compilerCall(e.call.kind.call.args[0].value.*)) |inner| if (std.mem.eql(u8, inner.callee, "name") and inner.args.len == 1 and namesHandle(ctx, inner.args[0].value.*)) {
             p.* = e.call.kind.call.args[0].value.*;
+            ctx.unwrapName = true;
+            defer ctx.unwrapName = false;
             return walkExpr(ctx, p);
         };
     }

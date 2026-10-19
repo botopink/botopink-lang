@@ -5,9 +5,9 @@ import {compiler} from "std";
 pub fn service(syntax decl: unknown) {
     compiler.addMember(
         "pub fn make() -> "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + " { return "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "(tag: \"made\"); }",
     );
 }

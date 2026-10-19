@@ -6,7 +6,7 @@ import {compiler, io.terminal.print} from "std";
 
 fn named(syntax decl: fn() -> string) {
     compiler.wrapWith({ call ->
-        compiler.name(decl) + ":" + call.run()
+        compiler.name(decl)! + ":" + call.run()
     });
 }
 

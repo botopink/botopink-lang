@@ -36,14 +36,14 @@ pub fn html(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` is not a function",
             at: decl,
         );
     if (!compiler.returnType(decl).startsWith("syntax "))
         compiler.fail(
             "#[bpp.html] annotates a template function, whose first parameter is `syntax q: string` — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)
                 + "`",
@@ -57,14 +57,14 @@ pub fn style(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.style] annotates the template function a .bpp file's style section unfolds onto — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` is not a function",
             at: decl,
         );
     if (!compiler.returnType(decl).startsWith("syntax "))
         compiler.fail(
             "#[bpp.style] annotates a template function, whose first parameter is `syntax q: string` — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` answers `"
                 + compiler.returnType(decl)
                 + "`",
@@ -78,7 +78,7 @@ pub fn htmlPrelude(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail(
             "#[bpp.htmlPrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` is not a val",
             at: decl,
         );
@@ -90,7 +90,7 @@ pub fn stylePrelude(syntax decl: unknown) {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail(
             "#[bpp.stylePrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "` is not a val",
             at: decl,
         );

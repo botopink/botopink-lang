@@ -7,5 +7,5 @@ pub fn markup(syntax q: string) -> string {
     val tag = compiler.tagDecl(DeclKind.Element, "div", []);
     val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
         + 2, end: text.indexOf("]>"), line: 1));
-    return compiler.name(d);
+    return compiler.name(d)!;
 }

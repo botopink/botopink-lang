@@ -194,7 +194,7 @@ test "decorator body: reads decl.kind and calls decl.fail" {
 test "decorator body: reads decl.name and decl.returnType" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn describe(syntax decl: unknown) {
-        \\    val n = compiler.name(decl);
+        \\    val n = compiler.name(decl)!;
         \\    val rt = compiler.returnType(decl);
         \\}
         \\

@@ -4,9 +4,9 @@ pub fn describe(syntax decl: unknown) {
     val names = compiler.fields(decl).map({ f -> f.name });
     val upper = names.map({ n -> n.toUpper() }).join("_");
     val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
-    val short = compiler.name(decl).slice(0, 3);
-    val size = if (compiler.name(decl).length() == 4) { "four"; } else { "other"; };
-    @emit("pub fn describe" + compiler.name(decl) + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+    val short = compiler.name(decl)!.slice(0, 3);
+    val size = if (compiler.name(decl)!.length() == 4) { "four"; } else { "other"; };
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
 }
 
 #[describe]

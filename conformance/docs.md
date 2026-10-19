@@ -3669,10 +3669,12 @@ it is read only through its members, and passed as an argument or stored it is
 <!-- example: modules/compiler_escapes_passed -->
 <!-- example: modules/compiler_escapes_stored -->
 
-`compiler.name(e)` answers a `string` (decision 612): the name a declaration,
-a named function or a type is written as. An expression that has no name — a
-lambda, a literal, a call, an operator expression — is `syntax-has-no-name` at
-it, naming its kind (`` `{ x -> x }` is a lambda: it has no name ``).
+`compiler.name(e)` answers a `?string` (decision 643): the name a declaration,
+a named function or a type is written as, and `null` for an expression that
+has no name — a lambda, a literal, a call, an operator expression. What a
+`null` means is the decorator's choice: `compiler.name(key) ?? "anonymous"`. On
+a declaration the answer is never `null`, and `compiler.name(decl)!` reads it
+as the `string` it is.
 
 <!-- example: modules/compiler_name_of_lambda -->
 

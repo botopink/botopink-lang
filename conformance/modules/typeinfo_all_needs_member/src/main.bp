@@ -4,7 +4,9 @@
 import {compiler, io.terminal.print} from "std";
 
 fn component(syntax decl: unknown) {
-    compiler.addMember("pub fn describe() -> string { return \"" + compiler.name(decl) + "\"; }");
+    compiler.addMember("pub fn describe() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
 }
 
 #[component]

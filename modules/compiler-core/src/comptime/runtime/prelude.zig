@@ -93,12 +93,12 @@ pub const fail_arg_fn = "__bp_failArg";
 pub const arg_text_fn = "__bp_argText";
 pub const arg_texts_key = "__bp_arg_texts";
 
-/// Decision 612 — the function a decorator body's `compiler.name(x)` becomes
+/// Decision 643 — the function a decorator body's `compiler.name(x)` becomes
 /// (`comptime/syntax_param.zig`): `'__bp_argName'(Index)`, the name the
-/// argument is written as, or `syntax-has-no-name` raised at the argument
-/// (`'__bp_failArg'/2`) when it is a lambda, a literal, a call or an operator
-/// expression. Each `arg_texts_key` entry is `{Text, Name}`, `Name` a binary
-/// or `{nameless, Message}` (`decorator_eval.zig` `argNameTerm`).
+/// argument is written as, or `undefined` (`null`) when it is a lambda, a
+/// literal, a call or an operator expression. Each `arg_texts_key` entry is
+/// `{Text, Name}`, `Name` a binary or `undefined` (`decorator_eval.zig`
+/// `argNameTerm`).
 pub const arg_name_fn = "__bp_argName";
 
 /// Decision 298 — the function `decl.setMeta(v)` / `decl.addMeta(v)` becomes
@@ -564,10 +564,7 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), try b.map(&.{Ast.field("arg", V("Index"))}) })}),
         }),
         try b.function(arg_name_fn, &.{V("Index")}, &.{}, &.{
-            try b.caseOf(try b.remote("erlang", "element", &.{ Ast.Expr.r("2"), try b.remote("lists", "nth", &.{ try b.binop("+", V("Index"), Ast.Expr.r("1")), try b.remote("erlang", "get", &.{A(arg_texts_key)}) }) }), &.{
-                try b.clause(&.{try b.tuple(&.{ A("nameless"), V("Message") })}, &.{}, &.{try b.call(fail_arg_fn, &.{ V("Index"), V("Message") })}),
-                try b.clause(&.{V("Name")}, &.{}, &.{V("Name")}),
-            }),
+            try b.remote("erlang", "element", &.{ Ast.Expr.r("2"), try b.remote("lists", "nth", &.{ try b.binop("+", V("Index"), Ast.Expr.r("1")), try b.remote("erlang", "get", &.{A(arg_texts_key)}) }) }),
         }),
     });
     // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods`

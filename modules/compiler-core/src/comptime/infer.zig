@@ -19042,6 +19042,23 @@ fn unwrapOrDefaultExpected(recv: ?*ast.TypedExpr, callee: []const u8) ?*T.Type {
 /// Instances only exist at comptime; no codegen backend ever sees these calls.
 /// Returns null when the receiver is not an `expr` or the method is
 /// unknown — the caller falls back to permissive method typing.
+/// Decision 643 — `compiler.name(d)` on a declaration handle
+/// (`ast.decl_name_method`, as `parser/compiler_surface.zig` writes it)
+/// answers `?string`: the
+/// declaration's name, never `null` — `compiler.name(d)!` reads it as the
+/// `string` it is.
+fn inferHandleName(env: *Env, recvPtr: *ast.TypedExpr, callee: []const u8, typedArgs: []ast.CallArgOf(.typed), loc: ast.Loc) InferError!?ast.TypedExpr {
+    if (!std.mem.eql(u8, callee, ast.decl_name_method) or typedArgs.len != 0) return null;
+    const d = recvPtr.getType().deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, ast.decl_type_name)) return null;
+    const ty = try env.namedTypeArgs("optional", &.{try env.namedType("string")});
+    return ast.TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .identAccess = .{
+        .receiver = recvPtr,
+        .member = "name",
+        .optional = false,
+    } } } };
+}
+
 fn inferTemplateMethod(
     env: *Env,
     recvPtr: *ast.TypedExpr,
@@ -19075,7 +19092,8 @@ fn inferTemplateMethod(
         }
         // Decision 576 (2) — in a decorator, `compiler.text(x)` reads the
         // argument as the annotation wrote it.
-        // Decision 612 — `compiler.name(x)` reads the name it is written as.
+        // Decision 643 — `compiler.name(x)` reads the name it is written as,
+        // `null` when it has none.
         if (!(env.inDecoratorFn and (std.mem.eql(u8, callee, "fail") or ((std.mem.eql(u8, callee, "text") or std.mem.eql(u8, callee, "name")) and typedArgs.len == 0)))) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `comptime` parameter, whose `@Expr` answers `.value`{s} — not `.{s}(…)`", .{ diagnostics.expr_param_method, p.name, if (env.inDecoratorFn) " and `.fail(…)`" else "", callee });
             env.lastError = TypeError.custom(msg, "Read the argument's value at build with `x.value` (decision 364); a template function's capture is the one `@Expr` with the template methods.").withLoc(loc);
@@ -19088,7 +19106,10 @@ fn inferTemplateMethod(
             // The expression's value type slot — what the code evaluates to.
             op = .value;
             retType = if (named.args.len >= 1) named.args[0] else try env.freshVar();
-        } else if (std.mem.eql(u8, callee, "text") or (std.mem.eql(u8, callee, "name") and typedArgs.len == 0 and env.inDecoratorFn)) {
+        } else if (std.mem.eql(u8, callee, "name") and typedArgs.len == 0 and env.inDecoratorFn) {
+            op = .text;
+            retType = try env.namedTypeArgs("optional", &.{try env.namedType("string")});
+        } else if (std.mem.eql(u8, callee, "text")) {
             op = .text;
             retType = try env.namedType("string");
         } else if (std.mem.eql(u8, callee, "source")) {
@@ -22840,6 +22861,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // it: the lowering is recorded per call site for every backend.
             if (typedReceiver) |recvPtr| {
                 if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
+                if (try inferHandleName(env, recvPtr, call.callee, typedArgs, loc)) |te| return te;
                 // Decision 523 — `map`, `then`, `mapError` and `catch` are
                 // withdrawn from a task: its value is read by `await`, and
                 // every composition of it is an `async { … }` block.

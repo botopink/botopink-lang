@@ -10,14 +10,14 @@ import {compiler, io.terminal.print} from "std";
 fn service(syntax decl: unknown) {
     compiler.setMeta(Service(role: "service"));
     compiler.addMember("pub fn make() -> string { return \""
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + "\"; }");
 }
 
 fn repository(syntax decl: unknown) {
     compiler.setMeta(Store(store: "sql"));
     compiler.addMember("pub fn make() -> string { return \""
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + "\"; }");
 }
 

@@ -7,7 +7,11 @@ import {compiler, io.terminal.print} from "std";
 val base = "x";
 
 fn dec(syntax decl: unknown, comptime name: string = base) {
-    @emit("pub fn " + compiler.name(decl) + "Tag() -> string { return \"" + name + "\"; }");
+    @emit("pub fn "
+        + compiler.name(decl)!
+        + "Tag() -> string { return \""
+        + name
+        + "\"; }");
 }
 
 #[dec]

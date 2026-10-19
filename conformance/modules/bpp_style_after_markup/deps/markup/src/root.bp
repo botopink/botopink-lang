@@ -14,7 +14,7 @@ pub fn named(syntax decl: unknown) {
     else
         "not a function";
     compiler.fail("named "
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + " ("
         + kind
         + ")", at: decl);

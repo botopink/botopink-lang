@@ -12,7 +12,7 @@ fn requireShort(name: string) -> string {
 }
 
 fn short(syntax decl: unknown) {
-    val n = requireShort(compiler.name(decl));
+    val n = requireShort(compiler.name(decl)!);
     @emit("pub fn tag() -> string { return \"" + n + "\"; }");
 }
 

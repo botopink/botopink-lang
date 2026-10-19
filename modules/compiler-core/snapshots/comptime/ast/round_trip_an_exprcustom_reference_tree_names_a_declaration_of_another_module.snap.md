@@ -86,10 +86,10 @@ pub behavior Compiler {
     // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
     fn text(self: Self, syntax e: unknown) -> string;
-    // The name the expression is written as, or the declaration's name; an
-    // expression that has none — a lambda, a literal, a call, `a + b` — is
-    // `syntax-has-no-name` at it (decision 612).
-    fn name(self: Self, syntax e: unknown) -> string;
+    // The name the expression is written as, or the declaration's name;
+    // `null` for an expression that has none — a lambda, a literal, a call,
+    // `a + b` — and never on a declaration (decision 643).
+    fn name(self: Self, syntax e: unknown) -> ?string;
     // A template text's source and the context it stands in.
     fn source(self: Self, syntax e: unknown) -> Source;
     fn context(self: Self, syntax e: unknown) -> ExprContext;
@@ -425,7 +425,7 @@ pub type HookNode = __HookNode;
               "is_comptime": true
             }
           ],
-          "return_type": "string"
+          "return_type": "?string"
         },
         {
           "name": "source",

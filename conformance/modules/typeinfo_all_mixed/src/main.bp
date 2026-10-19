@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 fn tagged(syntax decl: unknown) {
-    compiler.setMeta(Tagged(tag: compiler.name(decl)));
+    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }
 
 #[tagged]

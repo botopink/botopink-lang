@@ -336,7 +336,7 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         // `x.text()` → `__bp_argText(j)` in a decorator body (576 (2)).
         if (ctx.failArg and v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
-            // Decision 612 — `x.name()` (`compiler.name(x)`) → `__bp_argName(j)`.
+            // Decision 643 — `x.name()` (`compiler.name(x)`) → `__bp_argName(j)`.
             const readsName = std.mem.eql(u8, c.callee, "name");
             if (c.receiver) |r| if ((readsName or std.mem.eql(u8, c.callee, "text")) and c.args.len == 0) if (indexOf(ctx, r.*)) |k| {
                 var out = v;
@@ -348,6 +348,15 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
                 out.call.kind.call.callee = if (readsName) preludeMod.arg_name_fn else preludeMod.arg_text_fn;
                 out.call.kind.call.args = args;
                 return out;
+            };
+        }
+        // Decision 643 — `compiler.name(d)` on a declaration handle
+        // (`ast.decl_name_method`, a `?string` to the checker) is the handle's
+        // `name` when the body runs.
+        if (v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            if (c.receiver) |r| if (std.mem.eql(u8, c.callee, ast.decl_name_method) and c.args.len == 0) {
+                return .{ .identifier = .{ .loc = v.call.loc, .kind = .{ .identAccess = .{ .receiver = try clone(*ast.Expr, ctx, r), .member = "name" } } } };
             };
         }
         // `x.fail(m)` → `__bp_failArg(j, m)` in a decorator body.
@@ -590,7 +599,7 @@ test "a body's use of a parameter: read, `.value`, `.fail` only" {
     var lx = lexer.Lexer.init(
         \\fn d(syntax decl: unknown, comptime a: string, syntax b: string, comptime c: string) {
         \\    decl.setMeta("a", a);
-        \\    if (compiler.name(decl) == "") compiler.fail("no", at: b);
+        \\    if (compiler.name(decl)! == "") compiler.fail("no", at: b);
         \\}
         \\import {compiler} from "std";
     );

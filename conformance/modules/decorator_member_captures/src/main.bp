@@ -9,7 +9,7 @@ import {compiler, io.terminal.print} from "std";
 pub type Violation(field: string, message: string)
 
 fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) {
-    val field = compiler.name(decl);
+    val field = compiler.name(decl)!;
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
         return [Violation(field: field, message: "invalid")];

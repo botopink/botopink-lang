@@ -5,7 +5,7 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn mark(syntax decl: unknown) {
-    compiler.setMeta(Mark(name: compiler.name(decl)));
+    compiler.setMeta(Mark(name: compiler.name(decl)!));
 }
 
 pub fn first(syntax e: string) -> string {

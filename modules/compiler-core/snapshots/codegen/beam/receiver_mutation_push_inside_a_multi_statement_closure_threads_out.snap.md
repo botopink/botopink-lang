@@ -12,7 +12,7 @@ pub fn component(syntax decl: unknown) {
         };
         args.push(f.name + ": " + expr);
     });
-    @emit("pub fn wire" + compiler.name(decl) + "() -> string { return \"" + compiler.name(decl) + "(" + args.join(", ") + ")\"; }");
+    @emit("pub fn wire" + compiler.name(decl)! + "() -> string { return \"" + compiler.name(decl)! + "(" + args.join(", ") + ")\"; }");
 }
 
 val port = "port";
@@ -192,7 +192,7 @@ import {io.terminal.print} from "std";
   call $rt_bin
   i64.const 13
   call $rt_int
-  i64.const 106
+  i64.const 108
   call $rt_int
   local.get $s3
   call $bp_comptime_decorator:__bp_push/4

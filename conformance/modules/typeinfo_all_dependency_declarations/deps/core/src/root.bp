@@ -4,7 +4,7 @@
 import {compiler} from "std";
 
 pub fn m(syntax decl: unknown) {
-    compiler.setMeta(Role(role: compiler.name(decl)));
+    compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
 // What `#[m]` records: the role its declaration plays.

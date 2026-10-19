@@ -17,7 +17,7 @@ fn note(
 ) {
     @emit(
         "pub fn "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "Note() -> string { return \""
             + text
             + size.toString()

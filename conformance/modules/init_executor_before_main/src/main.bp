@@ -10,7 +10,7 @@
 import {compiler, io.terminal.print} from "std";
 
 fn registered(syntax decl: unknown, comptime label: string) {
-    val name = compiler.name(decl);
+    val name = compiler.name(decl)!;
     compiler.init({ -> print(label + " " + name) });
     compiler.init({ -> print("again " + name) });
 }

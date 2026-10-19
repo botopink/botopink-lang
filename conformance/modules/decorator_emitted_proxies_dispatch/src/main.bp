@@ -24,7 +24,7 @@ fn proxied(syntax decl: unknown) {
                 "pub fn "
                     + m.name
                     + "(self: Self) -> string {\n        val _g = guard(\""
-                    + compiler.name(decl)
+                    + compiler.name(decl)!
                     + "\");\n        return \"sec \" + self.inner."
                     + m.name
                     + "();\n    }",
@@ -32,9 +32,9 @@ fn proxied(syntax decl: unknown) {
         });
     @emit(
         "pub type "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "Sec(inner: "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + ") {\n    "
             + methods.join("\n    ")
             + "\n}",

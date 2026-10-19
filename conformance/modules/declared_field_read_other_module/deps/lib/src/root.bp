@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn mark(syntax decl: unknown) {
-    compiler.setMeta(Mark(k: compiler.name(decl)));
+    compiler.setMeta(Mark(k: compiler.name(decl)!));
 }
 
 fn nameOf(d: Declared<unknown>) -> string {

@@ -19,7 +19,7 @@ fn tidyBody(value: string) -> string {
 
 fn sized(syntax decl: unknown) {
     @emit("pub fn summary() -> string { return \""
-        + tidy(compiler.name(decl))
+        + tidy(compiler.name(decl)!)
         + "\"; }");
 }
 

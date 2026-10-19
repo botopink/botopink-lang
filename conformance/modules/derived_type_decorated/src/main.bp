@@ -21,9 +21,9 @@ fn schema(syntax decl: unknown) {
         .join(", ");
     @emit(
         "pub fn "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + "Schema() -> string { return \""
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + " "
             + isType.toString()
             + " ("

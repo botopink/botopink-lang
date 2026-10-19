@@ -985,6 +985,11 @@ literal. A read whose `comptime` argument (`Arrival.value` position of `members`
 `compiler-arg-at-run-time` there, naming the parameter and the value; a `syntax` position is never at run time, and
 `compiler.name(x)` / `compiler.text(x)` over a name the tree binds (`foldSyntax`) is the literal `"x"`. A bare `compiler`
 in a tree is `compiler-escapes`, which the checker reports there (`infer.zig` `refuseSurface`).
+`compiler.name(e)` answers `?string` (decision 643): on a declaration handle it is the method
+`ast.decl_name_method` (typed `?string` by `infer.zig` `inferHandleName`, the handle's `name` when the body
+runs, `comptime/syntax_param.zig`) and `compiler.name(d)!` the field `d.name`; on a `syntax` parameter
+`x.name()` (`__bp_argName`, `undefined` for an argument with no name); on an expression written there
+that has no name (a lambda, a literal, a call, an operator expression) the literal `null`.
 
 A typed meta record's field is written `f: T`; one a decorator fills from a `syntax` parameter holds the
 tree (575 (4), the checker's `treeFed`). The parameter modifier is `syntax` (decision 616 renamed 575 (4)'s

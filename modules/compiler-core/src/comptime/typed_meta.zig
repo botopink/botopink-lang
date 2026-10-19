@@ -483,7 +483,7 @@ test "typed meta calls, in body order; the string form and a member's body are n
         \\fn d(syntax decl: unknown, syntax m: string) {
         \\    decl.setMeta("key", "value");
         \\    compiler.setMeta(Entity(table: "a"));
-        \\    if (compiler.name(decl) == "") { compiler.addMeta(Index(column: "x")); }
+        \\    if (compiler.name(decl)! == "") { compiler.addMeta(Index(column: "x")); }
         \\    compiler.addMember("v", fn(self: string) -> string { return m; });
         \\    compiler.addMeta(orm.Index(column: "y"));
         \\}

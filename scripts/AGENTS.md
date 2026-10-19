@@ -913,7 +913,7 @@ python3 scripts/codemod/test_compiler_keyword.py
   → `compiler.<m>(x, …)`, `x.build` / `note` / `tagDecl` / `annotate(…)` → `compiler.<m>(…)` (576 (2)), `return x.custom(ast, code);` →
   `compiler.custom(ast); return code;`.
 - **A parameter typed `@Decl`** becomes `expr d: unknown` (`@Decl<T>` → `expr d: T`); `d.name` →
-  `compiler.name(d)`, `d.<r>` → `compiler.<r>(d)` (`module` → `moduleOf`), `d.meta(T)` →
+  `compiler.name(d)!`, `d.<r>` → `compiler.<r>(d)` (`module` → `moduleOf`), `d.meta(T)` →
   `compiler.meta<T>(d)`, the outputs `d.setMeta` / `addMeta` / `addMember` / `addType` / `wrapWith(…)` →
   `compiler.<m>(…)`, `d.addType(name, src)` → `compiler.addType(name, compiler.buildType(src))` (578
   (3)). The string `setMeta("key", value)` is left and counted. The same rules take a

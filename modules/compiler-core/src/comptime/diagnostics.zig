@@ -784,11 +784,6 @@ pub const compiler_output_outside_decorator: []const u8 = "compiler-output-outsi
 /// parameter and the value; a `syntax` parameter takes it as written.
 pub const compiler_arg_at_run_time: []const u8 = "compiler-arg-at-run-time";
 
-/// Decision 612 — `compiler.name(e)` on an expression that has no name (a
-/// lambda, a literal, a call, an operator expression): at the argument,
-/// naming the expression's kind.
-pub const syntax_has_no_name: []const u8 = "syntax-has-no-name";
-
 /// Decision 575 (3) — a member `Compiler` does not declare, `compiler` read
 /// without a member, or a member read where the point has none.
 pub const compiler_member_unknown: []const u8 = "compiler-member-unknown";
@@ -1015,7 +1010,6 @@ pub const all_codes = [_][]const u8{
     compiler_at_run_time,
     compiler_output_outside_decorator,
     compiler_arg_at_run_time,
-    syntax_has_no_name,
     compiler_member_unknown,
     compiler_escapes,
     syntax_call_outside_syntax,

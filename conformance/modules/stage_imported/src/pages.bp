@@ -22,7 +22,7 @@ fn stage(syntax decl: unknown) {
                 "Any";
             out.push(s)
         });
-    compiler.setMeta(Staged(name: compiler.name(decl), stages: out));
+    compiler.setMeta(Staged(name: compiler.name(decl)!, stages: out));
 }
 
 #[stage]

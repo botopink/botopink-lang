@@ -5,7 +5,7 @@ type Entity(table: string, audited: bool)
 type Index(column: string)
 
 fn entity(syntax decl: unknown, comptime table: string) {
-    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)
+    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)!
         == "City"));
 }
 
@@ -19,7 +19,9 @@ fn index(syntax decl: unknown, comptime column: string) {
 type City(name: string, state: string)
 
 fn main() {
-    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none"); // cities
+    print(comptime compiler
+        .typeInfo(City)
+        .meta(Entity)?.table ?? "none"); // cities
     print(comptime compiler.typeInfo(City).metaAll(Index).length); // 2
     print(comptime compiler.typeInfo(City).metaAll(Entity).length); // 1
 }

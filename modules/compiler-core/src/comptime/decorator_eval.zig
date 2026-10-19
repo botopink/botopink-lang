@@ -388,17 +388,14 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     return b.arena.dupe(Ast.Form, &forms);
 }
 
-/// Decision 612 — the name an argument is written as, for
+/// Decision 643 — the name an argument is written as, for
 /// `compiler.name(x)` (`'__bp_argName'/1`): a name or a dotted path answers
 /// its last name; a lambda, a function, a literal, an array, a call or an
-/// operator expression has none — `{nameless, Message}`, raised at the
-/// argument as `syntax-has-no-name`, naming the expression's kind.
-fn argNameTerm(arena: std.mem.Allocator, written: []const u8) error{OutOfMemory}!Term {
+/// operator expression has none — `undefined`, the body's `null`.
+fn argNameTerm(written: []const u8) Term {
     const src = std.mem.trim(u8, written, " \t\r\n");
     if (nameOfPath(src)) |n| return Term.str(n);
-    const kind = expressionKind(src);
-    const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` is {s}: it has no name", .{ diagnostics.syntax_has_no_name, src, kind });
-    return Term.tupleOf(try arena.dupe(Term, &.{ .{ .atom = "nameless" }, Term.str(msg) }));
+    return .{ .atom = "undefined" };
 }
 
 /// The last name of `a.b.c`, null when `src` is no dotted path of names.
@@ -420,30 +417,6 @@ fn nameOfPath(src: []const u8) ?[]const u8 {
 
 fn isLiteralWord(w: []const u8) bool {
     return std.mem.eql(u8, w, "true") or std.mem.eql(u8, w, "false") or std.mem.eql(u8, w, "null");
-}
-
-/// What a nameless argument is, in a refusal's words.
-fn expressionKind(src: []const u8) []const u8 {
-    if (src.len == 0) return "an expression";
-    const c = src[0];
-    if (c == '{') return "a lambda";
-    if (std.mem.startsWith(u8, src, "fn") and src.len > 2 and (src[2] == '(' or src[2] == ' ')) return "a function expression";
-    if (std.ascii.isDigit(c) or c == '"' or c == '\'' or isLiteralWord(src)) return "a literal";
-    if (c == '[') return "an array";
-    // `f(…)` / `a.b(…)`: a path of names, then one parenthesised list.
-    var i: usize = 0;
-    while (i < src.len and (std.ascii.isAlphanumeric(src[i]) or src[i] == '_' or src[i] == '.')) i += 1;
-    if (i > 0 and i < src.len and src[i] == '(' and src[src.len - 1] == ')') {
-        var depth: usize = 0;
-        for (src[i..], i..) |ch, k| {
-            if (ch == '(') depth += 1;
-            if (ch == ')') {
-                depth -= 1;
-                if (depth == 0) return if (k == src.len - 1) "a call" else "an operator expression";
-            }
-        }
-    }
-    return "an operator expression";
 }
 
 /// Whether the (erased) decorator `dfn` reads an argument's text
@@ -523,7 +496,7 @@ fn buildModule(
         const items = try arena.alloc(Term, @max(dfn.params.len, 1) - 1);
         for (items, 0..) |*t, i| {
             const src = if (i < plainArgs.len) plainArgs[i].source else "";
-            t.* = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(src), try argNameTerm(arena, src) }));
+            t.* = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(src), argNameTerm(src) }));
         }
         break :blk Term.tupleOf(try arena.dupe(Term, &.{ plain_argument, Term.listOf(items) }));
     } else plain_argument;

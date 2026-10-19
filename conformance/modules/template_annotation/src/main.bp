@@ -41,7 +41,7 @@ fn query(syntax q: string, syntax decl: unknown) -> string {
     if (params.length == 0)
         compiler.fail(
             "a query of `"
-                + compiler.name(decl)
+                + compiler.name(decl)!
                 + "("
                 + declared
                 + ")` binds no parameter",
@@ -110,7 +110,9 @@ fn logout(user: string) -> string {
 }
 
 pub fn main() {
-    val statements: string[] = comptime compiler.typeInfo(Users).meta(Repository)?.statements ?? [];
+    val statements: string[] = comptime compiler
+        .typeInfo(Users)
+        .meta(Repository)?.statements ?? [];
     print(statements.join(" | "));
     val m = comptime compiler.typeInfo(logout).meta(Query);
     print(m!.sql + " <- " + m!.params.join(", "));

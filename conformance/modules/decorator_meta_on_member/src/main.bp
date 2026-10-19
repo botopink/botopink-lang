@@ -5,7 +5,7 @@
 import {compiler, io.terminal.print} from "std";
 
 fn column(syntax decl: unknown) {
-    compiler.setMeta(Column(name: compiler.name(decl)));
+    compiler.setMeta(Column(name: compiler.name(decl)!));
 }
 
 type City(#[column] name: string)

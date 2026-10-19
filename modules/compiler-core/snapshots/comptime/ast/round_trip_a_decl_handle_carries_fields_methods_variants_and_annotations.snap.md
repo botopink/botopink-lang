@@ -2,7 +2,7 @@
 ```botopink
 fn column(syntax decl: unknown, comptime name: string) { }
 fn describe(syntax decl: unknown, comptime label: string) {
-    var out = compiler.name(decl) + "[" + label + "]";
+    var out = compiler.name(decl)! + "[" + label + "]";
     for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     for (compiler.fields(decl)) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
@@ -14,7 +14,7 @@ fn describe(syntax decl: unknown, comptime label: string) {
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
-    @emit("pub fn describe" + compiler.name(decl) + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
 }
 #[describe("record")]
 type Point(#[column("px")] x: i32, y: ?i32) {
@@ -110,7 +110,7 @@ pub fn describeMode() -> string {
       "return_type": "void",
       "body": [
         {
-          "source": "var out = compiler.name(decl) + \"[\" + label + \"]\";"
+          "source": "var out = compiler.name(decl)! + \"[\" + label + \"]\";"
         },
         {
           "source": "for (compiler.annotations(decl)) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
@@ -125,7 +125,7 @@ pub fn describeMode() -> string {
           "source": "for (compiler.methods(decl)) { m ->"
         },
         {
-          "source": "@emit(\"pub fn describe\" + compiler.name(decl) + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
+          "source": "@emit(\"pub fn describe\" + compiler.name(decl)! + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"
         }
       ]
     },

@@ -12,7 +12,7 @@ pub fn named(syntax decl: unknown) {
     else
         "not a function";
     compiler.fail("named "
-        + compiler.name(decl)
+        + compiler.name(decl)!
         + " ("
         + kind
         + ")", at: decl);
@@ -20,5 +20,5 @@ pub fn named(syntax decl: unknown) {
 
 /// A decorator named like a route file: it refuses what it annotates.
 pub fn page(syntax decl: unknown) {
-    compiler.fail("page applied to " + compiler.name(decl), at: decl);
+    compiler.fail("page applied to " + compiler.name(decl)!, at: decl);
 }

@@ -20,9 +20,9 @@ fn entity(syntax decl: unknown) {
         .forEach({ f -> names.push(f.name + ": \"" + f.name + "\"") });
     compiler.addMember(
         "pub fn columns() -> "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + ".Columns { return "
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + ".Columns("
             + names.join(", ")
             + "); }",

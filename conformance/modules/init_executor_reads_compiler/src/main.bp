@@ -1,12 +1,12 @@
 //// Decision 614 — a `compiler.*` call inside an executor is evaluated at
 //// build and enters the executor as a literal, exactly as a `val` read
-//// before it does: `compiler.name(decl)` is the annotated declaration's name,
+//// before it does: `compiler.name(decl)!` is the annotated declaration's name,
 //// printed when the init list runs, before `main`.
 
 import {compiler, io.terminal.print} from "std";
 
 fn registered(syntax decl: unknown) {
-    compiler.init({ -> print(compiler.name(decl)) });
+    compiler.init({ -> print(compiler.name(decl)!) });
 }
 
 #[registered]

@@ -20,7 +20,7 @@ fn fieldSummary(count: i32) -> string {
 fn sized(syntax decl: unknown) {
     @emit(
         "pub fn summary() -> string { return \""
-            + compiler.name(decl)
+            + compiler.name(decl)!
             + ": "
             + fieldSummary(compiler.fields(decl).length)
             + "\"; }",

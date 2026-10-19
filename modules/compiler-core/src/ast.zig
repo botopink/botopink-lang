@@ -1948,6 +1948,12 @@ pub const expr_custom_type_name = "__ExprCustom";
 /// The internal handle type of a decorator's first `expr` parameter.
 pub const decl_type_name = "__Decl";
 
+/// Decision 643 — the method `compiler.name(d)` on a declaration handle is
+/// read as (`parser/compiler_surface.zig`): `?string` to the checker
+/// (`infer.zig` `inferHandleName`), the handle's `name` when the body runs
+/// (`comptime/syntax_param.zig`). No source can call it.
+pub const decl_name_method = "__bp_declName";
+
 pub const FieldDestruct = struct {
     field_name: []const u8,
     bind_name: []const u8,

@@ -25,7 +25,7 @@ fn tagBody(value: string) -> string {
 
 fn tagged(syntax decl: unknown) {
     @emit("pub fn summary() -> string { return \""
-        + tag(compiler.name(decl))
+        + tag(compiler.name(decl)!)
         + "\"; }");
 }
 

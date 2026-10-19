@@ -13,7 +13,7 @@ fn check<T>(syntax decl: T, comptime note: string) {
 }
 
 fn mark(syntax decl: unknown) {
-    if (compiler.name(decl) == "")
+    if (compiler.name(decl)! == "")
         compiler.fail("a declaration has a name", at: decl);
 }
 
