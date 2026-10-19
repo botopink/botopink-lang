@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Async<i32> {
+async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
@@ -17,7 +17,7 @@ fn sum(f: fn(n: i32) -> Iter<i32>, n: i32) -> i32 {
     return acc;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val upTo: fn(n: i32) -> Iter<i32> = { iter n ->
         var i = 0;
         while (i < n) {

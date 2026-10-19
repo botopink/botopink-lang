@@ -8,7 +8,7 @@ type Service(name: string)
 
 type Module(name: string, make: fn() -> Component<Service>)
 
-fn Card() -> Component<Service> {
+component fn Card() -> Component<Service> {
     return Service(name: "card");
 }
 
@@ -16,18 +16,18 @@ fn moduleNamed(name: string) -> Module {
     return Module(name: name, make: { -> Card() });
 }
 
-fn Bound(name: string) -> Component<Service> {
+component fn Bound(name: string) -> Component<Service> {
     val c: Component<Service> = moduleNamed(name).make();
     val s = await c;
     return Service(name: s.name + "!");
 }
 
-fn Direct(name: string) -> Component<Service> {
+component fn Direct(name: string) -> Component<Service> {
     val s = await moduleNamed(name).make();
     return Service(name: s.name + "!");
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val b = await Bound("card");
     print(b.name);
     val d = await Direct("card");

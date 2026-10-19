@@ -35,7 +35,7 @@ fn shown(n: i32) -> Result<string, string> {
     return (try parse(n)).toString();
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val t = load(21);
     print(await t * 2);
     print(await load(2) + await load(3));

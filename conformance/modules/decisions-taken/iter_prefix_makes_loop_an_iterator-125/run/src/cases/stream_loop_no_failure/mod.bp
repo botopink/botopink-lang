@@ -11,7 +11,7 @@ import {io.terminal.print} from "std";
 
 type Ticker(s: AsyncIter<i32>)
 
-fn tick(n: i32) -> Async<i32> {
+async fn tick(n: i32) -> Async<i32> {
     return n * 100;
 }
 
@@ -25,7 +25,7 @@ fn ticks(limit: i32) -> Ticker {
     return Ticker(s: s);
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     for await (ticks(3).s) { v ->
         print(v);
     }

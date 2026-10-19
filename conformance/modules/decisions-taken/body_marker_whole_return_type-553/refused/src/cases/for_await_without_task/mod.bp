@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-fn numbers() -> AsyncIter<i32> {
+async iter fn numbers() -> AsyncIter<i32> {
     yield 1;
     yield 2;
 }

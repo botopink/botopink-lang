@@ -9,11 +9,11 @@ fn ok(value: string) -> Async<Result<string, string>> {
     return value;
 }
 
-fn failing(why: string) -> Async<Result<string, string>> {
+async fn failing(why: string) -> Async<Result<string, string>> {
     throw why;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val policy = async.RetryPolicy(3, 1, 2.0, 4);
     val first = await async.retry(policy, { -> ok("answered") });
     print("first " + first.unwrapOr("-"));

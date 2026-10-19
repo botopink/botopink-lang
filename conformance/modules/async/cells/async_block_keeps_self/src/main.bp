@@ -30,7 +30,7 @@ type Worker(id: i32) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val w = Worker(id: 10);
     print(await w.start());
     print(await w.nestedStart());

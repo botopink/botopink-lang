@@ -7,16 +7,16 @@
 
 import {io.terminal.print} from "std";
 
-fn answer(n: i32) -> Async<i32> {
+async fn answer(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn delayed(n: i32) -> Async<void> {
+async fn delayed(n: i32) -> Async<void> {
     val v = await answer(n);
     print("delayed " + v.toString());
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val a = await answer(20);
     print(a + 2);
     await delayed(5);

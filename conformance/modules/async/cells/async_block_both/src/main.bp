@@ -7,7 +7,7 @@ fn fetchUser(id: i32) -> Async<Result<User, string>> {
     return User(id: id, name: "ana");
 }
 
-fn both() -> Async<Result<string, string>> {
+async fn both() -> Async<Result<string, string>> {
     val first = async {
         return try await fetchUser(1);
     }; // Async<Result<User, string>>
@@ -19,7 +19,7 @@ fn both() -> Async<Result<string, string>> {
     return u.name + n.toString();
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await both();
     print(r.unwrapOr("none")); // ana2
 }

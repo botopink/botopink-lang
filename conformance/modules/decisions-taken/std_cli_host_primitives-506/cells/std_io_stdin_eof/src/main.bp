@@ -14,7 +14,7 @@ fn show(line: ?string) -> string {
     };
 }
 
-fn scenario() -> Async<void> {
+async fn scenario() -> Async<void> {
     print("isTTY " + stdin.isTTY().toString());
     print(show(await stdin.readLine()));
     print(show(await stdin.readLine()));

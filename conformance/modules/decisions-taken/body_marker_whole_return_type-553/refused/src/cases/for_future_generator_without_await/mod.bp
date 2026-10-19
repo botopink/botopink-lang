@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-fn ticks(n: i32) -> AsyncIter<i32> {
+async iter fn ticks(n: i32) -> AsyncIter<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; }
 }

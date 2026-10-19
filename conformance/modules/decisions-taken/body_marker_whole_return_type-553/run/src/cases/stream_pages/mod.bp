@@ -22,7 +22,7 @@ fn fetchPage(url: string) -> Async<Result<Page, string>> {
     throw url + ": 503";
 }
 
-fn pages(url: string) -> AsyncIter<Result<Array<string>, string>> {
+async iter fn pages(url: string) -> AsyncIter<Result<Array<string>, string>> {
     var next = url;
     while (next != "") {
         val page = try await fetchPage(next);
@@ -31,7 +31,7 @@ fn pages(url: string) -> AsyncIter<Result<Array<string>, string>> {
     }
 }
 
-fn countUsers(url: string) -> Async<Result<i32, string>> {
+async fn countUsers(url: string) -> Async<Result<i32, string>> {
     var n = 0;
     for await (pages(url)) { batch ->
         val users = try batch;
@@ -40,7 +40,7 @@ fn countUsers(url: string) -> Async<Result<i32, string>> {
     return n;
 }
 
-fn walk(url: string) -> Async<void> {
+async fn walk(url: string) -> Async<void> {
     for await (pages(url)) { r ->
         case r {
             Ok(users) -> print("batch " + users.join(","));
@@ -57,7 +57,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     show(await countUsers("q1"));
     show(await countUsers("p1"));
     await walk("p1");

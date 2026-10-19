@@ -5,7 +5,7 @@
 
 type Element(total: i32) implement Renderable
 
-fn total() -> Component<i32> {
+component fn total() -> Component<i32> {
     val ctx = use @getContext(Element);
     return ctx.total;
 }

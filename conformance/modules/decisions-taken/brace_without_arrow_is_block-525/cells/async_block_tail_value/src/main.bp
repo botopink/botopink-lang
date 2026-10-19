@@ -9,7 +9,7 @@ fn load(n: i32) -> Async<Result<i32, string>> {
     return n;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val safe = async { try await load(-1) catch 0 };
     print(await safe);
     val good = async { try await load(7) catch 0 };

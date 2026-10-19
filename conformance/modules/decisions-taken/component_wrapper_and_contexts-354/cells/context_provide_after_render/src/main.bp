@@ -11,12 +11,12 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn Label() -> Component<Element> {
+component fn Label() -> Component<Element> {
     val t = use context(themeContext);
     return Element(text: t.mode);
 }
 
-fn App() -> Component<Element> {
+component fn App() -> Component<Element> {
     val first = Label();
     use provide(createContext(Theme(mode: "dark")));
     return first;

@@ -5,12 +5,12 @@
 //// know `await` after `loop` and refuses the token, located at it (measured at
 //// compiler `82e32e36`).
 
-fn ticks(n: i32) -> AsyncIter<i32> {
+async iter fn ticks(n: i32) -> AsyncIter<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; }
 }
 
-fn total() -> Async<i32> {
+async fn total() -> Async<i32> {
     var n = 0;
     loop await (ticks(3)) { x -> n = n + x; }
     return n;

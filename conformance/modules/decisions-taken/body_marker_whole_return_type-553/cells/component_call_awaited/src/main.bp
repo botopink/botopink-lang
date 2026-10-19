@@ -13,17 +13,17 @@ fn text(s: string) -> Element {
     return Element(tag: s, kids: []);
 }
 
-pub fn Title() -> Component<Element> {
+pub component fn Title() -> Component<Element> {
     return text("title");
 }
 
-pub fn Wrap(child: Element) -> Component<Element> {
+pub component fn Wrap(child: Element) -> Component<Element> {
     return Element(tag: "wrap", kids: [child]);
 }
 
 pub type Slot(view: fn(child: Element) -> Component<Element>)
 
-pub fn Page(slot: Slot) -> Component<Element> {
+pub component fn Page(slot: Slot) -> Component<Element> {
     val direct = await Title();
     val view = slot.view;
     val wrapped = await view(Title());
@@ -38,7 +38,7 @@ fn render(e: Element) -> string {
     return out;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val page = await Page(Slot(view: { c -> Wrap(c) }));
     print(render(page));
 }

@@ -34,16 +34,16 @@ fn args(syntax decl: unknown) {
     compiler.setMeta(HookArgs(uses: out));
 }
 
-fn params<P>(fallback: P) -> Component<P> {
+component fn params<P>(fallback: P) -> Component<P> {
     return fallback;
 }
 
-fn title() -> Component<string> {
+component fn title() -> Component<string> {
     return "post";
 }
 
 #[args]
-pub fn Post() -> Component<Element> {
+pub component fn Post() -> Component<Element> {
     val p = use params<BlogParams>(BlogParams(slug: "hello", id: 1));
     val t = use title();
     return Element(text: t + " " + p.slug);

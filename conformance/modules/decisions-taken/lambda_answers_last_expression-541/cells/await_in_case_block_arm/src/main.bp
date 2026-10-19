@@ -4,11 +4,11 @@
 
 import {io.terminal.print} from "std";
 
-fn make(n: i32) -> Async<i32> {
+async fn make(n: i32) -> Async<i32> {
     return n * 10;
 }
 
-fn statement(k: i32) -> Async<void> {
+async fn statement(k: i32) -> Async<void> {
     case k {
         1 {
             val t = await make(2);
@@ -20,7 +20,7 @@ fn statement(k: i32) -> Async<void> {
     }
 }
 
-fn value(k: i32) -> Async<void> {
+async fn value(k: i32) -> Async<void> {
     val v = case k {
         1 {
             val t = await make(3);
@@ -33,7 +33,7 @@ fn value(k: i32) -> Async<void> {
     print(v);
 }
 
-fn returned(k: i32) -> Async<i32> {
+async fn returned(k: i32) -> Async<i32> {
     case k {
         1 {
             val v = await make(4);
@@ -45,7 +45,7 @@ fn returned(k: i32) -> Async<i32> {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     statement(1);
     value(1);
     print(await returned(1));

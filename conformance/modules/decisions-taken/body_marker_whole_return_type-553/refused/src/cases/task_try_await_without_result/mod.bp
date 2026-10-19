@@ -4,12 +4,12 @@
 //// `effect-try-without-fallible-channel`, at the `try`. The legal spellings
 //// (`await t`, `try await t catch x`) are `run/task_await_result.bp`.
 
-fn fetchUser(id: i32) -> Async<Result<string, string>> {
+async fn fetchUser(id: i32) -> Async<Result<string, string>> {
     if (id <= 0) { throw "no user"; }
     return "user" + id.toString();
 }
 
-fn name(id: i32) -> Async<string> {
+async fn name(id: i32) -> Async<string> {
     val u = try await fetchUser(id);
     return u;
 }

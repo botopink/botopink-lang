@@ -10,21 +10,21 @@ import {io.terminal.print} from "std";
 
 type RequestScope(id: string) implement Renderable
 
-fn requestId() -> Component<string> {
+component fn requestId() -> Component<string> {
     return "r-7";
 }
 
-fn byRequest(id: string) -> Async<Result<string, string>> {
+async fn byRequest(id: string) -> Async<Result<string, string>> {
     if (id == "") throw "no request";
     return "tenant-of-" + id;
 }
 
-fn tenant() -> Component<Result<string, string>> {
+component fn tenant() -> Component<Result<string, string>> {
     val id = use requestId();
     return try await byRequest(id);
 }
 
-fn tenantFor(id: string) -> Component<Result<string, string>> {
+component fn tenantFor(id: string) -> Component<Result<string, string>> {
     val known = use requestId();
     return try await byRequest(id);
 }
@@ -36,7 +36,7 @@ fn show(r: Result<string, string>) {
     }
 }
 
-fn Handler() -> Component<RequestScope> {
+component fn Handler() -> Component<RequestScope> {
     val t = use tenant();
     show(t);
     val u = use tenantFor("");
@@ -46,6 +46,6 @@ fn Handler() -> Component<RequestScope> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     await Handler();
 }

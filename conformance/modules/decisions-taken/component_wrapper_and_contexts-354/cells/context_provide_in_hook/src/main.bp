@@ -11,7 +11,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themed() -> Component<i32> {
+component fn themed() -> Component<i32> {
     use provide(createContext(Theme(mode: "dark")));
     return 1;
 }

@@ -5,20 +5,20 @@
 
 pub type Element(text: string) implement Renderable
 
-pub fn session() -> Component<string> {
+pub component fn session() -> Component<string> {
     return "alice";
 }
 
-pub fn Avatar() -> Component<Element> {
+pub component fn Avatar() -> Component<Element> {
     val s = use session();
     return Element(text: "avatar " + s);
 }
 
-fn loadPosts() -> Async<string> {
+async fn loadPosts() -> Async<string> {
     return "3 posts";
 }
 
-pub fn Posts() -> Component<Element> {
+pub component fn Posts() -> Component<Element> {
     val text = await loadPosts();
     return Element(text: text);
 }

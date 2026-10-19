@@ -7,16 +7,16 @@ type Element(count: i32) implement Renderable
 
 type Entry(name: string, view: fn() -> Component<Element>)
 
-fn make(n: i32) -> Component<Element> {
+component fn make(n: i32) -> Component<Element> {
     return Element(count: n);
 }
 
-fn Run(e: Entry) -> Component<Element> {
+component fn Run(e: Entry) -> Component<Element> {
     val out = await e.view();
     return Element(count: out.count + 1);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val e = Entry(name: "a", view: { -> make(6) });
     val r = await Run(e);
     print(r.count);

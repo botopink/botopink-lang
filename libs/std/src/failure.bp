@@ -102,7 +102,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
+async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");

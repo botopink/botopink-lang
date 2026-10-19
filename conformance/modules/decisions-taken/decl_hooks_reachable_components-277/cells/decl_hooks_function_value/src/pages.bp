@@ -36,7 +36,7 @@ fn graph(syntax decl: unknown) {
 }
 
 #[graph]
-pub fn Page(read: fn() -> Component<string>) -> Component<Element> {
+pub component fn Page(read: fn() -> Component<string>) -> Component<Element> {
     val v = use read();
     return Element(text: v);
 }

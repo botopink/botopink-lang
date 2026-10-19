@@ -7,22 +7,22 @@ import {async.delay, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
-fn Slow(n: i32) -> Component<View> {
+component fn Slow(n: i32) -> Component<View> {
     val v = await delay(5, n * 2);
     return View(text: "slow " + v.toString());
 }
 
-fn Fast() -> Component<View> {
+component fn Fast() -> Component<View> {
     return View(text: "fast");
 }
 
-fn Page() -> Component<View> {
+component fn Page() -> Component<View> {
     val a = await Slow(1);
     val b = await Fast();
     return View(text: a.text + " " + b.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val p = await Page();
     print(p.text);
 }

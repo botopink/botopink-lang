@@ -166,7 +166,7 @@ fn firstKeyLength(s: string) -> i32 {
 // The keys pressed, as they come, until standard input ends. Put the terminal in raw mode
 // first (`setRaw(true)`), else a key arrives only with its line. Several keys that arrive
 // together (a paste) are several items.
-pub fn keys() -> AsyncIter<Key> {
+pub async iter fn keys() -> AsyncIter<Key> {
     var pending = "";
     while (true) {
         var n = 0;

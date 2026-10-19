@@ -11,11 +11,11 @@ fn parse(s: string) -> Result<i32, string> {
     throw "not one: " + s;
 }
 
-fn later(n: i32) -> Async<i32> {
+async fn later(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn upTo(n: i32) -> Iter<i32> {
+iter fn upTo(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -31,12 +31,12 @@ fn joined(it: Iter<i32>) -> string {
     return acc;
 }
 
-fn Card(text: string) -> Component<Badge> {
+component fn Card(text: string) -> Component<Badge> {
     print("card " + text);
     return Badge(label: text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print(parse("1"), parse("2"));
     print(await later(21));
     print(joined(upTo(4)));

@@ -12,19 +12,19 @@ type Element(count: i32, name: string) implement Renderable
 type State(value: i32, name: string)
 
 // `state` yields its initial value.
-fn state(initial: i32) -> Component<State> {
+component fn state(initial: i32) -> Component<State> {
     return State(value: initial, name: "state");
 }
 
 // A hook whose `R` is a tuple.
-fn pair(a: i32, b: i32) -> Component<#(i32, i32)> {
+component fn pair(a: i32, b: i32) -> Component<#(i32, i32)> {
     return #(a, b);
 }
 
 // A hook whose `R` is a tuple with a fn element — step 3 binds each name to
 // its element (`shown : i32`, `push : fn(action: i32) -> i32`), so `push(shown)`
 // types with no annotation on the binding.
-fn optimistic(
+component fn optimistic(
     base: i32,
     f: fn(current: i32, action: i32) -> i32,
 ) -> Component<#(i32, fn(action: i32) -> i32)> {
@@ -33,39 +33,39 @@ fn optimistic(
 }
 
 // A void-ish hook activated as a bare statement.
-fn effect(cb: fn() -> i32) -> Component<i32> {
+component fn effect(cb: fn() -> i32) -> Component<i32> {
     return cb();
 }
 
 // A custom hook by the rule: a noun, no `use` prefix, composing another hook.
 // Its wrapper anchors at `Element`, so every `use` in it agrees on `Element`,
 // and `#[@use]` is what lets its body activate `state`.
-fn counter(start: i32) -> Component<State> {
+component fn counter(start: i32) -> Component<State> {
     val s = use state(start * 2);
     return s;
 }
 
-fn Widget(n: i32) -> Component<Element> {
+component fn Widget(n: i32) -> Component<Element> {
     val c = use state(n);
     return Element(count: c.value + 1, name: c.name);
 }
 
-fn Fields() -> Component<Element> {
+component fn Fields() -> Component<Element> {
     val { value, name } = use state(5);
     return Element(count: value, name: name);
 }
 
-fn Composed() -> Component<Element> {
+component fn Composed() -> Component<Element> {
     val k = use counter(10);
     return Element(count: k.value, name: k.name);
 }
 
-fn Positional() -> Component<Element> {
+component fn Positional() -> Component<Element> {
     val #(x, y) = use pair(3, 4);
     return Element(count: x + y, name: "pair");
 }
 
-fn Effectful() -> Component<Element> {
+component fn Effectful() -> Component<Element> {
     use effect({ ->
         return 9;
     });
@@ -73,7 +73,7 @@ fn Effectful() -> Component<Element> {
     return Element(count: c.value, name: "effect");
 }
 
-fn Liked() -> Component<Element> {
+component fn Liked() -> Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     return Element(count: push(shown), name: "optimistic");
 }

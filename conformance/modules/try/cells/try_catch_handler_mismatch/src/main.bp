@@ -11,7 +11,7 @@ fn loadPost(id: i32) -> Async<Result<Post, string>> {
     return async { throw "missing"; };
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val post: Post = try await loadPost(1) catch 7;
     print(post.title);
 }

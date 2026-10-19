@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn stream(n: i32) -> AsyncIter<Result<i32, string>> {
+async iter fn stream(n: i32) -> AsyncIter<Result<i32, string>> {
     yield n;
 }
 

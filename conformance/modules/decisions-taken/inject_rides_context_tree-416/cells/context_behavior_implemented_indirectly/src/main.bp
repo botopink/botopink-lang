@@ -35,18 +35,18 @@ type Memory(tag: string) implement Cached {
 
 pub val repoContext = createContext(CachedRepository(prefix: "cached-"), Repository);
 
-fn Lookup() -> Component<View> {
+component fn Lookup() -> Component<View> {
     val r = use context(repoContext);
     return View(text: r.fetch(1));
 }
 
-fn Root() -> Component<View> {
+component fn Root() -> Component<View> {
     use provide(createContext(Memory(tag: "mem"), Repository));
     val l = Lookup();
     return View(text: l.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val outside = await Lookup();
     print(outside.text);
     val inside = await Root();

@@ -8,19 +8,19 @@ type Styled(text: string) implement Renderable
 
 type Other(text: string) implement Renderable
 
-fn mk() -> Component<Other> {
+component fn mk() -> Component<Other> {
     return Other(text: "other");
 }
 
-fn view(syntax q: string) -> Component<Styled> {
+component fn view(syntax q: string) -> Component<Styled> {
     return compiler.build("mk()");
 }
 
-pub fn Page() -> Component<Styled> {
+pub component fn Page() -> Component<Styled> {
     return view @`a`;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val page = await Page();
     print(page.text);
 }

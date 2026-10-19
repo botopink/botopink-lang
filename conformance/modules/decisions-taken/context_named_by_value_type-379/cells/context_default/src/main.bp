@@ -11,24 +11,24 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "light"));
 
-fn Label() -> Component<Element> {
+component fn Label() -> Component<Element> {
     val t = use context(themeContext);
     return Element(text: t.mode);
 }
 
-fn Dark() -> Component<Element> {
+component fn Dark() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
     val l = Label();
     return Element(text: l.text);
 }
 
-fn Again() -> Component<Element> {
+component fn Again() -> Component<Element> {
     use provide(themeContext);
     val l = Label();
     return Element(text: l.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print("before");
     val l = await Label();
     print(l.text);

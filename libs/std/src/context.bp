@@ -54,7 +54,7 @@ pub fn createContext<T>(value: T) -> Context<T> {
 
 // Gives `ctx` to every component this component renders below it — never
 // to itself or a sibling; the nearest provider of a type wins.
-pub fn provide<T>(ctx: Context<T>) -> Component<void> {
+pub component fn provide<T>(ctx: Context<T>) -> Component<void> {
     panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -63,7 +63,7 @@ pub fn provide<T>(ctx: Context<T>) -> Component<void> {
 // The value of the context of `ctx`'s type provided nearest above this body,
 // or `ctx`'s own default: `use context(themeContext)` names a context value
 // the module declares or imports, never a bare type (decisions 722, 723).
-pub fn context<T>(ctx: Context<T>) -> Component<T> {
+pub component fn context<T>(ctx: Context<T>) -> Component<T> {
     panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -75,7 +75,7 @@ pub fn context<T>(ctx: Context<T>) -> Component<T> {
 // inject(Deps)`). `T` is a record; a behavior is read with `use context`.
 // `createContext(value, Behavior)` keys a context by the behavior its value
 // implements, so a field typed by the behavior reads it.
-pub fn inject(comptime t: anytype) -> Component<unknown> {
+pub component fn inject(comptime t: anytype) -> Component<unknown> {
     panic(
         "`use inject` is lowered where it is written; this body never runs",
     );

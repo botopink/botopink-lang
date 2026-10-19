@@ -12,7 +12,7 @@
 
 import {io.terminal.print} from "std";
 
-fn fibonacci(limit: i32) -> Iter<i32> {
+iter fn fibonacci(limit: i32) -> Iter<i32> {
     var a = 0;
     var b = 1;
     var i = 0;

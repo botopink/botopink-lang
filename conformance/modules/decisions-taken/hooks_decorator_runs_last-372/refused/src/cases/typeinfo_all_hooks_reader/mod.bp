@@ -13,7 +13,7 @@ fn graph(syntax decl: unknown) {
 }
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     return Element(text: "x");
 }
 

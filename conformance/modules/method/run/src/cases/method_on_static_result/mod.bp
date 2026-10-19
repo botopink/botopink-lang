@@ -17,7 +17,7 @@ type Scope(render: RenderScope) {
     }
 }
 
-fn Card() -> Component<View> {
+component fn Card() -> Component<View> {
     return View(text: "card");
 }
 

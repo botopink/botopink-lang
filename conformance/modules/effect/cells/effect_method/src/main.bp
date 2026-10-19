@@ -31,7 +31,7 @@ type Box(items: Array<i32>) {
 }
 
 type Tally(seed: i32) implement Tally {
-    fn upto(self: Self, n: i32) -> Iter<i32> {
+    iter fn upto(self: Self, n: i32) -> Iter<i32> {
         var i = self.seed;
         while (i < n) {
             yield i;
@@ -55,7 +55,7 @@ type Shape {
     Rect(width: i32, height: i32),
     Dot,
 
-    fn counts(self: Self, n: i32) -> Iter<i32> {
+    iter fn counts(self: Self, n: i32) -> Iter<i32> {
         var i = 0;
         while (i < n) {
             yield i;

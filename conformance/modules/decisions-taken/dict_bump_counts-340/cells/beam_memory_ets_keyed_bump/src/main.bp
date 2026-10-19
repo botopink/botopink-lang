@@ -18,7 +18,7 @@ fn worker(by: i32) -> Async<i32> {
     return i;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
     counts = counts.bump("seed", 5);
     print(done);

@@ -11,11 +11,11 @@ fn piece(s: string) -> Piece {
     return Piece(text: s);
 }
 
-pub fn Item(s: string) -> Component<Piece> {
+pub component fn Item(s: string) -> Component<Piece> {
     return piece(s);
 }
 
-fn joined(texts: string[], parts: string[]) -> Component<string> {
+component fn joined(texts: string[], parts: string[]) -> Component<string> {
     var out = texts.at(0) ?? "";
     var k = 0;
     for (parts) { s ->
@@ -26,7 +26,7 @@ fn joined(texts: string[], parts: string[]) -> Component<string> {
     return out;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val s = await joined(["<", "|", "|", ">"], ["a", "b", "c"]);
     print(s);
 }

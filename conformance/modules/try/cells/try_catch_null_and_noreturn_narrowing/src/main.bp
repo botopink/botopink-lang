@@ -22,19 +22,19 @@ fn notFound() -> noreturn {
     panic("404");
 }
 
-fn titleOf(id: i32) -> Async<string> {
+async fn titleOf(id: i32) -> Async<string> {
     val post = try await loadPost(id) catch null;
     if (post == null) return "none";
     return post.title;
 }
 
-fn mustTitle(id: i32) -> Async<string> {
+async fn mustTitle(id: i32) -> Async<string> {
     val post: ?Post = try await loadPost(id) catch null;
     if (post == null) notFound();
     return post.title;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print(await titleOf(1));
     print(await titleOf(2));
     print(await mustTitle(1));

@@ -20,7 +20,7 @@ fn place() -> Async<Result<Point, string>> {
     return Point(x: 1, y: 2);
 }
 
-fn run(n: i32) -> Async<void> {
+async fn run(n: i32) -> Async<void> {
     val c = await twice(21);
     print(c);
     val d = await plain(5);

@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Async<i32> {
+async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
@@ -12,6 +12,6 @@ async fn total() {
     return await double(2);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print(await total());
 }

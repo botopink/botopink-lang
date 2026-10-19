@@ -23,7 +23,7 @@ component fn Dark() -> Component<Element> {
     return Element(text: l.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val l = await Label();
     print(l.text);
     val d = await Dark();

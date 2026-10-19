@@ -11,11 +11,11 @@ type Box(task: Async<i32>) {
     }
 }
 
-fn make(n: i32) -> Async<i32> {
+async fn make(n: i32) -> Async<i32> {
     return n * 10;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val box = Box(task: make(4));
     print(await box.task);
     print(await make(3));

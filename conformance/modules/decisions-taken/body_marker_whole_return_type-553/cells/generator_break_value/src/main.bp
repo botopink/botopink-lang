@@ -14,7 +14,7 @@
 
 import {io.terminal.print} from "std";
 
-fn upto(n: i32) -> Iter<i32> {
+iter fn upto(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -23,14 +23,14 @@ fn upto(n: i32) -> Iter<i32> {
     break 7;
 }
 
-fn ends() -> Iter<i32> {
+iter fn ends() -> Iter<i32> {
     yield 1;
     break;
     yield 2;
 }
 
 // The same rule on another iterator.
-fn last() -> Iter<i32> {
+iter fn last() -> Iter<i32> {
     yield 5;
     break 6;
 }

@@ -7,11 +7,11 @@ import {io.terminal.print} from "std";
 mod shown;
 import {shown.view, shown.Styled};
 
-pub fn Page() -> Component<Styled> {
+pub component fn Page() -> Component<Styled> {
     return view @`a`;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val page = await Page();
     print(page.text);
 }

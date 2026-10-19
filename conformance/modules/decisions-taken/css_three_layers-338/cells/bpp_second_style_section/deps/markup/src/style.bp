@@ -4,12 +4,12 @@
 
 import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
 
-pub fn sized(size: i32) -> Component<i32> {
+pub component fn sized(size: i32) -> Component<i32> {
     return size;
 }
 
 #[bpp.style]
-pub fn css(syntax t: string) -> Component<i32> {
+pub component fn css(syntax t: string) -> Component<i32> {
     val text = compiler.text(t);
     val at = text.indexOf("!");
     if (at >= 0)

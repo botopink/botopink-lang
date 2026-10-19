@@ -13,7 +13,7 @@ import {compiler, io.terminal.print} from "std";
 )]
 declare fn later(millis: i32, value: string) -> Async<string>;
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(await later(1, "done"));
 }
 

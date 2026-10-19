@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-fn counted(n: i32) -> Iter<i32> {
+iter fn counted(n: i32) -> Iter<i32> {
     yield n;
     throw "stop";
 }

@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 fn fetch(n: i32) -> Async<i32> { return n; }
 
-fn feed() -> Async<i32> {
+async fn feed() -> Async<i32> {
     val g = iter loop {
         val v = await fetch(1);
         break v;

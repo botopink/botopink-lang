@@ -9,12 +9,12 @@ behavior Repository {
     fn find(self: Self, id: i32) -> string;
 }
 
-fn Page() -> Component<View> {
+component fn Page() -> Component<View> {
     val r = use inject(Repository);
     return View(text: "x");
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val p = await Page();
     print(p.text);
 }

@@ -37,7 +37,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val h = make(3);
     print(await h.t);
     show(await h.r);

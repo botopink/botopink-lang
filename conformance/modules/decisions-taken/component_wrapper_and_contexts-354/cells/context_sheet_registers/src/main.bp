@@ -22,7 +22,7 @@ fn printed(layer: string, rule: Rule) -> void {
 
 fn discard(layer: string, rule: Rule) -> void {}
 
-fn computed(name: string, parts: Rule[]) -> Component<Rule> {
+component fn computed(name: string, parts: Rule[]) -> Component<Rule> {
     val sheet = use context(sheetContext);
     var text = name;
     for (parts) { r ->
@@ -33,17 +33,17 @@ fn computed(name: string, parts: Rule[]) -> Component<Rule> {
     return out;
 }
 
-fn quiet(view: fn() -> Component<Rule>) -> Component<Rule> {
+component fn quiet(view: fn() -> Component<Rule>) -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "", add: discard)));
     val r = await view();
     return r;
 }
 
-fn constant(name: string) -> Component<Rule> {
+component fn constant(name: string) -> Component<Rule> {
     return Rule(name: name, text: name);
 }
 
-fn Root() -> Component<Rule> {
+component fn Root() -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "components", add: printed)));
     val a = await computed("badge", [quiet({ -> computed("pad", []) })]);
     val b = await computed("badge", [quiet({ -> computed("pad", []) })]);
@@ -53,7 +53,7 @@ fn Root() -> Component<Rule> {
     return a;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await Root();
     print("root " + r.name);
 }

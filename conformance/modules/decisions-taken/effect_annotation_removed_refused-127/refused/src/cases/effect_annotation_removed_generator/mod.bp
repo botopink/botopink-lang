@@ -6,7 +6,7 @@
 import {io.terminal.print} from "std";
 
 #[@generator]
-fn nums(n: i32) -> Iter<i32> {
+iter fn nums(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; }
 }

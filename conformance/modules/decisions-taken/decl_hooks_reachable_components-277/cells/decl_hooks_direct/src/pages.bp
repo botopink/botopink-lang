@@ -44,7 +44,7 @@ fn graph(syntax decl: unknown) {
 declare fn session() -> Component<string>;
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     val user = use session();
     return Element(text: user);
 }

@@ -26,7 +26,7 @@ fn writer(key: string) -> Async<i32> {
     return i;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
     print(done);
     print(counts.at("a"), counts.at("b"));

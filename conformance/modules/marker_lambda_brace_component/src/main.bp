@@ -11,13 +11,13 @@ type View(text: string, kids: Component<View>[]) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
+component fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
     use provide(createContext(">"));
     return View(text: "list", kids: names.map(item));
 }
 
 // Run `c` with `scope`, then each child with the scope `c`'s run answered.
-fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
+async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     val r = await c.run(scope);
     var out = r.value.text;
     for (r.value.kids) { k ->
@@ -27,7 +27,7 @@ fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     return out;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val Badge: fn() -> Component<View> = { component ->
         val p = use context(prefixContext);
         View(text: p + "badge", kids: [])

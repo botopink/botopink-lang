@@ -11,23 +11,23 @@ fn load(n: i32) -> Async<Result<i32, string>> {
     return n;
 }
 
-fn fallback(n: i32) -> Async<i32> {
+async fn fallback(n: i32) -> Async<i32> {
     val t = load(n);
     return try await t catch 7 * 2;
 }
 
-fn doubled(n: i32) -> Async<i32> {
+async fn doubled(n: i32) -> Async<i32> {
     val t = load(n);
     return (try await t catch 7) * 2;
 }
 
-fn composed(n: i32) -> Async<i32> {
+async fn composed(n: i32) -> Async<i32> {
     val t = load(n);
     val twice = async { (try await t catch 0) * 2 };
     return await twice;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(await fallback(5));
     print(await fallback(-5));
     print(await doubled(5));

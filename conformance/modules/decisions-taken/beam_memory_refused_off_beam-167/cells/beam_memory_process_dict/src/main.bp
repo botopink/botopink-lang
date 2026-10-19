@@ -16,7 +16,7 @@ fn elsewhere() -> Async<i32> {
     return before;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     scratch = 5;
     val seen = await async.runAll([{ -> elsewhere() }]);
     print(seen);

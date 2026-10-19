@@ -15,7 +15,7 @@ fn show(label: string, n: i32) {
     print(label + " " + n.toString());
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val safeGood = async {
         val v = try await load(5) catch 0;
         return v;

@@ -36,7 +36,7 @@ fn show(label: string, r: Result<i32, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     show("value", await layerValue(1));
     show("result", await layerResult(check(2)));
     show("result", await layerResult(check(-1)));

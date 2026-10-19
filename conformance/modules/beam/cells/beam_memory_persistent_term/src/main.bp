@@ -11,7 +11,7 @@ fn read() -> Async<i32> {
     return version;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val seen = await async.runAll([{ -> read() }]);
     print(seen);
     print(version);

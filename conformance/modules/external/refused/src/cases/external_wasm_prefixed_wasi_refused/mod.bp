@@ -7,7 +7,7 @@ import {compiler, io.terminal.print} from "std";
 )]
 declare fn later<T>(millis: i32, value: T) -> Async<T>;
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(await later(1, "done"));
 }
 

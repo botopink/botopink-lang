@@ -22,14 +22,14 @@ fn graph(syntax decl: unknown) {
 }
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     val who = use currentUser();
     val a = ui.Avatar();
     return Element(text: who + " " + a.text);
 }
 
 #[graph]
-pub fn Wall() -> Component<Element> {
+pub component fn Wall() -> Component<Element> {
     val p = ui.Posts();
     return Element(text: p.text);
 }

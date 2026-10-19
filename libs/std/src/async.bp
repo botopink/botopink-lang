@@ -87,7 +87,7 @@ pub declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 // A Async whose value is `Error(message)` — the failing instrument `allOf` and
 // `timeout` are tested with. On commonJS it rejects with `message` (decision
 // 432); `await` reads it as `Error(message)`.
-pub fn failed<T>(comptime t: type<T>, message: string) -> Async<Result<T, string>> {
+pub async fn failed<T>(comptime t: type<T>, message: string) -> Async<Result<T, string>> {
     throw message;
 }
 
@@ -141,7 +141,7 @@ pub fn openGate(gate: Gate) -> void {
 // assertion instead of a hang, so a test gives it a margin no scheduling delay
 // can cross (seconds) and opens every gate it closes. An open gate answers at
 // once and leaves no timer behind.
-pub fn awaitGate(gate: Gate, millis: i32) -> Async<bool> {
+pub async fn awaitGate(gate: Gate, millis: i32) -> Async<bool> {
     return await gateAwait(gate.handle, millis);
 }
 
@@ -227,7 +227,7 @@ declare fn spawnAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>>;
 // The public face of the cell above: a real function, so a module compiled
 // separately (the BEAM backend links modules by name) can call it — a
 // template-only `declare fn` has no body to export.
-pub fn runAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>> {
+pub async fn runAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>> {
     return await spawnAll(tasks);
 }
 
@@ -245,13 +245,13 @@ pub fn runAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>> {
 pub declare fn raceOf<T>(tasks: Array<fn() -> Async<T>>) -> Async<T>;
 
 // `task`'s value as `Ok` — the racer `timeout` puts beside the clock.
-fn answered<T>(task: fn() -> Async<T>) -> Async<Result<T, string>> {
+async fn answered<T>(task: fn() -> Async<T>) -> Async<Result<T, string>> {
     return await task();
 }
 
 // `Error("timeout")` after `millis` — the clock `timeout` races against
 // `task`, whose type it answers in (decision 668: `task` binds `T`).
-fn expireAfter<T>(task: fn() -> Async<T>, millis: i32) -> Async<Result<T, string>> {
+async fn expireAfter<T>(task: fn() -> Async<T>, millis: i32) -> Async<Result<T, string>> {
     await delay(millis, 0);
     throw "timeout";
 }
@@ -261,7 +261,7 @@ fn expireAfter<T>(task: fn() -> Async<T>, millis: i32) -> Async<Result<T, string
 // `Ok` (`Ok(Error(e))`): the budget and the task's outcome are two answers,
 // and neither hides the other. The task KEEPS RUNNING; the caller stops
 // waiting. Expressed over `raceOf` + `delay`.
-pub fn timeout<T>(
+pub async fn timeout<T>(
     task: fn() -> Async<T>,
     millis: i32,
 ) -> Async<Result<T, string>> {
@@ -358,7 +358,7 @@ pub fn nextDelay(policy: RetryPolicy, attempt: i32) -> ?i64 {
 }
 
 // Internal: attempt number `attempt` of `retry`, and every one after it.
-fn retryFrom<T, E>(
+async fn retryFrom<T, E>(
     policy: RetryPolicy,
     work: fn() -> Async<Result<T, E>>,
     attempt: i32,
@@ -381,7 +381,7 @@ fn retryFrom<T, E>(
 // A policy that is not usable is a programming error, fatal on both targets
 // (`async.retry: maxAttempts must be at least 1 (the first attempt)`), like
 // `race([])` — not an `Error` a caller could mistake for the work's own.
-pub fn retry<T, E>(
+pub async fn retry<T, E>(
     policy: RetryPolicy,
     work: fn() -> Async<Result<T, E>>,
 ) -> Async<Result<T, E>> {
@@ -420,7 +420,7 @@ type Probe(id: i32, label: string)
 val gateBudget = 10000;
 
 // `value` once `gate` opens; a value naming the failure when it never does.
-fn gated(gate: Gate, value: string) -> Async<string> {
+async fn gated(gate: Gate, value: string) -> Async<string> {
     val opened = await awaitGate(gate, gateBudget);
     return if (opened) value else "gate never opened: " + value;
 }
@@ -428,7 +428,7 @@ fn gated(gate: Gate, value: string) -> Async<string> {
 // Open `mine`, then answer `value` once `theirs` is open. Two of these over the
 // same pair of gates, crossed, can only BOTH answer when they run at the same
 // time: whichever runs first alone waits on a gate the other has not opened.
-fn handshake(mine: Gate, theirs: Gate, value: string) -> Async<string> {
+async fn handshake(mine: Gate, theirs: Gate, value: string) -> Async<string> {
     openGate(mine);
     return await gated(theirs, value);
 }
@@ -490,7 +490,7 @@ test "async: gate ---- a gate nobody opens answers false after its budget" {
 
 // ── allOf and all ────────────────────────────────────────────────────────────
 
-fn slowOk(millis: i32, value: string) -> Async<Result<string, string>> {
+async fn slowOk(millis: i32, value: string) -> Async<Result<string, string>> {
     return await delay(millis, value);
 }
 
@@ -670,7 +670,7 @@ test "async: timeout ---- an expired task cannot corrupt a later answer" {
 
 // The expired task of the test above: waits for `release`, opens `done` and
 // answers.
-fn ghost(release: Gate, done: Gate) -> Async<string> {
+async fn ghost(release: Gate, done: Gate) -> Async<string> {
     val v = await gated(release, "late");
     openGate(done);
     return v;
@@ -696,7 +696,7 @@ declare fn countOf(counter: unknown) -> i32;
 
 // The text a task panics with, `""` when it answered — a panic inside a
 // `-> Async` function is a rejected Promise on commonJS and a raise on erlang.
-fn panicOf<T>(body: fn() -> Async<T>) -> Async<string> {
+async fn panicOf<T>(body: fn() -> Async<T>) -> Async<string> {
     val r = await failure.attemptTask(body);
     return case r {
         Ok(_) -> "";
@@ -709,7 +709,7 @@ fn panicOf<T>(body: fn() -> Async<T>) -> Async<string> {
 // counts the call (`flaky(countUp(calls), …)`), so the counter's cells are
 // reached from the tests alone, and a module importing `async` on a target
 // with no counter (wasm) links no call of them.
-fn flaky(n: i32, succeedAt: i32) -> Async<Result<string, string>> {
+async fn flaky(n: i32, succeedAt: i32) -> Async<Result<string, string>> {
     if (n < succeedAt) throw ["failure ", n.toString()].join("");
     return ["ok after ", n.toString()].join("");
 }

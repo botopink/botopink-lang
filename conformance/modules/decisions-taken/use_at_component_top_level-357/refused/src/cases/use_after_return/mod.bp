@@ -5,9 +5,9 @@
 import {io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
-fn state(initial: i32) -> Component<i32> { return initial; }
+component fn state(initial: i32) -> Component<i32> { return initial; }
 
-fn Widget() -> Component<Element> {
+component fn Widget() -> Component<Element> {
     return Element(count: 1);
     val c = use state(0);
 }

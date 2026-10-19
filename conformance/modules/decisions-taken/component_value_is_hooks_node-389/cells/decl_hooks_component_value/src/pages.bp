@@ -49,29 +49,29 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn session() -> Component<string> {
+component fn session() -> Component<string> {
     return "s";
 }
 
-fn Card(item: Item) -> Component<View> {
+component fn Card(item: Item) -> Component<View> {
     val s = use session();
     return View(text: s + item.name, kids: []);
 }
 
-fn Badge(item: Item) -> Component<View> {
+component fn Badge(item: Item) -> Component<View> {
     return View(text: item.name, kids: []);
 }
 
-fn Row(item: Item) -> Component<View> {
+component fn Row(item: Item) -> Component<View> {
     return View(text: item.name, kids: []);
 }
 
-fn Tag(item: Item) -> Component<View> {
+component fn Tag(item: Item) -> Component<View> {
     return View(text: item.name, kids: []);
 }
 
 #[graph]
-pub fn Lista(itens: Item[]) -> Component<View> {
+pub component fn Lista(itens: Item[]) -> Component<View> {
     val cards = itens.map(Card);
     val pick = Badge;
     val slot = Slot(view: Row);

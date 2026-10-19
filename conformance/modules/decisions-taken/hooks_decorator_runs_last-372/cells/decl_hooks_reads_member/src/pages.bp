@@ -33,12 +33,12 @@ fn check(syntax decl: unknown) {
     );
 }
 
-fn user() -> Component<string> {
+component fn user() -> Component<string> {
     return "alice";
 }
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     val u = use user();
     return Element(text: Account(name: u).validate());
 }

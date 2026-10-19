@@ -12,18 +12,18 @@ type View(text: string) implement Renderable
 
 type Deps(clock: Clock)
 
-fn Page() -> Component<View> {
+component fn Page() -> Component<View> {
     val deps = use inject(Deps);
     return View(text: deps.clock.now);
 }
 
-fn Root() -> Component<View> {
+component fn Root() -> Component<View> {
     use provide(createContext(Clock(now: "noon")));
     val p = Page();
     return View(text: p.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val outside = await Page();
     print(outside.text);
     val inside = await Root();

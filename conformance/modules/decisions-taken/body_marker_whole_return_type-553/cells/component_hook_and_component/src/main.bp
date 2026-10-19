@@ -15,11 +15,11 @@ import {io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn label() -> Component<string> {
+component fn label() -> Component<string> {
     return "clicks";
 }
 
@@ -27,13 +27,13 @@ fn answer(n: i32) -> Async<i32> {
     return n;
 }
 
-fn counter(start: i32) -> Component<i32> {
+component fn counter(start: i32) -> Component<i32> {
     val s = use state(start);
     val v = await answer(1);
     return s + v;
 }
 
-fn Widget(n: i32) -> Component<Element> {
+component fn Widget(n: i32) -> Component<Element> {
     val name = use label();
     val c = use counter(n);
     val v = await answer(10);
@@ -43,6 +43,6 @@ fn Widget(n: i32) -> Component<Element> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     await Widget(1);
 }

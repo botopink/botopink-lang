@@ -11,7 +11,7 @@ fn evens(xs: i32[]) -> Iter<i32> :out {
     }
 }
 
-fn countTo(n: i32) -> Iter<i32> {
+iter fn countTo(n: i32) -> Iter<i32> {
     var i = 0;
     loop {
         i = i + 1;

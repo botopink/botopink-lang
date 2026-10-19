@@ -9,11 +9,11 @@
 
 import {io.terminal.print} from "std";
 
-fn one() -> Async<i32> {
+async fn one() -> Async<i32> {
     return 1;
 }
 
-fn maybe(flag: bool) -> Async<i32> {
+async fn maybe(flag: bool) -> Async<i32> {
     var total = 0;
     if (flag) {
         val got = await one();
@@ -22,7 +22,7 @@ fn maybe(flag: bool) -> Async<i32> {
     return total;
 }
 
-fn nested(a: bool, b: bool) -> Async<i32> {
+async fn nested(a: bool, b: bool) -> Async<i32> {
     var total = 10;
     if (a) {
         if (b) {
@@ -37,7 +37,7 @@ fn nested(a: bool, b: bool) -> Async<i32> {
     return total;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(await maybe(true));
     print(await maybe(false));
     print(await nested(true, true));

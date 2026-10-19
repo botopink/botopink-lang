@@ -1,12 +1,12 @@
 import {io.terminal.print} from "std";
 
-fn nums() -> AsyncIter<i32> {
+async iter fn nums() -> AsyncIter<i32> {
     defer print("closed");
     yield 1;
     yield 2;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     for await (nums()) { n ->
         if (n == 1) break;
     }

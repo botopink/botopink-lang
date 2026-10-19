@@ -10,7 +10,7 @@ type Element(count: i32) implement Renderable
 type Request(code: i32)
 
 // A hook anchored at `Element`.
-fn request() -> Component<Request> {
+component fn request() -> Component<Request> {
     return Request(code: 7);
 }
 
@@ -19,14 +19,14 @@ fn load(n: i32) -> Async<i32> {
 }
 
 // `use` and `await` in one body, under one annotation.
-fn Page() -> Component<Element> {
+component fn Page() -> Component<Element> {
     val r = use request();
     val extra = await load(1);
     return Element(count: r.code + extra);
 }
 
 // The component composes with a `#[@future]` caller that awaits it.
-fn rendered() -> Async<i32> {
+async fn rendered() -> Async<i32> {
     val e = await Page();
     return e.count;
 }

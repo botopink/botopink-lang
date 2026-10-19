@@ -4,11 +4,11 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Async<i32> {
+async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val f = { async x ->
         await double(x)
     };

@@ -9,7 +9,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn Label() -> Component<Element> {
+component fn Label() -> Component<Element> {
     val t = context(themeContext);
     return Element(text: "");
 }

@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 fn fetchCount(n: i32) -> Async<i32> { return n; }
 
-fn h() -> Iter<i32> {
+iter fn h() -> Iter<i32> {
     yield await fetchCount(1);
 }
 

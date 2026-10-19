@@ -42,7 +42,7 @@ fn nested() -> Async<Result<i32, string>> {
     return inner();
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val failing: fn(n: i32) -> Async<Result<i32, string>> = { n ->
         async {
             throw "inner";

@@ -11,7 +11,7 @@ fn label(s: string) -> string {
     return s;
 }
 
-fn answer(n: i32) -> Async<i32> {
+async fn answer(n: i32) -> Async<i32> {
     return n * 2;
 }
 
@@ -19,7 +19,7 @@ fn pair(a: string, b: i32) -> string {
     return a + b.toString();
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(pair(label("x"), await answer(21)));
 }
 

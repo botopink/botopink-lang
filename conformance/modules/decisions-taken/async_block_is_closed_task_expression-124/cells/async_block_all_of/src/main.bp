@@ -17,7 +17,7 @@ import {async, io.terminal.print} from "std";
 
 type Batch(task: Async<Result<Array<string>, string>>)
 
-fn fetchUser(id: i32) -> Async<Result<string, string>> {
+async fn fetchUser(id: i32) -> Async<Result<string, string>> {
     if (id <= 0) throw "user " + id.toString() + " does not exist";
     return "user" + id.toString();
 }
@@ -43,7 +43,7 @@ fn show(r: Result<Array<string>, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val good = launch(1, 2);
     show(await good.task);
     val bad = launch(1, 0);

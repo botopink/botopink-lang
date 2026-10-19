@@ -10,19 +10,19 @@
 
 import {async, io.terminal.print} from "std";
 
-fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
+async fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
     val v = await async.delay(millis, value);
     return v;
 }
 
 // `value` once `gate` opens, a value naming the failure when it never does.
-fn gated(gate: async.Gate, value: string) -> Async<string> {
+async fn gated(gate: async.Gate, value: string) -> Async<string> {
     val opened = await async.awaitGate(gate, 10000);
     return if (opened) value else "never opened: " + value;
 }
 
 // Open `mine`, then answer `value` once `theirs` is open.
-fn handshake(mine: async.Gate, theirs: async.Gate, value: string) -> Async<string> {
+async fn handshake(mine: async.Gate, theirs: async.Gate, value: string) -> Async<string> {
     async.openGate(mine);
     return await gated(theirs, value);
 }
@@ -39,7 +39,7 @@ fn show(label: string, r: Result<Array<string>, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val d = await async.delay(5, "delayed");
     print("delay " + d);
     val all = await async.all([async.delay(20, "a"), async.delay(1, "b")]);

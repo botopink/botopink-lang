@@ -120,7 +120,7 @@ fn hostFailure(e: HostError) -> HttpError {
 // Issue the request and resolve with the response, or fail with the
 // `HttpError` (`await` answers `Error(httpError)`, decision 432):
 // `fetchHost`'s `HostError` mapped to a variant (decision 486).
-pub fn fetch(req: Request) -> Async<Result<Response, HttpError>> {
+pub async fn fetch(req: Request) -> Async<Result<Response, HttpError>> {
     val names = req.headers.map({ h -> h.name });
     val values = req.headers.map({ h -> h.value });
     val r = await fetchHost(req.method.verb(), req.url, names, values, req.body
@@ -144,7 +144,7 @@ pub fn fetch(req: Request) -> Async<Result<Response, HttpError>> {
 // at test time (its `await` would issue a network call), but the fixture
 // type-checks at compile time.
 
-pub fn fetchStatus(url: string) -> Async<Result<i32, HttpError>> {
+pub async fn fetchStatus(url: string) -> Async<Result<i32, HttpError>> {
     val resp = try await fetch(Request(method: .Get, url: url));
     return resp.status;
 }

@@ -16,7 +16,7 @@ type Sheet(name: string)
 
 pub val sheetContext = comptime createContext(Sheet(name: "default"));
 
-fn styledView(c: string) -> Component<Styled> {
+component fn styledView(c: string) -> Component<Styled> {
     val s = use context(sheetContext);
     return Styled(className: c + "@" + s.name);
 }
@@ -25,19 +25,19 @@ fn badge(c: string) -> StyledView {
     return styledView(c);
 }
 
-fn Render(view: fn() -> StyledView) -> Component<Styled> {
+component fn Render(view: fn() -> StyledView) -> Component<Styled> {
     use provide(createContext(Sheet(name: "render")));
     val out = await view();
     return out;
 }
 
-fn Outer() -> Component<Styled> {
+component fn Outer() -> Component<Styled> {
     use provide(createContext(Sheet(name: "outer")));
     val b = await badge("blue");
     return b;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await Render({ -> badge("red") });
     print(r.className);
     val o = await Outer();

@@ -5,9 +5,9 @@
 
 type Element(count: i32) implement Renderable
 
-fn state(initial: i32) -> Component<i32> { return initial; }
+component fn state(initial: i32) -> Component<i32> { return initial; }
 
-fn Widget() -> Component<Element> {
+component fn Widget() -> Component<Element> {
     val t = async { return use state(1); };
     return Element(count: 1);
 }

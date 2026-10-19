@@ -9,7 +9,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn App() -> Component<Element> {
+component fn App() -> Component<Element> {
     val nothing = use provide(createContext(Theme(mode: "dark")));
     return Element(text: "");
 }

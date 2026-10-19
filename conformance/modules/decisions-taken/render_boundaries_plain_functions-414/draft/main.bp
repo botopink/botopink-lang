@@ -17,11 +17,11 @@ pub component fn Product(id: string) -> Component<Element> {
     return html @`<h1>product {id}</h1>`;
 }
 
-fn missing() -> Component<Element> {
+component fn missing() -> Component<Element> {
     return html @`<p>no such product</p>`;
 }
 
-fn oops(info: ErrorInfo) -> Component<Element> {
+component fn oops(info: ErrorInfo) -> Component<Element> {
     return html @`<em>price unavailable ({info.digest.length()})</em>`;
 }
 

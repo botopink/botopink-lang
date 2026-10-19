@@ -64,7 +64,7 @@ fn answeredBody(n: i32) -> Result<i32, HostError> {
     return n + 1;
 }
 
-fn laterBody(n: i32) -> Async<Result<i32, HostError>> {
+async fn laterBody(n: i32) -> Async<Result<i32, HostError>> {
     if (n <= 0) throw hostError("late", failure.HostErrorName.Error);
     return n * 3;
 }
@@ -76,7 +76,7 @@ fn show(r: Result<i32, HostError>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     show(double(21));
     show(double(-1));
     show(thrown(5));

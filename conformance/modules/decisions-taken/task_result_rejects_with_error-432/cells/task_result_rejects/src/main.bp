@@ -13,7 +13,7 @@
 import {io.terminal.print} from "std";
 
 type Account(id: i32) {
-    fn load(self: Self, n: i32) -> Async<Result<i32, string>> {
+    async fn load(self: Self, n: i32) -> Async<Result<i32, string>> {
         if (n < 0) throw "no account " + n.toString();
         return self.id + n;
     }
@@ -25,7 +25,7 @@ type Account(id: i32) {
 
 type Loader(load: fn(n: i32) -> Async<Result<i32, string>>)
 
-fn check(n: i32) -> Async<Result<i32, string>> {
+async fn check(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) throw "negative " + n.toString();
     return n * 2;
 }
@@ -34,16 +34,16 @@ fn relay(n: i32) -> Async<Result<i32, string>> {
     return check(n);
 }
 
-fn propagate(n: i32) -> Async<Result<i32, string>> {
+async fn propagate(n: i32) -> Async<Result<i32, string>> {
     val v = try await check(n);
     return v + 1;
 }
 
-fn wait<T>(t: Async<T>) -> Async<T> {
+async fn wait<T>(t: Async<T>) -> Async<T> {
     return await t;
 }
 
-fn save(n: i32) -> Async<Result<void, string>> {
+async fn save(n: i32) -> Async<Result<void, string>> {
     if (n < 0) throw "refused " + n.toString();
     return;
 }
@@ -55,7 +55,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     show(await check(1));
     show(await check(-1));
     show(await relay(2));

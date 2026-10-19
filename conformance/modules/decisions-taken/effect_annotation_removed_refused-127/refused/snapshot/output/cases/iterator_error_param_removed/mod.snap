@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[iterator-error-param-removed]: `@Iter` has no error parameter — the item carries the failure (decision 122)
-at src/cases/iterator_error_param_removed/mod.bp:10:29
+at src/cases/iterator_error_param_removed/mod.bp:10:34
 label write `@Iter<@Result<T, E>>`

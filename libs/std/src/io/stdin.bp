@@ -42,7 +42,7 @@ declare fn reader() -> unknown;
 declare fn readLineHost(reader: unknown) -> Async<?string>;
 
 // The next line of input without its line terminator, `null` at the end of input.
-pub fn readLine() -> Async<?string> {
+pub async fn readLine() -> Async<?string> {
     return await readLineHost(reader());
 }
 
@@ -56,7 +56,7 @@ declare fn readChunkHost(reader: unknown) -> Async<?string>;
 // On a terminal in raw mode (`io.terminal.setRaw`) that is the key just pressed, an escape
 // sequence whole. Erlang reads a character at a time: after an Escape it waits 50 ms for the rest
 // of the sequence, so a lone Escape key is told from the start of an arrow key there as well.
-pub fn readChunk() -> Async<?string> {
+pub async fn readChunk() -> Async<?string> {
     return await readChunkHost(reader());
 }
 

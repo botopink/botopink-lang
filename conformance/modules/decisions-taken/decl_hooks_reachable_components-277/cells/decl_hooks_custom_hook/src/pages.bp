@@ -36,17 +36,17 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn session() -> Component<string> {
+component fn session() -> Component<string> {
     return "alice";
 }
 
-fn user() -> Component<string> {
+component fn user() -> Component<string> {
     val s = use session();
     return "user " + s;
 }
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     val u = use user();
     return Element(text: u);
 }

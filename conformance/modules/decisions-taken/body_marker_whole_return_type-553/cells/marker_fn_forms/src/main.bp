@@ -55,7 +55,7 @@ type Grid(cells: i32[]) {
     }
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     for (upTo(3)) { x ->
         print(x);
     }

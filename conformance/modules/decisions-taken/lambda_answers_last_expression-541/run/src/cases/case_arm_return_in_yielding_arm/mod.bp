@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-fn items(n: i32) -> Iter<i32> {
+iter fn items(n: i32) -> Iter<i32> {
     yield 0;
     case n {
         0 {

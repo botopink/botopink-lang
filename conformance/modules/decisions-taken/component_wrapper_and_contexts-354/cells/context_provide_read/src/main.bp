@@ -14,35 +14,35 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themeName() -> Component<string> {
+component fn themeName() -> Component<string> {
     val t = use context(themeContext);
     return t.mode;
 }
 
-fn Label(prefix: string) -> Component<Element> {
+component fn Label(prefix: string) -> Component<Element> {
     val name = use themeName();
     return Element(text: prefix + name);
 }
 
-fn Page() -> Component<Element> {
+component fn Page() -> Component<Element> {
     val l = Label("label:");
     return Element(text: "page[" + l.text + "]");
 }
 
-fn App() -> Component<Element> {
+component fn App() -> Component<Element> {
     val outer = use context(themeContext);
     use provide(createContext(Theme(mode: "dark")));
     val p = Page();
     return Element(text: outer.mode + " " + p.text);
 }
 
-fn Root() -> Component<Element> {
+component fn Root() -> Component<Element> {
     use provide(createContext(Theme(mode: "light")));
     val a = App();
     return Element(text: a.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await Root();
     print(r.text);
 }

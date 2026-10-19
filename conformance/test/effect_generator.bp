@@ -1,7 +1,7 @@
 //// Decision 8 §9 — `#[@generator]` plus `-> Iter<T>`: `yield` produces
 //// the elements and `for (gen)` consumes them.
 
-fn nums(n: i32) -> Iter<i32> {
+iter fn nums(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;

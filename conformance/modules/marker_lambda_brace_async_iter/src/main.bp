@@ -5,11 +5,11 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Async<i32> {
+async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-fn drain(n: i32, f: fn(n: i32) -> AsyncIter<i32>) -> Async<i32> {
+async fn drain(n: i32, f: fn(n: i32) -> AsyncIter<i32>) -> Async<i32> {
     var acc = 0;
     for await (f(n)) { x ->
         acc = acc + x;
@@ -17,7 +17,7 @@ fn drain(n: i32, f: fn(n: i32) -> AsyncIter<i32>) -> Async<i32> {
     return acc;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val ticks: fn(n: i32) -> AsyncIter<i32> = { async iter n ->
         yield await double(n);
         yield await double(n + 1);

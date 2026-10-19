@@ -15,13 +15,13 @@ import {compiler, io.terminal.print} from "std";
 declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 
 type Counter(base: i32) {
-    fn bump(self: Self, by: i32) -> Async<i32> {
+    async fn bump(self: Self, by: i32) -> Async<i32> {
         val step = await delay(1, by);
         return self.base + step;
     }
 }
 
-fn check(n: i32) -> Async<Result<i32, string>> {
+async fn check(n: i32) -> Async<Result<i32, string>> {
     val v = await delay(1, n);
     if (v < 0) throw "negative " + v.toString();
     return v * 10;
@@ -36,7 +36,7 @@ fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> Async<i32>) -> Async<i32> {
     return total;
 }
 
-fn classify(n: i32) -> Async<string> {
+async fn classify(n: i32) -> Async<string> {
     if (n == 1) {
         val w = await delay(2, "one");
         return w + "!";
@@ -48,7 +48,7 @@ fn classify(n: i32) -> Async<string> {
     return label;
 }
 
-fn loopy() -> Async<string> {
+async fn loopy() -> Async<string> {
     var out = "";
     var i = 0;
     while (i < 3) {
@@ -65,13 +65,13 @@ fn loopy() -> Async<string> {
     return out;
 }
 
-fn fallible() -> Async<Result<string, string>> {
+async fn fallible() -> Async<Result<string, string>> {
     val a = try await check(2);
     val b = try await check(-3);
     return "unreachable " + a.toString() + b.toString();
 }
 
-fn recovered() -> Async<i32> {
+async fn recovered() -> Async<i32> {
     val r = try await check(-1) catch 7;
     return r;
 }
@@ -83,7 +83,7 @@ fn show(r: Result<string, string>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val c = Counter(base: 40);
     print(await c.bump(2));
     val checked = await check(4);

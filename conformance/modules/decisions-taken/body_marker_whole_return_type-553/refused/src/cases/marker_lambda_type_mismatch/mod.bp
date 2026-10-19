@@ -5,11 +5,11 @@
 
 import {io.terminal.print} from "std";
 
-fn apply(f: fn(x: i32) -> Async<i32>, v: i32) -> Async<i32> {
+async fn apply(f: fn(x: i32) -> Async<i32>, v: i32) -> Async<i32> {
     return await f(v);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print(await apply({ iter x ->
         yield x;
     }, 1));

@@ -14,7 +14,7 @@ fn component(f: fn() -> string) -> string {
     return f() + "!";
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     print(iter { x -> x + 1 });
     print(component { -> "named" });
     val x = 7;

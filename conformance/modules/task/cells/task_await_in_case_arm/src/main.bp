@@ -7,26 +7,26 @@ fn double(n: i32) -> Async<i32> {
     return delay(1, n * 2);
 }
 
-fn viaCase<T>(r: Result<Async<T>, string>, fallback: T) -> Async<T> {
+async fn viaCase<T>(r: Result<Async<T>, string>, fallback: T) -> Async<T> {
     case r {
         Ok(t) -> return await t;
         Error(_) -> return fallback;
     }
 }
 
-fn plainCase(r: Result<Async<i32>, string>) -> Async<i32> {
+async fn plainCase(r: Result<Async<i32>, string>) -> Async<i32> {
     case r {
         Ok(t) -> return await t;
         Error(_) -> return 0 - 1;
     }
 }
 
-fn viaIf(flag: bool, t: Async<i32>) -> Async<i32> {
+async fn viaIf(flag: bool, t: Async<i32>) -> Async<i32> {
     if (flag) return await t;
     return 0;
 }
 
-fn nested(a: Result<Async<i32>, string>, b: Result<Async<i32>, string>) -> Async<i32> {
+async fn nested(a: Result<Async<i32>, string>, b: Result<Async<i32>, string>) -> Async<i32> {
     case a {
         Ok(x) -> case b {
             Ok(y) -> return await y;
@@ -36,7 +36,7 @@ fn nested(a: Result<Async<i32>, string>, b: Result<Async<i32>, string>) -> Async
     }
 }
 
-fn viaCaseValue(r: Result<Async<i32>, string>) -> Async<i32> {
+async fn viaCaseValue(r: Result<Async<i32>, string>) -> Async<i32> {
     val v = case r {
         Ok(t) -> await t;
         Error(_) -> 7;
@@ -52,7 +52,7 @@ fn absent() -> Result<Async<i32>, string> {
     throw "none";
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val ok = present();
     val no = absent();
     val r1 = await viaCase(ok, 5);

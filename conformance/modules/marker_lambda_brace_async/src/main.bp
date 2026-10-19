@@ -6,19 +6,19 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Async<i32> {
+async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-fn apply(v: i32, f: fn(x: i32) -> Async<i32>) -> Async<i32> {
+async fn apply(v: i32, f: fn(x: i32) -> Async<i32>) -> Async<i32> {
     return await f(v);
 }
 
-fn later(f: fn() -> Async<string>) -> Async<string> {
+async fn later(f: fn() -> Async<string>) -> Async<string> {
     return await f();
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val g: fn(x: i32) -> Async<i32> = { async x -> await double(x) + 1 };
     print(await g(4));
     print(await apply(5, { async x ->

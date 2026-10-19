@@ -2,10 +2,10 @@ import {compiler} from "std";
 
 pub type Styled(text: string) implement Renderable
 
-fn mk() -> Component<Styled> {
+component fn mk() -> Component<Styled> {
     return Styled(text: "styled");
 }
 
-pub fn view(syntax q: string) -> Component<Styled> {
+pub component fn view(syntax q: string) -> Component<Styled> {
     return compiler.build("mk()");
 }

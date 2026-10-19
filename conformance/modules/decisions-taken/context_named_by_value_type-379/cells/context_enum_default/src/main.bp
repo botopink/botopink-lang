@@ -20,18 +20,18 @@ fn name(m: Mode) -> string {
     };
 }
 
-fn Label() -> Component<View> {
+component fn Label() -> Component<View> {
     val m = use context(modeContext);
     return View(text: name(m));
 }
 
-fn Dark() -> Component<View> {
+component fn Dark() -> Component<View> {
     use provide(createContext(Mode.Dark));
     val l = Label();
     return View(text: l.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val l = await Label();
     print(l.text);
     val d = await Dark();

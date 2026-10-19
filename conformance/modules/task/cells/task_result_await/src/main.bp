@@ -8,19 +8,19 @@ fn fetchUser(id: i32) -> Async<Result<User, string>> {
     return User(id: id, name: "ana"); // a Async holding Ok(…)
 }
 
-fn greetingFor(id: i32) -> Async<Result<string, string>> {
+async fn greetingFor(id: i32) -> Async<Result<string, string>> {
     val u = try await fetchUser(
         id,
     ); // await answers the Result; try propagates it
     return "Hello, " + u.name;
 }
 
-fn greetingOrGuest(id: i32) -> Async<string> {
+async fn greetingOrGuest(id: i32) -> Async<string> {
     val u = try await fetchUser(id) catch User(id: 0, name: "guest");
     return "Hello, " + u.name; // no Result in the return: handled here
 }
 
-fn describeUser(id: i32) -> Async<string> {
+async fn describeUser(id: i32) -> Async<string> {
     val r = await fetchUser(id); // the Result itself
     return case r {
         Ok(u) -> u.name;
@@ -28,7 +28,7 @@ fn describeUser(id: i32) -> Async<string> {
     };
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val g = await greetingFor(1);
     print(g.unwrapOr("none")); // Hello, ana
     print(await greetingOrGuest(0)); // Hello, guest

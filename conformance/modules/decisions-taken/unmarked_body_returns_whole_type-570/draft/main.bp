@@ -10,7 +10,7 @@ fn handedOn() -> Async<i32> {
     return Async.resolve(2);
 }
 
-fn unmarked() -> Async<i32> {
+async fn unmarked() -> Async<i32> {
     return 3;
 }
 

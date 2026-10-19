@@ -30,7 +30,7 @@ fn show(r: Result<i32, HostError>) {
     }
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val m = Meter(base: 3);
     show(m.plus(4));
     show(m.plus(-1));

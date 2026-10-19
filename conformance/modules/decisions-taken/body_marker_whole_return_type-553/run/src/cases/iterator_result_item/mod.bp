@@ -20,7 +20,7 @@ fn checked(xs: i32[]) -> Iter<Result<i32, string>> {
     }
 }
 
-fn upTo(limit: i32) -> Iter<Result<i32, string>> {
+iter fn upTo(limit: i32) -> Iter<Result<i32, string>> {
     var i = 0;
     loop {
         if (i == limit) throw "limit " + limit.toString();
@@ -29,7 +29,7 @@ fn upTo(limit: i32) -> Iter<Result<i32, string>> {
     }
 }
 
-fn asIs() -> Iter<Result<i32, string>> {
+iter fn asIs() -> Iter<Result<i32, string>> {
     yield check(1);
     yield check(-2);
     yield 3;

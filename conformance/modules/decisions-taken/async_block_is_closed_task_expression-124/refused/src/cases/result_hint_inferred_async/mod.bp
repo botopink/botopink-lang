@@ -12,7 +12,7 @@ fn parse(s: string) -> Result<i32, string> {
     return 1;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val t = async {
         val n = try parse("7");
         return n + 1;

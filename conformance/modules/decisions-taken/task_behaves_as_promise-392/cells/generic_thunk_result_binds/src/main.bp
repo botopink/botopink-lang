@@ -16,12 +16,12 @@ pub mod attempts;
 )]
 declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 
-fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
+async fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
     val v = await delay(millis, value);
     return v;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val r = await attempts.attempt({ -> slow(1, "answered") });
     print("attempt " + r.unwrapOr("-"));
 }

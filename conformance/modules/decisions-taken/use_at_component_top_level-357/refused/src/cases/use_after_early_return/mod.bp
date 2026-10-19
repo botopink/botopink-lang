@@ -4,11 +4,11 @@
 
 type Element(count: i32) implement Renderable
 
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn Widget(empty: bool) -> Component<Element> {
+component fn Widget(empty: bool) -> Component<Element> {
     if (empty) {
         return Element(count: 0);
     }

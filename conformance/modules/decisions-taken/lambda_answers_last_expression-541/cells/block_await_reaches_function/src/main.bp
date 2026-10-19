@@ -4,16 +4,16 @@
 
 import {io.terminal.print} from "std";
 
-fn double(n: i32) -> Async<i32> {
+async fn double(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn viaBlock(n: i32) -> Async<i32> {
+async fn viaBlock(n: i32) -> Async<i32> {
     val v = { await double(n) };
     return v + 1;
 }
 
-fn viaCase(n: i32) -> Async<i32> {
+async fn viaCase(n: i32) -> Async<i32> {
     val v = case n {
         1 { await double(n) }
         _ { 0 }
@@ -21,7 +21,7 @@ fn viaCase(n: i32) -> Async<i32> {
     return v + 1;
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     print(await viaBlock(4));
     print(await viaCase(1));
     print(await viaCase(2));

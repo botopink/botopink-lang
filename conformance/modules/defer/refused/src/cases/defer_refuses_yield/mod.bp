@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn nums() -> Iter<i32> {
+pub iter fn nums() -> Iter<i32> {
     defer {
         yield 9;
     }

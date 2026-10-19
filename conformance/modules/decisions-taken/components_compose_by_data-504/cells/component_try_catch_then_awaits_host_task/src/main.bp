@@ -13,18 +13,18 @@ fn parse(s: string) -> Result<i32, string> {
     return 7;
 }
 
-fn load(s: string) -> Component<string> {
+component fn load(s: string) -> Component<string> {
     val n = try parse(s) catch 1;
     val v = await delay(5, n * 2);
     return "loaded " + v.toString();
 }
 
-fn Page(s: string) -> Component<View> {
+component fn Page(s: string) -> Component<View> {
     val r = use load(s);
     return View(text: r);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val a = await Page("x");
     print(a.text);
     val b = await Page("");

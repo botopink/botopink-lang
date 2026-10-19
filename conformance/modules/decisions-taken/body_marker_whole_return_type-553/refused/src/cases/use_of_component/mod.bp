@@ -6,11 +6,11 @@
 
 type Element(count: i32) implement Renderable
 
-fn Counter() -> Component<Element> {
+component fn Counter() -> Component<Element> {
     return Element(count: 1);
 }
 
-fn Errado() -> Component<Element> {
+component fn Errado() -> Component<Element> {
     return use Counter();
 }
 

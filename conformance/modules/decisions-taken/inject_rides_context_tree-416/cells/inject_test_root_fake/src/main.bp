@@ -26,18 +26,18 @@ type Services(mailer: Mailer)
 
 pub val mailerContext = createContext(SmtpMailer(), Mailer);
 
-fn Signup(email: string) -> Component<View> {
+component fn Signup(email: string) -> Component<View> {
     val s = use inject(Services);
     return View(text: s.mailer.send(email));
 }
 
-fn FakeRoot() -> Component<View> {
+component fn FakeRoot() -> Component<View> {
     use provide(createContext(FakeMailer(log: "fake:"), Mailer));
     val v = Signup("a@b.c");
     return View(text: v.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val real = await Signup("x@y.z");
     print(real.text);
     val fake = await FakeRoot();

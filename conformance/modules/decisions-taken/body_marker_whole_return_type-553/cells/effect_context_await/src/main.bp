@@ -16,7 +16,7 @@ import {io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
@@ -25,14 +25,14 @@ fn answer(n: i32) -> Async<i32> {
 }
 
 // The explicit wrapper: `await` two levels down the chain.
-fn page(n: i32) -> Component<i32> {
+component fn page(n: i32) -> Component<i32> {
     val v = await answer(n);
     print(v);
     return v;
 }
 
 // The component shape — `use` and `await` in one body.
-fn Widget(n: i32) -> Component<Element> {
+component fn Widget(n: i32) -> Component<Element> {
     val c = use state(1);
     val v = await answer(n);
     print(c + v);
@@ -41,7 +41,7 @@ fn Widget(n: i32) -> Component<Element> {
 
 // A component with no `await` of its own: its `use` is the suspension on
 // commonJS (decision 104), so it prints from inside too.
-fn Plain(n: i32) -> Component<Element> {
+component fn Plain(n: i32) -> Component<Element> {
     val c = use state(1);
     print(c + n);
     return Element(count: c + n);
@@ -49,7 +49,7 @@ fn Plain(n: i32) -> Component<Element> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     await Plain(40);
     await page(41);
     await Widget(41);

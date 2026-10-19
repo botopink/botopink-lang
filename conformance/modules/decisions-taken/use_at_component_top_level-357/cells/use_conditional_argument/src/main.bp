@@ -12,12 +12,12 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn Label() -> Component<Element> {
+component fn Label() -> Component<Element> {
     val t = use context(themeContext);
     return Element(text: t.mode);
 }
 
-fn App(dark: bool) -> Component<Element> {
+component fn App(dark: bool) -> Component<Element> {
     var note = "";
     if (dark) note = "!";
     use provide(createContext(if (dark)
@@ -28,7 +28,7 @@ fn App(dark: bool) -> Component<Element> {
     return Element(text: l.text + note);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val a = await App(true);
     print(a.text);
     val b = await App(false);

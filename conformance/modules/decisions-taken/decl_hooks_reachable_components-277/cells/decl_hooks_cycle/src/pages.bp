@@ -35,14 +35,14 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn B(depth: i32) -> Component<Element> {
+component fn B(depth: i32) -> Component<Element> {
     if (depth == 0) return Element(text: "b");
     val a = A(depth - 1);
     return Element(text: a.text);
 }
 
 #[graph]
-pub fn A(depth: i32) -> Component<Element> {
+pub component fn A(depth: i32) -> Component<Element> {
     val b = B(depth);
     return Element(text: b.text);
 }

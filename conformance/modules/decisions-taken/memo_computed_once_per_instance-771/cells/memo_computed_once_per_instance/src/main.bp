@@ -21,7 +21,7 @@ component fn Page(name: string) -> Component<Element> {
     return Element(text: label + " " + count.toString());
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val a = Page("a");
     val b = Page("bb");
     val first = await a;

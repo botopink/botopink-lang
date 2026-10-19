@@ -31,7 +31,7 @@ import {compiler, failure.panic};
 
 // The value `make` computed on this component instance's first render, kept
 // for the instance (decisions 755, 771).
-pub fn memo<T>(make: fn() -> T) -> Component<T> {
+pub component fn memo<T>(make: fn() -> T) -> Component<T> {
     panic("`use memo` is lowered where it is written; this body never runs");
 }
 

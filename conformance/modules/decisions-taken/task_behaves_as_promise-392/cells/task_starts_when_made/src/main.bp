@@ -14,13 +14,13 @@ import {compiler, io.terminal.print} from "std";
 )]
 declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 
-fn work(label: string) -> Async<string> {
+async fn work(label: string) -> Async<string> {
     print("started " + label);
     val v = await delay(5, label);
     return v + "!";
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val t = work("a");
     print("made");
     val first = await t;

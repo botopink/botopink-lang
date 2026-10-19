@@ -38,15 +38,15 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn Avatar() -> Component<Element> {
+component fn Avatar() -> Component<Element> {
     return Element(text: "avatar");
 }
 
-fn Badge() -> Component<Element> {
+component fn Badge() -> Component<Element> {
     return Element(text: "badge");
 }
 
-fn UserMenu() -> Component<Element> {
+component fn UserMenu() -> Component<Element> {
     val a = Avatar();
     val b = Badge();
     val c = Avatar();
@@ -54,7 +54,7 @@ fn UserMenu() -> Component<Element> {
 }
 
 #[graph]
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     val m = UserMenu();
     return Element(text: m.text);
 }

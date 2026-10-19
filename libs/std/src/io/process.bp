@@ -189,7 +189,7 @@ pub type Child(pid: i32, handle: unknown) {
     // `128 + n`, as a shell reports it. The child's output is the parent's: written as the child
     // produces it (inherited on Node; on Erlang the port carries stdout and stderr, written to
     // stdout while `wait` runs). A second `wait` answers the same status.
-    pub fn wait(self: Self) -> Async<i32> {
+    pub async fn wait(self: Self) -> Async<i32> {
         return await rawWait(self.handle);
     }
 

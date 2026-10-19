@@ -16,11 +16,11 @@ fn text(s: string) -> Element {
     return Element(tag: s, kids: []);
 }
 
-pub fn Counter() -> Component<Element> {
+pub component fn Counter() -> Component<Element> {
     return text("counter");
 }
 
-pub fn Page() -> Component<Element> {
+pub component fn Page() -> Component<Element> {
     return div([text("title"), Counter()]);
 }
 
@@ -32,7 +32,7 @@ fn render(e: Element) -> string {
     return out;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val page = await Page();
     print(render(page));
 }

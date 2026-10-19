@@ -15,7 +15,7 @@ fn themed(syntax decl: unknown) {
 }
 
 #[themed]
-fn Label() -> Component<Element> {
+component fn Label() -> Component<Element> {
     return Element(text: "");
 }
 

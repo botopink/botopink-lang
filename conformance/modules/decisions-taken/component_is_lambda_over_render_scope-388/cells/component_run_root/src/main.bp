@@ -11,17 +11,17 @@ type View(text: string) implement Renderable
 
 pub val modeContext = comptime createContext("");
 
-fn Shell() -> Component<View> {
+component fn Shell() -> Component<View> {
     use provide(createContext("dark"));
     return View(text: "shell");
 }
 
-fn Mode() -> Component<View> {
+component fn Mode() -> Component<View> {
     val m = use context(modeContext);
     return View(text: "mode " + m);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await Shell().run(RenderScope.root());
     print(r.value.text);
     val m = await Mode().run(r.scope);

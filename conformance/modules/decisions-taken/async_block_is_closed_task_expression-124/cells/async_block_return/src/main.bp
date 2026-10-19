@@ -19,7 +19,7 @@ fn pick(n: i32) -> Holder {
     return Holder(t: t);
 }
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val a = pick(1);
     print(await a.t);
     val b = pick(0);

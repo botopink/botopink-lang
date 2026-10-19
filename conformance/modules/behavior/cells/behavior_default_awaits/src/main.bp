@@ -5,14 +5,14 @@
 
 import {io.terminal.print} from "std";
 
-fn fetch(n: i32) -> Async<i32> {
+async fn fetch(n: i32) -> Async<i32> {
     return n * 10;
 }
 
 behavior Loader {
     fn base(self: Self) -> i32;
 
-    default fn load(self: Self) -> Async<i32> {
+    default async fn load(self: Self) -> Async<i32> {
         val v = await fetch(self.base());
         return v + 1;
     }
@@ -24,7 +24,7 @@ type Box(n: i32) implement Loader {
     }
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val r = await Box(n: 4).load();
     print(r); // 41
 }

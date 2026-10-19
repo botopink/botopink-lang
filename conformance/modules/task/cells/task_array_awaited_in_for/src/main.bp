@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn double(n: i32) -> Async<i32> {
+async fn double(n: i32) -> Async<i32> {
     return n * 2;
 }
 
@@ -24,12 +24,12 @@ fn total(ts: Async<i32>[]) -> Async<i32> {
 
 type Holder(job: Async<i32>)
 
-fn settle(t: Async<i32>) -> Async<i32> {
+async fn settle(t: Async<i32>) -> Async<i32> {
     val v = await t;
     return v + 1;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val tasks = [double(1), double(2), double(3)];
     var sum = 0;
     for (tasks) { t ->

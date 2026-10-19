@@ -41,7 +41,7 @@ declare fn raceOf<T>(tasks: Array<fn() -> Async<T>>) -> Async<T>;
 )]
 declare fn spawnAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>>;
 
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val first = await raceOf(
         [
             { ->

@@ -13,12 +13,12 @@ type View(text: string) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn Shell() -> Component<View> {
+component fn Shell() -> Component<View> {
     use provide(createContext("#"));
     return View(text: "shell");
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val suffix = "!";
     val Card: fn(name: string) -> Component<View> = { component name ->
         val p = use context(prefixContext);

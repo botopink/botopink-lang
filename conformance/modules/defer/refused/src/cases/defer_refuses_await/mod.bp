@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn f() -> Async<i32> {
+pub async fn f() -> Async<i32> {
     defer {
         await (async { 1 });
     }

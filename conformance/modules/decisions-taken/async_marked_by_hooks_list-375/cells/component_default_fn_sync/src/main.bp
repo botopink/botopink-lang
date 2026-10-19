@@ -15,17 +15,17 @@ type Element(text: string) implement Renderable
 #[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
-fn loadComments() -> Async<string> {
+async fn loadComments() -> Async<string> {
     return "2 comments";
 }
 
 behavior Widget {
     fn name(self: Self) -> string;
 
-    default fn badge(self: Self) -> Component<Element> {
+    default component fn badge(self: Self) -> Component<Element> {
         return Element(text: "badge " + self.name());
     }
-    default fn later(self: Self) -> Component<Element> {
+    default component fn later(self: Self) -> Component<Element> {
         val t = await loadComments();
         return Element(text: t);
     }
@@ -41,29 +41,29 @@ type Tone {
     Warm,
     Cold,
 
-    fn swatch(self: Self) -> Component<Element> {
+    component fn swatch(self: Self) -> Component<Element> {
         return Element(text: "swatch");
     }
 }
 
-fn Plain() -> Component<Element> {
+component fn Plain() -> Component<Element> {
     val b = Box(n: "x");
     val a = await b.badge();
     return Element(text: a.text);
 }
 
-fn Tinted() -> Component<Element> {
+component fn Tinted() -> Component<Element> {
     val s = await Tone.Warm.swatch();
     return Element(text: s.text);
 }
 
-fn Slow() -> Component<Element> {
+component fn Slow() -> Component<Element> {
     val b = Box(n: "y");
     val a = await b.later();
     return Element(text: a.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val b = Box(n: "z");
     print(pending(b.badge().run(RenderScope.root())));
     print(pending(b.later().run(RenderScope.root())));

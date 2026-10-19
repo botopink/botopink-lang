@@ -15,13 +15,13 @@ fn parse(s: string) -> Result<i32, string> {
     return 7;
 }
 
-fn load(s: string) -> Component<Result<string, string>> {
+component fn load(s: string) -> Component<Result<string, string>> {
     val unit = use context(unitContext);
     val n = try parse(s);
     return (n + 1).toString() + unit;
 }
 
-fn Page(s: string) -> Component<View> {
+component fn Page(s: string) -> Component<View> {
     val r = use load(s);
     val text = case r {
         Ok(v) -> v;
@@ -30,13 +30,13 @@ fn Page(s: string) -> Component<View> {
     return View(text: text);
 }
 
-fn Root(s: string) -> Component<View> {
+component fn Root(s: string) -> Component<View> {
     use provide(createContext("kg"));
     val p = Page(s);
     return View(text: p.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val a = await Root("x");
     print(a.text);
     val b = await Root("");

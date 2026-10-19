@@ -14,13 +14,13 @@ type View(text: string, kids: Component<View>[]) implement Renderable
 
 pub val prefixContext = comptime createContext("");
 
-fn Card(item: Item) -> Component<View> {
+component fn Card(item: Item) -> Component<View> {
     val p = use context(prefixContext);
     print("ran " + item.name);
     return View(text: p + item.name, kids: []);
 }
 
-fn Lista(itens: Item[]) -> Component<View> {
+component fn Lista(itens: Item[]) -> Component<View> {
     use provide(createContext("#"));
     val cards = itens.map(Card);
     print("lista made " + cards.length.toString());
@@ -32,7 +32,7 @@ fn twice<T>(x: T) -> T[] {
 }
 
 // Run `c` with `scope`, then each child with the scope `c`'s run answered.
-fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
+async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     val r = await c.run(scope);
     var out = r.value.text;
     for (r.value.kids) { k ->
@@ -42,7 +42,7 @@ fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     return out;
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val c = Card(Item(name: "x"));
     val cs = twice(c);
     print("made " + cs.length.toString());

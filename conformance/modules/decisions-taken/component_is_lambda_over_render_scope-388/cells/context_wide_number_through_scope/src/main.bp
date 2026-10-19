@@ -12,23 +12,23 @@ pub val rateContext = comptime createContext(0.0);
 
 pub val totalContext = createContext(0l);
 
-fn rate() -> Component<f64> {
+component fn rate() -> Component<f64> {
     val r = use context(rateContext);
     return r * 2.0;
 }
 
-fn total() -> Component<i64> {
+component fn total() -> Component<i64> {
     val t = use context(totalContext);
     return t + 1;
 }
 
-fn Label() -> Component<View> {
+component fn Label() -> Component<View> {
     val r = use rate();
     val t = use total();
     return View(text: r.toString() + " " + t.toString());
 }
 
-fn Root() -> Component<View> {
+component fn Root() -> Component<View> {
     val big: i64 = 9000000000;
     use provide(createContext(1.25));
     use provide(createContext(big));
@@ -36,7 +36,7 @@ fn Root() -> Component<View> {
     return View(text: l.text);
 }
 
-pub fn main() -> Async<void> {
+pub async fn main() -> Async<void> {
     val v = await Root();
     print(v.text);
 }
