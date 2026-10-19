@@ -1,0 +1,9 @@
+import {compiler, compiler.Call, compiler.Lit, compiler.Name} from "std";
+
+fn calls(syntax q: string) -> anyvalue {
+    return compiler.ast(Call(callee: Name("nowhere"), args: [Lit(compiler.text(q))]));
+}
+
+pub fn missing() -> string {
+    return calls @`x`;
+}

@@ -45,7 +45,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $s3
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 7
   call $rt_bin
@@ -103,7 +103,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 1
   call $rt_bin
@@ -112,7 +112,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 312
+  i32.const 328
   i32.add
   i32.const 2
   call $rt_bin
@@ -170,7 +170,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $s3
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 7
   call $rt_bin

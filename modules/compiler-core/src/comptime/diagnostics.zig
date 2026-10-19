@@ -1031,6 +1031,7 @@ pub const all_codes = [_][]const u8{
     template_lookup_decl_write,
     template_lookup_meta_expr_field,
     template_build_outside_bound,
+    ast_ill_formed,
     marker_type_mismatch,
     marker_without_arrow,
     marker_lambda_without_expected_type,
@@ -1135,3 +1136,9 @@ pub const template_lookup_meta_expr_field: []const u8 = "template-lookup-meta-ex
 /// template's answer (the signature's `-> @Expr<…>`, a bound). Refused at the
 /// template's `build`.
 pub const template_build_outside_bound: []const u8 = "template-build-outside-bound";
+
+/// Decision 625 (2) — the tree handed to `compiler.ast(node)` is no code: a
+/// record no `compiler.Node` kind is, an `Arg` outside a `Call`, a `Lit`
+/// holding a `syntax` value, a `Name` nothing binds where the tree is
+/// spliced. Refused at the `ast` call, naming the node.
+pub const ast_ill_formed: []const u8 = "ast-ill-formed";

@@ -1,0 +1,18 @@
+//// Decision 638 — `Syntax(e)` is the node of the code a `syntax` value
+//// holds, spliced as it was written and typed where the splice stands: the
+//// receiver of a template method is the caller's code, its names the
+//// caller's (`double(10)` calls this module's `double`), while the tree's
+//// `Name("double")` is the library's.
+
+import {scale} from "scale";
+import {io.terminal.print} from "std";
+
+fn double(n: i32) -> i32 {
+    return n + 1;
+}
+
+pub fn main() {
+    val base = 5;
+    print(base.scale @`abc`);
+    print(double(10).scale @`a`);
+}

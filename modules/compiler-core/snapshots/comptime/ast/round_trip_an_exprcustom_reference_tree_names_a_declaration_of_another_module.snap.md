@@ -28,8 +28,11 @@
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
-//// - A template's call site: `build`, `buildType`, `note`, `tagDecl`,
-////   `annotate`, `custom` (decision 578 (3)).
+//// - A template's call site: `build`, `ast`, `buildType`, `note`, `tagDecl`,
+////   `annotate`, `custom` (decisions 578 (3), 625 (2)).
+//// - The typed AST `ast` builds code from (decision 625 (2)): `Node` and its
+////   kinds `Name`, `Lit`, `Member`, `Call`, `Arg`, `List`, `Tuple`,
+////   `Binary`, `Unary`, `If`, `Lambda` and `Syntax` (decision 638).
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
@@ -95,6 +98,10 @@ pub behavior Compiler {
     // Code built from source text, typed at the call (decisions 426 (1),
     // 578 (3)).
     fn build(self: Self, comptime source: string) -> anyvalue;
+    // Code built from a tree of `Node`s, typed at the call (decision 625
+    // (2)); a tree that is no code — an `Arg` outside a `Call`, a `Name`
+    // nothing binds — is refused here, naming the node.
+    fn ast(self: Self, comptime node: Node) -> anyvalue;
     // A type built from source text — the one way a type is built
     // (decision 578 (3)).
     fn buildType(self: Self, comptime source: string) -> anytype;
@@ -132,6 +139,50 @@ pub behavior Compiler {
 // the compiler at each point, so it has no body.
 #[builtin]
 pub default declare val compiler: Compiler;
+
+// ── The typed AST `compiler.ast` builds code from (decision 625 (2)) ──────
+// One record per kind of expression a template answers, each with a field
+// set of its own: a body that runs at build reads a record by its fields.
+pub type Node = Name | Lit | Member | Call | Arg | List | Tuple | Binary | Unary | If | Lambda | Syntax;
+
+// A name, resolved in the module that wrote the tree: `Name("double")`.
+pub type Name(name: string)
+
+// A value known at build, spliced as its literal: `Lit(3)`, `Lit("a")`,
+// `Lit([1, 2])`.
+pub type Lit(value: unknown)
+
+// `target.member`.
+pub type Member(target: Node, member: string)
+
+// A call: `callee` a `Name`, a `Member` (a method call) or any node; each
+// argument a node (positional) or an `Arg` (labelled).
+pub type Call(callee: Node, args: Node[])
+
+// A labelled argument, `name: value` — only an argument of a `Call`.
+pub type Arg(name: string, value: Node)
+
+// `[a, b]`.
+pub type List(items: Node[])
+
+// `#(a, b)`.
+pub type Tuple(elems: Node[])
+
+// `lhs op rhs`, `op` one of `+ - * / % == != < > <= >= && ||`.
+pub type Binary(op: string, lhs: Node, rhs: Node)
+
+// `op operand`, `op` one of `-` and `!`.
+pub type Unary(op: string, operand: Node)
+
+// `if (cond) then else otherwise`.
+pub type If(cond: Node, then: Node, otherwise: Node)
+
+// `{ a, b -> body }`.
+pub type Lambda(params: string[], body: Node)
+
+// The code a `syntax` value holds, spliced as it was written and typed where
+// the splice stands (decision 638).
+pub type Syntax(e: unknown)
 
 // ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 // No prelude name: a file naming one imports it, `import {compiler.Span} from
@@ -438,6 +489,21 @@ pub type HookNode = __HookNode;
             {
               "name": "source",
               "type": "string",
+              "is_comptime": true
+            }
+          ],
+          "return_type": "anyvalue"
+        },
+        {
+          "name": "ast",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "node",
+              "type": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
               "is_comptime": true
             }
           ],
@@ -771,6 +837,102 @@ pub type HookNode = __HookNode;
           "return_type": "TypeInfo<T>"
         }
       ]
+    },
+    {
+      "ast": "typeAlias"
+    },
+    {
+      "ast": "record_def",
+      "name": "Name",
+      "fields": {
+        "name": "string"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Lit",
+      "fields": {
+        "value": "unknown"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Member",
+      "fields": {
+        "target": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "member": "string"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Call",
+      "fields": {
+        "callee": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "args": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Arg",
+      "fields": {
+        "name": "string",
+        "value": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "List",
+      "fields": {
+        "items": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Tuple",
+      "fields": {
+        "elems": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Binary",
+      "fields": {
+        "op": "string",
+        "lhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "rhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Unary",
+      "fields": {
+        "op": "string",
+        "operand": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "If",
+      "fields": {
+        "cond": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "then": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "otherwise": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Lambda",
+      "fields": {
+        "params": "string[]",
+        "body": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Syntax",
+      "fields": {
+        "e": "unknown"
+      }
     },
     {
       "ast": "typeAlias"

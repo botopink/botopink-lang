@@ -28,7 +28,7 @@ import {compiler} from "std";
   (block $L4
   local.get $s0
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 6
   call $rt_bin
@@ -56,7 +56,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $s3
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -120,7 +120,7 @@ import {compiler} from "std";
   (block $L12
   local.get $s0
   global.get $__lit
-  i32.const 312
+  i32.const 328
   i32.add
   i32.const 4
   call $rt_bin
@@ -148,7 +148,7 @@ import {compiler} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -195,7 +195,7 @@ import {compiler} from "std";
   (block $L17
   local.get $s0
   global.get $__lit
-  i32.const 320
+  i32.const 336
   i32.add
   i32.const 17
   call $rt_bin
@@ -223,7 +223,7 @@ import {compiler} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -300,7 +300,7 @@ import {compiler} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin

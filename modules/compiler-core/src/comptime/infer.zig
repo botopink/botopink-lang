@@ -42,6 +42,7 @@ const Token = @import("../lexer/token.zig").Token;
 const erlang = @import("../codegen/erlang.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
+const astBuild = @import("ast_build.zig");
 const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
@@ -10112,7 +10113,21 @@ fn expandTemplateCallViaRuntime(
         valued = next;
     };
 
+    // Decision 625 (2) — the `compiler.ast` call the body answered, where an
+    // ill-formed tree is refused.
+    const builtAt: ?ast.Loc = if (extras.build) |i| (if (i < numbered.locs.len) numbered.locs[i] else null) else if (numbered.locs.len == 1 and (outcome == .code or outcome == .ast)) numbered.locs[0] else null;
+    var astNames: []const astBuild.Placed = &.{};
     const expansion: *const ast.Expr = switch (outcome) {
+        .ast => |tree| blk: {
+            const built = try astExpansion(env, tfn, tree, captures, loc);
+            switch (built) {
+                .ok => |r| {
+                    astNames = r.names;
+                    break :blk r.expr;
+                },
+                .ill => |message| return refuseAst(env, tfn.name, message, builtAt, if (own_template) null else srcPathOfModule(env, owner), loc),
+            }
+        },
         .code => |src| blk: {
             const origin = builtCodeOrigin(env, captures, loc);
             const parsed = parseCodeTextAt(env, tfn, src, origin, if (captures.len > 0) &captures[0] else null, null) orelse {
@@ -10197,7 +10212,7 @@ fn expandTemplateCallViaRuntime(
 
     const built: BuiltInfo = .{
         .callee = tfn.name,
-        .at = if (extras.build) |i| (if (i < numbered.locs.len) numbered.locs[i] else null) else if (numbered.locs.len == 1 and outcome == .code) numbered.locs[0] else null,
+        .at = builtAt,
         .file = if (own_template) null else srcPathOfModule(env, owner),
         .notes = extras.notes,
     };
@@ -10205,7 +10220,81 @@ fn expandTemplateCallViaRuntime(
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
         try env.templateEvalBuilt.put(env.arena, key, built);
     }
-    return finishExpansionBuilt(env, expansion, retType, loc, built);
+    if (astNames.len == 0) return finishExpansionBuilt(env, expansion, retType, loc, built);
+    return finishExpansionBuilt(env, expansion, retType, loc, built) catch |err| {
+        // Decision 625 (2) — a `Name` nothing binds where the tree is
+        // spliced is refused at the `ast` call, naming it.
+        if (err == error.TypeError) if (env.lastError) |le| if (le.kind == .unboundVariable) if (le.loc) |at| for (astNames) |n| {
+            if (!at.eql(n.loc)) continue;
+            const message = try std.fmt.allocPrint(env.arena, "`Name(\"{s}\")` names nothing in scope where the tree is spliced", .{n.name});
+            return refuseAst(env, tfn.name, message, builtAt, built.file, loc);
+        };
+        return err;
+    };
+}
+
+/// Decision 625 (2) — the code a `compiler.ast(node)` tree builds: each node
+/// lowered (`ast_build.zig`), a `Lit` as the value's literal, a `Syntax` as the
+/// caller's code it holds; the names the library wrote resolve in its module
+/// (decision 112), the caller's code in the caller's.
+const AstExpansion = union(enum) {
+    ok: struct { expr: *const ast.Expr, names: []const astBuild.Placed },
+    ill: []const u8,
+};
+
+fn astExpansion(env: *Env, tfn: ast.FnDecl, tree: std.json.Value, captures: []const template.CapturedExpr, loc: ast.Loc) InferError!AstExpansion {
+    const Ctx = struct {
+        env: *Env,
+        captures: []const template.CapturedExpr,
+
+        pub fn lit(self: @This(), v: std.json.Value, at: ast.Loc) ?*const ast.Expr {
+            if (holdsSyntax(v)) return null;
+            const typed = templateEval.typedValue(self.env.arena, v) catch return null;
+            return valueToAstLiteral(self.env, typed, at, null);
+        }
+
+        pub fn syntax(self: @This(), v: std.json.Value) ?*const ast.Expr {
+            if (v != .object) return null;
+            const param = v.object.get("__bp_capture") orelse return null;
+            if (param != .string) return null;
+            return captureNodeFor(self.captures, param.string);
+        }
+
+        fn holdsSyntax(v: std.json.Value) bool {
+            return switch (v) {
+                .object => |o| o.contains("__bp_capture") or for (o.values()) |x| {
+                    if (holdsSyntax(x)) break true;
+                } else false,
+                .array => |a| for (a.items) |x| {
+                    if (holdsSyntax(x)) break true;
+                } else false,
+                else => false,
+            };
+        }
+    };
+    var b: astBuild.Builder(Ctx) = .{ .arena = env.arena, .ctx = .{ .env = env, .captures = captures }, .origin = builtCodeOrigin(env, captures, loc) };
+    const root = switch (try b.build(tree)) {
+        .ok => |r| r,
+        .ill => |m| return .{ .ill = m },
+    };
+    try applyAstHygiene(env, tfn, root);
+    b.fill(root);
+    return .{ .ok = .{ .expr = root, .names = b.names.items } };
+}
+
+/// Decision 625 (2) — `ast-ill-formed`, at the `compiler.ast` call: in this
+/// module's template there, in another module's at the call it expands,
+/// naming where the `ast` call is written.
+fn refuseAst(env: *Env, callee: []const u8, message: []const u8, at: ?ast.Loc, file: ?[]const u8, loc: ast.Loc) InferError {
+    const hint = "`compiler.ast(node)` builds code from a tree of `compiler.Node` records (decision 625 (2)): each node a kind `compiler.bp` declares, an `Arg` only in `Call.args`, each `Name` bound where the code is spliced.";
+    if (file) |f| if (at) |a| {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}`'s tree at {s}:{d}:{d}: {s}", .{ diagnostics.ast_ill_formed, callee, f, a.line, a.col, message });
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    };
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: {s}", .{ diagnostics.ast_ill_formed, message });
+    env.lastError = TypeError.custom(msg, hint).withLoc(at orelse loc);
+    return error.TypeError;
 }
 
 /// Decision 302 — the most tag annotations one expansion runs.
@@ -10479,31 +10568,42 @@ fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u
     const owner = env.comptimeOwnerOf(tfn);
     if (std.mem.eql(u8, owner, env.modulePath)) return;
     const exports = env.templateOwnerExports.get(owner) orelse return;
-    const Resolver = struct {
-        env: *Env,
-        owner: []const u8,
-        exports: *const std.StringHashMap(*T.Type),
-
-        pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
-            const ty = self.exports.get(name) orelse
-                self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
-            const alias = try envMod.templateAlias(self.env.arena, self.owner, name);
-            if (!self.env.templateImports.contains(alias)) {
-                try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
-                // Module-wide, like an import: the expansion may sit in a
-                // body whose scope closes before the next one uses it.
-                const scope = self.env.bodyScope;
-                self.env.bodyScope = null;
-                defer self.env.bodyScope = scope;
-                // Decision 310 — renamed as an imported value's type is.
-                try self.env.bind(alias, try renameImportedType(self.env, ty, self.owner));
-            }
-            return alias;
-        }
-    };
     const spans = try dslHygiene.userSpans(env.arena, src, captures);
-    try dslHygiene.apply(env.arena, parsed, src, origin, spans, Resolver{ .env = env, .owner = owner, .exports = exports });
+    try dslHygiene.apply(env.arena, parsed, src, origin, spans, HygieneResolver{ .env = env, .owner = owner, .exports = exports });
 }
+
+/// Decisions 112, 625 (2) — every name of a `compiler.ast` tree is the
+/// library's (the caller's code a `Syntax` holds is spliced after).
+fn applyAstHygiene(env: *Env, tfn: ast.FnDecl, root: *ast.Expr) InferError!void {
+    const owner = env.comptimeOwnerOf(tfn);
+    if (std.mem.eql(u8, owner, env.modulePath)) return;
+    const exports = env.templateOwnerExports.get(owner) orelse return;
+    try dslHygiene.applyAll(env.arena, root, HygieneResolver{ .env = env, .owner = owner, .exports = exports });
+}
+
+/// A name the template's owner module declares, bound under its alias.
+const HygieneResolver = struct {
+    env: *Env,
+    owner: []const u8,
+    exports: *const std.StringHashMap(*T.Type),
+
+    pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
+        const ty = self.exports.get(name) orelse
+            self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
+        const alias = try envMod.templateAlias(self.env.arena, self.owner, name);
+        if (!self.env.templateImports.contains(alias)) {
+            try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
+            // Module-wide, like an import: the expansion may sit in a
+            // body whose scope closes before the next one uses it.
+            const scope = self.env.bodyScope;
+            self.env.bodyScope = null;
+            defer self.env.bodyScope = scope;
+            // Decision 310 — renamed as an imported value's type is.
+            try self.env.bind(alias, try renameImportedType(self.env, ty, self.owner));
+        }
+        return alias;
+    }
+};
 
 /// Replace `__bp_hole_<param>_<i>` placeholder identifiers in freshly parsed
 /// template output with the caller's hole expressions (the i-th `${…}` part
@@ -13118,7 +13218,11 @@ fn registerAliasClosure(
     a: ast.TypeAliasDecl,
     depth: usize,
 ) InferError!void {
-    if (depth >= 32 or env.typeAliases.contains(a.name)) return;
+    // The alias an import names was registered ahead of every type
+    // (`preRegisterStdImportAliases`); its closure is still walked here, at
+    // the import (depth 0): a union alias whose members are not imported by
+    // name (`compiler.Node`, decision 625 (2)) brings them as types.
+    if (depth >= 32 or (depth > 0 and env.typeAliases.contains(a.name))) return;
     try env.typeAliases.put(env.arena, a.name, a);
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer names.deinit(env.arena);
@@ -18899,6 +19003,12 @@ fn inferTemplateMethod(
             // code without quoting (`expr { … }` covers the pattern case).
             op = .build;
             try unifyArg(env, typedArgs, 0, try env.namedType("string"));
+            retType = try env.namedTypeArgs(ast.expr_type_name, &.{try env.freshVar()});
+        } else if (std.mem.eql(u8, callee, "ast")) {
+            // Decision 625 (2) — code built from a tree of `compiler.Node`s,
+            // read at the run's reply (`astBuild`); its value type is
+            // revealed at expansion, as `build`'s is.
+            op = .ast;
             retType = try env.namedTypeArgs(ast.expr_type_name, &.{try env.freshVar()});
         } else if (std.mem.eql(u8, callee, "custom")) {
             // Pack a reference `CustomNode` tree + executable `code` into the

@@ -1,0 +1,3 @@
+//// The package root: the template's handle.
+
+pub default mod shapes;

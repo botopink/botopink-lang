@@ -21,6 +21,7 @@
 ///
 /// Reply format (`main/1`):
 ///   {"kind":"code","source":"…"}                  ← `q.build(src)` / `@code(src)`
+///   {"kind":"ast","node":<tree>}                  ← `q.ast(node)` (decision 625 (2))
 ///   {"kind":"value","value":<json>}               ← `@expr(v)`
 ///   {"kind":"capture","param":"q"}                ← `return q`
 ///   {"kind":"custom","source":"…","ast":<tree>}   ← `q.custom(tree, code)`
@@ -79,6 +80,11 @@ pub const CustomNodeTree = struct {
 
 pub const Outcome = union(enum) {
     code: []const u8,
+    /// Decision 625 (2) — `compiler.ast(node)`: the `compiler.Node` tree as
+    /// the runtime encoded it (each record a JSON object of its fields; a
+    /// `syntax` value the capture's object), read by `infer.zig`'s
+    /// `astBuild`.
+    ast: std.json.Value,
     value: TypedValue,
     capture: []const u8,
     custom: struct { code: []const u8, ast: CustomNodeTree },
@@ -623,7 +629,8 @@ const RenameSelf = struct {
     }
 };
 
-/// Decision 426 (2) — `f` with each `q.build(src)` of its body (`q` one of its
+/// Decision 426 (2) — `f` with each `q.build(src)` and `q.ast(node)` (decision
+/// 625 (2)) of its body (`q` one of its
 /// `@Expr` parameters) written `q.build(src, <i>)`, `i` the call's index in
 /// `locs`: the prelude's `build/3` records the index of the build whose code
 /// the body answers, so a built type outside the template's answer is refused
@@ -645,7 +652,7 @@ const NumberBuilds = struct {
     fn replace(self: *NumberBuilds, arena: std.mem.Allocator, v: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
         if (v != .call or v.call.kind != .call) return null;
         const c = v.call.kind.call;
-        if (c.is_builtin or c.args.len != 1 or !std.mem.eql(u8, c.callee, "build")) return null;
+        if (c.is_builtin or c.args.len != 1 or !(std.mem.eql(u8, c.callee, "build") or std.mem.eql(u8, c.callee, "ast"))) return null;
         const r = c.receiver orelse return null;
         if (r.* != .identifier or r.identifier.kind != .ident) return null;
         const named = for (self.params) |p| {
@@ -1139,6 +1146,8 @@ const Reply = struct {
     span: ?template.Span = null,
     value: std.json.Value = .null,
     ast: std.json.Value = .null,
+    /// Decision 625 (2) — the `compiler.Node` tree `ast(node)` answered.
+    node: std.json.Value = .null,
     decl: std.json.Value = .null,
     /// Decision 532 — `[[File, Line, Col], …]`, the located calls a raise
     /// crossed (`'__bp_frames'/1`), innermost first, `[]` when none.
@@ -1167,6 +1176,7 @@ fn parseOutcomeExtras(arena: std.mem.Allocator, stdout: []const u8, extras: ?*Ex
 
     const kind = reply.kind;
     if (std.mem.eql(u8, kind, "code")) return .{ .code = reply.source };
+    if (std.mem.eql(u8, kind, "ast")) return .{ .ast = reply.node };
     if (std.mem.eql(u8, kind, "value")) return .{ .value = try typedValue(arena, reply.value) };
     if (std.mem.eql(u8, kind, "capture")) return .{ .capture = reply.param orelse "" };
     if (std.mem.eql(u8, kind, "custom")) {
@@ -1216,7 +1226,7 @@ fn needOutcome(arena: std.mem.Allocator, reply: Reply) EvalError!Outcome {
     return .{ .need = .{ .kind = kind, .name = name, .attrs = attrs.items, .answer = answer, .span = span } };
 }
 
-fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Error!TypedValue {
+pub fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Error!TypedValue {
     return switch (v) {
         .null => .null,
         .bool => |b| .{ .bool = b },

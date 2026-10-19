@@ -80,6 +80,7 @@ pub const members = [_]Member{
     .{ .name = "lookup", .kind = .read, .params = &.{ S, W } },
     .{ .name = "bindings", .kind = .read, .params = &.{S} },
     .{ .name = "build", .kind = .site, .params = &.{V} },
+    .{ .name = "ast", .kind = .site, .params = &.{V} },
     .{ .name = "buildType", .kind = .site, .params = &.{V} },
     .{ .name = "note", .kind = .site, .params = &.{W} },
     .{ .name = "tagDecl", .kind = .site, .params = &.{ W, W, S } },
@@ -979,15 +980,21 @@ fn liftAny(ctx: *Ctx, v: anytype) error{OutOfMemory}!void {
     }
 }
 
+/// The site's members that answer code: `build` (text), `ast` (a `Node`
+/// tree, decision 625 (2)) and `custom`.
+fn answersCode(callee: []const u8) bool {
+    return std.mem.eql(u8, callee, "build") or std.mem.eql(u8, callee, "ast") or std.mem.eql(u8, callee, "custom");
+}
+
 fn answersTree(ctx: *Ctx, e: ast.Expr) bool {
     if (e == .identifier and e.identifier.kind == .ident) return contains(ctx.trees, e.identifier.kind.ident);
     if (e == .call and e.call.kind == .call) {
         const c = e.call.kind.call;
         if (c.is_builtin) return std.mem.eql(u8, c.callee, "expr") or std.mem.eql(u8, c.callee, "code");
         if (c.receiver) |r| if (ctx.site) |s| if (isIdent(r.*, s))
-            return std.mem.eql(u8, c.callee, "build") or std.mem.eql(u8, c.callee, "custom");
+            return answersCode(c.callee);
         if (c.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident and contains(ctx.trees, r.identifier.kind.ident))
-            return std.mem.eql(u8, c.callee, "build") or std.mem.eql(u8, c.callee, "custom");
+            return answersCode(c.callee);
     }
     return false;
 }

@@ -173,6 +173,7 @@ test "template: expr methods typecheck and record lowerings" {
         \\    val scope = compiler.bindings(template);
         \\    val b = compiler.lookup(template, "Button");
         \\    val made = compiler.build("1 + 2");
+        \\    val tree = compiler.ast(3);
         \\    val node = CustomNode(kind: "expr", span: sp, label: "number", ref: b, children: []);
         \\    compiler.custom(node);
         \\    val tag = compiler.tagDecl(DeclKind.Element, "div", [#("id", "x")]);
@@ -188,7 +189,7 @@ test "template: expr methods typecheck and record lowerings" {
 
     // Decision 576 (2) — every template op but `.value` (an `expr` is
     // opaque: its value is no `compiler` member).
-    try std.testing.expectEqual(@as(usize, 12), env.templateLowerings.count());
+    try std.testing.expectEqual(@as(usize, 13), env.templateLowerings.count());
     var counts = std.enums.EnumArray(envMod.TemplateOp, usize).initFill(0);
     var it = env.templateLowerings.valueIterator();
     while (it.next()) |op| counts.set(op.*, counts.get(op.*) + 1);

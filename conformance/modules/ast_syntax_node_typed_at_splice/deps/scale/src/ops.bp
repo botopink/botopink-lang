@@ -1,0 +1,15 @@
+//// A template method whose tree splices its receiver as written:
+//// `Syntax(self)` is the caller's code, so `double` there is the caller's,
+//// while the `Name("double")` the library writes is this module's private
+//// function (decisions 112, 638).
+
+import {compiler, compiler.Binary, compiler.Call, compiler.Lit, compiler.Name, compiler.Syntax} from "std";
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub fn scale(syntax self: i32, syntax q: string) -> anyvalue {
+    val step = compiler.text(q).length();
+    return compiler.ast(Binary(op: "+", lhs: Call(callee: Name("double"), args: [Syntax(self)]), rhs: Lit(step)));
+}

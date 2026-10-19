@@ -53,3 +53,41 @@ test "decisions 575 (3), 616: the compiler's table of `Compiler` members is std'
         };
     }
 }
+
+test "decision 625 (2): `ast_build.zig`'s kinds are std's `compiler.Node`, record for record and field for field" {
+    const astBuild = @import("../ast_build.zig");
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var lx = Lexer.init(try compilerSource());
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const node = for (program.decls) |d| {
+        if (d == .typeAlias and std.mem.eql(u8, d.typeAlias.name, "Node")) break d.typeAlias;
+    } else return error.NodeMissing;
+    // `Node` is the union of the kinds, in the table's order.
+    try std.testing.expect(node.target == .generic and std.mem.eql(u8, node.target.generic.name, ast.union_type_name));
+    const members = node.target.generic.args;
+    try std.testing.expectEqual(astBuild.kinds.len, members.len);
+    for (astBuild.kinds, members) |k, m| {
+        try std.testing.expect(m == .named);
+        try std.testing.expectEqualStrings(@tagName(k.kind), m.named);
+        const record = for (program.decls) |d| {
+            if (d == .type_ and std.mem.eql(u8, d.type_.name, m.named)) break d.type_;
+        } else return error.KindRecordMissing;
+        const fields = record.recordFields();
+        try std.testing.expectEqual(k.fields.len, fields.len);
+        for (k.fields, fields) |want, f| try std.testing.expectEqualStrings(want, f.name);
+    }
+    // Each kind's field set is its own: a record is read by its fields.
+    for (astBuild.kinds, 0..) |a, i| for (astBuild.kinds[i + 1 ..]) |b| {
+        if (a.fields.len != b.fields.len) continue;
+        const same = for (a.fields) |f| {
+            const has = for (b.fields) |g| {
+                if (std.mem.eql(u8, f, g)) break true;
+            } else false;
+            if (!has) break false;
+        } else true;
+        try std.testing.expect(!same);
+    };
+}

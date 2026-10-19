@@ -25,7 +25,7 @@ import {io.terminal.print} from "std";
   (block $L4
   local.get $s0
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 4
   call $rt_bin
@@ -53,7 +53,7 @@ import {io.terminal.print} from "std";
   local.get $t2
   local.set $V___BpF0
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin

@@ -3634,6 +3634,47 @@ computed at build.
 <!-- example: modules/type_info_comptime_run_time -->
 <!-- example: modules/external_compiler_member -->
 
+### `compiler.ast`
+
+Code enters the compiler written — a `syntax` parameter, a template text — or
+built as a typed tree, never as a string the compiler parses back (decision
+625). A template answers `compiler.ast(node)`, `fn ast(self: Self, comptime
+node: Node) -> anyvalue`: the code the tree builds, typed where the call
+stands as built code always is (decision 426 (1)). `compiler.bp` declares the
+tree: `Node`, the union of one record per kind of expression a template
+answers, measured off the parser's expressions. Each record has a field set no
+other kind has, so a body that runs at build — where a record is the map of its
+fields — reads a node by its fields.
+
+```text
+Name(name: string)                          a name: `double`
+Lit(value: unknown)                         a value known at build, as its literal: `3`, `"a"`, `[1, 2]`
+Member(target: Node, member: string)        `target.member`
+Call(callee: Node, args: Node[])            a call; `callee` a `Name`, a `Member` (a method call) or any node
+Arg(name: string, value: Node)              a labelled argument, `name: value` — an element of `Call.args` only
+List(items: Node[])                         `[a, b]`
+Tuple(elems: Node[])                        `#(a, b)`
+Binary(op: string, lhs: Node, rhs: Node)    `lhs op rhs`, `op` one of + - * / % == != < > <= >= && ||
+Unary(op: string, operand: Node)            `-x`, `!x`
+If(cond: Node, then: Node, otherwise: Node) `if (cond) then else otherwise`
+Lambda(params: string[], body: Node)        `{ a, b -> body }`
+Syntax(e: unknown)                          the code a `syntax` value holds, as written (decision 638)
+```
+
+A kind of the parser's no template answers — a statement, a `case`, a loop, a
+`comptime` — is not a node. The names a library's tree writes resolve in the
+library's module (decision 112), its private functions included, wherever the
+template is expanded; a `Syntax` splice keeps the caller's scope.
+
+<!-- example: modules/template_answers_ast -->
+
+A tree that is no code is refused at the `ast` call, naming the node
+(`ast-ill-formed`): a record that is no `Node`, an `Arg` outside a `Call`, a
+`Lit` holding a `syntax` value, a name that is no identifier, an operator the
+language has not, and a `Name` nothing binds where the tree is spliced.
+
+<!-- example: modules/ast_ill_formed_refused -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `syntax` (decisions 575 (4),

@@ -26,7 +26,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   (block $L4
   local.get $s0
   global.get $__lit
-  i32.const 296
+  i32.const 312
   i32.add
   i32.const 2
   call $rt_bin
@@ -54,7 +54,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s2
   local.set $s3
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -112,7 +112,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   i32.const 4
   call $rt_atom
   global.get $__lit
-  i32.const 312
+  i32.const 328
   i32.add
   i32.const 5
   call $rt_bin
@@ -130,7 +130,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 320
+  i32.const 336
   i32.add
   i32.const 5
   call $rt_atom
@@ -140,7 +140,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 328
+  i32.const 344
   i32.add
   i32.const 3
   call $rt_atom
@@ -150,7 +150,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 336
+  i32.const 352
   i32.add
   i32.const 4
   call $rt_atom
@@ -178,7 +178,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -215,12 +215,12 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 344
+  i32.const 360
   i32.add
   i32.const 5
   call $rt_atom
   global.get $__lit
-  i32.const 352
+  i32.const 368
   i32.add
   i32.const 8
   call $rt_bin
@@ -228,7 +228,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 360
+  i32.const 376
   i32.add
   i32.const 3
   call $rt_atom
@@ -236,7 +236,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   (block $L16
   local.get $s0
   global.get $__lit
-  i32.const 368
+  i32.const 384
   i32.add
   i32.const 4
   call $rt_bin
@@ -264,7 +264,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -301,7 +301,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 376
+  i32.const 392
   i32.add
   i32.const 8
   call $rt_atom
@@ -328,7 +328,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -386,7 +386,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   i32.const 4
   call $rt_atom
   global.get $__lit
-  i32.const 384
+  i32.const 400
   i32.add
   i32.const 6
   call $rt_bin
@@ -404,7 +404,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 320
+  i32.const 336
   i32.add
   i32.const 5
   call $rt_atom
@@ -414,7 +414,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 328
+  i32.const 344
   i32.add
   i32.const 3
   call $rt_atom
@@ -424,7 +424,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 336
+  i32.const 352
   i32.add
   i32.const 4
   call $rt_atom
@@ -452,7 +452,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s4
   local.set $V___BpF4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -489,12 +489,12 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 344
+  i32.const 360
   i32.add
   i32.const 5
   call $rt_atom
   global.get $__lit
-  i32.const 392
+  i32.const 408
   i32.add
   i32.const 7
   call $rt_bin
@@ -502,7 +502,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 360
+  i32.const 376
   i32.add
   i32.const 3
   call $rt_atom
@@ -515,7 +515,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 376
+  i32.const 392
   i32.add
   i32.const 8
   call $rt_atom
@@ -548,7 +548,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s3
   local.set $s4
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin
@@ -639,7 +639,7 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
   local.get $s1
   local.set $s2
   global.get $__lit
-  i32.const 304
+  i32.const 320
   i32.add
   i32.const 7
   call $rt_bin

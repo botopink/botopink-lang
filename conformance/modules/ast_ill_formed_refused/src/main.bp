@@ -1,0 +1,17 @@
+//// Decision 625 (2) — a tree handed to `compiler.ast` that is no code is
+//// refused at the `ast` call, naming the node: an `Arg` is an argument, and
+//// outside a `Call` it is no expression (`main`); a `Name` that nothing binds
+//// where the tree is spliced names nothing (`unbound`).
+
+mod unbound;
+import {unbound.missing};
+import {compiler, compiler.Arg, compiler.List, compiler.Lit, io.terminal.print} from "std";
+
+fn loose(syntax q: string) -> anyvalue {
+    return compiler.ast(List([Arg(name: "tag", value: Lit(compiler.text(q)))]));
+}
+
+pub fn main() {
+    print(loose @`div`);
+    print(missing());
+}

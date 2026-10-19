@@ -20,7 +20,7 @@
 //!
 //!   bp_comptime_template    the capture API (`text/1`, `source/1`,
 //!                           `context/1`, `bindings/1`, `lookup/2`, `ref/1`),
-//!                           the result constructors (`build/2`, `custom/3`,
+//!                           the result constructors (`build/2`, `ast/2`, `custom/3`,
 //!                           `expr/1`, `code/1`), the failure throws
 //!                           (`fail/2`, `failAt/3`, `compilerError/1`), the
 //!                           reply encoder (`'__bp_reply'/1`) and the untyped
@@ -56,6 +56,8 @@ pub const decorator_fail_tag = "__bp_decorator_fail";
 /// `{'__bp_code', Source}` — what `build`/`code`/`ref` return and `'__bp_reply'`
 /// matches.
 pub const code_tag = "__bp_code";
+/// `{'__bp_ast', Node}` — what `ast/2` returns (decision 625 (2)).
+pub const ast_tag = "__bp_ast";
 /// Decision 237 — the message `lookup/2` fails the template with when its name
 /// is not a word of the captured text: head ++ Name ++ tail. ASCII only: the
 /// prelude's binary literals carry bytes, not code points.
@@ -226,6 +228,15 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.remote("erlang", "put", &.{ A(build_key), V("At") }),
             try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Source")}) }),
         }),
+        // Decision 625 (2) — `q.ast(node)`: the tree, encoded whole by the
+        // reply; `ast/3` records the index as `build/3` does.
+        try b.function("ast", &.{ V("_Capture"), V("Node") }, &.{}, &.{
+            try b.tuple(&.{ A(ast_tag), V("Node") }),
+        }),
+        try b.function("ast", &.{ V("_Capture"), V("Node"), V("At") }, &.{}, &.{
+            try b.remote("erlang", "put", &.{ A(build_key), V("At") }),
+            try b.tuple(&.{ A(ast_tag), V("Node") }),
+        }),
         try b.function("note", &.{ V("_Capture"), V("Message") }, &.{}, &.{
             try b.remote("erlang", "put", &.{ A(notes_key), try b.cons(&.{try b.call("__bp_text", &.{V("Message")})}, try b.call("__bp_notes", &.{})) }),
             A("ok"),
@@ -319,6 +330,9 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.clause(&.{try b.tuple(&.{ code, V("Source") })}, &.{}, &.{
                 try b.map(&.{ Ast.field("kind", Ast.str("code")), Ast.field("source", V("Source")) }),
             }),
+            try b.clause(&.{try b.tuple(&.{ A(ast_tag), V("Node") })}, &.{}, &.{
+                try b.map(&.{ Ast.field("kind", Ast.str("ast")), Ast.field("node", try b.call("__bp_json", &.{V("Node")})) }),
+            }),
             try b.clause(&.{try b.tuple(&.{ A("__bp_value"), V("Value") })}, &.{}, &.{
                 try b.map(&.{ Ast.field("kind", Ast.str("value")), Ast.field("value", try b.call("__bp_json", &.{V("Value")})) }),
             }),
@@ -401,7 +415,7 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
 /// clash with the decorator's `fail/2` / `failAt/3` / `compilerError/1`, which
 /// are not carried (the handle's report at the annotation).
 pub fn captureForms(b: Ast.Builder) Error![]const Ast.Form {
-    const names = [_][]const u8{ "text", "source", "context", "bindings", "lookup", "ref", "build", "custom", "expr", "code" };
+    const names = [_][]const u8{ "text", "source", "context", "bindings", "lookup", "ref", "build", "ast", "custom", "expr", "code" };
     var out: std.ArrayListUnmanaged(Ast.Form) = .empty;
     for (try templateForms(b)) |form| switch (form) {
         .function => |f| for (names) |n| {
