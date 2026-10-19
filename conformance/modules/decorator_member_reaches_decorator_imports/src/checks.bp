@@ -1,0 +1,15 @@
+//// The decorator lives in a module of its own and imports `panic` and
+//// `print`. The member it writes as text names both; each resolves here,
+//// where the member was written (decision 669).
+
+import {compiler, failure.panic, io.terminal.print} from "std";
+
+pub fn counted(syntax decl: unknown, comptime label: string) {
+    compiler.addMember(
+        "pub fn report(self: Self) { if (self.size < 0) panic(\"negative "
+            + label
+            + "\"); print(\""
+            + label
+            + ": \" + self.size.toString()); }",
+    );
+}

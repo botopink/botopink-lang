@@ -22,6 +22,8 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const format = @import("../format.zig");
+const Lexer = @import("../lexer.zig").Lexer;
+const Parser = @import("../parser.zig").Parser;
 
 /// The name a decorator body's `addMember` is written with.
 pub const add_member = "addMember";
@@ -534,6 +536,91 @@ pub fn renderWrapper(
     return spliceLexemes(arena, text, splices);
 }
 
+// ── decision 669 — a member written as text ────────────────────────────────
+
+/// Decision 669 — the member a decorator hands `decl.addMember(source)` as
+/// text, parsed as `comptime.zig` `mergeMembers` parses it: the one `fn` of a
+/// type body. Null when the text is not one `fn` — `mergeMembers` refuses it.
+pub fn parseSourceMember(arena: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!?ast.BehaviorMethod {
+    const text = try std.fmt.allocPrint(arena, "type __bp_member() {{\n{s}\n}}", .{source});
+    var lx = Lexer.init(text);
+    const tokens = lx.scanAll(arena) catch return null;
+    var p = Parser.init(tokens);
+    const program = p.parse(arena) catch return null;
+    if (program.decls.len != 1 or program.decls[0] != .type_) return null;
+    const t = program.decls[0].type_;
+    if (t.methods.len != 1 or t.recordFields().len != 0) return null;
+    return t.methods[0];
+}
+
+/// Decision 669 — `m` read as the function expression whose names
+/// `freeNames` and `typeNames` collect.
+pub fn methodAsFunction(arena: std.mem.Allocator, m: ast.BehaviorMethod) std.mem.Allocator.Error!ast.FunctionExpr {
+    const names = try arena.alloc([]const u8, m.params.len);
+    const types = try arena.alloc(ast.TypeRef, m.params.len);
+    for (m.params, 0..) |p, i| {
+        names[i] = p.name;
+        types[i] = p.typeRef;
+    }
+    return .{ .loc = m.nameLoc, .kind = .{ .syntax = .fnExpr, .params = names, .body = m.body orelse &.{}, .paramTypes = types, .returnType = m.returnType } };
+}
+
+/// Decision 669 — `m` with each name of `renames` written by its alias, in
+/// its body, its parameters' types and its return type: what the member reads
+/// resolves in the module that wrote it. A name the member binds itself (a
+/// parameter, a local) is left alone.
+pub fn renameMethod(arena: std.mem.Allocator, m: ast.BehaviorMethod, renames: []const Rename) std.mem.Allocator.Error!ast.BehaviorMethod {
+    if (renames.len == 0) return m;
+    const names = try arena.alloc([]const u8, m.params.len);
+    for (m.params, 0..) |p, i| names[i] = p.name;
+    const bound = try boundNames(arena, names, m.body orelse &.{});
+    var sub: Substitution = .{ .arena = arena, .splices = &.{}, .typeArgs = &.{}, .owner = "", .bound = &bound, .renames = renames };
+    var out = m;
+    if (m.body) |b| out.body = try sub.clone([]ast.Stmt, b);
+    const params = try arena.dupe(ast.Param, m.params);
+    for (params) |*p| p.typeRef = try sub.typeRef(p.typeRef);
+    out.params = params;
+    out.returnType = if (m.returnType) |t| try sub.typeRef(t) else null;
+    return out;
+}
+
+/// Decision 669 — whether `f`'s body hands a member on as text,
+/// `compiler.addMember(source)`: its module then shares its private functions
+/// and values with the modules the member joins (`written_names.sharesPrivates`).
+pub fn writesSourceMember(f: ast.FnDecl) bool {
+    for (f.body) |*s| if (findSourceMember(ast.Stmt, s)) return true;
+    return false;
+}
+
+fn findSourceMember(comptime X: type, ptr: *const X) bool {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call) {
+            const c = ptr.call.kind.call;
+            if (!c.is_builtin and c.receiver != null and c.args.len == 1 and std.mem.eql(u8, c.callee, add_member)) return true;
+        }
+    }
+    if (comptime !mayHoldExpr(X)) return false;
+    switch (@typeInfo(X)) {
+        .@"struct" => |s| inline for (s.fields) |fl| {
+            if (fl.is_comptime) continue;
+            if (findSourceMember(fl.type, &@field(ptr.*, fl.name))) return true;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (findSourceMember(@TypeOf(payload.*), payload)) return true,
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| return findSourceMember(o.child, inner),
+        .pointer => |p| switch (p.size) {
+            .one => if (@typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque") return findSourceMember(p.child, ptr.*),
+            .slice => for (ptr.*) |*e| if (findSourceMember(p.child, e)) return true,
+            else => {},
+        },
+        else => {},
+    }
+    return false;
+}
+
 /// `text` with every splice placeholder replaced by its argument's lexeme —
 /// bare when it is one name, parenthesised otherwise.
 fn spliceLexemes(arena: std.mem.Allocator, text: []const u8, splices: []const Splice) ![]const u8 {
@@ -759,4 +846,20 @@ test "decision 316 — a wrapper: collected in order apart from the members, ren
     const wrapper = (try collectWrappers(arena, f, "decl"))[0];
     const text = try renderWrapper(arena, wrapper, &.{.{ .param = "mark", .lexeme = "\"*\" + suffix" }}, &.{}, "", &.{});
     try std.testing.expect(std.mem.indexOf(u8, text, "(\"*\" + suffix) + call.run()") != null);
+}
+
+test "decision 669 — a member written as text: its free names renamed, its own bindings left alone" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const m = (try parseSourceMember(arena, "pub fn make(self: Self, n: i32) -> Row { val helper = n; return Row(size: helper + width()); }")).?;
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (try freeNames(arena, try methodAsFunction(arena, m))) |n| try names.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("Row width ", names.items);
+    const renamed = try renameMethod(arena, m, &.{ .{ .from = "Row", .to = "Bp__bp_tpl_rows__Row" }, .{ .from = "width", .to = "__bp_tpl_rows__width" }, .{ .from = "helper", .to = "nope" } });
+    try std.testing.expectEqualStrings("Bp__bp_tpl_rows__Row", renamed.returnType.?.named);
+    var again: std.ArrayListUnmanaged(u8) = .empty;
+    for (try freeNames(arena, try methodAsFunction(arena, renamed))) |n| try again.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("Bp__bp_tpl_rows__Row __bp_tpl_rows__width ", again.items);
+    try std.testing.expect(try parseSourceMember(arena, "pub fn a() {} pub fn b() {}") == null);
 }

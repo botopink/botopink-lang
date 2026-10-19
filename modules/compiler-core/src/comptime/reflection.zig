@@ -18,6 +18,7 @@ const envMod = @import("env.zig");
 const hooksMod = @import("hooks.zig");
 const typedMetaMod = @import("typed_meta.zig");
 const modTreeMod = @import("mod_tree.zig");
+const std_calls = @import("std_calls.zig");
 
 /// Decisions 378, 379 — the declaration of a context type's default.
 pub const ContextDefault = struct {
@@ -221,6 +222,11 @@ pub const Reflection = struct {
     /// A library member's names and an annotation's `@Expr` names resolve
     /// here, where they were written, wherever they are read.
     scopes: std.StringHashMapUnmanaged(WrittenName) = .empty,
+    /// Decision 669 — `scopeKey(module, local)` → the `print` / `panic` a
+    /// std import of `module` binds under `local` (`std_calls.itemsOf`),
+    /// recorded before `std_calls.expand` drops the import: a member that
+    /// module hands on as text reaches them (`comptime.zig` `mergeMembers`).
+    stdCalls: std.StringHashMapUnmanaged(std_calls.Item) = .empty,
     /// Decision 337 — the session's module tree (`mod_tree.zig`): which
     /// modules an import with no `from` may name, and what a `mod` binds.
     /// Null for a session built without one (a test's lone module).

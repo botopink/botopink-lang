@@ -208,6 +208,53 @@ const Ctx = struct {
 
 const mayHoldExpr = @import("std_namespace.zig").mayHoldExpr;
 
+/// Decision 669 — one `print` / `panic` a module's std imports reach: an item
+/// (`import {failure.panic as fail}` → `fail`) or a namespace whose module
+/// declares it (`import {io.terminal}` → `terminal`, read `terminal.print`).
+/// `expand` drops such an import once every use was a call, so the module's
+/// analysis no longer holds it; this is what it bound, for the code the module
+/// writes as text and another module reads (a member a decorator hands
+/// `compiler.addMember(source)`, `Reflection.stdCalls`).
+pub const Item = struct {
+    local: []const u8,
+    callee: []const u8,
+    namespace: bool,
+};
+
+/// Every `Item` the std imports of `program` bind, before `expand`.
+pub fn itemsOf(arena: std.mem.Allocator, program: ast.Program) Error![]const Item {
+    var out: std.ArrayListUnmanaged(Item) = .empty;
+    for (program.decls) |d| switch (d) {
+        .use => |u| {
+            if (!fromStd(u)) continue;
+            for (u.imports) |imp| {
+                const whole = try imp.fullPath(arena);
+                if (ofItemPath(whole)) |f| {
+                    try out.append(arena, .{ .local = imp.name(), .callee = @tagName(f), .namespace = false });
+                } else if (ofModule(whole)) |f| {
+                    try out.append(arena, .{ .local = imp.name(), .callee = @tagName(f), .namespace = true });
+                }
+            }
+        },
+        else => {},
+    };
+    return out.items;
+}
+
+/// Decision 669 — rewrite the calls in `ptr` (code another module wrote, e.g.
+/// a member a decorator handed on as text) that `items` — that module's std
+/// imports — name, into the call node `expand` writes: what the code reads
+/// resolves where it was written.
+pub fn rewriteWith(arena: std.mem.Allocator, items: []const Item, comptime T: type, ptr: *T) Error!void {
+    if (items.len == 0) return;
+    var ctx = Ctx{ .arena = arena };
+    for (items) |it| {
+        const f = std.meta.stringToEnum(Fn, it.callee) orelse continue;
+        if (it.namespace) try ctx.namespaces.put(arena, it.local, f) else try ctx.items.put(arena, it.local, f);
+    }
+    try ctx.walk(T, ptr);
+}
+
 /// Rewrite `program` in place (the arena-owned parse of one module). `key` is
 /// the module's std key (`io/terminal`) when it is one of std's, else null.
 pub fn expand(arena: std.mem.Allocator, program: ast.Program, key: ?[]const u8) Error!ast.Program {
@@ -321,4 +368,32 @@ test "std calls: a module's own print is no import" {
     var p = Parser.init(try lx.scanAll(arena));
     const program = try expand(arena, try p.parse(arena), null);
     try std.testing.expect(!program.decls[1].@"fn".body[0].expr.call.kind.call.is_builtin);
+}
+
+test "decision 669 — code another module wrote reaches the `print` / `panic` its imports bind" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    var lx = Lexer.init(
+        \\import {failure.panic as fail, io.terminal} from "std";
+        \\fn f() { fail("x"); terminal.print(1); panic("y"); }
+    );
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const items = try itemsOf(arena, program);
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    try std.testing.expectEqualStrings("fail", items[0].local);
+    try std.testing.expectEqualStrings("panic", items[0].callee);
+    try std.testing.expect(items[1].namespace);
+    var body = program.decls[1].@"fn";
+    try rewriteWith(arena, items, ast.FnDecl, &body);
+    const calls = [_][]const u8{ "panic", "print", "panic" };
+    const builtin = [_]bool{ true, true, false };
+    for (body.body, 0..) |s, i| {
+        const cc = s.expr.call.kind.call;
+        try std.testing.expectEqualStrings(calls[i], cc.callee);
+        try std.testing.expectEqual(builtin[i], cc.is_builtin);
+    }
 }

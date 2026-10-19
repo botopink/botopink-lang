@@ -25,6 +25,7 @@ const syntax_param = @import("./comptime/syntax_param.zig");
 const derived_types = @import("./comptime/derived_types.zig");
 const typed_meta = @import("./comptime/typed_meta.zig");
 const written_names = @import("./comptime/written_names.zig");
+const member_fn = @import("./comptime/member_fn.zig");
 const expand_call = @import("./comptime/expand_call.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
@@ -1041,7 +1042,7 @@ fn mergeMembers(
         }.at;
         const not_one = "`decl.addMember(source)` takes one member: a single `fn` (an associated fn, or a method whose first parameter is `self: Self`) written as it would be in the type's body.";
 
-        const method: ast.BehaviorMethod = parsed: {
+        const parsed_method: ast.BehaviorMethod = parsed: {
             var lexer = Lexer.init(text);
             const tokens = try arena.dupe(Token, lexer.scanAll(arena) catch
                 return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that does not lex: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one));
@@ -1061,6 +1062,10 @@ fn mergeMembers(
                 return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that is not one `fn`: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one);
             break :parsed methods[0];
         };
+        // Decision 669 — what the member reads resolves in the module that
+        // wrote it (`MemberContribution.renames`).
+        var method = try member_fn.renameMethod(arena, parsed_method, m.renames);
+        try std_calls.rewriteWith(arena, m.stdCalls, ast.BehaviorMethod, &method);
         line_shift += std.mem.count(u8, m.source, "\n") + 1;
         offset_shift += m.source.len + 1;
 
@@ -1988,7 +1993,14 @@ fn analyzeSource(
     // Decision 297: a `comptime x: V | type T` parameter's two forms.
     // Decision 330 (7): a type declared in a type's body is a top-level type
     // under its owner's path.
-    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_calls.expand(arena, try std_namespace.expand(arena, defaulted), stdKeyOf(mod.path)))));
+    const namespaced = try std_namespace.expand(arena, defaulted);
+    // Decision 669 — the `print` / `panic` this module's std imports bind,
+    // kept for the members it hands on as text before `std_calls.expand`
+    // drops an import every use of which was a call.
+    for (try std_calls.itemsOf(arena, namespaced)) |it| {
+        try reflection.stdCalls.put(reflection.arena, try reflectionMod.Reflection.scopeKey(reflection.arena, mod.path, it.local), it);
+    }
+    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_calls.expand(arena, namespaced, stdKeyOf(mod.path)))));
     // Decision 298: a module that reads a catalogue entry's typed meta
     // (`d.meta(T)`) declares the function the read calls, inferred with it.
     // Decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` is the

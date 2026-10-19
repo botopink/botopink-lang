@@ -22,6 +22,7 @@ const blockEval = @import("block_eval.zig");
 const embedMod = @import("embed.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
+const stdCallsMod = @import("std_calls.zig");
 const hooksMod = @import("hooks.zig");
 const typeinfoAll = @import("typeinfo_all.zig");
 const effectChain = @import("effect_chain.zig");
@@ -6058,7 +6059,18 @@ fn runDeclDecorators(
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, ownerlessKindWord(handle.kind), handle.name });
                             return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function or a `val` has no body to add to.");
                         };
-                        try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
+                        // Decision 669 — a decorator of another module: each
+                        // name the text reads resolves where it was written.
+                        // The `print` / `panic` its std imports bind are
+                        // read the same way, a decorator of this module's too.
+                        var renames: []const memberFn.Rename = &.{};
+                        var stdCalls: []const stdCallsMod.Item = &.{};
+                        if (try memberFn.parseSourceMember(env.arena, c.source)) |m| {
+                            const func = try memberFn.methodAsFunction(env.arena, m);
+                            if (!local) renames = try memberRenames(env, a, dfn, c, func, &.{}, &.{});
+                            stdCalls = try sourceMemberStdCalls(env, owner, func);
+                        }
+                        try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind), .renames = renames, .stdCalls = stdCalls });
                     },
                     // `decl.addMember(name, fn…)` (decision 370 (2)) — the
                     // member function the body wrote, rendered for the type with
@@ -6369,6 +6381,20 @@ fn memberFnSource(
     // writes beyond the parameters resolves where the decorator wrote it.
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
     return memberFn.render(env.arena, c.name, func, splices, typeArgs, target, renames) catch return error.OutOfMemory;
+}
+
+/// Decision 669 — the `print` / `panic` a member `owner` hands on as text
+/// reads, as `owner`'s std imports bind them (`Reflection.stdCalls`): an item
+/// called bare, a namespace a call is made through.
+fn sourceMemberStdCalls(env: *Env, owner: []const u8, func: ast.FunctionExpr) InferError![]const stdCallsMod.Item {
+    const r = env.reflection orelse return &.{};
+    var out: std.ArrayListUnmanaged(stdCallsMod.Item) = .empty;
+    next: for (try memberFn.freeNames(env.arena, func)) |n| {
+        for (out.items) |done| if (std.mem.eql(u8, done.local, n.name)) continue :next;
+        const it = r.stdCalls.get(try reflectionMod.Reflection.scopeKey(env.arena, owner, n.name)) orelse continue;
+        try out.append(env.arena, it);
+    }
+    return out.items;
 }
 
 /// Decision 316 — the source of the wrapper `decl.wrapWith(f)` gives the

@@ -690,6 +690,13 @@ pub const MemberContribution = struct {
     /// Decision 567 — the `decl.addMember` call that wrote the member: the
     /// decorator's file and the call's place in it.
     call: ?CallSite = null,
+    /// Decision 669 — each name the member reads that the decorator's module
+    /// (another module) declares or imports, and the alias it is bound under
+    /// here: `comptime.zig` `mergeMembers` writes the member with them.
+    renames: []const @import("member_fn.zig").Rename = &.{},
+    /// Decision 669 — each `print` / `panic` the member reads that the
+    /// writing module's std imports bind (`Reflection.stdCalls`).
+    stdCalls: []const @import("std_calls.zig").Item = &.{},
 };
 
 /// Decision 567 — where a decorator body wrote the `decl.addMember` /

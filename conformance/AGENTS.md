@@ -1172,6 +1172,10 @@ captured; it was `decorator-member-fn-imported-name` on the parent binary), and 
 `fn(self: T)`, `T` the field's type), each red on the parent binary. Decision 575 (4)'s tree rule
 turns `modules/decorator_member_captures` (a local of the decorator's body) from a refusal into the
 literal the member holds (`member_fn.capturedLocals`).
+Decision 669 — the names of a member a decorator writes as text, `compiler.addMember(source)`, resolve in the
+decorator's module, its imports included: `modules/decorator_member_reaches_decorator_imports` (the member calls
+`panic` and `print`, which only the decorator's module imports — `unbound variable 'panic'` on the parent binary,
+four targets).
 Decision 575 (3) (`compiler.init`, 144 B-137) adds `modules/init_executor_before_main` (executors of a
 function, a type with two annotations and a `val`, two calls per body, one named and one a `syntax` parameter,
 each run before `main`, four targets), `init_order_modules` (dependency order across two modules and

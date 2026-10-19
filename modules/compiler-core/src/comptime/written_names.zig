@@ -94,6 +94,8 @@ pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, ref
             if ((try member_fn.collectWrappers(arena, f, handle)).len > 0) return true;
             // Decision 575 (3) — so is an executor, beside the annotated declaration.
             if ((try member_fn.collectExecutors(arena, f, handle)).len > 0) return true;
+            // Decision 669 — so is a member handed on as text.
+            if (member_fn.writesSourceMember(f)) return true;
         }
     };
     const r = reflection orelse return false;

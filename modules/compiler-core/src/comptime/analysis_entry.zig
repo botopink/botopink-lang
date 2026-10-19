@@ -769,6 +769,7 @@ fn writeUleb(gpa: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), value: u6
 const ast = @import("../ast.zig");
 const Types = @import("./types.zig");
 const reflectionMod = @import("./reflection.zig");
+const stdCallsMod = @import("./std_calls.zig");
 const hooksMod = @import("./hooks.zig");
 const modTree = @import("./mod_tree.zig");
 
@@ -879,6 +880,7 @@ pub const Journal = struct {
     template_queries: MapOps([]const reflectionMod.TemplateQuery) = .{},
     hook_fns: MapOps(hooksMod.FnInfo) = .{},
     scopes: MapOps(reflectionMod.WrittenName) = .{},
+    std_calls: MapOps(stdCallsMod.Item) = .{},
     template_value_reads: MapOps(ast.Loc) = .{},
     declared_values: MapOps([]const u8) = .{},
     context_defaults: MapOps(reflectionMod.ContextDefault) = .{},
@@ -895,7 +897,7 @@ pub const Journal = struct {
 pub const unjournaled_reflection = [_][]const u8{ "arena", "readers", "templateReads", "oracle", "modTree", "srcPaths", "diagLabels", "failedModules", "defaultCallers", "rootModule" };
 
 /// The `Reflection` fields `Journal` carries, by their names there.
-pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes", "templateValueReads", "declaredValues", "contextDefaults" };
+pub const journaled_reflection = [_][]const u8{ "meta", "typedMeta", "decoratorMetaTypes", "assoc", "declared", "templateQueries", "hookFns", "scopes", "stdCalls", "templateValueReads", "declaredValues", "contextDefaults" };
 
 /// The entry of `outputs` (each `.ok`) under `key`, allocated with `gpa`.
 /// `journals` is empty, or one per output.

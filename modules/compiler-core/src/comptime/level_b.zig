@@ -49,6 +49,7 @@ const T = @import("./types.zig");
 const comptimeMod = @import("../comptime.zig");
 const entry = @import("./analysis_entry.zig");
 const reflectionMod = @import("./reflection.zig");
+const stdCallsMod = @import("./std_calls.zig");
 const modTree = @import("./mod_tree.zig");
 const Module = @import("../module.zig").Module;
 const moduleOutput = @import("../codegen/moduleOutput.zig");
@@ -502,6 +503,7 @@ pub const Snapshot = struct {
     template_queries: Flat([]const reflectionMod.TemplateQuery),
     hook_fns: Flat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value")),
     scopes: Flat(reflectionMod.WrittenName),
+    std_calls: Flat(stdCallsMod.Item),
     template_value_reads: Flat(ast.Loc),
     declared_values: Flat([]const u8),
     context_defaults: Flat(reflectionMod.ContextDefault),
@@ -528,6 +530,7 @@ pub const Snapshot = struct {
             .template_queries = try copyFlat([]const reflectionMod.TemplateQuery, a, &r.templateQueries),
             .hook_fns = try copyFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), a, &r.hookFns),
             .scopes = try copyFlat(reflectionMod.WrittenName, a, &r.scopes),
+            .std_calls = try copyFlat(stdCallsMod.Item, a, &r.stdCalls),
             .template_value_reads = try copyFlat(ast.Loc, a, &r.templateValueReads),
             .declared_values = try copyFlat([]const u8, a, &r.declaredValues),
             .context_defaults = try copyFlat(reflectionMod.ContextDefault, a, &r.contextDefaults),
@@ -559,6 +562,7 @@ pub const Snapshot = struct {
             .template_queries = try diffFlat([]const reflectionMod.TemplateQuery, arena, &self.template_queries, &r.templateQueries),
             .hook_fns = try diffFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), arena, &self.hook_fns, &r.hookFns),
             .scopes = try diffFlat(reflectionMod.WrittenName, arena, &self.scopes, &r.scopes),
+            .std_calls = try diffFlat(stdCallsMod.Item, arena, &self.std_calls, &r.stdCalls),
             .template_value_reads = try diffFlat(ast.Loc, arena, &self.template_value_reads, &r.templateValueReads),
             .declared_values = try diffFlat([]const u8, arena, &self.declared_values, &r.declaredValues),
             .context_defaults = try diffFlat(reflectionMod.ContextDefault, arena, &self.context_defaults, &r.contextDefaults),
@@ -729,6 +733,7 @@ pub fn replay(arena: Allocator, j: Journal, regs: Registries) !void {
     try replayFlat([]const reflectionMod.TemplateQuery, r.arena, &r.templateQueries, j.template_queries);
     try replayFlat(@FieldType(@FieldType(reflectionMod.Reflection, "hookFns").KV, "value"), r.arena, &r.hookFns, j.hook_fns);
     try replayFlat(reflectionMod.WrittenName, r.arena, &r.scopes, j.scopes);
+    try replayFlat(stdCallsMod.Item, r.arena, &r.stdCalls, j.std_calls);
     try replayFlat(ast.Loc, r.arena, &r.templateValueReads, j.template_value_reads);
     try replayFlat([]const u8, r.arena, &r.declaredValues, j.declared_values);
     try replayFlat(reflectionMod.ContextDefault, r.arena, &r.contextDefaults, j.context_defaults);
