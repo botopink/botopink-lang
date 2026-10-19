@@ -6,27 +6,27 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Task<i32> {
+fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-fn apply(f: fn(x: i32) -> Task<i32>, v: i32) -> Task<i32> {
+fn apply(f: fn(x: i32) -> Async<i32>, v: i32) -> Async<i32> {
     return await f(v);
 }
 
-pub fn main() -> Task<void> {
-    val g: fn(x: i32) -> Task<i32> = { async x -> await double(x) + 1 };
+pub fn main() -> Async<void> {
+    val g: fn(x: i32) -> Async<i32> = { async x -> await double(x) + 1 };
     print(await g(4));
     print(await apply({ async x ->
         await double(x)
     }, 5));
-    val k: fn(x: i32) -> Task<i32> = { async x ->
+    val k: fn(x: i32) -> Async<i32> = { async x ->
         if (x > 0) return x;
         await double(-x)
     };
     print(await k(3));
     print(await k(-2));
-    val h: fn(x: i32) -> Task<i32> = async fn(x) {
+    val h: fn(x: i32) -> Async<i32> = async fn(x) {
         val n = await double(x);
         n + 100
     };

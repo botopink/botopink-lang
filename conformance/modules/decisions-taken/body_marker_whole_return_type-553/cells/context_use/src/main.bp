@@ -77,7 +77,7 @@ fn Loading() -> Element {
     return Element(count: 7);
 }
 
-fn run() -> Task<i32> {
+fn run() -> Async<i32> {
     val e0 = await Widget(41);
     print(e0.count);
     val e1 = await Fields();

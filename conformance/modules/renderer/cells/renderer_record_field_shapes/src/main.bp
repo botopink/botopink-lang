@@ -32,6 +32,6 @@ pub fn main() {
     val none: Array<string> = [];
     val fallback: string = firstOf(Box(items: none), "z");
     print(fallback);
-    val thunks: Array<fn() -> Task<Node>> = [];
+    val thunks: Array<fn() -> Async<Node>> = [];
     print(count(v, thunks));
 }

@@ -10,7 +10,7 @@ pub val prefixContext = comptime createContext("");
 
 type View(text: string) implement Renderable
 
-iter fn upTo(n: i32) -> Iterator<i32> {
+iter fn upTo(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -18,11 +18,11 @@ iter fn upTo(n: i32) -> Iterator<i32> {
     }
 }
 
-pub async fn double(x: i32) -> Task<i32> {
+pub async fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-async iter fn doubled(n: i32) -> Stream<i32> {
+async iter fn doubled(n: i32) -> AsyncIter<i32> {
     for (upTo(n)) { x ->
         yield await double(x);
     }
@@ -40,13 +40,13 @@ component fn Page() -> Component<View> {
 }
 
 type Grid(cells: i32[]) {
-    iter fn each(self: Self) -> Iterator<i32> {
+    iter fn each(self: Self) -> Iter<i32> {
         for (self.cells) { c ->
             yield c * 10;
         }
     }
 
-    async fn total(self: Self) -> Task<i32> {
+    async fn total(self: Self) -> Async<i32> {
         var acc = 0;
         for (self.cells) { c ->
             acc = acc + await double(c);
@@ -55,7 +55,7 @@ type Grid(cells: i32[]) {
     }
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     for (upTo(3)) { x ->
         print(x);
     }

@@ -1,4 +1,4 @@
-# Decision 126 — A host function returning `@Task<@Result<T, E>>` turns a rejection into `Error(e)`
+# Decision 126 — A host function returning `@Async<@Result<T, E>>` turns a rejection into `Error(e)`
 
 [cells/host_erlang_task_result/src/main.bp](cells/host_erlang_task_result/src/main.bp)
 

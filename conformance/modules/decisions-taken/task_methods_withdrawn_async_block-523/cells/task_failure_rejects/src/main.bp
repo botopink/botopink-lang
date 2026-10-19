@@ -8,12 +8,12 @@
 //// cell printed `resolved Error negative`.
 ////
 //// `"targets"` is `commonJS`: the claim is about a JavaScript Promise;
-//// erlang, beam and wasm run a Task's failure as its value, which
+//// erlang, beam and wasm run a Async's failure as its value, which
 //// `task_result_rejects` reads on every target.
 
 import {io.terminal.print, compiler} from "std";
 
-fn check(n: i32) -> Task<Result<i32, string>> {
+fn check(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) throw "negative";
     return n;
 }
@@ -28,7 +28,7 @@ fn rejected(e: string) {
 
 #[compiler.external(.JavaScript("""$0.then((__v) => $1(__v), (__e) => $2(__e))"""))]
 declare fn observe(
-    t: Task<Result<i32, string>>,
+    t: Async<Result<i32, string>>,
     onResolve: fn(v: i32),
     onReject: fn(e: string),
 );

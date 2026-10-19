@@ -5,12 +5,12 @@
 
 import {io.terminal.print} from "std";
 
-iter fn literals() -> Iterator<i32> {
+iter fn literals() -> Iter<i32> {
     yield 1;
     yield 2;
 }
 
-iter fn computed() -> Iterator<i32> {
+iter fn computed() -> Iter<i32> {
     var n = 1;
     while (n < 3) {
         yield n;

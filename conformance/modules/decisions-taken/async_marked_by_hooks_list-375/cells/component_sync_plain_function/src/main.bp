@@ -18,7 +18,7 @@ type Element(text: string) implement Renderable
 #[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
-fn loadComments() -> Task<string> {
+fn loadComments() -> Async<string> {
     return "2 comments";
 }
 
@@ -48,7 +48,7 @@ fn Post() -> Component<Element> {
     return Element(text: a.text + " " + b.text + " " + m.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val card = Card("direct").run(RenderScope.root());
     print(pending(card));
     val post = Post().run(RenderScope.root());

@@ -7,20 +7,20 @@ import {io.terminal.print} from "std";
 
 type Point(x: i32, y: i32)
 
-fn twice<T>(v: T) -> Task<Result<T, string>> {
+fn twice<T>(v: T) -> Async<Result<T, string>> {
     return v;
 }
 
-fn plain(n: i32) -> Task<Result<i32, string>> {
+fn plain(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) throw "negative";
     return n;
 }
 
-fn place() -> Task<Result<Point, string>> {
+fn place() -> Async<Result<Point, string>> {
     return Point(x: 1, y: 2);
 }
 
-fn run(n: i32) -> Task<void> {
+fn run(n: i32) -> Async<void> {
     val c = await twice(21);
     print(c);
     val d = await plain(5);

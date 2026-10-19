@@ -24,7 +24,7 @@ fn rawText(on: bool) -> string {
     };
 }
 
-fn scenario() -> Task<void> {
+fn scenario() -> Async<void> {
     print("stdoutIsTTY " + terminal.stdoutIsTTY().toString());
     print(sizeText());
     print(rawText(true));

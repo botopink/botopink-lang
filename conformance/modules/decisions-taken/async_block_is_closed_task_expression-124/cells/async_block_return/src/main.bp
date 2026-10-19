@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-type Holder(t: Task<string>)
+type Holder(t: Async<string>)
 
 fn pick(n: i32) -> Holder {
     val t = async {
@@ -19,7 +19,7 @@ fn pick(n: i32) -> Holder {
     return Holder(t: t);
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val a = pick(1);
     print(await a.t);
     val b = pick(0);

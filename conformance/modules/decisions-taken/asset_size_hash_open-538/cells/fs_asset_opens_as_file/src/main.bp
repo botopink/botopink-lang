@@ -7,7 +7,7 @@ import {io.fs, encoding, io.terminal.print} from "std";
 
 pub val poem = @embed("assets/poem.txt");
 
-fn describe(f: fs.File, expected: string) -> Task<void> {
+fn describe(f: fs.File, expected: string) -> Async<void> {
     val size = f.size().unwrapOr(-1l);
     print(size);
     val digest = f.hash().unwrapOr("?");
@@ -25,7 +25,7 @@ fn describe(f: fs.File, expected: string) -> Task<void> {
     f.close();
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     fs.writeBytes("poem-copy.txt", poem.bytes);
     print("on disk");
     await describe(fs.open("poem-copy.txt").unwrapOr(poem.open()), poem.hash);

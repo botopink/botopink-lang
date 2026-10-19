@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() {
-    val last: fn() -> Iterator<i32> = { iter ->
+    val last: fn() -> Iter<i32> = { iter ->
         yield 1;
         break 2;
     };

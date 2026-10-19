@@ -14,7 +14,7 @@ fn parse(n: i32) -> Result<i32, string> {
 }
 
 // The item is a `Result`: `try` and `yield` in one body.
-fn upto(n: i32) -> Iterator<Result<i32, string>> {
+fn upto(n: i32) -> Iter<Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) {
@@ -33,7 +33,7 @@ fn digits(n: i32) -> Result<string, string> {
     return acc;
 }
 
-fn nums(n: i32) -> Iterator<i32> {
+fn nums(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;

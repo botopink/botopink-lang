@@ -17,7 +17,7 @@ var counts: Dict<string, i32> = Dict.ofEntries(
     [#("seed", 1), #("other", 2), #("seed", 7)],
 );
 
-fn writer(key: string) -> Task<i32> {
+fn writer(key: string) -> Async<i32> {
     var i = 0;
     while (i < 20000) {
         i += 1;
@@ -26,7 +26,7 @@ fn writer(key: string) -> Task<i32> {
     return i;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
     print(done);
     print(counts.at("a"), counts.at("b"));

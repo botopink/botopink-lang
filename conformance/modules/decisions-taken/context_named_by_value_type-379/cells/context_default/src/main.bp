@@ -28,7 +28,7 @@ fn Again() -> Component<Element> {
     return Element(text: l.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     print("before");
     val l = await Label();
     print(l.text);

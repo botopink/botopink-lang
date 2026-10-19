@@ -1,4 +1,4 @@
-# Decision 124 — The `async` block is a closed expression worth `@Task<T>`
+# Decision 124 — The `async` block is a closed expression worth `@Async<T>`
 
 [cells/async_block_all_of/src/main.bp](cells/async_block_all_of/src/main.bp)
 [refused/src/cases/async_block_conflicting_errors/mod.bp](refused/src/cases/async_block_conflicting_errors/mod.bp)

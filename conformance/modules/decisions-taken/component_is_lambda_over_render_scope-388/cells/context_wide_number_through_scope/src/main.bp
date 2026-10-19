@@ -36,7 +36,7 @@ fn Root() -> Component<View> {
     return View(text: l.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val v = await Root();
     print(v.text);
 }

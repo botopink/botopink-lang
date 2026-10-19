@@ -1,5 +1,5 @@
 //// Decisions 120 and 121 of 1.0.10-beta — the two rows of the chain that need
-//// a target able to consume a Task or an iterator, so they run here (commonJS
+//// a target able to consume a Async or an iterator, so they run here (commonJS
 //// and erlang) rather than in `run/effect_chain.bp`, which every backend runs.
 ////
 ////   `-> Async<Result<…>>`       — `try` (its value is a `Result`) and `await`
@@ -13,19 +13,19 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn fetch(n: i32) -> Task<i32> {
+fn fetch(n: i32) -> Async<i32> {
     return n * 2;
 }
 
 // `Async<Result<…>>`: `try` and `await` in one body.
-fn load(n: i32) -> Task<Result<i32, string>> {
+fn load(n: i32) -> Async<Result<i32, string>> {
     val v = try parse(n);
     val w = await fetch(v);
     return w + 1;
 }
 
 // `Iter<Result<…>>`: `try` and `yield` in one body.
-fn upTo(n: i32) -> Iterator<Result<i32, string>> {
+fn upTo(n: i32) -> Iter<Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) {
@@ -34,7 +34,7 @@ fn upTo(n: i32) -> Iterator<Result<i32, string>> {
     }
 }
 
-test "decision 121 a Task body holds the `try` its Result value grants" {
+test "decision 121 a Async body holds the `try` its Result value grants" {
     val f = load(3);
     assert f != null;
 }

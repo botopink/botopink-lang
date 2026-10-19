@@ -22,7 +22,7 @@ fn describe(e: fs.FsError) -> string {
     };
 }
 
-fn printChunks(f: fs.File, size: i32) -> Task<void> {
+fn printChunks(f: fs.File, size: i32) -> Async<void> {
     for await (f.chunks(size)) { r ->
         case r {
             Ok(b) -> print("chunk " + encoding.hexEncodeBytes(b));
@@ -32,7 +32,7 @@ fn printChunks(f: fs.File, size: i32) -> Task<void> {
     print("end of chunks");
 }
 
-fn printLines(f: fs.File) -> Task<void> {
+fn printLines(f: fs.File) -> Async<void> {
     for await (f.lines()) { r ->
         case r {
             Ok(line) -> print("line [" + line + "]");
@@ -46,7 +46,7 @@ fn open(path: string) -> fs.File {
     return fs.open(path).unwrapOr(fs.openAsset(@embed("assets/empty.txt")));
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     fs.writeText("sample.txt", "ab\r\n\nçd\nlast");
     await printChunks(open("sample.txt"), 4);
     await printChunks(open("sample.txt"), 65536);

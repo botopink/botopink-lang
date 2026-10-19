@@ -3,7 +3,7 @@
 
 import {io.http} from "std";
 
-fn probe(url: string) -> Task<Result<i32, http.HttpError>> {
+fn probe(url: string) -> Async<Result<i32, http.HttpError>> {
     val resp = try await http.fetch(url);
     return resp.status;
 }

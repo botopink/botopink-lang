@@ -6,12 +6,12 @@
 //// `Done` (`throw` ends the iterator). `reject/yield_step_error_param.bp` is the
 //// old spelling.
 
-fn two() -> Iterator<i32> {
+fn two() -> Iter<i32> {
     yield 1;
     yield 2;
 }
 
-fn failing() -> Iterator<Result<i32, string>> {
+fn failing() -> Iter<Result<i32, string>> {
     yield 1;
     throw "boom";
 }

@@ -5,15 +5,15 @@
 
 import {io.terminal.print} from "std";
 
-fn double(n: i32) -> Task<i32> {
+fn double(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn pass(t: Task<i32>) -> Task<i32> {
+fn pass(t: Async<i32>) -> Async<i32> {
     return t;
 }
 
-fn total(ts: Task<i32>[]) -> Task<i32> {
+fn total(ts: Async<i32>[]) -> Async<i32> {
     var acc = 0;
     for (ts) { t ->
         val v = await t;
@@ -22,14 +22,14 @@ fn total(ts: Task<i32>[]) -> Task<i32> {
     return acc;
 }
 
-type Holder(job: Task<i32>)
+type Holder(job: Async<i32>)
 
-fn settle(t: Task<i32>) -> Task<i32> {
+fn settle(t: Async<i32>) -> Async<i32> {
     val v = await t;
     return v + 1;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val tasks = [double(1), double(2), double(3)];
     var sum = 0;
     for (tasks) { t ->

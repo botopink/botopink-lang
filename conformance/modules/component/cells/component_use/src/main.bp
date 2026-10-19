@@ -27,7 +27,7 @@ fn Loading() -> Element {
     return Element(count: 0);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val w = await Widget(2);
     print(w.count); // 6: state(2) is 2, counter(2) reads state(4)
     print(Loading().count); // 0

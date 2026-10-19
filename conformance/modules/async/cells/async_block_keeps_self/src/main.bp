@@ -6,13 +6,13 @@
 import {io.terminal.print} from "std";
 
 type Worker(id: i32) {
-    fn start(self: Self) -> Task<i32> {
+    fn start(self: Self) -> Async<i32> {
         return async {
             return self.id + 1;
         };
     }
 
-    fn nestedStart(self: Self) -> Task<i32> {
+    fn nestedStart(self: Self) -> Async<i32> {
         return async {
             val inner = async {
                 return self.id + 2;
@@ -21,7 +21,7 @@ type Worker(id: i32) {
         };
     }
 
-    fn lazyStart(self: Self) -> fn(n: i32) -> Task<i32> {
+    fn lazyStart(self: Self) -> fn(n: i32) -> Async<i32> {
         return { n ->
             async {
                 return self.id + n;
@@ -30,7 +30,7 @@ type Worker(id: i32) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val w = Worker(id: 10);
     print(await w.start());
     print(await w.nestedStart());

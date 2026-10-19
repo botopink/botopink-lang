@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-fn line(it: Iterator<i32>) -> string {
+fn line(it: Iter<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
@@ -16,7 +16,7 @@ fn line(it: Iterator<i32>) -> string {
     return acc;
 }
 
-fn sum(it: Iterator<i32>) -> i32 {
+fn sum(it: Iter<i32>) -> i32 {
     var total = 0;
     for (it) { x ->
         total = total + x;
@@ -34,7 +34,7 @@ pub fn runCase() {
     print(line(doubled));
 
     var i = 3;
-    val countdown: Iterator<i32> = iter while (i > 0) {
+    val countdown: Iter<i32> = iter while (i > 0) {
         yield i;
         i = i - 1;
     };

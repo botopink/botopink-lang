@@ -5,9 +5,9 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm("wasi:delay"),
 )]
-declare fn later<T>(millis: i32, value: T) -> Task<T>;
+declare fn later<T>(millis: i32, value: T) -> Async<T>;
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     print(await later(1, "done"));
 }
 

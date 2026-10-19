@@ -10,11 +10,11 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn fetch(n: i32) -> Task<Result<i32, string>> {
+fn fetch(n: i32) -> Async<Result<i32, string>> {
     return n;
 }
 
-fn stream(n: i32) -> Stream<Result<i32, string>> {
+fn stream(n: i32) -> AsyncIter<Result<i32, string>> {
     val limit = try parse(n);
     var i = try await fetch(0);
     while (i < limit) {
@@ -23,7 +23,7 @@ fn stream(n: i32) -> Stream<Result<i32, string>> {
     }
 }
 
-fn collect(n: i32) -> Task<Result<string, string>> {
+fn collect(n: i32) -> Async<Result<string, string>> {
     var acc = "";
     for await (stream(n)) { x ->
         val v = try x;

@@ -9,7 +9,7 @@ import {async, collections.Dict, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
 
-fn worker(by: i32) -> Task<i32> {
+fn worker(by: i32) -> Async<i32> {
     var i = 0;
     while (i < 2000) {
         i += 1;
@@ -18,7 +18,7 @@ fn worker(by: i32) -> Task<i32> {
     return i;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
     counts = counts.bump("seed", 5);
     print(done);

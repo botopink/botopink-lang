@@ -53,7 +53,7 @@ fn Root() -> Component<Rule> {
     return a;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val r = await Root();
     print("root " + r.name);
 }

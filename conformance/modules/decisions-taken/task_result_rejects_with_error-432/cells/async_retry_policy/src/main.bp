@@ -5,15 +5,15 @@
 
 import {async, io.terminal.print} from "std";
 
-fn ok(value: string) -> Task<Result<string, string>> {
+fn ok(value: string) -> Async<Result<string, string>> {
     return value;
 }
 
-fn failing(why: string) -> Task<Result<string, string>> {
+fn failing(why: string) -> Async<Result<string, string>> {
     throw why;
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val policy = async.RetryPolicy(3, 1, 2.0, 4);
     val first = await async.retry(policy, { -> ok("answered") });
     print("first " + first.unwrapOr("-"));

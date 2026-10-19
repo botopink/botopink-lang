@@ -20,7 +20,7 @@ pub fn Page() -> Component<Styled> {
     return view @`a`;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val page = await Page();
     print(page.text);
 }

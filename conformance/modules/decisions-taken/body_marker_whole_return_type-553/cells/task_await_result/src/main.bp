@@ -9,17 +9,17 @@
 
 import {io.terminal.print} from "std";
 
-fn fetchUser(id: i32) -> Task<Result<string, string>> {
+fn fetchUser(id: i32) -> Async<Result<string, string>> {
     if (id <= 0) throw "user " + id.toString() + " does not exist";
     return "user" + id.toString();
 }
 
-fn greeting(id: i32) -> Task<Result<string, string>> {
+fn greeting(id: i32) -> Async<Result<string, string>> {
     val u = try await fetchUser(id);
     return "Hello, " + u;
 }
 
-fn nameOr(id: i32) -> Task<string> {
+fn nameOr(id: i32) -> Async<string> {
     return try await fetchUser(id) catch "guest";
 }
 
@@ -30,7 +30,7 @@ fn show(r: Result<string, string>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val found = await fetchUser(1);
     show(found);
     val missing = await fetchUser(0);

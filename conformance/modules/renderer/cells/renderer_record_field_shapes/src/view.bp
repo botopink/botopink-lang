@@ -22,6 +22,6 @@ pub fn firstOf<T>(b: Box<T>, fallback: T) -> T {
     return b.items.at(0) ?? fallback;
 }
 
-pub fn count<El>(v: ElementView<El>, thunks: Array<fn() -> Task<El>>) -> i32 {
+pub fn count<El>(v: ElementView<El>, thunks: Array<fn() -> Async<El>>) -> i32 {
     return thunks.length;
 }

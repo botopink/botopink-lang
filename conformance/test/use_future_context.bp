@@ -14,7 +14,7 @@ fn request() -> Component<Request> {
     return Request(code: 7);
 }
 
-fn load(n: i32) -> Task<i32> {
+fn load(n: i32) -> Async<i32> {
     return n;
 }
 
@@ -26,7 +26,7 @@ fn Page() -> Component<Element> {
 }
 
 // The component composes with a `#[@future]` caller that awaits it.
-fn rendered() -> Task<i32> {
+fn rendered() -> Async<i32> {
     val e = await Page();
     return e.count;
 }

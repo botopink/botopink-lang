@@ -20,7 +20,7 @@ fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn answer(n: i32) -> Task<i32> {
+fn answer(n: i32) -> Async<i32> {
     return n;
 }
 
@@ -49,7 +49,7 @@ fn Plain(n: i32) -> Component<Element> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     await Plain(40);
     await page(41);
     await Widget(41);

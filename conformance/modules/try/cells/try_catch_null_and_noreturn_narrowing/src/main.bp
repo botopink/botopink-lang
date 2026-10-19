@@ -11,7 +11,7 @@ import {failure.panic, io.terminal.print} from "std";
 
 pub type Post(title: string)
 
-fn loadPost(id: i32) -> Task<Result<Post, string>> {
+fn loadPost(id: i32) -> Async<Result<Post, string>> {
     return async {
         if (id == 1) return Post(title: "hello");
         throw "missing";
@@ -22,19 +22,19 @@ fn notFound() -> noreturn {
     panic("404");
 }
 
-fn titleOf(id: i32) -> Task<string> {
+fn titleOf(id: i32) -> Async<string> {
     val post = try await loadPost(id) catch null;
     if (post == null) return "none";
     return post.title;
 }
 
-fn mustTitle(id: i32) -> Task<string> {
+fn mustTitle(id: i32) -> Async<string> {
     val post: ?Post = try await loadPost(id) catch null;
     if (post == null) notFound();
     return post.title;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     print(await titleOf(1));
     print(await titleOf(2));
     print(await mustTitle(1));

@@ -12,7 +12,7 @@
 
 import {io.terminal.print} from "std";
 
-fn fibonacci(limit: i32) -> Iterator<i32> {
+fn fibonacci(limit: i32) -> Iter<i32> {
     var a = 0;
     var b = 1;
     var i = 0;
@@ -25,14 +25,14 @@ fn fibonacci(limit: i32) -> Iterator<i32> {
     }
 }
 
-fn firstNegative(xs: i32[]) -> Iterator<i32> {
+fn firstNegative(xs: i32[]) -> Iter<i32> {
     for (xs) { x ->
         if (x < 0) break x;
         yield x;
     }
 }
 
-fn line(it: Iterator<i32>) -> string {
+fn line(it: Iter<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();

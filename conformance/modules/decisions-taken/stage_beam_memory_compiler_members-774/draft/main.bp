@@ -19,7 +19,7 @@ component fn Badge(name: string) -> Component<Element> {
     return Element(text: label);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     print(comptime double(21));
     hits = hits + double(1);
     print(hits);

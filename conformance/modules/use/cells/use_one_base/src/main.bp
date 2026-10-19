@@ -34,6 +34,6 @@ fn Widget(n: i32) -> Component<Element> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     await Widget(10);
 }

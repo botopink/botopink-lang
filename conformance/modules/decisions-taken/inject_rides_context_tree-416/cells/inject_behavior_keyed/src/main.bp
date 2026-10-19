@@ -40,7 +40,7 @@ fn Root() -> Component<View> {
     return View(text: l.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val outside = await Lookup();
     print(outside.text);
     val inside = await Root();

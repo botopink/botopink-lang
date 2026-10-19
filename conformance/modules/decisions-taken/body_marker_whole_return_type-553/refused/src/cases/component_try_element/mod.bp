@@ -6,7 +6,7 @@
 
 type Element(count: i32) implement Renderable
 
-fn fetchCount(n: i32) -> Task<Result<i32, string>> {
+fn fetchCount(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     return n;
 }

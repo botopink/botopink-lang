@@ -14,7 +14,7 @@ pub fn Avatar() -> Component<Element> {
     return Element(text: "avatar " + s);
 }
 
-fn loadPosts() -> Task<string> {
+fn loadPosts() -> Async<string> {
     return "3 posts";
 }
 

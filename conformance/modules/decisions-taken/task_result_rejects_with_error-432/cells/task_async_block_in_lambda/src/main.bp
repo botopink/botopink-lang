@@ -9,14 +9,14 @@
 import {io.terminal.print} from "std";
 
 type Worker(id: i32) {
-    fn start(self: Self, n: i32) -> Task<Result<i32, string>> {
+    fn start(self: Self, n: i32) -> Async<Result<i32, string>> {
         return async {
             if (n < 0) throw "method " + n.toString();
             return n + 10;
         };
     }
 
-    fn lazyStart(self: Self) -> fn(n: i32) -> Task<Result<i32, string>> {
+    fn lazyStart(self: Self) -> fn(n: i32) -> Async<Result<i32, string>> {
         return { n ->
             async {
                 if (n < 0) throw "method lambda";
@@ -33,8 +33,8 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn nested() -> Task<Result<i32, string>> {
-    val inner: fn() -> Task<Result<i32, string>> = { ->
+fn nested() -> Async<Result<i32, string>> {
+    val inner: fn() -> Async<Result<i32, string>> = { ->
         async {
             throw "nested";
         }
@@ -42,14 +42,14 @@ fn nested() -> Task<Result<i32, string>> {
     return inner();
 }
 
-fn run() -> Task<void> {
-    val failing: fn(n: i32) -> Task<Result<i32, string>> = { n ->
+fn run() -> Async<void> {
+    val failing: fn(n: i32) -> Async<Result<i32, string>> = { n ->
         async {
             throw "inner";
         }
     };
     show(await failing(1));
-    val maybe: fn(n: i32) -> Task<Result<i32, string>> = { n ->
+    val maybe: fn(n: i32) -> Async<Result<i32, string>> = { n ->
         async {
             if (n < 0) throw "negative " + n.toString();
             return n * 2;

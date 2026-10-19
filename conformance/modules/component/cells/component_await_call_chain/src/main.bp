@@ -27,7 +27,7 @@ fn Direct(name: string) -> Component<Service> {
     return Service(name: s.name + "!");
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val b = await Bound("card");
     print(b.name);
     val d = await Direct("card");

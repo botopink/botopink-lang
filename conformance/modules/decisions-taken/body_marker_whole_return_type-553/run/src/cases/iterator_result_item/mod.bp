@@ -14,13 +14,13 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn checked(xs: i32[]) -> Iterator<Result<i32, string>> {
+fn checked(xs: i32[]) -> Iter<Result<i32, string>> {
     for (xs) { x ->
         yield try check(x);
     }
 }
 
-fn upTo(limit: i32) -> Iterator<Result<i32, string>> {
+fn upTo(limit: i32) -> Iter<Result<i32, string>> {
     var i = 0;
     loop {
         if (i == limit) throw "limit " + limit.toString();
@@ -29,13 +29,13 @@ fn upTo(limit: i32) -> Iterator<Result<i32, string>> {
     }
 }
 
-fn asIs() -> Iterator<Result<i32, string>> {
+fn asIs() -> Iter<Result<i32, string>> {
     yield check(1);
     yield check(-2);
     yield 3;
 }
 
-fn walk(name: string, it: Iterator<Result<i32, string>>) {
+fn walk(name: string, it: Iter<Result<i32, string>>) {
     for (it) { r ->
         case r {
             Ok(v) -> print(name + " ok " + v.toString());

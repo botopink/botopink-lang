@@ -2,25 +2,25 @@ import {io.terminal.print} from "std";
 
 type User(id: i32, name: string)
 
-fn fetchUser(id: i32) -> Task<Result<User, string>> {
+fn fetchUser(id: i32) -> Async<Result<User, string>> {
     if (id <= 0)
         throw "no user " + id.toString(); // legal: the value is a Result
-    return User(id: id, name: "ana"); // a Task holding Ok(…)
+    return User(id: id, name: "ana"); // a Async holding Ok(…)
 }
 
-fn greetingFor(id: i32) -> Task<Result<string, string>> {
+fn greetingFor(id: i32) -> Async<Result<string, string>> {
     val u = try await fetchUser(
         id,
     ); // await answers the Result; try propagates it
     return "Hello, " + u.name;
 }
 
-fn greetingOrGuest(id: i32) -> Task<string> {
+fn greetingOrGuest(id: i32) -> Async<string> {
     val u = try await fetchUser(id) catch User(id: 0, name: "guest");
     return "Hello, " + u.name; // no Result in the return: handled here
 }
 
-fn describeUser(id: i32) -> Task<string> {
+fn describeUser(id: i32) -> Async<string> {
     val r = await fetchUser(id); // the Result itself
     return case r {
         Ok(u) -> u.name;
@@ -28,7 +28,7 @@ fn describeUser(id: i32) -> Task<string> {
     };
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val g = await greetingFor(1);
     print(g.unwrapOr("none")); // Hello, ana
     print(await greetingOrGuest(0)); // Hello, guest

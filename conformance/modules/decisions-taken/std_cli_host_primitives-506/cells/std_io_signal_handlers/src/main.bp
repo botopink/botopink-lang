@@ -17,7 +17,7 @@ fn installed(r: Result<void, process.ProcessError>) -> string {
     };
 }
 
-fn scenario() -> Task<void> {
+fn scenario() -> Async<void> {
     print(installed(process.onSignal(process.Signal.Term, { -> print("Term handler one"); })));
     print(installed(process.onSignal(process.Signal.Term, { -> print("Term handler two"); })));
     print(installed(process.onSignal(process.Signal.Hup, { -> print("Hup handler"); })));

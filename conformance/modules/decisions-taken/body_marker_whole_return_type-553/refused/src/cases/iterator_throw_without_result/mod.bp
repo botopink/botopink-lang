@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn g() -> Iterator<i32> {
+fn g() -> Iter<i32> {
     yield 1;
     throw "x";
 }

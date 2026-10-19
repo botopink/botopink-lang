@@ -38,7 +38,7 @@ fn render(e: Element) -> string {
     return out;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val page = await Page(Slot(view: { c -> Wrap(c) }));
     print(render(page));
 }

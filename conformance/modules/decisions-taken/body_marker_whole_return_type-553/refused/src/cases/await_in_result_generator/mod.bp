@@ -5,9 +5,9 @@
 
 import {io.terminal.print} from "std";
 
-fn fetch(n: i32) -> Task<i32> { return n; }
+fn fetch(n: i32) -> Async<i32> { return n; }
 
-fn bad(n: i32) -> Iterator<i32> {
+fn bad(n: i32) -> Iter<i32> {
     val w = await fetch(n);
     yield w;
 }

@@ -37,7 +37,7 @@ fn Outer() -> Component<Styled> {
     return b;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val r = await Render({ -> badge("red") });
     print(r.className);
     val o = await Outer();

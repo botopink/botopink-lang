@@ -21,19 +21,19 @@ type View(text: string, kids: Component<View>[]) implement Renderable
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 #[compiler.external(.JavaScript("""($0)()"""), .Erlang("""($0)()"""))]
-declare fn hostNow(f: fn() -> Task<Rendered<View>>) -> Task<Rendered<View>>;
+declare fn hostNow(f: fn() -> Async<Rendered<View>>) -> Async<Rendered<View>>;
 
 #[compiler.external(
     .JavaScript("""(globalThis.__bpScopeStash = $0, undefined)"""),
     .Erlang("""persistent_term:put(bp_scope_stash, $0)"""),
 )]
-declare fn hostStash(f: fn() -> Task<Rendered<View>>) -> void;
+declare fn hostStash(f: fn() -> Async<Rendered<View>>) -> void;
 
 #[compiler.external(
     .JavaScript("""globalThis.__bpScopeStash"""),
     .Erlang("""persistent_term:get(bp_scope_stash)"""),
 )]
-declare fn hostStashed() -> fn() -> Task<Rendered<View>>;
+declare fn hostStashed() -> fn() -> Async<Rendered<View>>;
 
 fn Label(prefix: string) -> Component<View> {
     val t = use context(themeContext);
@@ -57,7 +57,7 @@ fn Root() -> Component<View> {
 
 // The library: run `c` with `scope`, then each child with the scope `c`'s
 // run answered.
-fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
+fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     hostStash({ -> c.run(scope) });
     val r = await hostNow({ -> c.run(scope) });
     var out = r.value.text;
@@ -68,7 +68,7 @@ fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
     return out;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     print(await render(Root(), RenderScope.root()));
     val later = hostStashed();
     val first = await later();

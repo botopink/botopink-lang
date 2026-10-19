@@ -6,12 +6,12 @@
 
 import {io.terminal.print} from "std";
 
-fn check(n: i32) -> Task<Result<void, string>> {
+fn check(n: i32) -> Async<Result<void, string>> {
     if (n < 0) { throw "negative"; }
     val _seen = n;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val r = await check(1);
     case r {
         Ok(_) -> print("ok");

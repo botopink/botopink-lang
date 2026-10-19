@@ -7,7 +7,7 @@
 
 import {io.terminal.print} from "std";
 
-fn old(n: i32) -> Iterator<i32, string> {
+fn old(n: i32) -> Iter<i32, string> {
     yield n;
 }
 

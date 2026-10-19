@@ -42,7 +42,7 @@ fn Root() -> Component<Element> {
     return Element(text: a.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val r = await Root();
     print(r.text);
 }

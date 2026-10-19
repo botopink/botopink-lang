@@ -15,7 +15,7 @@ type Element(text: string) implement Renderable
 #[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;
 
-fn loadComments() -> Task<string> {
+fn loadComments() -> Async<string> {
     return "2 comments";
 }
 
@@ -63,7 +63,7 @@ fn Slow() -> Component<Element> {
     return Element(text: a.text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val b = Box(n: "z");
     print(pending(b.badge().run(RenderScope.root())));
     print(pending(b.later().run(RenderScope.root())));

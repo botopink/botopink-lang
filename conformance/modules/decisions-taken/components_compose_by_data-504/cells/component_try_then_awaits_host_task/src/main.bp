@@ -27,7 +27,7 @@ fn Page(s: string) -> Component<View> {
     return View(text: text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val a = await Page("x");
     print(a.text);
     val b = await Page("");

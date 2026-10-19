@@ -7,12 +7,12 @@
 
 import {io.terminal.print} from "std";
 
-fn early(stop: bool) -> Task<void> {
+fn early(stop: bool) -> Async<void> {
     if (stop) return;
     print("after");
 }
 
-fn deeper(a: bool, b: bool) -> Task<void> {
+fn deeper(a: bool, b: bool) -> Async<void> {
     if (a) {
         if (b) return;
         print("a, not b");
@@ -23,7 +23,7 @@ fn deeper(a: bool, b: bool) -> Task<void> {
     print("end of deeper");
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     await early(true);
     print("--");
     await early(false);

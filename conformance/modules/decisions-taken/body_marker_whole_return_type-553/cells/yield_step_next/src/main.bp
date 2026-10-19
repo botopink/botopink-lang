@@ -12,12 +12,12 @@
 
 import {io.terminal.print} from "std";
 
-fn two() -> Iterator<i32> {
+fn two() -> Iter<i32> {
     yield 1;
     yield 2;
 }
 
-fn countdown(n: i32) -> Stream<i32> {
+fn countdown(n: i32) -> AsyncIter<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -33,7 +33,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     return t;
 }
 
-fn firstThree(it: Iterator<i32>) -> string {
+fn firstThree(it: Iter<i32>) -> string {
     var acc = "";
     var i = 0;
     while (i < 3) {
@@ -43,7 +43,7 @@ fn firstThree(it: Iterator<i32>) -> string {
     return acc;
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val s = countdown(2);
     print(stepText(await s.next()));
     print(stepText(await s.next()));

@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 type Worker(id: i32) {
-    fn lazyStart(self: Self) -> fn(n: i32) -> Task<Result<i32, string>> {
+    fn lazyStart(self: Self) -> fn(n: i32) -> Async<Result<i32, string>> {
         return { n ->
             async {
                 if (n < 0) throw "negative " + n.toString();
@@ -22,7 +22,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val w = Worker(id: 10);
     val later = w.lazyStart();
     show(await later(2));

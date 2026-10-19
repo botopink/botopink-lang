@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: for-over-stream: a `@Stream` suspends between items — iterate it with `for await`
+refused error: for-over-stream: a `@AsyncIter` suspends between items — iterate it with `for await`
 at src/cases/for_future_generator_without_await/mod.bp:13:5

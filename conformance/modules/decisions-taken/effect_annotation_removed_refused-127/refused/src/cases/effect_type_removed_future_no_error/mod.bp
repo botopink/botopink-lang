@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-fn answer(n: i32) -> Task<i32> { return n; }
+fn answer(n: i32) -> Async<i32> { return n; }
 
 fn keep(t: @Future<i32>) -> i32 { return 1; }
 

@@ -1,4 +1,4 @@
-# Decision 432 — A `@Task<@Result<T, E>>` is the task that fails with `E`: its Promise rejects with `E` and resolves with `T`; a `@Task<T>` does not fail.
+# Decision 432 — A `@Async<@Result<T, E>>` is the task that fails with `E`: its Promise rejects with `E` and resolves with `T`; a `@Async<T>` does not fail.
 
 [cells/async_retry_policy/src/main.bp](cells/async_retry_policy/src/main.bp)
 [cells/task_async_block_in_lambda/src/main.bp](cells/task_async_block_in_lambda/src/main.bp)

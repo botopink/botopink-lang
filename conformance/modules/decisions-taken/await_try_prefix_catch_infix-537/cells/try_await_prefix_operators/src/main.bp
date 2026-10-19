@@ -11,11 +11,11 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn load(n: i32) -> Task<i32> {
+fn load(n: i32) -> Async<i32> {
     return n;
 }
 
-fn ready() -> Task<bool> {
+fn ready() -> Async<bool> {
     return true;
 }
 
@@ -35,7 +35,7 @@ fn shown(n: i32) -> Result<string, string> {
     return (try parse(n)).toString();
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val t = load(21);
     print(await t * 2);
     print(await load(2) + await load(3));

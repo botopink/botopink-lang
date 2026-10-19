@@ -119,13 +119,13 @@ fn ifArgument(b: bool) -> string {
     return show(if (b) 9 else "nine");
 }
 
-fn later(n: i32) -> Task<i32> {
+fn later(n: i32) -> Async<i32> {
     return async {
         return n;
     };
 }
 
-fn machine(s: Shape) -> Task<string> {
+fn machine(s: Shape) -> Async<string> {
     return async {
         val k = await later(10);
         val v = case s {
@@ -143,7 +143,7 @@ fn machine(s: Shape) -> Task<string> {
     };
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     print(await machine(Shape.Circle(r: 1)));
     print(await machine(Shape.Label(text: "m")));
 }

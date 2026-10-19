@@ -6087,7 +6087,7 @@ check each one (`zig build test`), never a conformance cell — every cell's man
 118–128) and kept no compatibility window (decision 127): every old form below
 is a located compile error with a fix-it — `effect-annotation-removed` for an
 annotation (on a loop it suggests `iter` / `stream`), `effect-type-removed` for
-a wrapper name, `iterator-error-param-removed` for `Iterator<T, E>`. There is
+a wrapper name, `iterator-error-param-removed` for `Iter<T, E>`. There is
 no automatic rewriter: each error names the new spelling, from the table below.
 
 <!-- example: modules/decisions-taken/effect_annotation_removed_refused-127/refused/src/cases/effect_annotation_removed_async_generator -->
@@ -6127,7 +6127,7 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `#[@resultGenerator] loop { … }` | `iter loop { … }` (the item becomes a `Result` from the body) |
 | `#[@futureGenerator] loop { … }` | `stream loop { … }` |
 | `YieldStep<T, E>` with `Error(error: E)` | `YieldStep<T>` = `{ Yield(value: T), Done }` |
-| `Iterator<T, E>` | `Iter<Result<T, E>>` |
+| `Iter<T, E>` | `Iter<Result<T, E>>` |
 | `#[@context]` / `@Context<B, R>` as an effect | `-> Component<R>` |
 | `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator` | `Iter<Result<…>>` / `AsyncIter<Result<…>>` |
 | `Iterable`, `IteratorStep`, `Yield<T, R>` | `YieldStep<T>` |

@@ -6,7 +6,7 @@
 import {io.process, io.terminal.print} from "std";
 
 // The child installs its trap within a few milliseconds of starting: half a second is the margin.
-fn scenario() -> Task<void> {
+fn scenario() -> Async<void> {
     val child = process.spawn("sh", [
         "-c",
         "trap 'echo the child got SIGTERM; exit 7' TERM; while true; do sleep 0.05; done",

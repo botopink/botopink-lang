@@ -1,5 +1,5 @@
 //// Decision 606 (1) — the prelude's types and behaviors are written bare, with no import:
-//// `Result`, `Task`, `Iterator`, `Component` and the marker `Renderable`, in a return, a
+//// `Result`, `Async`, `Iter`, `Component` and the marker `Renderable`, in a return, a
 //// parameter, an `implement` clause and as a type argument of another.
 
 import {io.terminal.print} from "std";
@@ -11,11 +11,11 @@ fn parse(s: string) -> Result<i32, string> {
     throw "not one: " + s;
 }
 
-fn later(n: i32) -> Task<i32> {
+fn later(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn upTo(n: i32) -> Iterator<i32> {
+fn upTo(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -23,7 +23,7 @@ fn upTo(n: i32) -> Iterator<i32> {
     }
 }
 
-fn joined(it: Iterator<i32>) -> string {
+fn joined(it: Iter<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
@@ -36,7 +36,7 @@ fn Card(text: string) -> Component<Badge> {
     return Badge(label: text);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     print(parse("1"), parse("2"));
     print(await later(21));
     print(joined(upTo(4)));

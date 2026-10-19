@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn load() -> Task<i32> {
+fn load() -> Async<i32> {
     return 4;
 }
 

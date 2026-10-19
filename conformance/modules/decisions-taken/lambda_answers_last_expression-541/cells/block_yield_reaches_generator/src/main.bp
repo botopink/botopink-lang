@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-fn items() -> Iterator<i32> {
+fn items() -> Iter<i32> {
     yield 0;
     { yield 1; yield 2; }
     case 3 {

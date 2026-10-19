@@ -11,14 +11,14 @@ import {async, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets)]
 var hits: i32 = 0;
 
-fn request() -> Task<i32> {
+fn request() -> Async<i32> {
     hits = hits + 1;
     hits = hits + 1;
     hits += 1;
     return 0;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val done = await async.runAll(
         [
             { -> request() },

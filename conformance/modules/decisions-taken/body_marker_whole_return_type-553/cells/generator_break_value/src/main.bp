@@ -14,7 +14,7 @@
 
 import {io.terminal.print} from "std";
 
-fn upto(n: i32) -> Iterator<i32> {
+fn upto(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         yield i;
@@ -23,20 +23,20 @@ fn upto(n: i32) -> Iterator<i32> {
     break 7;
 }
 
-fn ends() -> Iterator<i32> {
+fn ends() -> Iter<i32> {
     yield 1;
     break;
     yield 2;
 }
 
 // The same rule on another iterator.
-fn last() -> Iterator<i32> {
+fn last() -> Iter<i32> {
     yield 5;
     break 6;
 }
 
 // A plain `fn` iterates a `Iter<T>`.
-fn plainDigits(g: Iterator<i32>) -> string {
+fn plainDigits(g: Iter<i32>) -> string {
     var acc = "";
     for (g) { x ->
         acc = acc + x.toString();

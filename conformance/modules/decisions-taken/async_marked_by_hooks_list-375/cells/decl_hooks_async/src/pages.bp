@@ -24,7 +24,7 @@ fn graph(syntax decl: unknown) {
     compiler.setMeta(Graph(nodes: nodes));
 }
 
-fn loadComments() -> Task<string> {
+fn loadComments() -> Async<string> {
     return "2 comments";
 }
 

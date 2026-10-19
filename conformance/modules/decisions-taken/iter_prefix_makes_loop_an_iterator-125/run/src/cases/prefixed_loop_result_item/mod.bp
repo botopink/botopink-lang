@@ -12,7 +12,7 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn walk(name: string, it: Iterator<Result<i32, string>>) {
+fn walk(name: string, it: Iter<Result<i32, string>>) {
     for (it) { r ->
         case r {
             Ok(v) -> print(name + " ok " + v.toString());

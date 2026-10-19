@@ -6,7 +6,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() {
-    val firstTwo: fn(xs: i32[]) -> Iterator<i32> = { iter xs ->
+    val firstTwo: fn(xs: i32[]) -> Iter<i32> = { iter xs ->
         var n = 0;
         for (xs) { x ->
             if (x < 0) continue;

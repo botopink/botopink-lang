@@ -26,7 +26,7 @@ fn joined(texts: string[], parts: string[]) -> Component<string> {
     return out;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val s = await joined(["<", "|", "|", ">"], ["a", "b", "c"]);
     print(s);
 }

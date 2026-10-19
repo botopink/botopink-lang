@@ -23,7 +23,7 @@
 import {io.terminal.print} from "std";
 
 type Box(items: Array<i32>) {
-    fn each(self: Self) -> Iterator<i32> {
+    fn each(self: Self) -> Iter<i32> {
         for (self.items) { x ->
             yield x;
         }
@@ -31,7 +31,7 @@ type Box(items: Array<i32>) {
 }
 
 type Tally(seed: i32) implement Tally {
-    fn upto(self: Self, n: i32) -> Iterator<i32> {
+    fn upto(self: Self, n: i32) -> Iter<i32> {
         var i = self.seed;
         while (i < n) {
             yield i;
@@ -39,7 +39,7 @@ type Tally(seed: i32) implement Tally {
         }
     }
 
-    fn total(self: Self, n: i32) -> Task<i32> {
+    fn total(self: Self, n: i32) -> Async<i32> {
         var acc = self.seed;
         var i = 0;
         while (i < n) {
@@ -55,7 +55,7 @@ type Shape {
     Rect(width: i32, height: i32),
     Dot,
 
-    fn counts(self: Self, n: i32) -> Iterator<i32> {
+    fn counts(self: Self, n: i32) -> Iter<i32> {
         var i = 0;
         while (i < n) {
             yield i;
@@ -64,7 +64,7 @@ type Shape {
     }
 }
 
-fn digits(xs: Iterator<i32>) -> i32 {
+fn digits(xs: Iter<i32>) -> i32 {
     var acc = 0;
     for (xs) { v ->
         acc = acc * 10 + v;

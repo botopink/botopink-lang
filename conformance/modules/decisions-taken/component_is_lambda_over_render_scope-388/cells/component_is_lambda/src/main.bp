@@ -32,7 +32,7 @@ fn twice<T>(x: T) -> T[] {
 }
 
 // Run `c` with `scope`, then each child with the scope `c`'s run answered.
-fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
+fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     val r = await c.run(scope);
     var out = r.value.text;
     for (r.value.kids) { k ->
@@ -42,7 +42,7 @@ fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
     return out;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val c = Card(Item(name: "x"));
     val cs = twice(c);
     print("made " + cs.length.toString());

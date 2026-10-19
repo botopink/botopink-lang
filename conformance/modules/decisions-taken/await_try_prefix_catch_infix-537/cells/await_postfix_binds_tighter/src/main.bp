@@ -5,17 +5,17 @@
 
 import {io.terminal.print} from "std";
 
-type Box(task: Task<i32>) {
-    fn again(self: Self) -> Task<i32> {
+type Box(task: Async<i32>) {
+    fn again(self: Self) -> Async<i32> {
         return self.task;
     }
 }
 
-fn make(n: i32) -> Task<i32> {
+fn make(n: i32) -> Async<i32> {
     return n * 10;
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val box = Box(task: make(4));
     print(await box.task);
     print(await make(3));

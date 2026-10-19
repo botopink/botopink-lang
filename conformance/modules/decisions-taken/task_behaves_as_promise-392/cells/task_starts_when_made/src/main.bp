@@ -12,15 +12,15 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm(wasi: .Delay),
 )]
-declare fn delay<T>(millis: i32, value: T) -> Task<T>;
+declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 
-fn work(label: string) -> Task<string> {
+fn work(label: string) -> Async<string> {
     print("started " + label);
     val v = await delay(5, label);
     return v + "!";
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val t = work("a");
     print("made");
     val first = await t;

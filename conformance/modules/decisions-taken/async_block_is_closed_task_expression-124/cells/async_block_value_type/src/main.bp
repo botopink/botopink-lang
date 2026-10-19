@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-type Holder(t: Task<i32>, r: Task<Result<i32, string>>, s: Task<Result<i32, string>>)
+type Holder(t: Async<i32>, r: Async<Result<i32, string>>, s: Async<Result<i32, string>>)
 
 fn check(n: i32) -> Result<i32, string> {
     if (n < 0) throw "negative";
@@ -16,10 +16,10 @@ fn check(n: i32) -> Result<i32, string> {
 }
 
 fn make(n: i32) -> Holder {
-    val t: Task<i32> = async {
+    val t: Async<i32> = async {
         return n + 1;
     };
-    val r: Task<Result<i32, string>> = async {
+    val r: Async<Result<i32, string>> = async {
         val v = try check(n);
         return v * 10;
     };
@@ -37,7 +37,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val h = make(3);
     print(await h.t);
     show(await h.r);

@@ -15,7 +15,7 @@ component fn Label() -> Component<Element> {
     return Element(text: t.mode);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val l = await Label();
     print(l.text);
 }

@@ -1,4 +1,4 @@
-//// Decision 732 — (a): `Async<T>` is the one name of an `async` body's return type; `Task` is no name of the prelude.
+//// Decision 732 — (a): `Async<T>` is the one name of an `async` body's return type; `Async` is no name of the prelude.
 
 import {io.terminal} from "std";
 

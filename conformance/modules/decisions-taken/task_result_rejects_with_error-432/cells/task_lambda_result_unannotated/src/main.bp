@@ -12,7 +12,7 @@ fn show(r: Result<i32, string>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val failing = { n ->
         async {
             throw "inner";

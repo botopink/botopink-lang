@@ -10,13 +10,13 @@ import {async, io.terminal.print} from "std";
 #[compiler.beamMemory(.ProcessDict)]
 var scratch: i32 = 0;
 
-fn elsewhere() -> Task<i32> {
+fn elsewhere() -> Async<i32> {
     val before = scratch;
     scratch = 99;
     return before;
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     scratch = 5;
     val seen = await async.runAll([{ -> elsewhere() }]);
     print(seen);

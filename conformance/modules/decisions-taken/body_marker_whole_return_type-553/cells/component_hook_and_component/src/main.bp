@@ -3,7 +3,7 @@
 //// `#[@use] fn f() -> Component<T>`, `#[@context]` and `-> Element` on a
 //// component that uses a hook) — one wrapper, `Component<T>`, with the base
 //// always written. A HOOK returns any `T` (`state`: `i32`, `label`: `string`);
-//// `counter` is a hook that composes a hook with `use` and awaits a Task
+//// `counter` is a hook that composes a hook with `use` and awaits a Async
 //// (`Component ⊃ Async`); `Widget` is a COMPONENT (its `T` implements
 //// `@Renderable`) holding `use` and `await` in one body, and `main`
 //// awaits it (decision 388: the call only makes its lambda).
@@ -23,7 +23,7 @@ fn label() -> Component<string> {
     return "clicks";
 }
 
-fn answer(n: i32) -> Task<i32> {
+fn answer(n: i32) -> Async<i32> {
     return n;
 }
 
@@ -43,6 +43,6 @@ fn Widget(n: i32) -> Component<Element> {
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     await Widget(1);
 }

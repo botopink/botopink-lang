@@ -1,15 +1,15 @@
 //// Decision 584 (1) — `{ async iter n -> … }` is a lambda whose body may
-//// `yield` and `await`, answering a `Stream`, typed by the function type it
+//// `yield` and `await`, answering a `AsyncIter`, typed by the function type it
 //// is written for (147): an annotated `val`, and the trailing form,
 //// `drain(3) { async iter n -> … }`.
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Task<i32> {
+fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-fn drain(n: i32, f: fn(n: i32) -> Stream<i32>) -> Task<i32> {
+fn drain(n: i32, f: fn(n: i32) -> AsyncIter<i32>) -> Async<i32> {
     var acc = 0;
     for await (f(n)) { x ->
         acc = acc + x;
@@ -17,8 +17,8 @@ fn drain(n: i32, f: fn(n: i32) -> Stream<i32>) -> Task<i32> {
     return acc;
 }
 
-pub fn main() -> Task<void> {
-    val ticks: fn(n: i32) -> Stream<i32> = { async iter n ->
+pub fn main() -> Async<void> {
+    val ticks: fn(n: i32) -> AsyncIter<i32> = { async iter n ->
         yield await double(n);
         yield await double(n + 1);
     };

@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-fn walk(f: fn() -> Iterator<i32>) {
+fn walk(f: fn() -> Iter<i32>) {
     for (f()) { x ->
         print(x);
     }

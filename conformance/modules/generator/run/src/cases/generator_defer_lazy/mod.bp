@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-iter fn counted() -> Iterator<i32> {
+iter fn counted() -> Iter<i32> {
     defer print("closed");
     print("before");
     yield 1;

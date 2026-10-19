@@ -5,11 +5,11 @@
 
 import {io.terminal.print} from "std";
 
-fn double(x: i32) -> Task<i32> {
+fn double(x: i32) -> Async<i32> {
     return x * 2;
 }
 
-fn sum(f: fn(n: i32) -> Iterator<i32>, n: i32) -> i32 {
+fn sum(f: fn(n: i32) -> Iter<i32>, n: i32) -> i32 {
     var acc = 0;
     for (f(n)) { x ->
         acc = acc + x;
@@ -17,8 +17,8 @@ fn sum(f: fn(n: i32) -> Iterator<i32>, n: i32) -> i32 {
     return acc;
 }
 
-pub fn main() -> Task<void> {
-    val upTo: fn(n: i32) -> Iterator<i32> = { iter n ->
+pub fn main() -> Async<void> {
+    val upTo: fn(n: i32) -> Iter<i32> = { iter n ->
         var i = 0;
         while (i < n) {
             yield i;
@@ -32,7 +32,7 @@ pub fn main() -> Task<void> {
         yield n;
         yield n * 10;
     }, 2));
-    val ticks: fn(n: i32) -> Stream<i32> = { async iter n ->
+    val ticks: fn(n: i32) -> AsyncIter<i32> = { async iter n ->
         yield await double(n);
         yield await double(n + 1);
     };

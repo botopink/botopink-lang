@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-fn fetchCount() -> Task<i32> { return 1; }
+fn fetchCount() -> Async<i32> { return 1; }
 
 fn noAwait() -> Result<i32, string> {
     val x = await fetchCount();

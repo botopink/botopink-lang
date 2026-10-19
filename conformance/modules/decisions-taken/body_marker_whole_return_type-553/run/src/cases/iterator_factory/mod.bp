@@ -9,26 +9,26 @@
 
 import {io.terminal.print} from "std";
 
-fn evens(xs: i32[]) -> Iterator<i32> {
+fn evens(xs: i32[]) -> Iter<i32> {
     for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
 
-fn evensOf(xs: i32[]) -> Iterator<i32> {
+fn evensOf(xs: i32[]) -> Iter<i32> {
     return iter for (xs) { x ->
         if (x % 2 == 0) yield x;
     };
 }
 
-fn pick(up: bool, xs: i32[]) -> Iterator<i32> {
+fn pick(up: bool, xs: i32[]) -> Iter<i32> {
     if (up) return evens(xs);
     return iter for (xs) { x ->
         yield x * 10;
     };
 }
 
-fn line(it: Iterator<i32>) -> string {
+fn line(it: Iter<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();

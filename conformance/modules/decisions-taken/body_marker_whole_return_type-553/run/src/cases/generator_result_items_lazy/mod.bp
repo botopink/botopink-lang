@@ -11,14 +11,14 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-iter fn parsed() -> Iterator<Result<i32, string>> {
+iter fn parsed() -> Iter<Result<i32, string>> {
     print("parsed before");
     yield check(1);
     print("parsed after");
     yield check(-2);
 }
 
-iter fn sugared(xs: i32[]) -> Iterator<Result<i32, string>> {
+iter fn sugared(xs: i32[]) -> Iter<Result<i32, string>> {
     for (xs) { x ->
         print("sugared " + x.toString());
         val v = try check(x);
@@ -26,7 +26,7 @@ iter fn sugared(xs: i32[]) -> Iterator<Result<i32, string>> {
     }
 }
 
-iter fn thrown(xs: i32[]) -> Iterator<Result<i32, string>> {
+iter fn thrown(xs: i32[]) -> Iter<Result<i32, string>> {
     for (xs) { x ->
         print("thrown before " + x.toString());
         if (x < 0) throw "stop at " + x.toString();

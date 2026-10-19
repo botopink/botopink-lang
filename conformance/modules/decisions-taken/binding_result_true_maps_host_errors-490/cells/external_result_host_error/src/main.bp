@@ -43,7 +43,7 @@ declare fn answered(n: i32) -> Result<i32, HostError>;
     .Erlang("""(case $0 > 0 of true -> $0 * 3; false -> erlang:error(late) end)""", result: true),
     .Wasm(body: laterBody),
 )]
-declare fn later(n: i32) -> Task<Result<i32, HostError>>;
+declare fn later(n: i32) -> Async<Result<i32, HostError>>;
 
 fn hostError(message: string, name: failure.HostErrorName) -> HostError {
     return HostError(message: message, kind: "host", name: name, detail: null);
@@ -64,7 +64,7 @@ fn answeredBody(n: i32) -> Result<i32, HostError> {
     return n + 1;
 }
 
-fn laterBody(n: i32) -> Task<Result<i32, HostError>> {
+fn laterBody(n: i32) -> Async<Result<i32, HostError>> {
     if (n <= 0) throw hostError("late", failure.HostErrorName.Error);
     return n * 3;
 }
@@ -76,7 +76,7 @@ fn show(r: Result<i32, HostError>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     show(double(21));
     show(double(-1));
     show(thrown(5));

@@ -7,7 +7,7 @@
 
 import {io.terminal.print} from "std";
 
-fn line(it: Iterator<i32>) -> string {
+fn line(it: Iter<i32>) -> string {
     var acc = "";
     for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();

@@ -9,12 +9,12 @@
 
 import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
 
-fn doubled(n: i32) -> Task<i32> {
+fn doubled(n: i32) -> Async<i32> {
     if (n < 0) panic("a negative input");
     return n * 2;
 }
 
-fn lookup(n: i32) -> Task<Result<i32, string>> {
+fn lookup(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) throw "not found";
     return n;
 }
@@ -26,7 +26,7 @@ fn show(r: Result<i32, Failure>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     show(await failure.attemptTask({ -> doubled(21) }));
     show(await failure.attemptTask({ -> doubled(-1) }));
     val found = await failure.attemptTask({ -> lookup(-1) });

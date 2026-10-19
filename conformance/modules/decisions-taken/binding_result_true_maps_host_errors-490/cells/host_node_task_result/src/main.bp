@@ -14,7 +14,7 @@ import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 #[compiler.external(
     .JavaScript("""(($0 > 0) ? Promise.resolve($0 * 2) : Promise.reject('refused ' + $0))""", result: true),
 )]
-declare fn hostDouble(n: i32) -> Task<Result<i32, HostError>>;
+declare fn hostDouble(n: i32) -> Async<Result<i32, HostError>>;
 
 fn show(r: Result<i32, HostError>) {
     case r {
@@ -23,7 +23,7 @@ fn show(r: Result<i32, HostError>) {
     }
 }
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     show(await hostDouble(21));
     show(await hostDouble(0));
     val a = try await hostDouble(1) catch 0;

@@ -32,7 +32,7 @@ fn killed(r: Result<void, process.ProcessError>) -> string {
     };
 }
 
-fn childScenario() -> Task<void> {
+fn childScenario() -> Async<void> {
     val first = process.spawn("sh", ["-c", "echo the child speaks; exit 3"]);
     case first {
         Ok(c) {
@@ -57,7 +57,7 @@ fn childScenario() -> Task<void> {
     }
 }
 
-fn scenario() -> Task<void> {
+fn scenario() -> Async<void> {
     print(refusal(process.spawn("definitely-not-a-binary-bp-std", [])));
     print(refusal(process.spawn("/", [])));
     fs.writeText("not-executable.txt", "plain text");

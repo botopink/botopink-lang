@@ -7,11 +7,11 @@ import {io.terminal.print} from "std";
 
 pub type Post(title: string)
 
-fn loadPost(id: i32) -> Task<Result<Post, string>> {
+fn loadPost(id: i32) -> Async<Result<Post, string>> {
     return async { throw "missing"; };
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val post: Post = try await loadPost(1) catch 7;
     print(post.title);
 }

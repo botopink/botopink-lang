@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 
 fn parse(n: i32) -> Result<i32, string> { return n; }
 
-fn counted(n: i32) -> Iterator<i32> {
+fn counted(n: i32) -> Iter<i32> {
     val v = try parse(n);
     yield v;
 }

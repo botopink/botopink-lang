@@ -16,7 +16,7 @@ fn Run(e: Entry) -> Component<Element> {
     return Element(count: out.count + 1);
 }
 
-pub fn main() -> Task<void> {
+pub fn main() -> Async<void> {
     val e = Entry(name: "a", view: { -> make(6) });
     val r = await Run(e);
     print(r.count);

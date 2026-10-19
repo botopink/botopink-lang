@@ -6,9 +6,9 @@
 import {compiler, io.terminal.print} from "std";
 
 #[compiler.external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", result: true))]
-declare fn later(n: i32) -> Task<i32>;
+declare fn later(n: i32) -> Async<i32>;
 
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     print(await later(1));
 }
 

@@ -9,7 +9,7 @@
 import {io.terminal.print} from "std";
 
 #[@iterator]
-fn upto(n: i32) -> Iterator<Result<i32, string>> {
+fn upto(n: i32) -> Iter<Result<i32, string>> {
     if (n < 0) { throw "negative"; }
     var i = 0;
     while (i < n) { yield i; i = i + 1; }
