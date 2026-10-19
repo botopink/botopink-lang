@@ -1,0 +1,58 @@
+//// Decision 595 — `try` opens a region; `catch` closes it and handles the failure of every `try` written in it.
+
+import {io.terminal.print} from "std";
+
+type ParseError {
+    Empty,
+    NotANumber(text: string),
+}
+
+fn parse(raw: string) -> Result<i64, ParseError> {
+    if (raw == "") throw ParseError.Empty;
+    return try raw.parseInt() catch throw ParseError.NotANumber(text: raw);
+}
+
+fn sum(a: string, b: string) -> Result<i64, ParseError> {
+    return try parse(a) + try parse(b);
+}
+
+fn sumOrZero(a: string, b: string) -> i64 {
+    return (try parse(a)) + (try parse(b)) catch 0l;
+}
+
+fn describe(a: string, b: string) -> string {
+    return try {
+        val x = try parse(a);
+        val y = try parse(b);
+        (x * y).toString()
+    } catch { e ->
+        case e {
+            ParseError.Empty -> "empty";
+            ParseError.NotANumber(text) -> "not a number: " + text;
+        }
+    };
+}
+
+fn checked(a: string) -> Result<i64, string> {
+    return try parse(a) catch throw "bad input " + a;
+}
+
+fn logged(a: string) -> i64 {
+    return try parse(a) catch {
+        print("fallback for " + a);
+        -1l
+    };
+}
+
+pub fn main() -> void {
+    print(sumOrZero("2", "3"));
+    print(sumOrZero("2", "x"));
+    print(describe("4", "5"));
+    print(describe("4", ""));
+    print(describe("x", "5"));
+    print(checked("9").unwrapOr(0l));
+    print(checked("?").isError());
+    print(logged("7"));
+    print(logged(""));
+    print(sum("1", "1").unwrapOr(0l));
+}

@@ -1,0 +1,14 @@
+//// Decision 618 — `Implementation.Node` is renamed `JavaScript`: a source names the language the template is written in, not a runtime.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("$0.split('').reverse().join('')"), .Erlang("string:reverse($0)"))]
+declare fn mirror(text: string) -> string;
+
+#[compiler.external(.Node("$0.length"), .Erlang("string:length($0)"))]
+declare fn count(text: string) -> i32;
+
+pub fn main() -> void {
+    print(mirror("abc"));
+    print(count("abc"));
+}

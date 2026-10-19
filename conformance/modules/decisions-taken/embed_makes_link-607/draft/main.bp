@@ -1,0 +1,19 @@
+//// Decision 607 — `compiler.embed(path)` makes the link and nothing else; `Asset`, a std module importing `compiler` and `io.fs`, takes the link, opens the `File` and reads.
+
+import {asset.Asset, compiler, failure.panic, io.terminal.print} from "std";
+
+val greeting = comptime Asset(compiler.embed("src/greeting.txt"));
+
+val atBuild = comptime {
+    val f = try greeting.open() catch panic("greeting");
+    try f.text() catch panic("greeting")
+};
+
+pub fn main() -> void {
+    print(greeting.link.path);
+    print(atBuild.trimTrailingNewlines());
+    val file = try greeting.open() catch panic("greeting");
+    defer file.close();
+    val atRun = try file.text() catch panic("greeting");
+    print(atRun == atBuild);
+}

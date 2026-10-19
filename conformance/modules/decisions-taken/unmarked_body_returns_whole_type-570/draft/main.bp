@@ -1,0 +1,25 @@
+//// Decision 570 — Without a marker a body returns the whole type: an unmarked `-> Async<T>` / `-> Component<R>` body returning the bare value is a type error; the codemod marks today's such bodies
+
+import {io.terminal.print} from "std";
+
+async fn marked() -> Async<i32> {
+    return 1;
+}
+
+fn handedOn() -> Async<i32> {
+    return Async.resolve(2);
+}
+
+fn unmarked() -> Async<i32> {
+    return 3;
+}
+
+async fn run() -> Async<void> {
+    print(await marked());
+    print(await handedOn());
+    print(await unmarked());
+}
+
+pub fn main() -> void {
+    run();
+}

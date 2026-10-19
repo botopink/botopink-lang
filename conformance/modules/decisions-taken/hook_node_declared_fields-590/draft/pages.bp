@@ -1,0 +1,20 @@
+import {context.createContext, context.provide, context.context} from "std";
+import {comptime.graph.graph};
+
+pub type Theme(mode: string)
+
+pub type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Label() -> Component<Element> {
+    val theme = use context(themeContext);
+    return Element(text: theme.mode);
+}
+
+#[graph]
+pub component fn App() -> Component<Element> {
+    use provide(themeContext);
+    val label = Label();
+    return Element(text: "app");
+}

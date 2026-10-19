@@ -1,0 +1,33 @@
+//// Decision 61 — The formatter's canonical layout — four rules
+
+import {io.terminal.print} from "std";
+
+fn describeTheOrderLineForTheInvoice(
+    productName: string,
+    quantityOrdered: i32,
+    unitPriceInCents: i32,
+) -> string {
+    return productName
+        + " x"
+        + quantityOrdered.toString()
+        + " = "
+        + (quantityOrdered * unitPriceInCents).toString();
+}
+
+fn each(xs: i32[], f: fn(x: i32)) -> void {
+    xs.forEach(f);
+}
+
+fn later(make: fn() -> i32) -> i32 {
+    return make();
+}
+
+pub fn main() -> void {
+    each([1, 2], { x ->
+        val doubled = x * 2;
+        print(doubled);
+    });
+    each([3], { x -> });
+    print(later({ -> 3 + 4 }));
+    print(describeTheOrderLineForTheInvoice("pen", 3, 150));
+}

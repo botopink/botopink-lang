@@ -1,0 +1,22 @@
+//// Decision 496 — `abs` aborts past its integer type, as unary `-` does, declared per width (`I32`, `I64`).
+
+import {failure, failure.Failure, io.terminal.print} from "std";
+
+fn show(r: Result<i64, Failure>) -> void {
+    case r {
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+fn lowest() -> i64 {
+    return -9223372036854775807l - 1l;
+}
+
+pub fn main() -> void {
+    print((-5).abs());
+    print((-7l).abs());
+    show(failure.attempt({ -> lowest().abs() }));
+    val small = -2147483647 - 1;
+    print(-small);
+}
