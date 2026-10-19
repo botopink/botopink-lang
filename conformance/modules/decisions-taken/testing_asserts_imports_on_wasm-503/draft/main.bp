@@ -1,0 +1,20 @@
+//// Decision 503 — `testing.asserts` imports on wasm, its API unchanged; `matches` waits on std's regex there, a located refusal until then. Amends 146.
+
+import {testing.asserts, failure.panic, io.terminal.print} from "std";
+
+type Point(x: i32, y: i32)
+
+fn show(r: Result<void, string>) -> void {
+    case r {
+        Ok(_) -> print("ok");
+        Error(m) -> print("failed: " + m);
+    }
+}
+
+pub fn main() -> void {
+    show(asserts.equals(1 + 1, 2));
+    show(asserts.deepEquals(Point(x: 1, y: 2), Point(x: 1, y: 2)));
+    show(asserts.deepEquals([1, 2], [1, 3]));
+    show(asserts.throws({ -> panic("boom") }));
+    show(asserts.throws({ -> 1 }));
+}

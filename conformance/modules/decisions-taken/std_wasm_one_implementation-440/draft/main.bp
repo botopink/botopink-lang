@@ -1,0 +1,15 @@
+//// Decision 440 — std-wasm is the wasm codegen's and the comptime's one implementation, transpiled into the program, bound by `@External.Wasm("std:…")`.
+
+import {hash, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    // At build: the comptime answers by std-wasm's `hash.contentHash`.
+    val atBuild = comptime hash.contentHash("botopink");
+    // At run time, from a text the build does not know: on `--target wasm` the
+    // same std-wasm function, transpiled into the program; elsewhere the host's cell.
+    val word = "botopink,x".split(",").at(0) ?? "";
+    val atRun = hash.contentHash(word);
+    print(atBuild);
+    print(atRun);
+    print(atBuild == atRun);
+}

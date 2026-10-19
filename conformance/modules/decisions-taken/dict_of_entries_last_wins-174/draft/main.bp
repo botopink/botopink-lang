@@ -1,0 +1,14 @@
+//// Decision 174 — † `Dict.ofEntries(entries: Array<#(K, V)>) -> Dict<K, V>` in `libs/std/src/collections.bp`; a key that repeats keeps its
+
+import {collections.Dict, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    // `a` is written twice: the last value stays, as `insert` keeps it.
+    val d = Dict.ofEntries([#("a", 1), #("b", 2), #("a", 3)]);
+    print(d.size());
+    print(d.at("a") ?? 0);
+    print(d.at("b") ?? 0);
+
+    val inserted = Dict.empty().insert("a", 1).insert("b", 2).insert("a", 3);
+    print(d == inserted);
+}

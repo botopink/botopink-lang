@@ -1,0 +1,22 @@
+//// Decision 780 — `compiler.load(path)` compiles a file of the package at build and answers its refusals as data; there is no `compiler.snapshot`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    // `src/cases/broken.bp` is compiled at build as a package of its own; its
+    // refusals are the answer, as data, and never a refusal of this program.
+    val broken = comptime compiler.load("src/cases/broken.bp");
+    print(broken.length);
+    for (broken) { d ->
+        print(d.code
+            + " at "
+            + d.file
+            + ":"
+            + d.line.toString()
+            + ":"
+            + d.column.toString());
+    }
+    // A file that compiles answers `[]`.
+    val fine = comptime compiler.load("src/cases/fine.bp");
+    print(fine.length);
+}

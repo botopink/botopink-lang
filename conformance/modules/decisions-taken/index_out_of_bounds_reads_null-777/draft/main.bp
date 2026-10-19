@@ -1,0 +1,16 @@
+//// Decision 777 — 721's list of raises met while folding loses "an index out of bounds": `xs[3]` answers `?T` (`null`, 63 as overtaken by 139) and raises nothing, so no fold can raise there; the raises that remain are a failed conversion, a missing key and a `panic` reached inside an `Any` function.
+
+import {io.terminal.print} from "std";
+
+// An `Any` function: every input known at build makes its call a fold.
+fn fourth(xs: i32[]) -> ?i32 {
+    return xs[3];
+}
+
+pub fn main() -> void {
+    // Folded at build: index 3 of a three-item array reads `null`, no raise.
+    print(fourth([1, 2, 3]) == null);
+    print(fourth([1, 2, 3]) ?? -1);
+    // Folded at build too, the index in bounds.
+    print(fourth([1, 2, 3, 4]) ?? -1);
+}
