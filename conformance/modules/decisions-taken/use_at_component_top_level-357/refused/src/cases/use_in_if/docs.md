@@ -51,7 +51,9 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 > - **`use` exists only where there is a render tree** (decision 354 (3)). A
 >   decorator body, a template body and a `comptime { … }` are compile-time
 >   evaluation with none: `use` there is `use-outside-render-tree`; what they
->   need comes from the catalogue (`@TypeInfo.all`, 353).
+>   need of the program's marked declarations is the registry each decorator
+>   writes with `compiler.init`, read when the program runs — nothing reads that
+>   set at build (665).
 > - **`use` never leaves a function body.** There is no module-level `use` and no
 >   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
 >   framework's boundary markers are its own decorators (`#[client]`).

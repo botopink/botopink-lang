@@ -19,4 +19,4 @@ The reference text this cell shows (from `conformance/docs.md`, § Primitives):
 > and `is` does not test it — erlang holds it and a `string` alike. A `bytes` value
 > may exist at build (decision 520): a `comptime` computes one, and the artifact
 > carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
-> wasm data segment (`@embed`'s `Asset.bytes`, § `Asset`).
+> wasm data segment (an `Asset`'s `File` read under `comptime`, `try f.bytes()`, § `Asset`).

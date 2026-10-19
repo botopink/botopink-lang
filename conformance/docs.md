@@ -337,9 +337,9 @@ to the leaf in either spelling — `io: {fs: {readText as read}}` is
 `io.fs.readText as read`, `collections: {ArraySets*}` activates the same
 extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
-`import-name-collision` at the second item (`import {url.parse, json.parse}`);
-an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). One item that reaches two declarations — `import {parse} from
+`import-name-collision` at the second item (`import {url.parse, querystring.parse}`);
+an alias on either side clears it (`url.parse as parseUrl, querystring: {parse as
+parseQuery}`). One item that reaches two declarations — `import {parse} from
 "kit"` while two modules of the package `kit` declare `pub fn parse` — is not
 refused itself: every **use** of the name is, where it is written, naming both
 (`ambiguous-import-use`), and the item that names the module (`import
@@ -425,7 +425,7 @@ does what it wants.
 <!-- example: modules/import/cells/import_std_groups -->
 
 **What is generic lives in std, once.** A primitive several libraries need —
-reading a number out of text, walking a decoded JSON value, a retry loop — is
+reading a number out of text, a retry loop — is
 std's, and a library calls it rather than writing its own:
 
 | Where | What | Answers |
@@ -433,7 +433,6 @@ std's, and a library calls it rather than writing its own:
 | a `string` | `s.parseInt()` | `Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer past the `i64` range, −2^63 … 2^63 − 1 |
 | a `string` | `s.parseFloat()` | `Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
 | a `string` | `s.indexOf(x)`, `s.lastIndexOf(x)` | an index `s.at` and `s.slice` take, on every target (`-1` when absent) |
-| `json.Json` | `v.kindName()`, `v.isObject()`, `v.members()`, `v.field(key)`, `v.str()`, `v.items()` | the readers of a decoded value: `members` and `items` are `[]`, `str` is `""` and `field` is `null` for a value of another kind — none throws |
 | `hash` | `pbkdf2Sha256(password, salt, iterations, length)` | `length` bytes of PBKDF2-HMAC-SHA256 as unpadded base64url; the password and the salt are text |
 | `io.clock` | `parseDuration(text)` | `Result<i64, string>` — the milliseconds of digits and one unit, `ms` `s` `m` `h` `d` (`"30s"` is `30000`); `"30"`, `"1.5s"`, `"30 s"`, `"30S"` are an `Error` |
 | `async` | `RetryPolicy(maxAttempts, initialMillis, multiplier, maxMillis)`, `nextDelay(policy, attempt)`, `retry(policy, work)` | `nextDelay` is `?i64` — `initialMillis × multiplier^(attempt − 1)`, never above `maxMillis`, `null` past `maxAttempts`; `retry` runs a `fn() -> Async<Result<T, E>>` until it answers `Ok` and answers the last `Error` when every attempt failed |
@@ -818,12 +817,9 @@ type the call is refused, located at the call:
 
 <!-- example: modules/decisions-taken/dict_bump_integer_values_only-534/cells/dict_bump_non_integer -->
 
-**`PersistentTerm`** — one value per node, written **once, at load**, read
-everywhere for the cost of a function call. A write after load is a
-compile-time error whose hint points to `#[compiler.beamMemory(.Ets)]`: at run time
-a `persistent_term:put` scans every process heap (measured, 810 ns against
-17 ns for a read), and the module's load hook **re-runs on every hot code
-reload**, so a run-time write would be erased by the next reload anyway. It is
+**`PersistentTerm`** — one value per node, for a `var` written rarely and read much:
+a read costs a function call; a write is allowed and unchecked, but scans every
+process heap, a cost the writer weighs (547). It is
 the mode for a routes table, a scanned-component list, configuration read at
 bootstrap — anything the decorators emit at load and nothing changes
 afterwards. Store a handler by **name**, not as a function value: a `fun`
@@ -931,7 +927,7 @@ target holds it. `bytes` does not widen to `unknown` (so `print` does not take i
 and `is` does not test it — erlang holds it and a `string` alike. A `bytes` value
 may exist at build (decision 520): a `comptime` computes one, and the artifact
 carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
-wasm data segment (`@embed`'s `Asset.bytes`, § `Asset`).
+wasm data segment (an `Asset`'s `File` read under `comptime`, `try f.bytes()`, § `Asset`).
 
 <!-- example: modules/decisions-taken/bytes_primitive-346/cells/bytes_round_trip -->
 <!-- example: modules/bytes/cells/bytes_length_property -->
@@ -1149,8 +1145,8 @@ the name it declares or imports.
 
 <!-- example: modules/decisions-taken/negative_index_counts_from_end-139/refused/src/cases/ambient_index_implement_missing_method -->
 
-That holds for every name the prelude gives — a type (`Result`, `Field`),
-a behavior, a bare variant (`DeclKind.Component`, `Stage.Any`):
+That holds for every name the prelude gives — a type (`Result`),
+a behavior (`Component`, `Renderable`), a bare variant (`Stage.Any`):
 a `behavior` the module declares or imports under that name is what the name
 reads in every type position — an annotation, a decorator's `syntax decl: …`, an
 `implement` clause — and the prelude's declaration is out of that module's
@@ -1303,13 +1299,14 @@ against the other. Nothing of the alias reaches the emitted program.
 
 <!-- example: modules/derived/cells/derived_type_declarations -->
 
-A derived type (decision 307) is a **new** record type answered at build by one
-of std's `Type` functions and bound by a module-level `val`, whose name it takes.
-It is nominal — `RecipeTitle` in diagnostics and printed values, its own type
-for `is` and `case`, never its source's — and usable everywhere a type is
-written: a parameter, a return, a field, an annotation, a constructor call
-(`RecipeTitle(title: "…")`), an export and an import
-(`import {recipes.RecipeTitle};`). Two `val`s over the same call are two types.
+A derived type (decisions 307, 629) is an inline type answered at build by one
+of std's `Type` functions and named by the module-level `val` it is bound to —
+`pub val Patch = Type.partial(Pessoa);` is
+`pub val Patch = type(nome: ?string, idade: ?i32, email: ?string);`. It is
+structural: two types with the same fields are one type, and nothing ties it to
+its source. It is usable everywhere a type is written: a parameter, a return, a
+field, an annotation, a constructor call (`RecipeTitle(title: "…")`), an export
+and an import (`import {recipes.RecipeTitle};`).
 
 - Each field is the source's as declared — its type, its default, its
   annotations (the markers a decorator reads). `partial` makes each field `?T`;
@@ -1364,12 +1361,10 @@ range.
 
 <!-- example: modules/decisions-taken/record_spread_copies_fields-359/run/src/cases/record_spread -->
 
-The source is any expression whose type is the record itself or a type derived
-from it by `Type.pick`, `Type.omit` or `Type.merge` — a call, a method call, a
-field path, another spread — evaluated once however many fields it supplies.
-The lineage holds across modules and through an import alias: a type derived in
-another module from an imported record, or from an imported derived type, is
-derived from that record.
+The source is any expression — a call, a method call, a field path, another
+spread — whose fields match the target's by name and type (decision 629 (3)):
+`Pessoa(..patch)` is refused at the `..`, `?string` not being `string`;
+evaluated once however many fields it supplies.
 
 <!-- example: modules/decisions-taken/record_spread_copies_fields-359/run/src/cases/record_spread_call_source -->
 <!-- example: modules/decisions-taken/record_spread_copies_fields-359/run/src/cases/record_spread_nested -->
@@ -2538,7 +2533,9 @@ The rules, each with its diagnostic:
 - **`use` exists only where there is a render tree** (decision 354 (3)). A
   decorator body, a template body and a `comptime { … }` are compile-time
   evaluation with none: `use` there is `use-outside-render-tree`; what they
-  need comes from the catalogue (`@TypeInfo.all`, 353).
+  need of the program's marked declarations is the registry each decorator
+  writes with `compiler.init`, read when the program runs — nothing reads that
+  set at build (665).
 - **`use` never leaves a function body.** There is no module-level `use` and no
   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
   framework's boundary markers are its own decorators (`#[client]`).
@@ -3601,8 +3598,7 @@ template call is the type of the code the template built for that call,
 computed at build, so `fn data(syntax q: string) -> anyvalue` answers
 `string[]` at one call and `i32` at another. The template's answer is a bound
 the built code fits — `unknown` holds anything, so `-> unknown[]` keeps the
-call's `string[]` —, and code outside it is refused in the template, at its
-`compiler.build` (`template-build-outside-bound`). The call then meets the type
+call's `string[]` —, and code outside it is refused in the template (`template-build-outside-bound`). The call then meets the type
 expected where it stands as any expression does: `` val n: i32 = names
 @`cities`; `` is `type mismatch: expected i32, got string[]`
 at the call. The template never reads the expected type, so what it builds is
@@ -3642,9 +3638,8 @@ too.
 On a handle, `compiler.meta<T>(d)` (`?T`) and `compiler.metaAll<T>(d)` (`T[]`)
 answer at build what the declaration's decorators recorded, when the record `T`
 is data — each field a string, a number, a `bool`, a variant, an array or an
-optional of those; a field the value left out reads its default. A record with
-a field that holds a tree (filled from a `syntax` parameter, § Typed meta) holds
-code the program runs, and its read is refused, naming the field
+optional of those; a field the value left out reads its default. A record with a field that holds code — a function filled from a
+`syntax` (576 (12)), no data — has its read refused, naming the field
 (`template-lookup-meta-expr-field`); `compiler.typeInfo(X).meta(T)` in a template body
 stays `typeinfo-meta-at-build`.
 
@@ -4325,9 +4320,9 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 
 | Record | Fields |
 |---|---|
-| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
-| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: compiler.Info<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context value a `use context(ctx)` names, or the `val` that declares the default of the type a `use provide(…)` gives, decisions 354 (4), 379, 723; `null` for any other hook) |
-| `HookCall` — one call of a `Component` function | `callee: Declared<unknown>`, `at: string` |
+| `HookNode` | `function: unknown`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
+| `HookUse` — one `use h(…)` | `hook: ?unknown` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: compiler.Info<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?unknown` (the context value a `use context(ctx)` names, or the `val` that declares the default of the type a `use provide(…)` gives, decisions 354 (4), 379, 723; `null` for any other hook) |
+| `HookCall` — one call of a `Component` function | `callee: unknown`, `at: string` |
 
 A call a template builds from a tag counts as written. `at` is
 `"<module>:<line>:<column>"`, the entry module `main`. A cycle is an edge back
@@ -5227,9 +5222,9 @@ with `@` (`@Result<…>`).
 
 Every builtin the compiler still reads is declared in `libs/std/src/primitives.bp`
 (`print` and `panic` are std's `io/terminal.bp` and `failure.bp`, § `print` and `panic`), and the compiler is
-held to the declarations (decision 252): a unit test fails, naming the builtin,
-when the compiler implements one the files do not declare, the files declare one
-it does not implement, or the two signatures differ. The declarations, as
+held to the declarations (decision 252 as carried by 575 (1) and 606): a unit test fails, naming the builtin,
+when the compiler implements one std does not declare, std declares one it does not implement, or
+the two signatures differ. The declarations, as
 written there:
 
 | Builtin | Declaration | Held at the call by |

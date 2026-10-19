@@ -18,9 +18,9 @@ The reference text this cell shows (from `conformance/docs.md`, § Imports):
 > `io.fs.readText as read`, `collections: {ArraySets*}` activates the same
 > extension as `collections.ArraySets*` — and on a node that opens braces they
 > are a syntax error (`import-group-modifier`). Two items binding one name are
-> `import-name-collision` at the second item (`import {url.parse, json.parse}`);
-> an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-> parseJson}`). One item that reaches two declarations — `import {parse} from
+> `import-name-collision` at the second item (`import {url.parse, querystring.parse}`);
+> an alias on either side clears it (`url.parse as parseUrl, querystring: {parse as
+> parseQuery}`). One item that reaches two declarations — `import {parse} from
 > "kit"` while two modules of the package `kit` declare `pub fn parse` — is not
 > refused itself: every **use** of the name is, where it is written, naming both
 > (`ambiguous-import-use`), and the item that names the module (`import

@@ -8,7 +8,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Functions exp
 > T` answers `string[]` at one call and `i32` at another. The template's
 > answer is a bound the built code fits — `unknown` holds anything, so `->
 > unknown[]` keeps the call's `string[]` —, and code outside it is
-> refused in the template, at its `build` (`template-build-outside-bound`). The
+> refused in the template (`template-build-outside-bound`). The
 > call then meets the type expected where it stands as any expression does:
 > `` val n: i32 = names @`cities`; `` is `type mismatch: expected i32, got string[]`
 > at the call. The template never reads the expected type, so what it builds is
