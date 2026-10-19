@@ -2604,6 +2604,9 @@ to load (`already declared`), and the backends miscompiled an inner shadow
   With no such expected type it is a located refusal naming the two spellings that work (decision 67
   — no guess by bare variant name). `inferExprTyped` keeps the expectation alive for this one call
   shape (`isLeadingDotCall`) and `inferCallExpr` clears it before the arguments.
+  A call through a module namespace (`phase.describe(.Slow)`, `namespaceCallee` in `inferCallExprWith`)
+  reads the exported function's parameters as that expectation, and registers the types its signature
+  names as types only (`registerImportedSignatureClosure`), as a leaf import's call does.
 - **anything else** is a function value: `calleeExpr` is inferred and must be a `fn` taking the
   written arguments; the call's type is its return, and a count it does not take is an arity error
   at the `(`. The typed node keeps `calleeExpr`; lowering it is each backend's (C-09's backend half).

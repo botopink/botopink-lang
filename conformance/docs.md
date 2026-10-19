@@ -1078,6 +1078,12 @@ bare name is another enum's variant too, as a `Kind`'s `Element` is the prelude'
 
 <!-- example: modules/enum_variant_bare_unit_refused -->
 
+A variant written with the leading dot is resolved by the declared type of the
+parameter it is passed to, whichever module declares the function:
+`phase.describe(.Slow)` with `describe(p: Phase)` in `phase`.
+
+<!-- example: modules/dot_variant_argument_imported_fn -->
+
 #### Sections of an enum
 
 An enum's body may group variants into **sections**, and a section may nest.

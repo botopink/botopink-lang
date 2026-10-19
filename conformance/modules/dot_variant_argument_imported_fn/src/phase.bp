@@ -1,0 +1,11 @@
+pub type Phase {
+    Fast,
+    Slow,
+}
+
+pub fn describe(p: Phase) -> string {
+    return case p {
+        Fast -> "fast";
+        Slow -> "slow";
+    };
+}

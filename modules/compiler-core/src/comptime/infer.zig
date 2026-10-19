@@ -22587,7 +22587,23 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 if (!env.variantCtors.contains(qn)) break :blk null;
                 break :blk qn;
             };
-            const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn| env.ctorParams.get(qn) else calleeParams(env, call.callee);
+            // Decision 587 — `phase.describe(.Slow)` through a module
+            // namespace: the exported function's parameters are the
+            // expectation, as a leaf import's are.
+            const namespaceCallee: ?[]const u8 = blk: {
+                if (call.is_builtin or call.calleeExpr != null) break :blk null;
+                const r = call.receiver orelse break :blk null;
+                if (r.* != .identifier or r.identifier.kind != .ident) break :blk null;
+                const ns = r.identifier.kind.ident;
+                if (!env.namespaces.modules.contains(ns)) break :blk null;
+                break :blk ns;
+            };
+            const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn|
+                env.ctorParams.get(qn)
+            else if (namespaceCallee) |ns|
+                env.namespaces.params.get(try envMod.NamespaceImports.paramsKey(env.arena, ns, call.callee))
+            else
+                calleeParams(env, call.callee);
             if (call.receiver == null) if (declParamsAst) |dps| try refuseInlineFieldsAcrossModules(env, call.callee, dps, call.args, loc);
 
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
@@ -22607,6 +22623,21 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     const inst = try instantiateGenericType(env, try instantiateCtorType(env, enumName, env.variantCtors.get(qn).?));
                     const d = inst.deref();
                     break :blk if (d.* == .func) d.func.params else null;
+                }
+                if (namespaceCallee) |ns| {
+                    const exports = env.namespaces.modules.get(ns) orelse break :blk null;
+                    const exported_ = exports.get(call.callee) orelse break :blk null;
+                    const exported = if (env.namespaces.paths.get(ns)) |path| try renameImportedType(env, exported_, path) else exported_;
+                    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+                    defer seen.deinit();
+                    const inst = (try instantiateType(env, exported, &seen, .allVars)).deref();
+                    // The types its signature names come with it, as types
+                    // only (01 R2), as a leaf import's do: `.Slow` resolves
+                    // on the parameter's enum though this module imports none.
+                    if (env.namespaces.paths.get(ns)) |path| if (env.typeDeclRegistry) |reg| if (reg.get(path)) |decls| {
+                        try registerImportedSignatureClosure(env, decls, exported);
+                    };
+                    break :blk if (inst.* == .func) inst.func.params else null;
                 }
                 if (call.receiver != null or call.is_builtin) break :blk null;
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
