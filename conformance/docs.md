@@ -1585,6 +1585,11 @@ range, an `|` of patterns and a guard see the value whole, on every target.
 
 <!-- example: modules/case_wide_integer_scrutinee -->
 
+A `case` is exhaustive when its arms cover every variant, a variant covered
+through its nested payloads included.
+
+<!-- example: modules/case_exhaustive_nested_variants -->
+
 <!-- example: modules/integer_literal_never_fits_f64 -->
 
 ### Arrays

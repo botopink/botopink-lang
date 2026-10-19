@@ -15332,6 +15332,137 @@ fn collectFullyCoveredVariants(
     }
 }
 
+/// The payload of a variant pattern as one pattern per field, positional, or
+/// null when the written payload cannot be read that way (labels written out
+/// of order). A whole-payload binder or a field list is a list of names, a
+/// name being a nested variant when the field's type has a variant so named;
+/// `..` pads with wildcards up to `arity`.
+fn variantPayloadPatterns(
+    env: *Env,
+    v: anytype,
+    arity: usize,
+) InferError!?[]ast.Pattern {
+    for (v.labels) |l| if (l.len > 0) return null;
+    var out: std.ArrayListUnmanaged(ast.Pattern) = .empty;
+    switch (v.payload) {
+        .binding => |name| try out.append(env.arena, .{ .ident = name }),
+        .fields => |names| for (names) |name| try out.append(env.arena, .{ .ident = name }),
+        .literals => |args| try out.appendSlice(env.arena, args),
+    }
+    if (out.items.len > arity) return null;
+    while (out.items.len < arity) try out.append(env.arena, .wildcard);
+    return try out.toOwnedSlice(env.arena);
+}
+
+/// Whether `rows` (one pattern per column, matched against `types`) together
+/// match every value of those columns: the usual specialisation over the
+/// first column. A variant of an enum column is covered when the rows naming
+/// it, or irrefutable there, cover its payload and the remaining columns; any
+/// other first column is covered only through the rows irrefutable in it.
+fn rowsCoverColumns(
+    env: *Env,
+    rows: []const []const ast.Pattern,
+    types: []const *T.Type,
+) InferError!bool {
+    if (rows.len == 0) return false;
+    if (types.len == 0) return true;
+    const first = types[0].deref();
+    const rest = types[1..];
+
+    var enumDef: ?envMod.TypeDef.Enum = null;
+    if (first.* == .named) {
+        if (env.lookupTypeDef(first.named.name)) |td| {
+            if (td == .enum_) enumDef = td.enum_;
+        }
+    }
+
+    if (enumDef) |en| {
+        for (en.variants) |vd| {
+            const payloadTypes = (try variantPayloadTypes(env, first, vd.name)) orelse &[_]*T.Type{};
+            var sub: std.ArrayListUnmanaged([]const ast.Pattern) = .empty;
+            for (rows) |row| {
+                const head = row[0];
+                if (try patternIsIrrefutable(env, head, first)) {
+                    const widened = try env.arena.alloc(ast.Pattern, payloadTypes.len + rest.len);
+                    for (widened[0..payloadTypes.len]) |*w| w.* = .wildcard;
+                    @memcpy(widened[payloadTypes.len..], row[1..]);
+                    try sub.append(env.arena, widened);
+                    continue;
+                }
+                switch (head) {
+                    .ident => |name| if (isEnumVariantNameForSubject(env, first, name) and
+                        std.mem.eql(u8, bareVariantName(name), vd.name) and payloadTypes.len == 0)
+                    {
+                        try sub.append(env.arena, row[1..]);
+                    },
+                    .variant => |v| {
+                        if (v.shape != .variant or !std.mem.eql(u8, bareVariantName(v.name), vd.name)) continue;
+                        const pats = (try variantPayloadPatterns(env, v, payloadTypes.len)) orelse continue;
+                        const widened = try env.arena.alloc(ast.Pattern, pats.len + rest.len);
+                        @memcpy(widened[0..pats.len], pats);
+                        @memcpy(widened[pats.len..], row[1..]);
+                        try sub.append(env.arena, widened);
+                    },
+                    else => {},
+                }
+            }
+            const subTypes = try env.arena.alloc(*T.Type, payloadTypes.len + rest.len);
+            @memcpy(subTypes[0..payloadTypes.len], payloadTypes);
+            @memcpy(subTypes[payloadTypes.len..], rest);
+            if (!try rowsCoverColumns(env, sub.items, subTypes)) return false;
+        }
+        return true;
+    }
+
+    var sub: std.ArrayListUnmanaged([]const ast.Pattern) = .empty;
+    for (rows) |row| {
+        if (try patternIsIrrefutable(env, row[0], first)) try sub.append(env.arena, row[1..]);
+    }
+    return rowsCoverColumns(env, sub.items, rest);
+}
+
+/// A variant no single arm covers whole may still be covered by several arms
+/// that refine its payload (`Run(Fast)` and `Run(Slow)` over a `Run(speed:
+/// Speed)`): add to `covered` every variant of the enum subject whose unguarded
+/// arms, taken together, cover all its payloads.
+fn collectVariantsCoveredByNestedPayloads(
+    env: *Env,
+    arms: []const ast.CaseArm,
+    subjectType: *T.Type,
+    variantNames: []const []const u8,
+    covered: *std.ArrayListUnmanaged([]const u8),
+) InferError!void {
+    for (variantNames) |vn| {
+        if (namesContain(covered.items, vn)) continue;
+        const payloadTypes = (try variantPayloadTypes(env, subjectType, vn)) orelse continue;
+        var rows: std.ArrayListUnmanaged([]const ast.Pattern) = .empty;
+        for (arms) |arm| {
+            if (arm.guard != null) continue;
+            try collectVariantRows(env, arm.pattern, vn, payloadTypes.len, &rows);
+        }
+        if (rows.items.len < 2) continue;
+        if (try rowsCoverColumns(env, rows.items, payloadTypes)) try covered.append(env.arena, vn);
+    }
+}
+
+fn collectVariantRows(
+    env: *Env,
+    pattern: ast.Pattern,
+    variantName: []const u8,
+    arity: usize,
+    rows: *std.ArrayListUnmanaged([]const ast.Pattern),
+) InferError!void {
+    switch (pattern) {
+        .variant => |v| {
+            if (v.shape != .variant or !std.mem.eql(u8, bareVariantName(v.name), variantName)) return;
+            const pats = (try variantPayloadPatterns(env, v, arity)) orelse return;
+            try rows.append(env.arena, pats);
+        },
+        .@"or" => |pats| for (pats) |p| try collectVariantRows(env, p, variantName, arity, rows),
+        else => {},
+    }
+}
+
 /// When `pattern` is a *single* irrefutable variant match whose variant is
 /// already covered, return that variant's name (the arm is unreachable). OR
 /// patterns are skipped — one covered alternative does not make the arm dead.
@@ -15515,6 +15646,8 @@ fn checkCaseExhaustiveness(
     }
 
     if (hasCatchAll) return;
+
+    if (domain == .enum_) try collectVariantsCoveredByNestedPayloads(env, arms, resolved, domain.enum_, &covered);
 
     switch (domain) {
         .open => {

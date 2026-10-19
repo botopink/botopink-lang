@@ -2724,6 +2724,11 @@ two domains and returned before looking at an arm for anything else, which is wh
   `patternIsIrrefutable` decides nested payloads: a tuple pattern of binders
   matches every tuple, so `.Some(#(a, b))` covers `Some` (§5.1 P6/P7). It used to
   answer `false` for every nested pattern.
+  Several arms that refine one variant's payload cover it together when their payload patterns cover
+  every value of the payload's types (`Run(Fast)` and `Run(Slow)` over `Run(speed: Speed)`):
+  `collectVariantsCoveredByNestedPayloads` runs `rowsCoverColumns`, a specialisation of the payload
+  columns over enum variants, after the arm walk. Only enum payload columns are split; any other
+  column counts through the rows irrefutable in it.
 - **Catch-all** — `_` or a non-variant identifier. A **type pattern is not a
   catch-all**: `case x { i32 { … } }` used to stand in for `_`.
 - **Guards** — a guarded arm neither covers anything nor shadows later arms.

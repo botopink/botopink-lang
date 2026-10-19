@@ -1,0 +1,28 @@
+//// A `case` whose arms cover a variant through its nested payloads is
+//// exhaustive: `Run(Fast)` and `Run(Slow)` together cover `Run`.
+
+import {io.terminal.print} from "std";
+
+pub type Speed {
+    Fast,
+    Slow,
+}
+
+pub type Job {
+    Run(speed: Speed),
+    Stop,
+}
+
+fn name(j: Job) -> string {
+    return case j {
+        Run(Fast) -> "run fast";
+        Run(Slow) -> "run slow";
+        Stop -> "stop";
+    };
+}
+
+pub fn main() {
+    print(name(Job.Run(Speed.Fast)));
+    print(name(Job.Run(Speed.Slow)));
+    print(name(Job.Stop));
+}
