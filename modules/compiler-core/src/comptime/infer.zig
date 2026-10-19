@@ -14643,6 +14643,12 @@ fn runtimeNameIn(env: *Env, e: ast.Expr) ?RuntimeName {
             if (env.fnDecls.get(env.currentFnName)) |f| for (f.params) |fp| {
                 if (fp.modifier == .@"comptime" and std.mem.eql(u8, fp.name, n)) return null;
             };
+            // A type method's `comptime` parameter is as known as a
+            // function's: its body's parameters are `bodyParams`, and its
+            // name is no `fnDecls` entry.
+            for (env.bodyParams) |fp| {
+                if (fp.modifier == .@"comptime" and std.mem.eql(u8, fp.name, n)) return null;
+            }
             return .{ .name = n, .loc = id.loc };
         },
         .unaryOp => |u| return runtimeNameIn(env, u.expr.*),

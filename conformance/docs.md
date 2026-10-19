@@ -1283,6 +1283,13 @@ known at compile time: a local or a non-`comptime` parameter is
 
 <!-- example: modules/decisions-taken/comptime_value_or_type_union-736/cases/comptime_value_or_type_union -->
 
+A `comptime` parameter of the enclosing function or type method is itself known
+at build: handed on to another `comptime` parameter it is a known argument, a
+type method's (`fn times(self: Self, comptime n: i32)`, `scaled(n, …)`) as a
+function's.
+
+<!-- example: modules/comptime_type_param_of_method -->
+
 <!-- example: modules/comptime/cases/comptime_value_or_type_param -->
 
 A function's or a method's type parameter is **bound by a parameter** (decision
