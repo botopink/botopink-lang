@@ -1,0 +1,24 @@
+//// Decision 688 — `onSignal(.Int, f)` answers `Error(Unsupported)` on erlang and beam, where the VM keeps `SIGINT` for its break handler; `forwardSignals` skips `Int` there; `Int` stays in the shared enum.
+
+import {io.process, io.terminal.print} from "std";
+
+fn installed(r: Result<void, process.ProcessError>) -> string {
+    return case r {
+        Ok(_) -> "installed";
+        Error(e) -> reason(e);
+    };
+}
+
+fn reason(e: process.ProcessError) -> string {
+    return case e {
+        process.ProcessError.Unsupported(_) -> "unsupported";
+        _ -> "refused";
+    };
+}
+
+pub fn main() -> void {
+    print("Int "
+        + installed(process.onSignal(process.Signal.Int, { -> print("int"); })));
+    print("Term "
+        + installed(process.onSignal(process.Signal.Term, { -> print("term"); })));
+}

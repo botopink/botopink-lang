@@ -1,0 +1,19 @@
+//// A decorator that records typed meta, and a template that reads it back by type.
+
+import {compiler} from "std";
+
+pub type RawBody(reason: string)
+
+pub fn raw(syntax decl: unknown, comptime reason: string) -> void {
+    compiler.setMeta(RawBody(reason: reason));
+}
+
+pub fn kinds(syntax q: string) -> string {
+    var out: string[] = [];
+    for (compiler.bindings(q)) { d ->
+        val m = compiler.meta<RawBody>(d);
+        out.push(compiler.name(d)! + " " + (m?.reason ?? "plain"));
+    }
+    val text = out.join(", ");
+    return text;
+}

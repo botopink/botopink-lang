@@ -1,0 +1,13 @@
+//// Decision 671 — A field's default travels with the field into every derived type and resolves where it was written (669); there is no "closed" default.
+
+import {types.Type, io.terminal.print} from "std";
+import {links.Link};
+
+pub val NoHref = Type.omit(Link, .href);
+
+pub fn main() -> void {
+    print(NoHref().rel);
+    val l = Link(href: "/x");
+    print(l.rel);
+    print(l.href);
+}

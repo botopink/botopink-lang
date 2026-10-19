@@ -1,0 +1,18 @@
+//// Decision 705 — Outside markup, expression-level work is a call (`traced(compute())`); a tag's annotation is the one expression-position decorator (278, 302, 369), and `val x = #[deco] 1;` stays refused.
+
+import {io.terminal.print} from "std";
+
+fn compute() -> i32 {
+    return 42;
+}
+
+fn traced(v: i32) -> i32 {
+    print("traced");
+    return v;
+}
+
+pub fn main() -> void {
+    val x = traced(compute());
+    print(x);
+    val y = #[traced] 2;
+}

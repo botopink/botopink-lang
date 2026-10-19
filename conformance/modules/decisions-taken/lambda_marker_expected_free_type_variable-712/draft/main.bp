@@ -1,0 +1,24 @@
+//// Decision 712 — B-116 P1's choices where no decision spoke, by the step's own list:
+
+import {io.terminal.print} from "std";
+
+fn run<R>(make: fn() -> R) -> R {
+    return make();
+}
+
+pub async fn main() -> Async<void> {
+    val a = run(async fn() -> Async<i32> {
+        return 2;
+    });
+    print(await a);
+    val it = run(iter fn() -> Iter<i32> {
+        yield 1;
+        yield 2;
+    });
+    for (it) { x ->
+        print(x);
+    }
+    print(run(fn() -> i32 {
+        return 3;
+    }));
+}

@@ -1,0 +1,19 @@
+//// Decision 738 — (c), a third option: neither `Pair<A, B>` nor `Function` exists — a pair is the tuple `#(A, B)`, and the function combinators are plain functions of a std module.
+
+import {functions.compose, io.terminal.print} from "std";
+
+fn inc(x: i32) -> i32 {
+    return x + 1;
+}
+
+fn double(x: i32) -> i32 {
+    return x * 2;
+}
+
+pub fn main() -> void {
+    val p = #(1, "x");
+    val #(n, _) = p;
+    print(p._1);
+    print(compose(inc, double)(n));
+    val q = Pair.of(1, "x");
+}

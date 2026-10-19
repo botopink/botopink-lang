@@ -1,0 +1,7 @@
+//// The source type, whose default reaches a private function of this module.
+
+fn defaultRel() -> string {
+    return "noopener";
+}
+
+pub type Link(href: string, rel: string = defaultRel())
