@@ -4087,6 +4087,37 @@ test "wat: gc ---- an empty array arm, a case of its own type, try over a tuple,
     );
 }
 
+// `indexOf`, `lastIndexOf` and `contains` over an array in a type-parameter
+// slot (std's `asserts.includes`): a number, a string or a bool by value.
+test "wat: gc ---- indexOf, lastIndexOf and contains over a generic array" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn at<T>(xs: T[], x: T) -> i32 {
+        \\    return xs.indexOf(x);
+        \\}
+        \\
+        \\fn lastAt<T>(xs: T[], x: T) -> i32 {
+        \\    return xs.lastIndexOf(x);
+        \\}
+        \\
+        \\fn holds<T>(xs: T[], x: T) -> bool {
+        \\    return xs.contains(x);
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(asserts.includes([1, 2], 2).isOk());
+        \\    print(asserts.includes([1, 2], 3).isOk());
+        \\    print(at([2.5, 3.5], 3.5));
+        \\    print(at(["a", "b"], "b"));
+        \\    print(lastAt([1, 2, 1], 1));
+        \\    print(lastAt([true, false], true));
+        \\    print(holds(["x"], "y"));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+        \\import {testing.asserts} from "std";
+    );
+}
+
 // ── front 164 s2 P2b: unknown, generic declarations, the array operations, generators ──
 //
 // Each program is lowered as a WasmGC module (`(rec`), its RUN LOG the language's own answer.

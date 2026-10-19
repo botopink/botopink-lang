@@ -6532,7 +6532,18 @@ const Emitter = struct {
     /// two numbers by value (`2.0 == 2`), two strings by content, two bools by
     /// value, anything else by its structure (`$__unk_eq_ref`, decision 569).
     fn gcUnkEq(self: *Emitter) anyerror![]const u8 {
-        const name = "__unk_eq";
+        return self.gcUnkEqBy("__unk_eq", true);
+    }
+
+    /// Front 164 s2 — `__unk_same(a, b)`: `$__unk_eq`'s numbers, strings and
+    /// bools by value, any other reference by identity — what `indexOf`,
+    /// `lastIndexOf` and `contains` compare a generic element by, as the
+    /// linear lowering's word compare and commonJS's `indexOf` do.
+    fn gcUnkSame(self: *Emitter) anyerror![]const u8 {
+        return self.gcUnkEqBy("__unk_same", false);
+    }
+
+    fn gcUnkEqBy(self: *Emitter, name: []const u8, structural: bool) anyerror![]const u8 {
         if (!try self.gcHelperOnce(name)) return name;
         const num = try self.gcUnkIsNum();
         const asf = try self.gcUnkAsNum(true);
@@ -6569,10 +6580,25 @@ const Emitter = struct {
                 try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, .{ .local_get = "b" }, .{ .ref_cast = bi }, .{ .struct_get = .{ .ty = bik, .field = 0 } }, opOf(.i32, "eq") });
             }
         }
-        self.gc_unk_eq_used = true;
-        try self.emit(.{ .local_get = "a" });
-        try self.emit(.{ .local_get = "b" });
-        try self.emit(.{ .call = "__unk_eq_ref" });
+        if (structural) {
+            self.gc_unk_eq_used = true;
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .call = "__unk_eq_ref" });
+        } else {
+            // Both absent: the same; one absent: not; else by identity.
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.ref_is_null);
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.ref_is_null);
+            try self.emit(opOf(.i32, "or"));
+            try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .ref_is_null, .{ .local_get = "b" }, .ref_is_null, opOf(.i32, "and") });
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .ref_cast = .eqref });
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .ref_cast = .eqref });
+            try self.emit(.ref_eq);
+        }
         try self.gcHelperFunc(name, &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
         return name;
     }
@@ -7321,6 +7347,9 @@ const Emitter = struct {
         const ti = self.gcTyIndex(.{ .arr = cls });
         const at = ValType.def(ti);
         const ev = gcElemVt(cls);
+        // `indexOfEq` / `lastIndexOfEq` compare by `$__unk_same`, a helper
+        // of its own, written before this one's capture opens.
+        const unk_eq: ?[]const u8 = if (std.mem.endsWith(u8, op, "IndexOfEq") or eq(u8, op, "indexOfEq")) try self.gcUnkSame() else null;
         var c: Capture = .{};
         self.open(&c);
         const P = wat.Builder.param;
@@ -7442,8 +7471,10 @@ const Emitter = struct {
             try self.emit(.array_len);
             try self.emit(.{ .array_new = ti });
             try self.gcFinishFn(name, &.{ P("xs", at), P("v", ev) }, at, &.{}, &c);
-        } else if (eq(u8, op, "indexOf") or eq(u8, op, "lastIndexOf")) {
-            const last = eq(u8, op, "lastIndexOf");
+        } else if (eq(u8, op, "indexOf") or eq(u8, op, "lastIndexOf") or eq(u8, op, "indexOfEq") or eq(u8, op, "lastIndexOfEq")) {
+            const last = std.mem.startsWith(u8, op, "last");
+            // `…Eq`: the elements of class `any` by `$__unk_same`, not by text.
+            const by_eq = unk_eq != null;
             // The element's equality: a word or a float by the number's own
             // compare, a string (the one reference class compared here) by content.
             try self.emit(lget("xs"));
@@ -7481,7 +7512,10 @@ const Emitter = struct {
                     try self.emit(lget("x"));
                     try self.emit(opOf(.f64, "eq"));
                 },
-                .any => {
+                .any => if (unk_eq) |ue| {
+                    try self.emit(lget("x"));
+                    try self.emit(.{ .call = ue });
+                } else {
                     try self.emit(.{ .ref_cast = prelude.gc_str_ref });
                     try self.emit(lget("x"));
                     try self.emit(self.builder().helper(.str_eq));
@@ -7506,7 +7540,7 @@ const Emitter = struct {
             const xt: ValType = switch (cls) {
                 .i32 => .i32,
                 .f64 => .f64,
-                .any => prelude.gc_str_ref,
+                .any => if (by_eq) .anyref else prelude.gc_str_ref,
             };
             try self.gcFinishFn(name, &.{ P("xs", at), P("x", xt) }, .i32, &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 } }, &c);
         } else if (eq(u8, op, "join")) {
@@ -7720,10 +7754,20 @@ const Emitter = struct {
             return true;
         }
         if ((eq(u8, name, "indexOf") or eq(u8, name, "lastIndexOf") or eq(u8, name, "contains")) and cc.args.len == 1) {
-            if (cls == .any and !er.isStr()) return false;
+            const last = eq(u8, name, "lastIndexOf");
             try self.lowerCoerced(recv, ar);
-            try self.lowerCoerced(callArg(cc, 0).?, if (cls == .any) Repr.string else er);
-            try self.emit(.{ .call = try self.gcArrOp(if (eq(u8, name, "lastIndexOf")) "lastIndexOf" else "indexOf", cls) });
+            if (cls == .any and !er.isStr()) {
+                // Front 164 s2 — any other element (a record, a tuple, a
+                // value in a type-parameter slot): a number, a string or a
+                // bool by value, any other reference by identity
+                // (`$__unk_same`), the linear lowering's answer.
+                try self.lowerCoerced(callArg(cc, 0).?, er);
+                try self.gcBox(er);
+                try self.emit(.{ .call = try self.gcArrOp(if (last) "lastIndexOfEq" else "indexOfEq", cls) });
+            } else {
+                try self.lowerCoerced(callArg(cc, 0).?, if (cls == .any) Repr.string else er);
+                try self.emit(.{ .call = try self.gcArrOp(if (last) "lastIndexOf" else "indexOf", cls) });
+            }
             if (eq(u8, name, "contains")) {
                 try self.emit(try self.constInt(-1));
                 try self.emit(opOf(.i32, "ne"));

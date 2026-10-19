@@ -130,8 +130,11 @@ function answers the other kind (`gcCaseArmsType`); `try r` answers the `Ok` typ
 (`resultShapeOf`: `actual.contains(needle)` beside `fn contains(…) -> Result<…>`); `xs.fill(v)` is an array of
 `v`'s class (`gcArrayOp`, `array.new`); `recv?.m(args)` over an optional record or enum
 (`gcOptionalTypedMethod`); `Self` in an enum's method is its `$enum_<owner>` (`emitMemberFn` sets
-`sig_owner`). Measured by building every conformance unit for wasm with `gc_debug` on; the test
-`wat: gc ---- an empty array arm, a case of its own type, …` pins them.
+`sig_owner`); `indexOf`, `lastIndexOf` and `contains` over an array of class `any` whose elements are no
+strings (a type-parameter slot, std's `asserts.includes`) compare a number, a string or a bool by value and any
+other reference by identity (`$__unk_same`, `__arr_indexOfEq_any`), as the linear lowering's word compare
+and commonJS do. Measured by building every conformance unit for wasm with `gc_debug` on; the test
+`wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
 linear memory, so `emitStdCall` marshals a GC module's call — each string or `Bytes` argument copied into the
