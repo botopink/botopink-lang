@@ -96,5 +96,69 @@ class Tests(unittest.TestCase):
         self.assertEqual(cc.cmd_verify(a), 1)
 
 
+class ApplyTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "decisions-taken.md").write_text(LEDGER)
+        self.m = self.root / "conformance" / "modules"
+        self.m.mkdir(parents=True)
+        (self.m / "botopink.json").write_text('{\n  "name": "conformance",\n  "version": "0.0.1",\n  "workspaces": ["*"]\n}\n')
+        cell(self.m, "named_cell", "//// Decision 40")
+        cell(self.m, "other_cell", "//// Decision 40")
+        cell(self.m, "both", "//// Decisions 40 and 10")
+        cell(self.m, "stray", "//// no decision")
+        cell(self.m, "stray_two")
+        (self.m / "stray_two" / "docs.md").write_text("see `modules/named_cell` and ../query/conformance/modules/stray\n")
+        (self.root / "conformance" / "docs.md").write_text("<!-- example: modules/named_cell -->\n<!-- example: modules/stray -->\n")
+        (self.root / "t.zig").write_text('const p = "conformance/modules/other_cell/src/main.bp"; // modules/named_cell_x\n')
+        run = lambda *c: subprocess.run(["git", "-C", str(self.root), *c], check=True, capture_output=True)
+        run("init", "-q")
+        run("add", "-A")
+        run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x")
+        self.run = run
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def apply(self, **kw):
+        a = dict(root=str(self.root), group=None, all=False, range=None, drop_star=False, dry_run=False)
+        a.update(kw)
+        return cc.cmd_apply(type("A", (), a))
+
+    def test_apply_all(self):
+        self.assertEqual(self.apply(all=True), 0)
+        self.assertTrue((self.m / "decisions-taken/slug_forty-40/cases/other_cell/botopink.json").is_file())
+        self.assertTrue((self.m / "stray/cases/stray/botopink.json").is_file())
+        self.assertFalse((self.m / "stray_two").exists() or (self.m / "named_cell").exists())
+        docs = (self.m / "decisions-taken/slug_forty-40/docs.md").read_text().split("\n")
+        self.assertEqual(docs[0], "# Decision 40 \u2014 cited")
+        self.assertIn("[cases/other_cell/src/main.bp](cases/other_cell/src/main.bp)", docs)
+        self.assertIn("Proved also by [both](../slug_forty-40/cases/both/src/main.bp)",
+                      (self.m / "decisions-taken/slug_ten-10/docs.md").read_text())
+        self.assertEqual((self.m / "stray/docs.md").read_text().split("\n")[0], "# stray")
+        # references: exact token, path only, other repositories' cells and glob stems untouched
+        self.assertEqual((self.root / "conformance/docs.md").read_text(),
+                         "<!-- example: modules/decisions-taken/slug_ten-10/cases/named_cell -->\n<!-- example: modules/stray/cases/stray -->\n")
+        self.assertIn("conformance/modules/decisions-taken/slug_forty-40/cases/other_cell/src/main.bp", (self.root / "t.zig").read_text())
+        self.assertIn("modules/named_cell_x", (self.root / "t.zig").read_text())
+        moved_docs = (self.m / "stray/cases/stray_two/docs.md").read_text()
+        self.assertIn("`modules/decisions-taken/slug_ten-10/cases/named_cell`", moved_docs)
+        self.assertIn("../query/conformance/modules/stray", moved_docs)
+        self.assertEqual((self.m / "botopink.json").read_text(),
+                         '{\n  "name": "conformance",\n  "version": "0.0.1",\n  "workspaces": ["decisions-taken/*/cases/*", "*/cases/*"]\n}\n'.replace('"decisions-taken/*/cases/*", "*/cases/*"', '"*/cases/*", "decisions-taken/*/cases/*"'))
+        # the moves are staged and verify is the identity against the base
+        self.assertEqual(cc.cmd_verify(type("A", (), {"root": str(self.root), "base": "HEAD"})), 0)
+        self.assertEqual(self.apply(all=True), 0)  # idempotent
+
+    def test_group_and_dry_run(self):
+        self.assertEqual(self.apply(group="stray", dry_run=True), 0)
+        self.assertTrue((self.m / "stray" / "botopink.json").exists())
+        self.assertEqual(self.apply(group="stray"), 0)
+        self.assertTrue((self.m / "stray/cases/stray_two").is_dir())
+        self.assertTrue((self.m / "named_cell").is_dir())
+        self.assertIn('"*"', (self.m / "botopink.json").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,15 @@ B-157 moves the cells of `conformance/modules/<cell>/` into modules, one per dec
         the count of `<!-- example:` references): equal / different each, exit 1 on any
         difference. On the unchanged tree it is the identity.
 
+    consolidate-cells.py apply [--group <prefix>|--all] [--range LO-HI] [--drop-star] [--dry-run]
+        moves the cells of the plan (`--allow-unslugged` mapping) with `git mv`, writes each
+        module's `docs.md`, rewrites every reference by exact token (`modules/<cell>` ->
+        `modules/<module>/cases/<cell>`; never the ledger), and adds the manifest globs
+        `*/cases/*` and `decisions-taken/*/cases/*`. `--group decisions-taken` takes the decision
+        modules (`--range` bounds their home rows); `--all` moves every group, largest first, and
+        drops `"*"` at the end (`--drop-star` alone drops it). `groups` lists the groups, largest
+        first. Idempotent: a moved cell is already home.
+
 A cell is homed in this precedence order:
 
     a  a row whose text names the cell (`modules/<cell>` or `<cell>` in backticks);
@@ -303,7 +312,10 @@ def measure(root):
                 inside += [p for p in (c / d).rglob("*") if p.is_file()]
         for p in inside:
             if p.is_file():
-                files[(p.relative_to(c).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest())] += 1
+                data = p.read_bytes()
+                if p.name == "docs.md" and p.parent == c:  # a moved cell's references name its new home
+                    data = MOVED.sub(b"modules/", data)
+                files[(p.relative_to(c).as_posix(), hashlib.sha256(data).hexdigest())] += 1
     examples = 0
     for md in (Path(root) / "conformance").rglob("*.md"):
         if md.name != "INDEX.md":
@@ -342,16 +354,208 @@ def cmd_verify(args):
     return 1 if bad else 0
 
 
+# ── apply ───────────────────────────────────────────────────────────────────────
+
+DASH = "—"
+GEN_LINE = re.compile(r"^(?:\[cases/[^\]]*\]\(cases/[^()\s]*\)|Proved also by .*)$")
+SKIP_PARTS = {"src", "snapshot", "deps"}
+OWN_REPO = {"botopink-lang", ".", "..", "$d", "$REPO_ROOT", "${REPO_ROOT}", "$repo", "$root"}
+
+
+def lead_of(rule):
+    """The lead of a row as decision-cells.py titles it."""
+    m = re.match(r"\*\*(.+?)\*\*", rule)
+    lead = m.group(1) if m else re.split(r"(?<=[.!?])\s", rule, maxsplit=1)[0][:120]
+    return re.sub(r"\s+", " ", lead.replace("\\|", "|")).strip()
+
+
+def group_of(entry):
+    return entry["new"].split("/")[1]
+
+
+def group_order(result):
+    n = collections.Counter(group_of(r) for r in result)
+    return sorted(n, key=lambda g: (-n[g], g))
+
+
+def git(root, *a):
+    return subprocess.run(["git", "-C", str(root), *a], check=True, capture_output=True, text=True)
+
+
+def module_of(entry):
+    return entry["new"].rsplit("/cases/", 1)[0]
+
+
+def write_docs(conf, rows, result):
+    """(Re)writes the docs.md of every module that holds a case on disk (or already has a docs.md)."""
+    mods = collections.defaultdict(lambda: {"cases": [], "also": [], "row": None})
+    for r in result:
+        m = module_of(r)
+        mods[m]["cases"].append(r)
+        if r["home"]:
+            mods[m]["row"] = r["home"]
+        for a in r["also"]:
+            if rows[a].slug:
+                mods[f"modules/decisions-taken/{rows[a].dirname}"]["also"].append(r)
+    for m, info in sorted(mods.items()):
+        d = conf / m
+        on_disk = [c for c in info["cases"] if (conf / c["new"]).is_dir()]
+        if not d.is_dir() or not on_disk:
+            continue
+        f = d / "docs.md"
+        if f.exists():
+            lines = [ln for ln in f.read_text().split("\n") if not GEN_LINE.match(ln)]
+        elif info["row"]:
+            lines = [f"# Decision {info['row']} {DASH} {lead_of(rows[info['row']].rule)}"]
+        else:
+            lines = [f"# {m.split('/')[1]}"]
+        while lines and lines[-1] == "":
+            lines.pop()
+        body = [f"[cases/{c['cell']}/src/main.bp](cases/{c['cell']}/src/main.bp)"
+                for c in sorted(on_disk, key=lambda c: c["cell"]) if (conf / c["new"] / "src/main.bp").is_file()]
+        also = []
+        for c in sorted(info["also"], key=lambda c: c["cell"]):
+            tgt = conf / c["new"]
+            if tgt.is_dir() and c["new"].startswith("modules/decisions-taken/"):
+                leaf = "src/main.bp" if (tgt / "src/main.bp").is_file() else "docs.md"
+                also.append(f"Proved also by [{c['cell']}](../{'/'.join(c['new'].split('/')[2:])}/{leaf})")
+        out = lines + [""] + body + ([""] + also if also else [])
+        f.write_text("\n".join(out) + "\n")
+
+
+def rewrite_text(text, rx, moved, dirs):
+    """`modules/<cell>` -> the cell's new path, by exact token and only where it names this repository's cell."""
+    def sub(m):
+        pre = re.search(r"[\w./$~{}-]*$", text[:m.start()]).group(0)
+        n = m.group(1)
+        if pre == "":
+            ok = n not in dirs  # a bare `modules/<name>` that is also a source module is not a cell
+        elif pre.endswith("conformance/"):
+            head = pre[:-len("conformance/")].rstrip("/")
+            ok = not head or head.rsplit("/", 1)[-1] in OWN_REPO
+        else:
+            ok = False
+        return moved[n] if ok else m.group(0)
+    return rx.sub(sub, text)
+
+
+def rewrite_refs(root, moved):
+    """moved: cell name -> its new `modules/...` path. -> the files changed."""
+    dirs = {p.name for p in (root / "modules").iterdir() if p.is_dir()} if (root / "modules").is_dir() else set()
+    alt = "|".join(re.escape(n) for n in sorted(moved, key=lambda n: (-len(n), n)))
+    rx = re.compile(r"modules/(" + alt + r")(?![\w-])(?!/cases/)")
+    listed = git(root, "grep", "-lE", "modules/[A-Za-z0-9_]").stdout.split("\n")
+    changed = []
+    for rel in filter(None, listed):
+        parts = rel.split("/")
+        if rel == "decisions-taken.md" or parts[-1] == "INDEX.md" or rel.startswith("scripts/consolidate-cells"):
+            continue
+        if parts[:2] == ["conformance", "modules"] and (parts[-1] != "docs.md" or SKIP_PARTS & set(parts[3:-1])):
+            continue
+        f = root / rel
+        if not f.is_file():
+            continue
+        try:
+            text = f.read_text()
+        except UnicodeDecodeError:
+            continue
+        out = rewrite_text(text, rx, moved, dirs)
+        if out != text:
+            f.write_text(out)
+            changed.append(rel)
+    return changed
+
+
+def add_globs(conf, drop_star):
+    f = conf / "modules" / "botopink.json"
+    d = json.loads(f.read_text())
+    ws = d.setdefault("workspaces", [])
+    for g in ("*/cases/*", "decisions-taken/*/cases/*"):
+        if g not in ws:
+            ws.append(g)
+    if drop_star and "*" in ws:
+        ws.remove("*")
+    rest = {k: v for k, v in d.items() if k != "workspaces"}
+    lines = ["{"] + [f"  {json.dumps(k)}: {json.dumps(v)}," for k, v in rest.items()]
+    lines.append(f'  "workspaces": [{", ".join(json.dumps(w) for w in ws)}]')
+    f.write_text("\n".join(lines + ["}"]) + "\n")
+
+
+def cmd_groups(args):
+    root = Path(args.root)
+    rows = load_ledger(root / "decisions-taken.md")
+    result = plan(rows, root / "conformance" / "modules")
+    n = collections.Counter(group_of(r) for r in result if r["old"] != r["new"])
+    for g in group_order(result):
+        print(f"{n[g]:5d} {g}")
+    return 0
+
+
+def apply_group(root, rows, group, lo, hi, dry):
+    conf = root / "conformance"
+    result = plan(rows, conf / "modules")
+    todo = [r for r in result if r["old"] != r["new"]
+            and (group is None or group_of(r) == group)
+            and (lo is None or (r["home"] is not None and lo <= r["home"] <= hi))]
+    if dry:
+        return todo, []
+    # a cell named like its own module moves out of the way first
+    selfmv = [r for r in todo if r["new"].startswith(f"{r['old']}/")]
+    for r in selfmv:
+        git(conf, "mv", r["old"], r["old"] + ".moving")
+    for r in selfmv:
+        (conf / r["new"]).parent.mkdir(parents=True, exist_ok=True)
+        git(conf, "mv", r["old"] + ".moving", r["new"])
+    for r in todo:
+        if r not in selfmv:
+            (conf / r["new"]).parent.mkdir(parents=True, exist_ok=True)
+            git(conf, "mv", r["old"], r["new"])
+    changed = rewrite_refs(root, {r["cell"]: r["new"] for r in todo}) if todo else []
+    write_docs(conf, rows, plan(rows, conf / "modules"))
+    git(root, "add", "-A", "conformance", ":!conformance/modules/INDEX.md", ":!conformance/modules/INDEX.ambiguous", *changed)
+    return todo, changed
+
+
+def cmd_apply(args):
+    root = Path(args.root)
+    rows = load_ledger(root / "decisions-taken.md")
+    conf = root / "conformance"
+    groups = group_order(plan(rows, conf / "modules")) if args.all else [args.group] if args.group else []
+    lo = hi = None
+    if args.range:
+        lo, hi = (int(x) for x in args.range.split("-"))
+    total = 0
+    for g in groups:
+        todo, changed = apply_group(root, rows, g, lo, hi, args.dry_run)
+        total += len(todo)
+        print(f"{g}: {len(todo)} cells, {len(changed)} files rewritten")
+    if not args.dry_run and (groups or args.drop_star):
+        add_globs(conf, args.all or args.drop_star)
+        git(root, "add", "conformance/modules/botopink.json")
+    print(f"moved {total} cells" if not args.dry_run else f"{total} cells would move")
+    return 0
+
+
+MOVED = re.compile(rb"modules/(?:[\w-]+/){1,2}cases/")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan")
     p.add_argument("--allow-unslugged", action="store_true")
+    sub.add_parser("groups")
+    a = sub.add_parser("apply")
+    a.add_argument("--group")
+    a.add_argument("--all", action="store_true")
+    a.add_argument("--range")
+    a.add_argument("--drop-star", action="store_true")
+    a.add_argument("--dry-run", action="store_true")
     v = sub.add_parser("verify")
     v.add_argument("--base", required=True)
     args = ap.parse_args(argv)
-    return cmd_plan(args) if args.cmd == "plan" else cmd_verify(args)
+    return {"plan": cmd_plan, "verify": cmd_verify, "apply": cmd_apply, "groups": cmd_groups}[args.cmd](args)
 
 
 if __name__ == "__main__":
