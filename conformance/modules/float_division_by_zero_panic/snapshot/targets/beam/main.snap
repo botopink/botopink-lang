@@ -1,4 +1,4 @@
 botopink-cell 1
 out 3.5
 abort
-stderr panic: division by zero: / on f64 at src/main.bp:6:14
+stderr panic: division by zero: / on f64 at src/main.bp:8:14
