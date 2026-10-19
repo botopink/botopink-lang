@@ -1,0 +1,31 @@
+//// Decision 178 — † A dangling link under `fs.walk` is an `Error` naming the link, on both targets — not skipped
+
+import {io.fs, compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""require('fs').symlinkSync($0, $1)"""),
+    .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
+)]
+declare fn linkTo(target: string, link: string) -> void;
+
+fn walked(root: string) -> string {
+    return case fs.walk(root) {
+        Ok(found) -> found.join(",");
+        Error(e) -> reason(e);
+    };
+}
+
+fn reason(e: fs.FsError) -> string {
+    return case e {
+        fs.FsError.Other(_, message) -> message;
+        _ -> "another error";
+    };
+}
+
+pub fn main() -> void {
+    fs.mkdir("site");
+    fs.writeText("site/page.bp", "page");
+    print(walked("site"));
+    linkTo("missing.bp", "site/gone.bp");
+    print(walked("site"));
+}

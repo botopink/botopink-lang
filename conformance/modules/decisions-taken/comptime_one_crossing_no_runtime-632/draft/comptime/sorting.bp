@@ -1,0 +1,21 @@
+//// A decorator that records typed meta and registers its declaration through `compiler.init`.
+
+import {compiler} from "std";
+
+pub type Sort(by: string)
+
+var seen: string[] = [];
+
+pub fn record(name: string) -> void {
+    seen.push(name);
+}
+
+pub fn sorted() -> string[] {
+    return seen;
+}
+
+pub fn sortBy(syntax decl: unknown, comptime by: string) -> void {
+    compiler.setMeta(Sort(by: by));
+    val name = compiler.name(decl)!;
+    compiler.init({ -> record(name) });
+}

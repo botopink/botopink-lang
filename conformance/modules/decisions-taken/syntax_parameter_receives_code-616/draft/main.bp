@@ -1,0 +1,27 @@
+//// Decision 616 — The parameter modifier `expr` is renamed `syntax`: a parameter marked `syntax` receives the code as it was written — a declaration, an argument expression, a lambda — and `comptime` one receives a value known at build.
+
+import {compiler, code, io.terminal.print} from "std";
+
+var calls = 0;
+
+fn next() -> i32 {
+    calls = calls + 1;
+    return calls;
+}
+
+// The code written at the call, spliced where the answer stands.
+fn traced(syntax value: i32) -> anyvalue {
+    val text = compiler.text(value);
+    return code @`${text} + " = " + (${value}).toString()`;
+}
+
+// A value known at build: the function's specialisation.
+fn times(comptime n: i32, s: string) -> string {
+    return s.repeat(n);
+}
+
+pub fn main() -> void {
+    print(traced(next()));
+    print(traced(2 + 3));
+    print(times(3, "ab"));
+}

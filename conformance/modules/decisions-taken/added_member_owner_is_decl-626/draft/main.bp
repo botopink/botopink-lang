@@ -1,0 +1,19 @@
+//// Decision 626 — (a): inside a member a decorator adds, the owner is `decl` — the annotated declaration as code (613), so `decl.make()` is `ServerConfig.make()` —; and a decorator's `syntax decl` is typed by what the decorator requires of the declaration.
+
+import {io.terminal.print} from "std";
+import {comptime.config.configurationProperties};
+
+#[configurationProperties("server")]
+type ServerConfig(address: string) {
+    pub fn make() -> ServerConfig {
+        return ServerConfig(address: "localhost");
+    }
+
+    pub fn host(self: Self) -> string {
+        return self.address;
+    }
+}
+
+pub fn main() -> void {
+    print(ServerConfig.check());
+}

@@ -1,0 +1,25 @@
+//// The two outputs `@emit` used to write, in the form that replaces them, and one `@emit` left.
+
+import {compiler} from "std";
+
+var seen: string[] = [];
+
+pub fn recordRoute(name: string) -> void {
+    seen.push(name);
+}
+
+pub fn routes() -> string[] {
+    return seen;
+}
+
+pub fn register(syntax decl: unknown) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> recordRoute(name) });
+    compiler.addMember("describe", fn() -> string {
+        return name.toLower();
+    });
+}
+
+pub fn legacy(syntax decl: unknown) -> void {
+    @emit("val registered = true;");
+}

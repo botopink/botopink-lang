@@ -1,0 +1,6 @@
+//// The real error: a `string` bound to an `i32`.
+
+pub fn side(n: i32) -> i32 {
+    val label: string = n * 2;
+    return n;
+}

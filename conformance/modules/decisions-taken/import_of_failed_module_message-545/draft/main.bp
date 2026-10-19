@@ -1,0 +1,8 @@
+//// Decision 545 — The wording of `import-of-failed-module` (144)
+
+import {io.terminal.print} from "std";
+import {shapes};
+
+pub fn main() -> void {
+    print(shapes.area(3));
+}

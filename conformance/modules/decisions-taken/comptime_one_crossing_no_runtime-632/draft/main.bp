@@ -1,0 +1,17 @@
+//// Decision 632 — No `runtime` keyword: a line runs on the side of the body it is written in; `comptime` is the one crossing from run-time code into the build, `compiler.init` the one crossing from a build body into the program.
+
+import {compiler, io.terminal.print} from "std";
+import {comptime.sorting.sortBy, comptime.sorting.Sort, comptime.sorting.sorted};
+
+#[sortBy("title")]
+type Book(title: string, pages: i32)
+
+pub fn main() -> void {
+    val o = comptime {
+        val s = compiler.typeInfo(Book).meta(Sort);
+        print("read at build");
+        s
+    };
+    print(o?.by ?? "none");
+    print(sorted().join(","));
+}

@@ -1,0 +1,20 @@
+//// Decision 556 — A `crash`'s reason is the engine's; a cell claims the kind
+
+import {compiler, failure, failure.Failure, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("5"), .Erlang("5"))]
+declare fn notText() -> string;
+
+fn show(r: Result<string, Failure>) -> void {
+    case r {
+        Ok(s) -> print("ok " + s);
+        Error(f) -> print(f.kind);
+    }
+}
+
+pub fn main() -> void {
+    show(failure.attempt({ -> notText().trim() }));
+    print("before");
+    print(notText().trim());
+    print("after");
+}
