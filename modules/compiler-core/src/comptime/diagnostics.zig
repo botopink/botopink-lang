@@ -616,9 +616,13 @@ pub const decorator_member_not_fn: []const u8 = "decorator-member-not-fn";
 /// A member function with a parameter whose type is not written.
 pub const decorator_member_fn_untyped: []const u8 = "decorator-member-fn-untyped";
 
-/// A member function reading the decorator's `@Decl` handle or a local of the
-/// decorator's body: those exist while the program compiles, the member runs
-/// with the program.
+/// Decision 759 — a member or an executor reading a local of the decorator's
+/// body whose value is no literal (575 (4): only literals enter a tree), at
+/// the annotation, naming the local.
+pub const decorator_member_local_not_literal: []const u8 = "decorator-member-local-not-literal";
+
+/// Decision 316 — a wrapper reading the handle or a local of the decorator's
+/// body; it goes with the wrapper (714, B-139).
 pub const decorator_member_captures: []const u8 = "decorator-member-captures";
 
 /// A member function's types at one annotation: a `self` that is not the type
@@ -972,6 +976,7 @@ pub const all_codes = [_][]const u8{
     decorator_wrap_generic,
     decorator_member_not_fn,
     decorator_member_fn_untyped,
+    decorator_member_local_not_literal,
     decorator_member_captures,
     decorator_member_type,
     decorator_type_without_owner,

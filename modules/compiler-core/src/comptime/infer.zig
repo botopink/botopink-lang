@@ -6285,8 +6285,8 @@ fn memberFnSource(
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, c.name, n });
-            return decoratorError(env, a, msg, "A member holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_local_not_literal, a.name, c.name, n });
+            return localNotLiteral(env, a, sig, func, local, n, msg, "A member holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
         };
         splices[values.len + k] = .{ .param = n, .lexeme = lit };
     }
@@ -6375,8 +6375,8 @@ fn executorSource(
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s executor reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, n });
-            return decoratorError(env, a, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s executor reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_local_not_literal, a.name, n });
+            return localNotLiteral(env, a, sig, func, local, n, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
         };
         splices[values.len + k] = .{ .param = n, .lexeme = lit };
     }
@@ -7390,6 +7390,23 @@ fn locatedFns(env: *Env, head: ast.FnDecl, head_file: []const u8, support: []con
 /// annotation or the template's use in this module.
 fn raisedFrom(env: *Env, message: []const u8, hint: []const u8, frames: []const blockEval.Frame, entry: ast.Loc) InferError {
     env.lastError = blockEval.raisedError(env, message, hint, frames, entry) catch return error.OutOfMemory;
+    return error.TypeError;
+}
+
+/// Decision 759 — `decorator-member-local-not-literal`, located at the read
+/// of `name` in the tree `func` (in the decorator's own file), the annotation
+/// its `called from` line.
+fn localNotLiteral(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, func: ast.FunctionExpr, local: bool, name: []const u8, message: []const u8, hint: []const u8) InferError {
+    const read: ?ast.Loc = for (try memberFn.freeNames(env.arena, func)) |f| {
+        if (std.mem.eql(u8, f.name, name)) break f.loc;
+    } else null;
+    const at = read orelse return decoratorError(env, a, message, hint);
+    const own = env.srcPathOf(env.modulePath);
+    const file = if (local or sig.module.len == 0) own else env.srcPathOf(sig.module);
+    const frames = try env.arena.alloc(errorMod.Frame, if (a.loc != null) 2 else 1);
+    frames[0] = .{ .file = file, .loc = at };
+    if (a.loc) |l| frames[1] = .{ .file = own, .loc = l };
+    env.lastError = TypeError.custom(message, hint).withRaise(own, frames);
     return error.TypeError;
 }
 
@@ -24261,7 +24278,7 @@ fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
 /// the call that takes nothing; it is the program's code, typed here as a
 /// wrapper is (`inferWrapWithCall`): each `comptime x: T` parameter read as
 /// its `T`, the body's locals read as the literals of their values (the tree
-/// rule, 575 (4)), never the handle (`decorator-member-captures`). The
+/// rule, 575 (4); a local that is no literal is `decorator-member-local-not-literal`, 759). The
 /// executor is checked against `fn()` (decision 409): a tail that answers a
 /// value is refused at it.
 fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
