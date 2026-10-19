@@ -11,29 +11,16 @@
 import {compiler};
 
 // ── numeric tower ─────────────────────────────────────────────────────────────
-// Capability interfaces shared by every numeric width. `Self` abstracts the
-// concrete type, so one signature serves all widths; concrete types inherit via
-// `extends` and carry no duplicated members. Declared (host-backed) methods use
-// `#[compiler.external(.Erlang(…), compiler.external(.JavaScript)(…))]`; pure-logic ops carry none.
+// Contracts shared by the numeric widths. `Self` abstracts the concrete type,
+// so one signature serves all widths; a contract carries no host code, and
+// each width declares the members it runs on the host itself.
 
-// commonJS holds an `i64` / `u64` past ±(2^53 − 1) as a `BigInt` (decision 319),
-// and the emitter patches these methods on `BigInt.prototype` as well as on
-// `Number.prototype`. A Node form here therefore takes a `number` or a
-// `BigInt` and answers the canonical one. `Math.*` throws a `TypeError` on a
-// `BigInt`, so `min` / `max` / `abs` are written out with `<` (exact across
-// the two kinds), answering an operand as it came, and keep `Math.*`'s
-// answers on numbers: a `NaN` operand is `NaN`, `-0` is below `0`.
+// The contracts of the numeric types: signatures and `default fn` bodies in
+// botopink, and no host code (decision 617 (2)). A width's host code lives on
+// the width's own type below (617 (3)), `Self` written as the width.
 behavior Number {
-    #[compiler.external(
-        .Erlang("erlang:min($0, $1)"),
-        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
-    )]
     fn min(self: Self, other: Self) -> Self;
 
-    #[compiler.external(
-        .Erlang("erlang:max($0, $1)"),
-        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
-    )]
     fn max(self: Self, other: Self) -> Self;
 
     default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
@@ -42,19 +29,12 @@ behavior Number {
 }
 
 behavior Integer extends Number {
-    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
     fn toString(self: Self) -> string;
 
-    #[compiler.external(
-        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
-    )]
     default fn isEven(self: Self) -> bool {
         return self % 2 == 0;
     }
 
-    #[compiler.external(
-        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
-    )]
     default fn isOdd(self: Self) -> bool {
         return self % 2 != 0;
     }
@@ -62,42 +42,18 @@ behavior Integer extends Number {
     // ── conversions (decision 319) ───────────────────────────────────────
     // Explicit and exact: the value when the target type holds it, else an
     // abort naming the value and the type — never a wrap, a saturation or a
-    // rounding. One form per target type, whatever the receiver's width. The
-    // erlang forms raise as an overflowing operator does
-    // (`{integer_overflow, What}`); the Node forms take a `number` or a
-    // `BigInt` and answer the canonical form (a `BigInt` only past
-    // ±(2^53 − 1)).
+    // rounding. One form per target type, whatever the receiver's width.
 
-    #[compiler.external(
-        .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
-        .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
-    )]
     fn toI32(self: Self) -> i32;
 
-    #[compiler.external(
-        .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
-        .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
-    )]
     fn toI64(self: Self) -> i64;
 
-    #[compiler.external(
-        .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
-        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
-    )]
     fn toU32(self: Self) -> u32;
 
-    #[compiler.external(
-        .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
-        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
-    )]
     fn toU64(self: Self) -> u64;
 
     // The `f64` equal to the integer; an integer between two `f64`s (past
     // 2^53 an `f64` counts by two, then by four, …) aborts.
-    #[compiler.external(
-        .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
-        .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
-    )]
     fn toF64(self: Self) -> f64;
 }
 
@@ -108,46 +64,100 @@ behavior Signed extends Integer {
 }
 
 behavior Float extends Number {
-    // `float_to_binary/1` prints scientific notation (`1.50000000000000000000e+00`);
-    // `short` is the shortest text that reads back as the same float (`1.5`).
-    // On wasm, std-wasm's text (decisions 440, 441): the erlang target's,
-    // and the one a wasm program writes for a float anywhere — `terminal.print`,
-    // `"${x}"`. commonJS writes the same text through its `__bp_f64` helper
-    // (a float receiver's `toString()` is lowered there, not by this binding).
-    #[compiler.external(
-        .Erlang("float_to_binary($0, [short])"),
-        .JavaScript("toString"),
-        .Wasm(std: "number.floatToString"),
-    )]
     fn toString(self: Self) -> string;
 
-    // Patched on `Number.prototype` as `Signed`'s `abs` is: the same form.
-    #[compiler.external(
-        .Erlang("erlang:abs($0)"),
-        .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
-    )]
     fn abs(self: Self) -> Self;
 
-    #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
     fn floor(self: Self) -> Self;
 
-    #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
     fn ceil(self: Self) -> Self;
 
-    // OTP has no `math:round/1`; `floor(x + 0.5)` is `Math.round` (ties round
-    // up) and keeps the float type `Self` promises.
-    #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
+    // Ties round up, as `Math.round` does, and the answer keeps the float type.
     fn round(self: Self) -> Self;
 
-    #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
     fn squareRoot(self: Self) -> Self;
 }
 
 // The primitive widths are types (decision 617 (1)): each names the contract
 // it implements, and a method on a width is found through that `implement`
 // clause and the contracts' `extends` — the checker and every backend read it
-// here. A width has no field list: the language gives its values.
+// here. A width has no field list: the language gives its values. Each width
+// declares the members its contracts leave to it, with their host code
+// (617 (3)).
+//
+// commonJS holds an `i64` / `u64` past ±(2^53 − 1) as a `BigInt` (decision
+// 319), and the emitter patches these methods on `BigInt.prototype` as well as
+// on `Number.prototype`. A Node form here therefore takes a `number` or a
+// `BigInt` and answers the canonical one. `Math.*` throws a `TypeError` on a
+// `BigInt`, so `min` / `max` / `abs` are written out with `<` (exact across
+// the two kinds), answering an operand as it came, and keep `Math.*`'s
+// answers on numbers: a `NaN` operand is `NaN`, `-0` is below `0`. The integer
+// conversions' erlang forms raise as an overflowing operator does
+// (`{integer_overflow, What}`); their Node forms take a `number` or a
+// `BigInt` and answer the canonical form (a `BigInt` only past ±(2^53 − 1)).
+// `isEven` / `isOdd` run the contract's algorithm in botopink on erlang and
+// wasm (`body:`, decision 610), and a form that reads a `BigInt` on commonJS.
+
 pub type i32 implement Signed {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
+
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    declare fn toString(self: Self) -> string;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
+        .Erlang(body: i32IsEvenBody),
+        .Wasm(body: i32IsEvenBody),
+    )]
+    declare fn isEven(self: Self) -> bool;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
+        .Erlang(body: i32IsOddBody),
+        .Wasm(body: i32IsOddBody),
+    )]
+    declare fn isOdd(self: Self) -> bool;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
+    )]
+    declare fn toI32(self: Self) -> i32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
+    )]
+    declare fn toI64(self: Self) -> i64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
+    )]
+    declare fn toU32(self: Self) -> u32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
+    )]
+    declare fn toU64(self: Self) -> u64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
+        .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
+    )]
+    declare fn toF64(self: Self) -> f64;
+
     // `abs` aborts past `i32` as unary `-` does (decision 496): the lowest
     // `i32` has no positive counterpart in `i32`.
     #[compiler.external(
@@ -158,6 +168,65 @@ pub type i32 implement Signed {
 }
 
 pub type i64 implement Signed {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
+
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    declare fn toString(self: Self) -> string;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
+        .Erlang(body: i64IsEvenBody),
+        .Wasm(body: i64IsEvenBody),
+    )]
+    declare fn isEven(self: Self) -> bool;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
+        .Erlang(body: i64IsOddBody),
+        .Wasm(body: i64IsOddBody),
+    )]
+    declare fn isOdd(self: Self) -> bool;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
+    )]
+    declare fn toI32(self: Self) -> i32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
+    )]
+    declare fn toI64(self: Self) -> i64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
+    )]
+    declare fn toU32(self: Self) -> u32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
+    )]
+    declare fn toU64(self: Self) -> u64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
+        .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
+    )]
+    declare fn toF64(self: Self) -> f64;
+
     // `abs` aborts past `i64` as unary `-` does (decision 496): the lowest
     // `i64` has no positive counterpart in `i64`.
     #[compiler.external(
@@ -167,13 +236,247 @@ pub type i64 implement Signed {
     declare fn abs(self: Self) -> Self;
 }
 
-pub type u32 implement Integer
+pub type u32 implement Integer {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
 
-pub type u64 implement Integer
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
 
-pub type f32 implement Float
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    declare fn toString(self: Self) -> string;
 
-pub type f64 implement Float
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
+        .Erlang(body: u32IsEvenBody),
+        .Wasm(body: u32IsEvenBody),
+    )]
+    declare fn isEven(self: Self) -> bool;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
+        .Erlang(body: u32IsOddBody),
+        .Wasm(body: u32IsOddBody),
+    )]
+    declare fn isOdd(self: Self) -> bool;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
+    )]
+    declare fn toI32(self: Self) -> i32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
+    )]
+    declare fn toI64(self: Self) -> i64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
+    )]
+    declare fn toU32(self: Self) -> u32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
+    )]
+    declare fn toU64(self: Self) -> u64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
+        .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
+    )]
+    declare fn toF64(self: Self) -> f64;
+}
+
+pub type u64 implement Integer {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
+
+    #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
+    declare fn toString(self: Self) -> string;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
+        .Erlang(body: u64IsEvenBody),
+        .Wasm(body: u64IsEvenBody),
+    )]
+    declare fn isEven(self: Self) -> bool;
+
+    #[compiler.external(
+        .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
+        .Erlang(body: u64IsOddBody),
+        .Wasm(body: u64IsOddBody),
+    )]
+    declare fn isOdd(self: Self) -> bool;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
+    )]
+    declare fn toI32(self: Self) -> i32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
+    )]
+    declare fn toI64(self: Self) -> i64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
+    )]
+    declare fn toU32(self: Self) -> u32;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
+        .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
+    )]
+    declare fn toU64(self: Self) -> u64;
+
+    #[compiler.external(
+        .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
+        .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
+    )]
+    declare fn toF64(self: Self) -> f64;
+}
+
+// The float widths. `toString`: `float_to_binary/1` prints scientific notation
+// (`1.50000000000000000000e+00`); `short` is the shortest text that reads back
+// as the same float (`1.5`). On wasm, std-wasm's text (decisions 440, 441): the
+// erlang target's, and the one a wasm program writes for a float anywhere —
+// `terminal.print`, `"${x}"`. commonJS writes the same text through its
+// `__bp_f64` helper (a float receiver's `toString()` is lowered there, not by
+// this binding). `abs` is patched on `Number.prototype` as the integers' is:
+// the same form. OTP has no `math:round/1`; `floor(x + 0.5)` is `Math.round`
+// (ties round up) and keeps the float type `Self` promises.
+pub type f32 implement Float {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("float_to_binary($0, [short])"),
+        .JavaScript("toString"),
+        .Wasm(std: "number.floatToString"),
+    )]
+    declare fn toString(self: Self) -> string;
+
+    #[compiler.external(
+        .Erlang("erlang:abs($0)"),
+        .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
+    )]
+    declare fn abs(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+    declare fn floor(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
+    declare fn ceil(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
+    declare fn round(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
+    declare fn squareRoot(self: Self) -> Self;
+}
+
+pub type f64 implement Float {
+    #[compiler.external(
+        .Erlang("erlang:min($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn min(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("erlang:max($0, $1)"),
+        .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
+    )]
+    declare fn max(self: Self, other: Self) -> Self;
+
+    #[compiler.external(
+        .Erlang("float_to_binary($0, [short])"),
+        .JavaScript("toString"),
+        .Wasm(std: "number.floatToString"),
+    )]
+    declare fn toString(self: Self) -> string;
+
+    #[compiler.external(
+        .Erlang("erlang:abs($0)"),
+        .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
+    )]
+    declare fn abs(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
+    declare fn floor(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
+    declare fn ceil(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
+    declare fn round(self: Self) -> Self;
+
+    #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
+    declare fn squareRoot(self: Self) -> Self;
+}
+
+// The botopink bodies of the widths' `isEven` / `isOdd` (`body:`, decision 610).
+fn i32IsEvenBody(value: i32) -> bool {
+    return value % 2 == 0;
+}
+
+fn i32IsOddBody(value: i32) -> bool {
+    return value % 2 != 0;
+}
+
+fn i64IsEvenBody(value: i64) -> bool {
+    return value % 2 == 0;
+}
+
+fn i64IsOddBody(value: i64) -> bool {
+    return value % 2 != 0;
+}
+
+fn u32IsEvenBody(value: u32) -> bool {
+    return value % 2 == 0;
+}
+
+fn u32IsOddBody(value: u32) -> bool {
+    return value % 2 != 0;
+}
+
+fn u64IsEvenBody(value: u64) -> bool {
+    return value % 2 == 0;
+}
+
+fn u64IsOddBody(value: u64) -> bool {
+    return value % 2 != 0;
+}
 
 // ── bigint (decision 332) ─────────────────────────────────────────────────────
 // An integer of any size, its literal suffixed `n` (`123…890n`): `+ - * / %`,

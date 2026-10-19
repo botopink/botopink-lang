@@ -8832,8 +8832,36 @@ const Emitter = struct {
         }
     }
 
+    /// Decision 610 — the free function of a member a width declares itself
+    /// (`__i64_isEven`) whose erlang cell is `body: <fn>`: a local call of
+    /// `<fn>`, the prelude's private body, emitted into this module once with
+    /// the reached defaults (`emitNeededDefaults`).
+    fn widthBodyCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode) anyerror!bool {
+        if (prelude_cache.widthMemberOf(f.name) == null) return false;
+        const impl = f.externalFor("erlang") orelse return false;
+        const name = hostFnBinding.fnName(impl) orelse return false;
+        const body = prelude_cache.freeFn(name) orelse return false;
+        if (body.isDeclare or body.body.len == 0) return false;
+        // The name is the prelude's, alive for the process, and holds no dot:
+        // no `Iface.method` key is it.
+        const method: ast.BehaviorMethod = .{ .name = body.name, .params = body.params, .returnType = body.returnType, .body = body.body, .from_prelude = true };
+        if (!self.needed_defaults.contains(name)) try self.needed_defaults.put(self.alloc, name, .{ .iface = "", .method = method });
+        var nbuf: [256]u8 = undefined;
+        const mangled = try self.methodFnName(&nbuf, "", name);
+        const arity = methodArity(method);
+        if (self.fnLabelsFor(mangled, arity)) |_| {} else |_| try self.reserveFn(mangled, arity);
+        try self.materializeCallArgs(cc.args, cc.trailing);
+        const labels = try self.fnLabelsFor(mangled, arity);
+        switch (mode) {
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
+        }
+        return true;
+    }
+
     /// `lowerExternalCall` without the adoption: the host's answer as it is.
     fn lowerHostCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
+        if (try self.widthBodyCall(f, cc, mode)) return;
         // 06 C13 — every exit below is `error.MissingExternalTarget`; naming the
         // fn and the call site here is what turns it into a located diagnostic
         // upstream.

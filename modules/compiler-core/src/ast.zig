@@ -2245,6 +2245,12 @@ pub const BehaviorMethod = struct {
     /// that reached it, never at the prelude's line under the program's file
     /// name. Left out of the AST dump.
     from_prelude: bool = false,
+    /// Decision 617 (3) — the host code every primitive type implementing
+    /// the member's contract declares alike, read back onto the contract's
+    /// member by `codegen/prelude_cache.zig` `foldWidthMembers`: the text
+    /// writes it on the types, never on the behavior (`external-on-behavior`
+    /// does not read it). Left out of the AST dump.
+    folded: bool = false,
 
     /// True when the method has a host implementation (decision 575 (6)).
     pub fn isExternal(this: BehaviorMethod) bool {
@@ -2274,7 +2280,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "markerLoc", "implementations", "nameLoc" }, &.{ "comments", "trailingComment", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "folded", "markerLoc", "implementations", "nameLoc" }, &.{ "comments", "trailingComment", "marker" });
     }
 };
 

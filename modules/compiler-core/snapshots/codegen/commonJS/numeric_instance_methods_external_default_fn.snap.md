@@ -92,8 +92,14 @@ BigInt.prototype.clamp = Number.prototype.clamp = function(lo, hi) {
 //   fn toU32(...)
 //   fn toU64(...)
 //   fn toF64(...)
-BigInt.prototype.isEven = Number.prototype.isEven = function() { return ((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)(this.valueOf()); };
-BigInt.prototype.isOdd = Number.prototype.isOdd = function() { return ((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)(this.valueOf()); };
+BigInt.prototype.isEven = Number.prototype.isEven = function() {
+    const self = this.valueOf();
+    return ((self % 2) === 0);
+};
+BigInt.prototype.isOdd = Number.prototype.isOdd = function() {
+    const self = this.valueOf();
+    return ((self % 2) !== 0);
+};
 BigInt.prototype.toI32 = Number.prototype.toI32 = function() { return ((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })(this.valueOf()); };
 BigInt.prototype.toI64 = Number.prototype.toI64 = function() { return ((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })(this.valueOf()); };
 BigInt.prototype.toU32 = Number.prototype.toU32 = function() { return ((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })(this.valueOf()); };
@@ -107,7 +113,7 @@ function main() {
     __bp_print(n.max(10));
     __bp_print(n.clamp(0, 5));
     const x = 7;
-    __bp_print(x.isEven());
+    __bp_print(((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)(x));
 }
 
 function _botopink_main() {

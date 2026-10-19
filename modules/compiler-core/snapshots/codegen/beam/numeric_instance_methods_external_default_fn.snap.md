@@ -16,9 +16,9 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Integer_isEven', 1}, {'__bp_priv__Number_clamp', 3}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Number_clamp', 3}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
-{labels, 57}.
+{labels, 55}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -98,10 +98,10 @@ import {io.terminal.print} from "std";
     {move, {y, 2}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, min, 2}, 5}.
 
-{function, 'Integer_isEven', 1, 48}.
+{function, '_i32IsEvenBody', 1, 48}.
   {label, 47}.
     {line, [{location, "test@main.erl", 5}]}.
-    {func_info, {atom, test@main}, {atom, 'Integer_isEven'}, 1}.
+    {func_info, {atom, test@main}, {atom, '_i32IsEvenBody'}, 1}.
   {label, 48}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -116,25 +116,18 @@ import {io.terminal.print} from "std";
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__Integer_isEven', 1, 52}.
+{function, '__bp_priv__Number_clamp', 3, 52}.
   {label, 51}.
     {line, [{location, "test@main.erl", 6}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Integer_isEven'}, 1}.
-  {label, 52}.
-    {call_only, 1, {f, 48}}.
-
-{function, '__bp_priv__Number_clamp', 3, 54}.
-  {label, 53}.
-    {line, [{location, "test@main.erl", 7}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__Number_clamp'}, 3}.
-  {label, 54}.
+  {label, 52}.
     {call_only, 3, {f, 46}}.
 
-{function, '__bp_priv__main', 0, 56}.
-  {label, 55}.
-    {line, [{location, "test@main.erl", 8}]}.
+{function, '__bp_priv__main', 0, 54}.
+  {label, 53}.
+    {line, [{location, "test@main.erl", 7}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__main'}, 0}.
-  {label, 56}.
+  {label, 54}.
     {call_only, 0, {f, 3}}.
 
 {function, '__bp_tpl_0-t/1-fun-0-', 1, 13}.

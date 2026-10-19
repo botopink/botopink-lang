@@ -4747,19 +4747,46 @@ fn checkProgramImplementations(env: *Env, program: ast.Program) InferError!void 
             .site = .type_method,
             .loc = m.nameLoc,
         }, m.annotations, m.implementations),
-        .behavior => |b| for (b.methods) |m| try checkImplementations(env, program, .{
-            .name = m.name,
-            .params = m.params,
-            .ret = m.returnType,
-            .hasBody = m.body != null,
-            .site = .behavior_member,
-            .isDefault = m.is_default,
-            .selfTy = selfSpelling(b.name),
-            .loc = m.nameLoc,
-        }, m.annotations, m.implementations),
+        .behavior => |b| for (b.methods) |m| {
+            try checkImplementations(env, program, .{
+                .name = m.name,
+                .params = m.params,
+                .ret = m.returnType,
+                .hasBody = m.body != null,
+                .site = .behavior_member,
+                .isDefault = m.is_default,
+                .selfTy = selfSpelling(b.name),
+                .loc = m.nameLoc,
+            }, m.annotations, m.implementations);
+            // After the sources' own checks: a source the constructor refuses
+            // is named first, wherever it stands.
+            try refuseExternalOnBehavior(env, b, m);
+        },
         else => {},
     };
     try refuseUnimplementedDeclares(env, program);
+}
+
+/// Decision 617 (2), (3) — a behavior is a contract: its members are
+/// signatures and `default fn` bodies, and host code lives on the type that
+/// implements it (`#[compiler.external(…)] declare fn toString(self: Self) ->
+/// string;` inside `pub type i32 implement Signed { … }`). An implementation
+/// on a behavior's member is refused at the annotation, `external-on-behavior`.
+/// What `prelude_cache.foldWidthMembers` read back onto a contract is the
+/// types' (`BehaviorMethod.folded`). `String`, `Array`, `Bool`, `BigInt` and
+/// `Bytes` — std's and a program's extending them — keep theirs until decision
+/// 641 dissolves them into their types.
+fn refuseExternalOnBehavior(env: *Env, b: ast.BehaviorDecl, m: ast.BehaviorMethod) InferError!void {
+    if (m.folded or m.implementations.len == 0) return;
+    for ([_][]const u8{ "String", "Array", "Bool", "BigInt", "Bytes" }) |kept| {
+        if (std.mem.eql(u8, b.name, kept)) return;
+    }
+    const impl = m.implementations[0];
+    return implError(env, impl.loc orelse m.nameLoc, try std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}.{s}` is a behavior's member, and a behavior carries no host code — `.{s}(…)` belongs on the type that implements `{s}`",
+        .{ diagnostics.external_on_behavior, b.name, m.name, impl.target.variant(), b.name },
+    ), "Keep the signature (or a `default fn` body) on the behavior, and write `#[compiler.external(…)] declare fn …` on each type that implements it, `Self` the type.");
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as

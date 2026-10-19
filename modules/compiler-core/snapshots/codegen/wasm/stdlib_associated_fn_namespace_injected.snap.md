@@ -808,15 +808,15 @@ import {io.terminal.print} from "std";
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 ",")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "integer overflow: - on i32 at main.bp:843:25")
+  (data $__d2 "integer overflow: - on i32 at main.bp:1146:25")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "integer overflow: - on i32 at main.bp:845:23")
+  (data $__d3 "integer overflow: - on i32 at main.bp:1148:23")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "integer overflow: - on i32 at main.bp:848:30")
+  (data $__d4 "integer overflow: - on i32 at main.bp:1151:30")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 "integer overflow: + on i32 at main.bp:849:48")
+  (data $__d5 "integer overflow: + on i32 at main.bp:1152:48")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "integer overflow: + on i32 at main.bp:850:42")
+  (data $__d6 "integer overflow: + on i32 at main.bp:1153:42")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
@@ -829,23 +829,23 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d1
     global.set $__s1
     i32.const 0
-    i32.const 44
+    i32.const 45
     array.new_data $str $__d2
     global.set $__s2
     i32.const 0
-    i32.const 44
+    i32.const 45
     array.new_data $str $__d3
     global.set $__s3
     i32.const 0
-    i32.const 44
+    i32.const 45
     array.new_data $str $__d4
     global.set $__s4
     i32.const 0
-    i32.const 44
+    i32.const 45
     array.new_data $str $__d5
     global.set $__s5
     i32.const 0
-    i32.const 44
+    i32.const 45
     array.new_data $str $__d6
     global.set $__s6
   )

@@ -907,8 +907,15 @@ and `f64` `implement Float`. A capitalised name there is a contract several
 types share — `Signed extends Integer extends Number`, `Float extends Number`
 — and a width's methods are found through its `implement` clause and the
 contracts' `extends`: `abs` answers on `i32` and `i64`, `isEven` on every
-integer, `floor` on every float, `min` on every width. A module declaring a
-width is refused at the name, `primitive-type-redeclared` (decision 639):
+integer, `floor` on every float, `min` on every width. The contracts hold
+signatures and `default fn` bodies in botopink, and no host code (617 (2)):
+each width declares the members it runs on the host itself, `Self` the width —
+`pub type i32 implement Signed { #[compiler.external(…)] declare fn min(self:
+Self, other: Self) -> Self; … }` —, and a member one target runs in botopink
+names its body with `body:` (decision 610): `isEven` and `isOdd` are the
+contract's algorithm on erlang and wasm, and a form that reads a `BigInt` on
+commonJS. A module declaring a width is refused at the name,
+`primitive-type-redeclared` (decision 639):
 
 <!-- example: modules/primitive_width_is_a_type -->
 
@@ -4726,6 +4733,13 @@ is refused at the annotation; a behavior's `default fn` keeps its body as the
 fallback of a target it has no implementation for:
 
 <!-- example: modules/decisions-taken/primitive_widths_are_types-617/cells/implement_with_body -->
+
+A behavior is a contract (decision 617 (2), (3)): its members are signatures and `default fn` bodies, and
+host code lives on the type that implements it — `#[compiler.external(…)] declare fn toString(self: Self) ->
+string;` inside `pub type i32 implement Signed { … }`, `Self` the type. An implementation on a behavior's
+member is refused at the annotation, `external-on-behavior`:
+
+<!-- example: modules/external_on_behavior -->
 
 A bodyless `declare fn` no annotation implements has no code on any target: it
 is refused at the declaration, before any call — top-level, a type's method or

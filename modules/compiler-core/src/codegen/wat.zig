@@ -13524,6 +13524,11 @@ const Emitter = struct {
                         (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) or
                         std.mem.eql(u8, cc.callee, "__bp_is_type");
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .bool_;
+                    // `n.isEven()` written as its width's own function (`__i64_isEven`).
+                    if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| {
+                        const m = preludeCache.widthMember(wm.width, wm.method).?;
+                        break :blk if (m.returnType) |rt| isBoolTypeRef(rt) else false;
+                    };
                     if (self.genericResultArg(cc)) |a| break :blk self.isBoolExpr(a);
                     // `f(a, b)` over a value declared `fn(…) -> bool`.
                     if (self.valueCallTypeRef(cc)) |t| if (isBoolTypeRef(t)) break :blk true;
@@ -16397,6 +16402,16 @@ const Emitter = struct {
     /// The carrier a value of the width `width` lives in: an `i64` for
     /// `i64`, `u32` and `u64` (a `u32` lives in an `i64` here), an `f64` for
     /// a float, else an `i32`.
+    /// What a call of the member `method` the width `width` declares itself
+    /// leaves: its declared return, `Self` the width's carrier.
+    fn widthMemberCarrier(width: []const u8, method: []const u8) Repr {
+        const m = preludeCache.widthMember(width, method) orelse return widthCarrier(width);
+        const rt = m.returnType orelse return .i32;
+        if (rt != .named or std.mem.eql(u8, rt.named, "Self")) return widthCarrier(width);
+        if (std.mem.eql(u8, rt.named, "bool")) return .i32;
+        return widthCarrier(rt.named);
+    }
+
     fn widthCarrier(width: []const u8) Repr {
         const eq = std.mem.eql;
         if (eq(u8, width, "i64") or eq(u8, width, "u32") or eq(u8, width, "u64")) return .i64;
@@ -16410,6 +16425,15 @@ const Emitter = struct {
     /// no positive counterpart — with `integer overflow: abs on <width>`, as
     /// every other target writes it. An `i64` is answered in its `i64`.
     fn lowerWidthMember(self: *Emitter, width: []const u8, method: []const u8, cc: anytype) anyerror!void {
+        // A member whose wasm cell is `body: <fn>` (decision 610): the
+        // prelude's private body, adopted (`adoptPreludeHostFn`) and called
+        // with the receiver first.
+        if (preludeCache.widthMember(width, method)) |m| if (m.externalFor("wasm")) |impl| if (hostFnBinding.fnName(impl)) |body| {
+            if (!self.fn_sigs.contains(body)) _ = try self.adoptPreludeHostFn(body);
+            const sig = self.fn_sigs.get(body) orelse return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
+            try self.lowerCallArgs(cc.args, sig, 0);
+            return self.emit(.{ .call = body });
+        };
         const arg = callArg(cc, 0) orelse return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
         if (!std.mem.eql(u8, method, "abs") or cc.args.len != 1) return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
         const t = widthCarrier(width);
@@ -26805,7 +26829,7 @@ const Emitter = struct {
                         if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and cc.args.len > 0) break :blk self.resultOkCell(cc.args[0].value.*).ty();
                         break :blk .i32;
                     }
-                    if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| break :blk widthCarrier(wm.width);
+                    if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| break :blk widthMemberCarrier(wm.width, wm.method);
                     if (self.primKindAt(cc, c.loc)) |k| {
                         // `xs.fold(init, f)` answers what its accumulator holds.
                         if (k == .array and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) break :blk self.wasmTypeOf(cc.args[0].value.*);

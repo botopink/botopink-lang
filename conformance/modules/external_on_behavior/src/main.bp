@@ -1,0 +1,20 @@
+//// Decision 617 (2), (3) — a behavior is a contract: its members are signatures and
+//// `default fn` bodies, and host code lives on the type that implements it. An
+//// implementation on a behavior's member is refused at the annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+behavior Measured {
+    #[compiler.external(.Erlang("byte_size($0)"), .JavaScript("$0.length"))]
+    fn size(self: Self) -> i32;
+}
+
+type Word(text: string) implement Measured {
+    fn size(self: Self) -> i32 {
+        return self.text.length;
+    }
+}
+
+pub fn main() {
+    print(Word(text: "abc").size());
+}

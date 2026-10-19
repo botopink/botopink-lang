@@ -400,6 +400,10 @@ pub const declare_in_behavior: []const u8 = "declare-in-behavior";
 pub const implementation_twice: []const u8 = "implementation-twice";
 /// Decision 575 (6) — an implementation on a declaration with a body.
 pub const implement_with_body: []const u8 = "implement-with-body";
+/// Decision 617 (2), (3) — `#[compiler.external(…)]` on a behavior's member:
+/// a behavior holds signatures and `default fn` bodies, and host code lives on
+/// the type that implements it.
+pub const external_on_behavior: []const u8 = "external-on-behavior";
 /// Decision 621 — a second unlabelled argument of a cell of
 /// `Implementation`: only the `template` is positional.
 pub const external_field_unlabelled: []const u8 = "external-field-unlabelled";
@@ -1055,6 +1059,7 @@ pub const all_codes = [_][]const u8{
     declare_in_behavior,
     implementation_twice,
     implement_with_body,
+    external_on_behavior,
     type_parameter_unbound,
 };
 

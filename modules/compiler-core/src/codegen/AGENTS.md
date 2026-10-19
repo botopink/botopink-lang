@@ -2693,6 +2693,11 @@ codegen/
   `prelude_cache.withWidthMembers` adds to the prelude with the member's
   cells, so every backend lowers it as a prelude `declare fn` (erlang's
   `preludeHelperNode`, wasm's `lowerWidthMember`, the width's bound checked).
+  A width's member whose cell is `body: <fn>` (`isEven`, decision 610) runs
+  the prelude's private body, emitted into the module (erlang's
+  `widthBodyCellNode`, beam's `widthBodyCall`, wasm's `adoptPreludeHostFn`).
+  A member every width declares alike is read back onto its contract
+  (`prelude_cache.foldWidthMembers`, decision 617 (3)) and takes this walk.
   The walk:
   an `.Erlang("mod", "sym")` host
   call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an

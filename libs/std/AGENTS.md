@@ -733,6 +733,16 @@ methods answer alike on both sides of that edge:
   `__i32_abs(n)` (`prelude_cache.widthMemberName`), and `prelude_cache.withWidthMembers` gives the prelude that
   `declare fn` with the member's cells — every backend lowers it as any prelude `declare fn` (wasm in
   `lowerWidthMember`, the `i64` in its `i64`): `modules/abs_aborts_on_overflow`, `modules/abs_aborts_on_i32_overflow`.
+- The numeric contracts carry no host code (decision 617 (2), (3)): `Number`, `Integer`, `Signed` and `Float` hold
+  signatures and `default fn` bodies, and each width declares the members it runs on the host itself (`min`, `max`,
+  `toString`, the conversions, `Float`'s `floor` …), `Self` the width; an implementation on a behavior's member is
+  `external-on-behavior` (`modules/external_on_behavior`), `String`, `Array`, `Bool`, `BigInt` and `Bytes` (std's, and a
+  program's behavior extending one) excepted until decision 641 dissolves them into their types. A member every width implementing the contract
+  declares with the same host code is read back onto the contract's member (`prelude_cache.foldWidthMembers`,
+  `BehaviorMethod.folded`), so its calls keep the contract's dispatch; one the widths declare differently (`abs`) or
+  with a `body:` cell (`isEven` / `isOdd`: `.JavaScript` reads a `BigInt`, erlang and wasm run the private
+  `i64IsEvenBody` …) goes through the width's free function — erlang and beam emit the body into the module
+  (`widthBodyCellNode`, `widthBodyCall`), wasm adopts it (`lowerWidthMember`).
 
 ## `bigint` — `behavior BigInt` (decision 332)
 

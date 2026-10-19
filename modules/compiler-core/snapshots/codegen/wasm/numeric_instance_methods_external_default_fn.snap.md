@@ -54,10 +54,16 @@ import {io.terminal.print} from "std";
     i32.const 7
     local.set $x
     local.get $x
+    call $i32IsEvenBody
+    call $__print_bool
+  )
+  (func $i32IsEvenBody (param $value i32) (result i32)
+    local.get $value
     i32.const 2
     i32.rem_s
-    i32.eqz
-    call $__print_bool
+    i32.const 0
+    i32.eq
+    return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)

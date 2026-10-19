@@ -3928,6 +3928,31 @@ const Emitter = struct {
     /// receiver (`self-param-outside-type`), so `$N` is the call's N-th
     /// positional argument, as for any other free `declare fn`. Null when the
     /// callee has no template.
+    /// Decision 610 — a member a width declares itself whose erlang cell is
+    /// `body: <fn>` (`i64`'s `isEven`): a local call of `<fn>`, the prelude's
+    /// private body, emitted into this module once with the reached defaults
+    /// (`instanceDefaultForms`), lowered without the program's tables as a
+    /// prelude default is.
+    fn widthBodyCellNode(this: *Emitter, b: Ast.Builder, width: []const u8, method: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const m = prelude_cache.widthMember(width, method) orelse return null;
+        const impl = m.externalFor("erlang") orelse return null;
+        const name = hostFnBinding.fnName(impl) orelse return null;
+        const f = prelude_cache.freeFn(name) orelse return null;
+        if (f.isDeclare or f.body.len == 0) return null;
+        // The name is the prelude's, alive for the process, and holds no dot:
+        // no `Iface.method` key is it.
+        if (!this.needed_instance_defaults.contains(name)) {
+            try this.needed_instance_defaults.put(this.alloc, name, .{ .iface = "", .from_prelude = true, .method = .{
+                .name = f.name,
+                .params = f.params,
+                .returnType = f.returnType,
+                .body = f.body,
+                .from_prelude = true,
+            } });
+        }
+        return try b.call(name, try this.callArgs(b, null, cc));
+    }
+
     fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         const template = templateFor(call, cc) orelse return null;
@@ -9246,8 +9271,9 @@ const Emitter = struct {
             }
             // Decisions 617 (3), 496 — a member a width declares itself, as the
             // free function the transform wrote its call as (`__i32_abs(N)`).
-            if (prelude_cache.widthMemberOf(cc.callee) != null) {
+            if (prelude_cache.widthMemberOf(cc.callee)) |wm| {
                 if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
+                if (try this.widthBodyCellNode(b, wm.width, wm.method, cc)) |node| return node;
             }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) {

@@ -2721,9 +2721,14 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
     const stdWasm = @import("std_wasm");
     const src = @import("std_prelude").primitives;
     for (watCodegen.std_method_exports) |row| {
+        // A behavior's member, or — a contract carries no host code
+        // (decision 617 (3)) — the member of the first type implementing it
+        // (`Float.toString` is written on `f32` and `f64`).
         var head_buf: [64]u8 = undefined;
         const head = try std.fmt.bufPrint(&head_buf, "behavior {s} ", .{row.behavior});
-        const at = std.mem.indexOf(u8, src, head) orelse return error.BehaviorMissing;
+        var type_buf: [64]u8 = undefined;
+        const type_head = try std.fmt.bufPrint(&type_buf, " implement {s} {{", .{row.behavior});
+        const at = std.mem.indexOf(u8, src, type_head) orelse std.mem.indexOf(u8, src, head) orelse return error.BehaviorMissing;
         var fn_buf: [64]u8 = undefined;
         const decl = try std.fmt.bufPrint(&fn_buf, "fn {s}(", .{row.method});
         const f = std.mem.indexOfPos(u8, src, at, decl) orelse return error.MethodMissing;
@@ -2737,6 +2742,8 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
         }
     }
     var n: usize = 0;
+    var seen: std.ArrayListUnmanaged(u8) = .empty;
+    defer seen.deinit(std.testing.allocator);
     var it = std.mem.splitSequence(u8, src, ".Wasm(std: \"");
     _ = it.next();
     while (it.next()) |rest| {
@@ -2755,10 +2762,17 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
             }
             continue;
         }
-        n += 1;
         var found = false;
         for (watCodegen.std_method_exports) |row| {
             if (std.mem.eql(u8, row.export_name, rest[0..end])) found = true;
+        }
+        // Each width writes its own cell (`f32` and `f64`'s `toString`): one
+        // row per function.
+        var key_buf: [96]u8 = undefined;
+        const key = try std.fmt.bufPrint(&key_buf, "|{s}|", .{rest[0..end]});
+        if (std.mem.indexOf(u8, seen.items, key) == null) {
+            n += 1;
+            try seen.appendSlice(std.testing.allocator, key);
         }
         if (!found) {
             std.debug.print("primitives.bp binds `std:{s}` and wat.zig's std_method_exports has no row for it\n", .{rest[0..end]});

@@ -17,7 +17,7 @@ import {io.terminal.print} from "std";
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export(['__bp_priv__main'/0, '__bp_priv__number_clamp'/3, '__bp_priv__integer_isEven'/1]).
+-export(['__bp_priv__main'/0, '__bp_priv__number_clamp'/3]).
 
 %% behavior Number
 
@@ -30,13 +30,13 @@ main() ->
     '__bp_print'([erlang:max(N, 10)]),
     '__bp_print'([number_clamp(N, 0, 5)]),
     X = 7,
-    '__bp_print'([integer_isEven(X)]).
+    '__bp_print'([i32IsEvenBody(X)]).
 
 number_clamp(Self, Lo, Hi) ->
     erlang:min(erlang:max(Self, Lo), Hi).
 
-integer_isEven(Self) ->
-    ((Self rem 2) =:= 0).
+i32IsEvenBody(Value) ->
+    ((Value rem 2) =:= 0).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -70,8 +70,6 @@ main(_Args) ->
 '__bp_priv__main'() -> main().
 
 '__bp_priv__number_clamp'(A0, A1, A2) -> number_clamp(A0, A1, A2).
-
-'__bp_priv__integer_isEven'(A0) -> integer_isEven(A0).
 ```
 
 ----- RUN LOG -----

@@ -266,11 +266,13 @@ pub fn widthMember(width: []const u8, method: []const u8) ?ast.BehaviorMethod {
     return null;
 }
 
-/// `program` with, after its declarations, one free `declare fn` per member a
-/// primitive type declares (`widthMemberName`): `self` named `value`, `Self`
+/// `program` folded (`foldWidthMembers`) and with, after its declarations, one
+/// free `declare fn` per member a primitive type still declares itself
+/// (`widthMemberName`): `self` named `value`, `Self`
 /// written as the type, the member's annotations and host cells kept. The
 /// checker and every backend read the prelude through this.
-pub fn withWidthMembers(alloc: std.mem.Allocator, program: ast.Program) !ast.Program {
+pub fn withWidthMembers(alloc: std.mem.Allocator, written: ast.Program) !ast.Program {
+    const program = try foldWidthMembers(alloc, written);
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     for (program.decls) |d| {
         if (d != .type_ or !d.type_.isPrimitive) continue;
@@ -339,4 +341,115 @@ fn unshift(alloc: std.mem.Allocator, text: []const u8) ![]const u8 {
         i += 1;
     }
     return out.items;
+}
+
+/// Decision 617 (3) — a contract's member that EVERY primitive type
+/// implementing the contract declares with the same host code (`Number.min`
+/// on the six widths, `Float.floor` on `f32` and `f64`) has one answer
+/// whatever the width: the program the checker and the backends read holds
+/// that code on the contract's member (`BehaviorMethod.folded`) and the
+/// member no longer on the types, so a call keeps the contract's dispatch.
+/// A member the types declare differently (`abs` on `i32` and on `i64`,
+/// each with its bound), or one only some of them declare, stays on each
+/// type (`withWidthMembers`). The text writes host code on the types alone.
+pub fn foldWidthMembers(alloc: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var out_decls = try alloc.dupe(ast.DeclKind, program.decls);
+    var folded_any = false;
+    for (out_decls, 0..) |d, bi| {
+        if (d != .behavior) continue;
+        const b = d.behavior;
+        var methods: ?[]ast.BehaviorMethod = null;
+        for (b.methods, 0..) |m, mi| {
+            if (m.implementations.len > 0) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var first: ?ast.BehaviorMethod = null;
+            var implementors: usize = 0;
+            const same = for (program.decls) |td| {
+                if (td != .type_ or !td.type_.isPrimitive) continue;
+                if (!reachesIn(program, td.type_, b.name)) continue;
+                implementors += 1;
+                const own = for (td.type_.methods) |tm| {
+                    if (std.mem.eql(u8, tm.name, m.name)) break tm;
+                } else break false;
+                if (own.implementations.len == 0) break false;
+                if (first) |f| {
+                    if (!sameImplementations(f.implementations, own.implementations)) break false;
+                } else first = own;
+            } else true;
+            if (!same or implementors == 0) continue;
+            const ms = methods orelse try alloc.dupe(ast.BehaviorMethod, b.methods);
+            methods = ms;
+            ms[mi].implementations = first.?.implementations;
+            ms[mi].annotations = first.?.annotations;
+            ms[mi].folded = true;
+        }
+        const ms = methods orelse continue;
+        folded_any = true;
+        var nb = b;
+        nb.methods = ms;
+        out_decls[bi] = .{ .behavior = nb };
+    }
+    if (!folded_any) return program;
+    // The folded members leave the types.
+    for (out_decls, 0..) |d, ti| {
+        if (d != .type_ or !d.type_.isPrimitive) continue;
+        var kept: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        for (d.type_.methods) |tm| {
+            if (foldedFor(out_decls, d.type_, tm.name)) continue;
+            try kept.append(alloc, tm);
+        }
+        var nt = d.type_;
+        nt.methods = kept.items;
+        out_decls[ti] = .{ .type_ = nt };
+    }
+    var out = program;
+    out.decls = out_decls;
+    return out;
+}
+
+/// True when a contract `t` reaches in `decls` holds `name` folded.
+fn foldedFor(decls: []const ast.DeclKind, t: ast.TypeDecl, name: []const u8) bool {
+    for (decls) |d| {
+        if (d != .behavior) continue;
+        if (!reachesIn(.{ .decls = @constCast(decls) }, t, d.behavior.name)) continue;
+        for (d.behavior.methods) |m| if (m.folded and std.mem.eql(u8, m.name, name)) return true;
+    }
+    return false;
+}
+
+/// True when the primitive type `t`'s `implement` clause, or a contract its
+/// chain `extends` in `program`, is `behavior`.
+fn reachesIn(program: ast.Program, t: ast.TypeDecl, behavior: []const u8) bool {
+    if (t.implement.len == 0) return false;
+    var cur: ?[]const u8 = switch (t.implement[0]) {
+        .named => |n| n,
+        .generic => |g| g.name,
+        else => null,
+    };
+    var guard: usize = 0;
+    while (cur) |c| : (guard += 1) {
+        if (guard >= 16) return false;
+        if (std.mem.eql(u8, c, behavior)) return true;
+        cur = null;
+        for (program.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, c)) {
+            if (d.behavior.extends.len > 0) cur = d.behavior.extends[0];
+            break;
+        };
+    }
+    return false;
+}
+
+fn sameImplementations(a: []const ast.Implementation, b: []const ast.Implementation) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| {
+        if (x.target != y.target or x.inline_ != y.inline_ or x.result != y.result or x.needs_mask != y.needs_mask) return false;
+        if (!std.mem.eql(u8, x.text, y.text)) return false;
+        if ((x.template == null) != (y.template == null)) return false;
+        if (x.template) |t| if (!std.mem.eql(u8, t, y.template.?)) return false;
+        if ((x.cell == null) != (y.cell == null)) return false;
+        if (x.cell) |c| if (c.kind != y.cell.?.kind or !std.mem.eql(u8, c.value, y.cell.?.value)) return false;
+        if ((x.host == null) != (y.host == null)) return false;
+        if (x.host) |h| if (h != y.host.?) return false;
+    }
+    return true;
 }
