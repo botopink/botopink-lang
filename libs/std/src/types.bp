@@ -23,17 +23,22 @@
 import {compiler.DeclAnnotation};
 
 pub type Type {
-    // The field of `T` (decisions 308, 599): its name, its type as the source
-    // spells it and its annotations. A build-time value only: `.title` names
-    // it where a `Type.Field<T>` is expected in a decorator's argument or in
-    // `pick` / `omit`, checked against `T`'s fields; there is no run-time key.
-    // The reflection record `decl.fields` hands out is still
-    // `primitives.bp`'s `Field` until `134` step 2 makes it
+    // The field of `T` (decisions 308, 599, 631): its owner type, its name,
+    // its type as the source spells it and its annotations. `.title` names it
+    // where a `Type.Field<T>` is expected in a decorator's argument or in
+    // `pick` / `omit`, checked against `T`'s fields. A build value with a
+    // run-time form: a `comptime` whose value holds a field splices
+    // `Field(Book, "pages")`, the constructor over the owner and the name,
+    // compared by both; `typeName` and `annotations` are build members,
+    // refused in a run-time body. There is no run-time key: no catalogue of
+    // a type's fields at run time. The reflection record `decl.fields` hands
+    // out is still `primitives.bp`'s `Field` until `134` step 2 makes it
     // `Type.Field<unknown>`.
     pub type Field<T>(
+        owner: type<T>,
         name: string,
-        typeName: string,
-        annotations: DeclAnnotation[],
+        typeName: string = "",
+        annotations: DeclAnnotation[] = [],
     )
 
     // Every field `F` of `T` made `?F`.

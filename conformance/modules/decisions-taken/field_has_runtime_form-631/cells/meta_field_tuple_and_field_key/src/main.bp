@@ -1,7 +1,7 @@
 //// Decision 298 — a meta record's field may hold a tuple of data and a
 //// `Type.Field<T>`: each is rebuilt where the meta is read, the tuple as
-//// written (`#(1, 9)`) and the field key as its `.name` against the read's
-//// type (decision 308). Read back here on every target (144 B-19).
+//// written (`#(1, 9)`) and the field as its run-time form, `Field(Book,
+//// "pages")` (decision 631). Read back here on every target (144 B-19).
 
 import {types.Type, compiler, io.terminal.print} from "std";
 

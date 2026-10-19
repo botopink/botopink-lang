@@ -7189,6 +7189,71 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
     return typed;
 }
 
+/// Decision 631 — `typeName` and `annotations` are a `Type.Field<T>`'s build
+/// members: read in a decorator's, a template's or the compiler's body, and
+/// refused in a run-time body, where a field holds its owner and its name
+/// alone (`Field(Book, "pages")`).
+fn refuseFieldBuildMember(env: *Env, record: []const u8, member: []const u8, loc: ast.Loc) InferError!void {
+    if (!std.mem.eql(u8, record, field_key_type_name)) return;
+    if (!std.mem.eql(u8, member, "typeName") and !std.mem.eql(u8, member, "annotations")) return;
+    if (env.inDecoratorFn or env.inTemplateFn or env.compilerBodies or env.inStd) return;
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is a build member of `Field`", .{member});
+    env.lastError = TypeError.custom(msg, "A field crosses to run time as `Field(Owner, \"name\")`, its owner and its name (decision 631); read its type and its annotations at build, in a decorator's body.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 631 — a `.name` against a `Type.Field<T>` in the answer of a
+/// typed meta read (the lines from `typed_meta_first_line` on): the field's
+/// run-time form `Type__Field(T, "name")`, its constructor over the owner and
+/// the name, the owner crossing to run time as the type's identity (decision
+/// 758, `Env.runtimeTokenArgs`). Recorded in `Env.srcRewrites` under the
+/// `.name`'s loc, which the transform swaps whole. A `.name` written in a
+/// run-time body is no field: there is no run-time key (decision 599 (1)).
+fn inferFieldRunTimeForm(env: *Env, name: []const u8, loc: ast.Loc) InferError!?TypedExpr {
+    if (loc.line < typed_meta_first_line) return null;
+    const exp = env.expectedType orelse return null;
+    const d = (optionalInner(exp) orelse exp).deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, field_key_type_name) or d.named.args.len != 1) return null;
+    const t = d.named.args[0].deref();
+    if (t.* != .named) return null;
+    const owner = t.named.name;
+    const fields = recordFieldNames(env, owner) orelse return null;
+    for (fields) |f| {
+        if (std.mem.eql(u8, f.name, name)) break;
+    } else {
+        env.lastError = TypeError.unknownField(owner, name).withLoc(loc);
+        return error.TypeError;
+    }
+    const at = struct {
+        fn of(l: ast.Loc, k: usize) ast.Loc {
+            return .{ .line = l.line, .col = l.col + ast.field_form_synthetic_col + k, .expansion = l.expansion };
+        }
+    }.of;
+    const ownerExpr = try env.arena.create(ast.Expr);
+    ownerExpr.* = .{ .identifier = .{ .loc = at(loc, 1), .kind = .{ .ident = owner } } };
+    const nameExpr = try env.arena.create(ast.Expr);
+    nameExpr.* = .{ .literal = .{ .loc = at(loc, 2), .kind = .{ .stringLit = name } } };
+    const args = try env.arena.alloc(ast.CallArg, 2);
+    args[0] = .{ .label = null, .value = ownerExpr };
+    args[1] = .{ .label = null, .value = nameExpr };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = at(loc, 0), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = field_key_type_name,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    try env.runtimeTokenArgs.put(env.arena, ownerExpr.getLoc(), {});
+    const prevExpected = env.expectedType;
+    env.expectedType = null;
+    defer env.expectedType = prevExpected;
+    const typed = try inferExprTyped(env, rewrite.*);
+    try unifyAt(env, try env.namedTypeArgs(field_key_type_name, &.{try env.namedType(owner)}), typed.getType(), loc);
+    try env.srcRewrites.put(loc, rewrite);
+    return typed;
+}
+
 /// Whether the meta record `name` of `module` has one type parameter and a
 /// field holding a `Type.Field` of it (directly, in an array or an optional).
 fn fieldKeyOwnerParam(env: *Env, module: []const u8, name: []const u8) InferError!bool {
@@ -15002,14 +15067,39 @@ fn typeTokenCalleeParams(env: *Env, call: anytype, typed: TypedExpr, owner: *?[]
         owner.* = tn;
         return if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) m.params[1..] else m.params;
     }
-    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse return null;
+    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse {
+        if (env.localBindDepth(call.callee) != null) return null;
+        return if (recordTokenCallee(env, call.callee)) |rc| rc.params else null;
+    };
     if (!isTypeTokenCallee(f)) return null;
     return f.params;
 }
 
 /// The parameters (after `self`) and the own type parameters of the function
 /// or type method a call names, for `typeTokenArgType`.
-const TokenCallee = struct { params: []const ast.Param, generics: []const ast.GenericParam };
+const TokenCallee = struct {
+    params: []const ast.Param,
+    generics: []const ast.GenericParam,
+    /// A record constructor's own type parameters, by name.
+    genericNames: []const []const u8 = &.{},
+};
+
+/// Decision 631 — a record constructor whose field takes a run-time type
+/// (`Type.Field<T>(owner: type<T>, …)`): its fields as parameters and its
+/// own type parameters, so a type written where the field takes it is typed
+/// as the type (`typeTokenArgType`) and crosses to run time as its identity
+/// (`noteTypeTokenArgs`).
+fn recordTokenCallee(env: *Env, callee: []const u8) ?TokenCallee {
+    const ps = env.ctorParams.get(callee) orelse return null;
+    const td = env.lookupTypeDef(callee) orelse return null;
+    const generics = switch (td) {
+        .record => |r| r.genericParams,
+        .struct_ => |r| r.genericParams,
+        .enum_ => return null,
+    };
+    for (ps) |p| if (p.modifier != .@"comptime" and p.typeRef == .typeparam) return .{ .params = ps, .generics = &.{}, .genericNames = generics };
+    return null;
+}
 
 /// The callee of `call` as written — a function of this module or an imported
 /// one, one through a module namespace or std's, or a type method of the
@@ -15038,7 +15128,7 @@ fn tokenCallee(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?TokenC
         return .{ .params = ps, .generics = m.genericParams };
     }
     if (env.localBindDepth(call.callee) != null) return null;
-    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse return null;
+    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse return recordTokenCallee(env, call.callee);
     return .{ .params = f.params, .generics = f.genericParams };
 }
 
@@ -15056,6 +15146,8 @@ fn typeTokenArgType(env: *Env, callee: TokenCallee, pi: usize, arg: ast.Expr) In
     const tp = p.typeRef.typeparam[0].named;
     const own = for (callee.generics) |g| {
         if (std.mem.eql(u8, g.name, tp)) break true;
+    } else for (callee.genericNames) |g| {
+        if (std.mem.eql(u8, g, tp)) break true;
     } else false;
     if (!own) return null;
     if (arg != .identifier or arg.identifier.kind != .ident) return null;
@@ -16780,6 +16872,9 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // mangling `__50`; it resolves by the expected section like an
             // identifier leaf, and only that way.
             const name = if (looksNumeric(written)) try std.fmt.allocPrint(env.arena, "__{s}", .{written}) else written;
+            // Decision 631 — a field a typed meta read splices: its run-time
+            // form `Field(Book, "pages")`.
+            if (try inferFieldRunTimeForm(env, written, loc)) |te| return te;
             // 01 step 12 — a leading-dot variant takes its enum from the
             // position's expected type (as `.Circle(…)` does), spliced in as
             // `Enum.Variant` so the backends see the qualified form. Without
@@ -17041,6 +17136,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     switch (td) {
                         .record, .struct_ => {
                             if (td.findField(ia.member)) |f| {
+                                try refuseFieldBuildMember(env, recvNamed.name, ia.member, loc);
                                 // The receiver's type, for the backends that
                                 // store a record positionally — erlang and beam
                                 // under decision 21 read `element(N + 1, V)`,

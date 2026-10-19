@@ -1378,6 +1378,10 @@ owner) and keys a `Dict`, `.name` → `"pages"`; `type`, `annotations` and
 `defaultValue` are build members, refused in a run-time body
 (`` `annotations` is a build member of `Field` ``, decision 631).
 
+<!-- example: modules/decisions-taken/field_has_runtime_form-631/cells/meta_field_compared_by_owner -->
+
+<!-- example: modules/decisions-taken/field_has_runtime_form-631/cells/meta_field_build_member_at_run_time -->
+
 ### Spread
 
 `Name(..src, field: value)` copies a record's fields into its constructor
@@ -4344,10 +4348,11 @@ the value is the record's constructor written at the call
 
 <!-- example: modules/meta/cells/meta_typed_records -->
 
-A tuple is rebuilt as written (`#(1, 9)`) and a `compiler.Field<T>` as its key
-(`.pages`): a generic meta record whose one parameter types the key
+A tuple is rebuilt as written (`#(1, 9)`) and a `compiler.Field<T>` as its run-time
+form, `Field(Book, "pages")` — the constructor over its owner and its name
+(decision 631): a generic meta record whose one parameter types the field
 (`Sort<T>(by: compiler.Field<T>)`) is read with that parameter the annotated
-declaration (`Sort<Book>(by: .pages)`, decision 308).
+declaration (`Sort<Book>(by: .pages)`).
 
 <!-- example: modules/decisions-taken/field_has_runtime_form-631/cells/meta_field_tuple_and_field_key -->
 
