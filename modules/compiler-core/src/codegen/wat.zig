@@ -1267,6 +1267,14 @@ fn itemsUseRefs(items: []const Item) bool {
 }
 
 /// The name a top-level declaration binds, when it binds one.
+/// Whether `d` is a `use` importing an item named `main` — the module-path
+/// call `other.main()` is such an import, and it means that module's `main`.
+fn usesMain(d: ast.DeclKind) bool {
+    if (d != .use) return false;
+    for (d.use.imports) |imp| if (std.mem.eql(u8, imp.leaf(), "main")) return true;
+    return false;
+}
+
 fn declName(d: ast.DeclKind) ?[]const u8 {
     return switch (d) {
         .@"fn" => |f| f.name,
@@ -1594,14 +1602,30 @@ fn emitWatPass(
     for (own_program.decls) |d| if (declName(d)) |n| try own_names.put(n, {});
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var owner: std.ArrayListUnmanaged(usize) = .empty;
+    // A linked module's own `main` is dropped, unless a `use` names it
+    // (`other.main()` reaches it as the namespace import `main`): then it is
+    // linked mangled, `<module>/main`, beside the entry's — the bare name
+    // belongs to the entry, and the call meant the module's (before it called
+    // the entry's own `main`: infinite recursion on wasm).
+    var main_imported = false;
+    for (own_program.decls) |d| if (usesMain(d)) {
+        main_imported = true;
+    };
+    for (linked) |l| for (l.program.decls) |d| if (usesMain(d)) {
+        main_imported = true;
+    };
     for (linked, 0..) |l, li| for (l.program.decls) |d| {
+        var is_linked_main = false;
         switch (d) {
-            .@"fn" => |f| if (isMain0(f)) continue,
+            .@"fn" => |f| if (isMain0(f)) {
+                if (!main_imported) continue;
+                is_linked_main = true;
+            },
             .@"test", .use, .mod, .comment => continue,
             else => {},
         }
         const n = declName(d) orelse continue;
-        if (own_names.contains(n)) {
+        if (is_linked_main or own_names.contains(n)) {
             // The std prelude's primitive behaviors (`String`, `Array`, …) are
             // materialised into every module that uses one of their default
             // methods, so two linked modules each carry the SAME declaration.

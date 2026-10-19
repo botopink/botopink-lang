@@ -1,0 +1,1 @@
+A package's `pub fn main` that calls a module's `pub fn main` (`other.main()`) calls the module's, on every target — the call is resolved by the module it names, not by the bare name `main` the entry shares with it.
