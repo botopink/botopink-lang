@@ -1,0 +1,75 @@
+import {io.terminal} from "std";
+
+// The logging module owns the records, the levels and the sinks; whoever uses
+// it only picks a sink and installs it.
+pub type Level {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+fn rank(l: Level) -> i32 {
+    return case l {
+        Debug {
+            0
+        }
+        Info {
+            1
+        }
+        Warn {
+            2
+        }
+        Error {
+            3
+        }
+    };
+}
+
+fn levelName(l: Level) -> string {
+    return case l {
+        Debug {
+            "DEBUG"
+        }
+        Info {
+            "INFO"
+        }
+        Warn {
+            "WARN"
+        }
+        Error {
+            "ERROR"
+        }
+    };
+}
+
+pub type LogRecord(level: Level, name: string, message: string, correlationId: ?string = null)
+
+pub behavior Sink {
+    fn write(self: Self, r: LogRecord) -> void;
+}
+
+// Writes through `print`, which std binds on every target, so this module
+// imports and runs on every build.
+pub type ConsoleSink(minimum: Level) implement Sink {
+    pub fn write(self: Self, r: LogRecord) -> void {
+        if (rank(r.level) < rank(self.minimum)) return;
+        val id = if (r.correlationId == null)
+            ""
+        else
+            " [" + r.correlationId! + "]";
+        terminal.print(levelName(r.level), r.name + id, r.message);
+    }
+}
+
+var installed: ?Sink = null;
+
+pub fn install(s: Sink) -> void {
+    installed = s;
+}
+
+pub type Logger(name: string) {
+    pub fn log(self: Self, level: Level, message: string, correlationId: ?string = null) -> void {
+        installed?.write(LogRecord(level: level, name: self.name, message: message, correlationId: correlationId));
+    }
+}

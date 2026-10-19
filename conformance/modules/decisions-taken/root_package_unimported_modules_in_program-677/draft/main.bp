@@ -1,0 +1,8 @@
+//// Decision 677 — The root package is a package like any other: every module under its `src/` is in the program, imported or not, and the manifest's `"entry"` says only where execution starts.
+
+import {io.terminal} from "std";
+import {comptime.registry};
+
+pub fn main() -> void {
+    terminal.print(registry.all().join(","));
+}

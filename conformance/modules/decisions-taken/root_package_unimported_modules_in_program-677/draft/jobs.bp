@@ -1,0 +1,8 @@
+// No module imports this one; it is in the program all the same.
+import {comptime.marks.job};
+
+#[job]
+pub type Cleaner(every: i32)
+
+#[job]
+pub type Mailer(batch: i32)

@@ -1,0 +1,18 @@
+import {compiler} from "std";
+
+// The data `#[mark]` carries: a record, not a type implementing a behavior.
+pub type Mark(label: string)
+
+// Whether a declaration also carries `#[mark]`.
+pub type Audit(marked: bool)
+
+pub fn mark(syntax decl: unknown, comptime label: string) -> void {
+    compiler.setMeta(Mark(label: label));
+}
+
+pub fn audited(syntax decl: unknown) -> void {
+    val marked = compiler
+        .annotations(decl)
+        .some({ a -> compiler.same(a.decorator, mark) });
+    compiler.setMeta(Audit(marked: marked));
+}

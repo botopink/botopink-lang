@@ -1,0 +1,32 @@
+//// Decision 737 — (a): a component takes its props as plain parameters or as one record parameter `..props: R` — 529 (1), (2) stand whole.
+
+import {io.terminal} from "std";
+import {context.RenderScope} from "std";
+
+type Element(text: string) implement Renderable
+
+type CardProps(title: string, featured: bool = false)
+
+fn star(featured: bool) -> string {
+    return if (featured) " *" else "";
+}
+
+component fn PlainCard(title: string, featured: bool = false) -> Component<Element> {
+    return Element(text: title + star(featured));
+}
+
+component fn RecordCard(..props: CardProps) -> Component<Element> {
+    return Element(text: props.title + star(props.featured));
+}
+
+fn text(c: Component<Element>) -> string {
+    return c.run(RenderScope.root()).value.text;
+}
+
+pub fn main() -> void {
+    terminal.print(text(PlainCard(title: "Olá")));
+    terminal.print(text(PlainCard(title: "Olá", featured: true)));
+    val p = CardProps(title: "Oi");
+    terminal.print(text(RecordCard(..p, featured: true)));
+    terminal.print(text(RecordCard(title: "Tchau")));
+}

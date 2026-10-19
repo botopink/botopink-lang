@@ -1,0 +1,9 @@
+import {compiler} from "std";
+
+// A type builder written in the program itself: the public view of any
+// record, every field but `password`.
+pub fn view<T>(comptime t: type<T>) -> anytype {
+    return compiler.buildTypeInline(fields: compiler
+        .fields(t)
+        .filter({ f -> f.name != "password" }));
+}

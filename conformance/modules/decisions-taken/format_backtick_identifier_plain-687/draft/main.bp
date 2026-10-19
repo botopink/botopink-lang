@@ -1,0 +1,12 @@
+//// Decision 687 — `botopink format` writes a backtick name that is already an identifier as the plain name (`` `count` `` → `count`); backticks stay only where the name needs them.
+
+import {io.terminal} from "std";
+
+type Limits(`default`: i32, count: i32)
+
+pub fn main() -> void {
+    val `max-age` = 3600;
+    val count = 2;
+    val l = Limits(`default`: 10, count: count);
+    terminal.print(l.`default`, l.count, `max-age`);
+}

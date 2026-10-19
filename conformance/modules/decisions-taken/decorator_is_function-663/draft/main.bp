@@ -1,0 +1,18 @@
+//// Decision 663 — A decorator is always a function, and `Annotation` goes: no type or enum is an annotation by implementing a behavior; `#[name(…)]` names a function whose first parameter is `syntax decl`, and the data an annotation carries is a record the decorator records with `compiler.setMeta`. There is no `Decorator` type (666): a decorator's name at build is a declaration handle.
+
+import {compiler, io.terminal} from "std";
+import {comptime.marks.mark, comptime.marks.audited, comptime.marks.Mark, comptime.marks.Audit};
+
+#[mark(label: "x")]
+#[audited]
+type Widget(size: i32)
+
+#[audited]
+type Plain(size: i32)
+
+pub fn main() -> void {
+    terminal.print(comptime compiler.typeInfo(Widget).meta(Mark)?.label ?? "-");
+    terminal.print(comptime compiler.typeInfo(Widget).meta(Audit)!.marked);
+    terminal.print(comptime compiler.typeInfo(Plain).meta(Mark)?.label ?? "-");
+    terminal.print(comptime compiler.typeInfo(Plain).meta(Audit)!.marked);
+}

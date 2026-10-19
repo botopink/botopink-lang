@@ -1,0 +1,22 @@
+//// Decision 670 — Any function declared `-> anytype` builds a type; std's `Type` functions are the first of them, not a privilege.
+
+import {io.terminal} from "std";
+import {types.Type} from "std";
+import {views.view};
+
+type User(name: string, email: string, password: string)
+
+pub val PublicUser = view(User);
+
+pub val UserPatch = Type.partial(PublicUser);
+
+fn show(u: PublicUser) -> string {
+    return u.name + " <" + u.email + ">";
+}
+
+pub fn main() -> void {
+    val u = User(name: "Ana", email: "ana@example.com", password: "secret");
+    terminal.print(show(PublicUser(name: u.name, email: u.email)));
+    val p = UserPatch(name: null, email: "new@example.com");
+    terminal.print(p.name ?? "-", p.email ?? "-");
+}

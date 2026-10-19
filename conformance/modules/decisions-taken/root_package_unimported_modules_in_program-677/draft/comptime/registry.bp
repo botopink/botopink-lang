@@ -1,0 +1,9 @@
+var names: string[] = [];
+
+pub fn add(name: string) -> void {
+    names = names.append([name]);
+}
+
+pub fn all() -> string[] {
+    return names;
+}
