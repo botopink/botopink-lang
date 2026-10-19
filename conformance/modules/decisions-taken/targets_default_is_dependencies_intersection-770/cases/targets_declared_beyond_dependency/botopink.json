@@ -1,0 +1,1 @@
+{ "name": "targets_declared_beyond_dependency", "targets": ["commonJS"], "dependencies": { "beamkit": { "path": "deps/beamkit" } } }

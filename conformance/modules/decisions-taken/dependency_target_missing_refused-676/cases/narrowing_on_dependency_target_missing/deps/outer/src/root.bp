@@ -1,0 +1,8 @@
+//// A fixture library that writes no `"targets"` and depends on `inner`:
+//// it holds `inner`'s (decision 770).
+
+import {core} from "inner";
+
+pub fn wrap() -> string {
+    return "[" + core() + "]";
+}

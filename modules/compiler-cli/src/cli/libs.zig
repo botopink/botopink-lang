@@ -347,6 +347,32 @@ pub fn loadDependenciesWith(
     return try modules.toOwnedSlice(gpa);
 }
 
+/// Decision 770 — the targets the project holds: its own `"targets"` when
+/// it writes them, else the intersection of its dependencies' (and of its
+/// workspace's, when it inherits them); every target when nothing narrows
+/// it. Resolves the closure as a build does and refuses as it refuses
+/// (`LibManifestInvalid`, …), printing nothing else. Owned by `arena`.
+pub fn heldTargets(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    proj: config.ProjectConfig,
+    env_map: EnvMap,
+) ![]const []const u8 {
+    var closure: DepClosure = .{ .arena = arena, .io = io, .tiers = &.{} };
+    if (proj.dependencies.len > 0) {
+        const roots = try resolveLibRoots(gpa, io, env_map);
+        defer freeRoots(gpa, roots);
+        closure.tiers = try dependencyTiers(gpa, arena, io, env_map, proj.dir, roots);
+        for (proj.dependencies) |dep| _ = try closure.resolve(proj.manifest, proj.dir, dep);
+        for (proj.dependencies) |dep| try closure.visit(proj.manifest, dep.name);
+        try closure.orderByLevel();
+        try closure.computeHeld();
+        try closure.refuseMissingTargets(proj.manifest, proj.dependencies);
+    }
+    return closure.heldBy(proj.manifest);
+}
+
 /// Load, into `out`, the modules of every package of `DepClosure` for the
 /// project at `project_dir` whose manifest is `project` — dependencies before
 /// dependents.
@@ -377,8 +403,10 @@ fn loadClosure(
     // directory by one of them is refused, not silently shadowed.
     for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
     for (deps) |dep| try closure.visit(project, dep.name);
-    try closure.refuseMissingTargets(project, deps);
     try closure.orderByLevel();
+    try closure.computeHeld();
+    try closure.refuseMissingTargets(project, deps);
+    if (keys) |k| try closure.refuseBuildTarget(project, deps, k.target.target.toString());
     try refuseNameTwice(arena, io, project, project_dir, workspace, closure.order.items);
     // One OTP release across the closure (decision 228): every package that
     // pins `"otp"` pins the project's — or the first pin's — release.
@@ -505,6 +533,8 @@ fn checkBppRoles(
 /// cannot hold both), and a cycle between packages (neither can come first).
 /// `std`, the one bundled package (decision 326), is skipped — it is embedded,
 /// and a dependency's own build is the one that refuses listing it.
+const ALL_TARGET_NAMES = [_][]const u8{ "commonJS", "erlang", "beam", "wasm" };
+
 const DepClosure = struct {
     arena: std.mem.Allocator,
     io: std.Io,
@@ -514,6 +544,9 @@ const DepClosure = struct {
     /// Dependencies before dependents; level by level once `orderByLevel`
     /// ran (decision 660).
     order: std.ArrayListUnmanaged(Package) = .empty,
+    /// The targets each package holds, by import name (`computeHeld`,
+    /// decision 770).
+    held: std.StringHashMapUnmanaged([]const []const u8) = .empty,
 
     const Package = struct {
         name: []const u8,
@@ -586,17 +619,42 @@ const DepClosure = struct {
         try self.order.append(self.arena, done.*);
     }
 
-    /// The targets a manifest declares: its `"targets"`, every target when
-    /// it writes none.
-    fn declaredTargets(m: manifest.Manifest) []const []const u8 {
-        return m.targets orelse &.{ "commonJS", "erlang", "beam", "wasm" };
+    /// Decision 770 — the targets each package of the closure holds: the
+    /// `"targets"` it writes, else the intersection of its dependencies'
+    /// (and of its workspace's, when it is a member that inherits them);
+    /// every target when nothing narrows it. `order` is dependencies first,
+    /// so each dependency's set is known when its dependant's is computed.
+    fn computeHeld(self: *DepClosure) !void {
+        for (self.order.items) |pkg| try self.held.put(self.arena, pkg.name, try self.heldBy(pkg.manifest));
     }
 
-    /// Decision 676 — a declared dependency's `"targets"` hold every target
-    /// of the package that declares it, whatever target this build is for:
-    /// the project's dependencies against the project's targets, and each
-    /// package's own against its own, so the whole graph builds for every
-    /// target of the root. Refused at the dependant's manifest, on the
+    /// The targets the package whose manifest is `m` holds (decision 770),
+    /// once its dependencies' are in `held`.
+    fn heldBy(self: *DepClosure, m: manifest.Manifest) ![]const []const u8 {
+        if (m.declaresTargets()) return m.targets.?;
+        var out: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (m.targets orelse &ALL_TARGET_NAMES) |t| {
+            const every = for (m.dependencies) |d| {
+                const dep_held = self.held.get(d.name) orelse continue;
+                if (!holds(dep_held, t)) break false;
+            } else true;
+            if (every) try out.append(self.arena, t);
+        }
+        return out.items;
+    }
+
+    fn holds(list: []const []const u8, t: []const u8) bool {
+        for (list) |x| if (std.mem.eql(u8, x, t)) return true;
+        return false;
+    }
+
+    /// Decision 676, as 770 reads it — a package that writes its own
+    /// `"targets"` holds them only when each declared dependency holds every
+    /// one of them, whatever target this build is for: the project's
+    /// dependencies against the project's targets, and each package's own
+    /// against its own, so the whole graph builds for every target of the
+    /// root. A package that writes none takes its dependencies' (770) and is
+    /// never refused here. Refused at the dependant's manifest, on the
     /// dependency's line, naming the package and each missing target.
     fn refuseMissingTargets(self: *DepClosure, project: manifest.Manifest, deps: []const manifest.DepEntry) !void {
         try self.checkTargets(project, deps);
@@ -604,29 +662,47 @@ const DepClosure = struct {
     }
 
     fn checkTargets(self: *DepClosure, by: manifest.Manifest, deps: []const manifest.DepEntry) !void {
-        const wanted = declaredTargets(by);
+        if (!by.declaresTargets()) return;
         for (deps) |dep| {
-            const pkg = self.packages.get(dep.name) orelse continue;
+            const dep_held = self.held.get(dep.name) orelse continue;
             var missing: std.ArrayListUnmanaged(u8) = .empty;
             var count: usize = 0;
-            for (wanted) |t| {
-                if (pkg.manifest.supportsTarget(t)) continue;
+            for (by.targets.?) |t| {
+                if (holds(dep_held, t)) continue;
                 if (count > 0) try missing.appendSlice(self.arena, ", ");
                 try missing.appendSlice(self.arena, t);
                 count += 1;
             }
             if (count == 0) continue;
-            const msg = try std.fmt.allocPrint(self.arena, "{s} declares no {s} target{s} — a dependency's \"targets\" hold every target of the package that declares it", .{ dep.name, missing.items, if (count > 1) "s" else "" });
-            var loc = by.locateEntryAt("dependencies", dep.name, msg);
-            loc.code = "dependency-target-missing";
-            // Located relative to the working directory, as `resolve` locates.
-            var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const cwd = cwd_buf[0..try std.process.currentPath(self.io, &cwd_buf)];
-            if (std.fs.path.isAbsolute(loc.file) and std.mem.startsWith(u8, loc.file, cwd))
-                loc.file = try std.fs.path.relative(self.arena, cwd, null, cwd, loc.file);
-            loc.print();
-            return error.LibManifestInvalid;
+            const verb = if (self.packages.get(dep.name).?.manifest.declaresTargets()) "declares" else "holds";
+            const msg = try std.fmt.allocPrint(self.arena, "{s} {s} no {s} target{s} — a dependency's \"targets\" hold every target of the package that declares it", .{ dep.name, verb, missing.items, if (count > 1) "s" else "" });
+            return self.refuseAt(by, dep.name, msg);
         }
+    }
+
+    /// Decisions 676, 770 — a dependency is never compiled for a target it
+    /// does not hold: a project built for such a target (one it writes no
+    /// `"targets"` for and so holds only as its dependencies do, or one its
+    /// own `"targets"` leave out) is refused on that dependency's line.
+    fn refuseBuildTarget(self: *DepClosure, project: manifest.Manifest, deps: []const manifest.DepEntry, target: []const u8) !void {
+        for (deps) |dep| {
+            const dep_held = self.held.get(dep.name) orelse continue;
+            if (holds(dep_held, target)) continue;
+            const msg = try std.fmt.allocPrint(self.arena, "{s} holds no {s} target — a package that writes no \"targets\" holds its dependencies' (decision 770)", .{ dep.name, target });
+            return self.refuseAt(project, dep.name, msg);
+        }
+    }
+
+    fn refuseAt(self: *DepClosure, by: manifest.Manifest, dep_name: []const u8, msg: []const u8) !void {
+        var loc = by.locateEntryAt("dependencies", dep_name, msg);
+        loc.code = "dependency-target-missing";
+        // Located relative to the working directory, as `resolve` locates.
+        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = cwd_buf[0..try std.process.currentPath(self.io, &cwd_buf)];
+        if (std.fs.path.isAbsolute(loc.file) and std.mem.startsWith(u8, loc.file, cwd))
+            loc.file = try std.fs.path.relative(self.arena, cwd, null, cwd, loc.file);
+        loc.print();
+        return error.LibManifestInvalid;
     }
 
     /// Decision 660 — the order of the program's init list, which is the

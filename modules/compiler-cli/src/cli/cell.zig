@@ -70,8 +70,10 @@ const TMP_ROOT = ".botopinkbuild/tmp";
 const RUN_TIMEOUT_S = 300;
 
 /// The texts a narrowing stands on (`conformance/AGENTS.md` § Narrowing a
-/// cell): the build of an excluded target refuses the cell on a host binding.
-const HOST_BINDING_REFUSALS = [_][]const u8{ "has no implementation for the ", "std-unsupported-on-target:" };
+/// cell): the build of an excluded target refuses the cell on a host binding,
+/// or on a dependency that declares no target its dependant holds (decision
+/// 676, `dependency-target-missing`) — a refusal no build of the graph passes.
+const HOST_BINDING_REFUSALS = [_][]const u8{ "has no implementation for the ", "std-unsupported-on-target:", "error[dependency-target-missing]:" };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -656,13 +658,16 @@ fn checkCell(ctx: *Ctx, cell: []const u8) !bool {
         return false;
     }
     var why: []const u8 = "";
-    const declared = readTargets(a, io, cell, &why) catch |err| switch (err) {
+    const written = readTargets(a, io, cell, &why) catch |err| switch (err) {
         error.Malformed => {
             ctx.say("FAIL {s}\n  {s}/botopink.json \"targets\": {s}\n", .{ rel, rel, why });
             return false;
         },
         else => return err,
     };
+    // A cell that writes no `"targets"` holds its dependencies' (decision
+    // 770): the targets none of them holds are left out, and audited.
+    const declared = if (try writesTargets(a, io, cell)) written else (try heldOf(ctx, cell)) orelse written;
     const snapshot_dir = try std.fs.path.join(a, &.{ cell, "snapshot" });
     // The candidates are this run's output: last run's go first.
     try removeCandidates(a, io, snapshot_dir);
@@ -763,6 +768,43 @@ fn readTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8, why: *[]const
     var ordered: std.ArrayListUnmanaged(Target) = .empty;
     for (ALL_TARGETS) |t| if (contains(list.items, t)) try ordered.append(a, t);
     return ordered.items;
+}
+
+/// Whether the cell's own manifest writes `"targets"`.
+fn writesTargets(a: std.mem.Allocator, io: std.Io, cell: []const u8) !bool {
+    const path = try std.fs.path.join(a, &.{ cell, "botopink.json" });
+    const text = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 * 1024));
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, a, text, .{}) catch return false;
+    if (parsed != .object) return false;
+    return parsed.object.get("targets") != null;
+}
+
+/// The targets a cell that writes no `"targets"` holds (decision 770): its
+/// workspace's and its dependencies', in `ALL_TARGETS` order, as the build
+/// resolves them in a scratch copy. Null when the closure does not resolve —
+/// every build then refuses the cell, and that refusal is its answer.
+fn heldOf(ctx: *Ctx, cell: []const u8) !?[]const Target {
+    const a = ctx.arena;
+    var scratch = try Scratch.open(ctx, cell);
+    defer scratch.close(ctx);
+    var sink: std.Io.Writer.Allocating = .init(a);
+    reporter.sink = &sink.writer;
+    manifest.sink = &sink.writer;
+    defer reporter.sink = null;
+    defer manifest.sink = null;
+    const proj = config.load(a, ctx.io) catch return null;
+    const held = libs.heldTargets(ctx.gpa, ctx.io, a, proj, ctx.env_map) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    var out: std.ArrayListUnmanaged(Target) = .empty;
+    for (ALL_TARGETS) |t| {
+        for (held) |h| if (std.mem.eql(u8, h, t.toString())) {
+            try out.append(a, t);
+            break;
+        };
+    }
+    return out.items;
 }
 
 /// The `"targets"` of the workspace the cell is a member of (`manifest.workspaceOf`,
@@ -976,7 +1018,8 @@ const Scratch = struct {
 
     /// A target the manifest's `"targets"` leaves out: its build must refuse the cell
     /// on a host binding — the one reason a program structurally has no row
-    /// on a target. Null when it does; else what is wrong.
+    /// on a target — or on a dependency's missing target (decision 676). Null
+    /// when it does; else what is wrong.
     fn audit(self: *Scratch, ctx: *Ctx, t: Target) !?[]const u8 {
         _ = self;
         const a = ctx.arena;

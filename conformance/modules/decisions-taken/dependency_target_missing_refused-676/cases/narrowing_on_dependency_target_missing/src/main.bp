@@ -1,0 +1,14 @@
+//// Decision 676 — a narrowing stands on a dependency's missing target: this
+//// program runs on `commonJS` and `erlang`, and depends on `outer`, which
+//// writes no `"targets"` and so holds those of `inner`, `commonJS` and
+//// `erlang` (decision 770). A build for `beam` or `wasm` is refused
+//// `dependency-target-missing` at `outer`'s line — no dependency is compiled
+//// for a target it does not hold — so `cell check` accepts that refusal as
+//// the reason the two targets are left out.
+
+import {wrap} from "outer";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print(wrap());
+}

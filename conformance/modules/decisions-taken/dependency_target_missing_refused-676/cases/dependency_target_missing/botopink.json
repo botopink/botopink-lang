@@ -1,0 +1,1 @@
+{ "name": "dependency_target_missing", "targets": ["commonJS", "erlang"], "dependencies": { "kit": { "path": "deps/kit" } } }

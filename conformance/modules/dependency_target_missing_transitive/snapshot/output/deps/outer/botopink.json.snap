@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error[dependency-target-missing]: inner declares no beam, wasm targets — a dependency's "targets" hold every target of the package that declares it
-at deps/outer/botopink.json:1:115

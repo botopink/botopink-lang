@@ -1,0 +1,11 @@
+//// Decision 770 — the program of `targets_default_is_dependencies_intersection`,
+//// declaring `commonJS`: a package that writes its `"targets"` is held to
+//// them (676), and `beamkit` declares `erlang` alone, so the manifest is
+//// refused at `beamkit`'s line, naming `commonJS`, on every build target.
+
+import {distance} from "beamkit";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print("distance " + distance(3, 10).toString());
+}

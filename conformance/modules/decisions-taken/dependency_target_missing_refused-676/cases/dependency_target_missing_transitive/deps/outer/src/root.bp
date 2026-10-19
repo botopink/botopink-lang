@@ -1,0 +1,8 @@
+//// A fixture library that declares `commonJS`, `erlang` and `beam` and
+//// depends on `inner`.
+
+import {core} from "inner";
+
+pub fn wrap() -> string {
+    return "[" + core() + "]";
+}

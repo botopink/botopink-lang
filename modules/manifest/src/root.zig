@@ -402,6 +402,9 @@ pub const Manifest = struct {
     /// The target whitelist the runner honours; a member inherits its
     /// workspace's when it declares none (set by `expand`).
     targets: ?[]const []const u8 = null,
+    /// True when `targets` is the workspace's, inherited because this member
+    /// writes none (decision 770: such a package declares no targets).
+    targets_inherited: bool = false,
     /// The modules a consumer may import, each relative to `src`.
     files: []const []const u8 = &.{},
     dependencies: []const DepEntry = &.{},
@@ -465,6 +468,12 @@ pub const Manifest = struct {
             if (d.inherited and std.mem.eql(u8, d.name, entry)) return origin;
         }
         return null;
+    }
+
+    /// True when this manifest writes its own `"targets"` (decision 770): only
+    /// such a package is refused for a target a dependency lacks (676).
+    pub fn declaresTargets(self: Manifest) bool {
+        return self.targets != null and !self.targets_inherited;
     }
 
     /// True when the whitelist is absent or contains `target`.
@@ -1323,7 +1332,10 @@ pub fn inheritFrom(arena: std.mem.Allocator, ws: Manifest, member: *Manifest, me
                     return error.Invalid;
                 }
             }
-        } else mm.targets = ws_targets;
+        } else {
+            mm.targets = ws_targets;
+            mm.targets_inherited = true;
+        }
     }
     // `otp`: inherit, or say the same release.
     if (ws.otp) |ws_otp| {

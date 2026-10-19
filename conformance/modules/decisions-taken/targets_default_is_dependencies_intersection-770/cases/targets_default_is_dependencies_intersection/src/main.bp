@@ -1,0 +1,13 @@
+//// Decision 770 — a package that writes no `"targets"` holds the
+//// intersection of its dependencies' targets: `beamkit` declares `erlang`
+//// alone, so this program holds `erlang` and runs there. A build for
+//// `commonJS`, `beam` or `wasm` is refused `dependency-target-missing` at
+//// `beamkit`'s line, never compiling `beamkit` for a target it does not
+//// hold.
+
+import {distance} from "beamkit";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print("distance " + distance(3, 10).toString());
+}

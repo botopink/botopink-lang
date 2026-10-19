@@ -1,0 +1,12 @@
+//// Decision 676 — a declared dependency's `"targets"` hold every target of
+//// the package that declares it: this program declares `commonJS` and
+//// `erlang`, and `kit` declares `commonJS` alone, so its manifest is
+//// refused at the dependency's line, naming `erlang` — on every build
+//// target, `commonJS` included.
+
+import {greet} from "kit";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print(greet());
+}

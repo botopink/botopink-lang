@@ -2172,6 +2172,19 @@ so a cell that declares one leaves those two out on the compiler's word, never o
 the annotation, so it never excuses either. `modules/decisions-taken/beam_memory_refused_off_beam-167/cases/beam_memory_off_beam` pins the refusal itself
 (its commonJS and wasm departures, located at the annotation) and prints `2` on the BEAM.
 
+A fourth stands one too — decisions 676 and 770: a build for a target one of the cell's dependencies
+does not hold is refused at the dependant's manifest, on that dependency's line,
+
+```
+error[dependency-target-missing]: <dependency> holds no <target> target — a package that writes no "targets" holds its dependencies' (decision 770)
+error[dependency-target-missing]: <dependency> declares no <target> target — a dependency's "targets" hold every target of the package that declares it
+```
+
+so no dependency is compiled for a target it does not hold. A cell that writes no `"targets"` holds its
+dependencies' (770): it runs on those and the others are audited
+(`decisions-taken/dependency_target_missing_refused-676/cases/narrowing_on_dependency_target_missing`,
+`decisions-taken/targets_default_is_dependencies_intersection-770/cases/targets_default_is_dependencies_intersection`).
+
 A target on which the cell must be refused for a reason that *is the cell's claim* is not narrowed
 away — its refusal is its answer, `snapshot/targets/<t>/<module>.snap`.
 
