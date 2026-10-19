@@ -33,6 +33,7 @@ scripts/
 ├── codemod/bodyless-decorators.py ← decision 604's migration: a bodyless decorator `[pub] declare fn name(comptime decl: @Decl, …);` → `[pub] fn name(…) {}`, a marker with an empty body, visibility, generics and the comments above kept; `.bp` files in place, `--check` lists every site as `path:line: name`
 ├── codemod-wasm-cells.py ← decision 481's migration: `.Wasm`'s prefixed strings → labelled cells (`"fn:x"` → `fn: x`, `"op:o"` → `op: "o"`, `"wasi:a_b"` → `wasi: .AB`, `"std:m.f"` → `std: "m.f"`) (§ below)
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
+├── consolidate-cells.py ← 144 B-157 (decision 765): `plan` homes every `conformance/modules/<cell>/` (INDEX.md, INDEX.ambiguous, generated, not committed), `verify --base <ref>` is the oracle; its test is `consolidate-cells-test.py`
 ├── codemod/
 │   ├── compiler_keyword.py      ← 144 B-136's migration (decisions 575 (4), (5), 576, 577, 578): `@Expr<T>` parameters → `comptime` / `expr`, `@Decl` → `expr d: unknown`, `x.text()` / `.fail` / the template model / a handle's reads and outputs → `compiler.*`, `@expr(v)` → `v`, `-> @Expr<T>` / `-> @ExprCustom<T>` → `-> T`, `type T` → `type<T>`, a bare `type` → `anytype`, a template's calls → `` name @`…` `` (§ below)
 │   ├── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
@@ -893,6 +894,26 @@ record states. Measured on the migration: 381 `.out`, 23 `.exit`, 76 `run` `<t>.
 and 1 manifest `"targets"` — every claim stated (1825 `out`, 86 `abort`, 242 per-target refusals,
 1620 `reject` refusals over four targets, 50 `stderr`, 20 narrowings, 73 test suites byte for
 byte).
+
+## consolidate-cells.py
+
+144 B-157's mapping of the cells into modules (decision 765), `plan` and `verify` only; nothing moves.
+
+```sh
+scripts/consolidate-cells.py plan [--allow-unslugged]
+scripts/consolidate-cells.py verify --base <ref>
+python3 scripts/consolidate-cells-test.py
+```
+
+`plan` homes each cell: (a) a ledger row whose text names it (`modules/<cell>` or `` `<cell>` ``), else (b) the
+decisions its `////` header cites (a number or step spelling counts only when that row is a code-bearing row of
+`decisions-taken.md`; a one-liner is followed to the row in force), else (c) outside, under the first `_` segment
+of its name. Several rows: the highest-numbered code-bearing one is the home, the others "proved also by". It writes
+`conformance/modules/INDEX.md` and `INDEX.ambiguous` (git-ignored scratch, never committed) and refuses, listing
+them, while a code-bearing row has no `Cell` slug, unless `--allow-unslugged` (those rows' cells go outside).
+`verify` compares the tree with a base commit: cell count, `.snap` files per output and target, record counts per
+kind, manifests with `"targets"`, the multiset of (path inside the cell, sha256) over `src/`, `deps/`, `snapshot/`,
+`botopink.json` and `docs.md`, and the `<!-- example:` count; exit 1 on any difference, 0 on the unchanged tree.
 
 ## codemod/compiler_keyword.py
 
