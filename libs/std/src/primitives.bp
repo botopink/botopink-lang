@@ -102,13 +102,8 @@ behavior Integer extends Number {
 }
 
 behavior Signed extends Integer {
-    // `abs` aborts past its integer type as unary `-` does (decision 496): the
-    // lowest `i64` has no positive counterpart in `i64`. The width is not told
-    // apart here, so the bound read is the 64-bit one — no `i32` holds it.
-    #[compiler.external(
-        .Erlang("""(fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)($0)"""),
-        .JavaScript("""((__a) => { if (__a === -9223372036854775808n) { throw Object.defineProperty(new Error("integer overflow: abs on i64"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })($0)"""),
-    )]
+    // Each signed width declares its own `abs` (decision 496): it aborts past
+    // the width's bound, as unary `-` does.
     fn abs(self: Self) -> Self;
 }
 
@@ -152,9 +147,25 @@ behavior Float extends Number {
 // it implements, and a method on a width is found through that `implement`
 // clause and the contracts' `extends` — the checker and every backend read it
 // here. A width has no field list: the language gives its values.
-pub type i32 implement Signed
+pub type i32 implement Signed {
+    // `abs` aborts past `i32` as unary `-` does (decision 496): the lowest
+    // `i32` has no positive counterpart in `i32`.
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V =/= -2147483648 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i32">>}) end)($0)"""),
+        .JavaScript("""((__a) => { if (__a === -2147483648) { throw Object.defineProperty(new Error("integer overflow: abs on i32"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })($0)"""),
+    )]
+    declare fn abs(self: Self) -> Self;
+}
 
-pub type i64 implement Signed
+pub type i64 implement Signed {
+    // `abs` aborts past `i64` as unary `-` does (decision 496): the lowest
+    // `i64` has no positive counterpart in `i64`.
+    #[compiler.external(
+        .Erlang("""(fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)($0)"""),
+        .JavaScript("""((__a) => { if (__a === -9223372036854775808n) { throw Object.defineProperty(new Error("integer overflow: abs on i64"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })($0)"""),
+    )]
+    declare fn abs(self: Self) -> Self;
+}
 
 pub type u32 implement Integer
 

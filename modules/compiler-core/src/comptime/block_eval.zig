@@ -34,6 +34,7 @@ const embedMod = @import("embed.zig");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
 const envMod = @import("./env.zig");
+const preludeCache = @import("../codegen/prelude_cache.zig");
 const Env = envMod.Env;
 const erlang = @import("../codegen/erlang.zig");
 const crossModule = @import("../codegen/crossModule.zig");
@@ -942,9 +943,24 @@ const ResultMethods = struct {
         if (U == ast.Expr) if (v == .call and v.call.kind == .call) if (v.call.kind.call.receiver) |recv| if (self.map.get(v.call.loc)) |lw| {
             self.changed = true;
             const cc = v.call.kind.call;
+            if (lw.domain == .width) {
+                const out = try self.arena.alloc(ast.CallArg, cc.args.len + 1);
+                const r = try self.arena.create(ast.Expr);
+                r.* = try self.clone(ast.Expr, recv.*);
+                out[0] = .{ .label = null, .value = r, .comments = &.{} };
+                for (cc.args, 0..) |a, i| out[i + 1] = try self.clone(ast.CallArg, a);
+                return .{ .call = .{ .loc = v.call.loc, .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = try preludeCache.widthMemberName(self.arena, lw.width, cc.callee),
+                    .is_builtin = false,
+                    .args = out,
+                    .trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing),
+                } } } };
+            }
             const domain = switch (lw.domain) {
                 .result => "result",
                 .option => "option",
+                .width => unreachable,
             };
             const op = @tagName(lw.op);
             const args = if (lw.qualified) try self.clone([]ast.CallArg, cc.args) else blk: {

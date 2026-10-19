@@ -9244,6 +9244,11 @@ const Emitter = struct {
             if (this.in_iface_default) {
                 if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
             }
+            // Decisions 617 (3), 496 — a member a width declares itself, as the
+            // free function the transform wrote its call as (`__i32_abs(N)`).
+            if (prelude_cache.widthMemberOf(cc.callee) != null) {
+                if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
+            }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) {
                 this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };

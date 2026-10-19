@@ -2883,7 +2883,9 @@ const Emitter = struct {
         var lx = lexerMod.Lexer.init(prelude.primitives);
         const tokens = lx.scanAll(arena) catch return;
         var p = parserMod.Parser.init(tokens);
-        const prim_program = p.parse(arena) catch return;
+        // Decisions 617 (3), 496 — with the free functions of the members a
+        // width declares itself (`__i32_abs`).
+        const prim_program = prelude_cache.withWidthMembers(arena, p.parse(arena) catch return) catch return;
         for (prim_program.decls) |decl| {
             if (decl != .behavior) continue;
             try self.collectIfaceErlangDispatch(decl.behavior);

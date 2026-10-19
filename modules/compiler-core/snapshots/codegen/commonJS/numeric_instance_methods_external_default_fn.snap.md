@@ -83,10 +83,6 @@ BigInt.prototype.clamp = Number.prototype.clamp = function(lo, hi) {
     return self.max(lo).min(hi);
 };
 
-// behavior Signed extends Integer
-//   fn abs(...)
-BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => { if (__a === -9223372036854775808n) { throw Object.defineProperty(new Error("integer overflow: abs on i64"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })(this.valueOf()); };
-
 // behavior Integer extends Number
 //   fn toString(...)
 //   default fn isEven(...)
@@ -106,7 +102,7 @@ BigInt.prototype.toF64 = Number.prototype.toF64 = function() { return ((__v) => 
 
 function main() {
     const n = (-5);
-    __bp_print(n.abs());
+    __bp_print(((__a) => { if (__a === -2147483648) { throw Object.defineProperty(new Error("integer overflow: abs on i32"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })(n));
     __bp_print(n.min(3));
     __bp_print(n.max(10));
     __bp_print(n.clamp(0, 5));

@@ -2687,7 +2687,13 @@ codegen/
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
   interface chain (`primIfaceChain`: `Signed → Integer → Number`, …, the
   widths' `implement` clauses read by `prelude_cache.contractChainOfKind`,
-  decision 617 (1)):
+  decision 617 (1)). A member a width declares itself (`i32`'s and `i64`'s
+  `abs`, decisions 617 (3), 496) never reaches this walk: the transform writes
+  the call as the width's free function `__i32_abs(n)`, which
+  `prelude_cache.withWidthMembers` adds to the prelude with the member's
+  cells, so every backend lowers it as a prelude `declare fn` (erlang's
+  `preludeHelperNode`, wasm's `lowerWidthMember`, the width's bound checked).
+  The walk:
   an `.Erlang("mod", "sym")` host
   call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an
   `.Erlang` template compiled into a `'__bp_tpl_<k>'` helper (BR5),

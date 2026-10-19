@@ -11992,6 +11992,10 @@ const Emitter = struct {
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the
                         // ordinary call-kind handling.
+                        // Decisions 617 (3), 496 — a member a width declares
+                        // itself (`__i32_abs`, the transform's rewrite of
+                        // `n.abs()`), lowered with the width known.
+                        if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| return self.lowerWidthMember(wm.width, wm.method, cc);
                         if (try self.lowerGenSyncedCall(e, cc)) return;
                         if (try self.lowerDispatchCall(cc, c.loc)) return;
                         // Decision 105 (144 B-128) — a method over a generator
@@ -16363,6 +16367,55 @@ const Emitter = struct {
         return self.refuseUnlessTemplate(self.call_loc, "the wasm backend has no lowering for the {s} method `{s}/{d}`", .{
             @tagName(k), cc.callee, cc.args.len + cc.trailing.len,
         });
+    }
+
+    /// The carrier a value of the width `width` lives in: an `i64` for
+    /// `i64`, `u32` and `u64` (a `u32` lives in an `i64` here), an `f64` for
+    /// a float, else an `i32`.
+    fn widthCarrier(width: []const u8) Repr {
+        const eq = std.mem.eql;
+        if (eq(u8, width, "i64") or eq(u8, width, "u32") or eq(u8, width, "u64")) return .i64;
+        if (eq(u8, width, "f32") or eq(u8, width, "f64")) return .f64;
+        return .i32;
+    }
+
+    /// Decisions 617 (3), 496 — a member the width `width` declares itself,
+    /// called as its free function (`__i32_abs(n)`): the width is known, so
+    /// `abs` aborts past the width's own bound — the lowest `i32` / `i64` has
+    /// no positive counterpart — with `integer overflow: abs on <width>`, as
+    /// every other target writes it. An `i64` is answered in its `i64`.
+    fn lowerWidthMember(self: *Emitter, width: []const u8, method: []const u8, cc: anytype) anyerror!void {
+        const arg = callArg(cc, 0) orelse return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
+        if (!std.mem.eql(u8, method, "abs") or cc.args.len != 1) return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
+        const t = widthCarrier(width);
+        if (t == .f64) return self.refuse(self.call_loc, "the wasm backend has no lowering for `{s}.{s}`", .{ width, method });
+        const wide = t.isI64();
+        const b = self.builder();
+        try self.lowerCoerced(arg, t);
+        // The value past the lowest one, else the abort.
+        try self.emit(constOf(t, if (wide) "-9223372036854775807" else "-2147483647"));
+        try self.emit(constOf(t, if (wide) "9223372036854775807" else "2147483647"));
+        try self.emitStrLit(try std.fmt.allocPrint(self.arena(), "integer overflow: abs on {s}", .{width}));
+        try self.emit(b.helper(if (wide) .i64_range_chk else .i32_range_chk));
+        if (!wide) return self.emit(b.helper(.i32_abs));
+        const v = try std.fmt.allocPrint(self.arena(), "__abs{d}", .{self.res_seq});
+        self.res_seq += 1;
+        try self.declareLocal(v, .i64);
+        try self.emit(.{ .local_set = v });
+        try self.emit(.{ .local_get = v });
+        try self.emit(constOf(.i64, "0"));
+        try self.emit(opOf(.i64, "lt_s"));
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emit(constOf(.i64, "0"));
+        try self.emit(.{ .local_get = v });
+        try self.emit(opOf(.i64, "sub"));
+        const then_seq = self.seal(&then_c, .{ .value = .i64 });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = v });
+        const else_seq = self.seal(&else_c, .{ .value = .i64 });
+        try self.emit(.{ .@"if" = .{ .result = .i64, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
     }
 
     fn lowerPrimMethod(self: *Emitter, k: envMod.PrimKind, cc: anytype) anyerror!void {
@@ -26627,6 +26680,7 @@ const Emitter = struct {
                         if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and cc.args.len > 0) break :blk self.resultOkCell(cc.args[0].value.*).ty();
                         break :blk .i32;
                     }
+                    if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| break :blk widthCarrier(wm.width);
                     if (self.primKindAt(cc, c.loc)) |k| {
                         // `xs.fold(init, f)` answers what its accumulator holds.
                         if (k == .array and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) break :blk self.wasmTypeOf(cc.args[0].value.*);

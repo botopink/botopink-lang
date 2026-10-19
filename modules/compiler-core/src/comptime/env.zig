@@ -518,7 +518,11 @@ pub const StarFnCtx = struct {
 /// the untyped call node into a `__bp_<domain>_<op>(receiver, args...)` builtin
 /// call that each codegen backend lowers to its native form.
 pub const MethodLowering = struct {
-    pub const Domain = enum { result, option };
+    /// `width` (decisions 617 (3), 496): a member a primitive width declares
+    /// itself (`i32`'s `abs`) — the call is that width's free function,
+    /// `__<width>_<method>(recv, args)` (`prelude_cache.widthMemberName`),
+    /// which carries the member's host cells; `op` is not read.
+    pub const Domain = enum { result, option, width };
     pub const Op = enum { map, flatMap, unwrapOr, isOk, isError };
     domain: Domain,
     op: Op,
@@ -527,6 +531,8 @@ pub const MethodLowering = struct {
     /// value, so the transform drops it and keeps the args as-is. False for
     /// method form (`x.map(f)`) where the receiver becomes the first arg.
     qualified: bool = false,
+    /// The width of a `.width` lowering (`i32`); empty otherwise.
+    width: []const u8 = "",
 };
 
 /// A type-directed lowering for a stdlib-module method call on a builtin-array

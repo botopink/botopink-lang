@@ -20336,7 +20336,10 @@ fn resolveStdArrayMethod(
     }
     const retType = if (im.returnType) |rt| try resolveTypeRefInContext(env, rt, gm) else try env.namedType("void");
 
-    if (primKindOfName(recvType.named.name) != null) try recordInstanceCall(env, loc, recvType.named.name);
+    if (primKindOfName(recvType.named.name) != null) {
+        try recordInstanceCall(env, loc, recvType.named.name);
+        try recordWidthMember(env, loc, recvType.named.name, callee);
+    }
 
     return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
         .receiver = recvPtr,
@@ -20613,6 +20616,7 @@ fn resolvePendingReceiverCalls(env: *Env) InferError!void {
                 if (env.instanceLowerings.get(p.loc) != null) continue;
                 if (primKindOfName(n.name)) |pk| {
                     try recordInstanceCall(env, p.loc, n.name);
+                    try recordWidthMember(env, p.loc, n.name, p.callee);
                     if ((pk == .array or pk == .string or pk == .bytes) and
                         (std.mem.eql(u8, p.callee, "len") or std.mem.eql(u8, p.callee, "size") or std.mem.eql(u8, p.callee, "length")))
                     {
@@ -20638,6 +20642,17 @@ fn resolvePendingReceiverCalls(env: *Env) InferError!void {
             else => {},
         }
     }
+}
+
+/// Decisions 617 (3), 496 — a call of a member the primitive width declares
+/// itself (`n.abs()` on an `i32`: `pub type i32 implement Signed { … declare fn
+/// abs(self: Self) -> Self; }`) is that width's own function: recorded as a
+/// `.width` lowering, which the transform writes `__i32_abs(n)`
+/// (`prelude_cache.widthMemberName`). A member only a contract declares keeps
+/// the primitive dispatch.
+fn recordWidthMember(env: *Env, loc: ast.Loc, typeName: []const u8, callee: []const u8) InferError!void {
+    if (preludeCache.widthMember(typeName, callee) == null) return;
+    try env.method_lowerings.put(loc, .{ .domain = .width, .op = .map, .width = typeName });
 }
 
 fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!void {
@@ -24135,6 +24150,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     const recvTy = recvPtr.getType().deref();
                     if (recvTy.* == .named and primKindOfName(recvTy.named.name) != null) {
                         try recordInstanceCall(env, loc, recvTy.named.name);
+                        try recordWidthMember(env, loc, recvTy.named.name, call.callee);
                         // `arr.len()`/`.size()`/`.length()` and `str.length()` are
                         // the native JS `.length` PROPERTY (commonJS emits it
                         // without call parens); erlang/beam lower them to the host

@@ -2217,7 +2217,8 @@ const yield_step_src =
 pub const primitive_interfaces_src = @import("std_prelude").primitives;
 /// Decision 617 (1) — the contract a primitive type implements (`i32` →
 /// `Signed`), read from `primitives.bp`.
-pub const primitiveContract = @import("codegen/prelude_cache.zig").primitiveContract;
+const prelude_cache = @import("codegen/prelude_cache.zig");
+pub const primitiveContract = prelude_cache.primitiveContract;
 // Array<T> and String behaviors live inside primitives.bp (the controller)
 // in the interface model — there are no standalone array/string modules.
 pub const array_interface_src = @import("std_prelude").primitives;
@@ -3815,13 +3816,16 @@ fn registerExports(
 /// contract is read from the text where a method is resolved
 /// (`prelude_cache.primitiveContract`).
 fn preludeForInference(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
+    // Decisions 617 (3), 496 — the members a width declares itself, as the
+    // free functions a call of one is written as (`__i32_abs`).
+    const with_members = try prelude_cache.withWidthMembers(alloc, program);
     var kept: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
-    for (program.decls) |decl| {
+    for (with_members.decls) |decl| {
         if (decl == .@"test") continue;
         if (decl == .type_ and decl.type_.isPrimitive) continue;
         try kept.append(alloc, decl);
     }
-    var out = program;
+    var out = with_members;
     out.decls = try kept.toOwnedSlice(alloc);
     return out;
 }

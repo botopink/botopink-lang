@@ -726,11 +726,13 @@ methods answer alike on both sides of that edge:
   form is reached, and abort past it naming the value (`clock.toCivil: <v> is past RFC 3339's range, -62167219200000 to 253402300799999`; ASCII, so
   erlang prints it as text), on every target: `modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_rfc3339_domain` and the three
   `modules/clock_*_past_rfc3339_aborts`.
-- `abs` of the type's minimum (`-2^63`, `-2^31`) answers `2^63` / `2^31`, a value outside the type,
-  on commonJS, erlang and beam alike. Decision 496 makes it abort as unary `-` does (`integer
-  overflow: abs on i64`), `abs` declared per width on `i32` and `i64` — not built: commonJS patches one
-  `abs` on `Number.prototype` for every width (and `Float`), so a per-width bound needs a dispatch by
-  the receiver's static type there, and erlang's primitive dispatch starts every integer at `Signed`.
+- `abs` is declared per width (decision 496, 617 (3)): `Signed` holds its signature, and `pub type i32 implement
+  Signed { … }` and `i64` each declare `abs` with their own cells, aborting past the width as unary `-` does
+  (`integer overflow: abs on i32` / `on i64`). A member a width declares itself is called through its free
+  function: inference records the call as a `.width` `MethodLowering`, the transform writes `n.abs()` as
+  `__i32_abs(n)` (`prelude_cache.widthMemberName`), and `prelude_cache.withWidthMembers` gives the prelude that
+  `declare fn` with the member's cells — every backend lowers it as any prelude `declare fn` (wasm in
+  `lowerWidthMember`, the `i64` in its `i64`): `modules/abs_aborts_on_overflow`, `modules/abs_aborts_on_i32_overflow`.
 
 ## `bigint` — `behavior BigInt` (decision 332)
 

@@ -16,10 +16,8 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__mag'/1, '__bp_priv__main'/0]).
 
-%% behavior Signed
-
 mag(N) ->
-    (fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)(N).
+    (fun(__V) when __V =/= -2147483648 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i32">>}) end)(N).
 
 main() ->
     '__bp_print'([mag((-7))]).

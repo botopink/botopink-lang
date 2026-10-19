@@ -13,6 +13,7 @@ const ast = @import("../ast.zig");
 const specialize = @import("./specialize.zig");
 const hooks = @import("./hooks.zig");
 const envMod = @import("./env.zig");
+const preludeCache = @import("../codegen/prelude_cache.zig");
 const lexerMod = @import("../lexer.zig");
 
 /// Map of `@Result`/`@Option` method-call sites (by source loc) to their
@@ -618,9 +619,23 @@ fn tryLowerMethodCall(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
     const lowering = agg.method_lowerings.get(loc) orelse return false;
 
     const arena = agg.spec_cache.arena;
+    if (lowering.domain == .width) {
+        const args = arena.alloc(ast.CallArg, cc.args.len + 1) catch return ScanError.OutOfMemory;
+        args[0] = .{ .label = null, .value = recv, .comments = &.{} };
+        for (cc.args, 0..) |a, i| args[i + 1] = a;
+        expr_ptr.* = ast.Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = preludeCache.widthMemberName(arena, lowering.width, cc.callee) catch return ScanError.OutOfMemory,
+            .is_builtin = false,
+            .args = args,
+            .trailing = cc.trailing,
+        } } } };
+        return true;
+    }
     const domain = switch (lowering.domain) {
         .result => "result",
         .option => "option",
+        .width => unreachable,
     };
     const opName = switch (lowering.op) {
         .map => "map",

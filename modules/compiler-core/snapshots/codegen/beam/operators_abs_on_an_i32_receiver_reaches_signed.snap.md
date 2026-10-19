@@ -79,23 +79,19 @@ import {io.terminal.print} from "std";
   {label, 14}.
     {func_info, {atom, test@main}, {atom, '__bp_tpl_0-t/1-fun-0-'}, 1}.
   {label, 15}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {integer, -9223372036854775807}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {gc_bif, '-', {f, 17}, 2, [{x, 0}, {x, 1}], {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {integer, -2147483648}, {x, 1}}.
     {test, is_ne_exact, {f, 17}, [{x, 0}, {x, 1}]}.
     {jump, {f, 18}}.
   {label, 18}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, abs, 1}, 2}.
+    {call_ext_last, 1, {extfunc, erlang, abs, 1}, 1}.
   {label, 17}.
-    {move, {literal, {integer_overflow, <<"integer overflow: abs on i64">>}}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
+    {move, {literal, {integer_overflow, <<"integer overflow: abs on i32">>}}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, error, 1}, 1}.
 
 {function, '__bp_tpl_0', 1, 11}.
   {label, 10}.

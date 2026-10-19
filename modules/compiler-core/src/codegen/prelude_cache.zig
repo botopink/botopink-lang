@@ -50,7 +50,8 @@ pub fn primitives() ?ast.Program {
     var lx = lexerMod.Lexer.init(prelude.primitives);
     const tokens = lx.scanAll(a) catch return null;
     var p = parserMod.Parser.init(tokens);
-    primitives_program = p.parse(a) catch null;
+    const parsed = p.parse(a) catch return null;
+    primitives_program = withWidthMembers(a, parsed) catch null;
     return primitives_program;
 }
 
@@ -232,3 +233,110 @@ pub fn kindsReaching(name: []const u8) []const envMod.PrimKind {
 var reach_names: [64][]const u8 = undefined;
 var reach_kinds: [64][]const envMod.PrimKind = undefined;
 var reach_len: usize = 0;
+
+/// Decision 617 (3), 496 — the free function a member a primitive type
+/// declares itself is lowered as: `__i32_abs` for `i32`'s `abs`. A call
+/// `n.abs()` on an `i32` is rewritten to `__i32_abs(n)` (`MethodLowering`'s
+/// `.width` domain), and the function carries the member's host cells, so
+/// every backend lowers it as any prelude `declare fn`. The width's own
+/// member is the one that knows the width: `abs` of the lowest `i32` and of
+/// the lowest `i64` abort with their own bound.
+pub fn widthMemberName(alloc: std.mem.Allocator, width: []const u8, method: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(alloc, "__{s}_{s}", .{ width, method });
+}
+
+/// The width and the member a `widthMemberName` names (`__i32_abs` →
+/// `i32`, `abs`) when the prelude's primitive type declares that member, else
+/// null.
+pub fn widthMemberOf(callee: []const u8) ?struct { width: []const u8, method: []const u8 } {
+    if (!std.mem.startsWith(u8, callee, "__")) return null;
+    const rest = callee[2..];
+    const us = std.mem.indexOfScalar(u8, rest, '_') orelse return null;
+    const width = rest[0..us];
+    const method = rest[us + 1 ..];
+    const m = widthMember(width, method) orelse return null;
+    return .{ .width = width, .method = m.name };
+}
+
+/// The member `method` the prelude's primitive type `width` declares itself
+/// (`i32`'s `abs`), or null — a member its contracts declare is not one.
+pub fn widthMember(width: []const u8, method: []const u8) ?ast.BehaviorMethod {
+    const t = primitiveType(width) orelse return null;
+    for (t.methods) |m| if (std.mem.eql(u8, m.name, method)) return m;
+    return null;
+}
+
+/// `program` with, after its declarations, one free `declare fn` per member a
+/// primitive type declares (`widthMemberName`): `self` named `value`, `Self`
+/// written as the type, the member's annotations and host cells kept. The
+/// checker and every backend read the prelude through this.
+pub fn withWidthMembers(alloc: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    for (program.decls) |d| {
+        if (d != .type_ or !d.type_.isPrimitive) continue;
+        const t = d.type_;
+        for (t.methods) |m| {
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            const params = try alloc.dupe(ast.Param, m.params);
+            params[0].name = "value";
+            for (params) |*pp| pp.typeRef = selfAs(pp.typeRef, t.name);
+            // The parser wrote a method's `$0` as the receiver marker and its
+            // `$N` as `$(N-1)` (`parser/template_markers.zig`); the free
+            // function takes the receiver as its `$0`.
+            const impls = try alloc.dupe(ast.Implementation, m.implementations);
+            for (impls) |*im| {
+                const same = im.template != null and std.mem.eql(u8, im.template.?, im.text);
+                if (im.template) |tp| im.template = try unshift(alloc, tp);
+                if (same) im.text = im.template.? else if (im.cell == null) im.text = try unshift(alloc, im.text);
+            }
+            try extra.append(alloc, .{ .@"fn" = .{
+                .isPub = false,
+                .isDeclare = true,
+                .name = try widthMemberName(alloc, t.name, m.name),
+                .nameLoc = m.nameLoc,
+                .annotations = m.annotations,
+                .implementations = impls,
+                .genericParams = m.genericParams,
+                .params = params,
+                .returnType = if (m.returnType) |r| selfAs(r, t.name) else null,
+                .returnTypeLoc = m.returnTypeLoc,
+                .body = &.{},
+            } });
+        }
+    }
+    if (extra.items.len == 0) return program;
+    var out = program;
+    out.decls = try std.mem.concat(alloc, ast.DeclKind, &.{ program.decls, extra.items });
+    return out;
+}
+
+fn selfAs(r: ast.TypeRef, name: []const u8) ast.TypeRef {
+    if (r == .named and std.mem.eql(u8, r.named, "Self")) return .{ .named = name };
+    return r;
+}
+
+/// A method's template written for a free function: the receiver marker is
+/// `$0`, and each `$N` is `$(N+1)`.
+fn unshift(alloc: std.mem.Allocator, text: []const u8) ![]const u8 {
+    const receiver_marker = @import("../comptime/primOpTemplate.zig").receiver_marker;
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < text.len) {
+        if (std.mem.startsWith(u8, text[i..], receiver_marker)) {
+            try out.appendSlice(alloc, "$0");
+            i += receiver_marker.len;
+            continue;
+        }
+        if (text[i] == '$' and i + 1 < text.len and std.ascii.isDigit(text[i + 1])) {
+            var j = i + 1;
+            while (j < text.len and std.ascii.isDigit(text[j])) j += 1;
+            const n = std.fmt.parseInt(usize, text[i + 1 .. j], 10) catch 0;
+            try out.print(alloc, "${d}", .{n + 1});
+            i = j;
+            continue;
+        }
+        try out.append(alloc, text[i]);
+        i += 1;
+    }
+    return out.items;
+}

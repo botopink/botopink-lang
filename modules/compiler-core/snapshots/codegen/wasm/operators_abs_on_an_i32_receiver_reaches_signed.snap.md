@@ -21,13 +21,17 @@ import {io.terminal.print} from "std";
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $mag (param $n i32) (result i32)
     local.get $n
+    i32.const -2147483647
+    i32.const 2147483647
+    global.get $__s0
+    call $__i32_range_chk
     call $__i32_abs
     return
   )
   (func $main
     i32.const 0
     i32.const 7
-    global.get $__s0
+    global.get $__s1
     call $__i32_sub_chk
     call $mag
     call $__print_i32
@@ -543,19 +547,42 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
+  (func $__i32_range_chk (param $v i32) (param $lo i32) (param $hi i32) (param $site (ref null $str)) (result i32)
+    local.get $v
+    local.get $lo
+    i32.lt_s
+    local.get $v
+    local.get $hi
+    i32.gt_s
+    i32.or
+    (if
+      (then
+        local.get $site
+        call $__chk_fail
+        unreachable
+      )
+    )
+    local.get $v
+  )
   (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:5:15")
+  (data $__d0 "integer overflow: abs on i32")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "integer overflow: - on i32 at main.bp:5:15")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
-    i32.const 42
+    i32.const 28
     array.new_data $str $__d0
     global.set $__s0
+    i32.const 0
+    i32.const 42
+    array.new_data $str $__d1
+    global.set $__s1
   )
   (@custom "botopink.needs" "gc\0a")
 )
