@@ -1,0 +1,46 @@
+//// Decision 595 (3), (5) — the handler converts the region's failure into the
+//// function's: `catch throw …`, or a block with a binder whose `throw` is the
+//// enclosing function's (the block is no lambda). Each region fails with one
+//// error type (`string` here); the function answers its own (`ConfigError`).
+
+import {io.terminal.print} from "std";
+
+type ConfigError { Missing(key: string), Invalid }
+
+fn lookup(key: string) -> Result<i32, string> {
+    if (key == "port") return 80;
+    if (key == "offset") return 1;
+    throw key;
+}
+
+fn sum(a: string, b: string) -> Result<i32, ConfigError> {
+    return try {
+        try lookup(a) + try lookup(b)
+    } catch throw ConfigError.Invalid;
+}
+
+fn port(key: string) -> Result<i32, ConfigError> {
+    val p = try {
+        try lookup(key)
+    } catch { e ->
+        throw ConfigError.Missing(key: e);
+    };
+    return p + 1;
+}
+
+fn show(r: Result<i32, ConfigError>) -> string {
+    return case r {
+        Ok(v) -> v.toString();
+        Error(e) -> case e {
+            Missing(key) -> "missing " + key;
+            Invalid -> "invalid";
+        };
+    };
+}
+
+pub fn main() {
+    print(show(sum("port", "offset")));
+    print(show(sum("port", "host")));
+    print(show(port("port")));
+    print(show(port("host")));
+}

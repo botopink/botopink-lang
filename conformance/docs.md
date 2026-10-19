@@ -3024,6 +3024,48 @@ the fallback, its left side is the whole expression before it. `try await t catc
 
 <!-- example: modules/catch_lowest_precedence -->
 
+**`try` opens a region; `catch` closes it** and handles the failure of every `try` written in it
+(decision 595). A `try` hands its failure to the nearest region holding it — a `try { … } catch …`,
+else the function, which then needs a `Result` in its return. The region is the block `try { … }`
+when it is written, else the whole expression left of the `catch`: `try e catch h` is
+`try { e } catch h`, and `(try a) + (try b) catch 0` sends both failures to the one `catch`. The
+region is an expression: its value is its last expression written without `;`, and the handler
+answers the same type. The handler is an expression (the fallback, `catch 0`), a `throw`
+(`catch throw ParseFailed` — the failure becomes the function's), a block whose value is the
+fallback (`catch { log.warn("…"); 0 }`), or a block with a binder, `catch { e -> … }` — `e` is the
+region's error, a `case` arm's binder typed by the region and never a lambda's parameter, so a
+`return` or a `throw` in the block is the enclosing function's:
+
+<!-- example: modules/try_block_catch_value -->
+<!-- example: modules/try_block_catch_binder -->
+<!-- example: modules/try_block_catch_rethrow -->
+<!-- example: modules/catch_region_covers_left_side -->
+
+A region whose value is `void` is a statement, and its handler is a block with at least one
+statement. An empty handler `catch { }` is refused `catch-empty`: a failure is handled (a value, a
+statement, a `throw`) or left to propagate, never swallowed in silence:
+
+<!-- example: modules/try_block_catch_void_statement -->
+<!-- example: modules/try_block_catch_empty -->
+
+A `try` written in the handler belongs to the region around the `try … catch`, or to the function —
+never to its own `catch`:
+
+<!-- example: modules/try_in_catch_body_propagates -->
+
+Every `try` in a region fails with one error type. A second type is refused at its `try`,
+`try-region-errors-differ`, naming both: handle that failure on the spot (`try parseInt(raw) catch …`)
+or convert it (`catch throw …`). A region that holds no `try` cannot fail, and is refused
+`try-region-cannot-fail`:
+
+<!-- example: modules/try_region_errors_differ -->
+<!-- example: modules/try_region_cannot_fail -->
+
+On every target a region is one early-exit block: a failing `try` leaves it for the handler — a
+sentinel on commonJS, a `try … catch` over a term of its own on erlang and beam, a `block … br` on
+wasm, with no exception of its own there. A `defer` runs when its block ends, a caught failure
+ending the region and the blocks inside it on the way.
+
 A `throw` or a propagating `try` needs a `Result` in some layer of the
 enclosing function's return (`Result<T, E>`, `Task<Result<T, E>>`,
 `Iterator<Result<T, E>>`, …); in a function with none, and in a lambda whose

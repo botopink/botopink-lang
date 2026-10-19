@@ -1022,6 +1022,9 @@ fn classifyTry(e: ast.Expr) ?TryForm {
         },
         .branch => |br| switch (br.kind) {
             .tryCatch => |tc| {
+                // Decision 595 — a region, and a handler with a binder, are
+                // values `buildExpr` builds.
+                if (tc.region or tc.binder != null) return null;
                 const h = tc.handler.*;
                 if (isJumpHandler(h)) return TryForm{ .catchJump = .{ .inner = tc.expr.*, .handler = h } };
                 const is_lambda = switch (h) {
@@ -1715,6 +1718,11 @@ const Emitter = struct {
     /// wraps the body in the guard that turns the thrown Result back into
     /// the propagated one (`guardExprTry`). Saved and restored per function.
     expr_try_used: bool = false,
+    /// Decision 595 — how many `try … catch` regions of the function being
+    /// built enclose the expression being built (`buildRegion`): a `try`
+    /// there throws `{ __bp_region: e }` to the innermost region's `catch`
+    /// instead of returning the Error. Reset by every nested function.
+    region_depth: u32 = 0,
     /// The `result: true` bindings of this module (decisions 431, 490): each
     /// is a function of its own (`buildResultBinding`) whose body runs the
     /// host call through `__bp_host_result` / `__bp_host_result_task`, so a call is a
@@ -4375,6 +4383,59 @@ const Emitter = struct {
         return self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "__bp_try", .value = value } }}));
     }
 
+    /// `{ __bp_region: <err> }` — what a `try` in a region throws to the
+    /// region's `catch` (decision 595).
+    fn regionSignal(self: *Emitter, err: js.Expr) !js.Expr {
+        return self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "__bp_region", .value = err } }}));
+    }
+
+    /// Decision 595 — a `try … catch` region, one early-exit block: the
+    /// region runs inside a JavaScript `try` whose `catch` takes the sentinel
+    /// `{ __bp_region: e }` every `try` written in the region throws
+    /// (`__bp_region_try`, or a `try` statement's `throw`) and hands `e` to
+    /// the handler; any other throw passes on.
+    ///
+    ///     (() => { try { return <region>; } catch (_rgN) {
+    ///         if (!(_rgN !== null && typeof _rgN === "object" && "__bp_region" in _rgN)) throw _rgN;
+    ///         const e = _rgN.__bp_region;
+    ///         return <handler>;
+    ///     } })()
+    ///
+    /// The region and its handler are the function's: a `return` there
+    /// throws to the function's guard (`case_return_throws`). The handler's
+    /// own `try`s belong to the region around this one (595 (6)).
+    fn buildRegion(self: *Emitter, tc: anytype) anyerror!js.Expr {
+        const n = self.try_seq;
+        self.try_seq += 1;
+        const name = try std.fmt.allocPrint(self.arena(), "_rg{d}", .{n});
+        const caught: js.Expr = .{ .name = name };
+        const prev_throws = self.case_return_throws;
+        defer self.case_return_throws = prev_throws;
+        self.case_return_throws = !self.in_generator and !self.in_test_body;
+        self.region_depth += 1;
+        const region = self.buildExpr(tc.expr.*) catch |err| {
+            self.region_depth -= 1;
+            return err;
+        };
+        self.region_depth -= 1;
+        const handler = tc.handler.*;
+        const handled: js.Stmt = if (isJumpHandler(handler))
+            try self.buildStmt(.{ .expr = handler })
+        else
+            .{ .return_ = try self.buildExpr(handler) };
+        const is_signal = try self.b.binaryBare("&&", try self.b.binaryBare("&&", try self.b.binaryBare("!==", caught, .null_), try self.b.binaryBare("===", try self.b.unary("typeof ", caught, false), .{ .quoted = "object" })), try self.b.binaryBare("in", .{ .quoted = "__bp_region" }, caught));
+        var on_catch: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try on_catch.append(self.arena(), try self.b.ifStmt(try self.b.unary("!", try self.b.paren(is_signal), false), .{ .throw_ = caught }));
+        if (tc.binder) |bn| try on_catch.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = bn }, .value = try self.b.member(caught, "__bp_region") } });
+        try on_catch.append(self.arena(), handled);
+        const indent = self.current_indent + 1;
+        return self.iife(&.{.{ .try_catch = .{
+            .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = region }}), .indent = indent },
+            .param = name,
+            .handler = .{ .stmts = try on_catch.toOwnedSlice(self.arena()), .indent = indent },
+        } }});
+    }
+
     /// `{ __bp_return: true, value: <value> }` — a function's `return` from
     /// inside the arrow a statement `case` lowers to (`case_return_box`).
     fn returnBox(self: *Emitter, value: js.Expr) !js.Expr {
@@ -4537,6 +4598,9 @@ const Emitter = struct {
         const prev_expr_try = self.expr_try_used;
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
+        const prev_region = self.region_depth;
+        self.region_depth = 0;
+        defer self.region_depth = prev_region;
         const lambda_body = try self.guardExprTry(try self.buildLambdaBody(body), self.current_indent);
         var arrow = try self.b.arrowBlock(ps, .{
             .stmts = lambda_body,
@@ -4599,7 +4663,10 @@ const Emitter = struct {
                 // anything else is JSON-rendered — and `__bp_run_tests`' catch
                 // prints `FAIL <name>  (<e>)  at <file>:<line>`. Everywhere else
                 // it propagates as the fn's own Result.
-                const on_error: js.Stmt = if (self.in_test_body) blk: {
+                const on_error: js.Stmt = if (self.region_depth > 0)
+                    // Decision 595 — the region's `catch` takes the failure.
+                    .{ .throw_ = try self.regionSignal(try self.b.member(.{ .name = temp }, "error")) }
+                else if (self.in_test_body) blk: {
                     const err_val = try self.b.member(.{ .name = temp }, "error");
                     const is_string = try self.b.binaryBare("===", try self.b.unary("typeof ", err_val, false), .{ .quoted = "string" });
                     const rendered = try self.b.call(try self.b.member(.{ .name = "JSON" }, "stringify"), &.{err_val});
@@ -4933,6 +5000,8 @@ const Emitter = struct {
                 .try_ => |t| {
                     // The parser always gives `try` an operand.
                     const val = t orelse return error.TryWithoutOperand;
+                    // Decision 595 — a `try` in a region throws to its `catch`.
+                    if (self.region_depth > 0) return self.b.call(self.helper(.region_try), &.{try self.buildExpr(val.*)});
                     // Nested `try` in expression position (`total + try r`):
                     // `__bp_try(x)` answers the Ok value or throws the Error
                     // Result to the enclosing function's guard, which returns
@@ -4960,6 +5029,7 @@ const Emitter = struct {
             .branch => |br| switch (br.kind) {
                 .if_ => |i| return self.buildIfExpr(i),
                 .tryCatch => |tc| {
+                    if (tc.region) return self.buildRegion(tc);
                     // `try expr catch handler` in expression position → pattern match
                     // on the `{ ok } | { error }` Result inside an IIFE (never JS
                     // try/catch).
@@ -4980,10 +5050,15 @@ const Emitter = struct {
                         }
                         break :blk js.Stmt{ .return_ = value };
                     };
+                    // Decision 595 (3) — `catch { e -> … }` binds the error.
+                    const on_error: []const js.Stmt = if (tc.binder) |bn|
+                        try self.b.stmts(&.{ .{ .decl = .{ .pattern = .{ .name = bn }, .value = try self.b.member(.{ .name = temp }, "error") } }, handled })
+                    else
+                        try self.b.stmts(&.{handled});
                     return self.iife(&.{
                         .{ .decl = .{ .pattern = .{ .name = temp }, .value = try self.buildExpr(tc.expr.*) } },
                         try self.b.ifStmt(try self.errorIn(temp), .{ .block = .{
-                            .stmts = try self.b.stmts(&.{handled}),
+                            .stmts = on_error,
                             .layout = .spaced,
                         } }),
                         .{ .return_ = try self.b.member(.{ .name = temp }, "ok") },
@@ -5566,6 +5641,9 @@ const Emitter = struct {
         const prev_expr_try = self.expr_try_used;
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
+        const prev_region = self.region_depth;
+        self.region_depth = 0;
+        defer self.region_depth = prev_region;
         const body = try self.buildStmts(lp.body);
         const while_stmt = js.Stmt{ .while_ = .{
             .cond = .{ .name = "true" },
@@ -5628,6 +5706,9 @@ const Emitter = struct {
         const prev_throws_f = self.case_return_throws;
         self.case_return_throws = false;
         defer self.case_return_throws = prev_throws_f;
+        const prev_region_f = self.region_depth;
+        self.region_depth = 0;
+        defer self.region_depth = prev_region_f;
         self.current_indent = base + 1;
         defer {
             self.loop_ctx = prev_ctx;

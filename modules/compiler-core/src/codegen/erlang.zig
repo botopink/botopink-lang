@@ -874,6 +874,9 @@ const cond_continue_signal = "__bp_cond_continue";
 const gen_end_signal = "__bp_gen_end";
 /// The throw of a `try` with no rest to nest (`tryThrowCase`).
 const try_throw_signal = "__bp_try";
+/// Decision 595 — the term a `try` in a region throws, `{'__bp_region', E}`,
+/// caught by the region's own `try … catch` (`regionNode`).
+const region_throw_signal = "__bp_region";
 /// The throw of a bare `break` at a generator fn's own level (`genStopThrow`).
 const gen_stop_signal = "__bp_gen_stop";
 
@@ -3262,6 +3265,11 @@ const Emitter = struct {
     /// Set when the body being lowered used the `'__bp_try'` throw; `fnForms`
     /// then wraps the body in the guard that answers the thrown Error.
     try_throw_used: bool = false,
+    /// Decision 595 — how many `try … catch` regions of the function being
+    /// lowered enclose the node being lowered (`regionNode`): a `try` there
+    /// throws `{'__bp_region', E}` to the innermost region's `catch`. Reset
+    /// by every closure; a loop's fun keeps it (a throw crosses the fun).
+    region_depth: u32 = 0,
     /// True while a loop's body is lowered — a fun (`lists:foreach`, a named
     /// recursive `__BpLoop`) whose value is not the function's. A `return` there
     /// throws `{'__bp_try', V}` to the function's guard (`returnNode`); a lambda
@@ -7235,6 +7243,10 @@ const Emitter = struct {
     /// there, by the body and by the rest of the sequence. `stream loop` is the
     /// same generator: erlang's `await` is identity.
     fn generatorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
+        // Decision 595 — a generator scope's `try`s end its iteration.
+        const saved_region = this.region_depth;
+        this.region_depth = 0;
+        defer this.region_depth = saved_region;
         if (this.untyped) return this.eagerGeneratorLoopNode(b, lp);
         const captured = try this.genCaptured(b, lp.body);
         const key = try this.genKey(b);
@@ -7450,6 +7462,43 @@ const Emitter = struct {
     /// the runner's FAIL in a `test` body (decision 74), and otherwise
     /// `throw({'__bp_try', E})` — caught by the function's guard
     /// (`guardTry`), which answers `E` as the function's value.
+    /// Decision 595 — a `try … catch` region, one early-exit block over a
+    /// term of its own:
+    ///
+    ///     try <region> catch throw:{'__bp_region', E} -> <handler> end
+    ///
+    /// Every `try` written in the region throws `{'__bp_region', E}`
+    /// (`tryThrowCase`); any other raise passes on. A `return` in the region
+    /// or the handler is the function's, thrown to its guard
+    /// (`in_nested_return`). The handler's own `try`s belong to the region
+    /// around this one (595 (6)).
+    fn regionNode(this: *Emitter, b: Ast.Builder, tc: anytype) anyerror!Ast.Expr {
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const saved_nested = this.in_nested_return;
+        this.in_nested_return = true;
+        defer this.in_nested_return = saved_nested;
+        const saved = this.indent;
+        this.indent = saved + 2;
+        defer this.indent = saved;
+        this.region_depth += 1;
+        const region = this.exprNode(b, tc.expr.*);
+        this.region_depth -= 1;
+        const region_expr = try region;
+        // The binder takes a fresh version where its name is bound already
+        // (`patternBindVar`), as a `case` arm's does.
+        const err_var = if (tc.binder) |bn| Ast.Expr.v(try this.patternBindVar(b, bn)) else Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_RgE{d}", .{n}));
+        const handler = try this.exprNode(b, tc.handler.*);
+        return .{ .try_catch = .{
+            .body = try b.body(&.{region_expr}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(region_throw_signal), err_var }))},
+                &.{},
+                &.{handler},
+            )}),
+        } };
+    }
+
     fn tryThrowCase(this: *Emitter, b: Ast.Builder, inner: ast.Expr) anyerror!Ast.Expr {
         const n = this.try_seq;
         this.try_seq += 1;
@@ -7457,7 +7506,10 @@ const Emitter = struct {
         const ok_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n}));
         const err_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
         const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
-        const on_error: Ast.Expr = if (this.in_test_body)
+        const on_error: Ast.Expr = if (this.region_depth > 0)
+            // Decision 595 — the region's `catch` takes the failure.
+            try b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(region_throw_signal), err_var })})
+        else if (this.in_test_body)
             try b.remote("erlang", "error", &.{try b.tuple(&.{ Ast.Expr.a("bp_assert"), err_var, .{ .lexeme_binary = this.test_loc } })})
         else if (this.gen_scope) |gs|
             try this.genEndThrowValue(b, gs, err)
@@ -8545,6 +8597,10 @@ const Emitter = struct {
                 const saved_throw = this.try_throw_used;
                 this.try_throw_used = false;
                 defer this.try_throw_used = saved_throw;
+                // Decision 595 — a closure's `try`s are its own.
+                const saved_region = this.region_depth;
+                this.region_depth = 0;
+                defer this.region_depth = saved_region;
                 // A `fun` is not the test body: its `try` is its own, and its
                 // body is the statement sequence a `try` nests the rest of.
                 const saved_in_test = this.in_test_body;
@@ -8721,6 +8777,7 @@ const Emitter = struct {
                     return b.caseOf(cond, clauses.items);
                 },
                 .tryCatch => |tc| {
+                    if (tc.region) return this.regionNode(b, tc);
                     // `try expr catch handler` → pattern match on the Result tag:
                     //   case Expr of {ok, V} -> V; {error, E} -> Handler end
                     const n = this.try_seq;
@@ -8732,7 +8789,8 @@ const Emitter = struct {
                     // `try … catch`, `attempt` alone contains it.
                     const subject = try this.exprNode(b, tc.expr.*);
                     const ok_var = V(try std.fmt.allocPrint(b.arena, "TryV{d}", .{n}));
-                    const err_var = V(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
+                    // Decision 595 (3) — `catch { e -> … }` binds the error to `e`.
+                    const err_var = if (tc.binder) |bn| V(try this.patternBindVar(b, bn)) else V(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
 
                     const saved = this.indent;
                     this.indent = saved + 2;

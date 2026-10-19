@@ -209,6 +209,17 @@ with no declared return: a lambda, a `test` block). `throw` / `try` under
 `effect-throw-without-fallible-channel` merged into it). `try … catch`
 propagates nothing and is not gated.
 
+**A `try … catch` region** (decision 595, `inferTryCatch`). A `tryCatch` with `region` set infers its
+`expr` under `env.tryRegion` (an `envMod.TryRegion`): every `try` there joins the region instead of the
+function's channel (`joinTryRegion`) — the first fixes the region's one error type, a second type is
+`try-region-errors-differ` at that `try` — and a region holding none is `try-region-cannot-fail` (so is an
+operand-form `e catch h` whose `e` is no `Result`). Every function border clears `tryRegion` (a fn, a
+method, a test, a lambda — not a `case` arm's block —, an `async { }` block, a prefixed loop), and the
+handler is inferred under the region around this one (595 (6)). A handler block with no statement is
+`catch-empty`; `catch { e -> … }` binds `e` to the region's error like a `case` arm's binder
+(`saveAndBindPatternName`); a handler block that ends in a jump answers no fallback. A region returned from
+a `-> Result` body is a plain value (`wrap_ok`).
+
 **`return` wraps through every layer** (decision 119). `returnTargetFor` gives a
 `return` the value layer's `U` when that layer is `@Result<U, E>`, the value `T`
 otherwise; `result_jump_lowerings` records `wrap_ok` for a plain value, nothing

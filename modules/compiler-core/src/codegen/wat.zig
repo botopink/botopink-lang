@@ -1004,6 +1004,17 @@ const DeferName = struct { name: []const u8, alias: ?[]const u8 };
 /// aliases of the names it reads at the `defer`, and — when a panic region
 /// covers the rest of its block — the local that says an exit path already ran
 /// it, so the region's handler does not run it again.
+/// Decision 595 — one `try … catch` region being lowered (`lowerRegion`):
+/// the block its failing `try`s branch out of, the local holding the failed
+/// `Result`, the defers it opened above `defer_floor`, and the error type its
+/// first `try` named (what the binder is typed by).
+const Region = struct {
+    fail: []const u8,
+    err: []const u8,
+    defer_floor: usize,
+    err_tr: ?ast.TypeRef = null,
+};
+
 const DeferEntry = struct {
     stmt: ast.Stmt,
     names: []const DeferName = &.{},
@@ -2453,6 +2464,8 @@ const Emitter = struct {
     globals: std.StringHashMap(void),
     case_depth: u32 = 0,
     try_seq: u32 = 0,
+    /// Decision 595 — numbers the labels and the local of each region.
+    region_seq: u32 = 0,
     /// Sequence counter for the `$__assert_{n}` local a `val assert` stages
     /// its subject in.
     assert_seq: u32 = 0,
@@ -2484,6 +2497,10 @@ const Emitter = struct {
     /// not run yet, outermost first: a `return`, a `break`, a `continue` or
     /// the end of their block writes each one's statement in place.
     defer_stack: std.ArrayListUnmanaged(DeferEntry) = .empty,
+    /// Decision 595 — the `try … catch` regions enclosing the code being
+    /// lowered, innermost last (`lowerRegion`): a failing `try` there leaves
+    /// its `Result` in the region's local and branches to its handler.
+    regions: std.ArrayListUnmanaged(Region) = .empty,
     /// `defer_stack`'s length where the innermost loop began: a `break` or a
     /// `continue` runs the entries above it.
     defer_loop_floor: usize = 0,
@@ -3066,6 +3083,7 @@ const Emitter = struct {
         self.locals.deinit();
         self.pending_locals.deinit(self.alloc);
         self.defer_stack.deinit(self.alloc);
+        self.regions.deinit(self.alloc);
         self.str_locals.deinit();
         self.bool_locals.deinit();
         self.str_fns.deinit();
@@ -6062,6 +6080,7 @@ const Emitter = struct {
 
     /// `try r`: an `Error` leaves the function with `r` itself, an `Ok` is its payload.
     fn gcTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
+        if (self.regions.items.len > 0) return self.gcFail("a try in a `try … catch` region");
         if (self.gen_item == null and self.yield_target != null and !(self.gen_repr.isArrRef() and self.gen_repr.ref.arr == .any)) return self.gcFail("a try inside a sequence of words");
         const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a @Result of no known shape");
         const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
@@ -12195,6 +12214,8 @@ const Emitter = struct {
     }
 
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
+        if (tc.region) return self.lowerRegion(tc);
+        if (self.mode == .gc and tc.binder != null) return self.gcFail("a `catch { e -> … }` handler");
         if (self.mode == .gc) return self.gcTryCatch(tc);
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
@@ -12209,6 +12230,8 @@ const Emitter = struct {
         const ty = if (cell != .none) self.vtOf(cell.ty()) else self.vtOf(self.cur_result);
         var then_c: Capture = .{};
         self.open(&then_c);
+        // Decision 595 (3) — `catch { e -> … }` binds the error to `e`.
+        if (tc.binder) |bn| try self.bindRegionError(bn, slot, if (self.resultShapeOf(tc.expr.*)) |sh| sh.err else null);
         if (cell != .none) try self.lowerCoerced(tc.handler.*, cell.ty()) else try self.lowerExpr(tc.handler.*);
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
@@ -12226,6 +12249,74 @@ const Emitter = struct {
         } });
     }
 
+    /// Decision 595 (3) — `name` bound to the error payload of the `Result`
+    /// whose address `slot` holds, typed by `err_tr` when it is known.
+    fn bindRegionError(self: *Emitter, name: []const u8, slot: []const u8, err_tr: ?ast.TypeRef) anyerror!void {
+        const cell: Cell = if (err_tr) |t| resultPayloadCell(t) else .none;
+        const repr: Repr = if (cell != .none) cell.ty() else if (err_tr) |t| self.reprOf(t) else .i32;
+        try self.declareLocal(name, repr);
+        if (err_tr) |t| try self.noteTypedBinder(name, t);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .load = .{ .offset = 4 } }, "the error payload");
+        try self.emitFromCell(cell);
+        try self.emit(.{ .local_set = name });
+    }
+
+    /// Decision 595 — a `try … catch` region, one early-exit block:
+    ///
+    ///     (block $__rg_done<N> (result T)
+    ///       (block $__rg_fail<N>
+    ///         <region>            ;; a failing `try`: its Result → $__rg_err<N>, br $__rg_fail<N>
+    ///         br $__rg_done<N>)
+    ///       <bind the binder from $__rg_err<N>>  <handler>)
+    ///
+    /// No exception: a failing `try` branches (518 untouched). The handler
+    /// is lowered outside the region: its own `try`s belong to the region
+    /// around this one (595 (6)). A GC module lowers in linear memory.
+    fn lowerRegion(self: *Emitter, tc: anytype) anyerror!void {
+        if (self.mode == .gc) return self.gcFail("a `try … catch` region");
+        if (self.machine != null) return self.refuse(tc.expr.getLoc(), "the wasm backend has no lowering yet for a `try … catch` region in a task", .{});
+        const ar = self.arena();
+        const n = self.region_seq;
+        self.region_seq += 1;
+        const done = try std.fmt.allocPrint(ar, "__rg_done{d}", .{n});
+        const fail = try std.fmt.allocPrint(ar, "__rg_fail{d}", .{n});
+        const err = try std.fmt.allocPrint(ar, "__rg_err{d}", .{n});
+        try self.declareLocal(err, .i32);
+        const repr = self.wasmTypeOf(tc.expr.*);
+        const ty = self.vtOf(repr);
+
+        var body_c: Capture = .{};
+        self.open(&body_c);
+        try self.regions.append(self.alloc, .{ .fail = fail, .err = err, .defer_floor = self.defer_stack.items.len });
+        const lowered = self.lowerValueAs(tc.expr.*, repr);
+        const rg = self.regions.pop().?;
+        try lowered;
+        try self.emit(.{ .br = done });
+        const body_seq = self.seal(&body_c, .terminated);
+
+        var outer_c: Capture = .{};
+        self.open(&outer_c);
+        try self.emit(.{ .block = .{ .kind = .block, .label = fail, .body = body_seq } });
+        if (tc.binder) |bn| try self.bindRegionError(bn, err, rg.err_tr);
+        try self.lowerValueAs(tc.handler.*, repr);
+        const outer_seq = self.seal(&outer_c, .{ .value = ty });
+        try self.emit(.{ .block = .{ .kind = .block, .label = done, .result = ty, .body = outer_seq } });
+    }
+
+    /// `e` as one value of `repr`: a void-tailed `e` runs and answers the
+    /// zero of `repr`, a leaving one (`throw`, `return`) answers nothing.
+    fn lowerValueAs(self: *Emitter, e: ast.Expr, repr: Repr) anyerror!void {
+        switch (self.exprTail(e)) {
+            .none => {
+                try self.lowerExpr(e);
+                try self.emit(self.zeroOf(repr));
+            },
+            .terminated => try self.lowerExpr(e),
+            else => try self.lowerCoerced(e, repr),
+        }
+    }
+
     /// `try expr` (no catch) → unwrap the Ok payload, or `return` the Result
     /// pointer unchanged to propagate the Error variant up. Leaves the unwrapped
     /// Ok payload on the stack.
@@ -12241,7 +12332,19 @@ const Emitter = struct {
 
         var then_c: Capture = .{};
         self.open(&then_c);
-        if (self.yield_target) |tgt| {
+        if (self.regions.items.len > 0) {
+            // Decision 595 — the region's handler takes the failure: the
+            // `Result` in the region's local, the defers opened inside the
+            // region run, and a branch out of the region's body.
+            const rg = &self.regions.items[self.regions.items.len - 1];
+            if (rg.err_tr == null) if (self.resultShapeOf(inner)) |sh| {
+                rg.err_tr = sh.err;
+            };
+            try self.emit(.{ .local_get = slot });
+            try self.emit(.{ .local_set = rg.err });
+            try self.runDefers(rg.defer_floor);
+            try self.emitC(.{ .br = rg.fail }, "to the region's handler");
+        } else if (self.yield_target) |tgt| {
             // Decision 122 — in a sequence whose item is a `@Result`, a
             // failing `try` emits the Error as the last item and ends (the
             // scope's `break <v>`).

@@ -1348,7 +1348,12 @@ pub const Parser = struct {
     /// token — the two agree on what "ends in `}`" means.
     pub fn isBracedBlockStmt(this: *const This, expr: Expr) bool {
         const shaped = switch (expr) {
-            .branch => |b| b.kind == .if_ and !isNullishDesugar(b.kind.if_),
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| !isNullishDesugar(i),
+                // Decision 595 (4) — a `try … catch { … }` statement ends at
+                // its handler block's `}`, as a braced `if` does.
+                .tryCatch => |tc| isValueBlockExpr(tc.handler.*),
+            },
             .loop => true,
             .collection => |c| c.kind == .case,
             else => false,
@@ -2001,17 +2006,45 @@ pub const Parser = struct {
     pub fn wrapCatch(this: *This, alloc: std.mem.Allocator, expr: Expr) ParseError!Expr {
         if (!this.noTailCatch and this.match(.@"catch")) {
             const catchTok = this.tokens[this.current - 1];
-            const handler = try this.parseExpr(alloc);
+            var binder: ?[]const u8 = null;
+            const handler = if (this.check(.leftBrace)) try this.parseCatchBlock(alloc, &binder) else try this.parseExpr(alloc);
             const handlerPtr = try this.boxExpr(alloc, handler);
             if (expr == .jump and expr.jump.kind == .try_) {
                 if (expr.jump.kind.try_) |inner| {
-                    return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true } } } };
+                    // Decision 595 (2) — `try { … } catch h`: the block is the
+                    // region. `try e catch h` is `try { e } catch h`: the
+                    // operand form unless `e` holds a `try` of its own, which
+                    // makes the whole `try e` the region.
+                    if (isValueBlockExpr(inner.*)) {
+                        return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true, .region = true, .binder = binder } } } };
+                    }
+                    if (ast.exprFindRegionTry(inner.*) == null) {
+                        return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true, .binder = binder } } } };
+                    }
                 }
             }
+            // Decision 595 (2) — the whole left side is the region when it
+            // holds a `try` (`(try a) + (try b) catch 0`); without one it is
+            // the operand form `r catch h`.
+            const region = ast.exprFindRegionTry(expr) != null;
             const exprPtr = try this.boxExpr(alloc, expr);
-            return Expr{ .branch = .{ .loc = locFromToken(catchTok), .kind = .{ .tryCatch = .{ .expr = exprPtr, .handler = handlerPtr } } } };
+            return Expr{ .branch = .{ .loc = if (region and expr == .jump) expr.jump.loc else locFromToken(catchTok), .kind = .{ .tryCatch = .{ .expr = exprPtr, .handler = handlerPtr, .region = region, .binder = binder } } } };
         }
         return expr;
+    }
+
+    /// Decision 595 (3) — a `catch` handler written as a block, the current
+    /// token its `{`: `{ … }` (its value the fallback) or `{ e -> … }`, `e` the
+    /// region's error bound like a `case` arm's binder — never a lambda's
+    /// parameter, so the block is a scope of the enclosing function. Lands as
+    /// the block (`makeBlockExpr`), the binder written to `binder`.
+    fn parseCatchBlock(this: *This, alloc: std.mem.Allocator, binder: *?[]const u8) ParseError!Expr {
+        const braceTok = this.advance();
+        if (this.check(.identifier) and this.peekAt(1).kind == .rightArrow) {
+            binder.* = this.advance().lexeme;
+            _ = this.advance();
+        }
+        return exprs.parseBlockValueBody(this, alloc, braceTok);
     }
 
     /// Parses comma-separated identifiers (e.g., `extends T1, T2, T3` or `use { a, b, c }`).

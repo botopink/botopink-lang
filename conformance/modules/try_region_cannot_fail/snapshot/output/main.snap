@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: try-region-cannot-fail: this region holds no `try`, so its `catch` handles nothing — write `try` before each call that can fail, or drop the `try { … } catch`
+at src/main.bp:7:12

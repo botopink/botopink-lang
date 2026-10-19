@@ -226,6 +226,7 @@ fn Walk(comptime Ctx: type) type {
                     },
                     .tryCatch => |tc| {
                         try self.expr(tc.expr);
+                        if (tc.binder) |n| try self.other(n);
                         try self.expr(tc.handler);
                     },
                 },

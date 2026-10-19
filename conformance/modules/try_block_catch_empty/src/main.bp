@@ -1,0 +1,21 @@
+//// Decision 595 (4) — an empty handler `catch { }` is refused `catch-empty`: a
+//// failure is handled (a value, a statement, a `throw`) or left to propagate,
+//// never swallowed in silence (67).
+
+import {io.terminal.print} from "std";
+
+fn save(n: i32) -> Result<void, string> {
+    if (n < 0) throw "negative";
+    print("saved " + n.toString());
+    return;
+}
+
+fn saveQuietly(n: i32) {
+    try {
+        try save(n)
+    } catch { }
+}
+
+pub fn main() {
+    saveQuietly(1);
+}

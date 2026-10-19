@@ -706,6 +706,14 @@ it was written) and is left out of the AST dump. The record-update spread of `pa
 `Ctor(..base, x: 1)` — is the argument labelled `ast.spread_arg_label` (`..`), which no source can
 write as a label.
 
+Decision 595 — **a region**: `try { … } catch h` (a `try` whose operand is a block) and a left side that holds
+a `try` of its own (`(try a) + (try b) catch 0`, `try f(try g()) catch 0` — `ast.exprFindRegionTry`, which
+stops at closures, prefixed loops and a nested region's own body) set `tryCatch.region`: `expr` is the
+region, every `try` in it hands its failure to this `catch`. A handler written as a block is read by
+`parseCatchBlock`: `{ … }` lands as a block (`makeBlockExpr`), `{ e -> … }` as the block with
+`tryCatch.binder = "e"` — a `case` arm's binder, never a lambda. A `try … catch { … }` statement ends at the
+handler's `}` (`isBracedBlockStmt`), as a braced `if` does.
+
 An **`if` expression** is read in the same place, `parseExpr`'s prefix arm, and follows the same
 rule: it stands where an expression begins and is never an operand. `parsePrimary` and a group's
 `(` refuse it as `ifOperand` (`if-operand`, at the `if`, fix-it "bind it first: `val x = if …;`")

@@ -1,0 +1,26 @@
+//// Decision 595 (4) — a region whose value is `void` is a statement; its
+//// handler is a block with at least one statement. The first failing `try`
+//// ends the region: the second `save` does not run.
+
+import {io.terminal.print} from "std";
+
+fn save(n: i32) -> Result<void, string> {
+    if (n < 0) throw "negative";
+    print("saved " + n.toString());
+    return;
+}
+
+fn saveBoth(a: i32, b: i32) {
+    try {
+        try save(a);
+        try save(b)
+    } catch {
+        print("not saved")
+    }
+    print("done");
+}
+
+pub fn main() {
+    saveBoth(1, 2);
+    saveBoth(-1, 2);
+}

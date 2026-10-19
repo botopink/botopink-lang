@@ -801,10 +801,16 @@ pub const Formatter = struct {
                 // `(parse(7) catch -1) == 7` printed with a `try` did not
                 // re-parse.
                 .tryCatch => |tc| blk: {
+                    // Decision 595 (3) — `catch { e -> … }`: the binder is
+                    // printed at the head of the handler block.
+                    const handler = if (tc.binder) |b|
+                        try this.fmtLambda(&.{b}, tc.handler.collection.kind.case.arms[0].body.function.kind.body, false)
+                    else
+                        try this.fmtExpr(tc.handler.*);
                     const tail = try this.concatAll(&.{
                         try this.fmtExpr(tc.expr.*),
                         try this.text(" catch "),
-                        try this.fmtExpr(tc.handler.*),
+                        handler,
                     });
                     break :blk if (tc.tryKeyword) this.concat(try this.text("try "), tail) else tail;
                 },

@@ -3623,6 +3623,21 @@ section at the loop's call site (`guardLoopCall`, one y-slot counted by
 wasm's `lowerTryPropagate` pushes the Error and ends when a generator scope is
 open.
 
+Decision 595 — **a `try … catch` region** (`tryCatch.region`) is one early-exit block per target, and a
+`try` inside it (outside a closure or a generator scope) hands its failure to the region's handler:
+commonJS `buildRegion` — an IIFE whose JavaScript `try` catches the sentinel `{ __bp_region: e }` that
+`__bp_region_try` (prelude `region_try`) and a `try` statement's `throw` (`region_depth`) raise, every other
+throw passed on, a `return` there thrown to the function's guard (`case_return_throws`); erlang `regionNode`
+— `try <region> catch throw:{'__bp_region', E} -> <handler> end`, `tryThrowCase` throwing that term while
+`region_depth` is set, a `return` thrown to the guard (`in_nested_return`); beam `lowerRegion` — a catch
+section over the same term, its entry on the defer stack (`DeferEntry.region`) so a `return` or a loop jump
+ends it (`try_end`) and its tag is a top slot of the frame (nested sections descend), `emitTryError`
+throwing `{'__bp_region', E}`; wasm `lowerRegion` — `block $__rg_done (block $__rg_fail <region> br
+$__rg_done) <handler>`, a failing `try` storing its `Result` in `$__rg_err<N>` and branching (no exception,
+518 untouched); a GC module lowers in linear memory (`gcFail`), and a region in a task's state machine is a
+located refusal. `catch { e -> … }` binds `e` to the error before the handler on every target (a fresh
+version on erlang, a y-slot on beam, a typed local on wasm, `noteTypedBinder`).
+
 The host rows (decisions 431, 489, 490): a binding that writes `result: true`
 answers `@Result<T, HostError>` (or a `@Task` of one), every way the host fails
 `Error(HostError(message, "host", name, detail))` with std's `failure.HostError`.

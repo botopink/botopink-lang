@@ -1,0 +1,51 @@
+//// Decision 595 (6) — a `try` in the handler's body belongs to the enclosing
+//// region or the function, never to its own `catch`: `backup`'s failure leaves
+//// `load` as its `Error`, and in `either` it reaches the outer region's
+//// `catch`.
+
+import {io.terminal.print} from "std";
+
+fn primary(n: i32) -> Result<i32, string> {
+    if (n > 10) throw "primary down";
+    return n;
+}
+
+fn backup(n: i32) -> Result<i32, string> {
+    if (n > 20) throw "backup down";
+    return n * 100;
+}
+
+fn load(n: i32) -> Result<i32, string> {
+    val v = try {
+        try primary(n)
+    } catch {
+        try backup(n)
+    };
+    return v + 1;
+}
+
+fn either(n: i32) -> i32 {
+    return try {
+        try {
+            try primary(n)
+        } catch {
+            try backup(n)
+        }
+    } catch -1;
+}
+
+fn show(r: Result<i32, string>) -> string {
+    return case r {
+        Ok(v) -> v.toString();
+        Error(e) -> e;
+    };
+}
+
+pub fn main() {
+    print(show(load(5)));
+    print(show(load(15)));
+    print(show(load(25)));
+    print(either(5));
+    print(either(15));
+    print(either(25));
+}
