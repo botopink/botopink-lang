@@ -5,7 +5,7 @@
 //// live here instead — `test/` is compiled in test mode and sees the global
 //// env. Run by `botopink test` from `libs/std/`.
 
-import {compiler} from "std";
+import {compiler};
 
 // ── numeric, bool, string, function ──────────────────────────────────────────
 // Migrated from the former int/float/bool/string/function modules. Rewritten

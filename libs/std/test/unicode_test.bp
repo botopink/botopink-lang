@@ -18,7 +18,7 @@
 import {unicode};
 import {unicode.NormalizationForm};
 import {io.fs};
-import {io.terminal.print} from "std";
+import {io.terminal.print};
 
 fn hexDigit(c: i32) -> i32 {
     if (c <= 57) return c - 48;
