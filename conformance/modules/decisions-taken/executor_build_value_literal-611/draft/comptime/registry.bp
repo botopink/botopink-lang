@@ -1,0 +1,9 @@
+var entries: #(string, fn() -> string)[] = [];
+
+pub fn add(name: string, run: fn() -> string) -> void {
+    entries = entries.append([#(name, run)]);
+}
+
+pub fn all() -> #(string, fn() -> string)[] {
+    return entries;
+}

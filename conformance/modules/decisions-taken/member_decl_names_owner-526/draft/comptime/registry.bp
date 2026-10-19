@@ -1,0 +1,9 @@
+var queries: #(string, string)[] = [];
+
+pub fn add(key: string, sql: string) -> void {
+    queries = queries.append([#(key, sql)]);
+}
+
+pub fn all() -> #(string, string)[] {
+    return queries;
+}

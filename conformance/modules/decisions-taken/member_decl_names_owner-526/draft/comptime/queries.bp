@@ -1,0 +1,11 @@
+import {compiler} from "std";
+import {comptime.registry};
+
+// Registers the annotated function under its owner's name and its own: two
+// same-named methods of two types never collide.
+pub fn query(syntax decl: unknown, comptime sql: string) -> void {
+    val owner = compiler.owner(decl);
+    val scope = if (owner == null) { "module" } else { compiler.name(owner)! };
+    val key = scope + "_" + compiler.name(decl)!;
+    compiler.init({ -> registry.add(key, sql); });
+}

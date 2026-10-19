@@ -1,0 +1,20 @@
+//// Decision 544 — WasmGC for a wasm program's values: what it waits on, and what std-wasm becomes
+
+import {io.terminal} from "std";
+
+type Point(x: i32, y: i32)
+
+pub fn main() -> void {
+    var text = 0;
+    var sum = 0;
+    var i = 0;
+    while (i < 1000000) {
+        val label = "item " + i.toString();
+        val p = Point(x: i % 7, y: i % 11);
+        text = text + label.length;
+        sum = sum + p.x + p.y;
+        i = i + 1;
+    }
+    terminal.print(text);
+    terminal.print(sum);
+}

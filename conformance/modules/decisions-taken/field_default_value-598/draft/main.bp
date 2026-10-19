@@ -1,0 +1,25 @@
+//// Decision 598 — `compiler.Field<T>` carries a field's default as `defaultValue`: the default as written, `null` when the field has none.
+
+import {compiler, io.terminal} from "std";
+import {comptime.defaults.describeDefaults, comptime.defaults.Defaults};
+
+fn defaultName() -> string {
+    return "anonymous";
+}
+
+#[describeDefaults]
+type Profile(
+    email: string,
+    name: string = defaultName(),
+    age: i32 = 0,
+    nickname: ?string = null,
+)
+
+pub fn main() -> void {
+    val lines = comptime compiler.typeInfo(Profile).meta(Defaults)!.lines;
+    for (lines) { line ->
+        terminal.print(line);
+    }
+    val p = Profile(email: "a@b.c");
+    terminal.print(p.name, p.age, p.nickname ?? "-");
+}

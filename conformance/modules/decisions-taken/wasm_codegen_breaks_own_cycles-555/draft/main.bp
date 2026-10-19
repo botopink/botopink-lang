@@ -1,0 +1,17 @@
+//// Decision 555 — wasmtime does not collect cycles yet: the codegen breaks its own
+
+import {io.terminal} from "std";
+
+async fn tick(n: i32) -> Async<i32> {
+    return n % 3;
+}
+
+pub async fn main() -> Async<void> {
+    var total = 0;
+    var i = 0;
+    while (i < 100000) {
+        total = total + await tick(i);
+        i = i + 1;
+    }
+    terminal.print(total);
+}

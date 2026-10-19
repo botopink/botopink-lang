@@ -1,0 +1,27 @@
+//// Decision 560 — The language's wasm runtime is hand-written `.wat`, never Zig building `wat_ast`
+
+import {io.terminal} from "std";
+import {collections.Dict} from "std";
+import {failure.panic} from "std";
+
+type Point(x: i32, y: i32)
+
+async fn later(n: i32) -> Async<i32> {
+    return n + 1;
+}
+
+fn describe(v: unknown) -> string {
+    if (v is string) return "a string";
+    if (v is Point) return "a point";
+    return "something else";
+}
+
+pub async fn main() -> Async<void> {
+    terminal.print("printing", 42, true, #(1, 2), [1, 2]);
+    terminal.print(Point(x: 1, y: 2) == Point(x: 1, y: 2), "b" > "a");
+    val ages = Dict<string, i32>.empty().insert("ana", 30).insert("bia", 25);
+    terminal.print(ages.at("bia") ?? 0, ages.size());
+    terminal.print(describe("x"), describe(Point(x: 0, y: 0)), describe(3));
+    terminal.print(await later(41));
+    panic("the runtime's abort");
+}

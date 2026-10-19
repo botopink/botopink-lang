@@ -1,0 +1,25 @@
+//// Decision 335 — What a wasm host forbids is a typed error; concurrency fixes results, never interleaving; mocks live in the module's memory.
+
+import {async, io.terminal} from "std";
+import {io.http.HttpError} from "std";
+
+fn explain(e: HttpError) -> string {
+    return case e {
+        NotAllowedOnHost { "the host forbids this request" }
+        Network(message: m) { "network: " + m }
+        Timeout { "timed out" }
+    };
+}
+
+pub async fn main() -> Async<void> {
+    val answers = await async.all([
+        async.delay(30, "slow"),
+        async.delay(10, "fast"),
+        async.delay(20, "middle"),
+    ]);
+    terminal.print(answers.join(","));
+    val first = await async.race([async.delay(30, "slow"), async.delay(10, "fast")]);
+    terminal.print(first);
+    terminal.print(explain(HttpError.NotAllowedOnHost));
+    terminal.print(explain(HttpError.Network(message: "refused")));
+}

@@ -1,0 +1,16 @@
+import {compiler} from "std";
+
+// What `#[describeDefaults]` records: one line per field.
+pub type Defaults(lines: string[])
+
+pub fn describeDefaults(syntax decl: unknown) -> void {
+    val lines = compiler
+        .fields(decl)
+        .map({ f ->
+            if (f.defaultValue != null)
+                f.name + " = " + compiler.text(f.defaultValue!)
+            else
+                f.name + " has no default"
+        });
+    compiler.setMeta(Defaults(lines: lines));
+}

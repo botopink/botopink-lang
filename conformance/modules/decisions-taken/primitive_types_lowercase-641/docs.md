@@ -1,0 +1,7 @@
+# Decision 641 — (b) for the names, and no contract with one implementor: every primitive type is written lowercase — `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bool`, `string`, `bigint`, `bytes`, `array<T>` — and a capitalised name is a contract shared by several types (`Number`, `Integer`, `Signed`, `Float`); `String`, `Bool`, `BigInt`, `Bytes` and `Array` dissolve into their types, which hold their methods and statics.
+
+Every primitive type is written lowercase, and each holds its own methods and statics: `string.fromCodepoint(65)` is `string`'s static and answers `A`, `array.range(0, 3)` is `array`'s and answers `[0, 1, 2]` (an `array<i32>`, spelt `i32[]`), `bytes.fromUtf8("hi")` is `bytes`'s, and `bool`, `i64` and `f64` are written the same way. The first line prints `A [0, 1, 2] 2 true 6 1.5`. A capitalised name is never one of those types: it is a contract several types share — `abs` comes from `Signed`, `isEven` and `isOdd` from `Integer` — and the second line prints `5 true true` for `i32` and `i64` alike. `String`, `Bool`, `BigInt`, `Bytes` and `Array` are no names at all: writing `String` is an unknown name.
+
+Cells in this repository that also bear on it: `modules/integer_conversions_exact`, `modules/primitive_method_undeclared`, `modules/primitive_type_name_taken`.
+
+[draft/main.bp](draft/main.bp)

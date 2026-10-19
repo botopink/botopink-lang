@@ -1,0 +1,19 @@
+//// Decision 641 — (b) for the names, and no contract with one implementor: every primitive type is written lowercase — `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bool`, `string`, `bigint`, `bytes`, `array<T>` — and a capitalised name is a contract shared by several types (`Number`, `Integer`, `Signed`, `Float`); `String`, `Bool`, `BigInt`, `Bytes` and `Array` dissolve into their types, which hold their methods and statics.
+
+import {io.terminal} from "std";
+
+fn total(xs: i64[]) -> i64 {
+    val zero: i64 = 0;
+    return xs.fold(zero, { acc, x -> acc + x });
+}
+
+pub fn main() -> void {
+    val letter: string = string.fromCodepoint(65);
+    val indices: i32[] = array.range(0, 3);
+    val raw: bytes = bytes.fromUtf8("hi");
+    val ok: bool = indices.length == 3;
+    val wide: i64 = total([1, 2, 3]);
+    val ratio: f64 = 1.5;
+    terminal.print(letter, indices, raw.length(), ok, wide, ratio);
+    terminal.print((-5).abs(), wide.isEven(), 7.isOdd());
+}

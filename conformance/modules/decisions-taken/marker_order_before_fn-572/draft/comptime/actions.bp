@@ -1,0 +1,2 @@
+// A marker decorator: it records nothing, the order of the words is the point.
+pub fn serverAction(syntax decl: unknown) -> void {}
