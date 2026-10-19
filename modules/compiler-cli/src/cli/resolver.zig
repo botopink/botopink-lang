@@ -130,6 +130,25 @@ pub fn resolve(
     return resolveWith(gpa, io, src_dir_path, entry, externals, own, declared, diag_arena, diag, null);
 }
 
+/// `resolveWith`, with the texts of the package's files outside `src/` (its
+/// `test/` suite) whose `compiler.load` calls name files of `src/`: those
+/// files are compiled as a package of their own too (decision 780 (1)).
+pub fn resolveWithLoaders(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    src_dir_path: []const u8,
+    entry: ?[]const u8,
+    externals: ?[]const []const u8,
+    own: []const u8,
+    declared: []const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+    bpp: ?*const bpp_unfold.Spec,
+    loaders: []const []const u8,
+) Error!Resolution {
+    return resolveImpl(gpa, io, src_dir_path, entry, externals, own, declared, diag_arena, diag, bpp, loaders);
+}
+
 /// `resolve`, with what the package's `.bpp` files unfold onto (front 116
 /// step 2): each `.bpp` the `mod` tree reaches is read as its unfolded module
 /// (`bpp_unfold.unfold`, the file's positions kept — `bpp_unfold.remember`),
@@ -146,6 +165,22 @@ pub fn resolveWith(
     diag_arena: std.mem.Allocator,
     diag: ?*Diagnostic,
     bpp: ?*const bpp_unfold.Spec,
+) Error!Resolution {
+    return resolveImpl(gpa, io, src_dir_path, entry, externals, own, declared, diag_arena, diag, bpp, &.{});
+}
+
+fn resolveImpl(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    src_dir_path: []const u8,
+    entry: ?[]const u8,
+    externals: ?[]const []const u8,
+    own: []const u8,
+    declared: []const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+    bpp: ?*const bpp_unfold.Spec,
+    loaders: []const []const u8,
 ) Error!Resolution {
     // Scratch arena for parsing + bookkeeping; only final modules are gpa-owned.
     var scratch = std.heap.ArenaAllocator.init(gpa);
@@ -191,7 +226,7 @@ pub fn resolveWith(
     // Decision 780 (1) — a file a `compiler.load` reads is compiled as a
     // package of its own and never joins this program: it and the `mod` tree
     // beside it are not adopted (nor orphans).
-    const loaded = try loadedFiles(sa, diag_arena, io, unreached, src_dir_path, root_logical);
+    const loaded = try loadedFiles(sa, diag_arena, io, unreached, loaders, src_dir_path, root_logical);
     var adopt_pass: u8 = 0;
     var next_unreached: usize = 0;
 
@@ -314,6 +349,7 @@ fn loadedFiles(
     diag_arena: std.mem.Allocator,
     io: std.Io,
     files: []const []const u8,
+    loaders: []const []const u8,
     src_dir_path: []const u8,
     root_logical: []const u8,
 ) Error!std.StringHashMapUnmanaged(void) {
@@ -321,16 +357,9 @@ fn loadedFiles(
     var pending: std.ArrayListUnmanaged([]const u8) = .empty;
     for (files) |file| {
         const text = std.Io.Dir.cwd().readFileAlloc(io, file, sa, .unlimited) catch continue;
-        if (std.mem.indexOf(u8, text, "load") == null) continue;
-        var lx = Lexer.init(text);
-        const tokens = lx.scanAll(sa) catch continue;
-        var p = Parser.init(tokens);
-        const program = p.parse(sa) catch continue;
-        for (bp.load.literalPaths(sa, program) catch continue) |path| {
-            const rel = if (std.mem.startsWith(u8, path, "./")) path[2..] else path;
-            for (files) |f| if (samePath(f, rel)) try pending.append(sa, f);
-        }
+        try addLoaded(sa, text, files, &pending);
     }
+    for (loaders) |text| try addLoaded(sa, text, files, &pending);
     while (pending.pop()) |f| {
         if (out.contains(f)) continue;
         try out.put(sa, f, {});
@@ -340,6 +369,24 @@ fn loadedFiles(
         for (named.items) |n| try pending.append(sa, n.file);
     }
     return out;
+}
+
+/// The files of `files` that `text` loads by a string literal, onto `pending`.
+fn addLoaded(
+    sa: std.mem.Allocator,
+    text: []const u8,
+    files: []const []const u8,
+    pending: *std.ArrayListUnmanaged([]const u8),
+) Error!void {
+    if (std.mem.indexOf(u8, text, "load") == null) return;
+    var lx = Lexer.init(text);
+    const tokens = lx.scanAll(sa) catch return;
+    var p = Parser.init(tokens);
+    const program = p.parse(sa) catch return;
+    for (bp.load.literalPaths(sa, program) catch return) |path| {
+        const rel = if (std.mem.startsWith(u8, path, "./")) path[2..] else path;
+        for (files) |f| if (samePath(f, rel)) try pending.append(sa, f);
+    }
 }
 
 /// Whether two package-relative paths name one file, separators aside.

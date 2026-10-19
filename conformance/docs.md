@@ -3870,6 +3870,11 @@ the refusals, `try comptime compiler.load(path);` propagates them to the enclosi
 <!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->
 
+`botopink test` leaves them out the same way: a `test/` module that loads a file under `src/`
+reads its answer, and the file is no failed module of the package under test.
+
+<!-- example: test/compiler_load_in_a_test_suite -->
+
 The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`
 segment `load-path-outside-package` and a path that names no file of the package

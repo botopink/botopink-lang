@@ -353,11 +353,15 @@ pub fn run(
     // already registered when they compile.
     // `src/` resolves through the explicit module tree; the flat `test/` suite
     // dir is not a package, so it keeps the plain directory scan.
-    var src_loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
-    defer src_loaded.free(gpa);
-    const src_modules = src_loaded.modules;
+    // `test/` is scanned first: a file of `src/` its modules `compiler.load` is
+    // left out of the program as `botopink build` leaves it (decision 780 (1)).
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
     defer test_scan.free(gpa);
+    const load_texts = try arena.alloc([]const u8, test_scan.modules.len);
+    for (test_scan.modules, load_texts) |m, *t| t.* = m.source;
+    var src_loaded = sources.loadWithLoaders(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null, load_texts) catch return 1;
+    defer src_loaded.free(gpa);
+    const src_modules = src_loaded.modules;
     // Decision 519 — a test module's `@embed` reads the package's files.
     for (test_scan.modules) |*m| m.files = bp.PackageFiles.disk(io, proj.dir);
     const test_modules = test_scan.modules;

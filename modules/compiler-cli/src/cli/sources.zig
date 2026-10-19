@@ -57,6 +57,20 @@ pub fn loadWith(
     src_dir: []const u8,
     bpp: ?*const bpp_unfold.Spec,
 ) !Loaded {
+    return loadWithLoaders(gpa, io, proj, src_dir, bpp, &.{});
+}
+
+/// `loadWith`, with the texts of the package's `test/` modules: a file of
+/// `src/` they `compiler.load` is compiled as a package of its own and left
+/// out of the program, as `botopink build` leaves it (decision 780 (1)).
+pub fn loadWithLoaders(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    src_dir: []const u8,
+    bpp: ?*const bpp_unfold.Spec,
+    loaders: []const []const u8,
+) !Loaded {
     var da = std.heap.ArenaAllocator.init(gpa);
     defer da.deinit();
     var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
@@ -66,7 +80,7 @@ pub fn loadWith(
     // Without them the resolver cannot tell a dependency from a typo.
     const externals = try proj.dependencyNames(da.allocator());
 
-    const res = resolver.resolveWith(gpa, io, src_dir, proj.entry, externals, proj.name, proj.files, da.allocator(), &diag, bpp) catch |err| switch (err) {
+    const res = resolver.resolveWithLoaders(gpa, io, src_dir, proj.entry, externals, proj.name, proj.files, da.allocator(), &diag, bpp, loaders) catch |err| switch (err) {
         resolver.Error.RootNotFound => {
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
