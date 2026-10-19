@@ -747,6 +747,33 @@ fn refuseDeclsNamedLikePrimitives(env: *Env, program: ast.Program) InferError!vo
     }
 }
 
+/// The types the checker gives to literals (decision 639 (a)): `1` is an
+/// `i32`, `"a"` a `string` — a module cannot declare a type of one of these
+/// names, where every other prelude name shadows (606 (1)).
+pub const literal_type_names = [_][]const u8{ "i32", "i64", "u32", "u64", "f32", "f64", "bool", "string", "bigint" };
+
+/// Decision 639 (a) — `type i32(value: i64)` refused at the name,
+/// `primitive-type-redeclared`: a shadowing `i32` would make `val x: i32 = 1`
+/// a mismatch between two `i32`s.
+fn refuseTypesNamedLikeLiterals(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        const name, const loc: ast.Loc = switch (decl) {
+            // The shorthand's `loc` is its name; the val form's is `type`.
+            .type_ => |t| .{ t.name, t.loc },
+            // An alias's `loc` is its `type` keyword: the name follows it.
+            .typeAlias => |a| .{ a.name, .{ .line = a.loc.line, .col = a.loc.col + "type ".len, .expansion = a.loc.expansion } },
+            else => continue,
+        };
+        const taken = for (literal_type_names) |n| {
+            if (std.mem.eql(u8, n, name)) break true;
+        } else false;
+        if (!taken) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is the type of a literal; a module cannot declare a type of that name", .{ diagnostics.primitive_type_redeclared, name });
+        env.lastError = locatedAt(TypeError.custom(msg, "Rename the type: a literal is typed by the language, never by a name this module declares (decision 639)."), loc);
+        return error.TypeError;
+    }
+}
+
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     env.foldableCall = callFoldable;
     var list: std.ArrayListUnmanaged(Binding) = .empty;
@@ -759,6 +786,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
+    try refuseTypesNamedLikeLiterals(env, program);
     try noteExplicitTypeNames(env, program);
     try preRegisterStdImportAliases(env, program);
 
@@ -937,6 +965,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
+    try refuseTypesNamedLikeLiterals(env, program);
     try noteExplicitTypeNames(env, program);
     try preRegisterStdImportAliases(env, program);
 
