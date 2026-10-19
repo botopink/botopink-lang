@@ -988,7 +988,8 @@ in a tree is `compiler-escapes`, which the checker reports there (`infer.zig` `r
 `compiler.name(e)` answers `?string` (decision 643): on a declaration handle it is the method
 `ast.decl_name_method` (typed `?string` by `infer.zig` `inferHandleName`, the handle's `name` when the body
 runs, `comptime/syntax_param.zig`) and `compiler.name(d)!` the field `d.name`; on a `syntax` parameter
-`x.name()` (`__bp_argName`, `undefined` for an argument with no name); on an expression written there
+`x.name()` in every body (a decorator's `__bp_argName`, a template capture's `name` field —
+`template_eval.argNameTerm` —, `undefined` for an argument with no name); on an expression written there
 that has no name (a lambda, a literal, a call, an operator expression) the literal `null`.
 
 A typed meta record's field is written `f: T`; one a decorator fills from a `syntax` parameter holds the

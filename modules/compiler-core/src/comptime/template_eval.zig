@@ -125,6 +125,38 @@ const max_error_detail = 4096;
 
 // ── evaluate ──────────────────────────────────────────────────────────────────
 
+/// Decision 643 — the name an argument is written as, for
+/// `compiler.name(x)` (a decorator's `'__bp_argName'/1`, a template's
+/// capture `name`): a name or a dotted path answers
+/// its last name; a lambda, a function, a literal, an array, a call or an
+/// operator expression has none — `undefined`, the body's `null`.
+pub fn argNameTerm(written: []const u8) Term {
+    const src = std.mem.trim(u8, written, " \t\r\n");
+    if (nameOfPath(src)) |n| return Term.str(n);
+    return .{ .atom = "undefined" };
+}
+
+/// The last name of `a.b.c`, null when `src` is no dotted path of names.
+fn nameOfPath(src: []const u8) ?[]const u8 {
+    if (src.len == 0) return null;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= src.len) : (i += 1) {
+        if (i == src.len or src[i] == '.') {
+            const seg = src[start..i];
+            if (seg.len == 0 or !(std.ascii.isAlphabetic(seg[0]) or seg[0] == '_')) return null;
+            for (seg) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return null;
+            if (i == src.len) return if (isLiteralWord(seg) and start == 0) null else seg;
+            start = i + 1;
+        }
+    }
+    return null;
+}
+
+fn isLiteralWord(w: []const u8) bool {
+    return std.mem.eql(u8, w, "true") or std.mem.eql(u8, w, "false") or std.mem.eql(u8, w, "null");
+}
+
 pub fn evaluate(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -1020,8 +1052,8 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     // Decision 302 — the answers `q.annotate` has had so far, in call order
     // (`expandTemplateCallViaRuntime`); the key only when there is one.
     const extra: usize = @as(usize, if (cap.valueRead) 1 else 0) + @as(usize, if (cap.tagAnswers.len > 0) 1 else 0);
-    const entries = try arena.alloc(Term.MapEntry, 6 + extra);
-    var next: usize = 6;
+    const entries = try arena.alloc(Term.MapEntry, 7 + extra);
+    var next: usize = 7;
     if (cap.valueRead) {
         entries[next] = Term.field("value", Term.str(text.items));
         next += 1;
@@ -1033,6 +1065,9 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     entries[3] = Term.field("context", Term.mapOf(context_entries));
     entries[4] = Term.field("bindings", Term.listOf(bindings.items));
     entries[5] = Term.field("words", Term.listOf(word_terms));
+    // Decision 643 — `compiler.name(e)`: the name the call site wrote, or
+    // `undefined` (`null`) when the expression has none.
+    entries[6] = Term.field("name", argNameTerm(text.items));
     return Term.mapOf(entries);
 }
 

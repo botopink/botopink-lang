@@ -108,7 +108,8 @@ import {io.terminal.print} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"x">>]
+;;     words => [<<"x">>],
+;;     name => <<"x">>
 ;; }
 ```
 

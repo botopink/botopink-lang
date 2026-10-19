@@ -513,9 +513,10 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
             // Decision 643 — an expression written right there that has no
             // name answers `null`.
             if (isNameless(first.*)) return .{ .literal = .{ .loc = loc, .kind = .null_ } };
-            // The name a `syntax` argument is written as: in a decorator,
-            // `null` when the annotation's argument has none.
-            if (!isHandle(ctx, first.*)) return methodCall(ctx, loc, first, if (ctx.decl != null) "name" else "text", rest, c.trailing, null);
+            // The name a `syntax` argument is written as — in a decorator the
+            // annotation's argument, in a template the call site's —, `null`
+            // when it has none.
+            if (!isHandle(ctx, first.*)) return methodCall(ctx, loc, first, "name", rest, c.trailing, null);
             // A declaration's name, a `?string` that is never `null`
             // (`ast.decl_name_method` to the checker); unwrapped, the `string`
             // itself.

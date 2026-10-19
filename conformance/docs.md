@@ -3674,9 +3674,13 @@ a named function or a type is written as, and `null` for an expression that
 has no name — a lambda, a literal, a call, an operator expression. What a
 `null` means is the decorator's choice: `compiler.name(key) ?? "anonymous"`. On
 a declaration the answer is never `null`, and `compiler.name(decl)!` reads it
-as the `string` it is.
+as the `string` it is. The signature is one in every body: in a template,
+`compiler.name(q)` is the name the call site's text is written as — a path's
+last segment, `user.email` → `"email"` (decision 642) —, and `null` for `1 + 2`,
+whose text `compiler.text(q)` still reads.
 
 <!-- example: modules/compiler_name_of_lambda -->
+<!-- example: modules/template_name_answers_optional -->
 
 What the compiler does is a member of `compiler` (decision 606 (3)): `compiler.typeInfo(T)`
 answers `Info<T>` (decision 630), `#[compiler.external(…)]` names a `declare fn`'s host
@@ -3948,9 +3952,9 @@ reached, so an argument not known at build (`t("…")`) is accepted. The
 decorator's type parameters take what the annotation bound them to (`T` is
 `Signup`, written `Self`). The handle `decl` is the annotated type as code in
 the member, as in an executor (decision 716 (3)): `decl.title()` in a member of
-`#[named]` over `syntax decl: Titled` is `Signup.title()`. A local that is no
-literal exists only while the program compiles (`decorator-member-captures`),
-while a `compiler.*` call inside a member
+`#[named]` over `syntax decl: Titled` is `Signup.title()`. A body local whose value
+is no literal is refused (`decorator-member-captures`; its name is question
+b137-k), while a `compiler.*` call inside a member
 is evaluated at build and spliced as its answer (decision 642; cell
 `member_reads_compiler_name`), `compiler.name(x)` over the member's own parameter
 `x` answering `"x"` (`member_names_its_parameter`), `compiler.text(x + 1)` its source as written

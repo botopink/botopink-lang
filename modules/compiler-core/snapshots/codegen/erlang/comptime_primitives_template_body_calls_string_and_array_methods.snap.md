@@ -4343,7 +4343,8 @@ import {io.terminal.print} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"hello">>, <<"big">>, <<"world">>]
+;;     words => [<<"hello">>, <<"big">>, <<"world">>],
+;;     name => undefined
 ;; }
 ```
 

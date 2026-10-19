@@ -183,7 +183,8 @@ import {compiler} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"cfg">>]
+;;     words => [<<"cfg">>],
+;;     name => undefined
 ;; }
 ```
 

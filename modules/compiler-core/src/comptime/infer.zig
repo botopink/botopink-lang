@@ -5283,7 +5283,11 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
             const saved = env.lastError;
             unifyUnlocated(env, pattern, actual) catch {
                 env.lastError = saved;
-                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` expects a declaration of type `{s}`, and `{s}` is `{s}`", .{ a.name, spelled, owner, try decoratorSpelling(env, actual, 0) });
+                // A type declaration is spelled as one (613's wording).
+                const msg = if (target.isType)
+                    try std.fmt.allocPrint(env.arena, "`#[{s}]` expects a declaration of type `{s}`, and `{s}` is a type", .{ a.name, spelled, owner })
+                else
+                    try std.fmt.allocPrint(env.arena, "`#[{s}]` expects a declaration of type `{s}`, and `{s}` is `{s}`", .{ a.name, spelled, owner, try decoratorSpelling(env, actual, 0) });
                 return decoratorError(env, a, msg, "The decorator's `@Decl<…>` names the shape of the declaration it annotates (decision 280).");
             };
         }
@@ -19108,7 +19112,9 @@ fn inferTemplateMethod(
             // The expression's value type slot — what the code evaluates to.
             op = .value;
             retType = if (named.args.len >= 1) named.args[0] else try env.freshVar();
-        } else if (std.mem.eql(u8, callee, "name") and typedArgs.len == 0 and env.inDecoratorFn) {
+        } else if (std.mem.eql(u8, callee, "name") and typedArgs.len == 0) {
+            // Decision 643 — `compiler.name(e)` answers `?string` in every
+            // body: the name the expression is written as, `null` for none.
             op = .text;
             retType = try env.namedTypeArgs("optional", &.{try env.namedType("string")});
         } else if (std.mem.eql(u8, callee, "text")) {

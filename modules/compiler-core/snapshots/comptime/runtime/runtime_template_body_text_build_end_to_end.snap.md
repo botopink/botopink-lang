@@ -232,7 +232,8 @@ import {compiler} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"hey">>]
+;;     words => [<<"hey">>],
+;;     name => <<"hey">>
 ;; }
 ```
 

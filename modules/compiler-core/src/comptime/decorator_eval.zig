@@ -388,37 +388,6 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     return b.arena.dupe(Ast.Form, &forms);
 }
 
-/// Decision 643 — the name an argument is written as, for
-/// `compiler.name(x)` (`'__bp_argName'/1`): a name or a dotted path answers
-/// its last name; a lambda, a function, a literal, an array, a call or an
-/// operator expression has none — `undefined`, the body's `null`.
-fn argNameTerm(written: []const u8) Term {
-    const src = std.mem.trim(u8, written, " \t\r\n");
-    if (nameOfPath(src)) |n| return Term.str(n);
-    return .{ .atom = "undefined" };
-}
-
-/// The last name of `a.b.c`, null when `src` is no dotted path of names.
-fn nameOfPath(src: []const u8) ?[]const u8 {
-    if (src.len == 0) return null;
-    var start: usize = 0;
-    var i: usize = 0;
-    while (i <= src.len) : (i += 1) {
-        if (i == src.len or src[i] == '.') {
-            const seg = src[start..i];
-            if (seg.len == 0 or !(std.ascii.isAlphabetic(seg[0]) or seg[0] == '_')) return null;
-            for (seg) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return null;
-            if (i == src.len) return if (isLiteralWord(seg) and start == 0) null else seg;
-            start = i + 1;
-        }
-    }
-    return null;
-}
-
-fn isLiteralWord(w: []const u8) bool {
-    return std.mem.eql(u8, w, "true") or std.mem.eql(u8, w, "false") or std.mem.eql(u8, w, "null");
-}
-
 /// Whether the (erased) decorator `dfn` reads an argument's text
 /// (`'__bp_argText'/1`, decision 576 (2)).
 fn readsArgText(arena: std.mem.Allocator, dfn: ast.FnDecl) !bool {
@@ -496,7 +465,7 @@ fn buildModule(
         const items = try arena.alloc(Term, @max(dfn.params.len, 1) - 1);
         for (items, 0..) |*t, i| {
             const src = if (i < plainArgs.len) plainArgs[i].source else "";
-            t.* = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(src), argNameTerm(src) }));
+            t.* = Term.tupleOf(try arena.dupe(Term, &.{ Term.str(src), templateEval.argNameTerm(src) }));
         }
         break :blk Term.tupleOf(try arena.dupe(Term, &.{ plain_argument, Term.listOf(items) }));
     } else plain_argument;

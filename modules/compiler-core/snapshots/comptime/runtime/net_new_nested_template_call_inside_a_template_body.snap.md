@@ -107,7 +107,8 @@ import {compiler} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"x">>]
+;;     words => [<<"x">>],
+;;     name => <<"x">>
 ;; }
 ```
 

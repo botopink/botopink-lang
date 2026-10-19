@@ -270,7 +270,8 @@ import {io.terminal.print} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"yaml">>]
+;;     words => [<<"yaml">>],
+;;     name => <<"yaml">>
 ;; }
 ```
 

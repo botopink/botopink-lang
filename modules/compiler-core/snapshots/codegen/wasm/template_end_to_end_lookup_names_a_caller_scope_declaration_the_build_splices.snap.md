@@ -436,7 +436,8 @@ import {io.terminal.print} from "std";
 ;;             local => <<"greeting">>
 ;;         }
 ;;     ],
-;;     words => [<<"greeting">>]
+;;     words => [<<"greeting">>],
+;;     name => <<"greeting">>
 ;; }
 ```
 

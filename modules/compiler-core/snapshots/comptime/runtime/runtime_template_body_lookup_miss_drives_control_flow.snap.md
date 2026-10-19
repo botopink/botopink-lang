@@ -369,7 +369,8 @@ import {compiler} from "std";
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"Buttom">>]
+;;     words => [<<"Buttom">>],
+;;     name => undefined
 ;; }
 ```
 

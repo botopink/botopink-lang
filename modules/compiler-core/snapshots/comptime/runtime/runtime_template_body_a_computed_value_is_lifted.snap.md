@@ -119,7 +119,8 @@ val n = six @`ignored`;
 ;;         multiline => false
 ;;     },
 ;;     bindings => [],
-;;     words => [<<"ignored">>]
+;;     words => [<<"ignored">>],
+;;     name => <<"ignored">>
 ;; }
 ```
 

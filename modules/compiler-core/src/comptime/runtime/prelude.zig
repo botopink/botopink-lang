@@ -155,6 +155,7 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
     const accessors = [_][2][]const u8{
         .{ "text", "Text" },       .{ "source", "Source" },
         .{ "context", "Context" }, .{ "bindings", "Bindings" },
+        .{ "name", "Name" },
     };
     var forms: std.ArrayListUnmanaged(Ast.Form) = .empty;
     for (accessors) |acc| {
@@ -415,7 +416,7 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
 /// clash with the decorator's `fail/2` / `failAt/3` / `compilerError/1`, which
 /// are not carried (the handle's report at the annotation).
 pub fn captureForms(b: Ast.Builder) Error![]const Ast.Form {
-    const names = [_][]const u8{ "text", "source", "context", "bindings", "lookup", "ref", "build", "ast", "custom", "expr", "code" };
+    const names = [_][]const u8{ "text", "name", "source", "context", "bindings", "lookup", "ref", "build", "ast", "custom", "expr", "code" };
     var out: std.ArrayListUnmanaged(Ast.Form) = .empty;
     for (try templateForms(b)) |form| switch (form) {
         .function => |f| for (names) |n| {

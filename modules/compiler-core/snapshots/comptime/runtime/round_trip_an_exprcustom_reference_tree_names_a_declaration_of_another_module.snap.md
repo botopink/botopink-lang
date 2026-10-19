@@ -713,7 +713,8 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;;             local => <<"Item">>
 ;;         }
 ;;     ],
-;;     words => [<<"select">>, <<"id">>, <<"from">>, <<"Item">>]
+;;     words => [<<"select">>, <<"id">>, <<"from">>, <<"Item">>],
+;;     name => undefined
 ;; }
 ```
 

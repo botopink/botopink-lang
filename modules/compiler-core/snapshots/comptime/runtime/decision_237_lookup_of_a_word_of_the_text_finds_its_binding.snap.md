@@ -575,7 +575,8 @@ import {compiler} from "std";
 ;;             local => <<"Badge">>
 ;;         }
 ;;     ],
-;;     words => [<<"Card">>, <<"title">>, <<"x">>, <<"Badge">>]
+;;     words => [<<"Card">>, <<"title">>, <<"x">>, <<"Badge">>],
+;;     name => undefined
 ;; }
 ```
 
