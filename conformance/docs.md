@@ -3681,6 +3681,14 @@ language has not, and a `Name` nothing binds where the tree is spliced.
 
 <!-- example: modules/ast_ill_formed_refused -->
 
+A tree carries no location of its own (decision 752): a type error inside the
+code it builds is reported at the call that expanded the template, its message
+naming the `file:line:col` of the `ast` call and the node
+(`` — in `wrong`'s tree at src/trees.bp:13:21, at the node `Lit(value: "abc")` ``).
+The caller's code a `Syntax(e)` splices keeps its own location.
+
+<!-- example: modules/ast_tree_type_error_at_call -->
+
 `Node` is a closed union alias of its kinds (decision 751): a record that is
 none of them is no node. Where a node's field is typed `Node` the checker
 refuses it where it is written; handed whole to `compiler.ast`, whose argument

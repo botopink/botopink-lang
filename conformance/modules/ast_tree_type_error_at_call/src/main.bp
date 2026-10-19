@@ -1,0 +1,15 @@
+//// Decision 752 — a type error inside a tree `compiler.ast` builds is
+//// reported at the `ast` call: located at the caller's call, its message
+//// naming the library's `file:line:col` of the `ast` call and the node
+//// (`main`). A `Syntax(e)` splice keeps the caller's own location: an error
+//// in the code the caller wrote is located there (`spliced`).
+
+mod spliced;
+import {spliced.run};
+import {wrong} from "trees";
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print(wrong @`abc`);
+    print(run());
+}

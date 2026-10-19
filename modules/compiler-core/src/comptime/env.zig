@@ -11,6 +11,7 @@ const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
 const hostCells = @import("./host_cells.zig");
+const astBuild = @import("./ast_build.zig");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 
@@ -324,6 +325,10 @@ pub const TemplateBuilt = struct {
     at: ?ast.Loc = null,
     file: ?[]const u8 = null,
     notes: []const []const u8 = &.{},
+    /// Decisions 625 (2), 752 — a `compiler.ast` tree's `Name`s and nodes by
+    /// the location each took, so an error at one is reported at the call.
+    ast_names: []const astBuild.Placed = &.{},
+    ast_nodes: []const astBuild.At = &.{},
 };
 
 pub const TemplateOp = enum { value, text, source, context, lookup, bindings, build, ast, custom, fail, failAt, tagDecl, annotate, note };

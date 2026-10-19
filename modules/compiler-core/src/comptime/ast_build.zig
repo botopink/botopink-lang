@@ -67,6 +67,19 @@ pub fn kindOf(obj: std.json.ObjectMap) ?Kind {
 /// A `Name` (or a `Call` whose callee is one) and where it landed.
 pub const Placed = struct { loc: ast.Loc, name: []const u8 };
 
+/// Decision 752 — a node of the tree and the location it took in the
+/// expansion: a type error located there is reported at the `ast` call,
+/// naming the node (`Builder.describe`).
+pub const At = struct { loc: ast.Loc, node: std.json.Value };
+
+/// Decision 752 — the node of `nodes` whose location is `loc`, or null when
+/// `loc` is none of the tree's (the caller's code a `Syntax` holds keeps its
+/// own).
+pub fn nodeAt(nodes: []const At, loc: ast.Loc) ?std.json.Value {
+    for (nodes) |n| if (n.loc.eql(loc)) return n.node;
+    return null;
+}
+
 pub const Result = union(enum) {
     ok: *ast.Expr,
     /// The message naming the node that is no code.
@@ -129,15 +142,19 @@ pub fn Builder(comptime Ctx: type) type {
         origin: ast.Loc,
         count: usize = 0,
         names: std.ArrayListUnmanaged(Placed) = .empty,
+        /// Every node, by the location it took (decision 752).
+        placed: std.ArrayListUnmanaged(At) = .empty,
         /// The caller's code of each `Syntax`, by its placeholder's index.
         splices: std.ArrayListUnmanaged(*const ast.Expr) = .empty,
         ill: ?[]const u8 = null,
 
         const Self = @This();
 
-        fn next(self: *Self) ast.Loc {
+        fn next(self: *Self, v: std.json.Value) Error!ast.Loc {
             self.count += 1;
-            return .{ .line = self.origin.line, .col = self.origin.col + self.count - 1, .expansion = self.origin.expansion };
+            const loc: ast.Loc = .{ .line = self.origin.line, .col = self.origin.col + self.count - 1, .expansion = self.origin.expansion };
+            try self.placed.append(self.arena, .{ .loc = loc, .node = v });
+            return loc;
         }
 
         fn refuse(self: *Self, comptime fmt: []const u8, args: anytype) (Error || error{Ill})!noreturn {
@@ -178,36 +195,36 @@ pub fn Builder(comptime Ctx: type) type {
             switch (o.kind) {
                 .Name => {
                     const n = try self.identifier(obj.get("name").?, v);
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     try self.names.append(self.arena, .{ .loc = loc, .name = n });
                     return .{ .identifier = .{ .loc = loc, .kind = .{ .ident = n } } };
                 },
                 .Lit => {
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const lit = self.ctx.lit(obj.get("value").?, loc) orelse
                         return try self.refuse("`{s}` holds no value known at build: write `Syntax(e)` for a `syntax` value", .{try self.describe(v)});
                     return lit.*;
                 },
                 .Member => {
                     const member = try self.identifier(obj.get("member").?, v);
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const target = try self.box(try self.node(obj.get("target").?));
                     return .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = target, .member = member } } } };
                 },
                 .Call => return self.call(obj, v),
                 .Arg => return try self.refuse("`{s}` is an argument outside a `Call`: an `Arg` is only an element of `Call.args`", .{try self.describe(v)}),
                 .List => {
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     return .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = try self.nodes(obj.get("items").?, v) } } } };
                 },
                 .Tuple => {
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     return .{ .collection = .{ .loc = loc, .kind = .{ .tupleLit = .{ .elems = try self.nodes(obj.get("elems").?, v) } } } };
                 },
                 .Binary => {
                     const opText = try self.string(obj.get("op").?, v);
                     const op = binaryOp(opText) orelse return try self.refuse("`{s}`: `{s}` is no binary operator", .{ try self.describe(v), opText });
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const lhs = try self.box(try self.node(obj.get("lhs").?));
                     const rhs = try self.box(try self.node(obj.get("rhs").?));
                     return .{ .binaryOp = .{ .loc = loc, .op = op, .lhs = lhs, .rhs = rhs } };
@@ -215,11 +232,11 @@ pub fn Builder(comptime Ctx: type) type {
                 .Unary => {
                     const opText = try self.string(obj.get("op").?, v);
                     const op: @FieldType(ast.UnaryOpExprOf(.untyped), "op") = if (std.mem.eql(u8, opText, "-")) .neg else if (std.mem.eql(u8, opText, "!")) .not else return try self.refuse("`{s}`: `{s}` is no unary operator", .{ try self.describe(v), opText });
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     return .{ .unaryOp = .{ .loc = loc, .op = op, .expr = try self.box(try self.node(obj.get("operand").?)) } };
                 },
                 .If => {
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const cond = try self.box(try self.node(obj.get("cond").?));
                     const then_ = try self.arena.alloc(ast.Stmt, 1);
                     then_[0] = .{ .expr = try self.node(obj.get("then").?) };
@@ -232,7 +249,7 @@ pub fn Builder(comptime Ctx: type) type {
                     if (ps != .array) return try self.refuse("`{s}`: `params` is no list of names", .{try self.describe(v)});
                     const params = try self.arena.alloc([]const u8, ps.array.items.len);
                     for (ps.array.items, 0..) |p, i| params[i] = try self.identifier(p, v);
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const body = try self.arena.alloc(ast.Stmt, 1);
                     body[0] = .{ .expr = try self.node(obj.get("body").?), .tail = .value };
                     return .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
@@ -240,7 +257,7 @@ pub fn Builder(comptime Ctx: type) type {
                 .Syntax => {
                     const code = self.ctx.syntax(obj.get("e").?) orelse
                         return try self.refuse("`{s}` holds no `syntax` value: write `Lit(v)` for a value known at build", .{try self.describe(v)});
-                    const loc = self.next();
+                    const loc = try self.next(v);
                     const name = try std.fmt.allocPrint(self.arena, "{s}{d}", .{ splice_placeholder, self.splices.items.len });
                     try self.splices.append(self.arena, code);
                     return .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
@@ -249,7 +266,7 @@ pub fn Builder(comptime Ctx: type) type {
         }
 
         fn call(self: *Self, obj: std.json.ObjectMap, v: std.json.Value) (Error || error{Ill})!ast.Expr {
-            const loc = self.next();
+            const loc = try self.next(v);
             const calleeV = obj.get("callee").?;
             var receiver: ?*ast.Expr = null;
             var callee: []const u8 = "";
@@ -312,50 +329,54 @@ pub fn Builder(comptime Ctx: type) type {
             return t;
         }
 
-        /// The node as a `compiler.bp` constructor call, its leaves written
-        /// and its subtrees elided: `Arg(name: "tag", value: …)`.
         fn describe(self: *Self, v: std.json.Value) Error![]const u8 {
-            var out: std.ArrayListUnmanaged(u8) = .empty;
-            switch (v) {
-                .object => |obj| {
-                    if (obj.contains("__bp_capture")) return "a `syntax` value";
-                    const k = kindOf(obj);
-                    try out.appendSlice(self.arena, if (k) |kk| @tagName(kk) else "");
-                    try out.append(self.arena, '(');
-                    var first = true;
-                    if (k) |kk| {
-                        for (kinds) |e| if (e.kind == kk) for (e.fields) |f| {
-                            if (!first) try out.appendSlice(self.arena, ", ");
-                            first = false;
-                            try self.leaf(&out, f, obj.get(f).?);
-                        };
-                    } else {
-                        var it = obj.iterator();
-                        while (it.next()) |e| {
-                            if (!first) try out.appendSlice(self.arena, ", ");
-                            first = false;
-                            try self.leaf(&out, e.key_ptr.*, e.value_ptr.*);
-                        }
-                    }
-                    try out.append(self.arena, ')');
-                },
-                else => try self.leaf(&out, "", v),
-            }
-            return out.items;
-        }
-
-        fn leaf(self: *Self, out: *std.ArrayListUnmanaged(u8), label: []const u8, v: std.json.Value) Error!void {
-            if (label.len > 0) try out.print(self.arena, "{s}: ", .{label});
-            switch (v) {
-                .string => |s| try out.print(self.arena, "\"{s}\"", .{s}),
-                .integer => |n| try out.print(self.arena, "{d}", .{n}),
-                .float => |f| try out.print(self.arena, "{d}", .{f}),
-                .bool => |b| try out.appendSlice(self.arena, if (b) "true" else "false"),
-                .null => try out.appendSlice(self.arena, "null"),
-                else => try out.appendSlice(self.arena, "…"),
-            }
+            return describeNode(self.arena, v);
         }
     };
+}
+
+/// The node as a `compiler.bp` constructor call, its leaves written and its
+/// subtrees elided: `Arg(name: "tag", value: …)`.
+pub fn describeNode(arena: std.mem.Allocator, v: std.json.Value) Error![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    switch (v) {
+        .object => |obj| {
+            if (obj.contains("__bp_capture")) return "a `syntax` value";
+            const k = kindOf(obj);
+            try out.appendSlice(arena, if (k) |kk| @tagName(kk) else "");
+            try out.append(arena, '(');
+            var first = true;
+            if (k) |kk| {
+                for (kinds) |e| if (e.kind == kk) for (e.fields) |f| {
+                    if (!first) try out.appendSlice(arena, ", ");
+                    first = false;
+                    try leaf(arena, &out, f, obj.get(f).?);
+                };
+            } else {
+                var it = obj.iterator();
+                while (it.next()) |e| {
+                    if (!first) try out.appendSlice(arena, ", ");
+                    first = false;
+                    try leaf(arena, &out, e.key_ptr.*, e.value_ptr.*);
+                }
+            }
+            try out.append(arena, ')');
+        },
+        else => try leaf(arena, &out, "", v),
+    }
+    return out.items;
+}
+
+fn leaf(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), label: []const u8, v: std.json.Value) Error!void {
+    if (label.len > 0) try out.print(arena, "{s}: ", .{label});
+    switch (v) {
+        .string => |s| try out.print(arena, "\"{s}\"", .{s}),
+        .integer => |n| try out.print(arena, "{d}", .{n}),
+        .float => |f| try out.print(arena, "{d}", .{f}),
+        .bool => |b| try out.appendSlice(arena, if (b) "true" else "false"),
+        .null => try out.appendSlice(arena, "null"),
+        else => try out.appendSlice(arena, "…"),
+    }
 }
 
 fn binaryOp(text: []const u8) ?@FieldType(ast.BinOpExprOf(.untyped), "op") {
