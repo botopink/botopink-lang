@@ -26,7 +26,7 @@ conformance/
 ├── AGENTS.md                ← you are here
 ├── docs.md                  ← the language reference (decisions 461, 462): its index, the text no one cell owns, the manifest schema; every example a `<!-- example: … -->` line naming a cell or a suite
 ├── run.sh                   ← the runner: `zig build test-conformance`, the gate's stage 9
-├── modules/botopink.json    ← the workspace whose members are the cells (decision 512 (5), `"workspaces": ["*"]`):
+├── modules/botopink.json    ← the workspace whose members are the cells (decision 512 (5), `"workspaces": ["*", "*/cases/*", "decisions-taken/*/cases/*"]`, the last two for modules of cases, decision 765):
 │                              what every cell shares — here the version alone; a library's declares its cells'
 │                              dependencies and targets — so a cell writes only what is its own, and every cell's
 │                              dependencies share one code cache, `modules/.botopinkbuild/cache/` (decision 509)
@@ -44,6 +44,7 @@ conformance/
 
 | Path | Kind | Passes when |
 |---|---|---|
+| `modules/<module>/cases/<case>/` | a cell of a module of cases (decision 765): the same shape as below, the module holding a `docs.md` that links its cases and no `src/` (`cell_cases_directory` is the first); `run.sh --only modules/<module>` stands for its cases |
 | `modules/<cell>/` | a cell: `botopink cell check <cell>` builds and runs it in process on every target its manifest declares (`modules/compiler-cli/AGENTS.md` § Cells) | every module's answer on every target is its accepted snapshot — `snapshot/targets/<t>/<m>.snap` where it exists, else `snapshot/output/<m>.snap`, else empty — and every target its `"targets"` leaves out refuses it on a host binding (§ Narrowing a cell) |
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang, wasm and beam (a single file declares no narrowing, decision 536: a suite that narrows its targets is a project suite below) | every test reports `ok` |
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |

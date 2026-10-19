@@ -39,6 +39,8 @@
 #               --cold` passes it
 #
 # Three kinds, every job (a share of cells, § run) in its own scratch directory:
+#   modules/<m>/cases/<c>/  a cell of a module of cases (decision 765); `--only modules/<m>`
+#                      stands for the module's cases
 #   modules/<cell>/    a cell (decisions 457, 475): `botopink.json`, `src/`,
 #                      `snapshot/output/<module>.snap`, `snapshot/targets/<t>/
 #                      <module>.snap` where a target departs, `docs.md`.
@@ -324,6 +326,23 @@ if [ ${#only[@]} -gt 0 ]; then
 else
     while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ modules/*/ 2>/dev/null | sed 's:/$::'; } | sort)
 fi
+# A module of cases (decision 765) is not a cell: `modules/<m>/cases/<c>` are, one job each.
+# A path naming such a module stands for its cases.
+expanded=()
+for f in "${files[@]}"; do
+    f="${f%/}"
+    case "$f" in
+        modules/*/cases/*) expanded+=("$f") ;;
+        modules/*)
+            if [ -d "$here/$f/cases" ]; then
+                while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/cases/*/ 2>/dev/null | sed 's:/$::' | sort)
+            else
+                expanded+=("$f")
+            fi ;;
+        *) expanded+=("$f") ;;
+    esac
+done
+files=("${expanded[@]+"${expanded[@]}"}")
 
 # ── one job → result lines in $work/results ──────────────────────────────────
 #   <target>\t<key>\t<ok|fail>\t<detail>

@@ -1,0 +1,9 @@
+//// A module other than `main` is refused: its answer is in `helper.snap`.
+
+pub mod helper;
+import {helper.twice};
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print(twice(2));
+}

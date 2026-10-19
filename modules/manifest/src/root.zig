@@ -846,16 +846,17 @@ fn parseWasm(arena: std.mem.Allocator, v: std.json.Value, text: []const u8, path
 /// The glob forms: `<dir>/*` (every child of `<dir>` that holds a manifest)
 /// and a literal `<dir>` (decision 75), and `*` — every child of the
 /// workspace's own directory, the form of a `conformance/modules/` workspace
-/// whose members are its cells (decision 512 (5)).
+/// whose members are its cells (decision 512 (5)); and the two-level forms
+/// `*/cases/*` and `<dir>/*/cases/*` — the cases of every module (decision 765).
 fn checkGlobForm(arena: std.mem.Allocator, g: []const u8, text: []const u8, path: []const u8, out_err: *?Located) Error!void {
     const bad = g.len == 0 or
         std.fs.path.isAbsolute(g) or
         std.mem.startsWith(u8, g, "..") or
-        (std.mem.indexOfScalar(u8, g, '*') != null and !std.mem.eql(u8, g, "*") and !(std.mem.endsWith(u8, g, "/*") and std.mem.count(u8, g, "*") == 1));
+        (std.mem.indexOfScalar(u8, g, '*') != null and !std.mem.eql(u8, g, "*") and !(std.mem.endsWith(u8, g, "/*") and std.mem.count(u8, g, "*") == 1) and casesOuter(g) == null);
     if (bad) {
         out_err.* = located(text, path, locateEntry(text, "workspaces", g), try std.fmt.allocPrint(
             arena,
-            "workspaces entry \"{s}\" is not a supported form — use \"<dir>/*\" (every child of <dir> holding a botopink.json), \"*\" (every child of the workspace's directory) or a literal \"<dir>\" inside the workspace",
+            "workspaces entry \"{s}\" is not a supported form — use \"<dir>/*\" (every child of <dir> holding a botopink.json), \"*\" (every child of the workspace's directory), \"*/cases/*\" or \"<dir>/*/cases/*\" (the cases of every module) or a literal \"<dir>\" inside the workspace",
             .{g},
         ));
         return error.Invalid;
@@ -1107,7 +1108,19 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
     var members: std.ArrayListUnmanaged(Member) = .empty;
 
     for (m.workspaces) |g| {
-        if (globChildrenOf(g)) |sub| {
+        if (casesOuter(g)) |outer| {
+            const base = if (outer.len == 0) ws_dir else try std.fs.path.join(arena, &.{ ws_dir, outer });
+            for (try childDirs(arena, io, base)) |module| {
+                const cases_dir = try std.fs.path.join(arena, &.{ base, module, "cases" });
+                std.Io.Dir.cwd().access(io, cases_dir, .{}) catch continue; // a module without cases
+                for (try childDirs(arena, io, cases_dir)) |case| {
+                    const member_dir = try std.fs.path.join(arena, &.{ cases_dir, case });
+                    const manifest_path = try std.fs.path.join(arena, &.{ member_dir, FILENAME });
+                    std.Io.Dir.cwd().access(io, manifest_path, .{}) catch continue; // not a member
+                    try addMember(arena, io, &members, m, g, member_dir, out_err);
+                }
+            }
+        } else if (globChildrenOf(g)) |sub| {
             const base = if (sub.len == 0) ws_dir else try std.fs.path.join(arena, &.{ ws_dir, sub });
             var d = std.Io.Dir.cwd().openDir(io, base, .{ .iterate = true }) catch {
                 out_err.* = located(m.text, m.path, locateEntry(m.text, "workspaces", g), try std.fmt.allocPrint(
@@ -1202,12 +1215,43 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
     return ws;
 }
 
+/// The sorted names of the subdirectories of `dir_path` (empty when it cannot be read).
+fn childDirs(arena: std.mem.Allocator, io: std.Io, dir_path: []const u8) Error![]const []const u8 {
+    var d = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return &.{};
+    defer d.close(io);
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = d.iterate();
+    while (it.next(io) catch null) |entry| {
+        if (entry.kind != .directory) continue;
+        try names.append(arena, try arena.dupe(u8, entry.name));
+    }
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    return names.items;
+}
+
 /// The directory a children glob lists, relative to the workspace: `<dir>`
 /// for `<dir>/*`, `""` for `*` (the workspace's own); null for a literal entry.
 fn globChildrenOf(g: []const u8) ?[]const u8 {
+    if (casesOuter(g) != null) return null;
     if (std.mem.eql(u8, g, "*")) return "";
     if (std.mem.endsWith(u8, g, "/*")) return g[0 .. g.len - 2];
     return null;
+}
+
+/// The two-level form `*/cases/*` (`""`) or `<dir>/*/cases/*` (`<dir>`, a
+/// literal without a `*`): the directory whose children are modules, each
+/// holding its cases under `cases/` (decision 765). Null for any other glob.
+fn casesOuter(g: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, g, "*/cases/*")) return "";
+    const tail = "/*/cases/*";
+    if (!std.mem.endsWith(u8, g, tail)) return null;
+    const outer = g[0 .. g.len - tail.len];
+    if (outer.len == 0 or std.mem.indexOfScalar(u8, outer, '*') != null) return null;
+    return outer;
 }
 
 /// `l` with another message — a location computed once, reused.
@@ -1322,7 +1366,15 @@ fn upToWorkspace(arena: std.mem.Allocator, ws_dir: []const u8, member_dir: []con
 pub fn listsMember(arena: std.mem.Allocator, ws: Manifest, dir: []const u8) Error!bool {
     const target = try std.fs.path.resolve(arena, &.{dir});
     for (ws.workspaces) |g| {
-        if (globChildrenOf(g)) |sub| {
+        if (casesOuter(g)) |outer| {
+            // <ws>/<outer>/<module>/cases/<case>
+            const cases_dir = std.fs.path.dirname(target) orelse continue;
+            if (!std.mem.eql(u8, std.fs.path.basename(cases_dir), "cases")) continue;
+            const module_dir = std.fs.path.dirname(cases_dir) orelse continue;
+            const base = try std.fs.path.resolve(arena, &.{ ws.dir(), outer });
+            const parent = std.fs.path.dirname(module_dir) orelse continue;
+            if (samePath(parent, base)) return true;
+        } else if (globChildrenOf(g)) |sub| {
             const base = try std.fs.path.resolve(arena, &.{ ws.dir(), sub });
             const parent = std.fs.path.dirname(target) orelse continue;
             if (samePath(parent, base)) return true;
@@ -2187,10 +2239,43 @@ test "parse: unsupported glob forms are located errors" {
         \\{ "name": "w", "workspaces": ["modules/**"] }
     );
     try testing.expect(std.mem.indexOf(u8, out, "error: workspaces entry \"modules/**\" is not a supported form — use \"<dir>/*\"") != null);
-    for ([_][]const u8{ "*/src", "../x", "/abs", "" }) |g| {
+    for ([_][]const u8{ "*/src", "../x", "/abs", "", "*/cases", "a/*/cases", "*/*/cases/*", "x/*/cases/*/y", "a*/b/cases/*" }) |g| {
         const text = try std.fmt.allocPrint(a, "{{ \"name\": \"w\", \"workspaces\": [\"{s}\"] }}", .{g});
         _ = try refuse(a, text);
     }
+}
+
+test "expand: the two-level globs list the cases of every module (decision 765)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    var err: ?Located = null;
+    const m = try read(a, testing.io, FIX ++ "/cases-workspace", &err);
+    const ws = try expand(a, testing.io, m, &err);
+    // "*" finds `plain` alone (the other children hold no manifest).
+    try testing.expectEqualStrings("plain, parser-prints, parser-refused, d1-proved", try ws.memberList(a));
+    try testing.expectEqualStrings(FIX ++ "/cases-workspace/parser/cases/prints", ws.member("parser-prints").?.dir);
+    // A case may only restrict the workspace's targets.
+    try testing.expectEqual(@as(usize, 1), ws.member("parser-refused").?.manifest.targets.?.len);
+    try testing.expectEqual(@as(usize, 2), ws.member("parser-prints").?.manifest.targets.?.len);
+}
+
+test "listsMember: a case is listed by the two-level globs, a module and a stray directory are not" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    var err: ?Located = null;
+    const m = try read(a, testing.io, FIX ++ "/cases-workspace", &err);
+    try testing.expect(try listsMember(a, m, FIX ++ "/cases-workspace/parser/cases/prints"));
+    try testing.expect(try listsMember(a, m, FIX ++ "/cases-workspace/decisions-taken/d-1/cases/proved"));
+    try testing.expect(!try listsMember(a, m, FIX ++ "/cases-workspace/parser/cases"));
+    try testing.expect(!try listsMember(a, m, FIX ++ "/cases-workspace/parser/other/prints"));
+    // Only the "*/cases/*" form lists a case of the modules directly under the root.
+    const only = try read(a, testing.io, FIX ++ "/cases-workspace", &err);
+    var narrowed = only;
+    narrowed.workspaces = &.{"decisions-taken/*/cases/*"};
+    try testing.expect(!try listsMember(a, narrowed, FIX ++ "/cases-workspace/parser/cases/prints"));
+    try testing.expect(try listsMember(a, narrowed, FIX ++ "/cases-workspace/decisions-taken/d-1/cases/proved"));
 }
 
 test "expand: the fixture workspace — members, inherited targets, example member" {

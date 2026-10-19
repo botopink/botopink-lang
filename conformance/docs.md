@@ -46,6 +46,15 @@ project's is to its own; every cell found is reported, a cell that cannot run as
 
 <!-- example: modules/local_dependency -->
 
+A module may hold several cells (decision 765): `modules/<module>/cases/<case>/` is a full cell —
+its own `botopink.json`, `src/main.bp`, `snapshot/` and `docs.md`, the `.snap` format unchanged —
+and the module holds a `docs.md` that links its cases and no `src/` of its own. `botopink cell new
+<module>/cases/<case>` writes the case and appends its link to the module's `docs.md`,
+`botopink cell check <module>` checks every case, and a `<!-- example: modules/<module>/cases/<case> -->`
+line names one; a module holding both `cases/` and `src/`, or a `cases/<x>` that is no cell, is refused:
+
+<!-- example: modules/cell_cases_directory/cases/prints -->
+
 A `.snap` is a record per line, in this order, one spelling per answer:
 
 ```text

@@ -19,8 +19,8 @@ scripts/
 ├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink-lib-test --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
-├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell (`zig build test-docs`)
-├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules emits (gate stage 11)
+├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell — `modules/<cell>` or `modules/<m>/cases/<c>`, decision 765 (`zig build test-docs`)
+├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules (and `modules/*/cases/*`, decision 765) emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported

@@ -1,0 +1,6 @@
+{
+  "name": "cases-ws",
+  "version": "0.0.1",
+  "targets": ["commonJS", "erlang"],
+  "workspaces": ["*", "*/cases/*", "decisions-taken/*/cases/*"]
+}

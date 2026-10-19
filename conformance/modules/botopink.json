@@ -1,5 +1,5 @@
 {
   "name": "conformance",
   "version": "0.0.1",
-  "workspaces": ["*"]
+  "workspaces": ["*", "*/cases/*", "decisions-taken/*/cases/*"]
 }

@@ -11,6 +11,13 @@
 ///                                                a path dependency, a named wasm host
 ///     <cell>/docs.md                             the reference text — `check` ignores it
 ///
+/// A module may hold several cells (decision 765): `<module>/cases/<case>/` is
+/// a full cell as above, and the module itself holds a `docs.md` beside
+/// `cases/` and no `src/`. `cell new <module>/cases/<case>` writes the case and
+/// appends a link to it in the module's `docs.md`; `check` over the module (or
+/// over its parent) finds every case, and refuses a module holding both `cases/`
+/// and `src/`, or a `cases/<x>` that is no cell.
+///
 /// `check` builds each cell **in this process** — `build.zig`'s pipeline with
 /// `reporter.sink` pointed at a buffer, so a refusal is read off exactly the
 /// text `botopink build` prints — and runs the built program with `node`,
@@ -92,6 +99,50 @@ const MAIN_BP =
     \\
 ;
 
+/// `<module>/cases/<case>`: the module's directory, or null when `path` is no case path.
+fn moduleOfCase(path: []const u8) ?[]const u8 {
+    const trimmed = std.mem.trimEnd(u8, path, "/");
+    const cases_dir = std.fs.path.dirname(trimmed) orelse return null;
+    if (!std.mem.eql(u8, std.fs.path.basename(cases_dir), "cases")) return null;
+    const module_dir = std.fs.path.dirname(cases_dir) orelse return null;
+    if (std.fs.path.basename(module_dir).len == 0) return null;
+    return module_dir;
+}
+
+/// The link line a module's `docs.md` gets for the case `case`.
+fn caseLink(arena: std.mem.Allocator, case: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "[cases/{s}/src/main.bp](cases/{s}/src/main.bp)\n", .{ case, case });
+}
+
+/// `docs` with the link to `case` appended (a `# <module>` page when `docs` is null).
+fn withCaseLink(arena: std.mem.Allocator, docs: ?[]const u8, module: []const u8, case: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (docs) |text| {
+        try out.appendSlice(arena, text);
+        if (text.len > 0 and text[text.len - 1] != '\n') try out.append(arena, '\n');
+    } else {
+        try out.appendSlice(arena, try std.fmt.allocPrint(arena, "# {s}\n\n", .{module}));
+    }
+    try out.appendSlice(arena, try caseLink(arena, case));
+    return out.items;
+}
+
+/// The member of the workspace enclosing `path` that already has `name`, as the
+/// path of its manifest (decision 512 (1): a member's name is unique); null
+/// when there is no workspace listing `path`, or no member has the name.
+fn nameTakenBy(arena: std.mem.Allocator, io: std.Io, path: []const u8, name: []const u8) !?[]const u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const home = buf[0..try std.process.currentPath(io, &buf)];
+    const abs = try std.fs.path.resolve(arena, &.{ home, path });
+    var err: ?manifest.Located = null;
+    // The directory is not there yet, so the workspace is found by its globs
+    // (`workspaceOf`) and expanded: its members are the ones on disk.
+    const wm = (manifest.workspaceOf(arena, io, abs, &err) catch return null) orelse return null;
+    const ws = manifest.expand(arena, io, wm, &err) catch return null;
+    if (ws.member(name)) |other| return other.manifest.path;
+    return null;
+}
+
 fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
     const cwd = std.Io.Dir.cwd();
     if (cwd.access(io, path, .{})) |_| {
@@ -105,6 +156,17 @@ fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
         reporter.errMsg(try std.fmt.allocPrint(arena, "`{s}` cannot name the cell's package: {s}", .{ name, why }));
         return 1;
     }
+    const module_dir = moduleOfCase(path);
+    if (module_dir) |m| {
+        if (isDir(io, try std.fs.path.join(arena, &.{ m, "src" }))) {
+            reporter.errMsg(try std.fmt.allocPrint(arena, "{s} holds src/ — a module holds cases or is a cell, not both (decision 765)", .{m}));
+            return 1;
+        }
+    }
+    if (try nameTakenBy(arena, io, path, name)) |other| {
+        reporter.errMsg(try std.fmt.allocPrint(arena, "`{s}` is already the name of a member of the workspace ({s}) — a member's name is unique (decision 512); name the case otherwise", .{ name, other }));
+        return 1;
+    }
     const main_bp = try std.fs.path.join(arena, &.{ path, "src", "main.bp" });
     const docs = try std.fs.path.join(arena, &.{ path, "docs.md" });
     const manifest_path = try std.fs.path.join(arena, &.{ path, "botopink.json" });
@@ -115,6 +177,13 @@ fn newCell(arena: std.mem.Allocator, io: std.Io, path: []const u8) !u8 {
     reporter.created(manifest_path);
     reporter.created(main_bp);
     reporter.created(docs);
+    if (module_dir) |m| {
+        const module_docs = try std.fs.path.join(arena, &.{ m, "docs.md" });
+        const before: ?[]const u8 = cwd.readFileAlloc(io, module_docs, arena, .limited(16 * 1024 * 1024)) catch null;
+        const text = try withCaseLink(arena, before, std.fs.path.basename(m), name);
+        try cwd.writeFile(io, .{ .sub_path = module_docs, .data = text });
+        if (before == null) reporter.created(module_docs);
+    }
     reporter.hintMsg(try std.fmt.allocPrint(arena, "write the program, then `botopink cell check {s}` writes its candidate snapshots", .{path}));
     return 0;
 }
@@ -175,7 +244,12 @@ fn check(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, opts: Che
         };
         dir.close(io);
         var found: std.ArrayListUnmanaged([]const u8) = .empty;
-        try discover(arena, io, root, &found);
+        var refused: std.ArrayListUnmanaged([]const u8) = .empty;
+        try discover(arena, io, root, &found, &refused);
+        if (refused.items.len > 0) {
+            for (refused.items) |why| reporter.errMsg(why);
+            return 1;
+        }
         if (found.items.len == 0) {
             reporter.errMsg(try std.fmt.allocPrint(arena, "no cell under {s} — a cell is a directory holding src/main.bp", .{path}));
             return 1;
@@ -458,16 +532,40 @@ fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
 /// `root` itself when it is a cell (it holds `src/`), else every cell under
 /// it, sorted — never inside a cell, a hidden directory, `node_modules` or a
 /// `deps` directory (a cell's own dependency packages live there, and a
-/// `deps/<pkg>` holding `src/` is a package, never a cell).
-fn discover(arena: std.mem.Allocator, io: std.Io, root: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
+/// `deps/<pkg>` holding `src/` is a package, never a cell). A directory
+/// holding `cases/` is a module of cases (decision 765): each `cases/<case>`
+/// is a cell. `refused` collects what the layout forbids — a directory
+/// holding both `cases/` and `src/`, and a `cases/<x>` that is no cell.
+fn discover(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    root: []const u8,
+    out: *std.ArrayListUnmanaged([]const u8),
+    refused: *std.ArrayListUnmanaged([]const u8),
+) !void {
+    const cases = try std.fs.path.join(arena, &.{ root, "cases" });
+    const has_cases = isDir(io, cases);
     if (isDir(io, try std.fs.path.join(arena, &.{ root, "src" }))) {
+        if (has_cases) try refused.append(arena, try std.fmt.allocPrint(arena, "{s} holds both cases/ and src/ — a module holds cases or is a cell, not both (decision 765)", .{root}));
         try out.append(arena, root);
+        return;
+    }
+    if (has_cases) {
+        for (try childNames(arena, io, cases, .dirs)) |name| {
+            if (name[0] == '.') continue;
+            const case = try std.fs.path.join(arena, &.{ cases, name });
+            if (!isDir(io, try std.fs.path.join(arena, &.{ case, "src" }))) {
+                try refused.append(arena, try std.fmt.allocPrint(arena, "{s} is no cell — a case is a directory holding src/main.bp (decision 765)", .{case}));
+                continue;
+            }
+            try out.append(arena, case);
+        }
         return;
     }
     const names = try childNames(arena, io, root, .dirs);
     for (names) |name| {
         if (name[0] == '.' or std.mem.eql(u8, name, "node_modules") or std.mem.eql(u8, name, "deps")) continue;
-        try discover(arena, io, try std.fs.path.join(arena, &.{ root, name }), out);
+        try discover(arena, io, try std.fs.path.join(arena, &.{ root, name }), out, refused);
     }
 }
 
@@ -1489,9 +1587,53 @@ test "discover finds the cells of a directory and never a nested package under d
     // A leftover tree outside any cell: `modules/<cell>/deps/<pkg>/src`.
     try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "modules", "one", "deps", "pkg", "src" }));
     var cells: std.ArrayListUnmanaged([]const u8) = .empty;
-    try discover(a, io, root, &cells);
+    var refused: std.ArrayListUnmanaged([]const u8) = .empty;
+    try discover(a, io, root, &cells, &refused);
     try std.testing.expectEqual(@as(usize, 1), cells.items.len);
     try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "one" }), cells.items[0]);
+    try std.testing.expectEqual(@as(usize, 0), refused.items.len);
+}
+
+test "discover finds the cases of a module, and refuses src/ beside cases/ and a case that is no cell (decision 765)" {
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const test_scratch = @import("test_scratch");
+    test_scratch.remove(io, "cell-discover-cases");
+    defer test_scratch.remove(io, "cell-discover-cases");
+    const root = test_scratch.path(io, "cell-discover-cases/modules");
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "cases", "b", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "cases", "a", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "plain", "src" }));
+    var cells: std.ArrayListUnmanaged([]const u8) = .empty;
+    var refused: std.ArrayListUnmanaged([]const u8) = .empty;
+    try discover(a, io, root, &cells, &refused);
+    try std.testing.expectEqual(@as(usize, 3), cells.items.len);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "m", "cases", "a" }), cells.items[0]);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "m", "cases", "b" }), cells.items[1]);
+    try std.testing.expectEqual(@as(usize, 0), refused.items.len);
+    // src/ beside cases/, and a case without src/.
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "other", "cases", "stray" }));
+    cells = .empty;
+    try discover(a, io, root, &cells, &refused);
+    try std.testing.expectEqual(@as(usize, 2), refused.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, refused.items[0], "m holds both cases/ and src/") != null);
+    try std.testing.expect(std.mem.indexOf(u8, refused.items[1], "other/cases/stray is no cell") != null);
+}
+
+test "moduleOfCase reads the module off a case path, and the docs link is appended (decision 765)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("modules/m", moduleOfCase("modules/m/cases/c").?);
+    try std.testing.expectEqualStrings("m", moduleOfCase("m/cases/c/").?);
+    try std.testing.expect(moduleOfCase("modules/m/c") == null);
+    try std.testing.expect(moduleOfCase("cases/c") == null);
+    try std.testing.expectEqualStrings("# m\n\n[cases/c/src/main.bp](cases/c/src/main.bp)\n", try withCaseLink(a, null, "m", "c"));
+    try std.testing.expectEqualStrings("# m\n\ntext\n[cases/d/src/main.bp](cases/d/src/main.bp)\n", try withCaseLink(a, "# m\n\ntext", "m", "d"));
 }
 
 test "a worker's report is cut into each cell's section by its verdict line" {

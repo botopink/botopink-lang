@@ -1640,6 +1640,52 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_code 0 "cell check over a workspace with nested member entries"
   expect_out "cells: 3 checked — 3 passed, 0 failed" "a nested member, a second entry's member and a cell with an excluded target and a literal workspace entry in its tree"
   no_candidate "$WSC" "the nested members write no candidate"
+
+  # Decision 765: a module of cases — `<module>/cases/<case>` is a full cell. A check over the
+  # module (or its parent) finds every case, a module holding `src/` beside `cases/` and a case
+  # that is no cell are refused, and `cell new` appends the link to the module's docs.md.
+  CASES="$WORK/cell-cases"
+  rm -rf "$CASES"; cp -R "$SCRIPT_DIR/cell-cases" "$CASES"; rm -rf "$CASES/.botopinkbuild"
+  run "$CASES" cell check cases_module
+  expect_code 0 "cell check over a module of cases"
+  expect_out "ok   cases_module/cases/cases_prints" "a printing case"
+  expect_out "ok   cases_module/cases/cases_refused" "a refused case"
+  expect_out "ok   cases_module/cases/cases_narrowed" "a case narrowed by its manifest"
+  expect_out "cells: 3 checked — 3 passed, 0 failed" "the module's cases are counted"
+  run "$CASES" cell check .
+  expect_out "cells: 3 checked — 3 passed, 0 failed" "the parent of the module finds the same cases"
+  run "$CASES" cell check cases_module/cases/cases_prints
+  expect_out "cells: 1 checked — 1 passed, 0 failed" "one case alone"
+  mkdir -p "$CASES/cases_module/src"
+  run "$CASES" cell check cases_module
+  expect_code 1 "a module holding src/ beside cases/"
+  expect_out "holds both cases/ and src/" "names the layout rule"
+  rm -r "$CASES/cases_module/src"
+  mkdir -p "$CASES/cases_module/cases/stray"
+  run "$CASES" cell check cases_module
+  expect_code 1 "a cases/<x> that is no cell"
+  expect_out "cases_module/cases/stray is no cell" "names the directory"
+  rm -r "$CASES/cases_module/cases/stray"
+  run "$CASES" cell new fresh/cases/first
+  expect_code 0 "cell new <module>/cases/<case>"
+  expect_file_out "$CASES/fresh/docs.md" "# fresh" "the module's docs.md is created with its title"
+  expect_file_out "$CASES/fresh/docs.md" "[cases/first/src/main.bp](cases/first/src/main.bp)" "… and holds the link to the case"
+  run "$CASES" cell new fresh/cases/second
+  expect_code 0 "a second case in the same module"
+  [[ "$(grep -c 'src/main.bp' "$CASES/fresh/docs.md")" -eq 2 ]] && ok "the link is appended to the module's docs.md" || fail "fresh/docs.md: $(cat "$CASES/fresh/docs.md")"
+  [[ -f "$CASES/fresh/cases/second/botopink.json" && -f "$CASES/fresh/cases/second/docs.md" ]] && ok "the case is a full cell" || fail "the case lacks its manifest or docs.md"
+  # 512 (1): a name another member has is refused, within the enclosing workspace.
+  printf '{ "name": "cases-ws", "version": "0.0.1", "workspaces": ["*/cases/*"] }\n' >"$CASES/botopink.json"
+  run "$CASES" cell new fresh/cases/first2
+  expect_code 0 "a fresh name under the workspace"
+  run "$CASES" cell new cases_module/cases/unique_one
+  expect_code 0 "a name no other member has"
+  mkdir -p "$CASES/other/cases"
+  run "$CASES" cell new other/cases/fresh_first
+  expect_code 0 "a distinct name in another module"
+  run "$CASES" cell new other/cases/first
+  expect_code 1 "a case named as another member"
+  expect_out "is already the name of a member" "names the clash (decision 512)"
 else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
 fi
