@@ -2226,8 +2226,9 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `test/mocks_decorator_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.newMock` |
 | `test/mocks_handwritten_double` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `pushMatcher`, `std/testing/mocks.invoke` |
 | `test/module_init` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `mark` |
+| `test/running_test_name` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `std/io/env.read` |
 
-In all, 59 narrowings (51 cells, 8 project suites) and 87 exclusions. No other
+In all, 60 narrowings (51 cells, 9 project suites) and 88 exclusions. No other
 manifest or suite carries a narrowing: a project that must be refused on a target says so with its
 departure.
 

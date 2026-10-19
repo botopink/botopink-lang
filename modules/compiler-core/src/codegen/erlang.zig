@@ -2783,10 +2783,17 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, impor
         "fence close and the ok/FAIL line. Older parsers that don't",
         "recognise the duration line skip it (forward-compatible).",
     }));
+    try run_one.appendSlice(b.arena, try comments(b, &.{
+        "The running test's name, a run-time value of the harness",
+        "(decision 772): BOTOPINK_TEST_NAME while the body runs.",
+    }));
+    const test_name_env: Ast.Expr = .{ .string = "BOTOPINK_TEST_NAME" };
     try run_one.appendSlice(b.arena, &.{
+        .{ .expr = try b.remote("os", "putenv", &.{ test_name_env, try b.remote("erlang", "binary_to_list", &.{V("Name")}) }) },
         .{ .expr = try b.match(V("T0"), monotonic) },
         .{ .expr = outcome },
         .{ .expr = try b.match(V("T1"), monotonic) },
+        .{ .expr = try b.remote("os", "unsetenv", &.{test_name_env}) },
         .{ .expr = try b.match(V("DurMs"), try b.remote("erlang", "max", &.{
             Ast.Expr.t(Term.int(0)),
             .{ .binop = .{ .op = "-", .lhs = try b.ptr(V("T1")), .rhs = try b.ptr(V("T0")), .parens = false } },

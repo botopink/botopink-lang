@@ -328,7 +328,8 @@ fn unquoted(name: []const u8) []const u8 {
 /// inside the `----- RUN LOG -----` envelope `erlang.zig`'s runner prints
 /// (`testRunnerForms`), byte for byte, and the run ends with
 /// `<P> passed, <F> failed` and `halt(1)` when one failed: the contract
-/// `botopink test` parses (`compiler-cli/AGENTS.md` § output format).
+/// `botopink test` parses (`compiler-cli/AGENTS.md` § output format). While a
+/// test's body runs, `BOTOPINK_TEST_NAME` holds its name (decision 772).
 const test_runner_body =
     \\Filter = case __BpA1 of [F | _] -> list_to_binary(F); _ -> none end,
     \\    Selected = case Filter of
@@ -338,6 +339,7 @@ const test_runner_body =
     \\    RunOne = fun({Name, Fun, Loc}) ->
     \\        io:format("TEST ~ts ~ts~n", [Loc, Name]),
     \\        io:format("----- RUN LOG -----~n```logs~n", []),
+    \\        os:putenv("BOTOPINK_TEST_NAME", binary_to_list(Name)),
     \\        T0 = erlang:monotonic_time(millisecond),
     \\        Outcome = try Fun(), ok
     \\            catch
@@ -346,6 +348,7 @@ const test_runner_body =
     \\                Class:Reason -> {fail, {Class, Reason}, Loc}
     \\            end,
     \\        T1 = erlang:monotonic_time(millisecond),
+    \\        os:unsetenv("BOTOPINK_TEST_NAME"),
     \\        DurMs = erlang:max(0, T1 - T0),
     \\        io:format("```~n", []),
     \\        io:format("  duration ~pms~n", [DurMs]),

@@ -297,6 +297,7 @@ no "files"` (decision 75).
 | `BOTOPINK_LIB_ROOTS`  | `cli/libs.zig:resolveLibRoots`, `dependencyTiers` | The first lookup tier of a `git` dependency (before the `.botopinkbuild/deps/` links, decision 483), and prepended to the walk-up roots. |
 | `BOTOPINK_BIN`        | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_BIN_ENV`) | "The compiler running me": the absolute path of this `botopink` executable, exported to every test runner when the variable is unset; a value the caller set passes through untouched. |
 | `BOTOPINK_TEST_TMPDIR` | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_TMPDIR_ENV`) | The run's own scratch directory, absolute (§ below). |
+| `BOTOPINK_TEST_NAME` | a test's body (`std`'s `io.env.read`; snap names a snapshot by it) — **set** by the emitted test runner (`codegen/commonJS.zig` `test_runner_source`, `codegen/erlang.zig` `testRunnerForms`, `codegen/beam_asm.zig` `test_runner_body`) | The running test's full name while its body runs, cleared after it (decision 772); unset outside a body. wasm's runner sets none. Proven by the `conformance/test/running_test_name/` suite. |
 
 **`BOTOPINK_LIB_ROOTS` contract:**
 

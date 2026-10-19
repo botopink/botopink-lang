@@ -1,0 +1,15 @@
+//// Decision 772 — the test runner sets the running test's name where a
+//// run-time library reads it: `BOTOPINK_TEST_NAME` holds the name of the test
+//// whose body runs (snap names a snapshot by it), and nothing outside a body.
+
+import {io.env} from "std";
+
+test "names: the first test reads its own name" {
+    assert env.read("BOTOPINK_TEST_NAME")
+        == "names: the first test reads its own name";
+}
+
+test "names: the second test reads its own name" {
+    assert env.read("BOTOPINK_TEST_NAME")
+        == "names: the second test reads its own name";
+}

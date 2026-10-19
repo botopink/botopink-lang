@@ -55,6 +55,9 @@ add(A, B) ->
     %% delta lands on its own `  duration <ms>ms` line between the
     %% fence close and the ok/FAIL line. Older parsers that don't
     %% recognise the duration line skip it (forward-compatible).
+    %% The running test's name, a run-time value of the harness
+    %% (decision 772): BOTOPINK_TEST_NAME while the body runs.
+    os:putenv("BOTOPINK_TEST_NAME", erlang:binary_to_list(Name)),
     T0 = erlang:monotonic_time(millisecond),
     Outcome = try
         Fun(),
@@ -68,6 +71,7 @@ add(A, B) ->
             {fail, {Class, Reason}, Loc}
     end,
     T1 = erlang:monotonic_time(millisecond),
+    os:unsetenv("BOTOPINK_TEST_NAME"),
     DurMs = erlang:max(0, T1 - T0),
     io:format("```~n", []),
     io:format("  duration ~pms~n", [DurMs]),

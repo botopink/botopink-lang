@@ -73,6 +73,10 @@ async function __bp_run_tests() {
         // delta lands on its own `  duration <ms>ms` line between the
         // fence close and the ok/FAIL line. Older parsers that don't
         // recognise the duration line skip it (forward-compatible).
+        // The running test's name, a run-time value of the harness
+        // (decision 772): `BOTOPINK_TEST_NAME` while the body runs,
+        // read by `std`'s `io.env.read` (snap names a snapshot by it).
+        process.env.BOTOPINK_TEST_NAME = t.name;
         const _t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         let _err = null;
         // Tests are `async function` (see `emitTestFn`) so the
@@ -81,6 +85,7 @@ async function __bp_run_tests() {
         // A sync test pays no observable cost (a resolved Promise
         // is returned and awaited).
         try { await t.fn(); } catch (e) { _err = e; }
+        delete process.env.BOTOPINK_TEST_NAME;
         const _t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         const _dur_ms = Math.max(0, Math.round(_t1 - _t0));
         process.stdout.write = _write;
