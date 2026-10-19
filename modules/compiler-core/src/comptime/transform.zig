@@ -103,7 +103,7 @@ const Aggregator = struct {
     /// `Env.resultPatternLocs`: the `Ok` / `Error` patterns over a `@Result`
     /// subject, written `Result.Ok` / `Result.Error` by `qualifyResultPattern`.
     /// Applied by both aggregators.
-    result_patterns: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
+    result_patterns: ?*const std.AutoHashMapUnmanaged(ast.Loc, envMod.PatternNote) = null,
     /// `Env.fieldKeyRewrites` (decision 308): a field key's written node
     /// swapped whole for its run-time form. Both aggregators.
     field_keys: ?*const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = null,
@@ -211,7 +211,7 @@ pub fn transform(
     optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
-    result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, envMod.PatternNote),
     namespaces: *const envMod.NamespaceImports,
     field_keys: *const std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr),
     local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
@@ -888,7 +888,10 @@ fn rewriteOptionalNullCase(
 /// as the `@Result` variant, and none reads it as a user enum's `Error`.
 fn qualifyResultPattern(agg: *Aggregator, pattern: *ast.Pattern, at: ast.Loc) ScanError!void {
     const set = agg.result_patterns orelse return;
-    if (!set.contains(at)) return;
+    const note = set.get(at) orelse return;
+    // B-154 — the checker's resolution of the nested bare variant names.
+    if (note.resolved) |resolved| pattern.* = resolved;
+    if (!note.result) return;
     if (pattern.* != .variant) return;
     const name = pattern.variant.name;
     if (std.mem.indexOfScalar(u8, name, '.') != null) return;

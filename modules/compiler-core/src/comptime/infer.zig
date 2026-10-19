@@ -14984,7 +14984,95 @@ fn noteResultPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, at: 
     const st = subjectType.deref();
     if (st.* != .named or !std.mem.eql(u8, st.named.name, "Result")) return;
     if (at.line == 0) return;
-    try env.resultPatternLocs.put(env.arena, at, {});
+    const prior = env.resultPatternLocs.get(at) orelse envMod.PatternNote{};
+    try env.resultPatternLocs.put(env.arena, at, .{ .result = true, .resolved = prior.resolved });
+}
+
+/// B-154 — a bare name inside a nested pattern that is a nullary variant of the
+/// matched sub-pattern's type is that variant (154's rule for expression
+/// position, applied to patterns); it is a binder only when no variant of the
+/// type has the name. The parser keeps a payload of plain names as `fields`,
+/// where `Error(Timeout)` reads as a binder; a name that is a variant is
+/// rewritten here to the leading-dot variant path every backend already
+/// lowers as a variant test (`.Timeout`), the payload becoming `literals`.
+fn resolveNestedVariants(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!ast.Pattern {
+    switch (pattern) {
+        .variant => |v| {
+            if (v.shape != .variant) return pattern;
+            const payload = try variantPayloadTypes(env, subjectType, v.name) orelse return pattern;
+            switch (v.payload) {
+                .fields => |fields| {
+                    if (payload.len != fields.len) return pattern;
+                    var any = false;
+                    for (fields, payload) |name, ty| {
+                        if (isNullaryVariantOfType(env, ty, name)) any = true;
+                    }
+                    if (!any) return pattern;
+                    const args = try env.arena.alloc(ast.Pattern, fields.len);
+                    for (fields, payload, args) |name, ty, *out| {
+                        out.* = if (isNullaryVariantOfType(env, ty, name))
+                            .{ .ident = try std.fmt.allocPrint(env.arena, ".{s}", .{name}) }
+                        else
+                            .{ .ident = name };
+                    }
+                    var out = v;
+                    out.payload = .{ .literals = args };
+                    return .{ .variant = out };
+                },
+                .literals => |args| {
+                    if (payload.len != args.len) return pattern;
+                    var changed = false;
+                    const next = try env.arena.alloc(ast.Pattern, args.len);
+                    for (args, payload, next) |arg, ty, *out| {
+                        out.* = switch (arg) {
+                            .ident => |name| if (isNullaryVariantOfType(env, ty, name))
+                                ast.Pattern{ .ident = try std.fmt.allocPrint(env.arena, ".{s}", .{name}) }
+                            else
+                                arg,
+                            else => try resolveNestedVariants(env, arg, ty),
+                        };
+                        if (!std.meta.eql(out.*, arg)) changed = true;
+                    }
+                    if (!changed) return pattern;
+                    var out = v;
+                    out.payload = .{ .literals = next };
+                    return .{ .variant = out };
+                },
+                .binding => return pattern,
+            }
+        },
+        .@"or" => |alts| {
+            const next = try env.arena.alloc(ast.Pattern, alts.len);
+            for (alts, next) |alt, *out| out.* = try resolveNestedVariants(env, alt, subjectType);
+            return .{ .@"or" = next };
+        },
+        else => return pattern,
+    }
+}
+
+/// True when `name` (bare, no path) is a variant of the enum `ty` names that
+/// carries no payload.
+fn isNullaryVariantOfType(env: *Env, ty: *T.Type, name: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return false;
+    const t = ty.deref();
+    if (t.* != .named) return false;
+    const td = env.lookupTypeDef(t.named.name) orelse return false;
+    if (td != .enum_) return false;
+    for (td.enum_.variants) |vd| {
+        if (std.mem.eql(u8, vd.name, name)) return vd.fields.len == 0;
+    }
+    return false;
+}
+
+/// Record the arm's pattern with its nested bare variant names resolved
+/// (`resolveNestedVariants`) when that changes it, for the transform to put
+/// in the arm's place.
+fn noteResolvedPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, at: ast.Loc) InferError!void {
+    if (at.line == 0) return;
+    const resolved = try resolveNestedVariants(env, pattern, subjectType);
+    if (std.meta.eql(resolved, pattern)) return;
+    const prior = env.resultPatternLocs.get(at) orelse envMod.PatternNote{};
+    try env.resultPatternLocs.put(env.arena, at, .{ .result = prior.result, .resolved = resolved });
 }
 
 fn bindCaseArmPatternNames(
@@ -24904,7 +24992,10 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                         try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
                     }
                 } else bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots) catch |err| return locateLast(env, err, arm.patternLoc);
-                if (typedSubjects.len == 1) try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
+                if (typedSubjects.len == 1) {
+                    try noteResolvedPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
+                    try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
+                }
 
                 // A guard clause must type-check to a boolean, with the
                 // pattern's bindings in scope.

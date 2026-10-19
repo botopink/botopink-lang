@@ -1,0 +1,96 @@
+//// A bare name inside a pattern that is a nullary variant of the matched
+//// sub-pattern's type is that variant, as at the top of a `case` and as in
+//// expression position; it binds a variable only when no variant of that
+//// type has the name (B-154). `Error(Timeout)` over a `Result<T, HttpError>`
+//// bound `Timeout` as a variable on every target: erlang warned that the
+//// variable was unused and commonJS took the first `Error` arm for every
+//// error. The same holds for a user enum nested in a user variant.
+
+import {io.terminal.print} from "std";
+
+type HttpError {
+    Timeout,
+    NotAllowedOnHost,
+    Status(code: i32),
+}
+
+type Mode {
+    Fast,
+    Slow,
+}
+
+type Job {
+    Run(mode: Mode),
+    Stop,
+}
+
+fn fetch(n: i32) -> Result<string, HttpError> {
+    if (n == 0) throw HttpError.Timeout;
+    if (n == 1) throw HttpError.NotAllowedOnHost;
+    if (n == 2) throw HttpError.Status(404);
+    return "body";
+}
+
+fn describe(r: Result<string, HttpError>) -> string {
+    return case r {
+        Ok(v) -> "ok " + v;
+        Error(Timeout) -> "timeout";
+        Error(NotAllowedOnHost) -> "not allowed";
+        Error(Status(c)) -> "status " + c;
+    };
+}
+
+fn job(j: Job) -> string {
+    return case j {
+        Run(Slow) -> "run slow";
+        Run(Fast) -> "run fast";
+        _ -> "stop";
+    };
+}
+
+fn detail(e: HttpError) -> string {
+    return case e {
+        Timeout -> "timeout";
+        NotAllowedOnHost -> "not allowed";
+        Status(c) -> "status " + c;
+    };
+}
+
+fn modeName(m: Mode) -> string {
+    return case m {
+        Fast -> "fast";
+        Slow -> "slow";
+    };
+}
+
+fn binder(r: Result<string, HttpError>) -> string {
+    return case r {
+        Error(Timeout) -> "timeout";
+        Error(other) -> "other " + detail(other);
+        Ok(v) -> "ok " + v;
+    };
+}
+
+fn modeBinder(j: Job) -> string {
+    return case j {
+        Run(Fast) -> "fast";
+        Run(whatever) -> "not fast " + modeName(whatever);
+        _ -> "stop";
+    };
+}
+
+pub fn main() {
+    print(describe(fetch(0)));
+    print(describe(fetch(1)));
+    print(describe(fetch(2)));
+    print(describe(fetch(3)));
+    print(job(Job.Run(Mode.Fast)));
+    print(job(Job.Run(Mode.Slow)));
+    print(job(Job.Stop));
+    print(binder(fetch(0)));
+    print(binder(fetch(1)));
+    print(binder(fetch(3)));
+    print(modeBinder(Job.Run(Mode.Fast)));
+    print(modeBinder(Job.Run(Mode.Slow)));
+    print(modeBinder(Job.Stop));
+}

@@ -1,0 +1,14 @@
+botopink-cell 1
+out timeout
+out not allowed
+out status 404
+out ok body
+out run fast
+out run slow
+out stop
+out timeout
+out other not allowed
+out ok body
+out fast
+out not fast slow
+out stop

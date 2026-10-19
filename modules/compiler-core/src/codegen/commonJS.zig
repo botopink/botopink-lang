@@ -7691,7 +7691,15 @@ const Emitter = struct {
         const record = !isVariantPath(v.name) and self.record_fields.contains(bare) and !self.isDeclaredVariantName(bare);
         const declared = self.payloadSlots(v.name, record);
         if (declared == .none) if (resultKey(bare)) |key| {
-            return try self.b.binaryBare("in", .{ .quoted = key }, subject);
+            var test_ = try self.b.binaryBare("in", .{ .quoted = key }, subject);
+            // B-154 — the payload's own test: `Error(.Timeout)` tells one
+            // error from another, `Ok(1)` one value from another.
+            if (v.payload == .literals and v.payload.literals.len == 1) {
+                if (try self.patternTest(v.payload.literals[0], try self.b.member(subject, key))) |t| {
+                    test_ = try self.b.binaryBare("&&", test_, t);
+                }
+            }
+            return test_;
         };
         var acc = if (record)
             try self.isTest(.{ .named = bare }, subject)
@@ -8132,7 +8140,9 @@ const Emitter = struct {
                             .pattern = .{ .ident = fields[0] },
                             .value = try self.b.member(subject, key),
                         } }),
-                        .literals => {},
+                        // `Error(Status(c))`, `Ok(Circle(r))`: the nested pattern
+                        // binds from the result's payload.
+                        .literals => |lits| if (lits.len == 1) try self.appendPatternBinds(body, lits[0], try self.b.member(subject, key)),
                     }
                     return;
                 };

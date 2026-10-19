@@ -847,6 +847,16 @@ pub const DerivedLineage = struct {
     partial: bool,
 };
 
+/// What the checker records for a `case` arm pattern, by its `patternLoc`
+/// (`Env.resultPatternLocs`).
+pub const PatternNote = struct {
+    /// The pattern is `Ok` / `Error` over a `@Result` subject.
+    result: bool = false,
+    /// The pattern with every bare nullary variant name in a nested position
+    /// written as the variant path (B-154).
+    resolved: ?ast.Pattern = null,
+};
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -1466,7 +1476,12 @@ pub const Env = struct {
     /// transform writes each as `Result.Ok` / `Result.Error`, so a backend
     /// never reads the bare name as a variant of a user enum that declares
     /// one (`type Level { Info, Error }`).
-    resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    ///
+    /// The same table carries B-154's rewrite: an arm pattern whose bare
+    /// names include a nullary variant of the matched sub-pattern's type is
+    /// recorded here already resolved (`resolved`), and the transform puts it
+    /// in the arm's place.
+    resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, PatternNote) = .empty,
     /// The scope rule (the nearest binding wins): the free calls whose callee
     /// is a parameter or a local, keyed by the call's loc. The transform
     /// never takes such a call for the module function of that name, so a
