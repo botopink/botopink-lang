@@ -2708,7 +2708,9 @@ pub const Formatter = struct {
     fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
         const pub_prefix: *const Doc = if (m.isPub) try this.text("pub ") else try this.text("");
         const markerKw: []const u8 = if (m.marker) |k| try std.fmt.allocPrint(this.arena, "{s} ", .{k.markerWord()}) else "";
-        const fn_kw = if (m.is_default)
+        // Decision 628 — a bodied member without `self` is a static, written `fn`.
+        const is_static = m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
+        const fn_kw = if (m.is_default and !is_static)
             try this.text(try std.fmt.allocPrint(this.arena, "default {s}fn ", .{markerKw}))
         else if (m.is_declare)
             try this.text("declare fn ")

@@ -10,7 +10,7 @@
 import {collections.Dict, io.terminal.print} from "std";
 
 behavior Seq<A> {
-    default fn firstOr(xs: Array<A>, d: A) -> A {
+    fn firstOr(xs: Array<A>, d: A) -> A {
         return xs.at(0) ?? d;
     }
 }

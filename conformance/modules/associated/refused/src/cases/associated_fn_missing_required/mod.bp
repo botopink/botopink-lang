@@ -4,7 +4,7 @@
 import {io.terminal.print} from "std";
 
 behavior Scale {
-    default fn by(x: i32, factor: i32 = 10) -> i32 {
+    fn by(x: i32, factor: i32 = 10) -> i32 {
         return x * factor;
     }
 }

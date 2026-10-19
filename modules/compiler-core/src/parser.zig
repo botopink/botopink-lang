@@ -292,6 +292,9 @@ pub const ParseErrorType = enum {
     /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
     /// without its terminating `;`.
     memberMissingSemicolon,
+    /// Decision 628 — `default fn unit() -> Self { … }` in a `behavior`: a
+    /// member without `self` is a static, written `fn`. Located at `default`.
+    defaultOnStatic,
     /// Decision 289 — `pub default <name>;` naming no `fn` of the module.
     defaultUnknown,
     /// Decision 289 — a second default function in one module: `pub default

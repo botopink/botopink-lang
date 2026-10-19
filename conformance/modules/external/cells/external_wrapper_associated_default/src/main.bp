@@ -12,7 +12,7 @@ import {compiler, io.terminal.print} from "std";
 declare fn otpRelease() -> string;
 
 behavior Probe {
-    default fn release() -> string {
+    fn release() -> string {
         return otpRelease();
     }
 }

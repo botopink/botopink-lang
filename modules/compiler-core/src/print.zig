@@ -661,6 +661,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "add `;`",
             .hint = "Write `fn name(self: Self) -> T;` or `val name: T;`.",
         },
+        .defaultOnStatic => .{
+            .code = "default-on-static",
+            .message = "a member without self is a static: write fn",
+            .caretCaption = "remove `default`",
+            .hint = "In a `behavior`, `fn unit() -> Self { … }` is the behavior's own static and `fn make() -> Self;` one each implementor provides; `default fn` is an instance member, its first parameter `self` (decision 628).",
+        },
         .templateSelfMarker => .{
             .code = "template-self-marker",
             .message = "`$self` is not a template marker",

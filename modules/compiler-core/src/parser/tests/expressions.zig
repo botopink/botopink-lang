@@ -31,7 +31,7 @@ test "parser: use multiple hooks in function" {
 test "parser: call: plain positional ---- print(\"hello\")" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        print("hello");
         \\    }
         \\}
@@ -41,7 +41,7 @@ test "parser: call: plain positional ---- print(\"hello\")" {
 test "parser: call: named argument ---- calcular(fator: 2)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        calcular(fator: 2);
         \\    }
         \\}
@@ -51,7 +51,7 @@ test "parser: call: named argument ---- calcular(fator: 2)" {
 test "parser: lambda: trailing lambda with no params ---- executar { ok }" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        executar { ok; };
         \\    }
         \\}
@@ -61,7 +61,7 @@ test "parser: lambda: trailing lambda with no params ---- executar { ok }" {
 test "parser: lambda: named arg + trailing lambda with two params and addition" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        calcular(fator: 2) { a, b ->
         \\            a + b;
         \\        };
@@ -73,7 +73,7 @@ test "parser: lambda: named arg + trailing lambda with two params and addition" 
 test "parser: lambda: two trailing lambdas, second labeled ---- executar {} erro: {}" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        executar { ok; } erro: { fail; };
         \\    }
         \\}
@@ -83,7 +83,7 @@ test "parser: lambda: two trailing lambdas, second labeled ---- executar {} erro
 test "parser: lambda: method call with two-param trailing lambda ---- precos.forEach { fruta, valor -> fruta }" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        precos.forEach { fruta, valor -> fruta; };
         \\    }
         \\}
@@ -93,7 +93,7 @@ test "parser: lambda: method call with two-param trailing lambda ---- precos.for
 test "parser: expression: binary addition ---- a + b" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a + b;
         \\    }
         \\}
@@ -171,7 +171,7 @@ test "parser: case ---- guard clauses" {
 test "parser: operator precedence ---- mul binds tighter than add" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        1 + 2 * 3;
         \\    }
         \\}
@@ -181,7 +181,7 @@ test "parser: operator precedence ---- mul binds tighter than add" {
 test "parser: operator precedence ---- left-to-right associativity for add" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        1 + 2 + 3;
         \\    }
         \\}
@@ -191,7 +191,7 @@ test "parser: operator precedence ---- left-to-right associativity for add" {
 test "parser: operator precedence ---- add binds tighter than compare" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a + 1 < b + 2;
         \\    }
         \\}
@@ -201,7 +201,7 @@ test "parser: operator precedence ---- add binds tighter than compare" {
 test "parser: operator precedence ---- compare binds tighter than eq" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a < b == c > d;
         \\    }
         \\}
@@ -211,7 +211,7 @@ test "parser: operator precedence ---- compare binds tighter than eq" {
 test "parser: operator precedence ---- all arithmetic operators" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a + b - c * d / e % f;
         \\    }
         \\}
@@ -221,7 +221,7 @@ test "parser: operator precedence ---- all arithmetic operators" {
 test "parser: operator precedence ---- comparison operators" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a < b;
         \\        a > b;
         \\        a <= b;
@@ -234,7 +234,7 @@ test "parser: operator precedence ---- comparison operators" {
 test "parser: operator precedence ---- equality operators" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        a == b;
         \\        a != b;
         \\    }
@@ -245,7 +245,7 @@ test "parser: operator precedence ---- equality operators" {
 test "parser: builtin ---- zero-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        comptime compiler.src();
         \\    }
         \\}
@@ -257,7 +257,7 @@ test "parser: builtin ---- zero-arg call" {
 test "parser: builtin ---- single-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        @sizeOf(Int);
         \\        @typeName(Bool);
         \\        panic("unreachable");
@@ -271,7 +271,7 @@ test "parser: builtin ---- single-arg call" {
 test "parser: builtin ---- multi-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = behavior {
-        \\    default fn run() {
+        \\    fn run() {
         \\        @min(a, b);
         \\        @max(x, y);
         \\        @as(Int, value);

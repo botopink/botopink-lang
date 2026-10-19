@@ -10,7 +10,7 @@ const h = @import("helpers.zig");
 test "format: lambda ---- trailing no params" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    default fn run() {
+        \\    fn run() {
         \\        executar { -> ok };
         \\    }
         \\}
@@ -20,7 +20,7 @@ test "format: lambda ---- trailing no params" {
 test "format: lambda ---- named arg + trailing with params" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    default fn run() {
+        \\    fn run() {
         \\        calcular(fator: 2) { a, b -> a + b };
         \\    }
         \\}
@@ -30,7 +30,7 @@ test "format: lambda ---- named arg + trailing with params" {
 test "format: lambda ---- two trailing blocks second labeled" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    default fn run() {
+        \\    fn run() {
         \\        executar { -> ok } erro: { -> fail };
         \\    }
         \\}

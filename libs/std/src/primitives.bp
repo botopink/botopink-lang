@@ -806,7 +806,7 @@ behavior Array<T> {
     #[compiler.external(
         .JavaScript("((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))($0, $1)"),
     )]
-    default fn range(start: i32, stop: i32) -> Array<i32> {
+    fn range(start: i32, stop: i32) -> Array<i32> {
         return if (stop - start <= 0)
             []
         else if (stop - start == 1)
@@ -822,7 +822,7 @@ behavior Array<T> {
     #[compiler.external(
         .JavaScript("((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))($0, $1)"),
     )]
-    default fn repeat<E>(value: E, times: i32) -> Array<E> {
+    fn repeat<E>(value: E, times: i32) -> Array<E> {
         return if (times <= 0) [] else {
             val half = Array.repeat(value, times / 2);
             if (times % 2 == 0)

@@ -6,13 +6,13 @@
 import {io.terminal.print} from "std";
 
 behavior Scale {
-    default fn by(x: i32, factor: i32 = 10) -> i32 {
+    fn by(x: i32, factor: i32 = 10) -> i32 {
         return x * factor;
     }
 }
 
 behavior Pick<A> {
-    default fn either(value: A, fallback: A, useFallback: bool = false) -> A {
+    fn either(value: A, fallback: A, useFallback: bool = false) -> A {
         if (useFallback) return fallback;
         return value;
     }

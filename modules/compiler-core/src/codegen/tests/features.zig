@@ -1112,10 +1112,10 @@ test "js: interface associated fn namespace" {
     // a namespace object so `Interface.method(...)` resolves at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Pairish<A, B> {
-        \\    default fn of(first: A, second: B) -> #(A, B) {
+        \\    fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
-        \\    default fn first(p: #(A, B)) -> A {
+        \\    fn first(p: #(A, B)) -> A {
         \\        return p._0;
         \\    }
         \\}

@@ -1,0 +1,16 @@
+//// Decision 628 — `default` on a behavior member without `self` is refused at the modifier, `default-on-static`: a static is written `fn`.
+
+import {io.terminal} from "std";
+
+behavior Shape {
+    fn area(self: Self) -> i32;
+
+    // A static written `default fn`: refused at `default`.
+    default fn unit() -> i32 {
+        return 1;
+    }
+}
+
+pub fn main() -> void {
+    terminal.print(Shape.unit());
+}

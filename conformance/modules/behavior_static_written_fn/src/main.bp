@@ -1,0 +1,55 @@
+//// Decision 628 — in a `behavior`, a member without `self` is a static written `fn`: with a body it is the behavior's own function, called through the behavior; without one, each implementor provides it. `default fn` is an instance member with an overridable body.
+
+import {io.terminal} from "std";
+
+behavior Shape {
+    fn area(self: Self) -> i32;
+
+    // A required static: each implementor provides it.
+    fn make() -> Self;
+
+    // The behavior's own statics: written `fn`, called through the behavior.
+    fn unit() -> i32 {
+        return 1;
+    }
+
+    fn scaled(n: i32) -> i32 {
+        return n * Shape.unit();
+    }
+
+    // An instance member with an overridable default body.
+    default fn describe(self: Self) -> string {
+        return "area " + self.area().toString();
+    }
+}
+
+type Square(side: i32) implement Shape {
+    fn make() -> Self {
+        return Square(side: 3);
+    }
+
+    fn area(self: Self) -> i32 {
+        return self.side * self.side;
+    }
+}
+
+type Dot(n: i32) implement Shape {
+    fn make() -> Self {
+        return Dot(n: 0);
+    }
+
+    fn area(self: Self) -> i32 {
+        return 0;
+    }
+
+    fn describe(self: Self) -> string {
+        return "a dot";
+    }
+}
+
+pub fn main() -> void {
+    terminal.print(Shape.unit());
+    terminal.print(Shape.scaled(7));
+    terminal.print(Square.make().describe());
+    terminal.print(Dot.make().describe());
+}

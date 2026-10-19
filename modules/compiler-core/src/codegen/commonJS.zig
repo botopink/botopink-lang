@@ -3557,10 +3557,11 @@ const Emitter = struct {
             .text = try std.fmt.allocPrint(self.arena(), "  {s}: {f}", .{ f.name, f.typeRef }),
         } });
         for (i.methods) |m| try stmts.append(self.arena(), .{ .comment = .{
+        // Decision 628 — a static (no `self`) is written `fn`.
             .text = try std.fmt.allocPrint(
                 self.arena(),
                 "  {s}fn {s}(...)",
-                .{ @as([]const u8, if (m.is_default) "default " else ""), m.name },
+                .{ @as([]const u8, if (m.is_default and !isAssociatedFn(m)) "default " else ""), m.name },
             ),
         } });
 

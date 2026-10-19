@@ -39,7 +39,7 @@ type Box(label: string, size: i64 = 4l) {
 }
 
 behavior Scale {
-    default fn by(x: i64, factor: i64 = 10l) -> i64 {
+    fn by(x: i64, factor: i64 = 10l) -> i64 {
         return x * factor;
     }
 }

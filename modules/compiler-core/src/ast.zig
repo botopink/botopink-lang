@@ -2215,7 +2215,9 @@ pub const BehaviorMethod = struct {
     /// member was synthesised. Left out of the AST dump.
     returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     body: ?[]Stmt,
-    /// true when declared with `default fn` in an interface body
+    /// true when the member carries a body in a behavior: a `default fn`
+    /// (an instance member, `self` first), or a static `fn` with a body — the
+    /// behavior's own function, written without `default` (decision 628)
     is_default: bool = false,
     /// Decision 553 (1) — the body marker written before `fn`, or null; the
     /// parser checks it against the return's wrapper. Dumped only when written.

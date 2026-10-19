@@ -652,7 +652,7 @@ test "definition: interface assoc-fn cross-module — Iface.method jumps to defa
     const dep_uri = "file:///dep_e2.bp";
     const dep_src =
         \\pub behavior Show<T> {
-        \\    default fn show(x: T) -> string { return "stub"; }
+        \\    fn show(x: T) -> string { return "stub"; }
         \\}
     ;
     const main_src =

@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 behavior Pairish<A, B> {
-    default fn of(first: A, second: B) -> #(A, B) {
+    fn of(first: A, second: B) -> #(A, B) {
         return #(first, second);
     }
-    default fn first(p: #(A, B)) -> A {
+    fn first(p: #(A, B)) -> A {
         return p._0;
     }
 }
@@ -77,8 +77,8 @@ function __bp_print() {
 }
 
 // behavior Pairish
-//   default fn of(...)
-//   default fn first(...)
+//   fn of(...)
+//   fn first(...)
 const Pairish = {};
 Pairish.of = function(first, second) {
     return [first, second];

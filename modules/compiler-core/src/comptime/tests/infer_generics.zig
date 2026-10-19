@@ -296,10 +296,10 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
     // concrete types in the same scope never conflict.
     try h.assertInfersOk(std.testing.allocator,
         \\behavior Pair2<A, B> {
-        \\    default fn of(first: A, second: B) -> #(A, B) {
+        \\    fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
-        \\    default fn first(p: #(A, B)) -> A {
+        \\    fn first(p: #(A, B)) -> A {
         \\        return p._0;
         \\    }
         \\}

@@ -1112,9 +1112,18 @@ function's does — through the instance and through the type alike
 
 <!-- example: modules/method/run/src/cases/method_behavior_parameter_implementer -->
 
-A behavior's associated `default fn` — one taking no `self` — is called
-through the behavior's name, `Shape.unit()`, wherever the behavior is
-imported, under an alias too, as in its own module:
+A behavior's static `fn` — a member taking no `self` — is written `fn`, never
+`default fn` (decision 628): with a body it is the behavior's own function, one
+owner, called through the behavior's name, `Shape.unit()`; without one it is a
+static each implementor provides (`Square.make()`). `default` on it is refused at
+the modifier, `default-on-static`:
+
+<!-- example: modules/behavior_static_written_fn -->
+
+<!-- example: modules/default_on_static_refused -->
+
+A behavior's static `fn` is called through the behavior's name wherever the
+behavior is imported, under an alias too, as in its own module:
 
 <!-- example: modules/behavior/cells/behavior_associated_fn_imported -->
 

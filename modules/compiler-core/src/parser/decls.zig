@@ -1907,9 +1907,10 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             const memberAnnotations = try this.parseAnnotations(alloc);
             const is_default = this.match(.default);
             const is_declare = this.match(.declare);
-            var method = parseBehaviorMethod(this, alloc, is_default) catch |err| {
+            var method = parseBehaviorMethod(this, alloc, is_default, default_tok) catch |err| {
                 freeAnnotations(alloc, memberAnnotations);
                 return err;
+            const default_tok = this.peek();
             };
             method.annotations = memberAnnotations;
             method.is_declare = is_declare;
@@ -1945,8 +1946,11 @@ fn expectMemberSemicolon(this: *This) ParseError!void {
 }
 
 /// One `fn` member of a `behavior`: a signature ending with `;`, or — for a
-/// `default fn` — a body ending with `}` (no separator after it).
-fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
+/// `default fn`, or a static `fn` (no `self`, decision 628) — a body ending
+/// with `}` (no separator after it). A static with a body is the behavior's own
+/// function and is stored as a bodied member (`is_default`); `default` written
+/// on a member without `self` is `default-on-static`, at `default`.
+fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, written_default: bool, default_tok: Token) ParseError!BehaviorMethod {
     // Decision 553 (1) — `[default] <marker> fn`; only a `default fn` has a
     // body, so only it takes a marker.
     const marker = parseFnMarker(this);
@@ -1972,6 +1976,9 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
     if (!is_default) {
         try expectMemberSemicolon(this);
         return BehaviorMethod{
+    const is_static = params.len == 0 or !std.mem.eql(u8, params[0].name, "self");
+    if (written_default and is_static) return failAt(this, .defaultOnStatic, default_tok);
+    const is_default = written_default or (is_static and this.check(.leftBrace));
             .name = methodName,
             .nameLoc = nameLoc,
             .genericParams = genericParams,
