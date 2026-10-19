@@ -1,0 +1,58 @@
+//// Decisions 625 (4), 637 — `code`, std's template over the typed AST: a
+//// template answers the code it writes with `${…}` holes, read into
+//// `compiler.Node` records and built as `compiler.ast` builds them. Each
+//// hole is read by its arrival: a value known at build is spliced as its
+//// literal (`tagged`, `scaled`), a `syntax` value as it was written — the
+//// caller's holes, `compiler.holes(t)`, typed where they land (`element`).
+//// A typed function and its type nodes are written the same way (`shape`,
+//// decision 753).
+
+import {code, compiler, io.terminal.print} from "std";
+
+type Element(tag: string, kids: string[])
+
+fn label(tag: string, size: i32) -> string {
+    return tag + ":" + size.toString();
+}
+
+fn tagged(syntax q: string) -> anyvalue {
+    val tag = compiler.text(q);
+    val size = tag.length();
+    return code @`label(${tag}, ${size}).toUpper()`;
+}
+
+fn element(syntax t: string) -> anyvalue {
+    val h = compiler.holes(t);
+    return code @`Element(tag: "div", kids: [${h[0]}, ${h[1]}])`;
+}
+
+fn scaled(syntax q: string) -> anyvalue {
+    val n = compiler.text(q).length();
+    return code @`if (${n} > 3) [1, 2, 3].map({ x -> x * ${n} }) else [-${n}, ${n} % 2]`;
+}
+
+fn pair(syntax q: string) -> anyvalue {
+    val word = compiler.text(q);
+    return code @`#(${word}, ${word}.length() + 1)`;
+}
+
+fn shape(syntax q: string) -> anyvalue {
+    val size = compiler.text(q).length();
+    return code @`fn(xs: i32[], pick: ?string, f: fn(i32) -> i32) -> #(n: i32, m: i32) { return #(f(xs.length), ${size}); }`;
+}
+
+pub fn main() {
+    print(tagged @`box`);
+    val name = "ana";
+    val e = element @`${name}, ${name + "!"}`;
+    print(e.tag + " " + e.kids.join(","));
+    val big = scaled @`hello`;
+    print(big.map({ x -> x.toString() }).join(", "));
+    val small = scaled @`hi`;
+    print(small.map({ x -> x.toString() }).join(", "));
+    val #(word, size) = pair @`four`;
+    print(word + " " + size.toString());
+    val run = shape @`built`;
+    val out = run([1, 2, 3], null, { x -> x * 10 });
+    print(out.n.toString() + " " + out.m.toString());
+}

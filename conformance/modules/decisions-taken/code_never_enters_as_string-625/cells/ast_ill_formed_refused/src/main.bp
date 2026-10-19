@@ -3,11 +3,14 @@
 //// outside a `Call` it is no expression (`main`); a `Name` that nothing binds
 //// where the tree is spliced names nothing (`unbound`). A type node is no
 //// expression (`types`), and an `FnParam` is a parameter only of a `Fn`
-//// (`params`, decision 753).
+//// (`params`, decision 753). A `Lit` holding a `syntax` value — a caller's
+//// hole — names `Syntax(e)` (`literal`, decision 637).
 
+mod literal;
 mod params;
 mod types;
 mod unbound;
+import {literal.wrapped};
 import {params.param};
 import {types.typeNode};
 import {unbound.missing};
@@ -22,4 +25,5 @@ pub fn main() {
     print(missing());
     print(typeNode());
     print(param());
+    print(wrapped());
 }

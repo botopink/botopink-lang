@@ -44,6 +44,7 @@ const erlang = @import("../codegen/erlang.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const astBuild = @import("ast_build.zig");
+const buildCalls = @import("build_template_calls.zig");
 const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
@@ -10285,7 +10286,7 @@ fn lookupMetaTerm(env: *Env, e: reflectionMod.TypedMetaEntry) InferError!decorat
 fn expandTemplateCallViaRuntime(
     env: *Env,
     tfn: ast.FnDecl,
-    captures: []const template.CapturedExpr,
+    captures_in: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
     retType: *T.Type,
     loc: ast.Loc,
@@ -10294,7 +10295,7 @@ fn expandTemplateCallViaRuntime(
 
     // All params must be accounted for: each is either an @Expr capture or a
     // plain-arg literal. Runtime params (no value at compile time) are rejected.
-    if (captures.len + plainArgs.len != tfn.params.len) {
+    if (captures_in.len + plainArgs.len != tfn.params.len) {
         env.lastError = TypeError.custom(
             "template function has parameters without compile-time values (V1)",
             "Every parameter must be either `comptime p: @Expr<T>` or receive a literal value at the call site.",
@@ -10307,9 +10308,16 @@ fn expandTemplateCallViaRuntime(
     // the call site's own hole expressions, so equal text parts at two sites
     // would alias the wrong holes.
     var holed = false;
-    for (captures) |cap| {
+    for (captures_in) |cap| {
         if (cap.text == null) holed = true;
     }
+    // Decision 637 — a body that reads `compiler.holes(t)` gets each hole's
+    // expression; the expansion embeds this call's holes, so it is not
+    // memoized.
+    const captures = if (decoratorSameMod.mentionsMethod(tfn, "holes")) blk: {
+        holed = true;
+        break :blk try withHoleCaptures(env, captures_in);
+    } else captures_in;
     // `@ExprCustom<T>` calls are never memoized: each expansion also stores a
     // reference `CustomNode` tree keyed by *this* call's location, so the
     // evaluation must run per call site (the memo cache holds only the `code`
@@ -10357,20 +10365,27 @@ fn expandTemplateCallViaRuntime(
         const own = if (i == 0) owner.len == 0 or std.mem.eql(u8, owner, env.modulePath) else if (env.fnDecls.get(f.name)) |g| g.body.ptr == f.body.ptr else false;
         c.* = if (own) try hosts.rewrite(try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f)) else f;
     }
+    // Decision 637 — the templates its body calls run with it, at build.
+    // An imported template's were lowered where its module exported it.
+    // Lowered first: a hole's expression (`${self}`) is the body's, renamed
+    // with it below.
+    const lowered: BuildLowered = if (owner.len == 0 or std.mem.eql(u8, owner, env.modulePath)) try lowerBuildTemplateCalls(env, carried[0]) else .{ .decl = carried[0] };
+    carried[0] = lowered.decl;
     // A template method's receiver parameter is no `self` to the backend
     // that lowers the module (decisions 311 (3), 415 (1)).
     carried[0] = try templateEval.renameTemplateSelf(env.arena, carried[0]);
+    const carried_all = if (lowered.support.len == 0) carried else try std.mem.concat(env.arena, ast.FnDecl, &.{ carried, lowered.support });
     // Decision 353 — the body's `@TypeInfo.all(…)` queries answered for the
     // program this call is compiled in; the module carries the records the
     // answers build.
     const answered = try answerTemplateQueries(env, owner, carried[0], loc);
     carried[0] = answered.decl;
-    const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names, "");
+    const reached = try blockEval.typesReached(env, carried_all, &templateEval.injected_names, "");
     // The host functions and std functions the run reaches (decision 341); an
     // imported template's travelled with its export.
     const own_template = owner.len == 0 or std.mem.eql(u8, owner, env.modulePath);
-    const hosted: []const ast.FnDecl = if (own_template) try hostCells.hostSupport(env, &env.fnDecls, carried) else &.{};
-    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns, hosted });
+    const hosted: []const ast.FnDecl = if (own_template) try hostCells.hostSupport(env, &env.fnDecls, carried_all) else &.{};
+    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried_all[1..], reached.fns, hosted });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
     var valued = try withHoleValues(env, ctx.io, captures);
     // Decision 415 (2) — what `q.lookup` / `q.bindings` answer.
@@ -10536,6 +10551,84 @@ fn expandTemplateCallViaRuntime(
         try env.templateEvalBuilt.put(env.arena, key, built);
     }
     return finishExpansionBuilt(env, expansion, retType, loc, built);
+}
+
+/// Decision 637 — a template's body with each template it calls at build
+/// lowered (`build_template_calls.zig`), and those templates — under the name
+/// they travel with — with the functions each reaches.
+pub const BuildLowered = struct { decl: ast.FnDecl, support: []const ast.FnDecl = &.{} };
+
+pub fn lowerBuildTemplateCalls(env: *Env, f: ast.FnDecl) InferError!BuildLowered {
+    const Ctx = struct {
+        env: *Env,
+
+        pub fn isBuildTemplate(self: @This(), callee: []const u8) bool {
+            const tf = self.env.templateFns.get(callee) orelse return false;
+            return buildCalls.answersAnyvalue(tf);
+        }
+
+        pub fn holes(self: @This(), text: []const u8, textLoc: ast.Loc) buildCalls.Error![]ast.Expr {
+            return textHoleExprs(self.env, text, textLoc) catch |err| switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                else => error.HoleNotAnExpression,
+            };
+        }
+    };
+    var l: buildCalls.Lowering(Ctx) = .{ .arena = env.arena, .ctx = .{ .env = env } };
+    const decl = l.lower(f) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.HoleNotAnExpression => return error.TypeError,
+    };
+    if (l.callees.items.len == 0) return .{ .decl = decl };
+    var support: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    for (l.callees.items) |name| {
+        const tf = env.templateFns.get(name) orelse continue;
+        var carried = tf;
+        carried.name = try buildCalls.carriedName(env.arena, name);
+        try support.append(env.arena, carried);
+        const reached: []const ast.FnDecl = if (env.importedTemplateSupport.get(@intFromPtr(tf.body.ptr))) |s|
+            s.fns
+        else
+            (try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, tf)).fns;
+        for (reached) |r| {
+            const dup = for (support.items) |have| {
+                if (std.mem.eql(u8, have.name, r.name)) break true;
+            } else false;
+            if (!dup) try support.append(env.arena, r);
+        }
+    }
+    return .{ .decl = decl, .support = support.items };
+}
+
+/// Decision 637 — the `${…}` holes of the template text `text` written at
+/// `textLoc` (its `` @` ``), each parsed where it is written; a hole that is
+/// no expression is refused at it.
+fn textHoleExprs(env: *Env, text: []const u8, textLoc: ast.Loc) InferError![]ast.Expr {
+    const spans = try template.holeSpans(env.arena, text);
+    const cap: template.CapturedExpr = .{
+        .callee = "",
+        .paramIndex = 0,
+        .paramName = "",
+        .node = undefined,
+        .text = text,
+        .multiline = false,
+        .templateText = true,
+        .loc = textLoc,
+        .modulePath = env.modulePath,
+        .scope = null,
+    };
+    const out = try env.arena.alloc(ast.Expr, spans.len);
+    for (spans, out) |sp, *o| {
+        const src = text[sp.start..sp.end];
+        const at = template.mapSpanToLoc(&cap, sp);
+        const node = parseCodeText(env, src, at) orelse {
+            const msg = try std.fmt.allocPrint(env.arena, "this hole is no expression: `${{{s}}}`", .{src});
+            env.lastError = TypeError.custom(msg, "A `${…}` hole of a template text holds one expression (decision 637).").withLoc(at);
+            return error.TypeError;
+        };
+        o.* = node.*;
+    }
+    return out;
 }
 
 /// Decision 625 (2) — the code a `compiler.ast(node)` tree builds: each node
@@ -11378,8 +11471,48 @@ fn literalSourceAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{Out
 fn captureNodeFor(captures: []const template.CapturedExpr, name: []const u8) ?*const ast.Expr {
     for (captures) |cap| {
         if (std.mem.eql(u8, cap.paramName, name)) return cap.node;
+        // Decision 637 — a hole of the capture's text.
+        for (cap.holes) |h| if (std.mem.eql(u8, h.paramName, name)) return h.node;
     }
     return null;
+}
+
+/// Decision 637 — `captures` with the `${…}` holes of each template text
+/// parsed, each a capture of its own located where it is written in the
+/// caller's text (`template.mapSpanToLoc`): what `compiler.holes(t)` answers.
+/// A hole that is no expression is refused at it.
+fn withHoleCaptures(env: *Env, captures: []const template.CapturedExpr) InferError![]const template.CapturedExpr {
+    const out = try env.arena.dupe(template.CapturedExpr, captures);
+    for (out) |*cap| {
+        if (!cap.templateText) continue;
+        const text = cap.text orelse continue;
+        const spans = try template.holeSpans(env.arena, text);
+        if (spans.len == 0) continue;
+        const holes = try env.arena.alloc(template.CapturedExpr, spans.len);
+        for (spans, holes, 0..) |sp, *h, i| {
+            const src = text[sp.start..sp.end];
+            const at = template.mapSpanToLoc(cap, sp);
+            const node = parseCodeText(env, src, at) orelse {
+                const msg = try std.fmt.allocPrint(env.arena, "this hole is no expression: `${{{s}}}`", .{src});
+                env.lastError = TypeError.custom(msg, "A `${…}` hole of a template text holds one expression of the caller's (decision 637).").withLoc(at);
+                return error.TypeError;
+            };
+            h.* = cap.*;
+            h.paramName = try std.fmt.allocPrint(env.arena, "{s}#{d}", .{ cap.paramName, i });
+            h.node = node;
+            h.text = src;
+            h.templateText = false;
+            h.multiline = false;
+            h.loc = at;
+            h.holes = &.{};
+            h.holeValues = &.{};
+            h.tagAnswers = &.{};
+            h.handles = &.{};
+            h.valueRead = false;
+        }
+        cap.holes = holes;
+    }
+    return out;
 }
 
 /// True when `e` is a V1-liftable expression for `@expr(…)` — literals,
@@ -19785,6 +19918,15 @@ fn inferTemplateMethod(
             // `lookup` answers it (decision 415 (2)).
             op = .bindings;
             retType = try env.namedTypeArgs("array", &.{try env.namedType(ast.decl_type_name)});
+        } else if (std.mem.eql(u8, callee, "holes")) {
+            // Decision 637 — the text's `${…}` holes, each a `syntax` value
+            // (or, handed by a body that runs at build, the hole's value).
+            op = .holes;
+            retType = try env.namedTypeArgs("array", &.{try env.namedType("unknown")});
+        } else if (std.mem.eql(u8, callee, "isSyntax")) {
+            // Decision 637 — whether a value is a `syntax` value.
+            op = .isSyntax;
+            retType = try env.namedType("bool");
         } else if (std.mem.eql(u8, callee, "build")) {
             // Parse source text into an expression carrying the receiver's
             // origin scope + provenance — how a second-layer language emits
@@ -24165,6 +24307,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.syntax_call_outside_syntax, call.callee });
                             env.lastError = TypeError.custom(msg, "Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).").withLoc(loc);
                             return error.TypeError;
+                        };
+                        // Decision 637 — a template answering `anyvalue`
+                        // called in a template's body runs where the body
+                        // runs, at build (`build_template_calls.zig`): the
+                        // holes of its text are the body's expressions, typed
+                        // here, and the call's value is the code it builds.
+                        if (maybeTfn) |tf| if (env.inTemplateFn and loc.expansion == 0 and call.templateText != null and call.receiver == null and buildCalls.answersAnyvalue(tf)) {
+                            for (try textHoleExprs(env, call.templateText.?, call.args[0].value.getLoc())) |h| _ = try inferExpr(env, h);
+                            break :blk try env.namedTypeArgs(ast.expr_type_name, &.{try env.freshVar()});
                         };
                         var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
                         var plainArgs: std.ArrayListUnmanaged(template.PlainArg) = .empty;

@@ -7,7 +7,7 @@
 
 mod store;
 import {cases.template_method_call.store.Store, cases.template_method_call.store.read};
-import {compiler, io.terminal.print} from "std";
+import {code, compiler, io.terminal.print} from "std";
 
 behavior Named {
     fn name(self: Self) -> string;
@@ -24,23 +24,18 @@ type Greeter(who: string) implement Named {
 }
 
 fn shout(syntax self: Greeter, syntax q: string) -> string {
-    return compiler.build(compiler.text(self)
-        + ".greet(\""
-        + compiler.text(q).toUpper()
-        + "\")");
+    val word = compiler.text(q).toUpper();
+    return code @`${self}.greet(${word})`;
 }
 
 fn tag(syntax self: Named, syntax q: string) -> string {
-    return compiler.build("\"["
-        + compiler.text(q)
-        + "] \" + "
-        + compiler.text(self)
-        + ".name()");
+    val said = "[" + compiler.text(q) + "] ";
+    return code @`${said} + ${self}.name()`;
 }
 
 fn shape(syntax self: Greeter, syntax q: string) -> string {
     val kind = if (compiler.context(q).multiline) "multi" else "single";
-    return compiler.build(compiler.text(self) + ".greet(\"" + kind + "\")");
+    return code @`${self}.greet(${kind})`;
 }
 
 type Room(host: Greeter) {

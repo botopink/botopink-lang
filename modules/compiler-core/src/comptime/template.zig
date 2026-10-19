@@ -181,7 +181,53 @@ pub const CapturedExpr = struct {
     /// `q.lookup(word)` answers and `q.bindings()` lists. Empty when none was
     /// computed; a scope hit then carries its name and kind alone.
     handles: []const LookupHandle = &.{},
+    /// Decision 637 — the `${…}` holes of a template text, in order, each
+    /// the hole's expression as a capture of its own (`paramName` the
+    /// text's with `#<i>` appended): what `compiler.holes(t)` answers, a
+    /// `Syntax(h)` of one splicing its expression. Empty unless the body
+    /// reads `holes` (`infer.zig` `withHoleCaptures`).
+    holes: []const CapturedExpr = &.{},
 };
+
+/// Decision 637 — the `${…}` holes of a template text: for each, the span of
+/// the expression between `${` and its matching `}` (braces nest; a string
+/// literal's braces do not count). An unclosed `${` ends the scan.
+pub fn holeSpans(arena: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]const Span {
+    var out: std.ArrayListUnmanaged(Span) = .empty;
+    var i: usize = 0;
+    var line: usize = 1;
+    while (i + 1 < text.len) : (i += 1) {
+        if (text[i] == '\n') line += 1;
+        if (text[i] != '$' or text[i + 1] != '{') continue;
+        const start = i + 2;
+        var depth: usize = 1;
+        var j = start;
+        var quote: ?u8 = null;
+        while (j < text.len) : (j += 1) {
+            const c = text[j];
+            if (quote) |q| {
+                if (c == '\\') j += 1 else if (c == q) quote = null;
+                continue;
+            }
+            switch (c) {
+                '"' => quote = '"',
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if (depth == 0) break;
+                },
+                else => {},
+            }
+        }
+        if (j >= text.len) break;
+        try out.append(arena, .{ .start = start, .end = j, .line = line });
+        for (text[i..j]) |c| if (c == '\n') {
+            line += 1;
+        };
+        i = j;
+    }
+    return out.items;
+}
 
 /// One `q.lookup` answer a capture carries: the name the call site spells
 /// and the handle's term (`decorator_eval.handleToTerm`).

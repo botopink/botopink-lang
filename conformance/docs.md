@@ -3908,6 +3908,30 @@ is checked in the reply, it is `ast-ill-formed` at the `ast` call.
 
 <!-- example: modules/ast_node_closed_union -->
 
+### `code`
+
+A template writes the code it answers with `code`, std's template over the
+typed tree (decisions 625 (4), 637), imported where used — `import {code} from
+"std";`. Called in a template's body, `` code @`…` `` runs where that body runs,
+at build: its text is read into `Node` records and built as `compiler.ast`
+builds them. Each `${…}` hole is an expression of the body, read by its
+arrival (638): a `syntax` value — a template method's receiver, a caller's
+hole from `compiler.holes(t)`, any `syntax` parameter — is spliced as it was
+written (`Syntax(e)`), any other value as its literal (`Lit(v)`):
+`` code @`${self}.run(${sql}, [${h[0]}])` `` runs the receiver's method where the
+call stands.
+
+`compiler.holes(t)` answers the `${…}` holes of the caller's template text, in
+order, each a `syntax` value typed where it is spliced; `compiler.isSyntax(v)`
+answers whether a value is one. The text is one expression of `Node`'s
+vocabulary, a typed `fn(a: A) -> R { return …; }` and its types included; a
+text that is none — an index, a string literal with a hole inside it — is
+refused at the template's call, naming what was met.
+
+<!-- example: modules/code_template_builds_ast -->
+<!-- example: modules/template_method_receiver_code -->
+<!-- example: modules/code_text_not_code_refused -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `syntax` (decisions 575 (4),

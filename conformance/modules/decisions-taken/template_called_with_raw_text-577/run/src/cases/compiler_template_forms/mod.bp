@@ -3,7 +3,7 @@
 //// (its `syntax self: R` receiver first), and the annotation `` #[name @`…`] ``,
 //// whose second `syntax` parameter is the annotated declaration.
 
-import {compiler, io.terminal.print} from "std";
+import {code, compiler, io.terminal.print} from "std";
 
 pub type Query(sql: string)
 
@@ -19,12 +19,20 @@ fn find() -> i32 {
 
 pub type Num(n: i32)
 
+// The number the text writes, read at build.
+fn digits(text: string) -> i32 {
+    var n = 0;
+    var i = 0;
+    while (i < text.length()) {
+        n = n * 10 + text.charCodeAt(i) - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
 fn plus(syntax self: Num, syntax q: string) -> anyvalue {
-    return compiler.build("Num(n: "
-        + compiler.text(self)
-        + ".n + "
-        + compiler.text(q)
-        + ")");
+    val more = digits(compiler.text(q));
+    return code @`Num(n: ${self}.n + ${more})`;
 }
 
 pub fn runCase() {

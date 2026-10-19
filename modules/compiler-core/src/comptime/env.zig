@@ -341,7 +341,7 @@ pub const TemplateBuilt = struct {
     ast_nodes: []const astBuild.At = &.{},
 };
 
-pub const TemplateOp = enum { value, text, source, context, lookup, bindings, build, ast, custom, fail, failAt, tagDecl, annotate, note };
+pub const TemplateOp = enum { value, text, source, context, lookup, bindings, holes, build, ast, isSyntax, custom, fail, failAt, tagDecl, annotate, note };
 
 /// Everything the inference-time template evaluator needs to run a template
 /// body in the external eval runtime (expr-templates F6-full). Null in

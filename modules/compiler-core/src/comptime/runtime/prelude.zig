@@ -58,6 +58,12 @@ pub const decorator_fail_tag = "__bp_decorator_fail";
 pub const code_tag = "__bp_code";
 /// `{'__bp_ast', Node}` — what `ast/2` returns (decision 625 (2)).
 pub const ast_tag = "__bp_ast";
+/// Decision 637 — the resident function a template call in a body that runs
+/// at build is lowered to the argument of (`infer.zig`
+/// `lowerBuildTemplateCalls`): `'__bp_captureOf'(Text, Holes)`.
+pub const capture_of_fn = "__bp_captureOf";
+/// The parameter name of the capture `capture_of_fn` builds: no template's.
+pub const nested_capture_param = "__bp_nested";
 /// Decision 237 — the message `lookup/2` fails the template with when its name
 /// is not a word of the captured text: head ++ Name ++ tail. ASCII only: the
 /// prelude's binary literals carry bytes, not code points.
@@ -238,6 +244,34 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.remote("erlang", "put", &.{ A(build_key), V("At") }),
             try b.tuple(&.{ A(ast_tag), V("Node") }),
         }),
+        // Decision 637 — `compiler.holes(t)`: the holes a capture carries
+        // (the caller's hole expressions, or the values a body that runs at
+        // build handed a template, `'__bp_captureOf'/2`).
+        try b.functionClauses("holes", &.{
+            try b.clause(&.{try b.map(&.{Ast.exactField("holes", V("Holes"))})}, &.{}, &.{V("Holes")}),
+            try b.clause(&.{V("_Capture")}, &.{}, &.{try b.list(&.{})}),
+        }),
+        // Decision 637 — `compiler.isSyntax(v)`: a `syntax` value is a
+        // capture.
+        try b.functionClauses("isSyntax", &.{
+            try b.clause(&.{ V("_Capture"), try b.map(&.{.{ .key = A("__bp_capture"), .value = V("_"), .exact = true }}) }, &.{}, &.{A("true")}),
+            try b.clause(&.{ V("_Capture"), V("_") }, &.{}, &.{A("false")}),
+        }),
+        // Decision 637 — a template called in a body that runs at build
+        // (`` code @`…` ``) receives its text as a capture whose holes are the
+        // values the body computed for them.
+        try b.function(capture_of_fn, &.{ V("Text"), V("Holes") }, &.{}, &.{
+            try b.map(&.{
+                .{ .key = A("__bp_capture"), .value = Ast.str(nested_capture_param) },
+                Ast.field("text", V("Text")),
+                Ast.field("holes", V("Holes")),
+                Ast.field("source", try b.map(&.{ Ast.field("file", Ast.str("")), Ast.field("line", Ast.Expr.r("0")), Ast.field("col", Ast.Expr.r("0")) })),
+                Ast.field("context", try b.map(&.{})),
+                Ast.field("bindings", try b.list(&.{})),
+                Ast.field("words", try b.list(&.{})),
+                Ast.field("name", A("undefined")),
+            }),
+        }),
         try b.function("note", &.{ V("_Capture"), V("Message") }, &.{}, &.{
             try b.remote("erlang", "put", &.{ A(notes_key), try b.cons(&.{try b.call("__bp_text", &.{V("Message")})}, try b.call("__bp_notes", &.{})) }),
             A("ok"),
@@ -416,7 +450,7 @@ fn tagForms(b: Ast.Builder) Error![]const Ast.Form {
 /// clash with the decorator's `fail/2` / `failAt/3` / `compilerError/1`, which
 /// are not carried (the handle's report at the annotation).
 pub fn captureForms(b: Ast.Builder) Error![]const Ast.Form {
-    const names = [_][]const u8{ "text", "name", "source", "context", "bindings", "lookup", "ref", "build", "ast", "custom", "expr", "code" };
+    const names = [_][]const u8{ "text", "name", "source", "context", "bindings", "lookup", "ref", "build", "ast", "holes", "isSyntax", capture_of_fn, "custom", "expr", "code" };
     var out: std.ArrayListUnmanaged(Ast.Form) = .empty;
     for (try templateForms(b)) |form| switch (form) {
         .function => |f| for (names) |n| {

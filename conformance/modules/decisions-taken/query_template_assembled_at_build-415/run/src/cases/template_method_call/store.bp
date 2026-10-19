@@ -3,15 +3,13 @@
 //// comptime q: @Expr<string>)`: the importer calls it on a value of a type
 //// that implements the behavior.
 
-import {compiler} from "std";
+import {code, compiler} from "std";
 
 pub behavior Store<E> {
     fn fetch(self: Self<E>, key: string) -> Result<string, E>;
 }
 
 pub fn read<E>(syntax self: Store<E>, syntax q: string) -> Result<string, E> {
-    return compiler.build(compiler.text(self)
-        + ".fetch(\""
-        + compiler.text(q)
-        + "\")");
+    val key = compiler.text(q);
+    return code @`${self}.fetch(${key})`;
 }

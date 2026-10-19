@@ -27,9 +27,10 @@
 ////   `setMeta`, `addMeta`, `addMember`, `addType`, `init`,
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
-////   `context`, `lookup`, `bindings`, `fail`.
-//// - A template's call site: `build`, `ast`, `buildType`, `note`, `tagDecl`,
-////   `annotate`, `custom` (decisions 578 (3), 625 (2)).
+////   `context`, `lookup`, `bindings`, `holes` (decision 637), `fail`.
+//// - A template's call site: `build`, `ast`, `isSyntax`, `buildType`,
+////   `note`, `tagDecl`, `annotate`, `custom` (decisions 578 (3), 625 (2),
+////   637).
 //// - The typed AST `ast` builds code from (decision 625 (2)): `Node` and its
 ////   kinds `Name`, `Lit`, `Member`, `Call`, `Arg`, `List`, `Tuple`,
 ////   `Binary`, `Unary`, `If`, `Lambda`, `Syntax` (decision 638), `Fn`,
@@ -96,6 +97,11 @@ pub behavior Compiler {
     // A name resolved where the call stands, and every name in scope there.
     fn lookup(self: Self, syntax e: unknown, name: string) -> unknown;
     fn bindings(self: Self, syntax e: unknown) -> unknown[];
+    // The `${…}` holes of a template text, in order (decision 637): the
+    // i-th the i-th hole's expression, a `syntax` value — opaque, typed in
+    // the caller's scope where it is spliced. A text a body that runs at
+    // build hands a template holds each hole's value there.
+    fn holes(self: Self, syntax t: string) -> unknown[];
 
     // ── A template's call site ────────────────────────────────────────────
     // Code built from source text, typed at the call (decisions 426 (1),
@@ -105,6 +111,10 @@ pub behavior Compiler {
     // (2)); a tree that is no code — an `Arg` outside a `Call`, a `Name`
     // nothing binds — is refused here, naming the node.
     fn ast(self: Self, comptime node: Node) -> anyvalue;
+    // Whether `v` is a `syntax` value — code as written — rather than a
+    // value known at build: what a hole of `code` is spliced as (`Syntax(e)`
+    // or `Lit(v)`, decisions 637, 638).
+    fn isSyntax(self: Self, v: unknown) -> bool;
     // A type built from source text — the one way a type is built
     // (decision 578 (3)).
     fn buildType(self: Self, comptime source: string) -> anytype;
@@ -539,6 +549,21 @@ pub type HookNode = __HookNode;
           "return_type": "unknown[]"
         },
         {
+          "name": "holes",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "t",
+              "type": "string",
+              "is_comptime": true
+            }
+          ],
+          "return_type": "unknown[]"
+        },
+        {
           "name": "build",
           "params": [
             {
@@ -567,6 +592,20 @@ pub type HookNode = __HookNode;
             }
           ],
           "return_type": "anyvalue"
+        },
+        {
+          "name": "isSyntax",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "v",
+              "type": "unknown"
+            }
+          ],
+          "return_type": "bool"
         },
         {
           "name": "buildType",
