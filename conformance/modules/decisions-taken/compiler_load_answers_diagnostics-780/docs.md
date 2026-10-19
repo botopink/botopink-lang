@@ -1,19 +1,19 @@
 # Decision 780 — `compiler.load(path)` compiles a file of the package at build and answers its refusals as data; there is no `compiler.snapshot`.
 
-`compiler.load(path)` compiles another file of the package at build and answers that file's refusals as data, a
-`Diagnostic[]`. Each `Diagnostic` has a `code`, a `message`, a `file`, a `line`, a `column` and a `label`, with the same
-text and location `botopink build` prints. The path follows `compiler.embed`'s rules: it is relative to the package
-root and the file is a build input. The file is compiled as the entry of a package of its own, for the build's
-target, and never joins the caller's module graph. Its refusals are only the answer: they are never printed and never
-refuse the caller. A file that compiles answers `[]`. There is no `compiler.snapshot`, so comparing an answer stays
-`botopink cell check`'s job.
+`compiler.load(path)` compiles another file of the package at build, as the entry of a package of its own — the
+caller's manifest, its own `mod` tree beside it, the build's target — and answers that file's refusals as data.
+Each `Diagnostic` holds a `code`, a `message`, a `file`, a `line`, a `column` and a `label`: the text and the place
+`botopink build` prints for the refusal. The loaded file never joins the caller's program, so its refusals never
+refuse the caller. Decision 782 makes the answer a `Result` (`Ok` when the file compiles), read with `try … catch`
+(783). There is no `compiler.snapshot`: comparing an answer stays `botopink cell check`'s job.
 
-In the example `main` loads two files under `src/cases/`, and no module declares either of them.
-[draft/cases/broken.bp](draft/cases/broken.bp) assigns a string to an `i32`. Its load answers one diagnostic, and
-`main` prints the count and then that diagnostic's code and location. [draft/cases/fine.bp](draft/cases/fine.bp)
-compiles, so its load answers an empty array and `main` prints `0`. The program itself builds and runs, even though
-one of the files it loads is refused.
+In the cell `main` loads three files under `src/cases/`, none of them a module of the program: a type error, a
+parse error whose caret carries a label, and a file whose sibling module `helper.bp` (its `mod` tree) is refused,
+which the entry's import then names. Each refusal is printed field by field. The refused cases are the path rules,
+`@embed`'s: an absolute path, a `..` segment and a file that does not exist are refusals of the program that
+loads, at the argument.
 
-Cells that bear on it: none yet (B-158 builds the member).
-
-[draft/main.bp](draft/main.bp)
+[cells/compiler_load_answers_diagnostics/src/main.bp](cells/compiler_load_answers_diagnostics/src/main.bp)
+[refused/src/cases/load_path_absolute/mod.bp](refused/src/cases/load_path_absolute/mod.bp)
+[refused/src/cases/load_path_outside_package/mod.bp](refused/src/cases/load_path_outside_package/mod.bp)
+[refused/src/cases/load_file_missing/mod.bp](refused/src/cases/load_file_missing/mod.bp)

@@ -1,0 +1,37 @@
+//// Decision 783 — `compiler.load`'s refusals are a `Result`'s failure: `try comptime
+//// compiler.load(…) catch { ds -> … }` handles them in its region, the handler a block
+//// with a binder; `try comptime compiler.load(…);` with no `catch` propagates them to
+//// the enclosing function's `Result`, whose caller handles them.
+
+import {compiler, io.terminal.print} from "std";
+
+// Propagated: the load's `Error(ds)` is this function's.
+fn checked() -> Result<void, compiler.Diagnostic[]> {
+    try comptime compiler.load("src/cases/broken.bp");
+    print("not reached");
+    return;
+}
+
+// A file that compiles propagates nothing.
+fn passes() -> Result<void, compiler.Diagnostic[]> {
+    try comptime compiler.load("src/cases/fine.bp");
+    print("fine loaded");
+    return;
+}
+
+pub fn main() {
+    // Handled in the region.
+    try comptime compiler.load("src/cases/broken.bp") catch { ds ->
+        for (ds) { d ->
+            print("handled " + d.file + ":" + d.line.toString());
+        }
+    }
+    try checked() catch { ds ->
+        for (ds) { d ->
+            print("propagated " + d.file + ":" + d.line.toString());
+        }
+    }
+    try passes() catch { ds ->
+        print("never");
+    }
+}

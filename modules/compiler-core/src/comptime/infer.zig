@@ -20,6 +20,7 @@ const errorMod = @import("error.zig");
 const evalMod = @import("eval.zig");
 const blockEval = @import("block_eval.zig");
 const embedMod = @import("embed.zig");
+const loadMod = @import("load.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
 const stdCallsMod = @import("std_calls.zig");
@@ -12624,6 +12625,96 @@ fn inferEmbedBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     return typed;
 }
 
+/// Decisions 780, 782 — `comptime compiler.load(path)`: the file `path`
+/// names in the package, read by `@embed`'s rules (a path known at build,
+/// relative to the package's `botopink.json`, no absolute path, no `..`),
+/// compiled now as the entry of a package of its own (`load.compileFile`)
+/// and rewritten into the call that answers its `Result` (`load.rewrite`):
+/// `Ok` when it compiles, `Error` its refusals. A path refused, a file
+/// missing and a compiler with no reader are refusals of the caller, at the
+/// argument; the loaded file's own refusals never are.
+fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 1 or call.trailing.len != 0 or (call.args[0].label != null and !std.mem.eql(u8, call.args[0].label.?, "path"))) {
+        env.lastError = TypeError.custom(
+            diagnostics.load_arguments ++ ": `compiler.load` takes one argument, the path",
+            "Write `comptime compiler.load(\"src/cases/broken.bp\")` — the path of a file of the package, relative to its `botopink.json` (decision 780).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const arg = call.args[0].value;
+    const argLoc = arg.getLoc();
+    const path = try embedPathValue(env, arg) orelse {
+        env.lastError = TypeError.custom(
+            diagnostics.comptime_arg_not_known ++ ": the path of `compiler.load` is not known at build",
+            "`compiler.load` compiles its file while the program compiles (decision 780): pass a literal, a constant `val` or a `comptime` value.",
+        ).withLoc(argLoc);
+        return error.TypeError;
+    };
+    if (embedMod.checkPath(path)) |refusal| {
+        env.lastError = switch (refusal) {
+            .absolute => TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` names an absolute path", .{ diagnostics.load_path_absolute, path }),
+                "A path of `compiler.load` is relative to the `botopink.json` of the package that writes it (decision 780).",
+            ),
+            .outside_package => TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` leaves the package", .{ diagnostics.load_path_outside_package, path }),
+                "A path of `compiler.load` names a file of the package that writes it: no `..` segment (decision 780).",
+            ),
+        }.withLoc(argLoc);
+        return error.TypeError;
+    }
+    const files = env.packageFiles orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` cannot be read — this compiler reads no file", .{ diagnostics.load_no_reader, path }),
+            "The compiler that runs in a browser is handed no reader (decision 780): build the program with the `botopink` CLI.",
+        ).withLoc(argLoc);
+        return error.TypeError;
+    };
+    const answer = loadMod.compileFile(env.arena, .{
+        .path = path,
+        .files = files,
+        .io = if (env.templateEval) |ctx| ctx.io else files.io,
+        .build_root = if (env.templateEval) |ctx| ctx.build_root else null,
+        .target = env.target,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` could not compile the file ({s})", .{ diagnostics.load_file_missing, path, @errorName(err) }),
+                "The file is compiled as the entry of a package of its own (decision 780).",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        },
+    };
+    const ds = switch (answer) {
+        .diagnostics => |ds| ds,
+        .missing => {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` names no file of the package", .{ diagnostics.load_file_missing, path }),
+                "The path is relative to the `botopink.json` of the package that writes it (decision 780).",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        },
+        .cycle => {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` loads a file that is being loaded", .{ diagnostics.load_cycle, path }),
+                "A loaded file is compiled at build as a package of its own; one that loads itself, through any chain of loads, would never end (decision 780 (5)).",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        },
+        .std_initialising => {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` is read while std's own declarations are first registered", .{ diagnostics.load_cycle, path }),
+                "A nested compile needs std ready; it never re-enters std's one-time initialisation (decision 780 (5)).",
+            ).withLoc(argLoc);
+            return error.TypeError;
+        },
+    };
+    const rewrite = try loadMod.rewrite(env.arena, loc, ds);
+    try env.srcRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
 /// Decision 519 — the `Asset(…)` constructor of the file `path` of this
 /// module's package, read now, located at `loc`: an absolute path or one with
 /// a `..` segment is refused at `argLoc`, a compiler with no reader and a
@@ -23416,6 +23507,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "embed")) {
                 return inferEmbedBuiltin(env, call, loc);
+            }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, compilerSurface.load_builtin)) {
+                return inferLoadBuiltin(env, call, loc);
             }
             // A hand-written `SourceLocation(file: …, …)` needs the record
             // declaration spliced in exactly like the rewrite does.

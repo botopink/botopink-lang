@@ -31,6 +31,11 @@ const memberFn = @import("../comptime/member_fn.zig");
 /// "<message>", "<hint>")`. No source can spell it (`@` takes a name).
 pub const refusal_builtin = "__compilerRefusal";
 
+/// Decisions 780, 782 — the builtin `compiler.load(path)` is read onto: the
+/// checker compiles the file at build (`comptime/load.zig`). No source can
+/// spell it.
+pub const load_builtin = "__compilerLoad";
+
 /// What a member is, for the table test and the mapping below.
 pub const Kind = enum {
     /// A read of the point: `compiler.module`.
@@ -75,6 +80,7 @@ pub const members = [_]Member{
     .{ .name = "implement", .kind = .output, .params = &.{V} },
     .{ .name = "find", .kind = .site, .params = &.{ W, W } },
     .{ .name = "typeInfo", .kind = .site, .params = &.{V} },
+    .{ .name = "load", .kind = .site, .params = &.{V} },
     .{ .name = "text", .kind = .read, .params = &.{S} },
     .{ .name = "name", .kind = .read, .params = &.{S} },
     .{ .name = "source", .kind = .read, .params = &.{S} },
@@ -490,6 +496,9 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     }
     if (std.mem.eql(u8, name, "typeInfo")) return builtinCall(loc, "typeInfo", args, c.trailing);
     if (std.mem.eql(u8, name, "find")) return builtinCall(loc, "TypeInfo.all", args, c.trailing);
+    // Decisions 780, 782 — `comptime compiler.load(path)`: the file compiled
+    // at build, its answer a `Result` (`comptime/load.zig`).
+    if (std.mem.eql(u8, name, "load")) return builtinCall(loc, load_builtin, args, c.trailing);
     if (member.kind == .site) {
         const s = ctx.site orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` reads a template's call site, and this body is no template", .{name}), "A template answers `-> expr T`; its body reads the call site through `compiler` (decision 576 (2)).");
         if (std.mem.eql(u8, name, "buildType"))
@@ -699,6 +708,7 @@ fn readCall(read: ast.Expr) ?CallData {
 
 /// The name of the `comptime` parameter of a `Compiler` member (`compiler.bp`).
 fn valueParamName(callee: []const u8) []const u8 {
+    if (std.mem.eql(u8, callee, "load")) return "path";
     return if (std.mem.eql(u8, callee, "typeInfo")) "t" else "source";
 }
 

@@ -1430,10 +1430,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // `try` / `await` are prefix operators binding as the unary `-` does
     // (decision 537): the operand is the next primary with its postfix chain
     // (`await t.x` is `await (t.x)`), so `await t * 2` is `(await t) * 2`. An
-    // `if` / `case` operand is a whole expression of its own.
+    // `if` / `case` operand is a whole expression of its own, and so is a
+    // `comptime` read (decision 783: `try comptime compiler.load(p) catch
+    // { ds -> … }`).
     if (this.check(.@"try") or this.check(.await)) {
         const kwTok = this.advance();
-        const operand = if (this.check(.@"if") or this.check(.case))
+        const operand = if (this.check(.@"if") or this.check(.case) or this.check(.@"comptime"))
             try this.parseExpr(alloc)
         else
             try this.parsePrimary(alloc);

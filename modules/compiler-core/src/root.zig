@@ -21,6 +21,10 @@ pub const analysis_entry = @import("./comptime/analysis_entry.zig");
 /// The code cache's level B inside a compile (144 B-60 S2): the store a
 /// driver hands `codegen.Config.analysis_store` / `compileWith`.
 pub const level_b = @import("./comptime/level_b.zig");
+/// Decisions 780–783 — `compiler.load(path)`: the paths a program's reads
+/// write (`literalPaths`), which the CLI's resolver leaves out of the
+/// package's module tree.
+pub const load = @import("./comptime/load.zig");
 // `@ExprCustom` tooling read API (expr-custom): the canonical reference node and
 // the per-call-site entries a language server consumes. Generic — names no
 // sub-language. See `comptime_pipeline.OkData.custom_ast`.

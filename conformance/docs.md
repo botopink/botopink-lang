@@ -3843,6 +3843,36 @@ computed at build.
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/type_info_comptime_run_time -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/external_compiler_member -->
 
+### `compiler.load`
+
+`comptime compiler.load(path)` compiles a file of the package at build, as the entry of a
+package of its own — the caller's manifest, the `mod` tree beside the file, the build's target
+(decision 780) — and answers `Result<void, compiler.Diagnostic[]>` (decision 782): `Ok` when it
+compiles, `Error(ds)` when it is refused, `ds` its refusals in the order `botopink build` prints
+them. A `Diagnostic` is the refusal as printed: `message` the text after `error: `, `file`,
+`line` and `column` where it points, `label` the text beside the caret.
+
+The loaded file never joins the program that loads it: no module declares it, the package's
+module tree leaves it out, and its refusals never refuse the program. The answer is read as
+every `Result` is (decision 783): `try comptime compiler.load(path) catch { ds -> … }` handles
+the refusals, `try comptime compiler.load(path);` propagates them to the enclosing function's
+`Result`, `.isError()` asks. There is no `compiler.snapshot`: comparing an answer is
+`botopink cell check`'s.
+
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
+<!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
+<!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->
+
+The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
+absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`
+segment `load-path-outside-package` and a path that names no file of the package
+`load-file-missing`, each a refusal of the program that loads, at the argument; a
+compiler handed no reader refuses every load, `load-no-reader`.
+
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_path_absolute -->
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_path_outside_package -->
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_file_missing -->
+
 ### `compiler.ast`
 
 Code enters the compiler written — a `syntax` parameter, a template text — or

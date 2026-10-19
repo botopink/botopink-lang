@@ -623,6 +623,7 @@ fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envM
 /// sync with the `decl_reflection_src` entry.
 pub const asset_decl_src = embedMod.decl_src;
 const embedMod = @import("comptime/embed.zig");
+const loadMod = @import("comptime/load.zig");
 
 /// The records the compiler splices into the module that uses them
 /// (`withSourceLocationDecl`, `withDeclaredDecls`, `withAssetDecl`): each is a
@@ -1658,6 +1659,13 @@ var stdlib_template_env: Env = undefined;
 /// init function runs exactly once, every other caller is read-only.
 var stdlib_template_init: std.atomic.Value(u8) = .init(0);
 
+/// Whether std's template is built (decision 780 (5)): a nested compile —
+/// `compiler.load`'s (`comptime/load.zig`) — starts only then, never while
+/// the one-time initialisation runs.
+pub fn stdlibTemplateReady() bool {
+    return stdlib_template_init.load(.acquire) == 2;
+}
+
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
     while (true) {
         const s = stdlib_template_init.load(.acquire);
@@ -1794,7 +1802,10 @@ fn analyzeSource(
     };
     // Decision 551 — the queries a call leaving a catalogue default out is
     // given (`fillCatalogueDefaults`): this module then reads `@TypeInfo.all`.
-    const parsed_as_written = if (inserts) |ins| try typeinfoAll.withInsertedArgs(arena, parsed_source, ins) else parsed_source;
+    const inserted = if (inserts) |ins| try typeinfoAll.withInsertedArgs(arena, parsed_source, ins) else parsed_source;
+    // Decisions 780, 782 — a module that loads a file declares the function
+    // its reads are rewritten to call (`comptime/load.zig`).
+    const parsed_as_written = try loadMod.withLoadHelper(arena, inserted);
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
@@ -2481,7 +2492,10 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
         // The same rewrite `analyzeSource` makes, so a module reached only
         // through a folder namespace (`io.fs.f()`) or a module's type
         // (`collections.Dict.empty()`) is embedded like any imported one.
-        const expanded = std_namespace.expand(scratch, p.parse(scratch) catch break :collect) catch break :collect;
+        // Decision 780 — a module that loads a file imports std's
+        // `compiler.Diagnostic` (`loadMod.withLoadHelper`), as `analyzeSource` adds it.
+        const parsed = loadMod.withLoadHelper(scratch, p.parse(scratch) catch break :collect) catch break :collect;
+        const expanded = std_namespace.expand(scratch, parsed) catch break :collect;
         // A namespace every use of which is a `print` / `panic` call is
         // dropped, as the compile drops it (144 B-151): its module is no
         // dependency.
@@ -4619,6 +4633,10 @@ pub fn compileWith(
     store: ?*levelB.Store,
 ) !ComptimeSession {
     if (store) |st| st.stats = .{};
+    // Decision 780 — a `compiler.load` of this compile shares its dependencies.
+    const saved_build = loadMod.build_modules;
+    loadMod.build_modules = modules;
+    defer loadMod.build_modules = saved_build;
     // Decision 353 — a template body's `@TypeInfo.all` answers for the whole
     // program, every module's decorators applied. A session answers it from
     // the catalogue as it stands when the template is expanded; when a module

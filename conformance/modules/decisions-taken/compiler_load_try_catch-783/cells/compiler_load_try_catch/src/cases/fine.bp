@@ -1,0 +1,5 @@
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print("fine");
+}

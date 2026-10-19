@@ -298,6 +298,20 @@ pub const embed_arguments: []const u8 = "embed-arguments";
 /// Decision 538 — `a.open()` on an `Asset` hands it to std's file system: the
 /// module that writes it imports `io.fs`.
 pub const embed_open_needs_fs: []const u8 = "embed-open-needs-fs";
+/// Decision 780 — `compiler.load`'s path is absolute (`@embed`'s rules).
+pub const load_path_absolute: []const u8 = "load-path-absolute";
+/// Decision 780 — `compiler.load`'s path leaves the package (a `..` segment).
+pub const load_path_outside_package: []const u8 = "load-path-outside-package";
+/// Decision 780 — the file `compiler.load` names is not in the package.
+pub const load_file_missing: []const u8 = "load-file-missing";
+/// Decision 780 — `compiler.load` in a compiler handed no reader.
+pub const load_no_reader: []const u8 = "load-no-reader";
+/// Decision 780 — `compiler.load` takes one argument, the path.
+pub const load_arguments: []const u8 = "load-arguments";
+/// Decision 780 (5) — a file loads itself through a chain of loads, or a
+/// load is read while std's own declarations are first registered: the
+/// nested compile would never end.
+pub const load_cycle: []const u8 = "load-cycle";
 /// Decision 346 — `Bytes` widened to `unknown`: erlang and beam hold `Bytes`
 /// and `string` alike (a binary), so no run-time test tells them apart.
 pub const bytes_widened: []const u8 = "bytes-widened";
@@ -949,6 +963,12 @@ pub const all_codes = [_][]const u8{
     embed_text_not_at_build,
     embed_arguments,
     embed_open_needs_fs,
+    load_path_absolute,
+    load_path_outside_package,
+    load_file_missing,
+    load_no_reader,
+    load_arguments,
+    load_cycle,
     bytes_widened,
     bytes_type_test,
     comptime_host_cell_unavailable,

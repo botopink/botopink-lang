@@ -38,7 +38,7 @@
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
-//// - The program: `find`, `typeInfo`.
+//// - The program: `find`, `typeInfo`, `load` (decisions 780, 782).
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -144,6 +144,14 @@ pub behavior Compiler {
     fn find(self: Self, with: unknown, member: ?string = null) -> unknown[];
     // A type's reflection (decision 253).
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
+    // A file of the package compiled at build as the entry of a package of
+    // its own — the caller's manifest, its `mod` tree beside it, the build's
+    // target — never joining the caller's program (decisions 780, 782): `Ok`
+    // when it compiles, `Error` its refusals in the order `botopink build`
+    // prints them, never empty and never a refusal of the caller. `path` is
+    // relative to the package's `botopink.json` (no absolute path, no `..`);
+    // read with `try … catch` or `try` (decision 783).
+    fn load(self: Self, comptime path: string) -> Result<void, Diagnostic[]>;
 }
 
 // The value the module's import binds (decision 579): its value is given by
@@ -259,6 +267,22 @@ pub type GenericType(name: string, args: Node[])
 
 // `A | B`.
 pub type UnionType(members: Node[])
+
+// ── A refusal `compiler.load` answers (decisions 780 (2), 781) ────────────
+// One refusal of the loaded file, as `botopink build` prints it: `message`
+// the text after `error: ` (after `error[<code>]: ` when the refusal carries
+// its code there), `code` the refusal's code (`""` when it has none), `file`
+// relative to the package's root with `line` and `column` where the refusal
+// points (`""` and `0` when it points nowhere), `label` the text beside the
+// caret when there is one.
+pub type Diagnostic(
+    code: string,
+    message: string,
+    file: string,
+    line: i32,
+    column: i32,
+    label: ?string,
+)
 
 // ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 // No prelude name: a file naming one imports it, `import {compiler.Span} from

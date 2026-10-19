@@ -1,0 +1,10 @@
+//// Decision 780 — the path of `compiler.load` names a file of the package, by
+//// `@embed`'s rules: a path with a `..` segment is refused at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() {
+    try comptime compiler.load("src/../../elsewhere/main.bp") catch { ds ->
+        print(ds.length);
+    }
+}

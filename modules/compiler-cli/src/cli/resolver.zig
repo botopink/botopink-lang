@@ -188,6 +188,10 @@ pub fn resolveWith(
         collectChildren(sa, diag_arena, io, text, "_", std.fs.path.dirname(file) orelse src_dir_path, root_logical, 0, &named, null) catch {};
         for (named.items) |n| try mod_targets.put(sa, n.file, {});
     }
+    // Decision 780 (1) — a file a `compiler.load` reads is compiled as a
+    // package of its own and never joins this program: it and the `mod` tree
+    // beside it are not adopted (nor orphans).
+    const loaded = try loadedFiles(sa, diag_arena, io, unreached, src_dir_path, root_logical);
     var adopt_pass: u8 = 0;
     var next_unreached: usize = 0;
 
@@ -196,7 +200,7 @@ pub fn resolveWith(
             const pick: ?[]const u8 = while (adopt_pass < 2) {
                 while (next_unreached < unreached.len) : (next_unreached += 1) {
                     const f = unreached[next_unreached];
-                    if (visited.contains(f)) continue;
+                    if (visited.contains(f) or loaded.contains(f)) continue;
                     if (adopt_pass == 0 and mod_targets.contains(f)) continue;
                     break;
                 }
@@ -268,6 +272,8 @@ pub fn resolveWith(
         try collectChildren(sa, diag_arena, io, source, item.logical, decl_dir, root_logical, my_idx, &work, diag);
     }
 
+    var loaded_it = loaded.keyIterator();
+    while (loaded_it.next()) |f| try visited.put(sa, f.*, {});
     const orphans = try collectOrphans(gpa, io, src_dir_path, &visited, declared);
 
     // Analyze the cross-module import graph once: which module owns each `pub`
@@ -297,6 +303,55 @@ pub fn resolveWith(
 
     const owned_modules = try modules.toOwnedSlice(gpa);
     return .{ .modules = owned_modules, .orphans = orphans };
+}
+
+/// Decision 780 (1) — the files of `files` (each `<src_dir_path>/<rel>`, a
+/// path relative to the package's root) that a `compiler.load` of any of
+/// them reads by a string literal, and, transitively, the `mod` tree beside
+/// each: the package a load compiles of its own.
+fn loadedFiles(
+    sa: std.mem.Allocator,
+    diag_arena: std.mem.Allocator,
+    io: std.Io,
+    files: []const []const u8,
+    src_dir_path: []const u8,
+    root_logical: []const u8,
+) Error!std.StringHashMapUnmanaged(void) {
+    var out: std.StringHashMapUnmanaged(void) = .empty;
+    var pending: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (files) |file| {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, file, sa, .unlimited) catch continue;
+        if (std.mem.indexOf(u8, text, "load") == null) continue;
+        var lx = Lexer.init(text);
+        const tokens = lx.scanAll(sa) catch continue;
+        var p = Parser.init(tokens);
+        const program = p.parse(sa) catch continue;
+        for (bp.load.literalPaths(sa, program) catch continue) |path| {
+            const rel = if (std.mem.startsWith(u8, path, "./")) path[2..] else path;
+            for (files) |f| if (samePath(f, rel)) try pending.append(sa, f);
+        }
+    }
+    while (pending.pop()) |f| {
+        if (out.contains(f)) continue;
+        try out.put(sa, f, {});
+        const text = std.Io.Dir.cwd().readFileAlloc(io, f, sa, .unlimited) catch continue;
+        var named: std.ArrayListUnmanaged(WorkItem) = .empty;
+        collectChildren(sa, diag_arena, io, text, "_", std.fs.path.dirname(f) orelse src_dir_path, root_logical, 0, &named, null) catch {};
+        for (named.items) |n| try pending.append(sa, n.file);
+    }
+    return out;
+}
+
+/// Whether two package-relative paths name one file, separators aside.
+fn samePath(a: []const u8, b: []const u8) bool {
+    const x = if (std.mem.startsWith(u8, a, "./")) a[2..] else a;
+    if (x.len != b.len) return false;
+    for (x, b) |c, d| {
+        if (c == d) continue;
+        if (isSep(c) and isSep(d)) continue;
+        return false;
+    }
+    return true;
 }
 
 /// Every module file of the package's own source tree (`collectOrphans`'s

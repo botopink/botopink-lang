@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn main() -> void {
+pub fn main() {
     val n: i32 = "not a number";
     print(n);
 }

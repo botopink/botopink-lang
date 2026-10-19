@@ -1,0 +1,23 @@
+//// Decision 782 — `compiler.load(path)` answers a `Result<void, compiler.Diagnostic[]>`:
+//// `Ok` when the loaded file compiles, `Error` its refusals — never empty — when it does
+//// not. It is read as every `Result` is: asked with `.isOk()` / `.isError()`, handled
+//// with `try … catch`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() {
+    val fine = comptime compiler.load("src/cases/fine.bp");
+    print(fine.isOk());
+    print(fine.isError());
+    val broken = comptime compiler.load("src/cases/broken.bp");
+    print(broken.isOk());
+    print(broken.isError());
+    // `Ok` runs no handler.
+    try comptime compiler.load("src/cases/fine.bp") catch { ds ->
+        print("never: " + ds.length.toString());
+    }
+    // `Error` holds at least one refusal.
+    try comptime compiler.load("src/cases/broken.bp") catch { ds ->
+        print(ds.length > 0);
+    }
+}
