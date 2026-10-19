@@ -1,0 +1,18 @@
+//// A lambda stored in an optional function-typed field is written against the
+//// function type, and a call through the field narrowed to a local answers the
+//// function's return: `x!` and `y!` on every target (wasm printed an address).
+
+import {io.terminal.print} from "std";
+
+type Cfg(name: string, scoper: ?fn(string) -> string)
+
+fn apply(cfg: Cfg) {
+    val f = cfg.scoper;
+    if (f != null) print(f("x"));
+    print(cfg.scoper?.("y"));
+}
+
+pub fn main() {
+    apply(Cfg(name: "n", scoper: { s -> s + "!" }));
+    apply(Cfg(name: "n", scoper: null));
+}

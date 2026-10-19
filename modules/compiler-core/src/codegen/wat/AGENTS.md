@@ -2364,3 +2364,9 @@ compares words. `conformance/modules/decisions-taken/equality_is_structural-210/
 - **Nodes borrow their slices.** Build them in an arena that outlives rendering
   (`wat.zig` uses the emitter's `reg_arena`, which dies after the module is
   rendered).
+
+## Generic calls in linear mode
+
+- `genericFnArgElem` reads the element kind of an `R[]` a generic fn answers (`fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[]`) off the function argument's tail, its parameter bound to an element of the `T[]` argument (string, bool as the `[b` print shape, float, else i32); cell `generic_fn_result_array_string_bool`.
+- `genericRetRecord` names the record a generic `-> ?T` / `-> T` answer holds (the `T[]` argument's element or the `T` argument), so `?.field` finds its slot; cell `generic_answer_record_field_read`.
+- A lambda stored in an optional function-typed field is written against the function type (`lowerLambdaValue` unwraps `?fn`), and `valueCallTypeRef` answers the return of a value narrowed from `?fn`; cell `optional_fn_field_narrowed_call`.

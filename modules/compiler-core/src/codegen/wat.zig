@@ -19714,7 +19714,9 @@ const Emitter = struct {
         // parameters: `fn greeter(p: string) -> fn(x: string) -> string {
         // return { x -> p + x }; }` concatenates, where an untyped `x` was an
         // `i32` and `p + x` wrote the number (`a264`, exit 0).
-        const expected = self.expected_fn;
+        // An optional function type (`scoper: ?fn(string) -> string`) types the
+        // lambda stored in it the same way.
+        const expected: ?ast.TypeRef = if (self.expected_fn) |ef| (if (ef == .optional) ef.optional.* else ef) else null;
         self.expected_fn = null;
         const param_rec = try ra.alloc(?[]const u8, params.len);
         @memset(param_rec, null);
@@ -22033,6 +22035,9 @@ const Emitter = struct {
         };
         return switch (ft) {
             .function => |f| f.returnType.*,
+            // A value narrowed from an optional function (`val f = cfg.scoper;
+            // if (f != null) { f("x") }`) answers the function's return.
+            .optional => |o| if (o.* == .function) o.function.returnType.* else null,
             else => null,
         };
     }
