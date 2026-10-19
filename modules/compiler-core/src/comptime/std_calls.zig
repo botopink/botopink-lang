@@ -16,7 +16,8 @@
 //!   `import {failure.panic as fail}`), the item dropped when every use of it
 //!   was a call: it binds nothing a backend reads;
 //! - `import {io.terminal} from "std"; terminal.print(x)` (a folder, `io`,
-//!   reaches it through `std_namespace.expand`, which runs first);
+//!   reaches it through `std_namespace.expand`, which runs first), the
+//!   namespace item dropped when every use of it was such a call;
 //! - inside `io/terminal.bp` and `failure.bp`, the module's own bare call.
 //!
 //! A name of the module's own — a `fn print` it declares — is never touched:
@@ -172,7 +173,7 @@ const Ctx = struct {
                 else => {},
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.items.contains(n)) try self.read.put(self.arena, n, {}),
+                .ident => |n| if (self.items.contains(n) or self.namespaces.contains(n)) try self.read.put(self.arena, n, {}),
                 else => {},
             },
             else => {},
@@ -232,9 +233,12 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, key: ?[]const u8) 
     };
     if (ctx.items.count() == 0 and ctx.namespaces.count() == 0 and ctx.own == null and !build_only) return program;
     for (program.decls) |*d| try ctx.walk(ast.DeclKind, @constCast(d));
-    if (ctx.items.count() == 0 and !build_only) return program;
+    if (ctx.items.count() == 0 and ctx.namespaces.count() == 0 and !build_only) return program;
 
-    // The items every use of which became the call node bind nothing left.
+    // The items every use of which became the call node bind nothing left;
+    // so does a namespace (`import {io.terminal}`) every use of which was
+    // such a call (144 B-151): the program reaches none of the module's other
+    // members, so none of their hosts is linked.
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     for (program.decls) |d| switch (d) {
         .use => |u| {
@@ -246,6 +250,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program, key: ?[]const u8) 
             for (u.imports) |imp| {
                 const whole = try imp.fullPath(arena);
                 if (ofItemPath(whole) != null and !ctx.read.contains(imp.name())) continue;
+                if (ofModule(whole) != null and ctx.namespaces.contains(imp.name()) and !ctx.read.contains(imp.name())) continue;
                 if (isBuildOnlyItem(whole)) continue;
                 try kept.append(arena, imp);
             }
@@ -276,10 +281,10 @@ test "std calls: an imported print, a namespace's panic, an alias" {
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(arena));
     const program = try expand(arena, try p.parse(arena), null);
-    // `print` and `fail` leave the import; `failure` stays.
-    try std.testing.expectEqual(@as(usize, 1), program.decls[0].use.imports.len);
-    try std.testing.expectEqualStrings("failure", program.decls[0].use.imports[0].name());
-    const body = program.decls[1].@"fn".body;
+    // `print`, `fail` and `failure` (every use of it was the `panic` call)
+    // leave the import.
+    try std.testing.expect(program.decls[0] == .@"fn");
+    const body = program.decls[0].@"fn".body;
     const want = [_][]const u8{ "print", "panic", "panic" };
     for (body, want) |st, w| {
         const cc = st.expr.call.kind.call;

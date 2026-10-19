@@ -2675,7 +2675,6 @@ BigInt.prototype.toF64 = Number.prototype.toF64 = function() { return ((__v) => 
 
 //// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 
-const failure = require("../../std/failure.js");
 const { relative } = require("../../std/path.js");
 const { HostError } = require("../../std/failure.js");
 
@@ -3660,12 +3659,11 @@ function noFile() {
 
 // allowAll: per-call template (see annotation)
 
-Object.defineProperty(exports, "__bp_priv__", { value: { failure, relative, HostError, FsError, FsError$NotFound, FsError$PermissionDenied, FsError$IsDirectory, FsError$NotDirectory, FsError$AlreadyExists, FsError$InvalidUtf8, FsError$Other, FileStat, rawReadBytes, rawWriteBytes, rawAppendText, rawOpen, rawCreate, rawSize, rawRead, rawReadAll, rawReadLine, rawHash, rawWrite, rawClose, rawWriteText, exists, rawList, rawMkdir, rawMkdirRecursive, rawRm, rawCopy, rawStat, rawWalk, rawRemoveTree, fsError, lift, decode, Walked, readBytes, readText, writeBytes, writeText, appendText, stat, list, mkdir, mkdirRecursive, rm, removeTree, copy, walk, glob, File, open, create, openAsset, statOr, makeFixtureTree, walkFixture, walkFixtureFromCwd, walkRefusal, describe, makeGlobTree, globbed, variantOf, noFile } });
+Object.defineProperty(exports, "__bp_priv__", { value: { relative, HostError, FsError, FsError$NotFound, FsError$PermissionDenied, FsError$IsDirectory, FsError$NotDirectory, FsError$AlreadyExists, FsError$InvalidUtf8, FsError$Other, FileStat, rawReadBytes, rawWriteBytes, rawAppendText, rawOpen, rawCreate, rawSize, rawRead, rawReadAll, rawReadLine, rawHash, rawWrite, rawClose, rawWriteText, exists, rawList, rawMkdir, rawMkdirRecursive, rawRm, rawCopy, rawStat, rawWalk, rawRemoveTree, fsError, lift, decode, Walked, readBytes, readText, writeBytes, writeText, appendText, stat, list, mkdir, mkdirRecursive, rm, removeTree, copy, walk, glob, File, open, create, openAsset, statOr, makeFixtureTree, walkFixture, walkFixtureFromCwd, walkRefusal, describe, makeGlobTree, globbed, variantOf, noFile } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/io/fs.d.ts
 ```typescript
-import * as failure from "../../std/failure";
 import { relative } from "../../std/path";
 import { HostError } from "../../std/failure";
 

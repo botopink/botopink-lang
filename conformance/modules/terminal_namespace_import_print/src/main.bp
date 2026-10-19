@@ -1,0 +1,9 @@
+//// 144 B-151 — a namespace import of a std module links only the members the program reaches:
+//// `terminal.print("x")` alone, with `io.terminal` imported as a namespace, builds on wasm as it
+//// does on the other targets, though the module also declares the hosts of stdin's members.
+
+import {io.terminal} from "std";
+
+pub fn main() {
+    terminal.print("x");
+}

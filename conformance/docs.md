@@ -5081,8 +5081,12 @@ shadows the prelude's in that module, the rule `string` and `Array` already foll
 `print(..values: unknown[])` is a function of std's `io/terminal.bp` and `panic(message:
 string = "panic") -> noreturn` one of `failure.bp` (decision 606 (2)): each is imported where it
 is used — `import {io.terminal.print} from "std";`, `import {failure.panic} from "std";`, an
-alias included —, std's own modules by the same import.
+alias included —, std's own modules by the same import. The namespace form reaches them too
+(`import {io.terminal}; terminal.print("x")`): a namespace the program uses for nothing else links
+none of the module's other members, so the hosts they bind (stdin's, which wasm has no cell for) are
+not linked, on wasm as on the other targets.
 
+<!-- example: modules/terminal_namespace_import_print -->
 <!-- example: modules/print_from_io_terminal -->
 <!-- example: modules/panic_from_failure -->
 

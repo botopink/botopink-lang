@@ -2662,7 +2662,11 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
         // The same rewrite `analyzeSource` makes, so a module reached only
         // through a folder namespace (`io.fs.f()`) or a module's type
         // (`collections.Dict.empty()`) is embedded like any imported one.
-        const program = std_namespace.expand(scratch, p.parse(scratch) catch break :collect) catch break :collect;
+        const expanded = std_namespace.expand(scratch, p.parse(scratch) catch break :collect) catch break :collect;
+        // A namespace every use of which is a `print` / `panic` call is
+        // dropped, as the compile drops it (144 B-151): its module is no
+        // dependency.
+        const program = std_calls.expand(scratch, expanded, null) catch break :collect;
         for (program.decls) |decl| switch (decl) {
             .val => |v| if (beam_target and v.mutable) {
                 if (stdIndex("std/beam")) |i| needed[i] = true;

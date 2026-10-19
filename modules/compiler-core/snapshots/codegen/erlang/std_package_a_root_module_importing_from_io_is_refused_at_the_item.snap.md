@@ -2270,7 +2270,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 %%% (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
 
-%% import relative, failure, HostError
+%% import relative, HostError
 
 % The error of every `io.fs` function (decision 540). `path` is the path the
 
