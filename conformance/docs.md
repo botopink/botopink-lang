@@ -1512,11 +1512,16 @@ specialisation (decisions 417, 757): the call compiles to the function's copy fo
 with one answer on every target, narrowing `v` to `T` in its branch — and `t`
 handed on to another call (`self.count(t)`) is a `comptime` argument known at
 build, the call of the copy for the same type. The type itself never reaches run
-time. Never a comparison by name.
+time. Never a comparison by name. A function of another module is copied into
+the module of the call: `firstOf(Users, xs)`, `firstOf` imported or called through
+its module, calls the copy for `Users` written beside the caller, where the names
+its body writes resolve as they do in its own module.
 
 <!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/is_comptime_type_parameter -->
 
 <!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/comptime_type_token_handed_on -->
+
+<!-- example: modules/comptime_type_token_cross_module -->
 
 A type also travels as a run-time value (decision 758): `t: type<T>` without
 `comptime` is the type's identity, crossing to run time as a `Field(Book,

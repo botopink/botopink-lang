@@ -22,6 +22,7 @@ const nested_types = @import("./comptime/nested_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
 const type_token = @import("./comptime/type_token.zig");
+const token_import = @import("./comptime/token_import.zig");
 const syntax_param = @import("./comptime/syntax_param.zig");
 const derived_types = @import("./comptime/derived_types.zig");
 const typed_meta = @import("./comptime/typed_meta.zig");
@@ -2705,14 +2706,38 @@ fn withExpansionImports(
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
 ) !ast.Program {
     const extra = try expand_call.importsFor(env, program.decls, package);
-    if (extra.len == 0) return program;
-    const marked = try ast.ImportDecl.withOwnPackage(arena, .{ .decls = extra }, package);
-    try resolveImports(env, marked, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
-    const grown = try arena.alloc(ast.DeclKind, marked.decls.len + program.decls.len);
+    const expanded: ast.Program = if (extra.len == 0) program else blk: {
+        const marked = try ast.ImportDecl.withOwnPackage(arena, .{ .decls = extra }, package);
+        try resolveImports(env, marked, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
+        const grown = try arena.alloc(ast.DeclKind, marked.decls.len + program.decls.len);
+        @memcpy(grown[0..marked.decls.len], marked.decls);
+        @memcpy(grown[marked.decls.len..], program.decls);
+        break :blk .{ .decls = grown };
+    };
+    // Decision 757 — the copies per type argument of the imported functions
+    // this module's calls ask for, and the imports their names need
+    // (`token_import.zig`).
+    const planned = try token_import.plan(env, expanded, package, ExportedFns{ .arena = arena, .registry = templateRegistry });
+    if (planned.copies.len == 0) return expanded;
+    const marked = try ast.ImportDecl.withOwnPackage(arena, .{ .decls = try arena.dupe(ast.DeclKind, planned.imports) }, package);
+    if (marked.decls.len > 0) try resolveImports(env, marked, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
+    const grown = try arena.alloc(ast.DeclKind, marked.decls.len + expanded.decls.len + planned.copies.len);
     @memcpy(grown[0..marked.decls.len], marked.decls);
-    @memcpy(grown[marked.decls.len..], program.decls);
+    @memcpy(grown[marked.decls.len..][0..expanded.decls.len], expanded.decls);
+    @memcpy(grown[marked.decls.len + expanded.decls.len ..], planned.copies);
     return .{ .decls = grown };
 }
+
+/// A module's `pub fn` by its path and name, as that module exported it
+/// (`defaultParamsKey`) — `token_import.plan`'s reach into a declaring module.
+const ExportedFns = struct {
+    arena: std.mem.Allocator,
+    registry: *const std.StringHashMap(ast.FnDecl),
+
+    pub fn fnOf(self: ExportedFns, module: []const u8, name: []const u8) ?ast.FnDecl {
+        return self.registry.get(defaultParamsKey(self.arena, module, name) catch return null);
+    }
+};
 
 fn resolveImports(
     env: *envMod.Env,
@@ -2826,6 +2851,8 @@ fn resolveImports(
                                     try env.importedFnDecls.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), pfn);
                                     // Decision 562 — `ns.f(…)` of a function expanded at its call site.
                                     if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), .{ .decl = pfn, .owner = path });
+                                    // Decision 757 — `ns.f(T, …)` of a function copied per type.
+                                    if (try type_token.copiedPerType(env.arena, pfn)) try env.tokenImports.put(env.arena, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ local, fname.* }), .{ .decl = pfn, .owner = path });
                                 }
                                 // Decision 386 — the module's body-carrying
                                 // decorators travel with the namespace, under
@@ -3090,6 +3117,8 @@ fn resolveImports(
                         try env.importedFnDecls.put(env.arena, local, pfn);
                         // Decision 562 — a function expanded at its call site.
                         if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, local, .{ .decl = pfn, .owner = owner });
+                        // Decision 757 — a function copied per type argument.
+                        if (try type_token.copiedPerType(env.arena, pfn)) try env.tokenImports.put(env.arena, local, .{ .decl = pfn, .owner = owner });
                     };
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in

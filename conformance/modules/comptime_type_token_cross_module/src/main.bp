@@ -1,0 +1,39 @@
+//// Decision 757 — a function of another module with a `comptime t:
+//// type<T>` parameter: the call compiles to the callee's copy for the type
+//// written, reachable from the caller's module on every target — the
+//// declaring module's names its body writes reached from there, the token
+//// handed on inside it or from a function of the caller, called by name or
+//// through its namespace — and the type binds
+//// `T` (`val u: ?Users = firstOf(Users, xs)`).
+
+pub mod lookup;
+
+import {lookup.firstOf, lookup.countOf, lookup.withTokens, lookup.Token};
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+pub type Orders(total: i32)
+
+fn firstUser(xs: unknown[]) -> ?Users {
+    return firstOf(Users, xs);
+}
+
+fn countBoth<T>(comptime t: type<T>, xs: unknown[]) -> i32 {
+    return countOf(t, xs) + withTokens(t, xs);
+}
+
+pub fn main() {
+    val o: unknown = Orders(total: 9);
+    val u: unknown = Users(count: 2);
+    val t: unknown = Token(id: 4);
+    val xs = [o, u, t, u];
+    print(firstUser(xs)?.count ?? 0);
+    val ord: ?Orders = firstOf(Orders, xs);
+    print(ord?.total ?? 0);
+    print(firstOf(Token, xs)?.id ?? 0);
+    print(countOf(Users, xs), countOf(Orders, xs), countOf(Token, xs));
+    print(withTokens(Users, xs), countBoth(Orders, xs));
+    print(lookup.countOf(Users, xs), lookup.firstOf(Token, xs) != null);
+    print(firstUser([o]) == null);
+}

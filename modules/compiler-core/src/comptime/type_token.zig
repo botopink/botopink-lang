@@ -51,6 +51,14 @@ const Ctx = struct {
     /// written where one is taken (`Env.runtimeTokenTests` / `runtimeTokenArgs`).
     rtTests: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     rtArgs: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    /// Decision 757 across modules — the imported callables copied per type
+    /// into this module (`Env.tokenImports`, `token_import.zig`), and the
+    /// names of this module's functions, where those copies are.
+    imports: *const std.StringHashMapUnmanaged(envMod.ExpandedImport),
+    fnNames: *const std.StringHashMapUnmanaged(void),
+    /// The calls written through a namespace (`ns.f(…)`), which the transform
+    /// already wrote as calls of an aliased import.
+    nsCalls: *const std.AutoHashMapUnmanaged(ast.Loc, envMod.NamespaceImports.Call),
     callables: *std.StringArrayHashMapUnmanaged(Callable),
     pending: *std.ArrayListUnmanaged(Pending),
     /// The token parameters of the copy being built, mapped to its types.
@@ -77,7 +85,7 @@ pub fn isTokenParam(p: ast.Param) bool {
 
 /// Whether a function's token parameters specialise it: it has a body, and is
 /// neither a decorator nor a template (`infer.isTypeTokenCallee`'s rule).
-fn fnSpecialises(f: ast.FnDecl) bool {
+pub fn fnSpecialises(f: ast.FnDecl) bool {
     if (f.body.len == 0) return false;
     if (memberFn.declParamName(f) != null) return false;
     if (f.returnType) |rt| if (rt.isTemplateReturnType()) return false;
@@ -85,13 +93,13 @@ fn fnSpecialises(f: ast.FnDecl) bool {
     return true;
 }
 
-fn tokensOf(arena: std.mem.Allocator, params: []const ast.Param) ![]const []const u8 {
+pub fn tokensOf(arena: std.mem.Allocator, params: []const ast.Param) ![]const []const u8 {
     var out: std.ArrayListUnmanaged([]const u8) = .empty;
     for (params) |p| if (isTokenParam(p)) try out.append(arena, p.name);
     return out.toOwnedSlice(arena);
 }
 
-fn boundOf(arena: std.mem.Allocator, params: []const ast.Param) ![]const []const u8 {
+pub fn boundOf(arena: std.mem.Allocator, params: []const ast.Param) ![]const []const u8 {
     var out: std.ArrayListUnmanaged([]const u8) = .empty;
     for (params) |p| if (isTokenParam(p)) {
         const t = p.typeRef.typeparam[0];
@@ -101,7 +109,7 @@ fn boundOf(arena: std.mem.Allocator, params: []const ast.Param) ![]const []const
 }
 
 /// `generics` without the ones a copy binds.
-fn unbound(arena: std.mem.Allocator, generics: []ast.GenericParam, bound: []const []const u8) ![]ast.GenericParam {
+pub fn unbound(arena: std.mem.Allocator, generics: []ast.GenericParam, bound: []const []const u8) ![]ast.GenericParam {
     var out: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
     outer: for (generics) |g| {
         for (bound) |b| if (std.mem.eql(u8, b, g.name)) continue :outer;
@@ -110,10 +118,30 @@ fn unbound(arena: std.mem.Allocator, generics: []ast.GenericParam, bound: []cons
     return out.toOwnedSlice(arena);
 }
 
-fn withoutTokens(arena: std.mem.Allocator, params: []ast.Param) ![]ast.Param {
+pub fn withoutTokens(arena: std.mem.Allocator, params: []ast.Param) ![]ast.Param {
     var out: std.ArrayListUnmanaged(ast.Param) = .empty;
     for (params) |p| if (!isTokenParam(p)) try out.append(arena, p);
     return out.toOwnedSlice(arena);
+}
+
+/// Whether `f`'s `comptime t: type<T>` parameters specialise it and its body
+/// reads one: it is then copied per type argument, in the module of each call
+/// when it is imported (`token_import.zig`).
+pub fn copiedPerType(arena: std.mem.Allocator, f: ast.FnDecl) !bool {
+    if (!fnSpecialises(f)) return false;
+    const tokens = try tokensOf(arena, f.params);
+    return tokens.len > 0 and mentionsAny([]ast.Stmt, f.body, tokens);
+}
+
+/// The name of the copy, written in a calling module, of `owner`'s function
+/// `name` for `types`: `<name>__<Type>[_<Type>…]__<owner>`, the owner's path
+/// with every character outside `[A-Za-z0-9_]` a `_`.
+pub fn copyName(arena: std.mem.Allocator, owner: []const u8, name: []const u8, types: []const []const u8) ![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    try buf.appendSlice(arena, try mangled(arena, name, types));
+    try buf.appendSlice(arena, "__");
+    for (owner) |ch| try buf.append(arena, if (std.ascii.isAlphanumeric(ch) or ch == '_') ch else '_');
+    return buf.toOwnedSlice(arena);
 }
 
 /// `program` with every type token specialised away (see the file's doc).
@@ -139,7 +167,9 @@ pub fn apply(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.
     if (callables.count() == 0 and env.typeTokenCalls.count() == 0 and env.runtimeTokenTests.count() == 0 and env.runtimeTokenArgs.count() == 0) return program;
 
     var pending: std.ArrayListUnmanaged(Pending) = .empty;
-    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .rtTests = &env.runtimeTokenTests, .rtArgs = &env.runtimeTokenArgs, .callables = &callables, .pending = &pending };
+    var fnNames: std.StringHashMapUnmanaged(void) = .empty;
+    for (program.decls) |d| if (d == .@"fn") try fnNames.put(arena, d.@"fn".name, {});
+    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .rtTests = &env.runtimeTokenTests, .rtArgs = &env.runtimeTokenArgs, .imports = &env.tokenImports, .fnNames = &fnNames, .nsCalls = &env.namespaces.calls, .callables = &callables, .pending = &pending };
 
     // Every body as written, the callables that read a token excepted (only
     // their copies run).
@@ -294,7 +324,7 @@ fn joined(arena: std.mem.Allocator, types: []const []const u8) ![]const u8 {
 }
 
 /// `<name>__<Type>[_<Type>…]`, every character outside `[A-Za-z0-9_]` a `_`.
-fn mangled(arena: std.mem.Allocator, name: []const u8, types: []const []const u8) ![]const u8 {
+pub fn mangled(arena: std.mem.Allocator, name: []const u8, types: []const []const u8) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     try buf.appendSlice(arena, name);
     try buf.appendSlice(arena, "__");
@@ -318,7 +348,7 @@ fn copyOf(ctx: *Ctx, key: []const u8, types: []const []const u8) ![]const u8 {
 
 /// The recorded call `call` at `loc`, rewritten: its type arguments dropped,
 /// and a callable of this module that reads a token called through its copy.
-fn rewriteCall(ctx: *Ctx, call: anytype, tc: envMod.TypeTokenCall) !void {
+fn rewriteCall(ctx: *Ctx, call: anytype, tc: envMod.TypeTokenCall, loc: ast.Loc) !void {
     const types = try ctx.arena.alloc([]const u8, tc.names.len);
     for (tc.names, types) |n, *t| t.* = ctx.substOf(n) orelse n;
     var args: std.ArrayListUnmanaged(@TypeOf(call.args[0])) = .empty;
@@ -329,6 +359,24 @@ fn rewriteCall(ctx: *Ctx, call: anytype, tc: envMod.TypeTokenCall) !void {
         if (!dropped) try args.append(ctx.arena, a);
     }
     call.args = try args.toOwnedSlice(ctx.arena);
+    // An imported callable copied per type: its copy for these types, written
+    // into this module (`token_import.zig`).
+    if (tc.owner == null) {
+        const key = if (ctx.nsCalls.get(loc)) |nc|
+            try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ nc.namespace, nc.callee })
+        else if (call.receiver) |r|
+            (if (r.* == .identifier and r.identifier.kind == .ident) try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ r.identifier.kind.ident, call.callee }) else null)
+        else
+            call.callee;
+        if (key) |k| if (ctx.imports.get(k)) |imp| {
+            const name = try copyName(ctx.arena, imp.owner, imp.decl.name, types);
+            if (ctx.fnNames.contains(name)) {
+                call.receiver = null;
+                call.callee = name;
+                return;
+            }
+        };
+    }
     const local = call.receiver == null or tc.owner != null;
     if (!local) return;
     const key = if (tc.owner) |o| try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ o, call.callee }) else call.callee;
@@ -363,7 +411,7 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
                 if (call.isType) |it| if (it == .named) if (ctx.substOf(it.named)) |t| {
                     call.isType = .{ .named = t };
                 };
-                if (ctx.calls.get(c.loc)) |tc| try rewriteCall(ctx, &call, tc);
+                if (ctx.calls.get(c.loc)) |tc| try rewriteCall(ctx, &call, tc, c.loc);
                 // Decision 758 — `x is t` over a run-time token: the
                 // target's run-time helper over the value and the token.
                 if (ctx.rtTests.contains(c.loc) and call.isType != null and call.isType.? == .named and call.args.len == 1) {
@@ -411,7 +459,7 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
 }
 
 /// Whether `v` reads one of `names`: as a name, or as the type `is` tests.
-fn mentionsAny(comptime T: type, v: T, names: []const []const u8) bool {
+pub fn mentionsAny(comptime T: type, v: T, names: []const []const u8) bool {
     if (T == ast.TypeRef) return false;
     if (T == ast.Expr) switch (v) {
         .identifier => |id| if (id.kind == .ident) {

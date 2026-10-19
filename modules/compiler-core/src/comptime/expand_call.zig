@@ -158,25 +158,7 @@ pub fn importsFor(env: *Env, decls: []const ast.DeclKind, own_package: []const u
         try names.walk([]const ast.Stmt, imp.decl.body);
         for (names.list.items) |n| {
             const w = (try r.written(env.arena, imp.owner, n)) orelse continue;
-            const text = switch (w.namespace) {
-                .std => try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"std\";", .{ try dotted(env.arena, w.module), try namespaceAlias(env.arena, imp.owner, n) }),
-                .module => blk: {
-                    // A module of this package is named by its path in it, one
-                    // of another package through that package (decision 337).
-                    const pkg = packageOf(r, w.module);
-                    const local = try dotted(env.arena, modTree.localPath(pkg, w.module));
-                    const alias = try namespaceAlias(env.arena, imp.owner, n);
-                    break :blk if (std.mem.eql(u8, pkg, own_package))
-                        try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}};", .{ local, alias })
-                    else
-                        try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ local, alias, pkg });
-                },
-                .none => if (w.isType and !typeHeldElsewhere(env, decls, w.module, w.name))
-                    try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ w.name, try writtenNames.typeAliasOf(env.arena, w.module, w.name), w.module })
-                else
-                    continue,
-            };
-            const parsed = try parseImport(env.arena, text) orelse continue;
+            const parsed = (try importOf(env, decls, imp.owner, n, w, own_package)) orelse continue;
             const alias = parsed.use.imports[0].name();
             if ((try bound.getOrPut(env.arena, alias)).found_existing) continue;
             try out.append(env.arena, parsed);
@@ -185,9 +167,38 @@ pub fn importsFor(env: *Env, decls: []const ast.DeclKind, own_package: []const u
     return out.items;
 }
 
+/// The import that binds, in the module of `decls`, the name `n` a body of
+/// `owner` writes (`w`, as `owner`'s scope resolves it) under its alias: a
+/// namespace under `namespaceAlias`, a type under `written_names.typeAliasOf`.
+/// Null for a value (bound by `written_names.bindValue`) and for a type this
+/// module holds from elsewhere. Decision 757's copies of an imported body
+/// (`token_import.zig`) are bound the same way.
+pub fn importOf(env: *Env, decls: []const ast.DeclKind, owner: []const u8, n: []const u8, w: reflectionMod.WrittenName, own_package: []const u8) InferError!?ast.DeclKind {
+    const r = env.reflection orelse return null;
+    const text = switch (w.namespace) {
+        .std => try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"std\";", .{ try dotted(env.arena, w.module), try namespaceAlias(env.arena, owner, n) }),
+        .module => blk: {
+            // A module of this package is named by its path in it, one
+            // of another package through that package (decision 337).
+            const pkg = packageOf(r, w.module);
+            const local = try dotted(env.arena, modTree.localPath(pkg, w.module));
+            const alias = try namespaceAlias(env.arena, owner, n);
+            break :blk if (std.mem.eql(u8, pkg, own_package))
+                try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}};", .{ local, alias })
+            else
+                try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ local, alias, pkg });
+        },
+        .none => if (w.isType and !typeHeldElsewhere(env, decls, w.module, w.name))
+            try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ w.name, try writtenNames.typeAliasOf(env.arena, w.module, w.name), w.module })
+        else
+            return null,
+    };
+    return parseImport(env.arena, text);
+}
+
 /// The alias a namespace `name` of `module` is imported under where a
 /// function of `module` is expanded.
-fn namespaceAlias(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
+pub fn namespaceAlias(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
     return envMod.templateAlias(arena, module, name);
 }
 
@@ -1080,7 +1091,7 @@ fn arrayOf(e: *const ast.Expr) ?[]const ast.Expr {
 
 /// The names a destructuring binds; a list or a constructor pattern binds
 /// none the expansion reads at build (their names stay as written).
-fn destructNames(arena: std.mem.Allocator, pattern: ast.ParamDestruct, out: *std.ArrayListUnmanaged([]const u8)) InferError!void {
+pub fn destructNames(arena: std.mem.Allocator, pattern: ast.ParamDestruct, out: *std.ArrayListUnmanaged([]const u8)) InferError!void {
     switch (pattern) {
         .names => |n| for (n.fields) |f| try out.append(arena, f.bind_name),
         .tuple_ => |t| for (t) |name| try out.append(arena, name),

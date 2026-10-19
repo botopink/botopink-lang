@@ -11837,7 +11837,7 @@ fn isKnownBuiltinName(callee: []const u8) bool {
         std.mem.eql(u8, callee, ast.non_null_builtin_name);
 }
 
-fn isPrimitiveTypeName(name: []const u8) bool {
+pub fn isPrimitiveTypeName(name: []const u8) bool {
     const names = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "void", "unknown" };
     for (names) |n| if (std.mem.eql(u8, n, name)) return true;
     return false;

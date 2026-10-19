@@ -1853,6 +1853,13 @@ pub const Env = struct {
     /// `ns.f` through a namespace): its declaration as its module carried
     /// it, and that module (`expand_call.zig`).
     expandedImports: std.StringHashMapUnmanaged(ExpandedImport) = .empty,
+    /// Decision 757 — an imported function whose `comptime t: type<T>`
+    /// parameters specialise it and whose body reads one
+    /// (`type_token.copiedPerType`), by the name it is bound under (`f`, or
+    /// `ns.f`): its declaration as its module carried it, and that module.
+    /// The copy per type argument is written into this module
+    /// (`token_import.zig`).
+    tokenImports: std.StringHashMapUnmanaged(ExpandedImport) = .empty,
     /// Decision 562 — the bodies being expanded now (by their address): a
     /// call of one of them inside its own expansion is not expanded again.
     expanding: std.AutoHashMapUnmanaged(usize, void) = .empty,

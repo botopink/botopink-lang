@@ -1,0 +1,28 @@
+// The first entry that is a `T` — specialised per type argument (757).
+pub fn firstOf<T>(comptime t: type<T>, entries: unknown[]) -> ?T {
+    for (entries) { e ->
+        if (e is t) return e;
+    }
+    return null;
+}
+
+fn bump(n: i32) -> i32 {
+    return n + 1;
+}
+
+// A private helper of this module, called from the copy in the caller.
+pub fn countOf<T>(comptime t: type<T>, entries: unknown[]) -> i32 {
+    var n = 0;
+    for (entries) { e ->
+        if (e is t) n = bump(n);
+    }
+    return n;
+}
+
+// The token handed on to another function of this module, and a type of
+// this module written beside it.
+pub fn withTokens<T>(comptime t: type<T>, entries: unknown[]) -> i32 {
+    return countOf(t, entries) * 10 + countOf(Token, entries);
+}
+
+pub type Token(id: i32)

@@ -22,6 +22,7 @@ const Env = envMod.Env;
 const reflectionMod = @import("reflection.zig");
 const member_fn = @import("member_fn.zig");
 const hooks = @import("hooks.zig");
+const type_token = @import("type_token.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const alias_erase = @import("alias_erase.zig");
 const format = @import("../format.zig");
@@ -81,13 +82,17 @@ pub fn typeAliasOf(arena: std.mem.Allocator, module: []const u8, name: []const u
 /// Whether `decls` (module `path`) shares its private functions and values
 /// with the modules that read what it wrote: it declares a decorator whose
 /// body hands a typed member or a wrapper (316) on (384), or a declaration of it carries typed
-/// meta with `@Expr` fields an annotation of it wrote (385).
+/// meta with `@Expr` fields an annotation of it wrote (385), or a function of it is
+/// copied per type argument into its callers (757).
 pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, reflection: ?*const reflectionMod.Reflection, path: []const u8) Error!bool {
     for (decls) |d| if (d == .@"fn") {
         const f = d.@"fn";
         // Decision 562 — a function expanded at its call site writes its
         // body's names into the caller.
         if (try hooks.isExpandedFn(arena, f)) return true;
+        // Decision 757 — so is one copied per type argument into each
+        // module that calls it (`token_import.zig`).
+        if (f.isPub and try type_token.copiedPerType(arena, f)) return true;
         if (member_fn.declParamName(f)) |handle| {
             if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
             // Decision 575 (3) — so is an executor, beside the annotated declaration.
