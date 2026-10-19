@@ -82,7 +82,7 @@ pub declare fn attempt<T>(f: fn() -> T) -> Result<T, Failure>;
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptTaskOnWasm),
 )]
-pub declare fn attemptTask<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>>;
+pub declare fn attemptTask<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>>;
 
 // wasm's form (decision 518): the thunk's value, or the message of the abort
 // it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
@@ -104,7 +104,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
+async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -263,7 +263,7 @@ attemptOnWasm(F) ->
 
 % `await` — and then its value.
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 attemptTaskOnWasm(F) ->
     case (fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)(F) of
         {ok, T} ->
