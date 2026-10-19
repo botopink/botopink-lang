@@ -14,6 +14,9 @@
 #   • the member's own modules are compiled every time: never stored, never a
 #     link to an entry
 #   • a changed byte of the dependency misses: a new entry, the new answer
+#   • `build --target erlang` materialises the dependencies' `.beam` into the
+#     output, each the cache entry's bytes, none for the member's own modules
+#     (decision 767, `build_materialises_dependency_beams`)
 #   • `--cold` reads nothing (every `.beam` compiled afresh, every entry
 #     rewritten) and writes what it ran
 #   • two concurrent writers over one empty store leave one whole entry per
@@ -114,6 +117,20 @@ run_in "$WS/one" build --target erlang
 [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "build of the first member (exit $CODE)"; }
 [[ "$(inodes)" == "$BEFORE" ]] || fail "build stored a dependency entry run had stored already"
 ok "test and build link the dependency entries run stored (decision 513)"
+
+echo "==> build_materialises_dependency_beams: build leaves the dependencies' .beam in the output"
+rm -rf "$WS/one/out"
+run_in "$WS/one" build --target erlang
+[[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "build of the first member (exit $CODE)"; }
+for e in "$WS"/one/out/erl/lib@*.erl; do
+  b="${e%.erl}.beam"
+  [[ -f "$b" ]] || fail "build left no .beam beside $(basename "$e")"
+  [[ "$(links "$b")" -ge 2 ]] || fail "$(basename "$b") is no link to its cache entry"
+done
+[[ -z "$(find "$WS/one/out/erl" -name 'one@*.beam')" ]] || fail "build compiled the member's own module into the output"
+DEP_BEAMS="$(find "$WS/one/out/erl" -name '*@*.beam' | wc -l | tr -d ' ')"
+[[ "$DEP_BEAMS" -eq "$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')" ]] || fail "one .beam per dependency module"
+ok "$DEP_BEAMS dependency .beam files, links to the entries; the member's own module has none"
 
 echo "==> cell check: two cells, one store where the cells live"
 run_in "$WORK" cell check "$WS"

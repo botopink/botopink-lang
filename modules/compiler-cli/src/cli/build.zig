@@ -240,7 +240,9 @@ fn checkErlang(
 /// the project's own `.erl` and of its dependencies' (`arglist.write`); the
 /// files are dealt round-robin to one process per online scheduler, each
 /// compiling its share in memory — a dependency's through `CodeDep`, answered
-/// from the store when it is there; every refusal is printed as
+/// from the store when it is there and its `.beam` materialised beside its
+/// `.erl` (decisions 509 (4), 767: what `run` links, so a consumer of the
+/// output compiles only the project's own modules); every refusal is printed as
 /// `<file>:<line>: <message>`; exit 1 when there is any.
 const ERLANG_CHECK_EVAL =
     \\[CacheDir, CacheMode, OwnListFile, DepListFile] = init:get_plain_arguments(),
@@ -262,7 +264,7 @@ const ERLANG_CHECK_EVAL =
     \\    end
     \\end,
     \\Check = fun({own, F}) -> Compile(F);
-    \\           ({dep, F}) -> case catch CodeDep(F, erl, none) of ok -> []; _ -> Compile(F) end
+    \\           ({dep, F}) -> case catch CodeDep(F, erl, filename:rootname(F) ++ ".beam") of ok -> []; _ -> Compile(F) end
     \\        end,
     \\Refs = [begin
     \\            R = make_ref(),
