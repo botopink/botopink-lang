@@ -1,0 +1,14 @@
+import {compiler, compiler.Binary, compiler.Call, compiler.Lit, compiler.Name, compiler.Syntax} from "std";
+
+pub fn clamp(v: i32, lo: i32, hi: i32) -> i32 {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+// Code built as the typed AST: `clamp(<value> * 2, 0, 10)` around the
+// caller's own expression, spliced as written.
+pub fn doubledInRange(syntax value: i32) -> anyvalue {
+    val twice = Binary(op: "*", lhs: Syntax(e: value), rhs: Lit(value: 2));
+    return compiler.ast(Call(callee: Name(name: "clamp"), args: [twice, Lit(value: 0), Lit(value: 10)]));
+}

@@ -1,0 +1,24 @@
+//// Decision 290 — No segment configuration; a page's settings are `#[page]` arguments.
+
+import {compiler, io.clock, io.terminal} from "std";
+import {comptime.pages.page, comptime.pages.PageSettings};
+
+#[page("blog/[slug]", revalidate: clock.hours(1), dynamicParams: false)]
+pub fn blogPost() -> string {
+    return "post";
+}
+
+#[page("about")]
+pub fn about() -> string {
+    return "about";
+}
+
+fn describe(s: PageSettings) -> string {
+    val every = if (s.revalidateMillis == null) { "never" } else { s.revalidateMillis!.toString() + "ms" };
+    return [s.route, "revalidate " + every, "dynamicParams " + s.dynamicParams.toString()].join(", ");
+}
+
+pub fn main() -> void {
+    terminal.print(describe(comptime compiler.meta<PageSettings>(blogPost)!));
+    terminal.print(describe(comptime compiler.meta<PageSettings>(about)!));
+}

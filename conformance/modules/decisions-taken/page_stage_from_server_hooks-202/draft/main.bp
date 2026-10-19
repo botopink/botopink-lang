@@ -1,0 +1,29 @@
+//// Decision 202 — No page declares or forces its stage: jhonstart's `#[page]` reads through 186's capability whether the page reaches a `#
+
+import {compiler, io.terminal} from "std";
+import {comptime.pages.page, comptime.pages.PageStage};
+import {hooks.title, hooks.session};
+
+type Element(text: string, child: ?Component<Element> = null) implement Renderable
+
+component fn Greeting() -> Component<Element> {
+    val user = use session();
+    return Element(text: "hello " + user);
+}
+
+#[page]
+component fn Home() -> Component<Element> {
+    val t = use title();
+    return Element(text: t);
+}
+
+#[page]
+component fn Account() -> Component<Element> {
+    val t = use title();
+    return Element(text: t, child: Greeting());
+}
+
+pub fn main() -> void {
+    terminal.print("Home", comptime compiler.meta<PageStage>(Home)!.kind);
+    terminal.print("Account", comptime compiler.meta<PageStage>(Account)!.kind);
+}

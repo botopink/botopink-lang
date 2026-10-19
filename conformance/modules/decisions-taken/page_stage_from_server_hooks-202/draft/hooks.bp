@@ -1,0 +1,10 @@
+import {comptime.hooks.serverOnly};
+
+pub component fn title() -> Component<string> {
+    return "Home";
+}
+
+#[serverOnly]
+pub component fn session() -> Component<string> {
+    return "ana";
+}

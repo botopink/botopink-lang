@@ -1,0 +1,11 @@
+//// Decision 767 — `botopink build` materialises the dependencies' cached `.beam` into the output (509 (4)'s materialisation, for `build` as for `run`), and rakun-ssr's `compileBeam` runs `erlc` only over the `.erl` with no `.beam` beside them — the app's own modules.
+
+import {hash, io.terminal, path} from "std";
+import {collections.Set} from "std";
+
+pub fn main() -> void {
+    val tags = Set<string>.fromList(["web", "api", "web"]);
+    terminal.print(tags.size());
+    terminal.print(path.basename("src/app/page.bp"));
+    terminal.print(hash.contentHash("release").length);
+}

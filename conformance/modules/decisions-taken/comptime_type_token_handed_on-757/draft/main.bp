@@ -1,0 +1,32 @@
+//// Decision 757 — (a): a function with a `comptime t: type<T>` parameter is specialised per type argument — a copy per type, `t` the type inside it — so `v is t` is the concrete type's test and `t` handed on to another call (`self.count(t)`) is a `comptime` argument known at build, as 667 and 417 state.
+
+import {io.terminal} from "std";
+
+type Users(name: string)
+
+type Orders(total: i32)
+
+type Registry(items: unknown[]) {
+    pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
+        return self.items.filter({ v -> v is t }).length;
+    }
+
+    pub fn get<T>(self: Self, comptime t: type<T>) -> ?T {
+        if (self.count(t) != 1) return null;
+        var i = 0;
+        while (i < self.items.length) {
+            val v = self.items.at(i)!;
+            if (v is t) return v;
+            i = i + 1;
+        }
+        return null;
+    }
+}
+
+pub fn main() -> void {
+    val items: unknown[] = [Users(name: "ana"), Orders(total: 3), Users(name: "bia")];
+    val r = Registry(items: items);
+    terminal.print(r.count(Users), r.count(Orders));
+    terminal.print(r.get(Orders)?.total ?? 0);
+    terminal.print(r.get(Users) == null);
+}

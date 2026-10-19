@@ -1,0 +1,13 @@
+import {compiler} from "std";
+import {comptime.hooks.serverOnly};
+
+// What `#[page]` decides, read off the hooks list: `S` prerendered at build,
+// `D` rendered per request.
+pub type PageStage(kind: string)
+
+pub fn page(syntax decl: unknown) -> void {
+    val dynamic = compiler.hooks(decl).some({ n ->
+        n.uses.some({ u -> u.annotations.some({ a -> compiler.same(a.decorator, serverOnly) }) })
+    });
+    compiler.setMeta(PageStage(kind: if (dynamic) { "D" } else { "S" }));
+}

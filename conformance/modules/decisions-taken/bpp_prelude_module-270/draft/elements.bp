@@ -1,0 +1,12 @@
+import {bpp} from "std";
+
+// In the prelude: a `.bpp` file sees it by its plain name, without importing.
+#[bpp.htmlPrelude]
+pub fn shout(s: string) -> string {
+    return s.toUpper() + "!";
+}
+
+// Not in the prelude: the package's API, imported where it is used.
+pub fn whisper(s: string) -> string {
+    return s.toLower();
+}

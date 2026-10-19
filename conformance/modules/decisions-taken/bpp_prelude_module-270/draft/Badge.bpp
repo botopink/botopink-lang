@@ -1,0 +1,5 @@
+import {elements.whisper};
+
+val label = shout(whisper("NEW"));
+---
+<span>badge</span>

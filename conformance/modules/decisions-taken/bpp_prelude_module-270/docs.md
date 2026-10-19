@@ -1,0 +1,7 @@
+# Decision 270 — The package `"bpp"` names (361) may have a prelude module: the one declaring a `#[bpp.htmlPrelude]` marker `val` (`#[bpp
+
+The package plays the part of the package a manifest's `"bpp"` key names: `comptime/markup.bp` holds its `#[bpp.html]` template — the markup's unfold target, answering here the markup's text as written —, and `elements.bp` marks one item for the prelude, `#[bpp.htmlPrelude] pub fn shout`, beside `whisper`, an ordinary `pub` function. `Card.bpp` is markup only and compiles as it is, unfolding to a default function that imports nothing it does not use. `Badge.bpp`'s header calls `shout` by its plain name — the prelude is the file's last scope, consulted only for a name the file does not bind, so `shout` becomes an import only because the header names it — while `whisper`, outside the prelude, is imported in the header in the package's own import form. A name the header declares or imports never reaches the prelude. `main` imports each file's default function by the file's name and prints `<article>a card with markup only</article>` and `<span>badge</span>`. The phase-1 shape has no manifest, so the `"bpp"` key naming this package is the promoted cell's to write.
+
+Cells in this repository that also bear on it: `modules/bpp_not_found_aliased`.
+
+[draft/main.bp](draft/main.bp) · [draft/elements.bp](draft/elements.bp) · [draft/comptime/markup.bp](draft/comptime/markup.bp) · [draft/Card.bpp](draft/Card.bpp) · [draft/Badge.bpp](draft/Badge.bpp)

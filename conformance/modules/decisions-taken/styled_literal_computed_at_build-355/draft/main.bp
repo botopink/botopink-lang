@@ -1,0 +1,25 @@
+//// Decision 355 — A `styled` literal is computed at build when every hole is known at build; at render only when a hole is not.
+
+import {hash, io.terminal} from "std";
+
+// A rule's class is the content hash of its declarations, as `styled` computes it.
+fn rule(decls: string) -> string {
+    val cls = "s_" + hash.contentHash(decls).slice(0, 8);
+    return "." + cls + "{" + decls + "}";
+}
+
+val tab4 = "tab-size:4;";
+
+// Every hole known at build: computed while the program compiles.
+val code = rule(tab4 + "color:red;");
+
+// A hole naming a parameter: computed when the page renders.
+fn badge(color: string) -> string {
+    return rule("color:" + color + ";");
+}
+
+pub fn main() -> void {
+    terminal.print(code);
+    terminal.print(badge("blue"));
+    terminal.print(code == rule("tab-size:4;color:red;"));
+}
