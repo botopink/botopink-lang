@@ -3,10 +3,10 @@
 The reference text this cell shows (from `conformance/docs.md`, § Typed meta (decision 298)):
 
 > A decorator's meta is a typed value keyed by its record type, never by the
-> decorator's name: `decl.setMeta(Entity(table: table.value))` records one
-> `Entity` on the declaration, `decl.addMeta(Index(column: c.value))` one more
-> `Index` each time. A reader names the type — `@typeInfo(City).meta(Entity)` is
-> an `?Entity` (`null` when nothing recorded one), `@typeInfo(City).metaAll(Index)`
+> decorator's name: `compiler.setMeta(Entity(table: table))` records one
+> `Entity` on the declaration, `compiler.addMeta(Index(column: c))` one more
+> `Index` each time. A reader names the type — `compiler.typeInfo(City).meta(Entity)` is
+> an `?Entity` (`null` when nothing recorded one), `compiler.typeInfo(City).metaAll(Index)`
 > an `Index[]` —, so a renamed decorator changes no reader, two decorators may
 > write one type, and who may read is who sees the type. The values are built at
 > build time and written back as their constructors where they are read: each

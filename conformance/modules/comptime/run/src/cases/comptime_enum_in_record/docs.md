@@ -10,5 +10,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Compile-time 
 > function the `comptime` reaches is resolved where that function is inferred,
 > so, as with a template call, the function is declared before the `comptime` —
 > otherwise the `comptime` is refused, naming the path. A decorator's argument
-> (`#[mark(.Pad.All.4)]`, read as `tokens.value`) and the functions a decorator
+> (`#[mark(.Pad.All.4)]`, read as `tokens`) and the functions a decorator
 > reaches carry the same values.

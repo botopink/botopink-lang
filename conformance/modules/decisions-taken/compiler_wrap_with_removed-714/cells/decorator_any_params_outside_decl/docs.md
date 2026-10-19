@@ -2,5 +2,5 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 
-> `@Decl<fn(..) -> R>` names a function of any parameters; `fn(..)` is written
+> `syntax decl: fn(..) -> R` names a function of any parameters; `fn(..)` is written
 > nowhere else (`any-params-outside-decl`, at the `..`).

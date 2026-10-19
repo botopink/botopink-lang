@@ -2,6 +2,6 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 
-> A marker is a decorator with an empty body (decision 604): `fn registered(comptime decl: @Decl) {}`
+> A marker is a decorator with an empty body (decision 604): `fn registered(syntax decl: unknown) {}`
 > annotates declarations, runs nothing, and is read back by its marking —
 > `@TypeInfo.all(with: registered)` lists what it marks.

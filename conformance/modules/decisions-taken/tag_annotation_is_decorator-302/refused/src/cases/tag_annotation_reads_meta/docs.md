@@ -2,6 +2,6 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § A tag is a `@Decl` (decision 302)):
 
-> Inside an annotation `decl.meta(T)` is refused (question B-15-c): meta is
+> Inside an annotation `compiler.meta<T>(decl)` is refused (question B-15-c): meta is
 > read by the code that consumes it, after every annotation ran, so annotations
 > do not depend on their written order.

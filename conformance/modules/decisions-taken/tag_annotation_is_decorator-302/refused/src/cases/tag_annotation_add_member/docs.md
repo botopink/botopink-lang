@@ -2,6 +2,5 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § A tag is a `@Decl` (decision 302)):
 
-> Refused at the annotation, in the caller's text: `decl.addMember`,
-> `decl.addType` and `@emit`
-> (`tag-annotation-output`).
+> Refused at the annotation, in the caller's text: `compiler.addMember`
+> and `compiler.addType` (`tag-annotation-output`).

@@ -7,7 +7,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Numbers):
 > ±(2^53 − 1) and a `BigInt` beyond, always in that canonical form, so `==`, a
 > `Dict` key and a `Set` member compare by value across 2^53; an operation keeps
 > the number's fast path and computes in `BigInt` only when its result leaves
-> that range. A Node host template receives and answers such a value as
+> that range. A JavaScript host template receives and answers such a value as
 > `number | bigint` in the canonical form, and the emitted `.d.ts` types it so.
 > The narrower integers stay JS numbers. An integer `/` or `%` by zero aborts on
 > every target (commonJS names it `integer division by zero`). A `%` never leaves its type.
