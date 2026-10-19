@@ -1242,7 +1242,12 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         var names: std.ArrayList([]const u8) = .empty;
         errdefer names.deinit(alloc);
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
-            try names.append(alloc, (try this.consume(.identifier)).lexeme);
+            // `_` reads a member and binds nothing, as in `val #(a, _) = p`.
+            if (this.match(.underscore)) {
+                try names.append(alloc, "_");
+            } else {
+                try names.append(alloc, (try this.consume(.identifier)).lexeme);
+            }
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);

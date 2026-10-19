@@ -3944,7 +3944,9 @@ const Emitter = struct {
 
     fn buildTuplePattern(self: *Emitter, names: []const []const u8) !js.Pattern {
         const elems = try self.arena().alloc(js.Pattern, names.len);
-        for (names, 0..) |nm, i| elems[i] = .{ .ident = nm };
+        // A `_` member binds nothing: an elision (`[ a,  ]`), so two of them
+        // never declare `_` twice.
+        for (names, 0..) |nm, i| elems[i] = if (std.mem.eql(u8, nm, "_")) .{ .name = "" } else .{ .ident = nm };
         return .{ .array = .{ .elems = elems, .spaced = true } };
     }
 
