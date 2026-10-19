@@ -2861,6 +2861,10 @@ const Emitter = struct {
     /// Decision 518 (2): the `needs:` of each emitted binding wrapper, by its
     /// symbol, and (second pass) the wrappers not to emit.
     wrapper_needs: std.StringHashMapUnmanaged(ast.WasmNeeds) = .empty,
+    /// The function being lowered holds a `defer` (decision 597): its lowering
+    /// reaches the panic tag as an `attempt` does, so a reached function that
+    /// does adds `.exceptions` to the program's `needs` (`wrapper_needs`).
+    fn_has_defer: bool = false,
     skip_wrappers: ?*const std.StringHashMapUnmanaged(void) = null,
     /// Decision 440 — the std-wasm functions the module calls, by their
     /// `std:` name (`text.trim`): a `std:` binding's, a primitive method's.
@@ -8763,6 +8767,7 @@ const Emitter = struct {
         self.gen_items.clearRetainingCapacity();
         self.loop_depth = 0;
         self.defer_stack.clearRetainingCapacity();
+        self.fn_has_defer = false;
         self.defer_loop_floor = 0;
         self.loop_stack.clearRetainingCapacity();
         self.defer_fn_body = null;
@@ -9687,6 +9692,11 @@ const Emitter = struct {
         // A state machine's `return f(…)` answers a task: it is never a loop.
         if (!accumulates and !is_task) try self.noteSelfTailCalls(f);
         const rendered = if (is_gen) try self.renderGenBody(f.body) else if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
+        if (self.fn_has_defer) {
+            var need = ast.WasmNeeds.initEmpty();
+            need.insert(.exceptions);
+            try self.wrapper_needs.put(self.alloc, f.name, need);
+        }
         const body = if (self.tail_self_used) try self.wrapTailLoop(rendered) else rendered;
 
         const ar = self.arena();
@@ -11124,6 +11134,7 @@ const Emitter = struct {
             if (!seen) try names.append(ra, .{ .name = n, .alias = self.aliases.get(n) });
         }
         try self.defer_stack.append(self.alloc, .{ .stmt = stmt, .names = names.items });
+        self.fn_has_defer = true;
     }
 
     /// The statement of `defer_stack[idx]`, written here. The entries from

@@ -1,0 +1,9 @@
+//// Decision 597 — A `defer` always runs, on every target, whatever goes wrong: a function holding a `defer` adds `.exceptions` to the program's `needs`.
+
+import {io.terminal.print, failure.panic} from "std";
+
+pub fn main() -> void {
+    defer print("closed");
+    print("x");
+    panic("y");
+}
