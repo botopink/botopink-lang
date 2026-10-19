@@ -16,7 +16,7 @@ fn parse(s: string) -> Result<i32, string> {
 }
 
 fn load(s: string) -> Component<Result<string, string>> {
-    val unit = use context(string);
+    val unit = use context(unitContext);
     val n = try parse(s);
     return (n + 1).toString() + unit;
 }

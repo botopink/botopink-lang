@@ -245,8 +245,8 @@ pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
 
 pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 
-/// Decisions 354, 379 — one `use provide(ctx)` / `use context(T)`: which
-/// hook, the context's identity and the `T` it carries.
+/// Decisions 354, 379, 723 — one `use provide(ctx)` / `use context(ctx)` /
+/// `use inject(R)`: which hook, the context's identity and the `T` it carries.
 pub const ContextUse = struct {
     kind: enum { provide, read, inject },
     /// The context's identity: its value's type (379), the run-time key in a
@@ -255,10 +255,8 @@ pub const ContextUse = struct {
     /// The type as written, for a message.
     name: []const u8,
     value_type: *T.Type,
-    /// A read's fallback: the name of the `val` that declares the type's
-    /// default — this module's, or the hidden alias of another module's
-    /// (`Env.contextDefaultImports`). Set once the module's bodies are
-    /// inferred (`infer.zig` `resolveContextReads`).
+    /// A read's fallback: the name of the context value it names (decision
+    /// 723), a module-level `val` of this module or an imported one.
     default_ref: ?[]const u8 = null,
     /// Decision 416 — an `inject(R)`'s fields, each read as a context of its
     /// type (`resolveContextReads` fills their fallbacks).

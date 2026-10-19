@@ -1,0 +1,21 @@
+//// Decision 722 — a context is read through a context value, never a bare
+//// type name: `use context(Theme)` is refused at the argument, naming the
+//// form `use context(<a context value>)`.
+
+import {context.createContext, context.context, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Label() -> Component<Element> {
+    val t = use context(Theme);
+    return Element(text: t.mode);
+}
+
+pub fn main() -> Task<void> {
+    val l = await Label();
+    print(l.text);
+}

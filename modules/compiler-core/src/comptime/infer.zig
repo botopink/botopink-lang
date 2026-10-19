@@ -16099,8 +16099,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         .call => |c| blk: {
             try noteKeyedRowRead(env, c);
             try checkStdContextCall(env, c);
-            // Decision 379 (3) — `context(T)` names a type: the call answers
-            // `@Component<T>`, typed here (its argument is no value).
+            // Decisions 416, 722 — `inject(R)` names a type: the call answers
+            // `@Component<R>`, typed here; `context(T)` with a bare type is
+            // refused here, `context(ctx)` typed as any call.
             if (try contextReadCall(env, c)) |typed| break :blk typed;
             try noteTypeTokenHandOns(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
@@ -20428,7 +20429,8 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     try validateUseOperand(env, valTyped.getType(), loc);
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteHookUse(env, uh.kind.inner.*, loc);
-    // Decision 379 (3) — `use context(T)` answers `T`, the type it names.
+    // Decision 723 — `use context(ctx)` answers `T`, the type of the
+    // `Context<T>` it names; `use inject(R)` answers `R` (416).
     const srcTy = if (env.contextUses.get(loc)) |cu| (if (cu.kind == .read or cu.kind == .inject) cu.value_type else bindingSourceType(valTyped.getType())) else bindingSourceType(valTyped.getType());
     return TypedExpr{ .useHook = .{ .loc = loc, .type_ = srcTy, .kind = .{ .inner = valPtr } } };
 }
@@ -20570,7 +20572,7 @@ fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
 
 fn refuseContextHookWithoutUse(env: *Env, name: []const u8, loc: ast.Loc) InferError {
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a hook of std's `context` module — it is `use`d (`use {s}(…)`), never called or passed as a value (decision 354)", .{ diagnostics.context_hook_without_use, name, name });
-    env.lastError = TypeError.custom(msg, "Write `use provide(SomeContext, value);` in a component's body, or `val v = use context(SomeContext);` in a `@Component` body.").withLoc(loc);
+    env.lastError = TypeError.custom(msg, "Write `use provide(ctx);` in a component's body, or `val v = use context(themeContext);` in a `component fn` body.").withLoc(loc);
     return error.TypeError;
 }
 
@@ -20676,10 +20678,15 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
         const d = ctx_ty.deref();
         if (d.* != .named or d.named.args.len != 1) return;
         break :blk d.named.args[0];
+    } else if (which == .context) blk: {
+        // `context(ctx)` answers `T`, the type of the `Context<T>` it names
+        // (decision 723).
+        const d = typed.getType().deref();
+        break :blk if (d.* == .named and std.mem.eql(u8, d.named.name, "Component") and d.named.args.len == 1) d.named.args[0] else typed.getType();
     } else blk: {
+        // `inject(R)` answers `R`, the type its argument names (416).
         const d = typed.getType().deref();
         const answered = if (d.* == .named and std.mem.eql(u8, d.named.name, "Component") and d.named.args.len == 1) d.named.args[0] else typed.getType();
-        // `context(T)` answers `T`, the type its argument names.
         if (arg == .identifier and arg.identifier.kind == .ident) {
             const tn = arg.identifier.kind.ident;
             if (env.lookupTypeDef(tn) != null or env.importedTypeDecls.contains(tn) or isPrimitiveTypeName(tn)) {
@@ -20691,7 +20698,7 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
     const key = try contextTypeKey(env, value_type) orelse {
         env.lastError = TypeError.custom(
             diagnostics.context_not_declared ++ ": a context is named by its value's type, and this one names none (decision 379)",
-            "Read a context by a declared type: `use context(Theme)`; provide one made by `createContext(Theme(…))`.",
+            "Read a context through a context value of a declared type: `use context(themeContext)`; provide one made by `createContext(Theme(…))`.",
         ).withLoc(arg.getLoc());
         return error.TypeError;
     };
@@ -20731,6 +20738,10 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
         .name = try errorMod.typeLabelAlloc(env.arena, value_type),
         .value_type = value_type,
         .fields = fields,
+        // Decision 723 — a read's fallback is the default the handle it names
+        // carries: the module-level value itself, a `Context<T>` being its
+        // value at run time.
+        .default_ref = if (which == .context) arg.identifier.kind.ident else null,
     });
 }
 
@@ -20760,20 +20771,37 @@ fn contextReadCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?TypedExpr
     const which = stdContextCallee(env, c) orelse return null;
     const call = c.kind.call;
     switch (which) {
-        .context, .inject => {
+        .context => {
+            // Decisions 722, 723 — a context is read through a context value
+            // the module declares or imports (`use context(themeContext)`),
+            // typed by std's `context<T>(ctx: Context<T>)` as any call; a bare
+            // type name is refused at the argument, and so is a value that is
+            // no module-level name (a parameter, a local, an expression).
+            if (call.args.len != 1) return null;
+            const arg = call.args[0].value.*;
+            if (contextTypeName(env, arg)) |tn| {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `use context({s})` names a type — a context is read through a context value, `use context(<a context value>)`, matched to the provider by the context's type (decisions 722, 723)", .{ diagnostics.context_read_by_type, tn });
+                env.lastError = TypeError.custom(msg, "Import or declare the context value and name it: `pub val themeContext = comptime createContext(Theme(…));`, then `val t = use context(themeContext);`.").withLoc(arg.getLoc());
+                return error.TypeError;
+            }
+            if (arg == .identifier and arg.identifier.kind == .ident and env.localBindDepth(arg.identifier.kind.ident) == null) return null;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use context(…)` reads a context value the module declares or imports, and this argument names none (decisions 722, 723)", .{diagnostics.context_not_declared});
+            env.lastError = TypeError.custom(msg, "Name a module-level context value: `import {theme.themeContext};`, then `val t = use context(themeContext);`.").withLoc(arg.getLoc());
+            return error.TypeError;
+        },
+        .inject => {
             if (call.args.len != 1) return null;
             const arg = call.args[0].value.*;
             const tn = contextTypeName(env, arg) orelse {
-                const what = if (which == .context) "`context(…)` reads a context by its value's type" else "`inject(…)` builds a record";
-                const msg = try std.fmt.allocPrint(env.arena, "{s}: {s}, and this argument names no type (decisions 379 (3), 416)", .{ diagnostics.context_not_declared, what });
-                env.lastError = TypeError.custom(msg, "Name the type: `use context(Theme)`, `use inject(Deps)` — a context value is given with `use provide(ctx)`, never read back.").withLoc(arg.getLoc());
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `inject(…)` builds a record, and this argument names no type (decisions 379 (3), 416)", .{diagnostics.context_not_declared});
+                env.lastError = TypeError.custom(msg, "Name the record type: `use inject(Deps)`.").withLoc(arg.getLoc());
                 return error.TypeError;
             };
-            if (which == .inject) {
+            {
                 const fields = if (env.lookupTypeDef(tn)) |td| td.fields() else null;
                 if (isBehaviorName(env, tn) or fields == null) {
                     const msg = try std.fmt.allocPrint(env.arena, "{s}: `inject({s})` builds a record from the contexts of its fields' types, and `{s}` is no record type (decision 416 (1))", .{ diagnostics.inject_not_record, tn, tn });
-                    env.lastError = TypeError.custom(msg, "Read a behavior's context with `use context(Behavior)`; `inject` takes a record whose fields are what it reads.").withLoc(arg.getLoc());
+                    env.lastError = TypeError.custom(msg, "Read a behavior's context through its context value, `use context(repoContext)`; `inject` takes a record whose fields are what it reads.").withLoc(arg.getLoc());
                     return error.TypeError;
                 }
             }
@@ -20831,50 +20859,27 @@ fn contextDefaultRef(env: *Env, key: []const u8) InferError!?[]const u8 {
     return alias;
 }
 
-/// Decisions 378 (3), 379 (3) — each read of this module gets its type's
+/// Decision 416 (1) — each `inject` field of this module gets its type's
 /// declared default: this module's `val`, or another analysed module's
-/// through a hidden import (question B-17-g's narrow reading: the type's own
-/// module or one analysed before this one). A type with no declaration is
-/// refused at the read.
+/// through a hidden import (the type's own module or one analysed before
+/// this one); a field with none and no default of its own is refused at the
+/// `inject`. A `use context(ctx)` needs nothing here: its fallback is the
+/// value it names (decision 723, `noteContextUse`).
 fn resolveContextReads(env: *Env) InferError!void {
     var it = env.contextUses.iterator();
     while (it.next()) |e| {
         const use = e.value_ptr;
-        if (use.kind == .inject) {
-            for (use.fields) |*f| {
-                if (f.key) |k| if (try contextDefaultRef(env, k)) |ref| {
-                    f.default_ref = ref;
-                    continue;
-                };
-                if (f.field_default != null) continue;
-                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}`: `{s}` has no context declared — declare its default with `createContext(…)` (decision 416 (1))", .{ diagnostics.context_not_declared, use.name, f.name, f.type_name });
-                env.lastError = TypeError.custom(msg, "A field `inject` reads is the context of its type provided above, else that type's declared default, else the field's own default.").withLoc(e.key_ptr.*);
-                return error.TypeError;
-            }
-            continue;
-        }
-        if (use.kind != .read or use.default_ref != null) continue;
-        if (env.contextDefaults.get(use.key)) |d| {
-            use.default_ref = d.name;
-            continue;
-        }
-        if (env.reflection) |r| if (r.contextDefaults.get(use.key)) |d| {
-            const alias = try std.fmt.allocPrint(env.arena, "bpContextDefault__{d}", .{env.contextDefaultImports.count()});
-            try env.contextDefaultImports.put(env.arena, alias, .{ .module = d.module, .name = d.name });
-            use.default_ref = alias;
-            continue;
-        };
-        // Decision 416 (2) — a behavior has no constructor: its default is a
-        // value of a type implementing it, keyed by the second argument.
-        const vt = use.value_type.deref();
-        if (vt.* == .named and isBehaviorName(env, vt.named.name)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no context declared — declare its default with `createContext(value, {s})` (decisions 379 (3), 416 (2))", .{ diagnostics.context_not_declared, use.name, use.name });
-            env.lastError = TypeError.custom(msg, "A read of a behavior answers the nearest context provided as it above, else its declared default: `pub val repoContext = comptime createContext(PgRepository(…), Repository);`, the value of a type that implements it.").withLoc(e.key_ptr.*);
+        if (use.kind != .inject) continue;
+        for (use.fields) |*f| {
+            if (f.key) |k| if (try contextDefaultRef(env, k)) |ref| {
+                f.default_ref = ref;
+                continue;
+            };
+            if (f.field_default != null) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}`: `{s}` has no context declared — declare its default with `createContext(…)` (decision 416 (1))", .{ diagnostics.context_not_declared, use.name, f.name, f.type_name });
+            env.lastError = TypeError.custom(msg, "A field `inject` reads is the context of its type provided above, else that type's declared default, else the field's own default.").withLoc(e.key_ptr.*);
             return error.TypeError;
         }
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no context declared — declare its default with `createContext({s}(…))` (decision 379 (3))", .{ diagnostics.context_not_declared, use.name, use.name });
-        env.lastError = TypeError.custom(msg, "A read answers the nearest context of its type provided above, else the type's declared default: `pub val themeContext = comptime createContext(Theme(…));` beside the type.").withLoc(e.key_ptr.*);
-        return error.TypeError;
     }
 }
 
@@ -21009,20 +21014,21 @@ fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
     const hook = target;
     var typeArgs: std.ArrayListUnmanaged(hooksMod.TypeArg) = .empty;
     if (call.typeArgs) |tas| for (tas) |ta| try typeArgs.append(env.arena, try hookTypeArg(env, ta));
-    // Decisions 354 (4), 379 — `use context(T)` names the `val` that declares
-    // `T`'s default (this module's or an analysed one's); `use
-    // provide(themeContext)` the declaring `val` it names.
+    // Decisions 354 (4), 379, 723 — `use context(ctx)` names the `val` it
+    // reads (this module's or an imported one); `use provide(createContext(x))`
+    // the declaration of `x`'s type's default.
     var context: ?hooksMod.DeclRef = null;
     if (stdContextCallee(env, c)) |which| if (call.args.len > 0) {
         const arg = call.args[0].value.*;
         if (arg == .identifier and arg.identifier.kind == .ident) {
             const name = arg.identifier.kind.ident;
-            if (which == .context) {
-                if (env.lookupTypeDef(name) != null or env.importedTypeDecls.contains(name)) {
-                    const key = if (env.importedTypeDecls.get(name)) |it| it.name else name;
-                    const found = env.contextDefaults.get(key) orelse if (env.reflection) |r| r.contextDefaults.get(key) else null;
-                    if (found) |d| context = .{ .module = d.module, .name = d.name };
-                }
+            // Decision 723 — `use context(ctx)` names the context value it
+            // reads: this module's `val`, or the one it imports.
+            if (which == .context and env.localBindDepth(name) == null) {
+                if (env.importOwners.get(name)) |o|
+                    context = .{ .module = o.owner, .name = o.name }
+                else if (env.ownDecls.contains(name))
+                    context = .{ .module = env.modulePath, .name = name };
             }
         }
         // `use provide(createContext(x))`: the declaration of `x`'s type's
@@ -23138,8 +23144,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // `Context<T>` object read with `use context(…)`.
                 if (std.mem.eql(u8, call.callee, "getContext")) {
                     env.lastError = TypeError.custom(
-                        diagnostics.unknown_builtin ++ ": unknown builtin `@getContext` — a context is read by its type with `use context(T)` (decisions 354, 379)",
-                        "Declare the type's default (`pub val themeContext = comptime createContext(Theme(…));`), provide another above (`use provide(createContext(theme));`) and read it with `val t = use context(Theme);`.",
+                        diagnostics.unknown_builtin ++ ": unknown builtin `@getContext` — a context is read through a context value with `use context(ctx)` (decisions 354, 722)",
+                        "Declare the type's default (`pub val themeContext = comptime createContext(Theme(…));`), provide another above (`use provide(createContext(theme));`) and read it with `val t = use context(themeContext);`.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }

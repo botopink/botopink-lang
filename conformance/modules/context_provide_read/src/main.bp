@@ -15,7 +15,7 @@ type Element(text: string) implement Renderable
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn themeName() -> Component<string> {
-    val t = use context(Theme);
+    val t = use context(themeContext);
     return t.mode;
 }
 
@@ -30,7 +30,7 @@ fn Page() -> Component<Element> {
 }
 
 fn App() -> Component<Element> {
-    val outer = use context(Theme);
+    val outer = use context(themeContext);
     use provide(createContext(Theme(mode: "dark")));
     val p = Page();
     return Element(text: outer.mode + " " + p.text);

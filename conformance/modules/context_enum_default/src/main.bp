@@ -21,7 +21,7 @@ fn name(m: Mode) -> string {
 }
 
 fn Label() -> Component<View> {
-    val m = use context(Mode);
+    val m = use context(modeContext);
     return View(text: name(m));
 }
 

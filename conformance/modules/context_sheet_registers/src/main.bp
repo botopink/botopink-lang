@@ -23,7 +23,7 @@ fn printed(layer: string, rule: Rule) -> void {
 fn discard(layer: string, rule: Rule) -> void {}
 
 fn computed(name: string, parts: Rule[]) -> Component<Rule> {
-    val sheet = use context(SheetWriter);
+    val sheet = use context(sheetContext);
     var text = name;
     for (parts) { r ->
         text = text + "+" + r.text;

@@ -17,7 +17,7 @@ type Sheet(name: string)
 pub val sheetContext = comptime createContext(Sheet(name: "default"));
 
 fn styledView(c: string) -> Component<Styled> {
-    val s = use context(Sheet);
+    val s = use context(sheetContext);
     return Styled(className: c + "@" + s.name);
 }
 

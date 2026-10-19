@@ -1,16 +1,16 @@
-//// Decisions 378, 379, question B-17-g's reading — a read finds its type's
-//// declared default in the type's own module: `Label` reads `Theme`, whose
-//// default `theme` declares, without importing the declaration.
+//// Decisions 378, 722 — a read names the context value it imports:
+//// `Label` reads `themeContext`, which `theme` declares beside `Theme`, so
+//// its default is found through the import, nothing searched.
 
 pub mod theme;
 
-import {theme.Theme};
+import {theme.Theme, theme.themeContext};
 import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
 fn Label() -> Component<Element> {
-    val t = use context(Theme);
+    val t = use context(themeContext);
     return Element(text: t.mode);
 }
 

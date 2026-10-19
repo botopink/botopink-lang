@@ -304,7 +304,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "context-marker-removed",
             .message = "`@Context` was removed — a component's `R` implements `@Renderable`, and a context is a `Context<T>` object (decision 354)",
             .caretCaption = "write `implement @Renderable`",
-            .hint = "`type Element(…) implement @Context<ElementBase>` is `type Element(…) implement @Renderable`; what a body reads from above it is `use context(SomeContext)`, under a `use provide(SomeContext, value)`.",
+            .hint = "`type Element(…) implement @Context<ElementBase>` is `type Element(…) implement @Renderable`; what a body reads from above it is `use context(themeContext)`, under a `use provide(ctx)`.",
         },
         .componentBaseParamRemoved => .{
             .code = "generic-arg-count-exceeded",

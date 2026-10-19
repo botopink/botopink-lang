@@ -11,7 +11,7 @@ type Element(text: string) implement Renderable
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 fn themed(syntax decl: unknown) {
-    val t = use context(Theme);
+    val t = use context(themeContext);
 }
 
 #[themed]

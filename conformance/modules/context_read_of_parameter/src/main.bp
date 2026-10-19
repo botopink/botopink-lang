@@ -1,5 +1,5 @@
-//// Decision 379 (3) — `use context(T)` names the context by its value's
-//// type; a parameter holding a context names no type.
+//// Decisions 722, 723 — `use context(ctx)` reads through a context value
+//// the module declares or imports; a parameter holding a context is none.
 
 import {context.Context, context.createContext, context.provide, context.context} from "std";
 

@@ -29,7 +29,7 @@ async iter fn doubled(n: i32) -> Stream<i32> {
 }
 
 component fn Label(text: string) -> Component<View> {
-    val p = use context(string);
+    val p = use context(prefixContext);
     return View(text: p + text);
 }
 

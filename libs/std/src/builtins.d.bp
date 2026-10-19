@@ -628,9 +628,9 @@ pub type Declared<T>(
 // `HookUse.hook` is the hook's declaration, `null` for a `use` over a function
 // value; `annotations` are the hook's own; `typeArgs` the `use`'s explicit
 // type arguments (`use params<BlogParams>()` → `[BlogParams]`, a record's
-// fields as the checker spells them); `context` the context object a
-// `use provide(C, …)` / `use context(C)` names (decision 354 (4)), `null` for
-// any other hook.
+// fields as the checker spells them); `context` the context value a
+// `use context(ctx)` names, or the declaration of the default of the type a
+// `use provide(…)` gives (decisions 354 (4), 723), `null` for any other hook.
 pub type HookUse(
     hook: ?Declared<unknown>,
     annotations: __Decl__Annotation[],

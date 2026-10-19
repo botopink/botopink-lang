@@ -15,7 +15,7 @@ type View(text: string, kids: Component<View>[]) implement Renderable
 pub val prefixContext = comptime createContext("");
 
 fn Card(item: Item) -> Component<View> {
-    val p = use context(string);
+    val p = use context(prefixContext);
     print("ran " + item.name);
     return View(text: p + item.name, kids: []);
 }

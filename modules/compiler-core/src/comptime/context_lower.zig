@@ -11,7 +11,7 @@
 //! children's scope starts as it:
 //!
 //!   use provide(c);      →  val bpScopeKids__N = bpScopePush__(<kids>, "<T's identity>", c);
-//!   use context(T)       →  bpScopeFind__(bpScope__, "<T's identity>", <T's declared default>)
+//!   use context(ctx)     →  bpScopeFind__(bpScope__, "<ctx's type's identity>", ctx)
 //!
 //! where a `Context<T>` is its value at run time: `createContext(v)` is `v`.
 //!   use h(…)             →  bpScopeValue__(await (h(…))(bpScope__))    — a hook is part of the body
@@ -39,8 +39,9 @@
 //! The `bpScope…__` functions are std's `context.push` / `find` / `rendered`
 //! / `valueOf` / `root`, imported under those names when the module needs
 //! them (the import is added here). A context's identity is its value's type
-//! (379), recorded by the checker in `Env.contextUses` with the `val` that
-//! declares the type's default (another module's through a hidden import,
+//! (379), recorded by the checker in `Env.contextUses`: a read's fallback is
+//! the context value it names (723), an `inject` field's the `val` that
+//! declares its type's default (another module's through a hidden import,
 //! `Env.contextDefaultImports`). A provide binds a fresh `val`, so a `return` after it
 //! answers the scope as it was there (the checker refuses a provide after the
 //! body rendered a component and a `use` after an early return).
@@ -314,8 +315,9 @@ const Lowering = struct {
                         return true;
                     }
                     const scope = try self.scopeArg(false, uh.loc);
-                    // Decision 378 (3) — no read is unbound: the type's
-                    // declared default when nothing of it is provided above.
+                    // Decisions 378 (3), 723 — no read is unbound: the
+                    // default of the value it names when nothing of its
+                    // type is provided above.
                     const fallback = try self.ident(use.default_ref orelse return error.ContextLowering, uh.loc);
                     e.* = (try self.callCarrying(find_fn, &.{ scope, try self.string(use.key, uh.loc), fallback }, try self.typeRefOfType(use.value_type), uh.loc)).*;
                     return true;

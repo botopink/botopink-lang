@@ -818,6 +818,11 @@ pub const inject_not_record: []const u8 = "inject-not-record";
 /// implement `B`, or whose `B` names no behavior: refused at the argument.
 pub const context_behavior_not_implemented: []const u8 = "context-behavior-not-implemented";
 
+/// Decisions 722, 723 — `use context(T)` naming a bare type: a context is read
+/// through a context value the reader imports or declares (`use
+/// context(themeContext)`). Refused at the argument, naming the form.
+pub const context_read_by_type: []const u8 = "context-read-by-type";
+
 // ── decision 553 — the body markers ──────────────────────────────────────────
 
 /// Decision 553 (2) — a marker whose return type is not the wrapper it names:
@@ -1022,6 +1027,7 @@ pub const all_codes = [_][]const u8{
     context_declared_twice,
     inject_not_record,
     context_behavior_not_implemented,
+    context_read_by_type,
     template_annotation_not_template,
     template_annotation_without_decl,
     template_annotation_only,

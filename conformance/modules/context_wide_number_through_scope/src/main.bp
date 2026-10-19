@@ -1,6 +1,6 @@
 //// Decisions 354, 379 and 388 — a value of any type crosses the render scope:
 //// an `f64` and an `i64` provided by `Root` are read below it with `use
-//// context(f64)` / `use context(i64)`,
+//// context(rateContext)` / `use context(totalContext)`,
 //// and the hooks `rate` and `total` render an `f64` and an `i64` that `Label`
 //// reads with `use` — each one the number it was, on every target.
 
@@ -13,12 +13,12 @@ pub val rateContext = comptime createContext(0.0);
 pub val totalContext = createContext(0l);
 
 fn rate() -> Component<f64> {
-    val r = use context(f64);
+    val r = use context(rateContext);
     return r * 2.0;
 }
 
 fn total() -> Component<i64> {
-    val t = use context(i64);
+    val t = use context(totalContext);
     return t + 1;
 }
 

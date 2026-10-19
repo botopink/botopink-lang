@@ -6,8 +6,8 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 > Component<R>` answers a function of std's opaque `RenderScope`, and calling
 > `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
 > the scope of the body that places them). In the body, `use provide(ctx)` makes
-> the scope its children receive, `use context(T)` finds `T`'s identity in the
-> scope the body received, else `T`'s declared default, and `await c` runs `c`
+> the scope its children receive, `use context(ctx)` finds the identity of
+> `ctx`'s type in the scope the body received, else `ctx`'s own default, and `await c` runs `c`
 > with the children's scope. Outside every body — `main`, a test, a plain
 > function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
 > `c.run(scope)` answers the result and the children's scope, so a render

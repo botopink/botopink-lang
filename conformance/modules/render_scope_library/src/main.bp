@@ -36,12 +36,12 @@ declare fn hostStash(f: fn() -> Task<Rendered<View>>) -> void;
 declare fn hostStashed() -> fn() -> Task<Rendered<View>>;
 
 fn Label(prefix: string) -> Component<View> {
-    val t = use context(Theme);
+    val t = use context(themeContext);
     return View(text: prefix + t.mode, kids: []);
 }
 
 fn Page(title: string) -> Component<View> {
-    val above = use context(Theme);
+    val above = use context(themeContext);
     use provide(createContext(Theme(mode: "dark")));
     return View(
         text: title + "(" + above.mode + ")",

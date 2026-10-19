@@ -18,8 +18,8 @@ pub val depthContext = comptime createContext(Depth(n: 0));
 pub val stepContext = comptime createContext(Step(n: 1));
 
 fn Leaf(name: string) -> Component<Element> {
-    val depth = use context(Depth);
-    val step = use context(Step);
+    val depth = use context(depthContext);
+    val step = use context(stepContext);
     return Element(text: name + "=" + (depth.n * step.n).toString());
 }
 

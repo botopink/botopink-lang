@@ -17,7 +17,7 @@ fn Shell() -> Component<View> {
 }
 
 fn Mode() -> Component<View> {
-    val m = use context(string);
+    val m = use context(modeContext);
     return View(text: "mode " + m);
 }
 

@@ -438,8 +438,8 @@ fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *con
     if (env.itemOwners.count() == 0 and env.implicitEnumImports.count() == 0 and env.contextDefaultImports.count() == 0 and env.liftedStdTypes.count() == 0) return prog;
     var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     // Decisions 378, 379 — the `val` another module declares a context
-    // type's default with, read by a `use context(T)` here under a hidden
-    // alias (`Env.contextDefaultImports`).
+    // type's default with, read by a `use inject(R)` field here under a
+    // hidden alias (`Env.contextDefaultImports`).
     var lit = env.liftedStdTypes.iterator();
     while (lit.next()) |e| {
         var segs: std.ArrayListUnmanaged([]const u8) = .empty;

@@ -2612,29 +2612,36 @@ the server renders.
 
 <!-- example: modules/component_default_fn_sync -->
 
-**Contexts** (decisions 354, 378, 379). What a body reads from above it is a
-context, named by its value's type. std's `context.createContext(value)` makes
-one; written as a module-level `val`'s initializer it **declares** that type's
-default — `pub val themeContext = comptime createContext(Theme(mode: "light"));`
-— one declaration per type in the program (`context-declared-twice` at the
-second, naming the first), and a module-level `Context<T>` made any other way
-(a `val` naming another context, a `var`) is `context-not-declared`. Two
-contexts over one base type are two types (`type Depth(n: i32)`, `type
-Step(n: i32)`). Two hooks of std's `context` module work it, `use`d and nothing
-else (`context-hook-without-use`):
+**Contexts** (decisions 354, 378, 379, 722, 723). What a body reads from above
+it is a context; its identity is its value's type. std's
+`context.createContext(value)` makes one; written as a module-level `val`'s
+initializer it **declares** a context value carrying that type's default —
+`pub val themeContext = comptime createContext(Theme(mode: "light"));` — one
+declaration per type in the program (`context-declared-twice` at the second,
+naming the first), and a module-level `Context<T>` made any other way (a `val`
+naming another context, a `var`) is `context-not-declared`. Two contexts over
+one base type are two types (`type Depth(n: i32)`, `type Step(n: i32)`). Two
+hooks of std's `context` module work it, `use`d and nothing else
+(`context-hook-without-use`):
 
-- `use provide(createContext(value));` in a **component's** body gives the
-  context to everything that component renders below it — descendants only,
-  never itself or a sibling; the nearest provider of a type wins (`use
-  provide(themeContext)` gives the declared default again). In a body whose
-  `R` is not `Renderable` it is `context-provide-outside-component`, and after
-  the body rendered a component it is `context-provide-after-render` (that
-  child would not see it).
-- `val t = use context(Theme);` reads the context of type `Theme` provided
-  nearest above, else `Theme`'s declared default — no read is unbound. A type
-  with no declared default is `context-not-declared` at the read; the
-  declaration is found in the reading module, or in a module analysed before
-  it — the type's own module included (question B-17-g).
+- `use provide(ctx);` in a **component's** body gives the context value `ctx`
+  to everything that component renders below it — descendants only, never
+  itself or a sibling; the nearest provider of a type wins. It takes the
+  context alone: a body that provides another value makes a context of the
+  same type in its body — `use provide(createContext(Theme(mode: "dark")));`,
+  or `val c = comptime createContext(Theme(mode: "dark"));` then `use
+  provide(c);` — and `use provide(themeContext)` gives the declared default
+  again. In a body whose `R` is not `Renderable` it is
+  `context-provide-outside-component`, and after the body rendered a component
+  it is `context-provide-after-render` (that child would not see it).
+- `val t = use context(themeContext);` reads through a context value the module
+  declares or imports (`import {theme.themeContext};`): it answers the nearest
+  context of `themeContext`'s type, `Theme`, provided above, else
+  `themeContext`'s own default — no read is unbound, and nothing is searched:
+  the default is the value the read names. A bare type name, `use
+  context(Theme)`, is `context-read-by-type` at the argument, naming the form
+  `use context(<a context value>)`; a value that is no module-level name (a
+  parameter, a local) is `context-not-declared` at the argument.
 
 <!-- example: modules/context_default -->
 
@@ -2642,7 +2649,13 @@ else (`context-hook-without-use`):
 
 <!-- example: modules/context_default_imported -->
 
-<!-- example: modules/context_undeclared_type -->
+<!-- example: modules/context_read_by_value -->
+
+<!-- example: modules/context_provide_made_in_body -->
+
+<!-- example: modules/context_read_by_type_refused -->
+
+<!-- example: modules/context_read_of_parameter -->
 
 <!-- example: modules/context_declared_twice -->
 
@@ -2655,17 +2668,17 @@ inject(Deps);` builds the record `Deps`, each field the nearest context of its
 field's type provided above, else that type's declared default, else the field's
 own default — a field with none of the three is `context-not-declared` at the
 `inject`, naming the field; `inject` of a behavior or of any type that is no
-record is `inject-not-record` (a behavior is read with `use context(B)`). A
+record is `inject-not-record` (a behavior is read through its context value,
+`use context(repoContext)`). A
 second argument of `createContext` names the behavior the context is provided
 as — `createContext(PgRepository(pool), Repository)`, the value checked to
 implement it as a parameter typed `Repository` is, through its own `implement`
 clause or a behavior that `extends` `Repository` (`context-behavior-not-implemented`
 at the argument) — so `use
-context(Repository)` and an `inject` field typed `Repository` read it; its
-declaration is the behavior's default. A read of a behavior with no declared
-default is `context-not-declared` at the read, naming the declaration a behavior
-takes — `createContext(value, Repository)`, a value of a type that implements it
-— never a constructor call, which a behavior has none of. Providing stays one
+context(repoContext)` (`pub val repoContext = comptime
+createContext(MissingRepository(), Repository);`) and an `inject` field typed
+`Repository` read it; its declaration is the behavior's default, a value of a
+type that implements it — a behavior has no constructor. Providing stays one
 context per dependency, so a test's root swaps one.
 
 <!-- example: modules/inject_record -->
@@ -2684,8 +2697,6 @@ context per dependency, so a test's root swaps one.
 
 <!-- example: modules/context_behavior_not_implemented -->
 
-<!-- example: modules/context_behavior_undeclared -->
-
 <!-- example: modules/context_behavior_implemented_indirectly -->
 
 <!-- example: modules/context_behavior_method_find -->
@@ -2696,8 +2707,8 @@ A component is a lambda over a render scope (decision 388): `fn C(…) ->
 Component<R>` answers a function of std's opaque `RenderScope`, and calling
 `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
 the scope of the body that places them). In the body, `use provide(ctx)` makes
-the scope its children receive, `use context(T)` finds `T`'s identity in the
-scope the body received, else `T`'s declared default, and `await c` runs `c`
+the scope its children receive, `use context(ctx)` finds the identity of
+`ctx`'s type in the scope the body received, else `ctx`'s own default, and `await c` runs `c`
 with the children's scope. Outside every body — `main`, a test, a plain
 function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
 `c.run(scope)` answers the result and the children's scope, so a render
@@ -4429,7 +4440,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 | Record | Fields |
 |---|---|
 | `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
-| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the `val` that declares the type's default of a `use provide(ctx)` / `use context(T)`, decisions 354 (4), 379; `null` for any other hook) |
+| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context value a `use context(ctx)` names, or the `val` that declares the default of the type a `use provide(…)` gives, decisions 354 (4), 379, 723; `null` for any other hook) |
 | `HookCall` — one call of a `Component` function | `callee: Declared<unknown>`, `at: string` |
 
 A call a template builds from a tag counts as written. `at` is

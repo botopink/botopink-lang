@@ -1,6 +1,6 @@
 //// Decisions 277, 354 (4), 379 — `decl.hooks` carries each `use
-//// provide(ctx)` / `use context(T)` with its context object, the `val` that
-//// declares the type's default, which a framework's root decorator reads to
+//// provide(ctx)` / `use context(ctx)` with its context object, the `val`
+//// that declares the type's default, which a framework's root decorator reads to
 //// check that every context read has a provider on its path. std's `provide`
 //// / `context` get no node.
 
@@ -29,7 +29,7 @@ fn contexts(syntax decl: unknown) {
 }
 
 fn Label() -> Component<Element> {
-    val t = use context(Theme);
+    val t = use context(themeContext);
     return Element(text: t.mode);
 }
 

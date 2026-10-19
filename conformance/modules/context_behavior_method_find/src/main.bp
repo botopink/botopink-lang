@@ -1,6 +1,6 @@
 //// Decision 416 (2) — a behavior method is called by its own name on a value
 //// read through a context, whatever that name is: `find` answers the
-//// repository's row on every target, read with `use context(Repository)` and
+//// repository's row on every target, read with `use context(repoContext)` and
 //// through an `inject` field, beside std `context`'s own functions.
 
 import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
@@ -35,7 +35,7 @@ type Deps(repo: Repository)
 pub val repoContext = createContext(MissingRepository(), Repository);
 
 fn Lookup() -> Component<View> {
-    val r = use context(Repository);
+    val r = use context(repoContext);
     val deps = use inject(Deps);
     return View(text: r.find(1)
         + " "

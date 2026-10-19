@@ -3,25 +3,28 @@
 //// Contexts (decisions 354, 378, 379) — what a component's body reads from
 //// above it, React's context in botopink's spelling.
 ////
-//// A context is named by its value's type. `createContext(value)` at module
-//// level declares the default of that type — one declaration per type in
-//// the program:
+//// A context's identity is its value's type. `createContext(value)` at
+//// module level declares a context value carrying the default of that type
+//// — one declaration per type in the program:
 ////
 ////     pub val themeContext = comptime createContext(Theme(mode: .Light));
 ////
 //// A component provides a context to everything it renders below it, and a
-//// body reads the nearest one of a type provided above it, else the type's
-//// declared default:
+//// body reads through a context value it declares or imports — the nearest
+//// context of that value's type provided above it, else the value's own
+//// default (decisions 722, 723):
 ////
-////     use provide(createContext(Theme(mode: .Dark)));   // the children's
-////     val theme = use context(Theme);                    // the nearest above
+////     val c = comptime createContext(Theme(mode: .Dark));
+////     use provide(c);                                    // the children's
+////     val theme = use context(themeContext);             // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
 //// only in a component's body (a `Component<R>` whose `R` implements
 //// `@Renderable`), before it renders a child. `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
-//// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
-//// with no declared default is refused at build, at the read.
+//// `comptime { … }` have none (`use-outside-render-tree`). A read naming a
+//// bare type (`use context(Theme)`) is refused at the argument
+//// (`context-read-by-type`).
 ////
 //// A component at run time is a lambda over a `RenderScope` (decision 388):
 //// calling `Card(item)` only makes the lambda, and the render library runs it
@@ -59,10 +62,10 @@ pub fn provide<T>(ctx: Context<T>) -> Component<void> {
     );
 }
 
-// The value of the context of type `T` provided nearest above this body, or
-// `T`'s declared default: `use context(T)` answers `T`, which the checker
-// reads off the type the argument names (decision 379 (3)).
-pub fn context(comptime t: anytype) -> Component<unknown> {
+// The value of the context of `ctx`'s type provided nearest above this body,
+// or `ctx`'s own default: `use context(themeContext)` names a context value
+// the module declares or imports, never a bare type (decisions 722, 723).
+pub fn context<T>(ctx: Context<T>) -> Component<T> {
     panic(
         "`use provide` / `use context` are lowered where they are written; this body never runs",
     );
@@ -104,8 +107,8 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
 // provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
 // children (a context is its value at run time: the compiler writes
-// `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
-// identity>, <T's declared default>)`,
+// `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
+// <ctx's type's identity>, ctx)`,
 // a `use` of a hook and an `await` of a component value run the lambda and
 // read `valueOf` of what it answers, and an `await` outside every body runs it
 // with `root()`. A context's identity is its value's type (379) — the
@@ -178,25 +181,28 @@ fn frameParent(f: Frame) -> unknown {
   ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
   ;; above it, React's context in botopink's spelling.
   ;; 
-  ;; A context is named by its value's type. `createContext(value)` at module
-  ;; level declares the default of that type — one declaration per type in
-  ;; the program:
+  ;; A context's identity is its value's type. `createContext(value)` at
+  ;; module level declares a context value carrying the default of that type
+  ;; — one declaration per type in the program:
   ;; 
   ;;     pub val themeContext = comptime createContext(Theme(mode: .Light));
   ;; 
   ;; A component provides a context to everything it renders below it, and a
-  ;; body reads the nearest one of a type provided above it, else the type's
-  ;; declared default:
+  ;; body reads through a context value it declares or imports — the nearest
+  ;; context of that value's type provided above it, else the value's own
+  ;; default (decisions 722, 723):
   ;; 
-  ;;     use provide(createContext(Theme(mode: .Dark)));   // the children's
-  ;;     val theme = use context(Theme);                    // the nearest above
+  ;;     val c = comptime createContext(Theme(mode: .Dark));
+  ;;     use provide(c);                                    // the children's
+  ;;     val theme = use context(themeContext);             // the nearest above
   ;; 
   ;; Both are hooks, so they are `use`d, never called for a value; `provide`
   ;; only in a component's body (a `Component<R>` whose `R` implements
   ;; `@Renderable`), before it renders a child. `use` exists only where there
   ;; is a render tree — a decorator body, a template body and a
-  ;; `comptime { … }` have none (`use-outside-render-tree`). A read of a type
-  ;; with no declared default is refused at build, at the read.
+  ;; `comptime { … }` have none (`use-outside-render-tree`). A read naming a
+  ;; bare type (`use context(Theme)`) is refused at the argument
+  ;; (`context-read-by-type`).
   ;; 
   ;; A component at run time is a lambda over a `RenderScope` (decision 388):
   ;; calling `Card(item)` only makes the lambda, and the render library runs it
@@ -231,10 +237,10 @@ fn frameParent(f: Frame) -> unknown {
     unreachable
     ref.null $closure
   )
-  ;; The value of the context of type `T` provided nearest above this body, or
-  ;; `T`'s declared default: `use context(T)` answers `T`, which the checker
-  ;; reads off the type the argument names (decision 379 (3)).
-  (func $context (export "context") (param $t i32) (result (ref null $closure))
+  ;; The value of the context of `ctx`'s type provided nearest above this body,
+  ;; or `ctx`'s own default: `use context(themeContext)` names a context value
+  ;; the module declares or imports, never a bare type (decisions 722, 723).
+  (func $context (export "context") (param $ctx (ref null $rec_Context)) (result (ref null $closure))
     global.get $__s0
     call $__panic_fail
     unreachable
@@ -272,8 +278,8 @@ fn frameParent(f: Frame) -> unknown {
   ;; `return v` of its body answers `rendered(v, <children's scope>)`; `use
   ;; provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
   ;; children (a context is its value at run time: the compiler writes
-  ;; `createContext(v)` as `v`), `use context(T)` is `find(<received scope>, <T's
-  ;; identity>, <T's declared default>)`,
+  ;; `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
+  ;; <ctx's type's identity>, ctx)`,
   ;; a `use` of a hook and an `await` of a component value run the lambda and
   ;; read `valueOf` of what it answers, and an `await` outside every body runs it
   ;; with `root()`. A context's identity is its value's type (379) — the
@@ -859,7 +865,7 @@ fn Widget() -> Component<Element> {
     unreachable
     i32.const 0
   )
-  (func $context (param $t i32) (result i32)
+  (func $context (param $ctx i32) (result i32)
     i32.const 292
     call $__panic_fail
     unreachable

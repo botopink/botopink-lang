@@ -1,7 +1,7 @@
 //// Decision 416 (2) — `createContext(value, Behavior)` keys a context by the
 //// behavior its value implements: `MissingRepository` declares
 //// `Repository`'s default, `Root` provides a `MemoryRepository` as a
-//// `Repository`, and both `use context(Repository)` and an `inject` field
+//// `Repository`, and both `use context(repoContext)` and an `inject` field
 //// typed `Repository` read it.
 
 import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
@@ -29,7 +29,7 @@ type Deps(repo: Repository)
 pub val repoContext = createContext(MissingRepository(), Repository);
 
 fn Lookup() -> Component<View> {
-    val r = use context(Repository);
+    val r = use context(repoContext);
     val deps = use inject(Deps);
     return View(text: r.fetch(1) + " " + deps.repo.fetch(2));
 }

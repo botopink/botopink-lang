@@ -18,8 +18,8 @@ pub val rateContext = createContext(Rate(value: null));
 pub val totalContext = createContext(Total(value: null));
 
 fn Label() -> Component<View> {
-    val r = (use context(Rate)).value;
-    val t = (use context(Total)).value;
+    val r = (use context(rateContext)).value;
+    val t = (use context(totalContext)).value;
     val rate = if (r != null) (r * 2.0).toString() else "no rate";
     val total = if (t != null) (t + 1).toString() else "no total";
     return View(text: rate + " " + total);

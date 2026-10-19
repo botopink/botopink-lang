@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: unknown-builtin: unknown builtin `@getContext` — a context is read by its type with `use context(T)` (decisions 354, 379)
-at src/main.bp:8:19
+refused error: unknown-builtin: unknown builtin `@getContext` — a context is read through a context value with `use context(ctx)` (decisions 354, 722)
+at src/main.bp:9:19
