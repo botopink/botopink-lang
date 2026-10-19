@@ -79,8 +79,10 @@ pub const members = [_]Member{
     .{ .name = "context", .kind = .read, .params = &.{S} },
     .{ .name = "lookup", .kind = .read, .params = &.{ S, W } },
     .{ .name = "bindings", .kind = .read, .params = &.{S} },
+    .{ .name = "holes", .kind = .read, .params = &.{S} },
     .{ .name = "build", .kind = .site, .params = &.{V} },
     .{ .name = "ast", .kind = .site, .params = &.{V} },
+    .{ .name = "isSyntax", .kind = .site, .params = &.{W} },
     .{ .name = "buildType", .kind = .site, .params = &.{V} },
     .{ .name = "note", .kind = .site, .params = &.{W} },
     .{ .name = "tagDecl", .kind = .site, .params = &.{ W, W, S } },
@@ -991,6 +993,9 @@ fn answersTree(ctx: *Ctx, e: ast.Expr) bool {
     if (e == .call and e.call.kind == .call) {
         const c = e.call.kind.call;
         if (c.is_builtin) return std.mem.eql(u8, c.callee, "expr") or std.mem.eql(u8, c.callee, "code");
+        // Decision 637 — a template called in a body that runs at build
+        // (`` code @`…` ``) answers the code it built.
+        if (c.templateText != null) return true;
         if (c.receiver) |r| if (ctx.site) |s| if (isIdent(r.*, s))
             return answersCode(c.callee);
         if (c.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident and contains(ctx.trees, r.identifier.kind.ident))

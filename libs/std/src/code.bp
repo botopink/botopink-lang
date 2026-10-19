@@ -1,0 +1,13 @@
+//// Decision 637 — `code`, the template that builds the typed AST from code
+//// written with `${…}` holes (scaffold).
+
+import {compiler, compiler.Lit, compiler.Syntax};
+
+pub default fn code(syntax q: string) -> anyvalue {
+    val holes = compiler.holes(q);
+    val first = holes[0];
+    if (compiler.isSyntax(first)) {
+        return compiler.ast(Syntax(first));
+    }
+    return compiler.ast(Lit(first));
+}

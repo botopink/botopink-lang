@@ -2988,6 +2988,21 @@ fn resolveImports(
                         if (!tree.isModule(try mod_tree.keyIn(env.arena, u.ownPackage, imp.segments[0]))) return refuseShorthand(env, tree, u, imp);
                     };
                     if (from_std) {
+                        // Decision 637 — a std template (`import {code} from
+                        // "std"`, the module's default; `import {code.code}`,
+                        // by name) expands at its call as a library's does.
+                        if (!imp.activate) {
+                            const whole = try std.fmt.allocPrint(env.arena, "std/{s}", .{try std.mem.join(env.arena, "/", imp.segments)});
+                            const prefix = try std.fmt.allocPrint(env.arena, "std/{s}", .{try imp.prefixPath(env.arena)});
+                            const hit: ?struct { owner: []const u8, tfn: ast.FnDecl } = if (templateRegistry.get(try default_fn.key(env.arena, whole))) |f|
+                                .{ .owner = whole, .tfn = f }
+                            else if (imp.isQualified()) (if (templateRegistry.get(try comptimeRegistryKey(env.arena, prefix, imp.leaf()))) |f| .{ .owner = prefix, .tfn = f } else null) else null;
+                            if (hit) |h| if (h.tfn.returnType) |rt| if (rt.isTemplateReturnType()) {
+                                try infer.registerImportedTemplateFn(env, imp.name(), h.tfn, h.owner);
+                                try importTemplateSupport(env, decoratorRegistry, h.owner, h.tfn.name, h.tfn);
+                                if (registry.getPtr(h.owner)) |ex| try env.templateOwnerExports.put(env.arena, h.owner, ex);
+                            };
+                        }
                         // `import {bool} from "std"` — handled inside
                         // inference (`inferProgramTyped` marks `stdImports`,
                         // gating qualified calls on `env.stdModules`).
@@ -3836,7 +3851,12 @@ fn registerExports(
                     // Its tuple label reads by position (`relabelTupleReads`):
                     // the importer lowers the body untyped, without this
                     // module's inference.
-                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), try hosts.rewriteAs(f, try templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f)));
+                    // Decision 637 — with the templates its body calls at
+                    // build lowered (`infer.lowerBuildTemplateCalls`).
+                    if (rt.isTemplateReturnType()) {
+                        const lowered = (try infer.lowerBuildTemplateCalls(env, f)).decl;
+                        try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), try hosts.rewriteAs(lowered, try templateEval.relabelTupleReads(arena, &env.tupleLabelReads, lowered)));
+                    }
                 }
                 // C-04 across a module boundary — a function exports its
                 // parameters as written, so an importer's short call is filled
@@ -3896,7 +3916,10 @@ fn registerExports(
                         r.* = if (own) try hosts.rewriteAs(sf, rl) else rl;
                     }
                     const head = templateRegistry.get(try comptimeRegistryKey(arena, path, b.name)) orelse f;
-                    const carried = try std.mem.concat(arena, ast.FnDecl, &.{ relabelled, try hostCells.hostSupport(env, &fns, try std.mem.concat(arena, ast.FnDecl, &.{ &.{head}, relabelled })) });
+                    // Decision 637 — the templates its body calls at build,
+                    // and what they reach, travel with it.
+                    const built = (try infer.lowerBuildTemplateCalls(env, f)).support;
+                    const carried = try std.mem.concat(arena, ast.FnDecl, &.{ relabelled, built, try hostCells.hostSupport(env, &fns, try std.mem.concat(arena, ast.FnDecl, &.{ &.{head}, relabelled })) });
                     for (carried, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
                     if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
                 } else if (infer.isCarriableFn(f)) {

@@ -1019,11 +1019,18 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     // the argument).
     // Decision 302 — the answers `q.annotate` has had so far, in call order
     // (`expandTemplateCallViaRuntime`); the key only when there is one.
-    const extra: usize = @as(usize, if (cap.valueRead) 1 else 0) + @as(usize, if (cap.tagAnswers.len > 0) 1 else 0);
+    const extra: usize = @as(usize, if (cap.valueRead) 1 else 0) + @as(usize, if (cap.tagAnswers.len > 0) 1 else 0) + @as(usize, if (cap.holes.len > 0) 1 else 0);
     const entries = try arena.alloc(Term.MapEntry, 6 + extra);
     var next: usize = 6;
     if (cap.valueRead) {
         entries[next] = Term.field("value", Term.str(text.items));
+        next += 1;
+    }
+    // Decision 637 — `compiler.holes(t)`: each hole a capture of its own.
+    if (cap.holes.len > 0) {
+        const hs = try arena.alloc(Term, cap.holes.len);
+        for (cap.holes, hs) |*h, *t| t.* = try captureToTerm(arena, h);
+        entries[next] = Term.field("holes", Term.listOf(hs));
         next += 1;
     }
     if (cap.tagAnswers.len > 0) entries[next] = .{ .key = Term.atomOf(preludeMod.annotations_key), .value = Term.listOf(cap.tagAnswers) };

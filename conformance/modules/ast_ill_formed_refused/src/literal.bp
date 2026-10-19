@@ -1,0 +1,11 @@
+import {compiler, compiler.Lit} from "std";
+
+fn literal(syntax t: string) -> anyvalue {
+    val h = compiler.holes(t);
+    return compiler.ast(Lit(h[0]));
+}
+
+pub fn wrapped() -> string {
+    val word = "x";
+    return literal @`${word}`;
+}
