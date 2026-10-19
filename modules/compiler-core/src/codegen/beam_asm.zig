@@ -11935,8 +11935,17 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, err_label);
         // Decision 595 (3) — `catch { e -> … }` binds the error to `e`.
         if (tc.binder) |bn| {
+            // The validator knows nothing of the `Error` shape after the failed
+            // `ok` test: the element is read behind a test of its own.
+            const bad_label = self.allocLabel();
+            const bound_label = self.allocLabel();
+            try beamEmitter.writeTest(self.out, .is_tagged_tuple, bad_label, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("error") });
             try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
             try self.bindX0(bn);
+            try beamEmitter.writeJump(self.out, bound_label);
+            try beamEmitter.writeLabel(self.out, bad_label);
+            try beamEmitter.writeCaseEnd(self.out, Op.xr(0));
+            try beamEmitter.writeLabel(self.out, bound_label);
         }
         try self.lowerExprIntoX0(tc.handler.*);
         try beamEmitter.writeLabel(self.out, end_label);

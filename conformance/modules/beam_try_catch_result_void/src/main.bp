@@ -1,0 +1,22 @@
+//// Decision 595 (3) — `try f() catch { e -> … }` over a `Result<void, E>` runs the
+//// handler on the failure and the fallback value on every target (beam too).
+
+import {io.terminal.print} from "std";
+
+fn tryReadSector(n: i32) -> Result<void, string> {
+    if (n > 5) throw "bad sector";
+    return;
+}
+
+fn read(n: i32) -> i32 {
+    try tryReadSector(n) catch { e ->
+        print("handled " + e);
+        return -1;
+    }
+    return 0;
+}
+
+pub fn main() {
+    print(read(7));
+    print(read(2));
+}
