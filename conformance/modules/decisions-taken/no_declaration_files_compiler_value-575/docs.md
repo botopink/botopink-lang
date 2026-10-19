@@ -13,7 +13,6 @@
 [cases/external_library_source_beside_emit/src/main.bp](cases/external_library_source_beside_emit/src/main.bp)
 [cases/external_library_source_beside_emit_split/src/main.bp](cases/external_library_source_beside_emit_split/src/main.bp)
 [cases/external_library_source_beside_member/src/main.bp](cases/external_library_source_beside_member/src/main.bp)
-[cases/external_library_source_beside_wrap/src/main.bp](cases/external_library_source_beside_wrap/src/main.bp)
 [cases/files_one_module_twice/src/main.bp](cases/files_one_module_twice/src/main.bp)
 [cases/implementation_twice/src/main.bp](cases/implementation_twice/src/main.bp)
 [cases/init_executor_before_main/src/main.bp](cases/init_executor_before_main/src/main.bp)

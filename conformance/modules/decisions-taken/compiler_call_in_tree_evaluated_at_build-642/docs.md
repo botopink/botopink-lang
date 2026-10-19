@@ -5,4 +5,3 @@
 [cases/member_reads_compiler_name/src/main.bp](cases/member_reads_compiler_name/src/main.bp)
 [cases/member_reads_compiler_text/src/main.bp](cases/member_reads_compiler_text/src/main.bp)
 [cases/member_texts_its_expression/src/main.bp](cases/member_texts_its_expression/src/main.bp)
-[cases/wrapper_reads_compiler_name/src/main.bp](cases/wrapper_reads_compiler_name/src/main.bp)

@@ -13,4 +13,3 @@
 [cases/template_method_call/src/main.bp](cases/template_method_call/src/main.bp)
 [cases/template_method_not_in_scope/src/main.bp](cases/template_method_not_in_scope/src/main.bp)
 
-Proved also by [template_lookup_decl_wrap_with](../compiler_wrap_with_removed-714/cases/template_lookup_decl_wrap_with/src/main.bp)
