@@ -23,7 +23,7 @@ is `(func $<module>.<function> …)` over the codegen's GC types, named and neve
 (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
 `std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
 WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
-Today's leaves (`wat/text.wat`, `wat/number.wat`):
+Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`):
 
 | Leaf | Signature over the codegen's types | Answers |
 |---|---|---|
@@ -36,6 +36,11 @@ Today's leaves (`wat/text.wat`, `wat/number.wat`):
 | `number.i32ToString` | `(i32) -> $str` | the decimal text, a `-` first for a negative |
 | `number.i64ToString` | `(i64) -> $str` | the decimal text; `i64::MIN` through its wrapped magnitude, read unsigned |
 | `number.u64ToString` | `(i64) -> $str` | the carrier's 64 bits read unsigned (decision 319) |
+| `bytes.length` | `($str) -> i32` | the number of bytes of a `Bytes` (a string's layout) |
+| `bytes.at` | `($str, i32) -> i32` | the byte at an index as a word `0..255`, `-1` for a negative index or one past the end |
+| `bytes.ofWords` | `($arr_i32) -> $str` | a new `Bytes`, one byte (the word's low eight bits) per word (decision 585 (k)) |
+
+The `bytes.*` leaves have no `std:` cell yet: the `.bp` half (`encoding`'s codecs over them, 585 (k)) waits for B-139 and s2 P5 (decision 566: no twin export — once P5 has deleted the linear lowering no module falls back).
 
 `text.byteLength`, `text.byteAt` and `text.byteSlice` are bound by `declare fn`s of `primitives.bp`'s trailing
 section `the wasm bodies (front 164 s3)` (`stringByteLength`, `stringByteAt`, `stringByteSlice`), which the private

@@ -1181,7 +1181,7 @@ reference is `(ref null …)`. A `(type …)` or `(rec …)` form is refused at 
 anything the model has no node for (a memory instruction, a numeric local or label, a flat
 `block … end`): a located error, `modules/std-wasm/wat/<file>:<line>:<col>: <message>`. Today's
 leaves: `text.length`, `text.charCodeAt`, `text.byteLength`, `text.byteAt`, `text.byteSlice` and `text.fromCodepoint` (`text.wat`), `number.i32ToString`, `number.i64ToString` and `number.u64ToString` (`number.wat`, with their internal body `number.decimal`; a GC module's `print_i64` / `print_u64` groups register the two 64-bit leaves and write their `$str` through `$__print_str_raw`, so the groups need `print_str`, `gcDeps`, and link no `number.i64Text`); the unit test `std_leaves: every leaf
-reads` reads each against the codegen's type names.
+reads` reads each against the codegen's type names. Front 164 s3 P2-d (decision 585 (k)): `bytes.length`, `bytes.at` and `bytes.ofWords` (`bytes.wat`).
 
 ## What stays in `wat_prelude` (decision 442, front 144 B-00g)
 

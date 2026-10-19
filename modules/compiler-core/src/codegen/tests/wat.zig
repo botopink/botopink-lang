@@ -350,6 +350,43 @@ test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC modu
     );
 }
 
+// Front 164 s3 P2-d — `bytes.length`, `bytes.at` and `bytes.ofWords`, the three
+// leaves `encoding`'s byte codecs are written over (decision 585 (k)). Their
+// `std:` cells wait for the `.bp` half in `libs/std`, so the program is a
+// module of std's own declaring them.
+test "wat: front 164 s3 ---- the Bytes leaves answer in a GC module" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
+        \\#[compiler.external(.Wasm(std: "bytes.length"))]
+        \\declare fn bytesLength(b: Bytes) -> i32;
+        \\#[compiler.external(.Wasm(std: "bytes.at"))]
+        \\declare fn bytesAt(b: Bytes, i: i32) -> i32;
+        \\#[compiler.external(.Wasm(std: "bytes.ofWords"))]
+        \\declare fn bytesOfWords(w: Array<i32>) -> Bytes;
+        \\fn main() {
+        \\    val b = bytesOfWords([104, 105, 256 + 33]);
+        \\    print(bytesLength(b));
+        \\    print(bytesAt(b, 0));
+        \\    print(bytesAt(b, 2));
+        \\    print(bytesAt(b, 3));
+        \\    print(bytesAt(b, -1));
+        \\    print(bytesLength(bytesOfWords([])));
+        \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(func $__std_bytes_ofWords ") != null);
+    try std.testing.expectEqualStrings("3\n104\n33\n-1\n-1\n0\n", o.result.run_output orelse "");
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
