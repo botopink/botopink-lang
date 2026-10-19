@@ -1469,6 +1469,13 @@ test; what it answers is the caller's to trust.
 
 <!-- example: modules/is_function_type -->
 
+A type parameter is erased at run time, so `v is T` with `T` a type parameter
+of the enclosing function (or of its type) can be decided by no target: it is
+refused at the test, `is-type-parameter`, naming the parameter and the two forms
+that work, `comptime t: type<T>` and `t: type<T>` (decisions 667, 758):
+
+<!-- example: modules/decisions-taken/is_test_on_type_parameter_refused-667/cases/is_type_parameter_refused -->
+
 A type to test against travels as a `comptime t: type<T>` parameter — `fn
 count<T>(self: Registry, comptime t: type<T>) -> i32 { … if (e is t) … }`, called
 `r.count(Users)`, `T` inferred from `t`. The parameter is the function's

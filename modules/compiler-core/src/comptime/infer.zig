@@ -14565,6 +14565,21 @@ fn typeTokenParam(params: []const ast.Param, name: []const u8) ?ast.Param {
     return null;
 }
 
+/// Decision 667 — `v is T` with `T` a type parameter of the enclosing function
+/// (or of its type): erased at run time, no target can decide it. The way out
+/// is a type token, in either form (decisions 757, 758).
+fn refuseIsTypeParameter(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    if (ref != .named or std.mem.eql(u8, ref.named, "Self")) return;
+    const n = ref.named;
+    const inScope = (if (env.fnGenericMap) |gm| gm.contains(n) else false) or
+        (if (env.methodGenericMap) |gm| gm.contains(n) else false);
+    if (!inScope) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `is {s}` tests the type parameter `{s}`, which no target knows at run time — take the type as `comptime t: type<{s}>` or `t: type<{s}>` and test `v is t`", .{ diagnostics.is_type_parameter, n, n, n, n });
+    const hint = try std.fmt.allocPrint(env.arena, "`fn get<{s}>(self: Registry, comptime t: type<{s}>) -> ?{s} {{ … if (e is t) … }}`, called `r.get(Users)`, is specialised per type (decision 757); `t: type<{s}>` without `comptime` is the type's identity at run time, one function for every type (decision 758).", .{ n, n, n, n });
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
 /// Decision 757 — a call of an ordinary function or method (one with a body:
 /// no decorator, no template) that passes a type to a `comptime t: type<T>`
 /// parameter: the arguments' positions and the names they write (a type, or
@@ -23078,6 +23093,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     const runtimeRef = runtimeTokenRef(env, call.isType.?);
                     if (runtimeRef != null) try env.runtimeTokenTests.put(env.arena, loc, {});
                     const tokenRef = typeTokenRef(env, call.isType.?) orelse runtimeRef;
+                    // Decision 667 — `v is T` on a bare type parameter.
+                    if (tokenRef == null) try refuseIsTypeParameter(env, call.isType.?, loc);
                     if (tokenRef orelse call.isType) |tested| {
                         // Decision 332 (question 139-a) — no run-time test
                         // tells a `bigint` from another integer: `is` neither

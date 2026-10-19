@@ -316,6 +316,9 @@ pub const decorator_writes_module_var: []const u8 = "decorator-writes-module-var
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
 /// Decision 297 — a read of `x` in the branch where `x is type` holds.
 pub const type_arg_read: []const u8 = "type-arg-read";
+/// Decision 667 — `v is T` with `T` a type parameter in scope: erased at run
+/// time, no target can decide it. Located at the test.
+pub const is_type_parameter: []const u8 = "is-type-parameter";
 /// A labelled argument in a call of a function VALUE (a parameter, a local, a
 /// field): its type is positional and names no parameter (01).
 pub const label_on_function_value: []const u8 = "label-on-function-value";
@@ -954,6 +957,7 @@ pub const all_codes = [_][]const u8{
     decorator_writes_module_var,
     is_type_outside_value_or_type,
     type_arg_read,
+    is_type_parameter,
     captured_var_write,
     inline_type_position,
     behavior_member_redeclared,
