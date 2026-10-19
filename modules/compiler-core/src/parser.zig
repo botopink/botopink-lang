@@ -368,14 +368,18 @@ pub const ParseErrorType = enum {
     /// `1e`, `2.5ex` — an exponent without digits (decision 247). Located at
     /// the `e`.
     numberExponentWithoutDigits,
-    /// Decision 553 (2) — `async fn f() -> i32`, `iter fn g()`: a marker whose
-    /// return type is not the wrapper it names, written literally (or no
-    /// return type at all, open point B-116-f). Located at the marker.
+    /// Decision 553 (2) — `async fn f() -> i32`: a marker whose return type is
+    /// not the wrapper it names, written literally. Located at the marker.
     markerTypeMismatch,
-    /// Decision 553 (1) — `iter { … }`, `component { … }`, `async iter { … }`
-    /// without `->`: a marker before `{` opens a lambda; the block forms are
-    /// `async { … }` (523) and `iter loop { … }` / `stream loop { … }` (125).
+    /// Decision 584 (3) — `async fn f()`: a marker with no return type at all
+    /// (every function is typed, 583, 622). The code is `marker-type-mismatch`;
+    /// the caption names the return type to write, `detail` the marker's word.
     /// Located at the marker.
+    markerReturnMissing,
+    /// Decision 584 (1) — `{ iter yield 1; }`, `{ async x }`: a marker inside a
+    /// lambda's brace opens a marked lambda, which writes `->`; the block forms
+    /// are `async { … }` (523) and `iter loop { … }` / `stream loop { … }`
+    /// (125). Located at the marker.
     markerWithoutArrow,
     /// Decision 553 (1) — `async fn f() -> @Task<i32>;`, `declare async fn …`,
     /// a behavior's bodyless member: a marker says how a body compiles, and a
@@ -2140,6 +2144,7 @@ pub const Parser = struct {
     // ── body markers (decision 553) ──────────────────────────────────────────
 
     pub const markerAt = decl_grammar.markerAt;
+    pub const MarkerAt = decl_grammar.MarkerAt;
 
     pub const markedFnAt = decl_grammar.markedFnAt;
 

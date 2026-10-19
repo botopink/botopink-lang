@@ -1,0 +1,41 @@
+//// Decision 584 (1), 574 — `{ component -> … }` is a lambda marked
+//// `component`, a `component fn`: bound to a `val` typed by the function type
+//// it is written for (147), and in the trailing form,
+//// `List(names) { component name -> … }`. Each runs where it is rendered:
+//// `Badge` outside every body, with `RenderScope.root()` (the declared
+//// default), and each item with the scope `List`'s run answered (its `>`).
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string, kids: Component<View>[]) implement Renderable
+
+pub val prefixContext = comptime createContext("");
+
+fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
+    use provide(createContext(">"));
+    return View(text: "list", kids: names.map(item));
+}
+
+// Run `c` with `scope`, then each child with the scope `c`'s run answered.
+fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
+    val r = await c.run(scope);
+    var out = r.value.text;
+    for (r.value.kids) { k ->
+        val inner = await render(k, r.scope);
+        out = out + " " + inner;
+    }
+    return out;
+}
+
+pub fn main() -> Task<void> {
+    val Badge: fn() -> Component<View> = { component ->
+        val p = use context(prefixContext);
+        View(text: p + "badge", kids: [])
+    };
+    print(await render(Badge(), RenderScope.root()));
+    val page = List(["a", "b"]) { component name ->
+        val p = use context(prefixContext);
+        View(text: p + name, kids: [])
+    };
+    print(await render(page, RenderScope.root()));
+}

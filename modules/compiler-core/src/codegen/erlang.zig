@@ -6394,6 +6394,9 @@ const Emitter = struct {
     /// `{nocatch,'__bp_break'}` (`modules/decisions-taken/body_marker_whole_return_type-553/cells/generator_break_value`).
     fn genStopThrow(this: *Emitter, b: Ast.Builder, gs: GenScope) anyerror!Ast.Expr {
         this.gen_stop_used = true;
+        // A marked lambda's loop (decision 584 (2)) hands back the variables
+        // it reassigns, as its `break <v>` does.
+        if (gs.names.len > 0) return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(gs.key), try this.varGroupExpr(b, gs.names) })});
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(gs.key) })});
     }
 
@@ -6433,6 +6436,13 @@ const Emitter = struct {
                 &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(k_var) }))},
                 &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
                 &.{Ast.Expr.a("ok")},
+            ),
+        }) else if (this.gen_stop_used) try b.arena.dupe(Ast.Clause, &.{
+            end_clause,
+            try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(k_var), Ast.Expr.v(g_var) }))},
+                &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
+                &.{Ast.Expr.v(g_var)},
             ),
         }) else try b.arena.dupe(Ast.Clause, &.{end_clause});
         return .{ .try_catch = .{ .body = body, .catches = catches } };
@@ -7284,7 +7294,12 @@ const Emitter = struct {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
         const saved_scope = this.gen_scope;
-        this.gen_scope = .{ .key = key, .names = names.items };
+        // Decision 584 (2) — a marked lambda's loop is its function body: a
+        // bare `return;` in it ends the iteration, as an `iter fn`'s does.
+        this.gen_scope = .{ .key = key, .names = names.items, .fn_level = lp.markedLambda };
+        const saved_stop = this.gen_stop_used;
+        this.gen_stop_used = false;
+        defer this.gen_stop_used = saved_stop;
         const call = blk: {
             defer this.gen_scope = saved_scope;
             break :blk try this.recursiveLoopCall(b, lp, names.items);
@@ -7347,7 +7362,12 @@ const Emitter = struct {
         try this.collectMutations(b.arena, lp.body, &.{}, &names);
         const key = try this.genKey(b);
         const saved_scope = this.gen_scope;
-        this.gen_scope = .{ .key = key, .names = names.items };
+        // Decision 584 (2) — a marked lambda's loop is its function body: a
+        // bare `return;` in it ends the iteration, as an `iter fn`'s does.
+        this.gen_scope = .{ .key = key, .names = names.items, .fn_level = lp.markedLambda };
+        const saved_stop = this.gen_stop_used;
+        this.gen_stop_used = false;
+        defer this.gen_stop_used = saved_stop;
         const call = blk: {
             defer this.gen_scope = saved_scope;
             break :blk try this.recursiveLoopCall(b, lp, names.items);

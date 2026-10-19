@@ -406,11 +406,17 @@ pub fn parseFnMarker(this: *This) ?FnMarker {
 /// declaration takes none (`marker-on-declaration`, open point B-116-b), and
 /// its return type is the one wrapper it names, written literally
 /// (`marker-type-mismatch`; no return type at all is refused the same way,
-/// B-116-f). Both located at the marker.
+/// its caption naming the type to write, 584 (3)). Both located at the marker.
 pub fn checkFnMarker(this: *This, marker: ?FnMarker, returnType: ?TypeRef, bodyless: bool) ParseError!void {
     const m = marker orelse return;
     if (bodyless) {
         this.parseError = ParseErrorInfo.fromToken(.markerOnDeclaration, m.tok);
+        return ParseError.UnexpectedToken;
+    }
+    // Decision 584 (3) — no return type at all is the same code, its caption
+    // naming the return type to write.
+    if (returnType == null) {
+        this.parseError = ParseErrorInfo.fromTokenDetail(.markerReturnMissing, m.tok, m.kind.markerWord());
         return ParseError.UnexpectedToken;
     }
     if (ast.EffectKind.fromReturnType(returnType) != m.kind) {

@@ -1,4 +1,4 @@
-//// Decision 553 (1), (4) — `async { x -> … }` is a lambda whose body may
+//// Decision 553 (1), (4) — `{ async x -> … }` is a lambda whose body may
 //// `await`, and `async fn(x) { … }` the same function expression: each is
 //// typed by the function type it is written for (147) — an annotated `val`,
 //// a parameter. The body answers its last expression, `await` included
@@ -15,12 +15,12 @@ fn apply(f: fn(x: i32) -> Task<i32>, v: i32) -> Task<i32> {
 }
 
 pub fn main() -> Task<void> {
-    val g: fn(x: i32) -> Task<i32> = async { x -> await double(x) + 1 };
+    val g: fn(x: i32) -> Task<i32> = { async x -> await double(x) + 1 };
     print(await g(4));
-    print(await apply(async { x ->
+    print(await apply({ async x ->
         await double(x)
     }, 5));
-    val k: fn(x: i32) -> Task<i32> = async { x ->
+    val k: fn(x: i32) -> Task<i32> = { async x ->
         if (x > 0) return x;
         await double(-x)
     };

@@ -501,6 +501,11 @@ pub const StarFnCtx = struct {
     /// The specific effect kind this context was built from. Drives effect-
     /// specific rejections (RI* only inside `@Iterator` / `@Stream`, etc.).
     effect: ast.EffectKind,
+    /// Decision 584 (2) — the generator scope is a marked lambda's
+    /// (`{ iter x -> … }`, lowered onto an `iter loop`): its body is a
+    /// function body, so `break <value>` is refused and a `return <value>` is
+    /// read as an `iter fn`'s.
+    markedLambda: bool = false,
 };
 
 /// The type-checking environment.
@@ -1229,7 +1234,7 @@ pub const Env = struct {
     /// type: in a component body it runs the value with the children's scope,
     /// outside every body with `RenderScope.root()` (`context_lower.zig`).
     componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 574 — every `component { -> … }` lambda, by its location,
+    /// Decision 574 — every `{ component -> … }` lambda, by its location,
     /// with the `R` of the `@Component<R>` it answers: `context_lower.zig`
     /// lowers its body as a `component fn`'s, a lambda over the scope.
     componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,

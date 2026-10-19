@@ -2993,29 +2993,50 @@ marker names. The marked body answers what the same body answers unmarked:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_fn_forms -->
 
-A marker whose return type is not its wrapper, or a marked function with no
-return type, is `marker-type-mismatch` at the marker; a declaration without a
-body takes no marker (`marker-on-declaration`) — its return type alone says
-what it answers:
+A marker whose return type is not its wrapper is `marker-type-mismatch` at the
+marker; a marked function with no return type is the same refusal, its caption
+naming the return type to write — every function is typed (decisions 583, 584
+(3)); a declaration without a body takes no marker (`marker-on-declaration`) —
+its return type alone says what it answers:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch -->
+<!-- example: modules/marker_fn_without_return_type -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_on_declaration -->
 
-Inside a lambda's brace, before the parameters, the marker makes a marked lambda —
-`{ async x -> … }`, `{ iter n -> … }`, `{ async iter n -> … }` — and before `fn(…)` a marked
-function expression; `async {` is always the block form and `iter loop {` the loop. A marked
-lambda is typed by the function type it is written for (decision 147): an annotated `val`, a
-parameter. Its body is a function body — `return v` is the iterator's `R`, a top-level
-`continue` is refused `continue-outside-loop`, `break v` is refused (decision 584 (2)):
+A lambda writes its marker inside the brace, before the parameters (decision
+584): `{ async x -> … }`, `{ iter -> … }`, `{ async iter x -> … }`,
+`{ component -> … }`; before `fn(…)` the marker makes a marked function
+expression. A marked lambda is typed by the function type it is written for
+(decision 147): an annotated `val`, a parameter. It goes wherever a lambda
+goes, the trailing form included — `apply(5) { async x -> … }`:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_iter -->
+<!-- example: modules/marker_lambda_brace_async -->
+<!-- example: modules/marker_lambda_brace_iter -->
+<!-- example: modules/marker_lambda_brace_async_iter -->
+<!-- example: modules/marker_lambda_brace_component -->
+
+`{ async`, `{ iter`, `{ component` always open a lambda, and before a brace
+the words are names: `async { … }` is always the block (decision 523) and
+`iter loop { … }` the loop (125), whatever the body starts with, and a function
+named `iter` or `component` takes a trailing lambda as any function does:
+
+<!-- example: modules/marker_words_before_brace -->
+
+A marked lambda's body is a function body, as an `iter fn`'s: a `return`
+leaves it — `return;` ends an iteration, `return v` is the iterator's `R`
+(553 (2)) — a `continue` at its top level is `continue-outside-loop`, and
+`break <value>` is `marker-lambda-break-value`:
+
+<!-- example: modules/marker_lambda_function_body -->
+<!-- example: modules/marker_lambda_continue_refused -->
+<!-- example: modules/marker_lambda_break_value_refused -->
 
 With no function type to agree with it is
 `marker-lambda-without-expected-type`, with another wrapper than its own
-`marker-type-mismatch`, and `iter`, `async iter` or `component` before a brace
-without `->` is `marker-without-arrow` — a function named `iter`, `async` or
-`component` called with a trailing lambda writes its parentheses:
+`marker-type-mismatch`, and a marker inside the brace followed by a statement
+and no `->` is `marker-without-arrow`:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_without_expected_type -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_type_mismatch -->

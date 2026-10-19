@@ -743,11 +743,17 @@ pub fn TrailingLambdaOf(comptime phase: Phase) type {
         /// `->`?"; `botopink format` writes it back as `{ -> … }`. Dumped only
         /// when set.
         isBlock: bool = false,
-        /// The `{` it opens with. Left out of the dump.
+        /// Decision 584 (1) — the marker written inside the brace
+        /// (`f(1) { async x -> … }`), its body already the block form it
+        /// names (`parser/exprs.zig` `desugarMarkedBody`), as a marked
+        /// `FunctionExpr`'s. Dumped only when written.
+        marker: ?EffectKind = null,
+        /// The `{` it opens with — the marker when one is written. Left out of
+        /// the dump.
         loc: Loc = .{ .line = 0, .col = 0 },
 
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{"loc"}, &.{"isBlock"});
+            return stringifyOmitting(this, jws, &.{"loc"}, &.{ "isBlock", "marker" });
         }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -1063,11 +1069,17 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// for `break :label` / `continue :label`, and — on an annotated
         /// `loop` — for `yield :label` / `break :label v`.
         label: ?[]const u8 = null,
+        /// Decision 584 (2) — the `iter loop` / `stream loop` a marked lambda
+        /// is lowered onto (`{ iter x -> b }` is `{ x -> iter loop { b; break; } }`,
+        /// the compiler's own): its body is the lambda's function body, so a
+        /// top-level `continue` is `continue-outside-loop` and a
+        /// `break <value>` is refused. Dumped only when set.
+        markedLambda: bool = false,
 
         /// `prefixedKeyword` is left out of the AST dump when null, so the
         /// slot moved no snapshot of an unprefixed loop.
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{"type_"}, &.{"prefixedKeyword"});
+            return stringifyOmitting(this, jws, &.{"type_"}, &.{ "prefixedKeyword", "markedLambda" });
         }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -1200,12 +1212,13 @@ pub fn FunctionExprOf(comptime phase: Phase) type {
         paramTypes: []const TypeRef = &.{},
         /// The `-> R` a typed function expression writes; null when none.
         returnType: ?TypeRef = null,
-        /// Decision 553 (1) — the body marker written before the lambda's
-        /// brace or the `fn` (`async { x -> … }`, `iter fn(n) { … }`), or
-        /// null. The parser writes the marked function as the unmarked one it
-        /// means, its body the one block form the marker names
-        /// (`async { x -> b }` is `{ x -> async { b } }`, `iter { x -> b }` is
-        /// `{ x -> iter loop { b; break; } }`, `async iter` a `stream loop`),
+        /// Decision 553 (1), 584 (1) — the body marker written inside the
+        /// lambda's brace or before the `fn` (`{ async x -> … }`,
+        /// `iter fn(n) { … }`), or null. The parser writes the marked function
+        /// as the unmarked one it means, its body the one block form the
+        /// marker names (`{ async x -> b }` is `{ x -> async { b } }`,
+        /// `{ iter x -> b }` is `{ x -> iter loop { b; break; } }`, `async
+        /// iter` a `stream loop`),
         /// so the four backends lower nothing new; the checker reads the
         /// marker against the expected type (147) and the formatter prints
         /// the marked form back. A `component` lambda keeps its body as
@@ -4878,6 +4891,7 @@ pub fn lowerTrailingLambdas(arena: std.mem.Allocator, call: anytype) std.mem.All
             .syntax = .lambda,
             .params = tl.params,
             .body = tl.body,
+            .marker = tl.marker,
         } } };
         args[call.args.len + i] = .{ .label = null, .value = lambda };
     }

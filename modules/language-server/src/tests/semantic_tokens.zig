@@ -105,8 +105,9 @@ test "semanticTokens: contextual async / iter / stream and loop labels" {
 }
 
 // Decision 553 (1) — the body markers `async`, `iter`, `async iter` and
-// `component` are keywords right before `fn` or a lambda's `{`; elsewhere the
-// words stay names (`val component = 1`, `val iter = 2`).
+// `component` are keywords right before `fn` or right after a lambda's `{`
+// (decision 584); elsewhere the words stay names (`val component = 1`,
+// `val iter = 2`).
 test "semanticTokens: body markers" {
     const source =
         \\async fn one() -> Task<i32> { return 1; }
@@ -114,7 +115,7 @@ test "semanticTokens: body markers" {
         \\async iter fn three() -> Stream<i32> { yield 3; }
         \\component fn Four() -> Component<i32> { return 4; }
         \\fn f() -> Task<i32> {
-        \\    val g: fn(x: i32) -> Task<i32> = async { x -> await one() };
+        \\    val g: fn(x: i32) -> Task<i32> = { async x -> await one() };
         \\    val component = 1;
         \\    val iter = 2;
         \\    return await g(component + iter);

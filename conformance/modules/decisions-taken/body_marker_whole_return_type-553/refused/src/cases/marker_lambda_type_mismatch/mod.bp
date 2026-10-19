@@ -1,5 +1,5 @@
 //// Decision 553 (4), 147 — a marked lambda agrees with the function type it
-//// is written for: `iter { … }` answers an `Iter`, and `apply` wants a
+//// is written for: `{ iter … }` answers an `Iter`, and `apply` wants a
 //// function returning a `Async`, so the lambda is refused at its marker,
 //// `marker-type-mismatch`.
 
@@ -10,7 +10,7 @@ fn apply(f: fn(x: i32) -> Task<i32>, v: i32) -> Task<i32> {
 }
 
 pub fn main() -> Task<void> {
-    print(await apply(iter { x ->
+    print(await apply({ iter x ->
         yield x;
     }, 1));
 }

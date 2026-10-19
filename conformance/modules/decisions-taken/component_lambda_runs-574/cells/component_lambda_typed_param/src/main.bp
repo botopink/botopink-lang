@@ -29,7 +29,7 @@ fn render(c: Component<View>, scope: RenderScope) -> Task<string> {
 
 pub fn main() -> Task<void> {
     val mark = "*";
-    val page = List(["a", "", "b"], component { name ->
+    val page = List(["a", "", "b"], { component name ->
         val p = use context(prefixContext);
         if (name == "") return View(text: p + "empty", kids: []);
         View(text: p + name + mark, kids: [])

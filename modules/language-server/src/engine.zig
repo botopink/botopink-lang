@@ -4297,31 +4297,44 @@ fn nextSignificantIndex(tokens: []const Token, i: usize) ?usize {
 /// `async { … }` block, decision 124), `iter` / `stream` right before
 /// `loop` / `while` / `for` (the prefixed loops, decision 125 — the parser's
 /// `genLoopPrefixAhead`), and the body markers of decision 553 — `async`,
-/// `iter`, `async iter` and `component` right before `fn` or a lambda's `{`
-/// (the parser's `markerAt`). Anywhere else the word is an ordinary name:
+/// `iter`, `async iter` and `component` right before `fn` or right after a
+/// lambda's `{` (the parser's `markerAt`, decision 584). Anywhere else the word is an ordinary name:
 /// `g.iter()`, `val stream = 1`, `http.stream(…)`, `import {async} from "std"`
 /// and `async.allOf(…)` stay identifiers.
 fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
     const word = tokens[i].lexeme;
-    if (prevSignificantIndex(tokens, i)) |p| {
+    const prev: ?usize = prevSignificantIndex(tokens, i);
+    if (prev) |p| {
         // A member (`x.iter loop` never parses, but `x.async {` must not paint).
         if (tokens[p].kind == .dot or tokens[p].kind == .questionDot) return false;
     }
     const ni = nextSignificantIndex(tokens, i) orelse return false;
     const nk = tokens[ni].kind;
-    const opensBody = nk == .leftBrace or nk == .@"fn";
+    // Decision 584 (1) — a lambda's marker sits inside its brace, before the
+    // parameters: `{ async x -> … }`, `{ iter -> … }`, `{ component -> … }`.
+    const afterBrace = if (prev) |p| tokens[p].kind == .leftBrace else false;
+    const opensLambda = afterBrace and (nk == .rightArrow or nk == .identifier);
     if (std.mem.eql(u8, word, "async")) {
-        if (opensBody) return true;
-        // `async iter fn` / `async iter { x -> … }`.
-        if (nk != .identifier or !std.mem.eql(u8, tokens[ni].lexeme, "iter")) return false;
-        const after = nextSignificantKind(tokens, ni) orelse return false;
-        return after == .leftBrace or after == .@"fn";
+        // `async { … }` (the block) and `async fn`.
+        if (nk == .leftBrace or nk == .@"fn") return true;
+        // `async iter fn` / `{ async iter x -> … }`.
+        if (nk == .identifier and std.mem.eql(u8, tokens[ni].lexeme, "iter")) {
+            const after = nextSignificantKind(tokens, ni) orelse return false;
+            return after == .@"fn" or (afterBrace and (after == .rightArrow or after == .identifier));
+        }
+        return opensLambda;
     }
-    if (std.mem.eql(u8, word, "iter"))
-        return opensBody or nk == .loop or nk == .@"while" or nk == .@"for";
+    if (std.mem.eql(u8, word, "iter")) {
+        if (nk == .@"fn" or nk == .loop or nk == .@"while" or nk == .@"for") return true;
+        // The second word of `{ async iter x -> … }`.
+        if (prev) |p| if (tokens[p].kind == .identifier and std.mem.eql(u8, tokens[p].lexeme, "async")) {
+            if (prevSignificantIndex(tokens, p)) |pp| if (tokens[pp].kind == .leftBrace) return nk == .rightArrow or nk == .identifier;
+        };
+        return opensLambda;
+    }
     if (std.mem.eql(u8, word, "stream"))
         return nk == .loop or nk == .@"while" or nk == .@"for";
-    if (std.mem.eql(u8, word, "component")) return opensBody;
+    if (std.mem.eql(u8, word, "component")) return nk == .@"fn" or opensLambda;
     return false;
 }
 

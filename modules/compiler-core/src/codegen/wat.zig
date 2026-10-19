@@ -24675,7 +24675,7 @@ const Emitter = struct {
     //                             `yield` (the item boxed in `value`), `0`
     //                             when it ended
     //
-    // and an `iter` loop (a marked lambda `iter { -> … }` is one, decision
+    // and an `iter` loop (a marked lambda `{ iter -> … }` is one, decision
     // 553) is a lifted lambda whose body is that machine (`gcEmitLifted`), its
     // closure called where the loop is written answering the handle — as an
     // `async { }` block's answers its task. The handle keeps the lambda's

@@ -398,7 +398,7 @@ stateful (a second `for` over an exhausted one reads nothing).
   bare `break` / `return`, the body's end) answers `0`. `emitGenMachine` writes `$g(args) -> (ref $gen)` (the
   frame, the arguments stored, the body's `kind`; it runs nothing) and `$g__body(gen) -> i32`.
 - **An `iter fn`** (and a method answering `@Iterator<T>`) is that machine, its item the declared `T`.
-  **An `iter` loop** (`iter while` / `iter for`, a marked lambda `iter { -> … }` — decision 553's desugaring)
+  **An `iter` loop** (`iter while` / `iter for`, a marked lambda `{ iter -> … }` — decision 553's desugaring)
   is a lifted lambda whose body is the loop unprefixed (`lowerGenLoopValue`), its closure called where the
   loop is written answering the handle, as an `async { }` block's answers its task; its item is read off its
   first `yield` where it is written (`genLoopItem`).

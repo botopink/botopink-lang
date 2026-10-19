@@ -1,0 +1,25 @@
+//// Decision 584 (2) — a marked lambda's body is a function body, as an
+//// `iter fn`'s: `return;` leaves it, ending the iteration — the `yield 99`
+//// after the loop never runs once two items are out —, and a `continue`
+//// inside one of its loops starts that loop's next round.
+
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    val firstTwo: fn(xs: i32[]) -> Iterator<i32> = { iter xs ->
+        var n = 0;
+        for (xs) { x ->
+            if (x < 0) continue;
+            if (n == 2) return;
+            yield x;
+            n = n + 1;
+        }
+        yield 99;
+    };
+    for (firstTwo([1, -1, 2, 3, 4])) { x ->
+        print(x);
+    }
+    for (firstTwo([5])) { x ->
+        print(x);
+    }
+}

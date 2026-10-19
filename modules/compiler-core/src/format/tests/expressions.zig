@@ -1642,12 +1642,12 @@ test "format: body markers print as written (decision 553)" {
         \\}
         \\
         \\fn main() -> Task<void> {
-        \\    val f: fn(x: i32) -> Task<i32> = async { x -> await one() + x };
-        \\    val g: fn(n: i32) -> Iterator<i32> = iter { n ->
+        \\    val f: fn(x: i32) -> Task<i32> = { async x -> await one() + x };
+        \\    val g: fn(n: i32) -> Iterator<i32> = { iter n ->
         \\        yield n;
         \\        yield n + 1;
         \\    };
-        \\    val s: fn() -> Stream<i32> = async iter { ->
+        \\    val s: fn() -> Stream<i32> = { async iter ->
         \\        yield await one();
         \\    };
         \\    val k: fn(x: i32) -> Task<i32> = async fn(x) { await one() };

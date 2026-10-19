@@ -1,6 +1,6 @@
 //// Decision 105 — a generator's body runs one step per item asked for: each
 //// `next` runs the body up to the next `yield`. On each form — an `iter fn`,
-//// an `iter loop`, a marked lambda `iter { -> … }` — a print before and after
+//// an `iter loop`, a marked lambda `{ iter -> … }` — a print before and after
 //// the first `yield` comes out between the items, and an endless generator is
 //// consumed by `take(3)`.
 
@@ -48,7 +48,7 @@ pub fn runCase() {
         print(x);
     }
 
-    val marked: fn() -> Iterator<i32> = iter { ->
+    val marked: fn() -> Iterator<i32> = { iter ->
         print("lambda before");
         yield 1;
         print("lambda after");
@@ -57,7 +57,7 @@ pub fn runCase() {
     for (marked()) { x ->
         print(x);
     }
-    val ones: fn() -> Iterator<i32> = iter { ->
+    val ones: fn() -> Iterator<i32> = { iter ->
         while (true) {
             yield 1;
         }

@@ -1,0 +1,41 @@
+//// Decision 584 (1) — `{ iter n -> … }` is a lambda whose body may `yield`,
+//// answering an `Iterator`, typed by the function type it is written for
+//// (147): an annotated `val`, and the trailing form, `sum(2) { iter n -> … }`;
+//// with no parameter it is `{ iter -> … }`.
+
+import {io.terminal.print} from "std";
+
+fn sum(n: i32, f: fn(n: i32) -> Iterator<i32>) -> i32 {
+    var acc = 0;
+    for (f(n)) { x ->
+        acc = acc + x;
+    }
+    return acc;
+}
+
+fn each(f: fn() -> Iterator<string>) {
+    for (f()) { s ->
+        print(s);
+    }
+}
+
+pub fn main() {
+    val upTo: fn(n: i32) -> Iterator<i32> = { iter n ->
+        var i = 0;
+        while (i < n) {
+            yield i;
+            i = i + 1;
+        }
+    };
+    for (upTo(3)) { x ->
+        print(x);
+    }
+    print(sum(2) { iter n ->
+        yield n;
+        yield n * 10;
+    });
+    each { iter ->
+        yield "a";
+        yield "b";
+    }
+}

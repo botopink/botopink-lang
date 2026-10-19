@@ -552,8 +552,8 @@ test "decision 553: marker-type-mismatch — located at the marker" {
     try expectKindAt("pub iter fn f() -> @Task<i32> { return 1; }", .markerTypeMismatch, 1, 5);
     try expectKindAt("async iter fn f() -> @Iterator<i32> { yield 1; }", .markerTypeMismatch, 1, 1);
     try expectKindAt("component fn F() -> @Task<i32> { return 1; }", .markerTypeMismatch, 1, 1);
-    // No return type at all (open point B-116-f).
-    try expectKindAt("async fn f() { }", .markerTypeMismatch, 1, 1);
+    // No return type at all: decision 584 (3), the code `marker-type-mismatch`.
+    try expectKindAt("async fn f() { }", .markerReturnMissing, 1, 1);
     try expectKindAt(
         \\type Grid(n: i32) {
         \\    async fn each(self: Self) -> Iterator<i32> { yield 1; }
@@ -577,28 +577,36 @@ test "decision 553: marker-on-declaration — a bodyless declaration takes no ma
     , .markerOnDeclaration, 2, 13);
 }
 
-test "decision 553: marker-without-arrow — `iter`, `async iter` and `component` before a block" {
-    try expectKindAt("fn f() { val g = iter { 1 }; }", .markerWithoutArrow, 1, 18);
-    try expectKindAt("fn f() { val g = async iter { 1 }; }", .markerWithoutArrow, 1, 18);
-    try expectKindAt("fn f() { val g = component { 1 }; }", .markerWithoutArrow, 1, 18);
-    // A function named `iter` called with a trailing lambda writes its
-    // parentheses (decision 525).
-    try expectKind("fn f() { iter { x -> x }; iter { 1 }; }", .markerWithoutArrow);
+test "decision 584: marker-without-arrow — a marker inside a lambda's brace with no `->`" {
+    try expectKindAt("fn f() { val g = { iter yield 1; }; }", .markerWithoutArrow, 1, 20);
+    try expectKindAt("fn f() { val g = { async iter yield 1; }; }", .markerWithoutArrow, 1, 20);
+    try expectKindAt("fn f() { val g = { component val x = 1; }; }", .markerWithoutArrow, 1, 20);
+    try expectKindAt("fn f() { val g = { async x }; }", .markerWithoutArrow, 1, 20);
+    // Trailing too.
+    try expectKindAt("fn f() { g(1) { iter yield 1; }; }", .markerWithoutArrow, 1, 17);
 }
 
-test "decision 553: the block forms and the words as names still parse" {
+test "decision 584: the block forms and the words as names still parse" {
     try expectParses("fn f() -> @Task<i32> { val t = async { 1 }; return await t; }");
+    // `async {` is always the block, whatever its body starts with.
+    try expectParses("fn f() -> @Task<i32> { val t = async { x }; return await t; }");
     try expectParses("fn f() { val a = iter loop { yield 1; break; }; val b = stream loop { yield 1; break; }; }");
     try expectParses("fn f(g: G) { val x = g.iter { -> 1 }; val iter = 1; val component = iter; }");
     try expectParses("fn f(iter: E) -> i32 { return case iter { .A { 1 } .B { 2 } }; }");
-    try expectParses("fn f() { iter() { x -> x }; }");
+    // A function named `iter` / `component` takes a trailing lambda as any
+    // function does (584 (1): no parentheses needed).
+    try expectParses("fn f() { iter { x -> x }; component { -> 1 }; iter() { x -> x }; }");
+    // A block whose first word is a marker word an expression continues.
+    try expectParses("fn f() -> @Task<i32> { val a = { iter.next() }; val b = { async { 1 } }; val c = { iter loop { yield 1; break; } }; return await b; }");
+    // `{ async, b -> … }` is a lambda whose first parameter is `async`.
+    try expectParses("fn f() { val g = { async, b -> b }; }");
 }
 
-test "decision 553: a marked lambda is the block form it names, returned" {
+test "decisions 553, 584: a marked lambda is the block form it names, returned" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const asyncLambda = bindValue(try firstStmt(alloc, "val f = async { x -> await g(x) };")).function;
+    const asyncLambda = bindValue(try firstStmt(alloc, "val f = { async x -> await g(x) };")).function;
     try std.testing.expectEqual(@as(?ast.EffectKind, .task), asyncLambda.kind.marker);
     try std.testing.expectEqual(@as(usize, 1), asyncLambda.kind.params.len);
     const ret = asyncLambda.kind.body[0];
@@ -608,23 +616,40 @@ test "decision 553: a marked lambda is the block form it names, returned" {
     // The block's tail `await g(x)` is its value (decisions 525, 537).
     try std.testing.expect(block.kind.body[0].tail == .returned);
 
-    const iterLambda = bindValue(try firstStmt(alloc, "val f = iter { n -> yield n; };")).function;
+    const iterLambda = bindValue(try firstStmt(alloc, "val f = { iter n -> yield n; };")).function;
     try std.testing.expectEqual(@as(?ast.EffectKind, .iterator), iterLambda.kind.marker);
     const loop = iterLambda.kind.body[0].expr.jump.kind.@"return".?.*.loop;
     try std.testing.expectEqual(@as(?ast.EffectKind, .iterator), loop.generator);
     try std.testing.expectEqual(@as(usize, 2), loop.body.len);
     try std.testing.expect(loop.body[1].expr.jump.kind == .@"break");
+    // Decision 584 (2) — the loop is the lambda's function body.
+    try std.testing.expect(loop.markedLambda);
 
-    const streamLambda = bindValue(try firstStmt(alloc, "val f = async iter { -> yield 1; };")).function;
+    const streamLambda = bindValue(try firstStmt(alloc, "val f = { async iter -> yield 1; };")).function;
     try std.testing.expectEqual(@as(?ast.EffectKind, .stream), streamLambda.kind.body[0].expr.jump.kind.@"return".?.*.loop.generator);
 
-    const comp = bindValue(try firstStmt(alloc, "val f = component { -> 1 };")).function;
+    const comp = bindValue(try firstStmt(alloc, "val f = { component -> 1 };")).function;
     try std.testing.expectEqual(@as(?ast.EffectKind, .component), comp.kind.marker);
     try std.testing.expect(comp.kind.body[0].tail == .value);
 
     const fnExpr = bindValue(try firstStmt(alloc, "val f = async fn(x) { await g(x) };")).function;
     try std.testing.expect(fnExpr.kind.syntax == .fnExpr);
     try std.testing.expectEqual(@as(?ast.EffectKind, .task), fnExpr.kind.marker);
+}
+
+test "decision 584: a marked trailing lambda carries its marker and its block form" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const prog = try parseOk(alloc, "fn f() { g(1) { async x -> await h(x) }; k { iter -> yield 1; }; }");
+    const body = prog.decls[0].@"fn".body;
+    const a = body[0].expr.call.kind.call.trailing[0];
+    try std.testing.expectEqual(@as(?ast.EffectKind, .task), a.marker);
+    try std.testing.expectEqual(@as(usize, 1), a.params.len);
+    try std.testing.expect(a.body[0].expr.jump.kind.@"return".?.*.function.kind.syntax == .asyncBlock);
+    const b = body[1].expr.call.kind.call.trailing[0];
+    try std.testing.expectEqual(@as(?ast.EffectKind, .iterator), b.marker);
+    try std.testing.expect(b.body[0].expr.jump.kind.@"return".?.*.loop.markedLambda);
 }
 
 test "decision 537: a body's tail `await e` / `try e` is its value" {
