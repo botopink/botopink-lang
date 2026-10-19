@@ -1,0 +1,24 @@
+//// A package whose decorator takes an enum parameter.
+
+import {compiler} from "std";
+
+pub type Lifecycle {
+    Eager,
+    Lazy(afterMs: i32),
+    Manual,
+}
+
+pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) {
+    compiler.setMeta(
+        Mark(
+            lifecycle: case lifecycle {
+                Eager -> "eager";
+                Lazy(n) -> "lazy " + n.toString();
+                Manual -> "manual";
+            },
+        ),
+    );
+}
+
+// What `#[m]` records.
+pub type Mark(lifecycle: string)

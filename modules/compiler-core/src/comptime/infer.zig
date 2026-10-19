@@ -5525,6 +5525,10 @@ fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: 
         try checkDotNameArg(env, a, e.identifier.kind.dotIdent, p, w, loc);
         return unknownAt == null;
     }
+    if (dotVariantCallName(e.*)) |name| if (declaredEnumOfParam(env, a, w) != null) {
+        try checkDotVariantCallArg(env, a, e.call.kind.call, name, p, w, loc);
+        return unknownAt == null;
+    };
     // The parameter's type is the argument's expectation, as a call's is
     // (an integer literal takes the integer type asked for, `.Name` its enum).
     const prevExpected = env.expectedType;
@@ -5670,6 +5674,70 @@ fn checkDotNameArg(env: *Env, a: ast.Annotation, name: []const u8, p: ast.Param,
     return error.TypeError;
 }
 
+/// The enum the decorator's module declares for a parameter typed `want` (or `?want`).
+fn declaredEnumOfParam(env: *const Env, a: ast.Annotation, want: *T.Type) ?ast.TypeDecl {
+    const w = (optionalInner(want) orelse want).deref();
+    if (w.* != .named) return null;
+    return declaringModuleEnum(env, a, w.named.name);
+}
+
+/// `.Lazy(afterMs: 5)` — the variant a leading-dot constructor call names.
+fn dotVariantCallName(e: ast.Expr) ?[]const u8 {
+    if (e != .call or e.call.kind != .call) return null;
+    const ce = e.call.kind.call.calleeExpr orelse return null;
+    if (ce.* != .identifier or ce.identifier.kind != .dotIdent) return null;
+    return ce.identifier.kind.dotIdent;
+}
+
+/// Decisions 587, 603 — a dotted variant with a payload in an annotation
+/// argument (`#[load(.Lazy(afterMs: 5))]`): the parameter's declared type
+/// tells which enum declares it, as for a bare `.Eager` (`checkDotNameArg`).
+/// The variant must exist and carry a payload, each label must name one of its
+/// fields and each argument meets its field's type.
+fn checkDotVariantCallArg(env: *Env, a: ast.Annotation, call: anytype, name: []const u8, p: ast.Param, want: *T.Type, loc: ast.Loc) InferError!void {
+    const w = (optionalInner(want) orelse want).deref();
+    const td = declaredEnumOfParam(env, a, want) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`.{s}(…)` names a variant by its leading dot, and `#[{s}]`'s `{s}` is `{s}`, which declares no enum to read it from", .{ name, a.name, p.name, try decoratorSpelling(env, want, 0) });
+        env.lastError = TypeError.custom(msg, "Give the parameter an enum type that declares the variant, or write `Enum.Variant(…)`.").withLoc(loc);
+        return error.TypeError;
+    };
+    const variants = td.shape.enum_.variants;
+    const variant = for (variants) |v| {
+        if (std.mem.eql(u8, v.name, name)) break v;
+    } else {
+        const msg = try std.fmt.allocPrint(env.arena, "`.{s}` names no variant of `{s}`", .{ name, w.named.name });
+        env.lastError = TypeError.custom(msg, "A variant is written exactly as declared, case included (decision 280 (4)).").withLoc(loc);
+        return error.TypeError;
+    };
+    if (call.args.len > variant.fields.len) {
+        env.lastError = TypeError.arityMismatch(name, variant.fields.len, call.args.len).withLoc(loc);
+        return error.TypeError;
+    }
+    for (call.args, 0..) |arg, i| {
+        const field = if (arg.label) |l| for (variant.fields) |f| {
+            if (std.mem.eql(u8, f.name, l)) break f;
+        } else {
+            env.lastError = TypeError.unknownField(name, l).withLoc(arg.value.getLoc());
+            return error.TypeError;
+        } else variant.fields[i];
+        // A payload type this module cannot resolve (one the decorator's
+        // module declares) is checked where the decorator runs.
+        const fieldTy = resolveTypeRef(env, field.typeRef) catch continue;
+        const prevExpected = env.expectedType;
+        env.expectedType = fieldTy;
+        defer env.expectedType = prevExpected;
+        const got = try inferExpr(env, arg.value.*);
+        unifyArgument(env, fieldTy, got, arg.value.getLoc()) catch |err| switch (err) {
+            error.TypeError => {
+                const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `.{s}`'s `{s}` expects `{s}`, got `{s}`", .{ name, field.name, try decoratorSpelling(env, fieldTy, 0), try decoratorSpelling(env, got, 0) });
+                env.lastError = TypeError.custom(msg, "A variant's payload is checked against its fields like a call's.").withLoc(arg.value.getLoc());
+                return error.TypeError;
+            },
+            else => |x| return x,
+        };
+    }
+}
+
 /// The enum `name` an imported decorator's module declares: the type its
 /// parameter names, read where the decorator is declared (never an enum of
 /// the same name this module or another one holds).
@@ -5727,6 +5795,12 @@ fn decoratorArgValue(env: *Env, program: ast.Program, e: ast.Expr, lexeme: []con
         },
         else => {},
     }
+    // `.Lazy(afterMs: 5)` against an enum parameter: the decorator module
+    // re-reads the source with no expectation, so the enum is written out.
+    if (dotVariantCallName(e) != null) if (want) |w| {
+        const d = (optionalInner(w) orelse w).deref();
+        if (d.* == .named and env.lookupTypeDef(d.named.name) == null) return .{ .source = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ d.named.name, lexeme }), .built = true };
+    };
     // A section path (`.Pad.All.4`) is its qualified constructor
     // (`Tok.Pad(_inner: …)`): the decorator module re-reads the source as
     // written, untyped, where the path is a chain of map reads.

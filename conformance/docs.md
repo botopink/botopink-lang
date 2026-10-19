@@ -3942,6 +3942,11 @@ module declares never supplies its variants.
 
 <!-- example: modules/annotation_argument_dot_variant_same_name -->
 
+A variant with a payload resolves the same way, on the parameter's declared type:
+`#[kit.m(lifecycle: .Lazy(afterMs: 5))]`.
+
+<!-- example: modules/annotation_argument_dot_variant_payload -->
+
 The value is that enum's variant wherever it goes (decisions 310, 603: a type
 is its module plus its name): the body reads `Manual` at build, and an executor
 the body hands to `compiler.init` passes `Manual` to the program at run time,

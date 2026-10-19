@@ -2607,6 +2607,10 @@ to load (`already declared`), and the backends miscompiled an inner shadow
   A call through a module namespace (`phase.describe(.Slow)`, `namespaceCallee` in `inferCallExprWith`)
   reads the exported function's parameters as that expectation, and registers the types its signature
   names as types only (`registerImportedSignatureClosure`), as a leaf import's call does.
+  A leading-dot constructor with a payload in a decorator argument (`#[kit.m(lifecycle: .Lazy(afterMs: 5))]`) is
+  read the same way (`checkDotVariantCallArg`): the enum the decorator's module declares for the parameter
+  (`declaredEnumOfParam`) must have the variant, its labels name its fields and its arguments meet their types;
+  `decoratorArgValue` hands the decorator module the qualified source (`Lifecycle.Lazy(afterMs: 5)`).
 - **anything else** is a function value: `calleeExpr` is inferred and must be a `fn` taking the
   written arguments; the call's type is its return, and a count it does not take is an arity error
   at the `(`. The typed node keeps `calleeExpr`; lowering it is each backend's (C-09's backend half).
