@@ -2738,6 +2738,8 @@ the scope its children receive, `use context(ctx)` finds the identity of
 
 <!-- example: modules/component_use_in_body -->
 
+<!-- example: modules/component_resolved_by_use_or_tree -->
+
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
 alone, and the message names `use c` and `c` placed in the tree as a child.
