@@ -349,6 +349,14 @@ const Expander = struct {
     /// at build) were copied into; every other one this expansion opened
     /// holds a copy of the body.
     caller_exps: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Decision 695 — where each caller's node copied into the expansion is
+    /// written in the caller: by the expansion its copy took.
+    caller_origin: std.AutoHashMapUnmanaged(u32, ast.Loc) = .empty,
+    /// Decision 695 — a copied call of the body whose receiver is a caller's
+    /// node (`value.toUpper()`, `value` the argument `7`): the call's location
+    /// in the expansion, and the argument's in the caller. A refusal of that
+    /// call is the argument's.
+    blame: std.AutoHashMapUnmanaged(ast.Loc, ast.Loc) = .empty,
     /// The expansions this one opened: `(first, last]`.
     first_exp: u32 = 0,
 
@@ -371,10 +379,17 @@ const Expander = struct {
     /// refusal already located in another file (a nested expansion's, a raise
     /// at build) is left as it is.
     fn locateInOwner(self: *Expander) InferError!void {
-        if (!self.foreign) return;
         var e = self.env.lastError orelse return;
         if (e.origin != null) return;
         const l = e.loc orelse return;
+        // Decision 695 — the value at fault is the caller's argument, written
+        // in the caller's file: the refusal is located there.
+        if (self.blame.get(l)) |argLoc| {
+            e.loc = argLoc;
+            self.env.lastError = e;
+            return;
+        }
+        if (!self.foreign) return;
         if (l.expansion <= self.first_exp or l.expansion > self.env.expansionCount or self.caller_exps.contains(l.expansion)) return;
         const frames = try self.env.arena.alloc(Frame, 1);
         frames[0] = .{ .file = self.env.srcPathOf(self.env.modulePath), .loc = self.call_loc };
@@ -806,7 +821,11 @@ const Copier = struct {
 
     fn copy(self: *Copier, comptime N: type, v: N) InferError!N {
         if (N == ast.Loc) return .{ .line = v.line, .col = v.col, .expansion = self.exp };
-        if (N == ast.Expr) if (try self.rewrite(v)) |r| return r;
+        if (N == ast.Expr) {
+            const out = (try self.rewrite(v)) orelse try self.copyPlain(N, v);
+            try self.noteBlame(out);
+            return out;
+        }
         if (N == ast.TypeRef) if (try self.rewriteType(v)) |r| return r;
         return self.copyPlain(N, v);
     }
@@ -869,12 +888,22 @@ const Copier = struct {
         }
     }
 
+    /// Decision 695 — a method call of the body on a caller's node: a
+    /// refusal of the call is located at that node, where the caller wrote it.
+    fn noteBlame(self: *Copier, e: ast.Expr) InferError!void {
+        if (!self.body or e != .call or e.call.kind != .call) return;
+        const recv = e.call.kind.call.receiver orelse return;
+        const argLoc = self.x.caller_origin.get(recv.getLoc().expansion) orelse return;
+        try self.x.blame.put(self.x.env.arena, e.call.loc, argLoc);
+    }
+
     /// A value of the caller copied into the expansion: its names are the
     /// caller's, left as written.
     fn caller(self: *Copier, e: *const ast.Expr) InferError!ast.Expr {
         // An expansion of its own: a refusal located in it is the caller's.
         const exp = self.x.fresh();
         try self.x.caller_exps.put(self.x.env.arena, exp, {});
+        try self.x.caller_origin.put(self.x.env.arena, exp, e.getLoc());
         var cp: Copier = .{ .x = self.x, .exp = exp, .body = false, .eval = self.eval, .depth = self.depth };
         return cp.copy(ast.Expr, e.*);
     }

@@ -1,0 +1,6 @@
+//// A function whose only parameter is `comptime`, so each call is expanded
+//// where it is written; its body is generic over the argument.
+
+pub fn shout<T>(comptime value: T) -> string {
+    return value.toUpper() + "!";
+}
