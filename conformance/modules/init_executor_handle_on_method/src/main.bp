@@ -1,6 +1,6 @@
-//// Decision 613 — on a method `decl` is the method by its owner's path:
-//// the executor registers `Users.make`, a static method's function value,
-//// called when `main` runs.
+//// Decisions 613, 716 — on a method `decl` is the method by its owner's
+//// path: the executor registers `Users.make`, a static method's function
+//// value meeting `syntax decl: fn() -> string`, called when `main` runs.
 
 pub mod marks;
 pub mod registry;

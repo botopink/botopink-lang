@@ -1,4 +1,3 @@
 botopink-cell 1
-refused error: type mismatch: expected string, got Users
-at src/main.bp:13:3
-from src/marks.bp:9:14
+refused error: `#[registered]` expects a declaration of type `fn() -> string`, and `Users` is `Users`
+at src/main.bp:12:3

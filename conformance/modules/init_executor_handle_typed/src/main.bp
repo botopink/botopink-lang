@@ -1,9 +1,10 @@
-//// Decision 581 (2) — inside a `compiler.init` executor the decorator's
-//// `syntax decl` handle is the annotated declaration itself as a run-time
-//// value, with its declared type: `make: decl` is checked against `make`'s
-//// `fn() -> string` for each annotated declaration, and `main` calls it. The
-//// `comptime` parameter `lifecycle` and the body's `val name` enter the
-//// executor as literals (575 (4)).
+//// Decisions 581 (2), 716 — inside a `compiler.init` executor the
+//// decorator's `syntax decl` handle is the annotated declaration itself as a
+//// run-time value, typed by the parameter's declared type: `make: decl` is
+//// checked against `make`'s `fn() -> string` once, at the decorator, by
+//// `syntax decl: fn() -> string`, and `main` calls it. The `comptime`
+//// parameter `lifecycle` and the body's `val name` enter the executor as
+//// literals (575 (4)).
 
 pub mod marks;
 pub mod registry;

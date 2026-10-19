@@ -1164,7 +1164,8 @@ of a decorator in another module, reading only its parameters and locals) and
 decorator's module — decision 384: each resolves there, the user's own same-named helper is not
 captured; it was `decorator-member-fn-imported-name` on the parent binary), and the refusals
 `modules/decorator_member_not_fn`, `modules/decorator_member_fn_untyped`,
-`modules/decorator_member_captures_handle` (`decl`) and `modules/decorator_member_type` (a field's
+`modules/decorator_member_captures_handle` (`decl`, a run cell since decision 716 (3): the member's
+`decl.title()` is `Signup.title()`) and `modules/decorator_member_type` (a field's
 `fn(self: T)`, `T` the field's type), each red on the parent binary. Decision 575 (4)'s tree rule
 turns `modules/decorator_member_captures` (a local of the decorator's body) from a refusal into the
 literal the member holds (`member_fn.capturedLocals`).
@@ -1192,7 +1193,12 @@ Decision 642 (144 B-137) extends 614's fold to every tree a decorator hands the 
 over the member's own parameter, `out x`) and `modules/member_reads_compiler_text` (`out always`; it was
 `expr_captures_build`, a `syntax-captures-build` refusal that decision 642 removed); `modules/init_executor_compiler_arg_at_run_time`
 refuses a `comptime` position (`compiler.typeInfo(s)`), where `compiler.text(s)` is accepted, and
-`modules/decorator_member_captures_handle` reads the handle itself (`decl.name`), still `decorator-member-captures`.
+`modules/decorator_member_captures_handle` reads the handle itself, the annotated type as code (decision 716 (3)).
+Decision 716 (144 B-137) makes the `syntax decl` parameter's declared type the contract: `modules/decl_unknown_no_member`
+(`unknown` gives no member, refused at the decorator), `modules/decl_behavior_contract_refused` (refused at the annotation),
+`modules/decl_behavior_member_typed`, `modules/member_decl_as_code`; the `init_executor_handle_*` cells write
+`syntax decl: fn() -> string` (or the behavior `Service`), and `_mistyped` / `_on_type_as_value` are refused at the
+annotation by the contract.
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds

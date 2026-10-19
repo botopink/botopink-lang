@@ -6274,8 +6274,10 @@ fn memberFnSource(
     // (decision 575 (4), the tree rule).
     const captured = try memberFn.capturedLocals(env.arena, dfn, func);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
-    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
+    // Decision 716 (3) — the handle is the annotated type as code.
+    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len + 1);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
+    splices[values.len + captured.len] = .{ .param = declName, .lexeme = target };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
@@ -24070,9 +24072,9 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 /// program's code: its parameters and return as written (the decorator's type
 /// parameters in scope), each `comptime x: @Expr<T>` parameter read as the `T`
 /// its argument is — spliced where the member uses it (`member_fn.render`) —,
-/// and nothing else of the decorator's body: neither the `@Decl` handle nor a
-/// local, which exist only while the program compiles
-/// (`decorator-member-captures`). A second argument that is not a function
+/// the handle the annotated type as code, typed by the `syntax decl`
+/// parameter's declared type (decision 716), and a local of the body the
+/// literal of its value (575 (4)). A second argument that is not a function
 /// expression written at the call is `decorator-member-not-fn`, a parameter
 /// without a type `decorator-member-fn-untyped`.
 fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
@@ -24110,6 +24112,18 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };
+    // Decision 716 (3) — the handle is the annotated declaration as code,
+    // typed by its contract, as in an executor.
+    if (env.currentParams.len > 0) {
+        const h = env.currentParams[0].name;
+        const already = for (rebound.items) |r| {
+            if (std.mem.eql(u8, r.name, h)) break true;
+        } else false;
+        if (!already) if (env.lookup(h)) |was| {
+            try rebound.append(env.arena, .{ .name = h, .was = was });
+            try env.bind(h, try handleContract(env, was));
+        };
+    }
     const savedParams = env.currentParams;
     const savedInDecorator = env.inDecoratorFn;
     const savedBody = env.decoratorBody;
@@ -24259,10 +24273,9 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         try rebound.append(env.arena, .{ .name = p.name, .was = was });
         try env.bind(p.name, inner);
     };
-    // Decision 581 (2) — the handle is the annotated declaration as a
-    // run-time value: its type is that declaration's, checked where the
-    // executor joins each annotated declaration's module (`executorSource`);
-    // here, a type still free.
+    // Decisions 581 (2), 716 — the handle is the annotated declaration as
+    // code, typed once, here, by the `syntax decl` parameter's declared type:
+    // the contract every annotated declaration meets (`checkDecoratorArgs`).
     if (env.currentParams.len > 0) {
         const h = env.currentParams[0].name;
         const already = for (rebound.items) |r| {
@@ -24270,7 +24283,7 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         } else false;
         if (!already) if (env.lookup(h)) |was| {
             try rebound.append(env.arena, .{ .name = h, .was = was });
-            try env.bind(h, try env.freshVar());
+            try env.bind(h, try handleContract(env, was));
         };
     }
     const savedParams = env.currentParams;
@@ -24317,27 +24330,38 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
 /// checker over the decorator's body (`inferMemberFnCall`), or the annotation
 /// of the decorator's own module, which runs it before any body of the module
 /// is inferred (`memberFnSource`). Every parameter typed
-/// (`decorator-member-fn-untyped`), and no read of the `@Decl` handle or of a
-/// local of the decorator's body (`decorator-member-captures`) — each refused
-/// where it is written.
+/// (`decorator-member-fn-untyped`), refused where it is written; the handle
+/// is the annotated type as code (decision 716 (3)) and a local of the body
+/// its literal (575 (4)).
 fn refuseMemberFnShape(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt) InferError!void {
     if (func.kind.paramTypes.len != func.kind.params.len) {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: the member's parameter `{s}` has no type", .{ diagnostics.decorator_member_fn_untyped, func.kind.params[0] });
         env.lastError = TypeError.custom(msg, "A member is written as in the type's body: `fn(self: T, x: i32) -> R { … }`, every parameter typed (decision 370 (2)).").withLoc(func.loc);
         return error.TypeError;
     }
-    return refuseCaptures(env, func, params, body, true, false);
+    return refuseCaptures(env, func, params, body, true, true);
 }
 
-/// Decision 370 (2), 316 — a member function or a wrapper reads no `@Decl`
-/// handle and no local of the decorator's body (`decorator-member-captures`),
-/// refused where it is read.
+/// Decision 716 — the type the `syntax decl` handle has in a tree the
+/// decorator writes: the parameter's declared type, the contract each
+/// annotated declaration meets — `unknown` (no member), a behavior (its
+/// members), a function type, a type parameter. `handle` is the handle's
+/// type in the body (`__Decl` over that contract).
+fn handleContract(env: *Env, handle: *T.Type) InferError!*T.Type {
+    const d = handle.deref();
+    if (d.* == .named and std.mem.eql(u8, d.named.name, ast.decl_type_name) and d.named.args.len == 1) return d.named.args[0];
+    return env.namedType("unknown");
+}
+
+/// Decision 316 — a wrapper reads no handle and no local of the decorator's
+/// body (`decorator-member-captures`), refused where it is read.
 /// Decision 575 (4), the tree rule — a member holds the body's locals as
 /// literals (`member_fn.capturedLocals`): `locals` admits them; a wrapper holds
 /// only the hoisted `compiler.*` reads (`capturedBuildReads`, decision 642), and
 /// neither reads the handle.
-/// Decision 581 (2) — an executor reads it (`handle`): there it is the
-/// annotated declaration itself as a run-time value (`executorSource`).
+/// Decisions 581 (2), 716 (3) — an executor and a member read it (`handle`):
+/// there it is the annotated declaration as code, typed by its contract
+/// (`handleContract`).
 fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, body: []const ast.Stmt, locals: bool, handle: bool) InferError!void {
     const declName = if (params.len > 0) params[0].name else "";
     const decoratorLocals = try memberFn.boundNames(env.arena, &.{}, body);
@@ -24350,7 +24374,7 @@ fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, 
         if (isHandle and handle) continue;
         if (!isHandle and (locals or !decoratorLocals.contains(n.name) or std.mem.startsWith(u8, n.name, memberFn.build_read_prefix))) continue;
         const msg = if (isHandle)
-            try std.fmt.allocPrint(env.arena, "{s}: the member reads `{s}`, the decorator's `@Decl` handle, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name })
+            try std.fmt.allocPrint(env.arena, "{s}: the wrapper reads `{s}`, the decorator's handle, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name })
         else
             try std.fmt.allocPrint(env.arena, "{s}: the member reads `{s}`, a local of the decorator's body, which exists only while the program compiles", .{ diagnostics.decorator_member_captures, n.name });
         env.lastError = TypeError.custom(msg, "A member uses the decorator's parameters — each `@Expr` is spliced where it was written — and what its own body declares (decision 370 (2)).").withLoc(n.loc);

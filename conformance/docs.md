@@ -3946,13 +3946,20 @@ validate(self: Self) -> Violation[] { … }` with each `syntax` argument spliced
 where the member uses it — evaluated at run time, each time that use is
 reached, so an argument not known at build (`t("…")`) is accepted. The
 decorator's type parameters take what the annotation bound them to (`T` is
-`Signup`, written `Self`). The member reads nothing else of the decorator's
-body: the handle and a local that is no literal exist only while the program
-compiles (`decorator-member-captures`), while a `compiler.*` call inside a member
+`Signup`, written `Self`). The handle `decl` is the annotated type as code in
+the member, as in an executor (decision 716 (3)): `decl.title()` in a member of
+`#[named]` over `syntax decl: Titled` is `Signup.title()`. A local that is no
+literal exists only while the program compiles (`decorator-member-captures`),
+while a `compiler.*` call inside a member
 is evaluated at build and spliced as its answer (decision 642; cell
 `member_reads_compiler_name`), `compiler.name(x)` over the member's own parameter
 `x` answering `"x"` (`member_names_its_parameter`), `compiler.text(x + 1)` its source as written
-(`member_texts_its_expression`). Every parameter is typed (`decorator-member-fn-untyped`),
+(`member_texts_its_expression`).
+
+<!-- example: modules/member_decl_as_code -->
+<!-- example: modules/decorator_member_captures_handle -->
+
+Every parameter is typed (`decorator-member-fn-untyped`),
 the member is written at the call (`decorator-member-not-fn`), and a `self` is
 the type the member joins and every type parameter it writes is bound
 (`decorator-member-type`); a typed function expression is legal in every other
@@ -4046,24 +4053,40 @@ below an annotated declaration reads what that declaration's executor did.
 
 <!-- example: modules/init_executor_module_val_order -->
 
-Inside the executor the decorator's `syntax decl` handle is the annotated
-declaration itself as a run-time value, with its declared type (decision 581
-(2)): `add(Module(name: name, lifecycle: lifecycle, make: decl))` is checked
-against `make`'s type for each annotated declaration, and a declaration whose
-type does not fit is refused at its annotation, the decorator's
-`compiler.init` call its `called from` line (decision 567).
+The declared type of the `syntax decl` parameter is the contract the
+annotated declaration meets (decision 716), and every tree the decorator
+writes — an executor, a member — is checked once, at the decorator, against
+that type, never per annotated declaration. `syntax decl: unknown` admits any
+declaration and gives `decl` no member: `decl.make()` in a tree is the
+checker's own refusal at the decorator, and `decl` serves only where an
+`unknown` does and in the `compiler.*` reads. `syntax decl: Module`, a
+behavior, admits a type implementing it — `#[module]` on a type without
+`implement Module` is refused at the annotation, naming the type and the
+behavior — and types `decl.make()` by the behavior; `syntax decl: fn() ->
+string` admits a function of that type, `decl` callable; `syntax decl: T`
+admits any declaration and keeps its type. Inside the executor the handle is
+the annotated declaration itself as a run-time value (decision 581 (2)):
+`add(Module(name: name, lifecycle: lifecycle, make: decl))` under `syntax decl:
+fn() -> string` is checked against `make`'s type at the decorator, and a
+declaration that does not meet the contract is refused at its annotation.
 
 <!-- example: modules/init_executor_handle_typed -->
 
 <!-- example: modules/init_executor_handle_mistyped -->
 
+<!-- example: modules/decl_unknown_no_member -->
+
+<!-- example: modules/decl_behavior_contract_refused -->
+
+<!-- example: modules/decl_behavior_member_typed -->
+
 On every kind the handle is the annotated declaration spliced as code and
 bound to it (decision 613), and the checker's ordinary rules apply to it: a
 type is the type in expression position — `decl.make()` is `Users.make()` —,
 a method is its owner's path, `Users.make`, a field `Config.db`; never what
-the bare name resolves to in the module. `Users` where a function is expected
-is the checker's own refusal at the annotation, the `compiler.init` call its
-`called from` line.
+the bare name resolves to in the module. A type annotated by a decorator
+whose `syntax decl` is a function type does not meet the contract and is
+refused at the annotation.
 
 <!-- example: modules/init_executor_handle_on_type -->
 

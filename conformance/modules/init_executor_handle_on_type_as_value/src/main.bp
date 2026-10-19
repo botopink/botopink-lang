@@ -1,8 +1,7 @@
-//// Decision 613 — on a type `decl` is the type in expression position, and
-//// the checker's ordinary rules apply to it: `make: decl` hands the type
-//// `Users` where a value is expected, refused with the checker's own text
-//// at the annotation, the decorator's `compiler.init` its `called from`
-//// line (567).
+//// Decisions 613, 716 — `syntax decl: fn() -> string` admits a function:
+//// the type `Users` does not meet the contract, so the annotation is refused,
+//// naming the contract and the type; the executor's `make: decl`, checked
+//// once at the decorator, is never checked against a type.
 
 pub mod marks;
 pub mod registry;

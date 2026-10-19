@@ -1067,8 +1067,11 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   signature with the decorator's type parameters in scope, each `exprWrapped`
   parameter rebound from `__Expr<T>` to `T`, `Env.currentParams` emptied;
   `refuseMemberFnShape` refuses a parameter without a type
-  (`decorator-member-fn-untyped`) and a read of the handle or of a local of
-  the decorator's body (`Env.decoratorBody`, `decorator-member-captures`); a
+  (`decorator-member-fn-untyped`); the handle is rebound to its contract
+  (`handleContract`, decision 716: the `syntax decl` parameter's declared
+  type — `unknown`, a behavior, a function type, a type parameter), as in an
+  executor (`inferCompileCall`), and `memberFnSource` splices it as the
+  annotated type's name; a
   second argument that is no function expression is `decorator-member-not-fn`.
   `syntax_param.useOf` does not count a read inside the member, so an argument
   not known at build (`t("…")`) is no `.value` read; `eraseFn` hands the
@@ -1165,11 +1168,14 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   the module's own), so a `val` below it runs after it; a type error inside one
   is located at the annotation, the call its `called from` line
   (`locateInOutputs`, decision 567). **Decision 581 (2):** the handle is
-  admitted in an executor (`refuseCaptures`' `handle`): `inferCompileCall` types
-  it as a free type in the decorator's body, and `executorSource` splices it as
-  the annotated declaration's name, so the module checks it with its declared
-  type (`modules/init_executor_handle_typed`,
-  `modules/init_executor_handle_mistyped`).
+  admitted in an executor and a member (`refuseCaptures`' `handle`). Decision
+  716: `inferCompileCall` and `inferMemberFnCall` type it once, in the
+  decorator's body, by its contract (`handleContract`, the `syntax decl`
+  parameter's declared type), and `checkDecoratorArgs` refuses at the
+  annotation a declaration that does not meet it; `executorSource` /
+  `memberFnSource` splice it as the annotated declaration's name
+  (`modules/init_executor_handle_typed`, `modules/init_executor_handle_mistyped`,
+  `modules/decl_unknown_no_member`, `modules/member_decl_as_code`).
 
 ## Typed meta (decisions 298, 370 (1))
 

@@ -1,17 +1,18 @@
-//// Decision 613 — inside an executor `decl` is the annotated declaration
-//// spliced as code: on a type it is the type in expression position, so
-//// `decl.make()` is `Users.make()`, its static method called when the init
-//// list runs.
+//// Decisions 613, 716 — inside an executor `decl` is the annotated
+//// declaration spliced as code, typed by `syntax decl: Service`, a behavior:
+//// `decl.make()` is typed by `Service.make` at the decorator, and on the type
+//// `Users` it is `Users.make()`, called when the init list runs.
 
 pub mod marks;
 pub mod registry;
 import {marks.service};
+import {marks.Service};
 import {registry.all};
 import {io.terminal.print} from "std";
 
 #[service]
-pub type Users() {
-    pub fn make() -> string {
+pub type Users() implement Service {
+    fn make() -> string {
         return "users made";
     }
 }

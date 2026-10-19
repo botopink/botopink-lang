@@ -3,7 +3,12 @@
 import {registry.add};
 import {compiler} from "std";
 
-pub fn service(syntax decl: unknown) {
+// What a service is: a type that makes its own entry.
+pub behavior Service {
+    fn make() -> string;
+}
+
+pub fn service(syntax decl: Service) {
     val name = compiler.name(decl)!;
     compiler.init({ -> add(name + " " + decl.make()) });
 }

@@ -1,16 +1,25 @@
-//// Decision 370 (2) — the `@Decl` handle exists only while the program
-//// compiles: a member function reading it is refused at the read.
+//// Decision 716 (3) — a member reads the handle: `decl` is the annotated
+//// type as code, typed by `syntax decl: Titled`, so `decl.title()` in the
+//// member is `Signup.title()`.
 
 import {compiler, io.terminal.print} from "std";
 
-fn named(syntax decl: unknown) {
+pub behavior Titled {
+    fn title() -> string;
+}
+
+fn named(syntax decl: Titled) {
     compiler.addMember("typeName", fn() -> string {
-        return decl.name;
+        return decl.title();
     });
 }
 
 #[named]
-pub type Signup(password: string, confirm: string)
+pub type Signup(password: string, confirm: string) implement Titled {
+    fn title() -> string {
+        return "Signup";
+    }
+}
 
 pub fn main() {
     print(Signup.typeName());

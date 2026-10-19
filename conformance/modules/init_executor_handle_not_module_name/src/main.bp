@@ -1,5 +1,5 @@
-//// Decision 613 — the splice names the annotated declaration, never what
-//// its bare name resolves to in the module: the method `Users.make` is
+//// Decisions 613, 716 — the splice names the annotated declaration, never
+//// what its bare name resolves to in the module: the method `Users.make` is
 //// registered, not the module's own `fn make` beside it.
 
 pub mod marks;

@@ -1,6 +1,7 @@
-//// Decision 581 (2) — the executor's `make: decl` is checked against
-//// `make`'s `fn() -> string` for each annotated declaration: `home` fits,
-//// `count`, a `fn() -> i32`, does not and is refused.
+//// Decision 716 — `syntax decl: fn() -> string` is the contract every
+//// declaration `#[module]` annotates meets: `home` fits, `count`, a
+//// `fn() -> i32`, does not and is refused at its annotation, naming both
+//// types; nothing is refused inside the executor.
 
 pub mod marks;
 pub mod registry;
