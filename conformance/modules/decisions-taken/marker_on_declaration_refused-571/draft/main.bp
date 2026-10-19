@@ -1,0 +1,27 @@
+//// Decision 571 — A marker is for a body: a declaration without one never carries it
+
+import {io.terminal, compiler} from "std";
+
+// A host binding has no body: its return type alone says it is asynchronous.
+#[compiler.external(.JavaScript("Promise.resolve($0)"), .Erlang("erlang:abs($0)"), .Wasm(body: echo))]
+declare fn delay(ms: i32) -> Async<i32>;
+
+fn echo(ms: i32) -> i32 {
+    return ms;
+}
+
+behavior Clock {
+    // A bodyless member carrying a marker: refused, `marker-on-declaration`.
+    async fn now(self: Self) -> Async<i32>;
+}
+
+type Fixed(t: i32) implement Clock {
+    // The implementor marks its own body, as its body needs.
+    async fn now(self: Self) -> Async<i32> {
+        return self.t;
+    }
+}
+
+pub async fn main() -> Async<void> {
+    terminal.print(await Fixed(t: 7).now());
+}

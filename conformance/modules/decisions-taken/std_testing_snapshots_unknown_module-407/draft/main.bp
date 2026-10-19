@@ -1,0 +1,10 @@
+//// Decision 407 — For now, `import {testing.snapshots} from "std"` keeps the checker's plain unknown-module error; the pointer to `snap` is documentation.
+
+import {io.terminal} from "std";
+// `testing/snapshots` left std for the `snap` library: the import is the
+// plain unknown-module error, naming no library.
+import {testing.snapshots} from "std";
+
+pub fn main() -> void {
+    terminal.print("never built");
+}

@@ -1,0 +1,28 @@
+//// Decision 596 — `Iter<T, R>` declares the iterator helpers whole, typed, on every target: `take`, `drop`, `map`, `filter`, `flatMap`, `forEach`, `toArray`, `reduce`, `some`, `every`, `find`.
+
+import {io.terminal} from "std";
+
+iter fn naturals() -> Iter<i32> {
+    var i = 0;
+    while (true) {
+        yield i;
+        i = i + 1;
+    }
+}
+
+iter fn twice(n: i32) -> Iter<i32> {
+    yield n;
+    yield n * 10;
+}
+
+pub fn main() -> void {
+    terminal.print(naturals().drop(1).take(5).toArray());
+    terminal.print(naturals().take(5).map({ n -> n * n }).toArray());
+    terminal.print(naturals().filter({ n -> n % 2 == 0 }).take(3).toArray());
+    terminal.print(naturals().take(3).flatMap({ n -> twice(n) }).toArray());
+    naturals().take(2).forEach({ n -> terminal.print("item " + n.toString()) });
+    terminal.print(naturals().take(5).reduce(0, { acc, n -> acc + n }));
+    terminal.print(naturals().take(5).some({ n -> n > 3 }));
+    terminal.print(naturals().take(5).every({ n -> n < 3 }));
+    terminal.print(naturals().find({ n -> n * n > 50 }) ?? -1);
+}

@@ -1,0 +1,28 @@
+//// Decision 380 — What depends on nothing of the run time is computed at build, wherever it is written — fully, or an error at build.
+
+import {io.terminal, io.random, failure.panic} from "std";
+
+val SPACING = 4;
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn radius() -> i32 {
+    // Every input is known at build and every function is `Any`: this is
+    // the constant 12, computed at build with no `comptime` written.
+    val r = double(SPACING) + 4;
+    return r;
+}
+
+pub fn main() -> void {
+    terminal.print(radius());
+    terminal.print("radius " + radius().toString());
+    // A run-time input: computed when the program runs.
+    val n = random.intInRange(3, 3);
+    terminal.print(double(n));
+    // A raise written as such is never computed at build without `comptime`:
+    // this dead branch stays a run-time raise, and the build succeeds.
+    if (SPACING > 100) panic("never happens");
+    terminal.print("done");
+}

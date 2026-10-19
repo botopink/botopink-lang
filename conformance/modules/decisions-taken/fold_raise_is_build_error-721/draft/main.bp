@@ -1,0 +1,17 @@
+//// Decision 721 — (a): every raise met while folding an expression at build is a build error at the expression — an index out of bounds, a failed conversion, a missing key, a `panic` reached inside an `Any` function — as 380 (2) writes; nothing that raised at build is left to the run time.
+
+import {io.terminal, failure.panic} from "std";
+
+// An `Any` function: every input known at build makes its call a fold.
+fn checked(n: i32) -> i32 {
+    if (n > 2) panic("checked: " + n.toString() + " is above 2");
+    return n * 10;
+}
+
+pub fn main() -> void {
+    // Folded at build, and it answers: the constant 20.
+    terminal.print(checked(2));
+    // Folded at build too, and it raises there: an error at this expression,
+    // never a panic left to the run time.
+    terminal.print(checked(5));
+}

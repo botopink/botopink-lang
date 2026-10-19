@@ -1,0 +1,20 @@
+//// Decision 498 — `clock.parseDuration` keeps its 2^53 − 1 ms bound: a duration is handed on as an `f64`.
+
+import {io.terminal, io.clock} from "std";
+
+fn show(text: string) -> void {
+    case clock.parseDuration(text) {
+        Ok(ms) -> terminal.print(text + " = " + ms.toString() + " ms");
+        Error(problem) -> terminal.print(problem);
+    }
+}
+
+pub fn main() -> void {
+    show("30s");
+    // 2^53 - 1 milliseconds: the largest duration an `f64` holds exactly.
+    show("9007199254740991ms");
+    show("9007199254740992ms");
+    // The bound holds for every unit: 104249991 days fit, one more does not.
+    show("104249991d");
+    show("104249992d");
+}

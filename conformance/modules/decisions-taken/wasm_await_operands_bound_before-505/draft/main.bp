@@ -1,0 +1,22 @@
+//// Decision 505 — The wasm backend binds each operand evaluated before an `await` in its statement to a frame local (A-normal form); until then the located refusal stays.
+
+import {io.terminal} from "std";
+
+fn label(s: string) -> string {
+    terminal.print("label " + s);
+    return s;
+}
+
+async fn answer(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+fn pair(a: string, b: i32) -> string {
+    return a + b.toString();
+}
+
+pub async fn main() -> Async<void> {
+    // `label("x")` is evaluated before the `await` in the same statement:
+    // it runs once, as written, on every target.
+    terminal.print(pair(label("x"), await answer(21)));
+}

@@ -1,0 +1,25 @@
+//// Decision 25 — Does `is` carry a pattern?
+
+import {io.terminal} from "std";
+
+pub type Token { Text(v: string), Num(n: i32), Eof }
+
+fn describe(t: Token) -> string {
+    // `is` answers a bool: it tests the variant and binds nothing.
+    if (t is Token.Eof) return "end";
+    // `case` is the one construct that binds a payload.
+    return case t {
+        Text(v) -> "text " + v;
+        Num(n) -> "number " + n.toString();
+        Eof -> "end";
+    };
+}
+
+pub fn main() -> void {
+    val tokens: Token[] = [Token.Text(v: "hi"), Token.Num(n: 3), Token.Eof];
+    for (tokens) { t ->
+        val numeric: bool = t is Token.Num;
+        terminal.print(numeric);
+        terminal.print(describe(t));
+    }
+}
