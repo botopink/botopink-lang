@@ -1461,7 +1461,7 @@ fn pruneUnreached(
 /// Prints, to stderr, why a module left the `.gc` lowering for linear memory
 /// (`GCGAP` — what it met —, `GCCONV` the conversion it refused, `GCTC` the
 /// type-check failure, `GCERR` the error, `GCWHY` the module; set `GCTRACE` for the stack of a refused
-/// conversion). Off: flip it to measure which constructs still send modules to linear memory.
+/// conversion or gap). Off: flip it to measure which constructs still send modules to linear memory.
 const gc_debug = false;
 
 /// The modules of the build this backend refused so far (`emitModules`):
@@ -2550,6 +2550,9 @@ const Emitter = struct {
     record_field_typerefs: std.StringHashMap([]const ast.TypeRef),
     /// The declared return type of the fn being emitted.
     cur_ret_typeref: ?ast.TypeRef = null,
+    /// The declared element types a tuple literal being returned is built
+    /// against (`gcTupleLit`), read once by the literal.
+    expected_tuple: ?[]const ast.TypeRef = null,
     /// Decision 504 — the function being lowered is one of
     /// `wat/scope_carry.zig`'s wrappers: its `return` passes the word std's
     /// `context` answered as it is, typed by the wrapper's declared return.
@@ -5331,6 +5334,7 @@ const Emitter = struct {
     /// for: the module is lowered in linear memory (`emitWat`).
     fn gcGap(self: *Emitter, why: []const u8) void {
         if (gc_debug and self.gc_gap == null) std.debug.print("GCGAP {s} at {d}:{d} in {s}\n", .{ why, if (self.stmt_loc) |l| l.line else 0, if (self.stmt_loc) |l| l.col else 0, self.module_name });
+        if (gc_debug and self.gc_gap == null and std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{});
         if (self.gc_gap == null) self.gc_gap = why;
     }
 
@@ -6119,10 +6123,17 @@ const Emitter = struct {
 
     /// `#(a, b)` in a GC module: an `anyref` array, a scalar boxed. `as` the
     /// types the slots are widened to (`lowerTupleLitAs`).
-    fn gcTupleLit(self: *Emitter, tl: anytype, as: ?[]const ast.TypeRef) anyerror!void {
+    fn gcTupleLit(self: *Emitter, tl: anytype, as0: ?[]const ast.TypeRef) anyerror!void {
+        // A tuple returned against the declared `#(…)`: an empty array
+        // element takes its slot's type (`return #([], "a")`, front 164 s2).
+        const declared = self.expected_tuple;
+        self.expected_tuple = null;
         for (tl.elems, 0..) |el, i| {
             var r = self.wasmTypeOf(el);
-            if (as) |ts| if (i < ts.len) {
+            if (as0) |ts| if (i < ts.len) {
+                r = self.reprOf(ts[i]);
+            };
+            if (as0 == null and isEmptyArrayLit(el)) if (declared) |ts| if (i < ts.len) {
                 r = self.reprOf(ts[i]);
             };
             try self.lowerCoerced(el, r);
@@ -11702,6 +11713,10 @@ const Emitter = struct {
                             self.expected_union_array = true;
                         };
                         defer self.expected_union_array = false;
+                        if (self.mode == .gc and tupleLitElems(val.*) != null) if (self.cur_ret_typeref) |rt| {
+                            self.expected_tuple = eagerTypeRef(rt).tupleElems();
+                        };
+                        defer self.expected_tuple = null;
                         defer self.expected_fn = null;
                         if (self.fn_has_result and self.raw_return and self.mode == .linear) {
                             // A carry wrapper (decision 504): the scope's word,
@@ -13112,8 +13127,10 @@ const Emitter = struct {
                 b.helper(if (last) .print_i32 else .print_i32_raw));
             return;
         }
-        if (self.isStringExpr(arg)) {
-            try self.lowerValue(arg);
+        // In a GC module a value whose repr is a string prints as one (a
+        // tuple element of a call's answer, `f()._1`).
+        if (self.isStringExpr(arg) or (self.mode == .gc and self.wasmTypeOf(arg).isStr())) {
+            if (self.mode == .gc) try self.lowerCoerced(arg, Repr.string) else try self.lowerValue(arg);
             try self.emit(self.builder().helper(if (last) .print_str else .print_str_raw));
             return;
         }
@@ -18259,6 +18276,9 @@ const Emitter = struct {
         // payload or `d`, one type — read as `o.unwrapOr(d)` is below.
         if (nullishParts(e)) |nu| {
             if (self.optInfoOf(nu.opt.*)) |oi| if (oi.shape) |sh| return sh;
+            // The optional's declared payload (`f(2) ?? []` over `-> ?i32[]`
+            // printed the array's address at exit 0).
+            if (self.typeRefOf(nu.opt.*)) |t| if (eagerTypeRef(t) == .optional) if (try self.typeRefShape(eagerTypeRef(eagerTypeRef(t).optional.*))) |sh| return sh;
             if (!isEmptyArrayLit(nu.dflt)) if (try self.printShapeOf(nu.dflt)) |sh| return sh;
         }
         if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| if (oi.shape) |sh| return sh;
@@ -26740,6 +26760,12 @@ const Emitter = struct {
         // Decision 105 (144 B-128) — a generator is a handle in a GC module.
         if (self.isGenExpr(e)) return false;
         if (self.genericResultOf(e)) |a| return self.isArrayExpr(a);
+        // `o ?? d` over an optional array is the array (`print(f(2) ?? [])`
+        // printed its address at exit 0).
+        if (nullishParts(e)) |nu| {
+            if (self.typeRefOf(nu.opt.*)) |ot| if (eagerTypeRef(ot) == .optional) return arrayElemOfTypeRef(eagerTypeRef(ot).optional.*) != null;
+            return !isEmptyArrayLit(nu.dflt) and self.isArrayExpr(nu.dflt);
+        }
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(self.resolveName(n)),
@@ -29156,7 +29182,13 @@ const Emitter = struct {
 
     /// The last statement of a branch answering `ty`.
     fn branchLastStmt(self: *Emitter, last: ast.Stmt, ty: Repr) anyerror!Tail {
-        const from = self.wasmTypeOf(last.expr);
+        // An empty array literal answers the array the branch is asked for
+        // (`o ?? []`, front 164 s2): in a GC module it has no type of its own.
+        const empty_arr = self.mode == .gc and ty.isArrRef() and isEmptyArrayLit(last.expr);
+        const prev_want = self.gc_want;
+        if (empty_arr) self.gc_want = ty;
+        defer self.gc_want = prev_want;
+        const from = if (empty_arr) ty else self.wasmTypeOf(last.expr);
         const tail = try self.emitStmtRaw(last);
         switch (tail) {
             .none => {

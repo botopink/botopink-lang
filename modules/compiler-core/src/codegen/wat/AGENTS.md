@@ -136,7 +136,12 @@ other reference by identity (`$__unk_same`, `__arr_indexOfEq_any`), as the linea
 and commonJS do; `r.unwrapOr(d)` answers the reference the `Result`'s `Ok` type or the default names
 (`gcReprOfExpr`); a lambda written in a generic function keeps its type parameters (`Lifted.fn_tparams`,
 `owner_tparams`, set by `gcEmitLifted`), and an argument against a parameter typed by a type parameter out of
-scope (the function value `compose<A, B, C>` answers) crosses boxed in its own repr (`gcValueCall`). Measured by building every conformance unit for wasm with `gc_debug` on; the test
+scope (the function value `compose<A, B, C>` answers) crosses boxed in its own repr (`gcValueCall`); `o ?? d`
+over an optional array is an array (`isArrayExpr`, `printShapeOf` by the optional's declared payload) and its
+empty `[]` default takes the branch's array type (`branchLastStmt`); a `[]` element of a tuple returned against
+its declared `#(…)` takes its slot's type (`expected_tuple`, `gcTupleLit`); a value whose GC repr is a string
+prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish_default_optional_array`, whose wasm
+answers were addresses before. Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
