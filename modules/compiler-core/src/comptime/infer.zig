@@ -23348,6 +23348,12 @@ fn markPacked(c: ast.CallExprOf(.untyped), args: []ast.CallArgOf(.untyped)) ast.
 }
 
 fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    if (try asyncResolveBlock(env, c, loc)) |block| {
+        const spliced = try env.arena.create(ast.Expr);
+        spliced.* = block;
+        try env.templateExpansions.put(loc, spliced);
+        return inferExprTyped(env, block);
+    }
     const expected = env.expectedType;
     try refuseBehaviorCallOnEntry(env, c, loc);
     const typed = try inferCallExprWith(env, c, loc, null);
@@ -23355,6 +23361,28 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     // `comptime` is replaced by the code its body emits.
     if (try expandCall.expand(env, c, loc, expected)) |expanded| return expanded;
     return typed;
+}
+
+/// Decision 570 — `Async.resolve(v)`, std's one way to hand on a value as an `Async<T>` from a
+/// function that carries no marker (JS `Promise.resolve`, Rust `std::future::ready`): the
+/// closed block `async { v }` (decision 124), which every backend already runs. Null unless the
+/// call is `Async.resolve(<one argument>)` with no `Async` of the program's own in scope.
+fn asyncResolveBlock(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!?ast.Expr {
+    if (c.kind != .call) return null;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null or call.args.len != 1 or call.trailing.len != 0) return null;
+    if (!std.mem.eql(u8, call.callee, "resolve")) return null;
+    const recv = call.receiver orelse return null;
+    if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+    if (!std.mem.eql(u8, recv.identifier.kind.ident, "Async")) return null;
+    if (env.lookup("Async") != null or env.lookupTypeDef("Async") != null) return null;
+    const body = try env.arena.alloc(ast.Stmt, 1);
+    body[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = call.args[0].value } } }, .tail = .returned };
+    return ast.Expr{ .function = .{ .loc = loc, .kind = .{
+        .syntax = .asyncBlock,
+        .params = &.{},
+        .body = body,
+    } } };
 }
 
 /// Decision 564 — `d.value.f(…)`, `d` a catalogue entry `Declared<B>` and
