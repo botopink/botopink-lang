@@ -1736,6 +1736,11 @@ adds none, so a list of strings joins as strings on every target:
 
 <!-- example: modules/meta_list_coalesced_method -->
 
+A method written after a `?.` field that is a `Dict` (or any other nominal type) is that type's:
+`post?.params.at("slug")` is the `Dict`'s `at` on every target, `null` when `post` is.
+
+<!-- example: modules/optional_chain_method_on_dict_field -->
+
 A tuple's label read through `?.` on an absent element is absent (`es.at(3)?.a ?? 0`
 is `0`), and a present element's label is its value, `0`, `false` and `""` included
 — never taken for absence:

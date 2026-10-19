@@ -22791,6 +22791,24 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     }
                 }
 
+                // 144 B-155 — a link that continues a `?.` chain over a nominal
+                // payload (`post?.params.at("slug")`, `params` a `Dict`): the
+                // call is the payload's, so it is recorded as the payload's
+                // (`recordInstanceCall`, else the type this module has no
+                // declaration of), at the written loc. Left unrecorded, erlang
+                // and beam ran the untyped primitive shim and aborted with
+                // `bp_unsupported_method`.
+                if (continuesOptionalChain(recvPtr.*) and env.instanceLowerings.get(loc) == null) {
+                    if (optionalInner(recvPtr.getType())) |inner| if (nominalName(inner)) |tn| {
+                        if (primKindOfName(tn) == null and tn.len > 0 and std.ascii.isUpper(tn[0]) and !std.mem.eql(u8, tn, "Self")) {
+                            if (env.hasInherentMethod(tn, call.callee))
+                                try recordInstanceCall(env, loc, tn)
+                            else if (env.lookupTypeDef(tn) == null)
+                                try env.instanceLowerings.put(loc, .{ .unplaced_type = tn });
+                        }
+                    };
+                }
+
                 // 06 C9 — a receiver whose type is a nominal the env actually
                 // registered has a closed method surface: nothing above matched,
                 // so the method does not exist. `d.swim()` on a `type D(id: i32)`
