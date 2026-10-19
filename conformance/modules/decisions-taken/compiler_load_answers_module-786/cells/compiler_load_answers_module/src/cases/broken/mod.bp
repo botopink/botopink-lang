@@ -1,0 +1,6 @@
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    val n: string = 1;
+    print(n);
+}

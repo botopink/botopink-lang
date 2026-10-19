@@ -12752,7 +12752,7 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
             return error.TypeError;
         },
     };
-    const rewrite = try loadMod.rewrite(env.arena, loc, ds);
+    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = path, .target = env.target }, ds);
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
 }

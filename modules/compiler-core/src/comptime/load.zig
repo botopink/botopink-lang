@@ -1,6 +1,6 @@
-//! Decisions 780–783 — `comptime compiler.load(path)`: a file of the package
-//! compiled at build as the entry of a package of its own, its refusals the
-//! answer.
+//! Decisions 780–783, 786 — `comptime compiler.load(path)`: a file of the
+//! package compiled at build as the entry of a package of its own, answered
+//! as its `Module` and its refusals.
 //!
 //! - `parser/compiler_surface.zig` reads `compiler.load(p)` onto the builtin
 //!   `surface.load_builtin`; the checker (`infer.zig` `inferLoadBuiltin`, beside
@@ -12,10 +12,14 @@
 //!   program never sees the modules. Each refused module is one `Diagnostic`,
 //!   in the order `botopink build` prints them, with the text and the place it
 //!   prints (decision 780 (2), 781).
-//! - The answer is code (`rewrite`): `__bp_loaded([Bp_LoadDiagnostic(…), …])`, a
-//!   call of the function `withLoadHelper` declares in the module that loads
-//!   (`Ok` for `[]`, `Error(ds)` otherwise, decision 782), `Diagnostic` std's
-//!   `compiler.Diagnostic` imported under a name no source writes.
+//! - The answer is code (`rewrite`): `__bp_loaded(Bp_LoadModule(…),
+//!   [Bp_LoadDiagnostic(…), …])`, a call of the function `withLoadHelper`
+//!   declares in the module that loads (`Ok(m)` for `[]`, `Error(Refused(m,
+//!   ds))` otherwise, decisions 782, 786), std's `compiler.Module`,
+//!   `compiler.Refused` and `compiler.Diagnostic` imported under names no
+//!   source writes. The `Module` is the loaded file's (`Loaded`): `name` its
+//!   directory's, `path` the file, `target` the build's as std's `Target`
+//!   (`targetVariant`), written `.Wasm` so no source name is needed.
 //! - A nested compile re-enters nothing of std's one-time initialisation: it
 //!   runs only once std's template is ready (`comptime.stdlibTemplateReady`),
 //!   and a file that loads itself through a chain of loads is refused
@@ -32,11 +36,24 @@ const Parser = @import("../parser.zig").Parser;
 const printErrors = @import("../print.zig");
 const blockEval = @import("block_eval.zig");
 
-/// The function `withLoadHelper` declares: `Ok` for no refusal, `Error(ds)`
-/// otherwise.
+/// The function `withLoadHelper` declares: `Ok(m)` for no refusal,
+/// `Error(Refused(m, ds))` otherwise.
 pub const helper_fn = "__bp_loaded";
 /// The local name of std's `compiler.Diagnostic` in a module that loads.
 pub const diagnostic_alias = "Bp_LoadDiagnostic";
+/// The local name of std's `compiler.Module` in a module that loads.
+pub const module_alias = "Bp_LoadModule";
+/// The local name of std's `compiler.Refused` in a module that loads.
+pub const refused_alias = "Bp_LoadRefused";
+
+/// The fields of the records the answer builds, in the order `rewrite`
+/// writes them — std's `compiler.Module`, `compiler.Refused` and
+/// `compiler.Diagnostic`, record for record (`tests/compiler_members.zig`).
+pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
+    .{ .name = "Module", .fields = &.{ "name", "path", "target" } },
+    .{ .name = "Refused", .fields = &.{ "module", "diagnostics" } },
+    .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label" } },
+};
 
 /// Where the helper's lines are parsed: past every line of the module and of
 /// a typed meta read's helper (`typed_meta.helper_first_line`).
@@ -48,6 +65,13 @@ const rewrite_first_line: usize = 4_000_000;
 /// shares with its caller (the caller's manifest): set by `comptime.compile`
 /// around each compile, restored after it (a nested compile sets its own).
 pub threadlocal var build_modules: []const Module = &.{};
+
+/// The build's own target (decision 786 (1), `Module.target`), as the driver
+/// names its backend (`commonJS`, `erlang`, `beam`, `wasm`): set by
+/// `codegen.analyse` around its compile — the checker's `Env.target` is the
+/// host-binding lookup, `erlang` for both BEAM targets. Null where no driver
+/// set it (tests, the language server): the lookup name stands in.
+pub threadlocal var build_target: ?[]const u8 = null;
 
 /// The files being loaded on this thread, outermost first — a file loading
 /// one of them is a cycle.
@@ -135,8 +159,8 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         .@"fn" => |fd| if (std.mem.eql(u8, fd.name, helper_fn)) return program,
         else => {},
     };
-    const src = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ "} from \"std\";\n" ++
-        "fn " ++ helper_fn ++ "(ds: " ++ diagnostic_alias ++ "[]) -> Result<void, " ++ diagnostic_alias ++ "[]> { if (ds.length > 0) throw ds; return; }\n";
+    const src = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ "} from \"std\";\n" ++
+        "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n";
     const helper = try parseShifted(arena, src, helper_first_line, null);
     // Both first: an alias of an imported type names it in a signature only
     // of a function declared after the import and before its callers.
@@ -163,11 +187,46 @@ fn parseShifted(arena: std.mem.Allocator, src: []const u8, first: usize, col: ?u
 
 // ── the answer as code ───────────────────────────────────────────────────────
 
-/// The call a read at `loc` is rewritten to: `__bp_loaded([…])`, one
-/// `Bp_LoadDiagnostic(…)` per refusal, on a line of its own.
-pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, ds: []const Diagnostic) error{OutOfMemory}!*ast.Expr {
+/// The loaded file's `Module` (decision 786 (1)).
+pub const Loaded = struct {
+    /// The file, relative to the package's `botopink.json`.
+    path: []const u8,
+    /// The build's target, as the compile names it (`commonJS`, `erlang`, …).
+    target: ?[]const u8,
+
+    /// `name`: the directory the file sits in, by its last segment
+    /// (`src/cases/<case>/mod.bp` → `<case>`); `""` for a file at the
+    /// package's root.
+    pub fn name(self: Loaded) []const u8 {
+        const dir = std.fs.path.dirnamePosix(self.path) orelse return "";
+        return std.fs.path.basenamePosix(dir);
+    }
+};
+
+/// The build's target as a variant of std's `Target` (`primitives.bp`):
+/// `build_target` when the driver set it, else `target` (the lookup name);
+/// commonJS (`node`) is `Node`, the wasm hosts `Wasm`; a compile given no
+/// target is commonJS's.
+pub fn targetVariant(target: ?[]const u8) []const u8 {
+    const t = build_target orelse target orelse return "Node";
+    if (std.mem.eql(u8, t, "erlang")) return "Erlang";
+    if (std.mem.eql(u8, t, "beam")) return "Beam";
+    if (std.mem.eql(u8, t, "typescript")) return "Typescript";
+    if (std.mem.startsWith(u8, t, "wasm")) return "Wasm";
+    return "Node";
+}
+
+/// The call a read at `loc` is rewritten to: `__bp_loaded(Bp_LoadModule(…),
+/// […])`, one `Bp_LoadDiagnostic(…)` per refusal, on a line of its own.
+pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!*ast.Expr {
     var text: std.ArrayListUnmanaged(u8) = .empty;
-    try text.appendSlice(arena, "fn __bp_load_rewrite() { " ++ helper_fn ++ "([");
+    try text.appendSlice(arena, "fn __bp_load_rewrite() { " ++ helper_fn ++ "(");
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: Target.{s})", .{
+        try blockEval.stringLexeme(arena, loaded.name()),
+        try blockEval.stringLexeme(arena, loaded.path),
+        targetVariant(loaded.target),
+    });
+    try text.appendSlice(arena, ", [");
     for (ds, 0..) |d, i| {
         if (i > 0) try text.appendSlice(arena, ", ");
         try text.print(arena, diagnostic_alias ++ "(code: \"{s}\", message: \"{s}\", file: \"{s}\", line: {d}, column: {d}, label: ", .{

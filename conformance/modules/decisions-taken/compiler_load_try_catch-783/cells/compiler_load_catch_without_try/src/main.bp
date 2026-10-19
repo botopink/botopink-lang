@@ -1,15 +1,16 @@
 //// Decision 783 — `compiler.load`'s refusals are a `Result`'s failure, handled by a
-//// `try … catch` region: `comptime compiler.load(…) catch { ds -> … }` holds no `try`, so
+//// `try … catch` region: `comptime compiler.load(…) catch { r -> … }` holds no `try`, so
 //// its region cannot fail and its `catch` handles nothing — refused
 //// `try-region-cannot-fail` (595 (7)). The handled form is `try comptime compiler.load(…)
-//// catch { ds -> … }`.
+//// catch { r -> … }`.
 
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    comptime compiler.load("src/cases/broken.bp") catch { ds ->
-        for (ds) { d ->
+    comptime compiler.load("src/cases/broken.bp") catch { r ->
+        for (r.diagnostics) { d ->
             print("handled " + d.file + ":" + d.line.toString());
         }
+        r.module
     }
 }

@@ -31,7 +31,7 @@ const memberFn = @import("../comptime/member_fn.zig");
 /// "<message>", "<hint>")`. No source can spell it (`@` takes a name).
 pub const refusal_builtin = "__compilerRefusal";
 
-/// Decisions 780, 782 — the builtin `compiler.load(path)` is read onto: the
+/// Decisions 780, 782, 786 — the builtin `compiler.load(path)` is read onto: the
 /// checker compiles the file at build (`comptime/load.zig`). No source can
 /// spell it.
 pub const load_builtin = "__compilerLoad";
@@ -496,7 +496,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     }
     if (std.mem.eql(u8, name, "typeInfo")) return builtinCall(loc, "typeInfo", args, c.trailing);
     if (std.mem.eql(u8, name, "find")) return builtinCall(loc, "TypeInfo.all", args, c.trailing);
-    // Decisions 780, 782 — `comptime compiler.load(path)`: the file compiled
+    // Decisions 780, 782, 786 — `comptime compiler.load(path)`: the file compiled
     // at build, its answer a `Result` (`comptime/load.zig`).
     if (std.mem.eql(u8, name, "load")) return builtinCall(loc, load_builtin, args, c.trailing);
     if (member.kind == .site) {

@@ -91,3 +91,36 @@ test "decision 625 (2): `ast_build.zig`'s kinds are std's `compiler.Node`, recor
         try std.testing.expect(!same);
     };
 }
+
+test "decision 786: the records `compiler.load` answers are std's `compiler.Module`, `Refused` and `Diagnostic`, field for field" {
+    const loadMod = @import("../load.zig");
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var lx = Lexer.init(try compilerSource());
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    for (loadMod.records) |r| {
+        const record = for (program.decls) |d| {
+            if (d == .type_ and std.mem.eql(u8, d.type_.name, r.name)) break d.type_;
+        } else {
+            std.debug.print("compiler.bp declares no `{s}`\n", .{r.name});
+            return error.RecordMissing;
+        };
+        const fields = record.recordFields();
+        try std.testing.expectEqual(r.fields.len, fields.len);
+        for (r.fields, fields) |want, f| try std.testing.expectEqualStrings(want, f.name);
+    }
+    // `load` answers them: `Result<Module, Refused>`.
+    const behavior = for (program.decls) |d| {
+        if (d == .behavior and std.mem.eql(u8, d.behavior.name, "Compiler")) break d.behavior;
+    } else return error.CompilerBehaviorMissing;
+    const load = for (behavior.methods) |m| {
+        if (std.mem.eql(u8, m.name, "load")) break m;
+    } else return error.MemberMissing;
+    const ret = load.returnType orelse return error.LoadReturnMissing;
+    try std.testing.expect(ret == .generic and std.mem.eql(u8, ret.generic.name, "Result"));
+    try std.testing.expectEqual(@as(usize, 2), ret.generic.args.len);
+    try std.testing.expectEqualStrings("Module", ret.generic.args[0].named);
+    try std.testing.expectEqualStrings("Refused", ret.generic.args[1].named);
+}

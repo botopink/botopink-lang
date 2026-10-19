@@ -1,0 +1,6 @@
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    val n: i32 = 1;
+    print(n);
+}

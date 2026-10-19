@@ -3871,16 +3871,18 @@ computed at build.
 
 `comptime compiler.load(path)` compiles a file of the package at build, as the entry of a
 package of its own — the caller's manifest, the `mod` tree beside the file, the build's target
-(decision 780) — and answers `Result<void, compiler.Diagnostic[]>` (decision 782): `Ok` when it
-compiles, `Error(ds)` when it is refused, `ds` its refusals in the order `botopink build` prints
-them. A `Diagnostic` is the refusal as printed: `message` the text after `error: `, `file`,
-`line` and `column` where it points, `label` the text beside the caret.
+(decision 780) — and answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
+`Ok(m)` when it compiles, `Error(r)` when it is refused, `r.module` the same `Module` and
+`r.diagnostics` its refusals in the order `botopink build` prints them, never empty. A
+`Diagnostic` is the refusal as printed: `message` the text after `error: `, `file`, `line` and
+`column` where it points, `label` the text beside the caret.
 
 The loaded file never joins the program that loads it: no module declares it, the package's
 module tree leaves it out, and its refusals never refuse the program. The answer is read as
-every `Result` is (decision 783): `try comptime compiler.load(path) catch { ds -> … }` handles
-the refusals, `try comptime compiler.load(path);` propagates them to the enclosing function's
-`Result`, `.isError()` asks. There is no `compiler.snapshot`: comparing an answer is
+every `Result` is (decision 783): `try comptime compiler.load(path) catch { r -> … }` handles
+the refusals — the region's value is the `Module`, so the handler ends with one, `r.module`
+(decision 595 (4)) —, `try comptime compiler.load(path);` propagates them to the enclosing
+function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. There is no `compiler.snapshot`: comparing an answer is
 `botopink cell check`'s.
 
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
@@ -3893,9 +3895,16 @@ reads its answer, and the file is no failed module of the package under test.
 <!-- example: test/compiler_load_in_a_test_suite -->
 
 A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `compiler.load`'s included:
-`comptime compiler.load(path) catch { ds -> … }` handles nothing — write `try comptime compiler.load(path) catch { ds -> … }`:
+`comptime compiler.load(path) catch { r -> … }` handles nothing — write `try comptime compiler.load(path) catch { r -> … }`:
 
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_catch_without_try -->
+
+The `Module` (decision 786) is the loaded file's, on both sides: `name` the directory it sits in,
+`path` the file relative to the package (as a `Diagnostic`'s `file`), `target` the build's, std's
+`Target` (`.Node` for commonJS, `.Erlang`, `.Beam`, `.Wasm`). It carries no dependency list: the
+loaded package still resolves its own to compile.
+
+<!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
 
 The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`

@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() {
-    try comptime compiler.load("src/../../elsewhere/main.bp") catch { ds ->
-        print(ds.length);
+    try comptime compiler.load("src/../../elsewhere/main.bp") catch { r ->
+        print(r.diagnostics.length);
     }
 }

@@ -659,6 +659,36 @@ fn withYieldStepDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const en
     return ast.Program{ .decls = new_decls };
 }
 
+/// Decision 786 — the prelude enum `Target` as a program declaration of a
+/// module that loads (`compiler.load`'s `Module.target`, written
+/// `Target.<Variant>` by `comptime/load.zig`'s answer), unless the module
+/// declares a `Target` of its own: like `YieldStep`, the prelude's enum has no
+/// declaration a backend emits.
+fn withLoadTargetDecl(arena: std.mem.Allocator, prog: ast.Program) !ast.Program {
+    var loads = false;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "Target")) return prog,
+        .@"fn" => |f| if (std.mem.eql(u8, f.name, loadMod.helper_fn)) {
+            loads = true;
+        },
+        else => {},
+    };
+    if (!loads) return prog;
+    var lx = Lexer.init(load_target_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    if (decl_prog.decls.len != 1) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, 1 + prog.decls.len);
+    new_decls[0] = decl_prog.decls[0];
+    @memcpy(new_decls[1..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declaration `withLoadTargetDecl` splices: `primitives.bp`'s `Target`,
+/// private.
+const load_target_decl_src = "type Target { Node, Typescript, Erlang, Beam, Wasm }";
+
 /// The declaration `withYieldStepDecl` splices: private, like
 /// `source_location_decl_src` — per module, the variants are what matter.
 const yield_step_decl_src =
@@ -2136,6 +2166,9 @@ fn isIdentChar(c: u8) bool {
 /// type of one of those names takes the name (`infer.zig`
 /// `dropReflectionAlias`), so a decorator module that imports a user `Param`
 /// still reads `m.params` of a `@Decl` as the reflection's `Param`.
+///
+/// Decision 786 — `Target` (`primitives.bp`'s enum) is here so `compiler.bp`'s
+/// `Module(name, path, target: Target)` names it from a std module's scratch env.
 pub const decl_reflection_src =
     \\pub type __DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type __Span(start: i32, end: i32, line: i32)
@@ -2169,6 +2202,7 @@ pub const decl_reflection_src =
     \\)
     \\pub type HookCall(callee: ?Declared<unknown>, at: string)
     \\pub type Stage { Build, Run, Any }
+    \\pub type Target { Node, Typescript, Erlang, Beam, Wasm }
     \\pub type __HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool, stage: Stage)
     \\pub type __Decl(
     \\    kind: __DeclKind,
@@ -4572,7 +4606,8 @@ pub fn compileTypesOnly(
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceRecordDecl(arena_alloc, withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums, &succ.env) catch with_enums;
-                    const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
+                    const with_step0 = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
+                    const with_step = withLoadTargetDecl(arena_alloc, with_step0) catch with_step0;
                     const with_asset = withEmbedParams(arena_alloc, withAssetDecl(arena_alloc, with_step, &succ.env) catch with_step, &succ.env) catch with_step;
                     const erased = alias_erase.erase(arena_alloc, with_asset, &succ.env.typeAliases) catch with_asset;
                     break :blk_t withImportSourcesNamed(arena_alloc, withImportTypeAliasesErased(arena_alloc, erased, &succ.env) catch erased, &succ.env) catch erased;
@@ -4910,11 +4945,11 @@ fn compileOnce(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withLoadTargetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
+                ), &succ.env), &succ.env), &succ.env), &succ.env)), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {
