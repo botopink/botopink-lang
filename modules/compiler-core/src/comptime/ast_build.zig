@@ -22,6 +22,16 @@
 //!   Lambda(params, body)        `{ a, b -> body }`
 //!   Syntax(e)                   a `syntax` value's code, as written
 //!                               (decision 638; `Ctx.syntax`)
+//!   Fn(params, ret, body)       `fn(a: A) -> R { … }`, typed (decision 753)
+//!   FnParam(name, annotation)   a parameter of a `Fn`, only in `Fn.params`
+//!   Return(result)              `return result`
+//!
+//! and the type nodes (decision 753), each only where a type is written — an
+//! `FnParam`'s annotation, a `Fn`'s `ret`, inside another type node
+//! (`Builder.typeRef`): `NamedType(named)`, `ArrayType(elem)`,
+//! `TupleType(types)`, `LabeledTupleType(types, labels)`,
+//! `OptionalType(inner)`, `FnType(params, returns)`, `GenericType(name,
+//! args)`, `UnionType(members)`.
 //!
 //! A tree that is no code is refused, naming the node (`Result.ill`). Every
 //! node gets a location of its own in the expansion (`origin`'s line and
@@ -32,11 +42,12 @@
 //! keeps the caller's scope.
 const std = @import("std");
 const ast = @import("../ast.zig");
+const parserTypes = @import("../parser/types.zig");
 
 pub const Error = std.mem.Allocator.Error;
 
 /// The kinds of `compiler.Node`, each with its field set (sorted).
-pub const Kind = enum { Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax };
+pub const Kind = enum { Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType };
 
 pub const kinds = [_]struct { kind: Kind, fields: []const []const u8 }{
     .{ .kind = .Name, .fields = &.{"name"} },
@@ -51,7 +62,27 @@ pub const kinds = [_]struct { kind: Kind, fields: []const []const u8 }{
     .{ .kind = .If, .fields = &.{ "cond", "then", "otherwise" } },
     .{ .kind = .Lambda, .fields = &.{ "params", "body" } },
     .{ .kind = .Syntax, .fields = &.{"e"} },
+    .{ .kind = .Fn, .fields = &.{ "params", "ret", "body" } },
+    .{ .kind = .FnParam, .fields = &.{ "name", "annotation" } },
+    .{ .kind = .Return, .fields = &.{"result"} },
+    .{ .kind = .NamedType, .fields = &.{"named"} },
+    .{ .kind = .ArrayType, .fields = &.{"elem"} },
+    .{ .kind = .TupleType, .fields = &.{"types"} },
+    .{ .kind = .LabeledTupleType, .fields = &.{ "types", "labels" } },
+    .{ .kind = .OptionalType, .fields = &.{"inner"} },
+    .{ .kind = .FnType, .fields = &.{ "params", "returns" } },
+    .{ .kind = .GenericType, .fields = &.{ "name", "args" } },
+    .{ .kind = .UnionType, .fields = &.{"members"} },
 };
+
+/// Decision 753 — whether `k` is a type node: it stands only where a type is
+/// written (`Builder.typeRef`).
+pub fn isTypeKind(k: Kind) bool {
+    return switch (k) {
+        .NamedType, .ArrayType, .TupleType, .LabeledTupleType, .OptionalType, .FnType, .GenericType, .UnionType => true,
+        else => false,
+    };
+}
 
 /// The kind whose field set is exactly `obj`'s keys, or null.
 pub fn kindOf(obj: std.json.ObjectMap) ?Kind {
@@ -262,7 +293,79 @@ pub fn Builder(comptime Ctx: type) type {
                     try self.splices.append(self.arena, code);
                     return .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
                 },
+                .Fn => return self.function(obj, v),
+                .FnParam => return try self.refuse("`{s}` is a parameter outside a `Fn`: an `FnParam` is only an element of `Fn.params`", .{try self.describe(v)}),
+                .Return => {
+                    const loc = try self.next(v);
+                    return .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = try self.box(try self.node(obj.get("result").?)) } } };
+                },
+                .NamedType, .ArrayType, .TupleType, .LabeledTupleType, .OptionalType, .FnType, .GenericType, .UnionType => return try self.refuse("`{s}` is a type, not an expression: a type node stands where a type is written — an `FnParam`'s annotation, a `Fn`'s `ret`", .{try self.describe(v)}),
             }
+        }
+
+        /// Decision 753 — `Fn(params, ret, body)`: a typed function
+        /// expression, as the parser builds `fn(a: A) -> R { … }`.
+        fn function(self: *Self, obj: std.json.ObjectMap, v: std.json.Value) (Error || error{Ill})!ast.Expr {
+            const loc = try self.next(v);
+            const ps = obj.get("params").?;
+            if (ps != .array) return try self.refuse("`{s}`: `params` is no list of `FnParam`s", .{try self.describe(v)});
+            const names = try self.arena.alloc([]const u8, ps.array.items.len);
+            const types = try self.arena.alloc(ast.TypeRef, ps.array.items.len);
+            for (ps.array.items, 0..) |p, i| {
+                const po = try self.object(p);
+                if (po.kind != .FnParam) return try self.refuse("`{s}`: each of `Fn.params` is an `FnParam`, not `{s}`", .{ try self.describe(v), try self.describe(p) });
+                names[i] = try self.identifier(po.obj.get("name").?, p);
+                types[i] = try self.typeRef(po.obj.get("annotation").?);
+            }
+            const ret = try self.typeRef(obj.get("ret").?);
+            const bodyV = obj.get("body").?;
+            if (bodyV != .array) return try self.refuse("`{s}`: `body` is no list of nodes", .{try self.describe(v)});
+            const body = try self.arena.alloc(ast.Stmt, bodyV.array.items.len);
+            for (bodyV.array.items, 0..) |st, i| body[i] = .{ .expr = try self.node(st) };
+            return .{ .function = .{ .loc = loc, .kind = .{ .syntax = .fnExpr, .params = names, .body = body, .paramTypes = types, .returnType = ret } } };
+        }
+
+        /// Decision 753 — a type node as the type the parser reads.
+        fn typeRef(self: *Self, v: std.json.Value) (Error || error{Ill})!ast.TypeRef {
+            const o = try self.object(v);
+            const obj = o.obj;
+            if (!isTypeKind(o.kind)) return try self.refuse("`{s}` is no type node where a type is written", .{try self.describe(v)});
+            _ = try self.next(v);
+            return switch (o.kind) {
+                .NamedType => .{ .named = try self.identifier(obj.get("named").?, v) },
+                .ArrayType => .{ .array = try self.boxType(try self.typeRef(obj.get("elem").?)) },
+                .OptionalType => .{ .optional = try self.boxType(try self.typeRef(obj.get("inner").?)) },
+                .TupleType => .{ .tuple_ = try self.typeRefs(obj.get("types").?, v) },
+                .LabeledTupleType => blk: {
+                    const elems = try self.typeRefs(obj.get("types").?, v);
+                    const ls = obj.get("labels").?;
+                    if (ls != .array or ls.array.items.len != elems.len) return try self.refuse("`{s}`: one label per type", .{try self.describe(v)});
+                    const labels = try self.arena.alloc([]const u8, elems.len);
+                    for (ls.array.items, 0..) |l, i| labels[i] = try self.identifier(l, v);
+                    break :blk .{ .labeledTuple = .{ .elems = elems, .labels = labels } };
+                },
+                .FnType => .{ .function = .{ .params = try self.typeRefs(obj.get("params").?, v), .returnType = try self.boxType(try self.typeRef(obj.get("returns").?)) } },
+                .GenericType => blk: {
+                    const name = try self.identifier(obj.get("name").?, v);
+                    const prelude = parserTypes.isPreludeWrapperName(name);
+                    break :blk .{ .generic = .{ .name = name, .args = try self.typeRefs(obj.get("args").?, v), .is_builtin = prelude, .bare = prelude } };
+                },
+                .UnionType => .{ .generic = .{ .name = ast.union_type_name, .args = try self.typeRefs(obj.get("members").?, v), .is_builtin = false } },
+                else => unreachable,
+            };
+        }
+
+        fn typeRefs(self: *Self, list: std.json.Value, owner: std.json.Value) (Error || error{Ill})![]ast.TypeRef {
+            if (list != .array) return try self.refuse("`{s}` holds no list of type nodes", .{try self.describe(owner)});
+            const out = try self.arena.alloc(ast.TypeRef, list.array.items.len);
+            for (list.array.items, 0..) |item, i| out[i] = try self.typeRef(item);
+            return out;
+        }
+
+        fn boxType(self: *Self, t: ast.TypeRef) Error!*ast.TypeRef {
+            const p = try self.arena.create(ast.TypeRef);
+            p.* = t;
+            return p;
         }
 
         fn call(self: *Self, obj: std.json.ObjectMap, v: std.json.Value) (Error || error{Ill})!ast.Expr {

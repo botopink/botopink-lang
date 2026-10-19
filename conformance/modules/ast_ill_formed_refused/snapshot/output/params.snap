@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: ast-ill-formed: `FnParam(name: "n", annotation: …)` is a parameter outside a `Fn`: an `FnParam` is only an element of `Fn.params`
+at src/params.bp:4:21

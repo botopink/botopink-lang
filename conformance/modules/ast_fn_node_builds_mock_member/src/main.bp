@@ -1,0 +1,88 @@
+//// Decision 753 — `Fn(params, ret, body)` is a typed function: each
+//// parameter an `FnParam` whose annotation is a type node, `ret` a type
+//// node, `body` its statements. `member` builds the shape 644's mock adds to
+//// a type: `fn(mock: Greeter, name: string) -> string { return invoke(…); }`.
+//// `shape` writes a parameter of each type node: an array, an optional, a
+//// tuple, a function type, a prelude wrapper's generic, a union, and a
+//// labelled tuple for its answer.
+
+import {
+    compiler,
+    compiler.ArrayType,
+    compiler.Call,
+    compiler.Fn,
+    compiler.FnParam,
+    compiler.FnType,
+    compiler.GenericType,
+    compiler.LabeledTupleType,
+    compiler.List,
+    compiler.Lit,
+    compiler.Member,
+    compiler.Name,
+    compiler.NamedType,
+    compiler.OptionalType,
+    compiler.Return,
+    compiler.Tuple,
+    compiler.TupleType,
+    compiler.UnionType,
+    io.terminal.print,
+} from "std";
+
+type Greeter(id: string)
+
+fn invoke(id: string, method: string, args: string[], fallback: string) -> string {
+    return id + "." + method + "(" + args.join(", ") + ") or " + fallback;
+}
+
+fn member(syntax q: string) -> anyvalue {
+    val method = compiler.text(q);
+    return compiler.ast(Fn(
+        params: [
+            FnParam(name: "mock", annotation: NamedType("Greeter")),
+            FnParam(name: "name", annotation: NamedType("string")),
+        ],
+        ret: NamedType("string"),
+        body: [
+            Return(Call(callee: Name("invoke"), args: [
+                Member(target: Name("mock"), member: "id"),
+                Lit(method),
+                List([Name("name")]),
+                Lit("?"),
+            ])),
+        ],
+    ));
+}
+
+fn shape(syntax q: string) -> anyvalue {
+    val i32Type = NamedType("i32");
+    val stringType = NamedType("string");
+    return compiler.ast(Fn(
+        params: [
+            FnParam(name: "xs", annotation: ArrayType(i32Type)),
+            FnParam(name: "pick", annotation: OptionalType(stringType)),
+            FnParam(name: "pair", annotation: TupleType([i32Type, i32Type])),
+            FnParam(name: "f", annotation: FnType(params: [i32Type], returns: i32Type)),
+            FnParam(name: "r", annotation: GenericType(name: "Result", args: [i32Type, stringType])),
+            FnParam(name: "u", annotation: UnionType([i32Type, stringType])),
+        ],
+        ret: LabeledTupleType(types: [i32Type, i32Type], labels: ["n", "m"]),
+        body: [
+            Return(Tuple([
+                Call(callee: Name("f"), args: [Call(callee: Member(target: Name("xs"), member: "length"), args: [])]),
+                Lit(compiler.text(q).length()),
+            ])),
+        ],
+    ));
+}
+
+fn one() -> Result<i32, string> {
+    return 1;
+}
+
+pub fn main() {
+    val greet = member @`greet`;
+    print(greet(Greeter(id: "g1"), "ana"));
+    val run = shape @`built`;
+    val out = run([1, 2, 3], null, #(1, 2), { x -> x * 10 }, one(), 2);
+    print(out.n.toString() + " " + out.m.toString());
+}

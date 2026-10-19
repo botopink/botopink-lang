@@ -2,4 +2,5 @@
 > naming the node (`ast-ill-formed`): a record that is no `Node`, an `Arg`
 > outside a `Call`, a `Lit` holding a `syntax` value, a name that is no
 > identifier, an operator the language has not, and a `Name` nothing binds
-> where the tree is spliced.
+> where the tree is spliced. Decision 753: a type node is no expression, and
+> an `FnParam` is only an element of `Fn.params`.

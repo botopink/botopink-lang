@@ -2387,6 +2387,24 @@ pub const Env = struct {
         return self.valNames.contains(name);
     }
 
+    /// Decision 753 — a `type` a std module declares as a member of a union
+    /// alias this module has registered (`compiler.Node`'s `Fn`), with its
+    /// number of type parameters: the alias names it, and a prelude value of
+    /// the same name (`DeclKind.Fn`) does not make it a value. Null for any
+    /// other name.
+    fn stdAliasMemberArity(self: *const Env, name: []const u8) ?usize {
+        var it = self.stdModuleTypes.valueIterator();
+        while (it.next()) |decls| for (decls.*) |d| {
+            if (d != .type_ or !std.mem.eql(u8, d.type_.name, name)) continue;
+            for (decls.*) |a| {
+                if (a != .typeAlias or !self.typeAliases.contains(a.typeAlias.name)) continue;
+                const members = a.typeAlias.target.unionMembers() orelse continue;
+                for (members) |m| if (m == .named and std.mem.eql(u8, m.named, name)) return d.type_.genericParams.len;
+            }
+        };
+        return null;
+    }
+
     pub fn lookupTypeDef(self: *const Env, name: []const u8) ?TypeDef {
         return self.typeDefs.get(name);
     }
@@ -2773,7 +2791,7 @@ pub const Env = struct {
             // unit variant of a builtin enum (`DeclKind.Element`,
             // `DeclKind.Field`) — read in its own declaration before it is
             // registered (`type Element(children: Element[])`): the type.
-            if (self.ownTypeDecls.get(name)) |arity| {
+            if (self.ownTypeDecls.get(name) orelse self.stdAliasMemberArity(name)) |arity| {
                 if (arity == 0) return self.namedType(name);
                 const args = try self.arena.alloc(*T.Type, arity);
                 for (args) |*a| a.* = try self.freshVar();
