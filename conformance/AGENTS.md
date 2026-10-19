@@ -1210,7 +1210,9 @@ Decision 716 (144 B-137) makes the `syntax decl` parameter's declared type the c
 (`unknown` gives no member, refused at the decorator), `modules/decl_behavior_contract_refused` (refused at the annotation),
 `modules/decl_behavior_member_typed`, `modules/member_decl_as_code`; the `init_executor_handle_*` cells write
 `syntax decl: fn() -> string` (or the behavior `Service`), and `_mistyped` / `_on_type_as_value` are refused at the
-annotation by the contract.
+annotation by the contract. Decision 759 names the refusal of a body local whose value is no literal, read in a member or an executor,
+`decorator-member-local-not-literal` (`modules/decorator_member_local_not_literal`); the wrapper's `decorator-member-captures`
+goes with the wrapper (B-139).
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
 position — `modules/fn_expr_typed`, its refusal anywhere but `decl.addMember`, is gone — and adds

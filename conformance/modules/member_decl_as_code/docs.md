@@ -13,8 +13,9 @@ The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 > `Signup`, written `Self`). The handle `decl` is the annotated type as code in
 > the member, as in an executor (decision 716 (3)): `decl.title()` in a member of
 > `#[named]` over `syntax decl: Titled` is `Signup.title()`. A body local whose value
-> is no literal is refused (`decorator-member-captures`; its name is question
-> b137-k), while a `compiler.*` call inside a member
+> is no literal, read in a member or an executor, is refused at the read, naming
+> the local (`decorator-member-local-not-literal`, decision 759), while a
+> `compiler.*` call inside a member
 > is evaluated at build and spliced as its answer (decision 642; cell
 > `member_reads_compiler_name`), `compiler.name(x)` over the member's own parameter
 > `x` answering `"x"` (`member_names_its_parameter`), `compiler.text(x + 1)` its source as written

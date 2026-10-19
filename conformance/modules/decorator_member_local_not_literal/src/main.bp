@@ -1,0 +1,22 @@
+//// Decision 759 — only literals enter a tree (575 (4)): a member reading
+//// `box`, a local of the decorator's body holding a record, is refused
+//// `decorator-member-local-not-literal` at the read, naming the local; the
+//// annotation is its `called from` line.
+
+import {compiler, io.terminal.print} from "std";
+
+type Box(n: i32)
+
+fn boxed(syntax decl: unknown) {
+    val box = Box(n: 1);
+    compiler.addMember("size", fn() -> i32 {
+        return box.n;
+    });
+}
+
+#[boxed]
+pub type Users()
+
+pub fn main() {
+    print(Users.size());
+}

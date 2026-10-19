@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: decorator-member-local-not-literal: `#[boxed]`'s member `size` reads `box`, a local of the decorator's body whose value is no literal
+at src/main.bp:13:16
+from src/main.bp:17:3
