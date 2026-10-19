@@ -2593,25 +2593,8 @@ test "asserts: errorText answers the empty string for Ok" {
       )
     )
     local.get $a
-    ref.is_null
     local.get $b
-    ref.is_null
-    i32.or
-    (if
-      (then
-    local.get $a
-    ref.is_null
-    local.get $b
-    ref.is_null
-    i32.and
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null eq)
-    local.get $b
-    ref.cast (ref null eq)
-    ref.eq
+    call $__unk_eq_ref
   )
   (func $__arr_indexOfEq_any (param $xs (ref null $arr_any)) (param $x anyref) (result i32)
     (local $n i32)
@@ -3531,6 +3514,21 @@ import {testing.asserts} from "std";
     (call $main)
     drop
   )
+  (func $__f64_eq (param $a f64) (param $b f64) (result i32)
+    local.get $a
+    local.get $a
+    f64.ne
+    local.get $b
+    local.get $b
+    f64.ne
+    i32.and ;; both NaN
+    local.get $a
+    i64.reinterpret_f64
+    local.get $b
+    i64.reinterpret_f64
+    i64.eq ;; the same bits
+    i32.or
+  )
   (func $__unk_is_num (param $v anyref) (result i32)
     local.get $v
     ref.is_null
@@ -3565,6 +3563,74 @@ import {testing.asserts} from "std";
     local.get $v
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
+  )
+  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    call $__unk_is_num
+    local.get $b
+    call $__unk_is_num
+    i32.and
+    (if
+      (then
+    local.get $a
+    call $__unk_as_f64
+    local.get $b
+    call $__unk_as_f64
+    f64.eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $str)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $str)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $str)
+    local.get $b
+    ref.cast (ref null $str)
+    call $__str_eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_bool)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $box_bool)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.get $b
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    i32.eq
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
   )
   (func $__unk_same (param $a anyref) (param $b anyref) (result i32)
     local.get $a
@@ -3631,25 +3697,8 @@ import {testing.asserts} from "std";
       )
     )
     local.get $a
-    ref.is_null
     local.get $b
-    ref.is_null
-    i32.or
-    (if
-      (then
-    local.get $a
-    ref.is_null
-    local.get $b
-    ref.is_null
-    i32.and
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null eq)
-    local.get $b
-    ref.cast (ref null eq)
-    ref.eq
+    call $__unk_eq_ref
   )
   (func $__arr_indexOfEq_any (param $xs (ref null $arr_any)) (param $x anyref) (result i32)
     (local $n i32)
@@ -3845,6 +3894,275 @@ import {testing.asserts} from "std";
     )
     )
     i32.const -1
+  )
+  (func $__unk_eq_s1 (param $a (ref null $result)) (param $b (ref null $result)) (result i32)
+    local.get $a
+    struct.get $result $tag
+    local.get $b
+    struct.get $result $tag
+    i32.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    struct.get $result $payload
+    local.get $b
+    struct.get $result $payload
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_arr_any (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_any
+    local.get $b
+    local.get $i
+    array.get $arr_any
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_arr_i32 (param $a (ref null $arr_i32)) (param $b (ref null $arr_i32)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_i32
+    local.get $b
+    local.get $i
+    array.get $arr_i32
+    i32.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_arr_f64 (param $a (ref null $arr_f64)) (param $b (ref null $arr_f64)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_f64
+    local.get $b
+    local.get $i
+    array.get $arr_f64
+    call $__f64_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $result)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $result)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $result)
+    local.get $b
+    ref.cast (ref null $result)
+    call $__unk_eq_s1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_any)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_any)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_any)
+    local.get $b
+    ref.cast (ref null $arr_any)
+    call $__unk_eq_arr_any
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_i32)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_i32)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_i32)
+    local.get $b
+    ref.cast (ref null $arr_i32)
+    call $__unk_eq_arr_i32
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_f64)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_f64)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_f64)
+    local.get $b
+    ref.cast (ref null $arr_f64)
+    call $__unk_eq_arr_f64
+    return
+      )
+    )
+    i32.const 0
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

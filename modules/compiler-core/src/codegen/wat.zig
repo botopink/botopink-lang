@@ -6563,16 +6563,18 @@ const Emitter = struct {
         return self.gcUnkEqBy("__unk_eq", true);
     }
 
-    /// Front 164 s2 — `__unk_same(a, b)`: `$__unk_eq`'s numbers, strings and
-    /// bools by value, any other reference by identity — what `indexOf`,
-    /// `lastIndexOf` and `contains` compare a generic element by, as the
-    /// linear lowering's word compare and commonJS's `indexOf` do.
+    /// Front 164 s2 — `__unk_same(a, b)`: what `indexOf`, `lastIndexOf` and
+    /// `contains` compare a generic element by: `==`, so numbers, strings and
+    /// bools by value and any other reference by structure (decision 210).
     fn gcUnkSame(self: *Emitter) anyerror![]const u8 {
-        return self.gcUnkEqBy("__unk_same", false);
+        return self.gcUnkEqBy("__unk_same", true);
     }
 
     fn gcUnkEqBy(self: *Emitter, name: []const u8, structural: bool) anyerror![]const u8 {
         if (!try self.gcHelperOnce(name)) return name;
+        // `$__unk_eq_ref` compares its parts by `$__unk_eq`, so a structural
+        // `$__unk_same` needs that helper emitted too, before this one's capture opens.
+        if (structural and !std.mem.eql(u8, name, "__unk_eq")) _ = try self.gcUnkEq();
         const num = try self.gcUnkIsNum();
         const asf = try self.gcUnkAsNum(true);
         const bb = self.gcBoxVt(.bool);
@@ -7786,11 +7788,15 @@ const Emitter = struct {
             try self.lowerCoerced(recv, ar);
             if (cls == .any and !er.isStr()) {
                 // Front 164 s2 — any other element (a record, a tuple, a
-                // value in a type-parameter slot): a number, a string or a
-                // bool by value, any other reference by identity
-                // (`$__unk_same`), the linear lowering's answer.
-                try self.lowerCoerced(callArg(cc, 0).?, er);
-                try self.gcBox(er);
+                // value in a type-parameter slot): `==`, a number, a string or a
+                // bool by value, any other reference by structure
+                // (`$__unk_same`, decision 210).
+                // The item's own reference repr when the element shape print
+                // gave a word (an enum with payloads prints as `E`).
+                const needle = callArg(cc, 0).?;
+                const ir: Repr = if (er.isRef()) er else if (self.wasmTypeOf(needle).isRef()) self.wasmTypeOf(needle) else er;
+                try self.lowerCoerced(needle, ir);
+                try self.gcBox(ir);
                 try self.emit(.{ .call = try self.gcArrOp(if (last) "lastIndexOfEq" else "indexOfEq", cls) });
             } else {
                 try self.lowerCoerced(callArg(cc, 0).?, if (cls == .any) Repr.string else er);

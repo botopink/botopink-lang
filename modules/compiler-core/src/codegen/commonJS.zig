@@ -3671,14 +3671,26 @@ const Emitter = struct {
                 // §F1-commonJS of `prim-op-template-instance-methods` —
                 // the 1-arg form has module="" + symbol=<template>, so this
                 // case takes precedence over the §A4 native-prototype skip.
-                if (primOpTemplate.looksLikeTemplate(ref)) {
+                // Decision 210 — `indexOf` / `lastIndexOf` over an array compare
+                // by `==`, structural, not by the native identity: the prototype
+                // is patched with a `__bp_eq` search while the std declaration
+                // stays the bare host name (erlang and beam read that same
+                // declaration, so a template there would change their output).
+                const search: ?[]const u8 = if (std.mem.eql(u8, owner, "Array") and m.params.len == 2) blk: {
+                    if (std.mem.eql(u8, m.name, "indexOf")) break :blk primOpTemplate.receiver_marker ++ ".findIndex((__e) => __bp_eq(__e, $0, 0))";
+                    if (std.mem.eql(u8, m.name, "lastIndexOf")) break :blk primOpTemplate.receiver_marker ++ ".findLastIndex((__e) => __bp_eq(__e, $0, 0))";
+                    break :blk null;
+                } else null;
+                if (search != null) _ = self.helper(.structural_eq);
+                if (search != null or primOpTemplate.looksLikeTemplate(ref)) {
+                    const template_text = search orelse ref;
                     var holes = MethodHoles{ .params = m.params[1..], .boxed_recv = boxed };
                     var tmpl = HostTemplate(MethodHoles){
                         .arena = self.arena(),
                         .holes = &holes,
                         .argc = m.params.len - 1,
                     };
-                    try primOpTemplate.render(ref, &tmpl);
+                    try primOpTemplate.render(template_text, &tmpl);
                     try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
                         .params = try self.buildParams(m.params[1..]),
                         .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try tmpl.finish() }}), .layout = .spaced },
