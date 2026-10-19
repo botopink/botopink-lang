@@ -470,11 +470,14 @@ def add_globs(conf, drop_star):
     f = conf / "modules" / "botopink.json"
     d = json.loads(f.read_text())
     ws = d.setdefault("workspaces", [])
+    before = list(ws)
     for g in ("*/cases/*", "decisions-taken/*/cases/*"):
         if g not in ws:
             ws.append(g)
     if drop_star and "*" in ws:
         ws.remove("*")
+    if ws == before:
+        return
     rest = {k: v for k, v in d.items() if k != "workspaces"}
     lines = ["{"] + [f"  {json.dumps(k)}: {json.dumps(v)}," for k, v in rest.items()]
     lines.append(f'  "workspaces": [{", ".join(json.dumps(w) for w in ws)}]')
@@ -491,9 +494,8 @@ def cmd_groups(args):
     return 0
 
 
-def apply_group(root, rows, group, lo, hi, dry):
+def apply_group(root, rows, result, group, lo, hi, dry):
     conf = root / "conformance"
-    result = plan(rows, conf / "modules")
     todo = [r for r in result if r["old"] != r["new"]
             and (group is None or group_of(r) == group)
             and (lo is None or (r["home"] is not None and lo <= r["home"] <= hi))]
@@ -511,7 +513,9 @@ def apply_group(root, rows, group, lo, hi, dry):
             (conf / r["new"]).parent.mkdir(parents=True, exist_ok=True)
             git(conf, "mv", r["old"], r["new"])
     changed = rewrite_refs(root, {r["cell"]: r["new"] for r in todo}) if todo else []
-    write_docs(conf, rows, plan(rows, conf / "modules"))
+    for r in todo:
+        r["old"] = r["new"]
+    write_docs(conf, rows, result)
     git(root, "add", "-A", "conformance", ":!conformance/modules/INDEX.md", ":!conformance/modules/INDEX.ambiguous", *changed)
     return todo, changed
 
@@ -520,13 +524,14 @@ def cmd_apply(args):
     root = Path(args.root)
     rows = load_ledger(root / "decisions-taken.md")
     conf = root / "conformance"
-    groups = group_order(plan(rows, conf / "modules")) if args.all else [args.group] if args.group else []
+    result = plan(rows, conf / "modules")
+    groups = group_order(result) if args.all else [args.group] if args.group else []
     lo = hi = None
     if args.range:
         lo, hi = (int(x) for x in args.range.split("-"))
     total = 0
     for g in groups:
-        todo, changed = apply_group(root, rows, g, lo, hi, args.dry_run)
+        todo, changed = apply_group(root, rows, result, g, lo, hi, args.dry_run)
         total += len(todo)
         print(f"{g}: {len(todo)} cells, {len(changed)} files rewritten")
     if not args.dry_run and (groups or args.drop_star):
