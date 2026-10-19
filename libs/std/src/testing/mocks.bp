@@ -130,7 +130,7 @@ pub declare fn thenThrowCell(msg: string) -> i32;
 // across parameters — all of them, or none.
 //
 // These three are MATCHERS, not assertions: they push and return, they never
-// answer a `@Result`. They stay here rather than joining `std/asserts`
+// answer a `Result`. They stay here rather than joining `std/asserts`
 // (`onze-migration.md` § Where the assertion surface goes — the old library
 // exported no assertion at all).
 
@@ -457,11 +457,11 @@ test "mocks: anyString() matches any argument" {
 // (`onze-migration.md` § Language gaps holds the proposed surfaces):
 //
 // LIMITATION: a `thenThrow` stub matched at run time raises a HOST throw from
-// `invoke`. botopink's `try … catch …` only unwraps an `@Result` produced by a
-// `-> @Result` fn — it does not catch a host throw from a plain (non-effect)
+// `invoke`. botopink's `try … catch …` only unwraps an `Result` produced by a
+// `-> Result` fn — it does not catch a host throw from a plain (non-effect)
 // method call, so `try svc.name(0) catch …` does not compile: the callee is not
-// `-> @Result`. Modelling the throw as an effect (the synthesized method
-// answering `@Result<R, string>`) is a design change, not a port. The covered
+// `-> Result`. Modelling the throw as an effect (the synthesized method
+// answering `Result<R, string>`) is a design change, not a port. The covered
 // surface is what the test above asserts: a matched `thenThrow` raises, and a
 // non-matching call answers the default. A caller that must observe the raise
 // uses `asserts.throws` from its own module, where `std/asserts` is importable.

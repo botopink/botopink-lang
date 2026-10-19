@@ -1,5 +1,5 @@
-//// Decision 452 — an `@External.Erlang` cell beside a `fn:` cell is ignored
-//// at build: `tidy`'s `@External.Wasm(fn: tidyBody)` cell serves the comptime
+//// Decision 452 — an `compiler.external(.Erlang)` cell beside a `fn:` cell is ignored
+//// at build: `tidy`'s `compiler.external(.Wasm)(fn: tidyBody)` cell serves the comptime
 //// call, so the decorator emits `tidyBody`'s answer on the four targets (the
 //// Erlang cell binds the erlang and beam targets alone, and is never run by
 //// the compiler).

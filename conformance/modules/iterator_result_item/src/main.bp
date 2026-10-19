@@ -1,7 +1,7 @@
 //// Decisions 121 and 122 of 1.0.10-beta (front 24, § Cells "Iterators", second
-//// line; guide.md § 5.2) — the iterator does not fail; each `@Result<U, E>`
+//// line; guide.md § 5.2) — the iterator does not fail; each `Result<U, E>`
 //// ITEM may be an error, and the body gains sugar: `yield v` with `v: U` emits
-//// `Ok(v)`, with `v: @Result<U, E>` emits it as is (and CONTINUES); `throw e`
+//// `Ok(v)`, with `v: Result<U, E>` emits it as is (and CONTINUES); `throw e`
 //// emits `Error(e)` and ends; a `try x` that fails emits `Error(e)` and ends.
 //// The consumer's `for` stops after the last item — the `Done` that follows the
 //// `Error` — and prints `done`. `test/yield_step_next.bp` reads the `Done` by

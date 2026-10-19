@@ -1,7 +1,7 @@
 //// Decision 432 — an `async { }` block that throws is a failing task, and it
 //// reads back as `Error(e)` at its `await` wherever the block sits: in a
 //// lambda, in a nested function, in a method, or in a lambda inside a
-//// method. The block is not the body of a function declared `-> @Task<…>`,
+//// method. The block is not the body of a function declared `-> Async<…>`,
 //// so its failure comes from the block itself. The beam target answered `ok`
 //// for the lambda's task, because the block's `throw` left the lambda as a
 //// bare Erlang `throw`.

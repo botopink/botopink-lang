@@ -1,5 +1,5 @@
 //// Decision 105 — `iter loop { … }` is an expression worth
-//// `@Iterator<T>`: the body is a generator scope, `yield v` emits and
+//// `Iter<T>`: the body is a generator scope, `yield v` emits and
 //// continues, `break v` emits and ends, and the captured `var` is generator
 //// state. A `for` over it binds `T` in any body.
 

@@ -1,6 +1,6 @@
 //// Decision 431 (3) — std's `failure.attempt` contains a crash: `Ok` of the
 //// body's value, or `Error(Failure(message, kind))` for a raise it caught.
-//// A `@panic` is `panic` (decision 492), its message the text the program
+//// A `panic` is `panic` (decision 492), its message the text the program
 //// wrote. After a contained crash the program goes on.
 ////
 //// On wasm (decision 518) `attempt` runs the thunk under wasm exception

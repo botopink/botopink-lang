@@ -1,4 +1,4 @@
-//// A bare `return;` inside an `if` block of a `@Task<void>` body leaves the
+//// A bare `return;` inside an `if` block of a `Async<void>` body leaves the
 //// function: nothing after the block runs. The same one level deeper, and
 //// in the `else` branch.
 ////

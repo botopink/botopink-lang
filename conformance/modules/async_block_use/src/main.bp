@@ -1,6 +1,6 @@
 //// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`") — the block is
 //// closed: its body starts a new capability context, like a closure, so inside
-//// a `@Component` function an `async { }` may not `use`. Refused at the `use`
+//// a `Component` function an `async { }` may not `use`. Refused at the `use`
 //// with the code a closure's `use` gets (`reject/use_in_closure.bp`).
 
 type Element(count: i32) implement Renderable

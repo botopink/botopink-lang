@@ -1,7 +1,7 @@
-//// A `-> @Result` `default fn` of a behavior wraps its `return` and its
+//// A `-> Result` `default fn` of a behavior wraps its `return` and its
 //// `throw` like any fallible method (both used to reach the backends
 //// unwrapped), and a call of the adopted default on an implementer answers
-//// the declared `@Result` (it was an unknown type, so `.isOk()` found no
+//// the declared `Result` (it was an unknown type, so `.isOk()` found no
 //// lowering). A `test/` cell: beam answers `{unresolved_method, …}` for any
 //// adopted `default fn` (`03-beam`'s row).
 
@@ -21,11 +21,11 @@ type Sq(s: i32) implement Shape {
     }
 }
 
-test "a default fn returning @Result wraps its return" {
+test "a default fn returning Result wraps its return" {
     assert Sq(s: 2).checked().isOk();
     assert Sq(s: 3).checked().unwrapOr(0) == 9;
 }
 
-test "a default fn returning @Result wraps its throw" {
+test "a default fn returning Result wraps its throw" {
     assert Sq(s: 5).checked().isError();
 }

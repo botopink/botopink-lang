@@ -4,24 +4,24 @@ type User(id: i32, name: string)
 
 fn fetchUser(id: i32) -> Task<Result<User, string>> {
     if (id <= 0)
-        throw "no user " + id.toString(); // legal: the value is a @Result
+        throw "no user " + id.toString(); // legal: the value is a Result
     return User(id: id, name: "ana"); // a Task holding Ok(…)
 }
 
 fn greetingFor(id: i32) -> Task<Result<string, string>> {
     val u = try await fetchUser(
         id,
-    ); // await answers the @Result; try propagates it
+    ); // await answers the Result; try propagates it
     return "Hello, " + u.name;
 }
 
 fn greetingOrGuest(id: i32) -> Task<string> {
     val u = try await fetchUser(id) catch User(id: 0, name: "guest");
-    return "Hello, " + u.name; // no @Result in the return: handled here
+    return "Hello, " + u.name; // no Result in the return: handled here
 }
 
 fn describeUser(id: i32) -> Task<string> {
-    val r = await fetchUser(id); // the @Result itself
+    val r = await fetchUser(id); // the Result itself
     return case r {
         Ok(u) -> u.name;
         Error(e) -> "error: " + e;

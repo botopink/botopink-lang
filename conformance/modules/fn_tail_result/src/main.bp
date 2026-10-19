@@ -1,4 +1,4 @@
-//// Decision 409 — in a function answering `@Result<T, E>` the tail is the `T`
+//// Decision 409 — in a function answering `Result<T, E>` the tail is the `T`
 //// it answers, as `return value;` is: after a `throw` that did not run and
 //// after a `try` that did not fail.
 

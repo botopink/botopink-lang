@@ -1,4 +1,4 @@
-//// Decision 540 (3) — `chunks(size)` and `lines()` are `@Stream<@Result<…, FsError>>`: the rest of
+//// Decision 540 (3) — `chunks(size)` and `lines()` are `AsyncIter<Result<…, FsError>>`: the rest of
 //// the file in pieces of at most `size` bytes (65536 by default), or line by line with `\n` and
 //// `\r\n` stripped — an empty line is a line, a last line with no terminator is one, an empty
 //// file has none. A line that is not UTF-8 ends the stream with `InvalidUtf8` (the item is

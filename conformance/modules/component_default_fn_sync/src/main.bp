@@ -1,5 +1,5 @@
 //// Decision 375 (2), question 04s12-a's answer (1) — a behavior's `default
-//// fn` and an enum's method answering `@Component<R>` are marked by their own
+//// fn` and an enum's method answering `Component<R>` are marked by their own
 //// bodies, as a top-level function and a type's method are: `Widget.badge`
 //// awaits nothing, so its lambda answers its `Rendered` at once and `Plain`,
 //// which renders it, is synchronous; `Widget.later` awaits, and so is `Slow`;

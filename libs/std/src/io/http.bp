@@ -8,13 +8,13 @@
 ////              (`httpc:request/4`; requires `inets:start()` and,
 ////               for https URLs, `ssl:start()`).
 ////
-//// `fetch(req: Request) -> @Task<@Result<Response, HttpError>>` is the one
+//// `fetch(req: Request) -> Async<Result<Response, HttpError>>` is the one
 //// surface (decision 623; `fetch(url)` is gone): `Request(method, url,
 //// headers = [], body = null)` — a short GET is
 //// `fetch(Request(method: .Get, url: u))` — and a failure is a variant of
 //// `HttpError` (`NotAllowedOnHost`, `Network(message)`, `Timeout`), matched
 //// by variant. Decision 432: the task that fails with the error — `await`
-//// answers the `@Result`, so the caller writes `try await http.fetch(req)`
+//// answers the `Result`, so the caller writes `try await http.fetch(req)`
 //// to propagate it. It maps the host binding `fetchHost` (`result: true`,
 //// decisions 431, 490) to the `HttpError` of its `HostError` (decision 486):
 //// the node template's rejected `fetch` is `Error(HostError(…))` and a
@@ -25,7 +25,7 @@
 //// that names a timeout is `Timeout`, any other is `Network(message)`;
 //// `NotAllowedOnHost` is what a host that does not allow the request answers
 //// (the wasm `wasi:http` adapter, decisions 334, 393). Erlang is eager:
-//// `@Task<T>` is `T` there, so the caller's `await` is identity on that
+//// `Async<T>` is `T` there, so the caller's `await` is identity on that
 //// backend. An HTTP error status (404, 500) is a RESPONSE, not a failure: it
 //// is `Ok` with its `status`.
 ////
@@ -139,7 +139,7 @@ pub fn fetch(req: Request) -> Task<Result<Response, HttpError>> {
 // which pin `declare fn` with `#[external(.<Target>(…))]` as accepted.
 //
 // A compile-only smoke fixture lives below to ensure callers can
-// `try await fetch(req)` from a `-> @Task<@Result<…>>` body without the type
+// `try await fetch(req)` from a `-> Async<Result<…>>` body without the type
 // checker tripping on the eager `Response` payload. The body is not executed
 // at test time (its `await` would issue a network call), but the fixture
 // type-checks at compile time.

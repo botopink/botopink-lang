@@ -1,7 +1,7 @@
 //// std/erlang — auto-imported Erlang BIF catalog (shadow-detection
 //// metadata, also callable when explicitly imported).
 ////
-//// Each decl uses `@External.Erlang("erlang", "<symbol>")`. The erlang
+//// Each decl uses `compiler.external(.Erlang)("erlang", "<symbol>")`. The erlang
 //// codegen (`codegen/erlang.zig`) walks this module via the std
 //// `pkg_modules` table, extracts the (symbol, arity) pairs from every
 //// annotation whose first arg is `"erlang"`, and emits
@@ -21,7 +21,7 @@
 //// can't be shadowed by camelCase user fns; they live as primitive
 //// methods on `primitives.bp` and don't need a shadow entry here.
 ////
-//// Adding a BIF: add one `#[@External.Erlang("erlang", "<name>")] pub
+//// Adding a BIF: add one `#[compiler.external(.Erlang("erlang", "<name>"))] pub
 //// declare fn <camelCase>(…) -> unknown;`. Symbol + param count drive the
 //// shadow entry — name in botopink is doc-only for callers.
 

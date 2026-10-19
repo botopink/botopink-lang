@@ -1,5 +1,5 @@
 //// Decision 253 — the program's catalogue is the static method `all` of the
-//// builtin type `TypeInfo`: `@typeInfo.all(…)` is refused where it is
+//// builtin type `TypeInfo`: `compiler.typeInfo.all(…)` is refused where it is
 //// written, naming `@TypeInfo.all`.
 
 import {io.terminal.print} from "std";

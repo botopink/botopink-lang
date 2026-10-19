@@ -1,7 +1,7 @@
 //// Decisions 431 (2), 489, 490 — a binding that writes `result: true` answers
-//// `@Result<T, HostError>`: a value is `Ok(v)`, and every way the host fails is
+//// `Result<T, HostError>`: a value is `Ok(v)`, and every way the host fails is
 //// `Error(HostError(message, "host", name, detail))`. On commonJS a sync
-//// binding runs in a `try`/`catch` and a `@Task` one's rejection is caught;
+//// binding runs in a `try`/`catch` and a `Async` one's rejection is caught;
 //// on erlang and beam the call runs in a `try … catch Class:Reason`, and a
 //// host that answers `{error, R}` is an `Error` too. `name` is the same on
 //// every target: a JavaScript `Error` and an erlang `error` raise are

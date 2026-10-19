@@ -11,7 +11,7 @@ fn ports(xs: i32[]) -> Iterator<Result<i32, string>> {
     } // a failed `try` emits Error(e) and ends
 }
 
-// stop at the first error: an explicit try, under a @Result return
+// stop at the first error: an explicit try, under a Result return
 fn sumPorts(xs: i32[]) -> Result<i32, string> {
     var total = 0;
     for (ports(xs)) { r ->

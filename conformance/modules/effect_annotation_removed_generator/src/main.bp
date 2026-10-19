@@ -1,6 +1,6 @@
 //// Decisions 118, 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
 //// guide.md § 9, row `#[@generator]` + `@Generator<T>`) — `#[@generator]` is
-//// refused at the annotation over the new `@Iterator<T>` return, which is all
+//// refused at the annotation over the new `Iter<T>` return, which is all
 //// an iterator needs. The new form is `run/iterator_fibonacci.bp`.
 
 import {io.terminal.print} from "std";

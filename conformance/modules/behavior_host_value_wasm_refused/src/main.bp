@@ -1,7 +1,7 @@
 //// A method called on a `behavior` no type of the program implements is
 //// answered by a value the host builds. The wasm backend has nothing to call
 //// when the `declare fn` that builds the value carries no
-//// `#[@External.Wasm(…)]` cell, and says so: the missing host binding is the
+//// `#[compiler.external(.Wasm(…))]` cell, and says so: the missing host binding is the
 //// refusal, not an unresolved call.
 
 import {compiler, io.terminal.print} from "std";

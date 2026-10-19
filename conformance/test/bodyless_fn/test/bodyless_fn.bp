@@ -9,7 +9,7 @@
 
 import {compiler} from "std";
 
-// wasm refuses this suite on a host binding: `hostMin` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+// wasm refuses this suite on a host binding: `hostMin` has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[compiler.external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
 declare fn hostMin(a: i32, b: i32) -> i32;

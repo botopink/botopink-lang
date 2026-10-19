@@ -1,4 +1,4 @@
-//// Decision 8 §9 — `#[@result]` plus `-> @Result<T, E>`: inside the fn a bare
+//// Decision 8 §9 — `#[@result]` plus `-> Result<T, E>`: inside the fn a bare
 //// `return` is the success value and `throw` is the error; `catch` unwraps with
 //// a fallback and `try` propagates.
 

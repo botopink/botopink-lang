@@ -1,5 +1,5 @@
 //// Decision 277 — every node reachable from the reflected function through
-//// calls of `@Component` functions, breadth-first in body order, each
+//// calls of `Component` functions, breadth-first in body order, each
 //// function once: `Page` renders `UserMenu`, which renders `Avatar`, `Badge`
 //// and `Avatar` again — four nodes, `Avatar` listed once, `UserMenu`'s three
 //// calls in body order.

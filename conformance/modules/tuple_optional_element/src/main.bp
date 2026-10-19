@@ -5,7 +5,7 @@
 //// optional's carrier; read through the payload's own shape it printed the
 //// box's address (`#(1, 328)`, `296`) at exit 0. `o.unwrapOr(d)` keeps the
 //// payload's shape: `rows.at(1).unwrapOr(#("", ""))._1` and `r.unwrapOr([])`
-//// over an `@Result` of tuples printed string addresses.
+//// over an `Result` of tuples printed string addresses.
 
 import {io.terminal.print} from "std";
 

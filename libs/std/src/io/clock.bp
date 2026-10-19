@@ -12,10 +12,10 @@
 //// silently ignores the extra arg (JS variadic) — and to
 //// `erlang:system_time(1000)` on Erlang, where the integer `1000`
 //// selects the millisecond unit. The split exists because the bare-symbol
-//// `#[@External.<Target>]` form cannot inject a literal atom-style unit on the
+//// `#[compiler.external(.<Target>)]` form cannot inject a literal atom-style unit on the
 //// Erlang side without a richer template (tracked under
 //// prim-op-annotation); the integer divisor form is universal and
-//// keeps the call signature 1-arg. The `#[@External.<Target>]`
+//// keeps the call signature 1-arg. The `#[compiler.external(.<Target>)]`
 //// annotation form (typed-enum) is the canonical surface.
 ////
 //// `monotonicMillis()` returns the host's monotonic clock in
@@ -30,7 +30,7 @@
 ////
 //// `sleep(ms)` blocks the caller (1.0.10-beta front 01): `Atomics.wait`
 //// on Node, `timer:sleep/1` on Erlang. It is synchronous on purpose — the
-//// `@Task` spelling (`delay`) lives in `std/async`.
+//// `Async` spelling (`delay`) lives in `std/async`.
 ////
 //// Front 01 also adds the calendar half below the readings: `parseIso8601`
 //// (RFC 3339, offset required), `toCivil` (UTC breakdown, ISO weekday),
@@ -63,7 +63,7 @@ pub fn nowMillis() -> i64 {
 // millis on Erlang (`erlang:monotonic_time/1` uses the divisor selector);
 // Node uses the §A2 commonJS template form (`performance.now($0)`)
 // to keep the receiver bound — the legacy
-// `#[@External.Node("performance", "now")]` form aliased `const x =
+// `#[compiler.external(.JavaScript("performance", "now"))]` form aliased `const x =
 // performance.now` and stripped `this`, reding with `Value of "this"
 // must be of type Performance` at the first call site. The template
 // renders inline at every call to `monotonicTimeWithUnit(N)`.

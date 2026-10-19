@@ -1,6 +1,6 @@
 //// A value of an all-unit enum prints as the source writes it, however it
-//// reached `@print`. On wasm such a value is its ordinal, with no header to
-//// read: a literal trapped, and a name or a call printed the ordinal (`@print(g)`
+//// reached `terminal.print`. On wasm such a value is its ordinal, with no header to
+//// read: a literal trapped, and a name or a call printed the ordinal (`terminal.print(g)`
 //// → `2`). A record field, an array, an array element, a parameter, a `?Color`
 //// (present, absent, and a present FIRST variant, whose ordinal is `0` — a
 //// declared `?Color` was unboxed on wasm, so `Color.Red` there was absent), an

@@ -1,5 +1,5 @@
 //// Decision 147 (lg-a) — a lambda that can fail is written under an expected
-//// `fn(x: T) -> @Result<U, E>`: its `try` propagates, its `return v` is
+//// `fn(x: T) -> Result<U, E>`: its `try` propagates, its `return v` is
 //// `Ok(v)` and its `throw e` is `Error(e)`.
 
 import {io.terminal.print} from "std";

@@ -1,6 +1,6 @@
 //// onze findings F4 and F9 — `xs.at(i).unwrapOr(d)` is lowered wherever it
 //// is written. A method body took only the `@src()` splice from the
-//// transform, so the `@Option` method stayed a call to an undefined
+//// transform, so the `Option` method stayed a call to an undefined
 //// `unwrapOr` (commonJS "is not a function", erlang `unwrapOr/2 undefined`);
 //// and a parenthesised expression was not walked at all, so an `if` branch
 //// read through `( … ).v` kept it too, as did the operand of a unary `-` /

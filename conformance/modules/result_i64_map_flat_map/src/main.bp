@@ -1,4 +1,4 @@
-//// Decision 118 — a `@Result<i64, E>`'s `map` and `flatMap` at run time
+//// Decision 118 — a `Result<i64, E>`'s `map` and `flatMap` at run time
 //// answer the transformed payload, wide integers kept whole: an `Ok` is
 //// transformed, an `Error` passed on untouched.
 

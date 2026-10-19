@@ -1,5 +1,5 @@
 //// Decision 105 — inside a `#[@future]` fn a `iter loop` may not
-//// `await`: `@Iterator<T>` has no suspension to honour. For `await` in the
+//// `await`: `Iter<T>` has no suspension to honour. For `await` in the
 //// body one writes `stream loop { … }`.
 
 import {io.terminal.print} from "std";

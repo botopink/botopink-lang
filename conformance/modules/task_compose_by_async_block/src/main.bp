@@ -1,5 +1,5 @@
 //// Decision 523 — a task is composed by an `async { … }` block, itself a
-//// `@Task` (decision 375), which leaves through `return`: `safe` recovers a failing
+//// `Async` (decision 375), which leaves through `return`: `safe` recovers a failing
 //// task with `try await … catch`, `doubled` maps a task's value, and `chained`
 //// binds one task into another. Every
 //// composition reads the same on every target.

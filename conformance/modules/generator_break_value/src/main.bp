@@ -35,7 +35,7 @@ fn last() -> Iterator<i32> {
     break 6;
 }
 
-// A plain `fn` iterates a `@Iterator<T>`.
+// A plain `fn` iterates a `Iter<T>`.
 fn plainDigits(g: Iterator<i32>) -> string {
     var acc = "";
     for (g) { x ->

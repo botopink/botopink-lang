@@ -1,5 +1,5 @@
 //// Decision 432 — a lambda bound without an annotation and answering an
-//// `async { }` block that throws still has the type `fn(i32) -> @Task<@Result<…>>`:
+//// `async { }` block that throws still has the type `fn(i32) -> Async<Result<…>>`:
 //// awaited, it reads back as `Error(e)` carrying the thrown text, the same as
 //// when the binding is annotated.
 

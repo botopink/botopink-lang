@@ -1,6 +1,6 @@
 //// Decision 122 of 1.0.10-beta (front 24, § Cells "Iterators"; guide.md § 5.6
-//// `h`) — `@Iterator` is synchronous: `await` does not exist in it, and the
-//// refusal suggests `@Stream`. `iter-await`, at the `await`.
+//// `h`) — `Iter` is synchronous: `await` does not exist in it, and the
+//// refusal suggests `AsyncIter`. `iter-await`, at the `await`.
 
 import {io.terminal.print} from "std";
 

@@ -1,7 +1,7 @@
 //// Decision 540 (3) — the `File` handle: `create` (write, creating or truncating) and `open`
 //// (read), `path`, `size`, `read(n)` (up to `n` bytes, empty at the end), `bytes` and `text` (the
 //// rest from the position), `hash` (the SHA-256 of the whole file, whatever the position) and
-//// `write`, closed by the writer. Every fallible call answers `@Result<…, FsError>`; a file
+//// `write`, closed by the writer. Every fallible call answers `Result<…, FsError>`; a file
 //// opened for reading refuses `write` and one created for writing refuses `read`.
 
 import {io.fs, encoding, hash, io.terminal.print} from "std";

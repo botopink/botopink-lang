@@ -1,6 +1,6 @@
 //// Decision 553 (4), 147 — a marked lambda agrees with the function type it
-//// is written for: `iter { … }` answers an `@Iterator`, and `apply` wants a
-//// function returning a `@Task`, so the lambda is refused at its marker,
+//// is written for: `iter { … }` answers an `Iter`, and `apply` wants a
+//// function returning a `Async`, so the lambda is refused at its marker,
 //// `marker-type-mismatch`.
 
 import {io.terminal.print} from "std";

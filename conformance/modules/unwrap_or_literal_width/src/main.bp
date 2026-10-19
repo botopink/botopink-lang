@@ -1,6 +1,6 @@
 //// An integer literal takes the width its position asks for — as an
 //// argument of a declared parameter and as a field already, and as the
-//// default of `unwrapOr` too: over a `?i64` or a `@Result<i64, E>` the `0`
+//// default of `unwrapOr` too: over a `?i64` or a `Result<i64, E>` the `0`
 //// is an `i64` (it was `expected i32, got i64`).
 
 import {io.terminal.print} from "std";

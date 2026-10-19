@@ -5,7 +5,7 @@
 //// module's, so the sidecar was never consulted, and on the code path the
 //// two would be one module.
 ////
-//// commonJS and wasm refuse an `@External.Erlang`-only function
+//// commonJS and wasm refuse an `compiler.external(.Erlang)`-only function
 //// (`commonJS.expect`, `wasm.expect`).
 
 pub mod text;

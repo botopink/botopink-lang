@@ -1,4 +1,4 @@
-//// Decision 8 §9 — `#[@future]` plus `-> @Task<T>`: a bare `return` resolves
+//// Decision 8 §9 — `#[@future]` plus `-> Async<T>`: a bare `return` resolves
 //// the future and `await` inside another `#[@future]` body unpacks it.
 ////
 //// A `test` body is not a `#[@future]` body, so a resolved value cannot be

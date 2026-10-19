@@ -603,7 +603,7 @@ that has no binding).
 
 ### The HTTP client, `io.http`
 
-`io.http.fetch` has one typed surface (decision 623): `fetch(req: Request) -> @Task<@Result<Response,
+`io.http.fetch` has one typed surface (decision 623): `fetch(req: Request) -> Async<Result<Response,
 HttpError>>`. `Request(method, url, headers = [], body = null)` holds the `Method` (`.Get`, `.Post`, `.Put`,
 `.Delete`, `.Patch`, `.Head`, `.Options`), the URL, the `Header`s (`name`, `value`) and an optional `Bytes`
 body; a short GET is the record with its defaults, never a second signature. A failure is a variant of

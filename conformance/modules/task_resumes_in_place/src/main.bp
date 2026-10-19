@@ -1,7 +1,7 @@
 //// Decision 392 (2) — on wasm an asynchronous function is a resumable state
 //// machine: its locals live in a frame across each `await`, and loops, `if`
 //// arms, `try`, `try … catch`, a `case` after an `await`, a method answering
-//// `@Task`, a generic function and an `async { }` block that suspend (on a
+//// `Async`, a generic function and an `async { }` block that suspend (on a
 //// real timer) are resumed where they stopped. The answers equal commonJS's,
 //// erlang's and beam's.
 

@@ -1,5 +1,5 @@
 //// Decision 8 §9 — `catch` already unwrapped the value, so the `val assert`
-//// pattern has no `@Result` left to match.
+//// pattern has no `Result` left to match.
 
 import {io.terminal.print} from "std";
 

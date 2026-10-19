@@ -1,7 +1,7 @@
 //// A project cell narrows itself with `"targets"` in its `botopink.json`, the
 //// way a `run/` cell does with `<name>.targets` — and the narrowing stands on
 //// the same evidence: `magnitude` is bound for the BEAM alone, so commonJS and
-//// wasm REFUSE the project (``has no `#[@External.<Target>(…)]` ``), which
+//// wasm REFUSE the project (``has no `#[compiler.external(.<Target>(…))]` ``), which
 //// `run.sh` checks on every run. The cell runs on erlang and beam, and nowhere
 //// else; a `"targets"` the compiler did not back would fail the run.
 ////

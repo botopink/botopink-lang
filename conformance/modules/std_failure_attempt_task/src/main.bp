@@ -1,7 +1,7 @@
-//// Decision 494 — `failure.attemptTask` is `attempt`'s `@Task` form: it
+//// Decision 494 — `failure.attemptTask` is `attempt`'s `Async` form: it
 //// awaits the task its thunk answers and is `Ok` of its value, or
 //// `Error(Failure)` when the task crashed (decision 492's kinds). A task that
-//// fails with its own `E` (decision 432) did not crash: its `@Result` is the
+//// fails with its own `E` (decision 432) did not crash: its `Result` is the
 //// value, so `attemptTask` answers `Ok(Error(e))`.
 ////
 //// On wasm (decision 518) the thunk runs under wasm exception handling: an

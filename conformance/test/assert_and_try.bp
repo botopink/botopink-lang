@@ -1,6 +1,6 @@
 //// The language half of `modules/compiler-cli/tests/test_tooling.sh` (144 B-29
 //// step H): in a `test` block, `assert cond, "msg"` passes when its condition
-//// holds, whatever the message, and `try` on an `@Result` that holds a value
+//// holds, whatever the message, and `try` on an `Result` that holds a value
 //// answers the value. A failing assertion's message and a failing `try`'s error
 //// string, as the runner reports them, are the CLI's contract and stay in the
 //// script; `modules/assert_message_aborts` is the failing `assert` outside a test.

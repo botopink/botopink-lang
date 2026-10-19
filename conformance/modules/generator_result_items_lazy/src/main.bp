@@ -1,6 +1,6 @@
-//// Decisions 105 and 122 — a generator whose item is a `@Result` runs one step
+//// Decisions 105 and 122 — a generator whose item is a `Result` runs one step
 //// per item like any other: a print before and after the first `yield` comes
-//// out between the items, whether the body yields a `@Result` as is, yields a
+//// out between the items, whether the body yields a `Result` as is, yields a
 //// `U` through a `try` that fails, or ends with a `throw` (an `iter fn` and an
 //// `iter loop`).
 

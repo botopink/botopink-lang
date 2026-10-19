@@ -1,5 +1,5 @@
 //// The `T[]` suffix belongs to the type, not to a handful of type spellings —
-//// front 15's R1. Before it, `#(a: i32, b: string)[]`, `@Result<i32, string>[]`
+//// front 15's R1. Before it, `#(a: i32, b: string)[]`, `Result<i32, string>[]`
 //// and `(i32 | string)[]` were each `Unexpected token` at the `[`; only
 //// `Box<i32>[]` parsed.
 ////
@@ -37,6 +37,6 @@ test "the suffix still applies to a generic type" {
     assert boxes().length == 3;
 }
 
-test "an array of @Result is a return type" {
+test "an array of Result is a return type" {
     assert attempts().length == 0;
 }

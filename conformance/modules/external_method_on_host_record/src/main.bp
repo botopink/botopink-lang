@@ -4,7 +4,7 @@
 //// the record's class, whose prototype carries the methods: before the method
 //// form existed a host-built record was only ever read field by field there,
 //// so a plain object was enough and `r.at(1)` answered `… is not a function`.
-//// Adopted directly, through `@Result` and element by element through an
+//// Adopted directly, through `Result` and element by element through an
 //// array, like `run/external_host_record`.
 ////
 //// `at` is ALSO the name of a module function taking two arguments — the

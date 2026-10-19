@@ -6,7 +6,7 @@
 ////            https://www.erlang.org/doc/apps/ssl/ssl.html
 ////   Node   — https://nodejs.org/api/net.html (for the shape only)
 ////
-//// Every call is synchronous and answers `@Result<T, string>`; a host error
+//// Every call is synchronous and answers `Result<T, string>`; a host error
 //// reason reaches the caller as its text (`timeout`, `econnrefused`,
 //// `closed`). Sockets are passive (`{active, false}`), binary, raw: bytes
 //// arrive only when `recv` asks for them.
@@ -227,7 +227,7 @@ declare fn tlsFixture() -> string;
 )]
 declare fn tlsEchoOnce(listener: TlsListener, length: i32) -> void;
 
-// The `Error` payload of a result, `""` for `Ok` (`@Result` has no builtin
+// The `Error` payload of a result, `""` for `Ok` (`Result` has no builtin
 // reader for its error side).
 fn errText<T>(r: Result<T, string>) -> string {
     val text = case r {

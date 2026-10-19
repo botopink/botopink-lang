@@ -2,7 +2,7 @@
 //// mode"; guide.md § 2.3) — the wrapper has to be written in the return: an
 //// alias types the function and never activates the effect, so the capability
 //// used under it is `effect-wrapper-behind-alias`, at the `throw`, with the
-//// fix-it "write `@Result<i32, ParseError>`". The alias declaration
+//// fix-it "write `Result<i32, ParseError>`". The alias declaration
 //// (`type Name<T> = …;`) is the guide's spelling; measured at compiler
 //// `82e32e36` it does not parse (`this token cannot appear here` at the `=`),
 //// which no step of front 24 lists — reported with the cell.

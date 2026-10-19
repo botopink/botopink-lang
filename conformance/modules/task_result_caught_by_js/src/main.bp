@@ -1,4 +1,4 @@
-//// Decision 432 — on commonJS a `@Task<@Result<T, E>>` rejects its Promise
+//// Decision 432 — on commonJS a `Async<Result<T, E>>` rejects its Promise
 //// with `E` and resolves it with the bare `T` (no `{ ok }` / `{ error }`
 //// wrapper), so JavaScript that awaits a botopink task writes
 //// `try { await t } catch (e) { … }`. The callers here are host code: a

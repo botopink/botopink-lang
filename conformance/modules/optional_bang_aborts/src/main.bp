@@ -1,5 +1,5 @@
 //// Decision 330 (5) — `x!` over a `null` aborts, a program error like
-//// `@panic`, naming the expression and where it is written. What was printed
+//// `panic`, naming the expression and where it is written. What was printed
 //// before it stays printed.
 
 import {io.terminal.print} from "std";

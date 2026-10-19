@@ -59,7 +59,7 @@ pub fn coin() -> bool {
 
 // Random integer in the closed interval `[lo, hi]`. When `lo > hi` the
 // range is empty and the result is `lo` (a defensive default — the
-// alternative is to `@panic`, which the @assert-style tests would
+// alternative is to `panic`, which the @assert-style tests would
 // rather catch at the call site).
 pub fn intInRange(lo: i32, hi: i32) -> i32 {
     if (lo >= hi) return lo;
@@ -297,7 +297,7 @@ test "random.randomBytes(0) is empty" {
 
 // ── the wasm bodies (decision 238) ──────────────────────────────────────────
 // wasm has no host for these cells, so each names one of the private bodies
-// below with `#[@External.Wasm(fn: …)]`; commonJS and erlang call their
+// below with `#[compiler.external(.Wasm(fn: …))]`; commonJS and erlang call their
 // host. On wasm `float()` is `std: "random.float"` — 53 bits of WASI's
 // `random_get`, the host's cryptographic source — so the token, UUID and
 // byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a

@@ -1,4 +1,4 @@
-//// 144 B-22 — a `@Result` whose `Ok` is an `f64` or an `i64` keeps the whole value through every
+//// 144 B-22 — a `Result` whose `Ok` is an `f64` or an `i64` keeps the whole value through every
 //// reader, on every target: `unwrapOr`, a `case` arm's binder, `try`, `try … catch` and `map`.
 
 import {io.terminal.print} from "std";

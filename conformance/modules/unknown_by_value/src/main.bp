@@ -5,7 +5,7 @@
 ////
 //// On wasm a value entering an `unknown` slot carries a header behind its
 //// pointer (the one C-01 gave every declared value): a primitive is boxed with
-//// a descriptor naming what it is, and `is`, a type arm, `==` and `@print` ask
+//// a descriptor naming what it is, and `is`, a type arm, `==` and `terminal.print` ask
 //// the box. Before the box, `x is i32` trapped and a type arm was a binding that
 //// matched everything — `number 364`, a heap address, at exit 0.
 ////

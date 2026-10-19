@@ -1,4 +1,4 @@
-//// A template hole writes an enum's value as `@print` writes it: a unit variant and a payload
+//// A template hole writes an enum's value as `terminal.print` writes it: a unit variant and a payload
 //// variant name their enum, built in place, bound by a `val`, passed as a parameter, answered by
 //// a call, the enum declared here or imported; `string + value` writes the same text. commonJS
 //// wrote `[object Object]`, erlang and beam the variant's atom or tuple, wasm the ordinal or the

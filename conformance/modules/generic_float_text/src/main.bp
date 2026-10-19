@@ -1,6 +1,6 @@
 //// An `f64` reaching a generic body as its type parameter is written as text
 //// with its decimal part on every target (decision 521): in a template hole,
-//// beside a string in a `+`, through `@print` and `toString()`, inside an
+//// beside a string in a `+`, through `terminal.print` and `toString()`, inside an
 //// array of the type parameter, read off a record's field at the call, and
 //// handed on to another generic function. commonJS has one number type and a
 //// generic body one JavaScript function, so the call hands that body the

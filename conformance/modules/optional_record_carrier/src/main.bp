@@ -24,7 +24,7 @@
 //// from the field's declared type; and a `?T[]` — an element that is itself a
 //// pointer for the same reason a record is.
 ////
-//// NOT here, and deliberately: `@print` of an ABSENT optional. Every backend
+//// NOT here, and deliberately: `terminal.print` of an ABSENT optional. Every backend
 //// spells absence differently today (`null` on commonJS and wasm, the atom
 //// `undefined` on erlang and beam) and decision 47's row owns that
 //// disagreement — `run/index_at_optional.bp` carries it. This cell reads the

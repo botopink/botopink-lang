@@ -1,9 +1,9 @@
-//// Decisions 121 and 122 of 1.0.10-beta — only `@Result` fails. An iterator
-//// never fails: its ITEM may. `@Iterator<@Result<T, E>>`'s body answers
-//// `try` (the item is a `@Result`, so a failing `try` emits `Error(e)` and
-//// ends), and the body that ITERATES it receives each `@Result` and decides —
+//// Decisions 121 and 122 of 1.0.10-beta — only `Result` fails. An iterator
+//// never fails: its ITEM may. `Iter<Result<T, E>>`'s body answers
+//// `try` (the item is a `Result`, so a failing `try` emits `Error(e)` and
+//// ends), and the body that ITERATES it receives each `Result` and decides —
 //// `for` does no implicit `try`. `digits` propagates with an explicit
-//// `try r`, so it returns `@Result`; `total` iterates an `@Iterator<i32>` in a
+//// `try r`, so it returns `Result`; `total` iterates an `Iter<i32>` in a
 //// plain `fn`, with no level at all.
 
 import {io.terminal.print} from "std";
@@ -13,7 +13,7 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-// The item is a `@Result`: `try` and `yield` in one body.
+// The item is a `Result`: `try` and `yield` in one body.
 fn upto(n: i32) -> Iterator<Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
@@ -23,7 +23,7 @@ fn upto(n: i32) -> Iterator<Result<i32, string>> {
     }
 }
 
-// The iterating body reads each `@Result`; `try r` propagates.
+// The iterating body reads each `Result`; `try r` propagates.
 fn digits(n: i32) -> Result<string, string> {
     var acc = "";
     for (upto(n)) { r ->

@@ -1,4 +1,4 @@
-//// Decision 304 (144 B-13) — a behavior method declared `-> @Result` dispatches
+//// Decision 304 (144 B-13) — a behavior method declared `-> Result` dispatches
 //// and wraps as a function does: called through a parameter typed by the
 //// behavior, each implementation's `return v` is `Ok(v)`, its `throw e` is
 //// `Error(e)` and its `try` propagates the error; a `default fn` of the

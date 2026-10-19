@@ -1,6 +1,6 @@
-//// Decision 431 — `try e catch f` handles the `Error` of its operand's `@Result`
+//// Decision 431 — `try e catch f` handles the `Error` of its operand's `Result`
 //// on the spot, and only that. A raise that does not arrive as one — a host
-//// binding's, a `@panic` — is not the operand's `Error`: it leaves the
+//// binding's, a `panic` — is not the operand's `Error`: it leaves the
 //// `try … catch` and only `attempt` contains it. A binding declared
 //// `result: true` answers its failure as an `Error`, and that one reaches the
 //// `catch`.

@@ -1,4 +1,4 @@
-//// Decision 8 §9 — `#[@generator]` plus `-> @Iterator<T>`: `yield` produces
+//// Decision 8 §9 — `#[@generator]` plus `-> Iter<T>`: `yield` produces
 //// the elements and `for (gen)` consumes them.
 
 fn nums(n: i32) -> Iterator<i32> {

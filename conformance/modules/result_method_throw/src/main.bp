@@ -1,9 +1,9 @@
-//// A METHOD whose return is a `@Result` lowers its `throw` and its `return`
+//// A METHOD whose return is a `Result` lowers its `throw` and its `return`
 //// like a function's: `throw e` answers `Error(e)` and `return v` answers
 //// `Ok(v)` — in a record's own body, in an enum's, through a `try` of
-//// another method; and a returned `@Result` passes through unwrapped.
+//// another method; and a returned `Result` passes through unwrapped.
 ////
-//// The gap this pins: method bodies skipped the `@Result` wrapping, so on
+//// The gap this pins: method bodies skipped the `Result` wrapping, so on
 //// erlang and beam `Reader(…).read("")` died with `{nocatch, <<"empty">>}`,
 //// on commonJS with an uncaught `empty`, and a returned value was not an
 //// `Ok` (wasm printed its string as a heap address).

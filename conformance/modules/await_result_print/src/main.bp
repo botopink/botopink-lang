@@ -1,6 +1,6 @@
-//// An awaited `@Result` is printed as the value it is: `Ok(21)`, `Error(boom)`.
-//// The answer of a generic `@Task`, of a non-generic one and of an `async`
-//// block keeps its `@Result<T, string>` type through `await`, so `@print` and a
+//// An awaited `Result` is printed as the value it is: `Ok(21)`, `Error(boom)`.
+//// The answer of a generic `Async`, of a non-generic one and of an `async`
+//// block keeps its `Result<T, string>` type through `await`, so `terminal.print` and a
 //// `case` binder read it the same on every target.
 
 import {io.terminal.print} from "std";

@@ -1,6 +1,6 @@
 //// A record whose field is an `f64`, reaching a generic body as its type
-//// parameter, is written as `@print` writes it on every target (decisions
-//// 521, 530): in a template hole and through `@print`, the field with its
+//// parameter, is written as `terminal.print` writes it on every target (decisions
+//// 521, 530): in a template hole and through `terminal.print`, the field with its
 //// decimal part. commonJS wrote the hole as JavaScript's `[object Object]`.
 
 import {io.terminal.print} from "std";

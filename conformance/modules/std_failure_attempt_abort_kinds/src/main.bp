@@ -1,5 +1,5 @@
 //// Decision 492 — every abort the program raises itself is `panic`: a
-//// `@todo` and `x!` over `null` as a `@panic` is (`modules/std_failure_attempt`).
+//// `@todo` and `x!` over `null` as a `panic` is (`modules/std_failure_attempt`).
 //// `attempt` contains each, and the program goes on, an integer overflow
 //// (decision 264) too. The cell claims the kind alone; the message of each is
 //// its abort's text.

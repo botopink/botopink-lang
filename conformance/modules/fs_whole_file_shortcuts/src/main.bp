@@ -1,4 +1,4 @@
-//// Decision 540 (2) — the whole-file shortcuts and the directory functions answer `@Result<…,
+//// Decision 540 (2) — the whole-file shortcuts and the directory functions answer `Result<…,
 //// FsError>` and do the same on every target: `writeBytes` / `readBytes` keep every byte (a zero,
 //// a byte past 0x7f), `writeText` truncates and `appendText` adds, `copy` leaves the source, `rm`
 //// removes a file, `removeTree` a tree (and a path that is not there is `Ok`), `mkdirRecursive`

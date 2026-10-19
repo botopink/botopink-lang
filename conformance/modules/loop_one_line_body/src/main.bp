@@ -1,8 +1,8 @@
 //// 1.0.10-beta `00 · 15-language-surface` step 4b — a one-statement lambda
 //// body needs no `;` before its `}`, in a collection loop and in a trailing
 //// lambda alike: both take the fn body's semicolon policy
-//// (`requiredExceptLast`). `for (xs) { x -> @print(x) };` was a parse error
-//// (`this token cannot appear here`) while `{ x -> @print(x); }` compiled.
+//// (`requiredExceptLast`). `for (xs) { x -> terminal.print(x) };` was a parse error
+//// (`this token cannot appear here`) while `{ x -> terminal.print(x); }` compiled.
 //// Specified by 15 as `loop (xs) { … }`; decision 105 renamed the collection
 //// loop to `for`, which is the spelling here. A `;` AFTER the loop's `}` is
 //// accepted and removed by `botopink format` (C-13, decision 524).

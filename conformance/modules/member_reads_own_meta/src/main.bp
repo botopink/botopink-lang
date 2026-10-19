@@ -1,6 +1,6 @@
 //// Decision 395 — a typed member reads its own type's typed meta through
 //// the decorator's type parameter. In `#[validated]`'s body
-//// `@typeInfo(T).metaAll(Check)` is typed `Check<T>[]` and the member is
+//// `compiler.typeInfo(T).metaAll(Check)` is typed `Check<T>[]` and the member is
 //// checked against it; rendered into `Conta`, the read is answered with the
 //// two `#[check]`s and the member checked again. The list is a constant of
 //// build (`comptime`); the loop and the rules run at run time.

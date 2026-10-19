@@ -16,7 +16,7 @@
 
 import {compiler} from "std";
 
-// wasm refuses this suite on a host binding: `mark` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+// wasm refuses this suite on a host binding: `mark` has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[compiler.external(
     .JavaScript("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)"),

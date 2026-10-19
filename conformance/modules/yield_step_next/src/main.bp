@@ -1,8 +1,8 @@
 //// Decision 122 of 1.0.10-beta (front 24, § Cells "Iterators"; guide.md § 5,
 //// `YieldStep<T> = { Yield(value: T), Done }`) — the same protocol by hand on
-//// every target: `it.next()` on an `@Iterator<T>` answers `Yield` for each item
+//// every target: `it.next()` on an `Iter<T>` answers `Yield` for each item
 //// and then `Done`, and keeps answering `Done`; `await s.next()` on a
-//// `@Stream<T>` answers the same steps. The run half of `test/yield_step_next.bp`
+//// `AsyncIter<T>` answers the same steps. The run half of `test/yield_step_next.bp`
 //// (a `test/` cell reaches commonJS and erlang only): commonJS maps the
 //// generator's `{ value, done }` onto the variants, and the eager lowerings of
 //// erlang, beam and wasm — whose sequence is the list of its items — pop the

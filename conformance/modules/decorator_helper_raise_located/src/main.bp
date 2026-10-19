@@ -1,6 +1,6 @@
 //// Decision 451 (3), 144 B-48 — a decorator body that calls a function of
 //// its own module, which raises, is refused at the call that raised: the
-//// `@panic` inside `requireShort`, the innermost of this module's calls the
+//// `panic` inside `requireShort`, the innermost of this module's calls the
 //// raise leaves — not the helper's call in the body, not the annotation
 //// `#[short]` that ran the body.
 

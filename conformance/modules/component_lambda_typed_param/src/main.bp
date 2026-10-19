@@ -1,5 +1,5 @@
 //// Decision 574 — a lambda marked `component` passed where a parameter
-//// expects `fn(name: string) -> @Component<View>` (147) is a `component fn`:
+//// expects `fn(name: string) -> Component<View>` (147) is a `component fn`:
 //// `List` makes one component per name and places them in its tree, and the
 //// renderer runs each with the scope `List`'s run answered — the one its
 //// `use provide` made — so every item reads `List`'s `>`. The `mark` the

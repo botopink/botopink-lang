@@ -1,6 +1,6 @@
 //// Decision 541 (2) — a `case` arm's block is no function: the task scope of the enclosing
 //// function is its own, so an `await` in a `pat { … }` arm is accepted in a function that
-//// returns `@Task`, as it is in an expression arm.
+//// returns `Async`, as it is in an expression arm.
 
 import {io.terminal.print} from "std";
 

@@ -1,5 +1,5 @@
 //// 1.0.12-beta `1-botopink-lang/144-botopink-lang` B-22 step 6 (was `01-checker` s6 and
-//// `04-js` s6): a `throw` in a `case` arm under `-> @Result` is the enclosing
+//// `04-js` s6): a `throw` in a `case` arm under `-> Result` is the enclosing
 //// function's — in an expression arm (`_ -> throw …`) and in a block arm
 //// (`_ { … throw … }`), with the `case` returned, bound by a `val`, passed as an
 //// argument or in statement position. The throw path answers `Error`, the other

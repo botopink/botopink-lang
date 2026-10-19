@@ -1,5 +1,5 @@
-//// Decision 393 — an adapter answering `@Task<T>` is checked by shape at the
-//// annotation: `wasi: .Delay` is `(i32, T) -> @Task<T>` over one type parameter,
+//// Decision 393 — an adapter answering `Async<T>` is checked by shape at the
+//// annotation: `wasi: .Delay` is `(i32, T) -> Async<T>` over one type parameter,
 //// and a declaration of another shape is refused there on every target
 //// (decision 238: the binding is read whatever the build's target), though
 //// the other targets bind their own templates.

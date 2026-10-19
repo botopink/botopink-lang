@@ -1,4 +1,4 @@
-//// Front 140 step 5 (decisions 392–394) — `@Task` on wasm behaves as a Promise,
+//// Front 140 step 5 (decisions 392–394) — `Async` on wasm behaves as a Promise,
 //// under wasmtime (`wasi`: `wasi:clocks/monotonic-clock` + `wasi:io/poll`) and
 //// under node (`browser`: the loader's `setTimeout`, the JS event loop), and the
 //// answers equal commonJS's and erlang's. `delay`, `race`, `raceOf` and

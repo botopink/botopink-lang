@@ -2241,16 +2241,16 @@ test "path.isInside treats a name starting with two dots as a name" {
 //// `HostError` is what a host binding that writes `result: true` answers on
 //// the `Error` side: the host's message and `kind`, always `"host"`.
 //// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
-//// (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// (`panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
 //// from a binding without `result: true`) or `crash` (a VM or emitted-code
 //// fault, a wasm trap).
 ////
 //// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
 //// for a raise it caught — the one way to contain a crash (decision 431 (3)).
-//// `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
-//// awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+//// `attemptTask(f)` is its `Async` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `Async<Result<…>>` read
 //// back by `await` like any failing task (decision 432). The kinds
-//// (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+//// (decision 492): a `panic` / `@todo` (and so `x!`), a failed `assert`
 //// and an integer overflow or division by zero are `panic`, their message
 //// the text the program wrote. A raise of a binding declared outside std without
 //// `result: true` is `host` (decision 546), its message the host's text — on
@@ -2297,7 +2297,7 @@ pub type Failure(message: string, kind: string)
 pub declare fn panic(message: string = "panic") -> noreturn;
 
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
-// every one it raises — `@panic`, `@todo`, an integer overflow or division
+// every one it raises — `panic`, `@todo`, an integer overflow or division
 // by zero, a failed `assert` (whose mark carries its message) — or a test
 // body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
 // backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
@@ -2360,16 +2360,16 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
 %%% `HostError` is what a host binding that writes `result: true` answers on
 %%% the `Error` side: the host's message and `kind`, always `"host"`.
 %%% `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
-%%% (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+%%% (`panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
 %%% from a binding without `result: true`) or `crash` (a VM or emitted-code
 %%% fault, a wasm trap).
 %%% 
 %%% `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
 %%% for a raise it caught — the one way to contain a crash (decision 431 (3)).
-%%% `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
-%%% awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+%%% `attemptTask(f)` is its `Async` form (decision 494): the task `f` answers,
+%%% awaited, or the `Failure` it crashed with — a `Async<Result<…>>` read
 %%% back by `await` like any failing task (decision 432). The kinds
-%%% (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+%%% (decision 492): a `panic` / `@todo` (and so `x!`), a failed `assert`
 %%% and an integer overflow or division by zero are `panic`, their message
 %%% the text the program wrote. A raise of a binding declared outside std without
 %%% `result: true` is `host` (decision 546), its message the host's text — on
@@ -2404,7 +2404,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
   {label, 9}.
     {call_only, 1, {f, 7}}.
 % The Node forms read an abort by the `__bp_panic` mark the backend puts on
-% every one it raises — `@panic`, `@todo`, an integer overflow or division
+% every one it raises — `panic`, `@todo`, an integer overflow or division
 % by zero, a failed `assert` (whose mark carries its message) — or a test
 % body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
 % backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
@@ -2961,7 +2961,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
 ////   Erlang   — https://www.erlang.org/doc/man/file.html
 ////   Node.js  — https://nodejs.org/api/fs.html
 ////
-//// Every function that can fail answers `@Result<…, FsError>`: the same OS error is
+//// Every function that can fail answers `Result<…, FsError>`: the same OS error is
 //// the same `FsError` variant on every target (`ENOENT`, `enoent` → `NotFound`),
 //// and `Other.message` is the host's own text. The whole-file shortcuts
 //// (`readBytes`, `readText`, `writeBytes`, `writeText`, `appendText`), `stat`, and
@@ -2970,7 +2970,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
 //// and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 ////
 //// The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
-//// `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+//// `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
 //// and `lift` reads that message as the `FsError` of the path the caller wrote
 //// (decision 486); no cell catches by hand. All operations are synchronous
 //// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
@@ -3551,7 +3551,7 @@ pub fn create(path: string) -> Result<File, FsError> {
 }
 
 // An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
-// like a file on disk — no `@Result`, the build proved the file exists — and
+// like a file on disk — no `Result`, the build proved the file exists — and
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
     return File(location: asset.path, handle: memoryHandle(asset.bytes));
@@ -3998,7 +3998,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 %%%   Erlang   — https://www.erlang.org/doc/man/file.html
 %%%   Node.js  — https://nodejs.org/api/fs.html
 %%% 
-%%% Every function that can fail answers `@Result<…, FsError>`: the same OS error is
+%%% Every function that can fail answers `Result<…, FsError>`: the same OS error is
 %%% the same `FsError` variant on every target (`ENOENT`, `enoent` → `NotFound`),
 %%% and `Other.message` is the host's own text. The whole-file shortcuts
 %%% (`readBytes`, `readText`, `writeBytes`, `writeText`, `appendText`), `stat`, and
@@ -4007,7 +4007,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 %%% and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 %%% 
 %%% The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
-%%% `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+%%% `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
 %%% and `lift` reads that message as the `FsError` of the path the caller wrote
 %%% (decision 486); no cell catches by hand. All operations are synchronous
 %%% (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
@@ -4895,7 +4895,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
 % An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
-% like a file on disk — no `@Result`, the build proved the file exists — and
+% like a file on disk — no `Result`, the build proved the file exists — and
 % closing it is a no-op.
 
 {function, openAsset, 1, 41}.

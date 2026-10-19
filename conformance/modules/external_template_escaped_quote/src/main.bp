@@ -1,5 +1,5 @@
-//// A `\"` written inside an `@External.Node` template is a quote of the
-//// JavaScript it carries, as it is of the Erlang an `@External.Erlang` template
+//// A `\"` written inside an `compiler.external(.JavaScript)` template is a quote of the
+//// JavaScript it carries, as it is of the Erlang an `compiler.external(.Erlang)` template
 //// carries: a free host function, one bound to a type, and one called with an
 //// argument that holds a quote itself. commonJS wrote the template's raw lexeme
 //// into the `.js`, backslash and all — `SyntaxError: Invalid or unexpected

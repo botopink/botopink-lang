@@ -1,5 +1,5 @@
 //// Decision 123 of 1.0.10-beta (front 24, § Cells "Iterators", fourth line;
-//// guide.md § 5.4) — a function with an `@Iterator` return is an iterator if
+//// guide.md § 5.4) — a function with an `Iter` return is an iterator if
 //// its own body has `yield` / `break v` (`evens`), and otherwise an ordinary
 //// function that RETURNS a ready iterator — a factory (`evensOf` returns an
 //// `iter for`; `pick` returns one of two, by a plain `if`). The scan does not

@@ -12,7 +12,7 @@
 //// integer). `fromCodepoint(cp)` lifts a single codepoint to a string
 //// through the primitive `String.fromCodepoint` (a `fn:` body on every
 //// target); `firstCodepoint(s)` peeks the head. The carry-forward declares use
-//// the typed `#[@External.<Target>]` annotation form (migrated in
+//// the typed `#[compiler.external(.<Target>)]` annotation form (migrated in
 //// `external-target-libs-migration` F5-partial, c828308).
 ////
 //// `normalize(s, form)` renders `s` under NFC, NFD, NFKC or NFKD by std's

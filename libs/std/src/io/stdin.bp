@@ -6,7 +6,7 @@
 ////
 //// `readLine()` is the next line of input without its terminator (`\n` or `\r\n`), a last
 //// line with no terminator included, and `null` at the end of input — the same on commonJS,
-//// erlang and beam. It is a `@Task` so that a program waiting on a terminal is not blocked
+//// erlang and beam. It is a `Async` so that a program waiting on a terminal is not blocked
 //// as a whole on Node: the line arrives through the stream's own events, so a signal handler
 //// (`io.process.onSignal`) still runs while a prompt waits. Erlang is eager and blocks the
 //// calling process in `io:get_line/2`.

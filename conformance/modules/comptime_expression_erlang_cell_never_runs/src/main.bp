@@ -1,5 +1,5 @@
 //// 1.0.12-beta `1-botopink-lang/144` B-00k (decisions 434, 452) — an
-//// `@External.Erlang` cell never runs at build, reached from a `comptime`
+//// `compiler.external(.Erlang)` cell never runs at build, reached from a `comptime`
 //// expression as from a decorator (`comptime_host_cell_unavailable_erlang_only`):
 //// `tag` has no `std:` and no `fn:` cell, so the call is refused at the
 //// `comptime`, naming both, whatever the build's target. The parent of the

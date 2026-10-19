@@ -4,7 +4,7 @@
 //// unknown `@Name<…>` is typed as an opaque nominal (`type mismatch: expected
 //// AsyncIterator, …` at best, silence in a parameter). The cell asks for
 //// `effect-type-removed`, the family's code with the fix-it
-//// `@Stream<@Result<T, E>>` — decision 127 names no code for the older names;
+//// `AsyncIter<Result<T, E>>` — decision 127 names no code for the older names;
 //// reported as a choice. The new form is `run/stream_pages.bp`.
 
 fn ticks(n: i32) -> @AsyncIterator<i32> {

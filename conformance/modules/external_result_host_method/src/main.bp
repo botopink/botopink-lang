@@ -1,7 +1,7 @@
 //// Decisions 431 (2), 489, 490 — a host function declared as a method of its
 //// type answers the same as a module-level one when its binding writes
 //// `result: true`: a value is `Ok(v)`, a throw (commonJS) or a raise
-//// (erlang, beam) is `Error(HostError(…))`, and a `@Task` method's rejection
+//// (erlang, beam) is `Error(HostError(…))`, and a `Async` method's rejection
 //// or raise reads back as that `Error` at its `await`. The receiver is `$0`.
 ////
 //// `"targets"` is `commonJS`, `erlang`, `beam`: the claim is the host's;

@@ -512,7 +512,7 @@ test "hash.fingerprint answers a different name for different contents" {
 
 // ── the wasm bodies (decision 238) ──────────────────────────────────────────
 // wasm has no host to hash with, so each cell above names one of these
-// private bodies with `#[@External.Wasm(fn: …)]`. They run only on wasm —
+// private bodies with `#[compiler.external(.Wasm(fn: …))]`. They run only on wasm —
 // commonJS and erlang call their host — and they answer what Node's `crypto`
 // answers: SHA-256 and SHA-512 (FIPS 180-4), SHA-1 (RFC 3174), MD5
 // (RFC 1321), HMAC (RFC 2104), PBKDF2 (RFC 8018 §5.2), base64 (RFC 4648 §4,

@@ -2140,16 +2140,16 @@ test "path.isInside treats a name starting with two dots as a name" {
 //// `HostError` is what a host binding that writes `result: true` answers on
 //// the `Error` side: the host's message and `kind`, always `"host"`.
 //// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
-//// (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// (`panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
 //// from a binding without `result: true`) or `crash` (a VM or emitted-code
 //// fault, a wasm trap).
 ////
 //// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
 //// for a raise it caught — the one way to contain a crash (decision 431 (3)).
-//// `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
-//// awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+//// `attemptTask(f)` is its `Async` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `Async<Result<…>>` read
 //// back by `await` like any failing task (decision 432). The kinds
-//// (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+//// (decision 492): a `panic` / `@todo` (and so `x!`), a failed `assert`
 //// and an integer overflow or division by zero are `panic`, their message
 //// the text the program wrote. A raise of a binding declared outside std without
 //// `result: true` is `host` (decision 546), its message the host's text — on
@@ -2196,7 +2196,7 @@ pub type Failure(message: string, kind: string)
 pub declare fn panic(message: string = "panic") -> noreturn;
 
 // The Node forms read an abort by the `__bp_panic` mark the backend puts on
-// every one it raises — `@panic`, `@todo`, an integer overflow or division
+// every one it raises — `panic`, `@todo`, an integer overflow or division
 // by zero, a failed `assert` (whose mark carries its message) — or a test
 // body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
 // backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
@@ -2271,16 +2271,16 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
   ;; `HostError` is what a host binding that writes `result: true` answers on
   ;; the `Error` side: the host's message and `kind`, always `"host"`.
   ;; `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
-  ;; (`@panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+  ;; (`panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
   ;; from a binding without `result: true`) or `crash` (a VM or emitted-code
   ;; fault, a wasm trap).
   ;; 
   ;; `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
   ;; for a raise it caught — the one way to contain a crash (decision 431 (3)).
-  ;; `attemptTask(f)` is its `@Task` form (decision 494): the task `f` answers,
-  ;; awaited, or the `Failure` it crashed with — a `@Task<@Result<…>>` read
+  ;; `attemptTask(f)` is its `Async` form (decision 494): the task `f` answers,
+  ;; awaited, or the `Failure` it crashed with — a `Async<Result<…>>` read
   ;; back by `await` like any failing task (decision 432). The kinds
-  ;; (decision 492): a `@panic` / `@todo` (and so `x!`), a failed `assert`
+  ;; (decision 492): a `panic` / `@todo` (and so `x!`), a failed `assert`
   ;; and an integer overflow or division by zero are `panic`, their message
   ;; the text the program wrote. A raise of a binding declared outside std without
   ;; `result: true` is `host` (decision 546), its message the host's text — on
@@ -2309,7 +2309,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
   ;; inside std); `panic("not implemented")` is what `todo` was.
   ;; declare fn panic — no wasm implementation (host-backed)
   ;; The Node forms read an abort by the `__bp_panic` mark the backend puts on
-  ;; every one it raises — `@panic`, `@todo`, an integer overflow or division
+  ;; every one it raises — `panic`, `@todo`, an integer overflow or division
   ;; by zero, a failed `assert` (whose mark carries its message) — or a test
   ;; body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
   ;; backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,

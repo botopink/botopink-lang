@@ -1,4 +1,4 @@
-//// `@todo()` and `@panic(…)` are declared `-> noreturn` (`builtins_fns.d.bp`)
+//// `@todo()` and `panic(…)` are declared `-> noreturn` (`builtins_fns.d.bp`)
 //// and `noreturn` is the bottom type: the call stands wherever a value of any
 //// type is expected — a `return` of a `-> i32` function, an annotated `val`,
 //// an `if` branch, a call argument. The branches that would reach them are

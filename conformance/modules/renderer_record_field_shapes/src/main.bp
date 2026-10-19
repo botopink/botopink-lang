@@ -5,7 +5,7 @@
 //// function of `view` typed an importer's `raw(…)` as `bool`; `xs.at(i)
 //// .unwrapOr(…)` read the element back unwrapped when the array came off a
 //// record field inside a generic function; and a parameter typed
-//// `Array<fn() -> @Task<El>>` beside another generic in `El` was refused
+//// `Array<fn() -> Async<El>>` beside another generic in `El` was refused
 //// `generic-arg-skip-forbidden`. A parameter named like an imported function
 //// (`label(raw)`) is the parameter.
 

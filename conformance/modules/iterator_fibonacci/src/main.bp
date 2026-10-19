@@ -1,11 +1,11 @@
 //// Decisions 118, 122 and 123 of 1.0.10-beta (front 24, § Cells "Iterators",
 //// first line; guide.md § 5.1 and § 9, row `#[@generator]` + `@Generator<T>`)
-//// — `-> @Iterator<T>` with a `yield` is an iterator, and any function may
+//// — `-> Iter<T>` with a `yield` is an iterator, and any function may
 //// iterate one (`main` is plain). `yield v` emits and continues; `break v`
 //// emits and ends (`firstNegative` stops at the first negative, which it
 //// emits).
 ////
-//// The guide's `fibonacci` is `@Iterator<i64>` over `var a: i64 = 0`; the cell
+//// The guide's `fibonacci` is `Iter<i64>` over `var a: i64 = 0`; the cell
 //// uses `i32` because an integer literal does not widen to `i64` at compiler
 //// `82e32e36` (`type mismatch: expected i64, got i32`), a gap that is not this
 //// cell's claim.

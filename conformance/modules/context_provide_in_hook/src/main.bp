@@ -1,5 +1,5 @@
 //// Decision 354 (2) — a provider gives its value to what a COMPONENT renders
-//// below it. A hook (`@Component<R>` whose `R` does not implement
+//// below it. A hook (`Component<R>` whose `R` does not implement
 //// `@Renderable`) renders nothing: `use provide(…)` in its body is refused at
 //// the `use`.
 

@@ -1,6 +1,6 @@
 //// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` activates the hook
 //// `f(x)`; decisions 102/104 (front 21) — and decision 128 — a hook
-//// is `fn … -> @Component<T>` with any `T`, a component the same wrapper
+//// is `fn … -> Component<T>` with any `T`, a component the same wrapper
 //// with `T: @Renderable`, and every caller `await`s a
 //// component (commonJS emits every `#[@use]` body as an `async function`; erlang,
 //// wasm and beam are eager and `await` is the identity). So `run` awaits each

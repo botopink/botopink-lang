@@ -1,8 +1,8 @@
 //// Decisions 104, 118 and 128 — inside a component body a component call
 //// renders as its `T`, and a written `await` of the same call still answers
-//// that `T`: `await`'s own operand keeps the `@Component<T>` wrapper, so
+//// that `T`: `await`'s own operand keeps the `Component<T>` wrapper, so
 //// `val tree = await view(props)` (jhonstart's layout chain) is not refused as
-//// "`await` expects a `@Task<_>`". A component call nested in the awaited
+//// "`await` expects a `Async<_>`". A component call nested in the awaited
 //// call's arguments still renders.
 
 import {io.terminal.print} from "std";

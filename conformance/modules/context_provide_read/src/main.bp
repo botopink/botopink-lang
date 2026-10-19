@@ -1,8 +1,8 @@
 //// Decision 354 (2), (8) — a context provided by a component reaches every
 //// component it renders below it, through the hidden context map every
-//// `@Component` function takes: `App` provides `ThemeContext`, `Page` (a
+//// `Component` function takes: `App` provides `ThemeContext`, `Page` (a
 //// component `App` renders) renders `Label`, and `Label` reads the value.
-//// A `@Component` read with `use` (`themeName`) reads the map its caller
+//// A `Component` read with `use` (`themeName`) reads the map its caller
 //// received. `App` itself does not see its own provide — `Root` provides the
 //// one `App` reads.
 

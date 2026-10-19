@@ -1,6 +1,6 @@
 //// Decisions 121 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
-//// guide.md § 4.5 `Propaga`) — `@Component ⊃ @Task`, never `@Result`: a
-//// component returns its `Element`, not a `@Result`, so it handles a failure in
+//// guide.md § 4.5 `Propaga`) — `Component ⊃ Async`, never `Result`: a
+//// component returns its `Element`, not a `Result`, so it handles a failure in
 //// its body (`catch`, `case`, `notFound()`) and a propagating `try` is
 //// `effect-try-without-fallible-channel`, at the `try`.
 

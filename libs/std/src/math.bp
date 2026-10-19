@@ -9,7 +9,7 @@
 //// floating-point on the host, and staying in `f64` keeps mixed arithmetic
 //// from running into i32/i64 unification issues in pure-botopink
 //// derivations). Constants live as `pub val`; every host-bound fn carries
-//// `#[@External.<Target>(…)]` per backend, and `#[@Stage.Any]`: a pure
+//// `#[compiler.external(.<Target>(…))]` per backend, and `#[@Stage.Any]`: a pure
 //// primitive runs at build as when the program runs (decision 376 (4)).
 
 import {failure.panic, compiler};

@@ -1,4 +1,4 @@
-//// A value of an enum with payloads prints as `Enum.Variant(…)` however it reaches `@print`: built
+//// A value of an enum with payloads prints as `Enum.Variant(…)` however it reaches `terminal.print`: built
 //// in place, bound by a `val`, in an array, the enum declared here or imported (aliased or not).
 //// wasm printed a name bound to one as the value's address.
 

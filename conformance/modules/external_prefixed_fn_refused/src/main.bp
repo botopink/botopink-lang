@@ -1,6 +1,6 @@
 //// Decision 305 — on every target a binding cell is a labelled argument: the
-//// prefixed string `"fn:mixBody"` binds nothing on `@External.Node` or
-//// `@External.Erlang` either. It is refused at the argument, naming the
+//// prefixed string `"fn:mixBody"` binds nothing on `compiler.external(.JavaScript)` or
+//// `compiler.external(.Erlang)` either. It is refused at the argument, naming the
 //// labelled form; an unlabelled string is host code.
 
 import {compiler, io.terminal.print} from "std";

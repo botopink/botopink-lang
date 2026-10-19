@@ -1,7 +1,7 @@
 //// Decision 105 — a stream's body runs one step per item asked for, as an
 //// iterator's does: nothing of it runs when the stream is made, and a print before
 //// and after the first `yield` comes out between the items a `for await` reads —
-//// a `@Stream` fn, one whose items are awaited, and a `stream loop` over a
+//// a `AsyncIter` fn, one whose items are awaited, and a `stream loop` over a
 //// captured `var`.
 
 import {io.terminal.print} from "std";

@@ -1,11 +1,11 @@
-//// Decision 95 — `@Component` ⊃ `@Future` ⊃ `@Result`, so `await` is legal in a
+//// Decision 95 — `Component` ⊃ `@Future` ⊃ `Result`, so `await` is legal in a
 //// `#[@use]` body; `run/effect_chain.bp` carries `use` and `try`. Both shapes of
-//// decision 128's one wrapper are here: a hook (`-> @Component<i32>`) and
-//// a component (`-> @Component<Element>`).
+//// decision 128's one wrapper are here: a hook (`-> Component<i32>`) and
+//// a component (`-> Component<Element>`).
 ////
 //// Every value is printed from INSIDE the body. commonJS emits every `#[@use]`
 //// body as an `async function` (decision 104) and hands its CALLER a promise,
-//// while erlang, wasm and beam hand it the value, so a `@print` at the call
+//// while erlang, wasm and beam hand it the value, so a `terminal.print` at the call
 //// site would compare a promise with `41`. What every target agrees on is the
 //// body: it runs, in order, with the awaited value in hand. On commonJS each
 //// body resumes after its first `await` (`use` awaits too); `Plain` and `page`

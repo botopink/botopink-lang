@@ -1,5 +1,5 @@
 //// Decision 430 (B-41) — a library's abort reads the same on every target: the
-//// message a `@panic` was given, built the way a library builds one (quotes, a
+//// message a `panic` was given, built the way a library builds one (quotes, a
 //// concatenated name, a non-ASCII dash), reaches stderr unchanged. Erlang and
 //// beam used to print the term with the message as a list of byte values
 //// whenever a byte was outside ASCII, and wasm trapped with no text, so only

@@ -1,5 +1,5 @@
-//// Decision 248 — the one reflection builtin is `@typeInfo`; the lowercase
-//// `@typeinfo` is refused where it is written, naming `@typeInfo`.
+//// Decision 248 — the one reflection builtin is `compiler.typeInfo`; the lowercase
+//// `@typeinfo` is refused where it is written, naming `compiler.typeInfo`.
 
 import {io.terminal.print} from "std";
 

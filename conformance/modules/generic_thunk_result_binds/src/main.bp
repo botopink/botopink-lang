@@ -1,5 +1,5 @@
 //// 144 B-25 (decision 392) — a generic function of another module over a thunk
-//// answering `@Task<@Result<T, E>>` binds `T` and `E` from the thunk's answer,
+//// answering `Async<Result<T, E>>` binds `T` and `E` from the thunk's answer,
 //// and so does the generic it passes the thunk on to: `attempts.attempt({ ->
 //// slow(1, "answered") })` answers the string on every target, the shape std's
 //// `async.retry` is called in (wasm called the generic body with no type bound

@@ -1,6 +1,6 @@
 //// Decisions 125 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
 //// guide.md § 9, row `#[@resultGenerator] loop { … }`) — refused at the
-//// annotation; the fix-it is `iter loop`, whose item becomes `@Result` from the
+//// annotation; the fix-it is `iter loop`, whose item becomes `Result` from the
 //// body's own `throw` / `try`. The new form is `run/prefixed_loop_result_item.bp`.
 
 import {io.terminal.print} from "std";

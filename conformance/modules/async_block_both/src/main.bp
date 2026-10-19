@@ -10,10 +10,10 @@ fn fetchUser(id: i32) -> Task<Result<User, string>> {
 fn both() -> Task<Result<string, string>> {
     val first = async {
         return try await fetchUser(1);
-    }; // @Task<@Result<User, string>>
+    }; // Async<Result<User, string>>
     val count = async {
         return 2;
-    }; // @Task<i32>
+    }; // Async<i32>
     val u = try await first;
     val n = await count;
     return u.name + n.toString();

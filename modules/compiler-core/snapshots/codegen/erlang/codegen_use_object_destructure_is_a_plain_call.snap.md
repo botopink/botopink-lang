@@ -17,7 +17,7 @@
 ////     val theme = use context(Theme);                    // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
-//// only in a component's body (a `@Component<R>` whose `R` implements
+//// only in a component's body (a `Component<R>` whose `R` implements
 //// `@Renderable`), before it renders a child. `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
 //// `comptime { … }` have none (`use-outside-render-tree`). A read of a type
@@ -100,7 +100,7 @@ pub type Rendered<R>(value: R, scope: RenderScope)
 // ── what the scope lowering calls (decision 388) ─────────────────────────────
 //
 // A program never names these: the compiler imports them under names no
-// source can spell. A `@Component` function answers `{ scope -> … }`; each
+// source can spell. A `Component` function answers `{ scope -> … }`; each
 // `return v` of its body answers `rendered(v, <children's scope>)`; `use
 // provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
 // children (a context is its value at run time: the compiler writes
@@ -199,7 +199,7 @@ fn frameParent(f: Frame) -> unknown {
 
 %%% Both are hooks, so they are `use`d, never called for a value; `provide`
 
-%%% only in a component's body (a `@Component<R>` whose `R` implements
+%%% only in a component's body (a `Component<R>` whose `R` implements
 
 %%% `@Renderable`), before it renders a child. `use` exists only where there
 
@@ -309,7 +309,7 @@ inject(T) ->
 
 % A program never names these: the compiler imports them under names no
 
-% source can spell. A `@Component` function answers `{ scope -> … }`; each
+% source can spell. A `Component` function answers `{ scope -> … }`; each
 
 % `return v` of its body answers `rendered(v, <children's scope>)`; `use
 

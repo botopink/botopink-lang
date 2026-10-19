@@ -1,4 +1,4 @@
-//// An `await` inside a `case` arm of a `@Task` function suspends the task and resumes
+//// An `await` inside a `case` arm of a `Async` function suspends the task and resumes
 //// into the arm — in a generic function, a non-generic one, an `if` branch and a nested `case`.
 
 import {async.delay, io.terminal.print} from "std";

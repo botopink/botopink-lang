@@ -1,6 +1,6 @@
-//// Decision 120 of 1.0.10-beta (front 24, § Cells "`@Task` and failure", first
-//// line; guide.md § 9, row `@Future<T>` with no error) — `@Task<T>` never fails:
-//// `await` unwraps it and needs no `try`. `delayed` is a `@Task<void>` whose
+//// Decision 120 of 1.0.10-beta (front 24, § Cells "`Async` and failure", first
+//// line; guide.md § 9, row `@Future<T>` with no error) — `Async<T>` never fails:
+//// `await` unwraps it and needs no `try`. `delayed` is a `Async<void>` whose
 //// body only awaits. Printed from inside `run` (see
 //// `run/task_return_layers.bp`). `reject/effect_type_removed_future_no_error.bp`
 //// is the old spelling.

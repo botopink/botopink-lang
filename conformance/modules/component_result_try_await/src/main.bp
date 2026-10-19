@@ -1,8 +1,8 @@
 //// Decisions 121 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`",
-//// second line; guide.md § 4.4 `tenant`) — `@Component<@Result<T, E>>`: a
-//// hook whose `T` is a `@Result` may `try await` (the fallible channel is read
+//// second line; guide.md § 4.4 `tenant`) — `Component<Result<T, E>>`: a
+//// hook whose `T` is a `Result` may `try await` (the fallible channel is read
 //// off the return, apart from the level). `tenant` propagates a success and
-//// `tenantFor("")` a failure; the component `Handler` is not a `@Result`, so it
+//// `tenantFor("")` a failure; the component `Handler` is not a `Result`, so it
 //// reads both with `case`. Printed from inside `Handler` (commonJS: an
 //// `async function`, decision 120).
 

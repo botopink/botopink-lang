@@ -1,6 +1,6 @@
 //// Decision 432 (inverting 120 and 121 of 1.0.10-beta for a JavaScript
-//// observer) — on commonJS a `@Task` return is a Promise, and a `throw` in a
-//// `@Task<@Result<…>>` body REJECTS it with the thrown value; a success
+//// observer) — on commonJS a `Async` return is a Promise, and a `throw` in a
+//// `Async<Result<…>>` body REJECTS it with the thrown value; a success
 //// resolves it with the bare value, never an `{ ok }` / `{ error }` wrapper.
 //// The observer is host code: it attaches both callbacks to the Promise the
 //// call answered and hands the resolved value or the rejection back to

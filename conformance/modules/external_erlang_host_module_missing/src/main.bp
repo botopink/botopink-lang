@@ -1,4 +1,4 @@
-//// A host module an `#[@External.Erlang("<module>", "<fn>")]` names must exist:
+//// A host module an `#[compiler.external(.Erlang("<module>", "<fn>"))]` names must exist:
 //// shipped as a sidecar (`src/sidecars/<module>.erl` or `src/<module>.erl`),
 //// or a module of the Erlang code path (`lists`, `crypto`, the preloaded
 //// `erlang`). `nosuchhost` is neither, and the erlang build refuses the program,
@@ -10,7 +10,7 @@
 //// died with `undef` at the first call.
 ////
 //// `.targets` is `erlang beam`: commonJS and wasm refuse any
-//// `@External.Erlang`-only function (`run/external_erlang_only.bp`); the beam
+//// `compiler.external(.Erlang)`-only function (`run/external_erlang_only.bp`); the beam
 //// build ships the same sidecars and refuses this one the same way.
 
 import {compiler, io.terminal.print} from "std";

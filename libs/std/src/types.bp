@@ -9,7 +9,7 @@
 //// Every function here runs only at compile time and takes every parameter
 //// `comptime x: T`, so a call needs no `comptime`
 //// keyword. The bodies are the
-//// compiler's: bodyless, without `#[@External.<Target>]`, because no target
+//// compiler's: bodyless, without `#[compiler.external(.<Target>)]`, because no target
 //// runs them — the compiler answers `partial`, `required`, `pick`, `omit` and
 //// `merge` with the record declaration they derive, keyed on this `Type`
 //// (`comptime/derived_types.zig`), and `keys` with the alias of `Field<T>`

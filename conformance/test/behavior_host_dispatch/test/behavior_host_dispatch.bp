@@ -14,7 +14,7 @@
 
 import {compiler} from "std";
 
-// wasm refuses this suite on a host binding: `makeGreeter` builds the value and has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+// wasm refuses this suite on a host binding: `makeGreeter` builds the value and has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 behavior Greeter {
     val tag: string;

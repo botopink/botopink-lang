@@ -1,6 +1,6 @@
 //// Decision 491 — `result:` belongs to a host call that can fail. An `fn:`
 //// cell binds a botopink function, which fails only through its own
-//// `@Result`, so `result:` beside `fn:` is refused at the annotation.
+//// `Result`, so `result:` beside `fn:` is refused at the annotation.
 
 import {compiler, io.terminal.print} from "std";
 

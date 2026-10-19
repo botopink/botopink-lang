@@ -1,4 +1,4 @@
-//// Decision 389 — a `@Component` named as a value in a body is a reached
+//// Decision 389 — a `Component` named as a value in a body is a reached
 //// node of the hooks list, as a call is: under 388 a component value is
 //// rendered wherever its lambda lands, so naming it reaches it. `Lista`
 //// names `Card` as an argument of a call (`itens.map(Card)`), `Badge` as the

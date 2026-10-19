@@ -1,4 +1,4 @@
-//// Decision 518 — `needs:` on `@External.Wasm` names the host features a
+//// Decision 518 — `needs:` on `compiler.external(.Wasm)` names the host features a
 //// binding needs, each a value of std's closed enum `WasmNeed { Exceptions,
 //// Http }`. A value outside it names no feature, and is refused at the
 //// annotation on every target, not on a wasm build alone (decision 516).

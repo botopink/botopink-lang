@@ -1,5 +1,5 @@
 //// Decision 538 — an `Asset` opens as a `File`: `a.open()` answers the file's API over the
-//// embedded copy (Go's `embed.FS` model), with no `@Result` — the build proved the file exists —
+//// embedded copy (Go's `embed.FS` model), with no `Result` — the build proved the file exists —
 //// and `close` a no-op. Code that takes a `File` reads one on disk (`fs.open`) and an embedded
 //// one alike; here one function reads both, and the two answer the same text.
 

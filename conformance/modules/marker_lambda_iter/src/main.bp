@@ -1,6 +1,6 @@
 //// Decision 553 (1), (4) — `iter { n -> … }` is a lambda whose body may
-//// `yield`, answering an `@Iterator`, and `async iter { n -> … }` one whose
-//// body may `yield` and `await`, answering a `@Stream`; each is typed by the
+//// `yield`, answering an `Iter`, and `async iter { n -> … }` one whose
+//// body may `yield` and `await`, answering a `AsyncIter`; each is typed by the
 //// function type it is written for (147).
 
 import {io.terminal.print} from "std";

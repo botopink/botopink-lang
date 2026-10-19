@@ -1,5 +1,5 @@
 //// Decision 375 (2), question 04s12-a's answer (1) — a method answering
-//// `@Component<R>` is marked by its own body as a top-level function is:
+//// `Component<R>` is marked by its own body as a top-level function is:
 //// `Menu.render` awaits nothing, so its lambda answers its `Rendered` at once
 //// and `await m.render()` in a body runs it with no `await`; `Menu.slow`
 //// awaits, so its lambda answers a `Promise`. `Plain`, which renders only

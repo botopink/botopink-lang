@@ -1,7 +1,7 @@
 //// Decisions 431 (2), 488, 490 — `result: true` on a host binding says the
 //// host call can fail, and the backend answers every way it fails as
 //// `Error(HostError(…))`. The declared return must then be
-//// `@Result<…, HostError>` or `@Task<@Result<…, HostError>>` with std's
+//// `Result<…, HostError>` or `Async<Result<…, HostError>>` with std's
 //// `failure.HostError`, so the flag has one reading: a binding that writes it
 //// and returns a plain value is refused at the annotation.
 

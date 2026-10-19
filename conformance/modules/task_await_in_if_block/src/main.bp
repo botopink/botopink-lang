@@ -1,4 +1,4 @@
-//// An `if` block that `await`s and does not return, inside a `@Task` body — as
+//// An `if` block that `await`s and does not return, inside a `Async` body — as
 //// a statement, nested in another `if`, and in the `else` branch. The block's
 //// value is discarded; the function runs on after it.
 ////

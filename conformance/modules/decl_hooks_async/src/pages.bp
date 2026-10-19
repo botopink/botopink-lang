@@ -4,7 +4,7 @@
 //// `false`; `Comments` writes `await`, so it is `true`; `Page` writes no
 //// `await` but calls `Comments`, so it is `true`. `Ring` and `Link` call each
 //// other and `Link` awaits: the cycle is asynchronous. `Feed` calls a
-//// function value answering `@Component`, which the checker cannot follow:
+//// function value answering `Component`, which the checker cannot follow:
 //// `true`.
 
 import {compiler} from "std";

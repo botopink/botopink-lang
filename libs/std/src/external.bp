@@ -77,7 +77,7 @@ pub type WasiAdapter {
 //   hand-coded shape for the declaration instead of the template.
 // - `result` (decisions 431, 490): the host call can fail; every way it fails
 //   is answered as `Error(HostError(…))`, so the return is
-//   `@Result<…, HostError>` or a `@Task` of one.
+//   `Result<…, HostError>` or a `Async` of one.
 // - `Wasm`: one cell (decision 481) — `op:` a numeric wasm instruction,
 //   `std:` a function std-wasm implements (std's alone, decision 445),
 //   `wasi:` a compiler adapter, `body:` a botopink function, or a

@@ -1,8 +1,8 @@
-//// Decisions 126, 431 (2), 490 — a `#[@External.Node(…, result: true)]`
-//// function declared `-> @Task<@Result<T, HostError>>` turns a rejected Promise
+//// Decisions 126, 431 (2), 490 — a `#[compiler.external(.JavaScript(…, result: true))]`
+//// function declared `-> Async<Result<T, HostError>>` turns a rejected Promise
 //// into `Error(HostError(…))`, and a resolved value is the `T` the return
 //// wraps in `Ok`. Without `result: true` a binding promises no failure: 126's
-//// implicit conversion of every `-> @Task<@Result<T, E>>` host is retired.
+//// implicit conversion of every `-> Async<Result<T, E>>` host is retired.
 ////
 //// The host rejects with a STRING, which is not a JavaScript `Error`: its
 //// `message` is `String(e)` and its `name` is `HostErrorName.Throw` (decision

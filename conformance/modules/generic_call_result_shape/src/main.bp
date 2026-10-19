@@ -2,8 +2,8 @@
 //// one body on wasm, so what a call answers has the shape of the argument
 //// that type parameter was read from: a string, a bool, a record, an array.
 //// wasm read the declared `T`, which says nothing, and printed a string as
-//// its address (`256`) and a bool as `1`. `unwrapOr` over an `@Option` or a
-//// `@Result` answers the default's shape: a concatenation with it wrote the
+//// its address (`256`) and a bool as `1`. `unwrapOr` over an `Option` or a
+//// `Result` answers the default's shape: a concatenation with it wrote the
 //// string's address (`x272`).
 
 import {io.terminal.print} from "std";

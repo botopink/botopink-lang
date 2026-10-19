@@ -1,7 +1,7 @@
 //// Decisions 118, 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
 //// guide.md § 9, row `#[@resultGenerator]` + `@ResultGenerator<T, E>`) —
 //// `#[@resultGenerator]` is refused at the annotation over the new
-//// `@Iterator<@Result<T, E>>` return. The new form is
+//// `Iter<Result<T, E>>` return. The new form is
 //// `run/iterator_result_items.bp`.
 
 import {io.terminal.print} from "std";

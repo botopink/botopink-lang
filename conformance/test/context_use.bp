@@ -1,8 +1,8 @@
 //// Front 19 of 1.0.10-beta (C-27), decisions 87 and 88 — the `use` activation,
 //// as decisions 102/104 (front 21) spell it. A hook is
-//// `fn <noun>(…) -> @Component<R>` (decision 128) (no `use` prefix in its name);
+//// `fn <noun>(…) -> Component<R>` (decision 128) (no `use` prefix in its name);
 //// `val x = use <noun>(…)` binds `R` inside a `#[@use]` body — a component
-//// (`-> @Component<Element>`) or another hook (`-> @Component<_>`). A
+//// (`-> Component<Element>`) or another hook (`-> Component<_>`). A
 //// component is awaited by its caller (a `test` body runs in a future context,
 //// so it `await`s). The owner type is declared here: the suite depends on no
 //// library.

@@ -1,6 +1,6 @@
 //// Decision 118 rule 1 — a type alias is a transparent name. `Id`, `Pair<A, B>`
 //// and `Ids` stand for the types they name wherever they are written; `Parser<T>`
-//// names `@Result<T, ParseError>` and types `port`, a function that only passes
+//// names `Result<T, ParseError>` and types `port`, a function that only passes
 //// the value `parsePort` answers along — it uses no capability, so the alias
 //// activates nothing and is legal (`effect-wrapper-behind-alias` is the refusal
 //// for a body that does). Nothing of an alias reaches the emitted program.

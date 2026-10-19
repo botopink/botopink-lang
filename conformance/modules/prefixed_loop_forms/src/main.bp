@@ -1,6 +1,6 @@
 //// Decision 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops", first line;
 //// guide.md § 6.1 and § 9, row `#[@generator] loop { … }`) — `iter` in front of
-//// any of the three loops makes it an expression worth `@Iterator<T>`: `iter
+//// any of the three loops makes it an expression worth `Iter<T>`: `iter
 //// loop` and `iter while` over captured `var`s (the iterator's state) and `iter
 //// for` over a literal, each bound to a `val` — one of them annotated — and an
 //// `iter for` passed straight as an argument. A bare `break` in the prefixed

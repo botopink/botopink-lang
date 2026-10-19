@@ -15,7 +15,7 @@
 //// regression that fixes one form and breaks the other is visible.
 ////
 //// Each result is read as `join(",")` rather than printed as an array on
-//// purpose: `@print` of an array is decision 8 §7's separator row, which two
+//// purpose: `terminal.print` of an array is decision 8 §7's separator row, which two
 //// backends still get wrong, and a §7 row must not hide this one. A cell that
 //// only checked the program RAN would have passed before the fix — the defect
 //// is a wrong answer, not a crash — so every line asserts the VALUE.

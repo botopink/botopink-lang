@@ -1,7 +1,7 @@
 //// Decisions 298, 302 — inside an annotation `decl.meta(T)` is refused
 //// (question B-15-c, as built): a declaration's or a tag's meta is read by
 //// the code that consumes it, after every annotation ran — a template body
-//// over the `@Decl` `q.annotate` answered, `@typeInfo(X).meta(T)` — so
+//// over the `@Decl` `q.annotate` answered, `compiler.typeInfo(X).meta(T)` — so
 //// annotations do not depend on their written order. `checked` reads the
 //// meta `level` recorded before it on the same tag: refused at the read.
 

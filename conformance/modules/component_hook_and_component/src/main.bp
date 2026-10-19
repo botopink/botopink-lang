@@ -1,14 +1,14 @@
 //// Decisions 118, 120 and 128 of 1.0.10-beta (front 24, § Cells "Chain and
 //// `use`", first line; guide.md § 4 and § 9, rows `#[@use] fn f() -> @Use<C, T>`,
-//// `#[@use] fn f() -> @Component<T>`, `#[@context]` and `-> Element` on a
-//// component that uses a hook) — one wrapper, `@Component<T>`, with the base
+//// `#[@use] fn f() -> Component<T>`, `#[@context]` and `-> Element` on a
+//// component that uses a hook) — one wrapper, `Component<T>`, with the base
 //// always written. A HOOK returns any `T` (`state`: `i32`, `label`: `string`);
 //// `counter` is a hook that composes a hook with `use` and awaits a Task
-//// (`@Component ⊃ @Task`); `Widget` is a COMPONENT (its `T` implements
+//// (`Component ⊃ Async`); `Widget` is a COMPONENT (its `T` implements
 //// `@Renderable`) holding `use` and `await` in one body, and `main`
 //// awaits it (decision 388: the call only makes its lambda).
 ////
-//// Printed from inside `Widget`: commonJS lowers every `@Component` return to an
+//// Printed from inside `Widget`: commonJS lowers every `Component` return to an
 //// `async function` (decision 120) and hands `main` a Promise.
 
 import {io.terminal.print} from "std";

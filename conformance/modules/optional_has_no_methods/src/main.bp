@@ -1,5 +1,5 @@
 //// Decision 330 — `?T` has no methods: `unwrapOr` (like `map` and
-//// `flatMap`) left it and stays on `@Result`. `x ?? d` is the default.
+//// `flatMap`) left it and stays on `Result`. `x ?? d` is the default.
 
 import {io.terminal.print} from "std";
 

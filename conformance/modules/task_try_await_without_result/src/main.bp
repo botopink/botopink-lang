@@ -1,6 +1,6 @@
-//// Decisions 120 and 121 of 1.0.10-beta (front 24, § Cells "`@Task` and
-//// failure") — `try await t` needs an await channel AND a `@Result` in the
-//// return; `@Task<string>` has the first and not the second.
+//// Decisions 120 and 121 of 1.0.10-beta (front 24, § Cells "`Async` and
+//// failure") — `try await t` needs an await channel AND a `Result` in the
+//// return; `Async<string>` has the first and not the second.
 //// `effect-try-without-fallible-channel`, at the `try`. The legal spellings
 //// (`await t`, `try await t catch x`) are `run/task_await_result.bp`.
 

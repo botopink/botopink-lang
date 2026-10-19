@@ -11,8 +11,8 @@
 ////
 //// One import for the whole wire-format surface. Every encoder answers a
 //// string; every decoder that can meet malformed input answers
-//// `@Result<…, EncodingError>` (decision 486): the host cell writes
-//// `result: true` (decisions 431, 490) and answers `@Result<…, HostError>`,
+//// `Result<…, EncodingError>` (decision 486): the host cell writes
+//// `result: true` (decisions 431, 490) and answers `Result<…, HostError>`,
 //// and the public function maps it — nothing here returns a sentinel. The text
 //// codecs read and write the UTF-8 bytes of a `string`: `base64Decode` and
 //// `hexDecode` answer the bytes read back as UTF-8 (a non-UTF-8 payload is
@@ -233,7 +233,7 @@ fn formDecode(s: string) -> string {
 
 // ── the wasm bodies (decision 238) ───────────────────────────────────────────
 // wasm has no host to encode with, so each cell above names one of these
-// private bodies with `#[@External.Wasm(fn: …)]`. They run only on wasm and
+// private bodies with `#[compiler.external(.Wasm(fn: …))]`. They run only on wasm and
 // answer what the Node cell answers: a string's bytes are its UTF-8, a decoded
 // byte string is read back as Node's `toString('utf8')` reads it (WHATWG UTF-8:
 // each maximal ill-formed subsequence one U+FFFD), and the text is built from

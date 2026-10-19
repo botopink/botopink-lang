@@ -1,4 +1,4 @@
-//// Front 12 step 4.3 — `@panic` aborts the program: what was printed before it
+//// Front 12 step 4.3 — `panic` aborts the program: what was printed before it
 //// stays printed, nothing after it runs, and the status is non-zero. The cell
 //// asserts stdout **and** the abort (`panic_aborts.exit` says `nonzero`); the
 //// number itself is the runtime's (node 1, erl 1, wasmtime 134) and is not

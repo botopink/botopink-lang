@@ -1,5 +1,5 @@
 //// Decisions 105 and 357 — an annotated loop is closed: its body has only its
-//// own capabilities, never the enclosing fn's. Inside a `@Component` fn an
+//// own capabilities, never the enclosing fn's. Inside a `Component` fn an
 //// `iter loop` may not `use`: the body runs later, on demand, and a lazy
 //// `use` would activate a hook outside the render — and a `use` stands at the
 //// top level of its body only (`use-not-top-level`, naming the loop).

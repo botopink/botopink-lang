@@ -1,7 +1,7 @@
 //// Decision 277 — `decl.hooks` of a function that `use`s a host hook: one
 //// node, the function's own, holding the `use` with where it is written
 //// (`"<module>:<line>:<column>"`). A host function (`declare fn` bound by
-//// `#[@External…]`) gets no node of its own.
+//// `#[compiler.external(…)]`) gets no node of its own.
 ////
 //// wasm is not in `.targets`: `session` has no wasm binding, and the
 //// compiler refuses the `use` there.

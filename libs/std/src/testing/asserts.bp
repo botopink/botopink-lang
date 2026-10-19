@@ -5,16 +5,16 @@
 ////   Node.js  — https://nodejs.org/api/assert.html
 ////   Erlang   — (no equivalent module; pattern matching does the same job)
 ////
-//// Every assertion answers `-> @Result<void, string>` (the return is the effect):
+//// Every assertion answers `-> Result<void, string>` (the return is the effect):
 //// success is `Ok`, failure is `Error(message)`. The caller writes
 //// `try asserts.equals(a, b);` and a failure propagates to the enclosing
 //// `test` body, which ends as `FAIL <name>  (<message>)  at <file>:<line>`
 //// (the test body is a fallible context — `conformance/docs.md` § Tests). A `-test`
-//// helper that is itself `-> @Result<void, string>` composes an assertion
+//// helper that is itself `-> Result<void, string>` composes an assertion
 //// with `try` and nothing else; nothing here panics.
 ////
 //// Five rules (`asserts-api.md` § The shape of every function):
-////   1. `-> @Result<void, string>`; the `ok` position is `return;`.
+////   1. `-> Result<void, string>`; the `ok` position is `return;`.
 ////   2. `actual` first, `expected` second — everywhere (`matches(actual, pattern)`).
 ////   3. One literal message per function, `asserts.<fn>: <what>`; no value
 ////      rendering (a generic `T` has no `toString`). The call site's `@src()`
@@ -132,8 +132,8 @@ pub fn isOk<T, E>(result: Result<T, E>) -> Result<void, string> {
     return;
 }
 
-// Fails when `result` is `Ok`. To assert that a `@Result`-returning body
-// fails, this is the tool — `throws` is for a `@panic` or a host throw.
+// Fails when `result` is `Ok`. To assert that a `Result`-returning body
+// fails, this is the tool — `throws` is for a `panic` or a host throw.
 pub fn isError<T, E>(result: Result<T, E>) -> Result<void, string> {
     if (result.isOk()) throw "asserts.isError: result was Ok";
     return;
@@ -257,8 +257,8 @@ fn caughtMessage<T>(r: Result<T, Failure>) -> string {
     return text;
 }
 
-// Fails when `body` completes normally — for a `@panic` or a host raise from
-// code whose return carries no `@Result` (a failing `@Result` is `isError`).
+// Fails when `body` completes normally — for a `panic` or a host raise from
+// code whose return carries no `Result` (a failing `Result` is `isError`).
 // Generic over the body's own type and run under `failure.attempt` (decisions
 // 431, 493), so it needs Node or Erlang at run time.
 pub fn throws<T>(body: fn() -> T) -> Result<void, string> {
@@ -269,7 +269,7 @@ pub fn throws<T>(body: fn() -> T) -> Result<void, string> {
 
 // Fails when `body` completes normally, or when the caught message does not
 // contain `needle`. The message is `failure.attempt`'s `Failure.message`: a
-// `@panic(text)` / `@todo(text)` is its own `text` on every target, byte for
+// `panic(text)` / `@todo(text)` is its own `text` on every target, byte for
 // byte — a needle with a `"`, a `\` or a non-ASCII character matches alike;
 // any other host raise is its JS `message` (else `String(e)`) on Node and
 // the reason by `~tp` on Erlang (`badarg`).
@@ -290,7 +290,7 @@ pub fn fail(message: string) -> Result<void, string> {
 }
 
 // The `Error` payload of an assertion's result, or `""` for `Ok`. Not
-// a `-> @Result` fn: it is how a test reads a failure message to compare or
+// a `-> Result` fn: it is how a test reads a failure message to compare or
 // snapshot it (`test-snap.md`), matching over the builtin `Result` enum in a
 // function the manual-construction rule does not apply to.
 pub fn errorText(r: Result<void, string>) -> string {

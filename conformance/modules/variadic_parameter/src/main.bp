@@ -2,7 +2,7 @@
 //// takes zero or more positional arguments after the fixed ones, each checked
 //// against `T`, and the body reads `name` as a `T[]`. Pinned: a free function
 //// called with zero, one and three variadic arguments, a generic one, a method
-//// (`self` first, then the variadic), an associated function, and `@print`
+//// (`self` first, then the variadic), an associated function, and `terminal.print`
 //// itself, declared `(..values: unknown[])` in `builtins.d.bp`, with two.
 //// commonJS lowers it as a rest parameter, erlang and beam as one list
 //// argument, wasm as one array.

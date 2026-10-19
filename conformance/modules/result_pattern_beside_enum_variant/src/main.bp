@@ -1,4 +1,4 @@
-//// `Ok(…)` and `Error(…)` over a `@Result` subject are the `@Result`'s
+//// `Ok(…)` and `Error(…)` over a `Result` subject are the `Result`'s
 //// variants, even in a module whose own enum declares `Error` and `Ok` — a
 //// log level, a status. The enum's variants still match its own values.
 ////

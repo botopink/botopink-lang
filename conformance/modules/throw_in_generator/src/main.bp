@@ -1,6 +1,6 @@
-//// Decision 103 of 1.0.10-beta — `@Iterator<T>` has no error channel, so
+//// Decision 103 of 1.0.10-beta — `Iter<T>` has no error channel, so
 //// `throw` in a `#[@generator]` body is refused, naming the generator that
-//// has one (`@Iterator<@Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
+//// has one (`Iter<Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
 
 import {io.terminal.print} from "std";
 

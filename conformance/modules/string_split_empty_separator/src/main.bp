@@ -2,7 +2,7 @@
 //// on every target, the way JS `split("")` does for these strings; `""`
 //// splits into no piece. On beam the method lowered to `string:split/3`,
 //// which answers the whole string as one piece for an empty separator; it now
-//// runs std's `@External.Erlang` template, as erlang does.
+//// runs std's `compiler.external(.Erlang)` template, as erlang does.
 
 import {io.terminal.print} from "std";
 

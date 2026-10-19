@@ -7,7 +7,7 @@
 //// a decorator's does: typed meta of the method, read by the owner's
 //// decorator on `decl.methods` (`m.meta(Query)`, question s29-b: a method's
 //// decorators run before its owner's), and typed meta of a function, read by
-//// `@typeInfo(f).meta(Query)`. A template annotation sits beside a
+//// `compiler.typeInfo(f).meta(Query)`. A template annotation sits beside a
 //// decorator, and its text may span lines. `decl.params` is a method's own
 //// parameter list.
 

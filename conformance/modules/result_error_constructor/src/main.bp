@@ -1,5 +1,5 @@
 //// Decision 208 — `Error(e)` is no constructor either: the error of a
-//// `@Result` is made by `throw e`.
+//// `Result` is made by `throw e`.
 
 import {io.terminal.print} from "std";
 

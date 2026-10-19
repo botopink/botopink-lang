@@ -1,4 +1,4 @@
-//// Decisions 431, 486 — a std function whose host call can fail answers `@Result<T, E>`, never a `string`.
+//// Decisions 431, 486 — a std function whose host call can fail answers `Result<T, E>`, never a `string`.
 //// Where std maps the host's raise (`encoding`, `io.clock`, `io.fs`) `E` is the module's own enum and the
 //// same input is the same variant on every target; `json`, `regex` and `io.process` answer std's
 //// `HostError` itself, its `kind` `"host"`. The calls that succeed answer `Ok` beside the failing ones.

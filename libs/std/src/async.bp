@@ -1,26 +1,26 @@
-//// std/async — combinators over `@Task<T>` (decisions 120 and 121 of
+//// std/async — combinators over `Async<T>` (decisions 120 and 121 of
 //// 1.0.10-beta, front 24 step E7).
 ////
-//// An operation that can go wrong answers `@Task<@Result<T, E>>` — the task
+//// An operation that can go wrong answers `Async<Result<T, E>>` — the task
 //// that fails with `E` (decision 432): on commonJS its Promise rejects with
 //// `E`, and `await` reads the rejection back as `Error(e)`. The combinators
-//// here read that `@Result`: a host cell that awaits the tasks itself
+//// here read that `Result`: a host cell that awaits the tasks itself
 //// (`runAll`, `raceOf`, `race`) reads a failing task's rejection as the
 //// `{ error }` value `await` would answer, so nothing here hides a failure
 //// by swallowing one, and a crash stays a crash.
 ////
 //// THE ERLANG DIVERGENCE, AT THE TOP RATHER THAN IN A FOOTNOTE.
-//// `@Task<T>` lowers EAGERLY on the erlang backend: a `-> @Task` fn is a plain
+//// `Async<T>` lowers EAGERLY on the erlang backend: a `-> Async` fn is a plain
 //// function, `await` is identity, and a Task is therefore a value that has
-//// already run (`codegen/erlang.zig` — the `@Task — eager lowering` arm;
+//// already run (`codegen/erlang.zig` — the `Async — eager lowering` arm;
 //// `libs/std/src/http.bp` says the same for `http.fetch`). By the time an
-//// `Array<@Task<T>>` reaches a combinator on erlang, every element has already
+//// `Array<Async<T>>` reaches a combinator on erlang, every element has already
 //// finished, in list order, serially.
 ////
 //// So this module has TWO surfaces and they do not make the same promise.
 ////
 ////   STARTED TASKS — `allOf`, `all`, `race`.
-////   Take `Array<@Task<…>>`, the shape the guide writes
+////   Take `Array<Async<…>>`, the shape the guide writes
 ////   (`async.allOf([fetchUser(1), fetchUser(2)])`). Concurrent on commonJS,
 ////   where each Task is a live Promise. On erlang it is honest rather than
 ////   concurrent: the Tasks resolved before the call, so `allOf` / `all` read
@@ -30,7 +30,7 @@
 ////   docblock to be rewritten instead of silently making it a lie.
 ////
 ////   UNSTARTED TASKS — `runAll`, `raceOf`, `timeout`, `retry`.
-////   Take `fn() -> @Task<T>` thunks. Because nothing has run when the
+////   Take `fn() -> Async<T>` thunks. Because nothing has run when the
 ////   combinator receives them, the erlang cell can `spawn` one process per
 ////   task and gather the replies by index, and the commonJS cell can call each
 ////   thunk into `Promise.all`. Real concurrency on BOTH targets. This is the
@@ -38,9 +38,9 @@
 ////
 //// `allOf` stops at the FIRST error in input order (front 24 README, E7) — the
 //// `E` is the tasks' own type, so there is no message to join; `runAll` over
-//// `@Task<@Result<…>>` thunks answers every `@Result` when the caller wants
+//// `Async<Result<…>>` thunks answers every `Result` when the caller wants
 //// them all. `allSettled` and `settleOf` left with the rejection they settled:
-//// a Task has no failure to settle, and a `@Result` element IS the settled
+//// a Task has no failure to settle, and a `Result` element IS the settled
 //// outcome (`specs/1.0.10-beta/decisions-pending.md` 24-g).
 ////
 //// NO CANCELLATION. `raceOf`'s losers and `timeout`'s expired task keep
@@ -147,7 +147,7 @@ pub fn awaitGate(gate: Gate, millis: i32) -> Task<bool> {
 
 // ── reading a settled element ────────────────────────────────────────────────
 
-// The `Error` payload of a `@Result<T, string>`, or `""` for `Ok`. `@Result`
+// The `Error` payload of a `Result<T, string>`, or `""` for `Ok`. `Result`
 // carries `isOk`/`isError`/`unwrapOr` as builtins but no way to read the error
 // side, so without this a caller can see THAT a widget failed and never WHY —
 // the shape decision 67 refuses.
@@ -205,8 +205,8 @@ pub declare fn race<T>(tasks: Array<Task<T>>) -> Task<T>;
 // ── unstarted tasks ──────────────────────────────────────────────────────────
 
 // Run every task concurrently and answer their values in the ORDER OF THE
-// INPUT rather than the order they finished. A task over a `@Result` answers
-// its `@Result` in its slot, so `runAll` of fallible tasks is the settled
+// INPUT rather than the order they finished. A task over a `Result` answers
+// its `Result` in its slot, so `runAll` of fallible tasks is the settled
 // view: nothing is hidden and nothing stops early.
 //
 // Node: each thunk is called and the Promises go to `Promise.all`, a failing
@@ -256,7 +256,7 @@ fn expireAfter<T>(millis: i32) -> Task<Result<T, string>> {
 }
 
 // `Ok(value)` when the task answered inside the budget, `Error("timeout")`
-// when it did not. A task over a `@Result` keeps its own failure INSIDE the
+// when it did not. A task over a `Result` keeps its own failure INSIDE the
 // `Ok` (`Ok(Error(e))`): the budget and the task's outcome are two answers,
 // and neither hides the other. The task KEEPS RUNNING; the caller stops
 // waiting. Expressed over `raceOf` + `delay`.
@@ -374,7 +374,7 @@ fn retryFrom<T, E>(
 // `nextDelay(policy, n)` after failed attempt `n`. `Ok` is answered as soon as
 // an attempt succeeds; when every attempt fails, the LAST `Error` is answered —
 // the task fails with it, in `timeout`'s shape. `work` is a thunk because
-// each attempt has to start the task again; a plain `@Task<T>` never fails
+// each attempt has to start the task again; a plain `Async<T>` never fails
 // (decisions 120, 432), so there is nothing to retry over one.
 //
 // A policy that is not usable is a programming error, fatal on both targets
@@ -521,7 +521,7 @@ test "async: all ---- answers input order" {
 }
 
 test "async: race ---- fastest on commonJS, element zero on erlang" {
-    // The divergence, written as a test rather than as prose. `@Task<T>` is
+    // The divergence, written as a test rather than as prose. `Async<T>` is
     // eager on erlang: both Tasks have resolved by the time `race` is called,
     // in list order, so `race` answers the FIRST element even though the other
     // one is instant. On commonJS the Promises are live and the one that
@@ -568,7 +568,7 @@ test "async: runAll ---- runs its tasks concurrently" {
     assert values.join(",") == "a,b";
 }
 
-test "async: runAll ---- a fallible task answers its @Result in its slot" {
+test "async: runAll ---- a fallible task answers its Result in its slot" {
     val settled = await runAll(
         [
             { -> slowOk(40, "slow") },
@@ -585,7 +585,7 @@ test "async: runAll ---- a fallible task answers its @Result in its slot" {
 
 // A settled element to stand in for the `?T` fallback of `.at(i)`. `Array.at`
 // answers an optional and `unwrapOr` needs a value of the element type, which
-// here is itself a `@Result`; this is the cheapest way to spell one.
+// here is itself a `Result`; this is the cheapest way to spell one.
 fn errorProbe() -> Result<string, string> {
     throw "async: no element";
 }
@@ -694,7 +694,7 @@ declare fn countUp(counter: unknown) -> i32;
 declare fn countOf(counter: unknown) -> i32;
 
 // The text a task panics with, `""` when it answered — a panic inside a
-// `-> @Task` function is a rejected Promise on commonJS and a raise on erlang.
+// `-> Async` function is a rejected Promise on commonJS and a raise on erlang.
 fn panicOf<T>(body: fn() -> Task<T>) -> Task<string> {
     val r = await failure.attemptTask(body);
     return case r {

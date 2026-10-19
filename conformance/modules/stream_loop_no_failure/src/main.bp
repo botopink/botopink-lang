@@ -1,10 +1,10 @@
 //// Decisions 122 and 125 of 1.0.10-beta (front 24, § Cells "Streams", second
 //// line; guide.md § 6.1 and § 9, row `#[@futureGenerator] loop { … }`) — a
-//// `stream loop` with no `throw` / `try` is `@Stream<T>`, not
-//// `@Stream<@Result<…>>`: `ticks` stores the UNANNOTATED loop in a field typed
-//// `@Stream<i32>`, which is where the inferred item is checked. The loop is
+//// `stream loop` with no `throw` / `try` is `AsyncIter<T>`, not
+//// `AsyncIter<Result<…>>`: `ticks` stores the UNANNOTATED loop in a field typed
+//// `AsyncIter<i32>`, which is where the inferred item is checked. The loop is
 //// closed and brings its own await channel, so it awaits inside a plain
-//// function; the consumer's `for await` is in a `@Task` body. A bare `break`
+//// function; the consumer's `for await` is in a `Async` body. A bare `break`
 //// ends the stream. Printed from inside `run`.
 
 import {io.terminal.print} from "std";

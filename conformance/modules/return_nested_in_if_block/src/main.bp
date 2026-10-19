@@ -1,7 +1,7 @@
 //// A `return` at any depth of a statement ends the function — here an `if`
 //// nested in an `if` block, a `return` two blocks down, the same in a record
 //// METHOD, and a `throw` (a returned `Error`) nested the same way in a
-//// `@Result` function. A `return` in the arm of a `case` used as a statement
+//// `Result` function. A `return` in the arm of a `case` used as a statement
 //// is `run/return_in_case_arm_statement.bp`.
 ////
 //// The erlang gap this pins: only an `if` whose block ENDS in `return` nested

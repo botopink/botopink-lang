@@ -4,7 +4,7 @@
 ////
 //// Measured by emilia's theme front on commonJS, where the lambda form died at
 //// run time with `e.name.contains is not a function`. `String.contains` is
-//// declared `#[@External.Node("includes")]` in `libs/std/src/primitives.bp`,
+//// declared `#[compiler.external(.JavaScript("includes"))]` in `libs/std/src/primitives.bp`,
 //// and the call-site rename that reads that annotation only fires on a
 //// receiver the inferencer has resolved to a primitive. A lambda ARGUMENT was
 //// inferred with fresh variables for its parameters — nothing pushed the

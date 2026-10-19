@@ -1,4 +1,4 @@
-//// A behavior's bodied `default fn` that answers `@Task<T>` and awaits, adopted by a
+//// A behavior's bodied `default fn` that answers `Async<T>` and awaits, adopted by a
 //// type that implements the behavior without declaring it, is an async method of that
 //// type: called on a typed value and awaited. commonJS emitted the adopted body as a
 //// plain function, which Node refuses ("await is only valid in async functions").

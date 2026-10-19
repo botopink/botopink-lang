@@ -1,11 +1,11 @@
 //// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`", first line;
-//// guide.md § 3.1) — `async { … }` creates a `@Task` in ANY function: `launch`
+//// guide.md § 3.1) — `async { … }` creates a `Async` in ANY function: `launch`
 //// is a plain function (it answers a record, not a wrapper), builds two blocks
 //// and passes them to `async.allOf`. Each block's `try await` makes its value
-//// `@Result<string, string>`, so each block is `@Task<@Result<string, string>>`.
+//// `Result<string, string>`, so each block is `Async<Result<string, string>>`.
 ////
 //// `allOf` is taken in the shape front 24 step E7 writes —
-//// `allOf(Array<@Task<@Result<T, E>>>) -> @Task<@Result<Array<T>, E>>`, started
+//// `allOf(Array<Async<Result<T, E>>>) -> Async<Result<Array<T>, E>>`, started
 //// Tasks, stopping at the first error (the README's open point 3 leaves the
 //// thunk shape of `01-std/02` open; the cell follows E7 and the guide).
 //// Printed from inside `run`.

@@ -1,6 +1,6 @@
-//// Decision 8 §9 — `val assert Ok(n) = <@Result>` binds the success value; a
+//// Decision 8 §9 — `val assert Ok(n) = <Result>` binds the success value; a
 //// failure is a fatal assert (decision 4). There is no `catch` on this form:
-//// after a `catch` the value is no longer a `@Result`
+//// after a `catch` the value is no longer a `Result`
 //// (`reject/val_assert_after_catch.bp`).
 
 fn parse(n: i32) -> Result<i32, string> {

@@ -1,6 +1,6 @@
-//// Decision 530 — a template hole writes the text `@print` writes for every value, on every
+//// Decision 530 — a template hole writes the text `terminal.print` writes for every value, on every
 //// target: a record, an array, a tuple, `null`, an enum; a string writes itself, and a type
-//// implementing `Display` writes its `display()`. Each hole is printed beside the `@print` of the
+//// implementing `Display` writes its `display()`. Each hole is printed beside the `terminal.print` of the
 //// same value, so the two lines say the same.
 
 import {io.terminal.print} from "std";

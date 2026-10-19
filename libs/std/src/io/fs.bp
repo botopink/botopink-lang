@@ -7,7 +7,7 @@
 ////   Erlang   — https://www.erlang.org/doc/man/file.html
 ////   Node.js  — https://nodejs.org/api/fs.html
 ////
-//// Every function that can fail answers `@Result<…, FsError>`: the same OS error is
+//// Every function that can fail answers `Result<…, FsError>`: the same OS error is
 //// the same `FsError` variant on every target (`ENOENT`, `enoent` → `NotFound`),
 //// and `Other.message` is the host's own text. The whole-file shortcuts
 //// (`readBytes`, `readText`, `writeBytes`, `writeText`, `appendText`), `stat`, and
@@ -16,7 +16,7 @@
 //// and `create` answer a `File`, a `Closeable` closed by the writer with `defer`.
 ////
 //// The host cells (`raw…`) write `result: true` (decisions 431, 490) and answer
-//// `@Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
+//// `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
 //// and `lift` reads that message as the `FsError` of the path the caller wrote
 //// (decision 486); no cell catches by hand. All operations are synchronous
 //// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
@@ -597,7 +597,7 @@ pub fn create(path: string) -> Result<File, FsError> {
 }
 
 // An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
-// like a file on disk — no `@Result`, the build proved the file exists — and
+// like a file on disk — no `Result`, the build proved the file exists — and
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
     return File(location: asset.path, handle: memoryHandle(asset.bytes));

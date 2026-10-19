@@ -1,5 +1,5 @@
 //// Decision 553 (2) — a marker names its return type: `async fn` returns a
-//// `@Task<T>`. `total` writes `i32`, so the marker is refused where it is
+//// `Async<T>`. `total` writes `i32`, so the marker is refused where it is
 //// written, `marker-type-mismatch`.
 
 import {io.terminal.print} from "std";

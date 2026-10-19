@@ -12,7 +12,7 @@ fn portOrDefault(n: i32) -> i32 {
     return try port(n) catch 8080;
 }
 
-// 2) try alone — propagates; needs a @Result in the return
+// 2) try alone — propagates; needs a Result in the return
 fn doubled(n: i32) -> Result<i32, PortError> {
     val p = try port(n);
     return p * 2;

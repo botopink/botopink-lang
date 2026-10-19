@@ -17,6 +17,10 @@ that declares or imports a name the rewrite would bind (its own `fn print`, `typ
 that site as written and is reported (`UNDECIDED`). A module that declares the function itself
 (`io/terminal.bp`, `failure.bp`, `compiler.bp`) imports nothing for it.
 
+Comments (`//`, `///`, `////`) and `test "…"` names are respelled too: the `@Type` names, `#[@External.<T>(…)]`,
+`@External.<T>`, `@print` / `@panic` / `@typeInfo` (a `////` line is the cell's reference). The cells
+that refuse an old spelling (SKIP_CELLS) are never touched. `@Expr`, `@Decl` and `@Stage` stay in prose.
+
 Left as written, and counted: `@TypeInfo.all` (the catalogue — 144 B-137's `compiler.find`),
 `@embed` (607: `comptime Asset(compiler.embed(p))` and its reads over `File` are each cell's),
 `@emit` / `@code` / `@expr` (605), the removed effect annotations (`#[@use]`, `#[@future]`, …),
@@ -44,7 +48,7 @@ SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", "
 # The declarations the compiler still reads by name (B-139's removal piece deletes them).
 SKIP_FILES = ("std/src/builtins.d.bp", "std/src/builtins_fns.d.bp")
 # The cells whose sources write the spelling a refusal is about, on purpose.
-SKIP_CELLS = ("conformance/modules/builtin_print_removed/", "conformance/modules/prelude_name_with_sigil/")
+SKIP_CELLS = ("conformance/modules/external_beam_removed/", "conformance/modules/builtin_print_removed/", "conformance/modules/prelude_name_with_sigil/")
 
 WRAPPERS = ("Result", "Task", "Component", "Iterator", "Stream")
 PRINTS = ("print", "debug", "println")
@@ -55,6 +59,8 @@ IMPORTS = {
     "panic": ("failure.panic", "failure"),
     "compiler": ("compiler", "compiler"),
 }
+
+TARGETS = {"Beam": "Erlang", "Erlang": "Erlang", "Node": "JavaScript", "JavaScript": "JavaScript", "Wasm": "Wasm"}
 
 LEFT = ("TypeInfo", "embed", "emit", "code", "expr", "Stage", "BeamMemory", "field", "TypeOf",
         "makeRecord", "RecordKeys", "comptimeError", "compilerError", "trap", "module")
@@ -150,7 +156,21 @@ def rewrite(text, key):
         # `#[@x` is an annotation; `@`…`` a template text (no name follows).
         ann = m[max(0, a - 2):a] == "#["
         if ann:
-            if name == "external":
+            em = re.match(r"External\.(\w+)\s*\(", m[a + 1:]) if name == "External" else None
+            if em:
+                op = a + 1 + em.end() - 1
+                close = match_close(m, op)
+                if close < 0:
+                    undecided.append((line_of(a), "#[@External: no closing parenthesis"))
+                    continue
+                if cname is None and clashes("compiler", a, "#[@External"):
+                    continue
+                ed.add(a, a + 1 + em.end(), (cname or "compiler") + ".external(." + TARGETS.get(em.group(1), em.group(1)) + "(")
+                ed.add(close + 1, close + 1, ")")
+                if cname is None:
+                    need("compiler")
+                counts["#[@External.<T>(…) -> #[compiler.external(.<T>(…))"] += 1
+            elif name == "external":
                 if cname is None and clashes("compiler", a, "#[@external"):
                     continue
                 ed.add(a, mo.end(), (cname or "compiler") + ".external")
@@ -279,6 +299,68 @@ def add_imports(text, items, in_std):
         return text[:at] + ins + text[at:], (at, at, ins)
     ins = line + "\n"
     return ins + text, (0, 0, ins)
+
+
+# ── prose: comments, `////` reference lines and `test "…"` names ─────────────
+
+PROSE_TYPES = {"Result": "Result", "Task": "Async", "Component": "Component", "Iterator": "Iter",
+               "Stream": "AsyncIter", "Option": "Option"}
+PROSE_RULES = [
+    (re.compile(r"#\[@External\.(Beam|Erlang|Node|JavaScript|Wasm|<\w+>)(?:\((.*?)\))?\]"),
+     lambda mo: "#[compiler.external(.%s%s)]" % (TARGETS.get(mo.group(1), mo.group(1)),
+                                                 "" if mo.group(2) is None else "(%s)" % mo.group(2)),
+     "#[@External.<T>(…)]"),
+    (re.compile(r"@External\.(Beam|Erlang|Node|JavaScript|Wasm)\b"),
+     lambda mo: "compiler.external(.%s)" % TARGETS[mo.group(1)], "@External.<T>"),
+    (re.compile(r"@(Result|Task|Component|Iterator|Stream|Option)\b"),
+     lambda mo: PROSE_TYPES[mo.group(1)], "@<Type>"),
+    (re.compile(r"@(?:print|debug|println)\b"), lambda mo: "terminal.print", "@print"),
+    (re.compile(r"@panic\b"), lambda mo: "panic", "@panic"),
+    (re.compile(r"@typeInfo\b"), lambda mo: "compiler.typeInfo", "@typeInfo"),
+]
+TEST_NAME = re.compile(r'^(\s*test\s+")([^"\n]*)(")', re.M)
+
+
+def prose_text(t, counts):
+    for rx, fn, label in PROSE_RULES:
+        t, n = rx.subn(fn, t)
+        if n:
+            counts["prose: " + label] += n
+    return t
+
+
+def rewrite_prose(text):
+    """`text` with the old spellings respelled inside comments (`//`, `///`, `////`) and test names."""
+    m = mask(text)
+    counts = collections.Counter()
+    out, pos = [], 0
+    for ls in [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]:
+        le = text.find("\n", ls)
+        le = len(text) if le < 0 else le
+        line = text[ls:le]
+        k = 0
+        cut = None
+        while True:
+            k = line.find("//", k)
+            if k < 0:
+                break
+            if m[ls + k:ls + k + 2] == "  " and line[:k].count('"') % 2 == 0:
+                cut = k
+                break
+            k += 2
+        tn = TEST_NAME.match(line)
+        if cut is not None and "@" in line[cut:]:
+            new = line[:cut] + prose_text(line[cut:], counts)
+        elif tn and "@" in tn.group(2):
+            new = tn.group(1) + prose_text(tn.group(2), counts) + line[tn.end(2):]
+        else:
+            continue
+        if new != line:
+            out.append(text[pos:ls])
+            out.append(new)
+            pos = le
+    out.append(text[pos:])
+    return "".join(out), counts
 
 
 # ── locations: an original (line, col) to the rewritten text's ─────────────
@@ -492,6 +574,9 @@ def main(argv):
         else:
             new, counts, und, ed = rewrite(text, std_key(path))
             edits = ed.edits
+            code_new = new
+            new, pc = rewrite_prose(new)  # same lines, so the snapshot locations follow code_new
+            counts.update(pc)
         for line, what in und:
             print("UNDECIDED %s:%d %s" % (path, line, what))
             undecided += 1
@@ -503,7 +588,7 @@ def main(argv):
             print("WOULD CHANGE %s" % path)
             continue
         if snaps and edits is not None:
-            moved += move_snapshot_locations(path, text, new, edits)
+            moved += move_snapshot_locations(path, text, code_new, edits)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(new)
     for rule, n in sorted(total.items()):

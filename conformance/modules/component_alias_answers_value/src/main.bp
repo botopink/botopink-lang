@@ -1,4 +1,4 @@
-//// Decisions 388 and 118 — a function typed by an alias of `@Component`
+//// Decisions 388 and 118 — a function typed by an alias of `Component`
 //// (`-> StyledView`) is no component body: the alias types it and activates
 //// nothing, so it answers the lambda another body made (`styledView`'s), not
 //// a lambda of its own. `Render` awaits what a function value typed by the

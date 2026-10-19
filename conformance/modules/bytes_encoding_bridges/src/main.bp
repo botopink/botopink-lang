@@ -1,5 +1,5 @@
 //// Decision 346 — `encoding`'s `Bytes` bridges: base64 and hex over bytes, lossless where the
-//// text codecs read the bytes back as UTF-8. A decoder answers `@Result<Bytes, EncodingError>` with
+//// text codecs read the bytes back as UTF-8. A decoder answers `Result<Bytes, EncodingError>` with
 //// the text codecs' rules and `Error` variants (decision 486). The parent binary knew no `Bytes`.
 
 import {encoding, io.terminal.print} from "std";

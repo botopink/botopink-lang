@@ -1,4 +1,4 @@
-//// A host-backed method — `declare fn` with `#[@External.<Target>(…)]`
+//// A host-backed method — `declare fn` with `#[compiler.external(.<Target>(…))]`
 //// written INSIDE a `type` body — is a method of the type on every backend
 //// that has a host: `m.plus(4)` is an ordinary method call, the binding's `$0`
 //// is the receiver and `$1…` the arguments after it (decision 5's markers).

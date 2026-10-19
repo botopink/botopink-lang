@@ -1,6 +1,6 @@
 //// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
 //// component body with the same base it renders within that render: the call
-//// answers its `T` (the context owner), not the `@Component<T>` wrapper.
+//// answers its `T` (the context owner), not the `Component<T>` wrapper.
 //// `div([title(), Counter()])` used to red "expected Element, got Component"
 //// with no location. A hook is still `use`d.
 

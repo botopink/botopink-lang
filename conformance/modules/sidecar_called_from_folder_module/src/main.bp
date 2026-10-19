@@ -9,7 +9,7 @@
 //// the build was refused naming that package. The owner is the package the
 //// build's module table gives the module: `orm/entity` is the project's.
 ////
-//// commonJS and wasm refuse an `@External.Erlang`-only function
+//// commonJS and wasm refuse an `compiler.external(.Erlang)`-only function
 //// (`commonJS.expect`, `wasm.expect`).
 
 pub mod orm;

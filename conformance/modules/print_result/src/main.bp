@@ -1,4 +1,4 @@
-//// A `@Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` —
+//// A `Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` —
 //// at the top level and nested in an array or a record, on every target.
 
 import {io.terminal.print} from "std";

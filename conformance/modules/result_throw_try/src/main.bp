@@ -13,7 +13,7 @@ fn serverPort(n: i32) -> Result<i32, PortError> {
     return p + 1;
 }
 
-// `return` passes an existing @Result through unchanged
+// `return` passes an existing Result through unchanged
 fn firstOk(
     a: Result<i32, string>,
     b: Result<i32, string>,

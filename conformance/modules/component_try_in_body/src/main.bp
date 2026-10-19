@@ -1,4 +1,4 @@
-//// Decisions 388 and 121 — a bare `try` in a `@Component<@Result<…>>` body
+//// Decisions 388 and 121 — a bare `try` in a `Component<Result<…>>` body
 //// leaves the body early with the error, and the component's lambda still
 //// answers it as the body's result: `load("")` is `Error("empty")` read by
 //// `Page`, `load("x")` the value. `load` reads a context before its `try`,

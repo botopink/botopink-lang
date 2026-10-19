@@ -1,6 +1,6 @@
 //// Primitive controller — the central interface registry for botopink's
 //// primitive types. Declarations only (no bodies): the type checker consumes
-//// the signatures, and `#[@External.<Target>(...)]` tells each codegen
+//// the signatures, and `#[compiler.external(.<Target>(...))]` tells each codegen
 //// backend how to lower the operation (host symbol per target). Pure-logic
 //// operations carry no `@External.*` — the compiler synthesises them.
 ////
@@ -14,7 +14,7 @@ import {compiler};
 // Capability interfaces shared by every numeric width. `Self` abstracts the
 // concrete type, so one signature serves all widths; concrete types inherit via
 // `extends` and carry no duplicated members. Declared (host-backed) methods use
-// `#[@External.Erlang(…), @External.Node(…)]`; pure-logic ops carry none.
+// `#[compiler.external(.Erlang(…), compiler.external(.JavaScript)(…))]`; pure-logic ops carry none.
 
 // commonJS holds an `i64` / `u64` past ±(2^53 − 1) as a `BigInt` (decision 319),
 // and the emitter patches these methods on `BigInt.prototype` as well as on
@@ -113,7 +113,7 @@ behavior Float extends Number {
     // `float_to_binary/1` prints scientific notation (`1.50000000000000000000e+00`);
     // `short` is the shortest text that reads back as the same float (`1.5`).
     // On wasm, std-wasm's text (decisions 440, 441): the erlang target's,
-    // and the one a wasm program writes for a float anywhere — `@print`,
+    // and the one a wasm program writes for a float anywhere — `terminal.print`,
     // `"${x}"`. commonJS writes the same text through its `__bp_f64` helper
     // (a float receiver's `toString()` is lowered there, not by this binding).
     #[compiler.external(
@@ -657,7 +657,7 @@ declare fn bytesSlice1(b: Bytes, start: i32, end: ?i32) -> Bytes;
 // ── string numerals ──────────────────────────────────────────────────────────
 // Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
 // in botopink which strings are numerals; these convert, and build the
-// `@Result` and its text — a `default fn` body of this file is emitted as
+// `Result` and its text — a `default fn` body of this file is emitted as
 // written on commonJS, where `Ok(…)` / `Error(…)` name nothing. wasm's and
 // the comptime runtime's are std-wasm's (`number.*`).
 

@@ -36,7 +36,7 @@
 //// botopink value inhabited, so `beam.pdPut("k", 1)` read `expected any,
 //// got string`.
 ////
-//// Targets: `@External.Erlang` covers **both** BEAM targets — `codegen.zig:74-77`
+//// Targets: `compiler.external(.Erlang)` covers **both** BEAM targets — `codegen.zig:74-77`
 //// maps `.erlang` and `.beam` alike to the `"erlang"` lookup name. On
 //// `commonJS` and `wasm` importing this module is `std-unsupported-on-target`
 //// (`comptime/infer.zig:100`), and that is the intended answer: a target
@@ -61,7 +61,7 @@
 //// the row read of a `keyed: true` var (decision 168, front 17 step 1 of
 //// 1.0.11 — a carve-out of the std track, the layer-1 half of decision 43).
 ////
-//// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
+//// Adding a primitive: one `#[compiler.external(.Erlang("<mod>", "<symbol>"))] pub
 //// declare fn <camelCase>(…) -> unknown;`. `root.bp` already declares this
 //// module, and `build.zig` derives the std module set from `root.bp`.
 

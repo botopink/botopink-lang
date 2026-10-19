@@ -1,7 +1,7 @@
-//// Decisions 431 (2), 432, 490 — a `@Task` binding that writes `result: true`
-//// must hold the `@Result` inside the task, `@Task<@Result<…, HostError>>`: a
-//// `@Task<T>` never fails, so a host that answers later and can fail has
-//// nowhere to put the error. `-> @Task<i32>` is refused at the annotation.
+//// Decisions 431 (2), 432, 490 — a `Async` binding that writes `result: true`
+//// must hold the `Result` inside the task, `Async<Result<…, HostError>>`: a
+//// `Async<T>` never fails, so a host that answers later and can fail has
+//// nowhere to put the error. `-> Async<i32>` is refused at the annotation.
 
 import {compiler, io.terminal.print} from "std";
 

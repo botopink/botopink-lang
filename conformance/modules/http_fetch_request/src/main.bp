@@ -1,5 +1,5 @@
 //// Decision 623 — `io.http`'s `fetch` has one typed surface: `fetch(req: Request) ->
-//// @Task<@Result<Response, HttpError>>`, with `Request(method, url, headers = [], body = null)`
+//// Async<Result<Response, HttpError>>`, with `Request(method, url, headers = [], body = null)`
 //// and `HttpError { NotAllowedOnHost, Network(message), Timeout }` matched by variant. A short GET
 //// is the record with its defaults. The cell builds the requests and reads the errors; the
 //// `fetch` call type-checks in `probe` and is never run (a cell has no network).

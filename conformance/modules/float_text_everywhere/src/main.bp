@@ -1,6 +1,6 @@
 //// An `f64` written as text keeps its decimal part on every target (decision
 //// 8 § 7, the numbers' text; decision 521): in a template hole, through
-//// `toString()`, beside a string in a `+` and through `@print`. commonJS has
+//// `toString()`, beside a string in a `+` and through `terminal.print`. commonJS has
 //// one number type, so it spells the float through `__bp_f64` wherever the
 //// checker types it `f64` — an imported record's field and an `f64` a
 //// generic method answers included — and a record carries its float fields'

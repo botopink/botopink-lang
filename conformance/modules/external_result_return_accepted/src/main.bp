@@ -1,5 +1,5 @@
 //// Decisions 431 (2), 487, 488, 490 — `result: true` is accepted on a binding
-//// whose return is `@Result<…, HostError>` or `@Task<@Result<…, HostError>>`,
+//// whose return is `Result<…, HostError>` or `Async<Result<…, HostError>>`,
 //// std's `failure.HostError` named as a leaf or through its module; the flag
 //// is labelled and sits anywhere among the arguments, beside `inline:`. No
 //// binding is called: what the cell claims is that the program checks.

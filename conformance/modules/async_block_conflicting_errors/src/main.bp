@@ -1,5 +1,5 @@
 //// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`") — an `async`
-//// block's value becomes `@Result<U, E>` from its own `throw` / `try`, `E`
+//// block's value becomes `Result<U, E>` from its own `throw` / `try`, `E`
 //// unified over them; two different error types (`string` and `ParseError`)
 //// do not unify and are `gen-infer-conflicting-errors`, suggesting an
 //// annotated `val`. No line 2: the site (the block or the second `try`) is not

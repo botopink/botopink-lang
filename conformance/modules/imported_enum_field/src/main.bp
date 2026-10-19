@@ -6,7 +6,7 @@
 //// injected default is now qualified by the field's declared enum, the form
 //// a `.Top` the call writes already took. wasm printed a field of an enum
 //// with a payload variant, and a `?Target` field, as the cell's address
-//// (`place: 316`), and `@print` of such a field or name the same; they
+//// (`place: 316`), and `terminal.print` of such a field or name the same; they
 //// print by the value's header and by the optional's payload. A record of
 //// this module with an enum default takes the same path.
 

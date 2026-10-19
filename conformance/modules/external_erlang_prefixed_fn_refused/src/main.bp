@@ -1,4 +1,4 @@
-//// Decision 305 — `@External.Erlang`, which the erlang and beam targets read,
+//// Decision 305 — `compiler.external(.Erlang)`, which the erlang and beam targets read,
 //// binds a private fn by the labelled cell `fn: <name>`: the prefixed string
 //// `"fn:mixBody"` binds nothing. It is refused at the argument on every
 //// target, naming the labelled form.

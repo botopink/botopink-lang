@@ -1,6 +1,6 @@
 //// Decisions 120 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
 //// guide.md § 9, row `@Future<T>` with no error) — the one-argument `@Future<T>`
-//// is refused like the two-argument one; its fix-it is `@Task<T>`. The type sits
+//// is refused like the two-argument one; its fix-it is `Async<T>`. The type sits
 //// in a parameter, so the refusal does not depend on a function's effect mode.
 //// The new form is `run/task_await_no_try.bp`.
 

@@ -1,5 +1,5 @@
-//// Decisions 305, 481 — `op:` is `@External.Wasm`'s cell alone. The prefixed
-//// string `"op:f64.floor"` on `@External.Node` is no binding and no host code
+//// Decisions 305, 481 — `op:` is `compiler.external(.Wasm)`'s cell alone. The prefixed
+//// string `"op:f64.floor"` on `compiler.external(.JavaScript)` is no binding and no host code
 //// the compiler passes through: it is refused at the argument on every
 //// target, naming the wasm cell to write.
 

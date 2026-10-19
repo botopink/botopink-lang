@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-// wasm refuses this suite on a host binding: `biggest` has no `#[@External.Wasm]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+// wasm refuses this suite on a host binding: `biggest` has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
 
 #[compiler.external(.JavaScript("Math.max($args)"), .Erlang("erlang:max($args)"))]
 declare fn biggest(a: i32, b: i32) -> i32;

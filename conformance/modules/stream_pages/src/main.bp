@@ -1,14 +1,14 @@
 //// Decisions 120, 121 and 122 of 1.0.10-beta (front 24, § Cells "Streams", first
 //// line; guide.md § 5.3 and § 9, rows `#[@futureGenerator]` +
 //// `@FutureGenerator<T, E>`, `#[@asyncGenerator]` / `@AsyncIterator`, `loop
-//// await`) — `pages` is a `@Stream<@Result<…>>` over a simulated http:
-//// `fetchPage` is a `@Task<@Result<Page, string>>` that answers two pages from
+//// await`) — `pages` is a `AsyncIter<Result<…>>` over a simulated http:
+//// `fetchPage` is a `Async<Result<Page, string>>` that answers two pages from
 //// `p1`, fails at `p3`, and answers one page from `q1`. In the stream a failing
 //// `try await` emits `Error(e)` and ENDS; each `yield` of a `U` emits `Ok(…)`.
 ////
 //// `countUsers` stops at the first error with `val users = try batch` (its return carries
-//// a `@Result`); `walk` carries on through the items with `case` and sees the
-//// `Error` as the last one. Both iterate with `for await` inside a `@Task`
+//// a `Result`); `walk` carries on through the items with `case` and sees the
+//// `Error` as the last one. Both iterate with `for await` inside a `Async`
 //// body — the await channel. Printed from inside `run`.
 
 import {io.terminal.print} from "std";
