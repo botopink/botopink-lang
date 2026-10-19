@@ -10052,7 +10052,36 @@ const BuiltInfo = envMod.TemplateBuilt;
 /// otherwise (`template-build-outside-bound`); the call then meets the type
 /// expected where it stands as any expression does, at the call, and the
 /// template's `q.note`s ride an error there (`Env.templateNotes`, `unifyAt`).
-fn finishExpansionBuilt(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, loc: ast.Loc, built: BuiltInfo) InferError!TypedExpr {
+fn finishExpansionBuilt(env: *Env, expansion: *const ast.Expr, retType: *T.Type, loc: ast.Loc, built: BuiltInfo) InferError!TypedExpr {
+    if (built.ast_nodes.len == 0) return finishExpansionTyped(env, expansion, retType, loc, built);
+    return finishExpansionTyped(env, expansion, retType, loc, built) catch |err| {
+        if (err != error.TypeError) return err;
+        const le = env.lastError orelse return err;
+        const at = le.loc orelse return err;
+        // Decision 625 (2) — a `Name` nothing binds where the tree is
+        // spliced is refused at the `ast` call, naming it.
+        if (le.kind == .unboundVariable) for (built.ast_names) |n| {
+            if (!at.eql(n.loc)) continue;
+            const message = try std.fmt.allocPrint(env.arena, "`Name(\"{s}\")` names nothing in scope where the tree is spliced", .{n.name});
+            return refuseAst(env, built.callee, message, built.at, built.file, loc);
+        };
+        // Decision 752 — a type error at a node of the tree is reported at
+        // the call, naming the `ast` call's `file:line:col` and the node; the
+        // caller's code a `Syntax` splices keeps its own location.
+        const node = astBuild.nodeAt(built.ast_nodes, at) orelse return err;
+        const file = built.file orelse srcPathOfModule(env, env.modulePath);
+        const original = try le.message(env.arena);
+        const described = try astBuild.describeNode(env.arena, node);
+        const msg = if (built.at) |b|
+            try std.fmt.allocPrint(env.arena, "{s} — in `{s}`'s tree at {s}:{d}:{d}, at the node `{s}`", .{ original, built.callee, file, b.line, b.col, described })
+        else
+            try std.fmt.allocPrint(env.arena, "{s} — in `{s}`'s tree, at the node `{s}`", .{ original, built.callee, described });
+        env.lastError = TypeError.custom(msg, "A tree `compiler.ast` builds carries no location of its own: an error inside it is reported at the call that expanded it (decision 752).").withLoc(loc);
+        return error.TypeError;
+    };
+}
+
+fn finishExpansionTyped(env: *Env, expansion_in: *const ast.Expr, retType: *T.Type, loc: ast.Loc, built: BuiltInfo) InferError!TypedExpr {
     // 144 B-10 (decisions 192, 207) — the calls the built code makes of this
     // module's functions build their inline parameter types, as the written
     // ones do (`inline_types.zig` ran before the code existed).
@@ -10399,12 +10428,14 @@ fn expandTemplateCallViaRuntime(
     // ill-formed tree is refused.
     const builtAt: ?ast.Loc = if (extras.build) |i| (if (i < numbered.locs.len) numbered.locs[i] else null) else if (numbered.locs.len == 1 and (outcome == .code or outcome == .ast)) numbered.locs[0] else null;
     var astNames: []const astBuild.Placed = &.{};
+    var astNodes: []const astBuild.At = &.{};
     const expansion: *const ast.Expr = switch (outcome) {
         .ast => |tree| blk: {
             const built = try astExpansion(env, tfn, tree, captures, loc);
             switch (built) {
                 .ok => |r| {
                     astNames = r.names;
+                    astNodes = r.nodes;
                     break :blk r.expr;
                 },
                 .ill => |message| return refuseAst(env, tfn.name, message, builtAt, if (own_template) null else srcPathOfModule(env, owner), loc),
@@ -10497,22 +10528,14 @@ fn expandTemplateCallViaRuntime(
         .at = builtAt,
         .file = if (own_template) null else srcPathOfModule(env, owner),
         .notes = extras.notes,
+        .ast_names = astNames,
+        .ast_nodes = astNodes,
     };
     if (memoKey) |key| {
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
         try env.templateEvalBuilt.put(env.arena, key, built);
     }
-    if (astNames.len == 0) return finishExpansionBuilt(env, expansion, retType, loc, built);
-    return finishExpansionBuilt(env, expansion, retType, loc, built) catch |err| {
-        // Decision 625 (2) — a `Name` nothing binds where the tree is
-        // spliced is refused at the `ast` call, naming it.
-        if (err == error.TypeError) if (env.lastError) |le| if (le.kind == .unboundVariable) if (le.loc) |at| for (astNames) |n| {
-            if (!at.eql(n.loc)) continue;
-            const message = try std.fmt.allocPrint(env.arena, "`Name(\"{s}\")` names nothing in scope where the tree is spliced", .{n.name});
-            return refuseAst(env, tfn.name, message, builtAt, built.file, loc);
-        };
-        return err;
-    };
+    return finishExpansionBuilt(env, expansion, retType, loc, built);
 }
 
 /// Decision 625 (2) — the code a `compiler.ast(node)` tree builds: each node
@@ -10520,7 +10543,7 @@ fn expandTemplateCallViaRuntime(
 /// caller's code it holds; the names the library wrote resolve in its module
 /// (decision 112), the caller's code in the caller's.
 const AstExpansion = union(enum) {
-    ok: struct { expr: *const ast.Expr, names: []const astBuild.Placed },
+    ok: struct { expr: *const ast.Expr, names: []const astBuild.Placed, nodes: []const astBuild.At },
     ill: []const u8,
 };
 
@@ -10561,7 +10584,7 @@ fn astExpansion(env: *Env, tfn: ast.FnDecl, tree: std.json.Value, captures: []co
     };
     try applyAstHygiene(env, tfn, root);
     b.fill(root);
-    return .{ .ok = .{ .expr = root, .names = b.names.items } };
+    return .{ .ok = .{ .expr = root, .names = b.names.items, .nodes = b.placed.items } };
 }
 
 /// Decision 625 (2) — `ast-ill-formed`, at the `compiler.ast` call: in this

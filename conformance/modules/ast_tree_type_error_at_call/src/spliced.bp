@@ -1,0 +1,6 @@
+import {twice} from "trees";
+
+pub fn run() -> i32 {
+    val word = "four";
+    return word.twice @`x`;
+}

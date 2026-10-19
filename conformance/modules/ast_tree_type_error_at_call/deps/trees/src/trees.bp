@@ -1,0 +1,18 @@
+//// Templates whose trees hold a type error: `double` takes an `i32`, and
+//// `wrong` hands it the template text, a `string`; `twice` doubles the code
+//// its caller writes, spliced as written.
+
+import {compiler, compiler.Call, compiler.Lit, compiler.Name, compiler.Syntax} from "std";
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub fn wrong(syntax q: string) -> anyvalue {
+    val text = compiler.text(q);
+    return compiler.ast(Call(callee: Name("double"), args: [Lit(text)]));
+}
+
+pub fn twice(syntax self: unknown, syntax q: string) -> anyvalue {
+    return compiler.ast(Call(callee: Name("double"), args: [Syntax(self)]));
+}
