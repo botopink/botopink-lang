@@ -226,8 +226,8 @@ pub const ComptimeSession = struct {
 };
 
 /// Prepend the interface declarations whose associated functions were used as
-/// call receivers (`Pair.of(...)`) but that aren't declared in the program —
-/// i.e. stdlib primitives (`Pair`, `Function`, `Array`). Codegen then emits their
+/// call receivers (`Array.range(...)`) but that aren't declared in the program —
+/// i.e. stdlib primitives (`Array`, `String`). Codegen then emits their
 /// namespace objects so `Interface.method(...)` resolves at runtime. Local
 /// interfaces already in the program are skipped (avoids duplicate emission).
 /// True when `decls` declare a template function (`-> @Expr<T>` /
@@ -3997,7 +3997,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     try env.bind("false", try env.namedType("bool"));
     for (sources) |src| {
         // Parse into `env.arena` (not a scratch arena): the interface decls for
-        // primitive associated fns (`Pair`, `Function`, …) are retained in
+        // primitive associated fns (`Array`, …) are retained in
         // `env.assocInterfaceDecls` and emitted by codegen, so they must outlive
         // this call.
         const alloc = env.arena;

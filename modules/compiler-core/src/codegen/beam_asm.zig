@@ -2219,7 +2219,7 @@ fn emitBeamAsm(
                 .record => try em.emitRecord(tdecl),
                 .enum_ => try em.emitEnum(tdecl),
             },
-            // An interface's associated `default fn`s (`Array.range`, `Pair.of`)
+            // An interface's associated `default fn`s (`Array.range`, `Array.repeat`)
             // are pure botopink — emit them as local mangled fns (`'Array_range'`).
             .behavior => |i| try em.emitInterfaceAssoc(i),
             .implement => |im| try em.emitImplement(im),
@@ -7800,7 +7800,7 @@ const Emitter = struct {
                     if (cc.trailing.len == 0 and (self.record_fields.contains(rn) or self.enum_names.contains(rn))) {
                         if (try self.typeAssocCall(rn, cc, mode)) return;
                     }
-                    // Associated `default fn` of an interface (`Array.range`, `Pair.of`):
+                    // Associated `default fn` of an interface (`Array.range`, `Array.repeat`):
                     // emitted as the local mangled fn `'<Interface>_<callee>'` by
                     // `emitInterfaceAssoc` (the interface is inlined), so call it
                     // directly — never a remote `array:range`.

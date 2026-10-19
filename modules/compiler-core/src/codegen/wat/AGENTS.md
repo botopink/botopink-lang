@@ -627,7 +627,7 @@ of its functions needed a host; no module does now. **One shape is still lowered
 only when a call reaches it**: an associated `default fn` with a type parameter
 of its own or of its behavior (`behavior Probe<A> { default fn f(x: A) … }`),
 which commonJS refuses uncalled and wasm accepts. Queueing those too emits the
-primitive behaviors' (`Array.range`, `Array.repeat`, `Pair.of`, …) into every
+primitive behaviors' (`Array.range`, `Array.repeat`, …) into every
 module that carries the behavior — measured: 14 wasm fixtures change and a
 two-line `flatMap` program's `.wat` goes from 12 to 17 functions — which is
 `05-wasm`'s to weigh.

@@ -1486,8 +1486,8 @@ pub const Env = struct {
     /// Nothing below inference learns a new pattern.
     optionalNullCases: std.AutoHashMap(ast.Loc, []const u8),
     /// Interface declarations that expose associated functions (`default fn` with
-    /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
-    /// `Array`) registered before user inference. Used to emit their namespace
+    /// no `self`), keyed by name. Includes stdlib primitives (`Array`,
+    /// `String`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
     assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
     /// A program's own `behavior` named like one std already registered
@@ -1559,7 +1559,7 @@ pub const Env = struct {
     stdDecoratorHandles: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     /// Interface names actually used as an associated-fn call receiver
-    /// (`Pair.of(...)`), recorded during inference so codegen emits only the
+    /// (`Array.range(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
     usedAssocInterfaces: std.StringHashMap(void),
     /// Resolved external-dispatch rewrites: call-site location → extension symbol

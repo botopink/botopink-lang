@@ -3565,7 +3565,7 @@ const Emitter = struct {
         } });
 
         // Associated functions (`default fn` with no `self` receiver, e.g.
-        // `Pair.of`, `Function.compose`) materialize as a namespace object so
+        // `Array.range`, `Array.repeat`) materialize as a namespace object so
         // `Interface.method(...)` resolves at runtime. Instance methods (with a
         // `self` receiver) dispatch on the value and are not emitted here.
         var has_assoc = false;
@@ -3580,7 +3580,7 @@ const Emitter = struct {
             // `Bool`) already exists as a global constructor: associated fns are
             // statics on it (`Array.range = …`). Emitting `const Array = {}` would
             // SHADOW the global and leave `Array.prototype.*` patches setting
-            // properties on `undefined`. Only a fresh interface (`Pair`/`Function`)
+            // properties on `undefined`. Only a fresh interface (`Array`)
             // needs the namespace object.
             const assoc_ns = jsIdent(i.name);
             if (!isJsGlobalNamespace(jsPrototypeOwner(i.name)) and !isJsGlobalNamespace(i.name)) {

@@ -1,11 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val p = Pair.of(1, "one");
-    print(Pair.first(p));
-    print(Function.identity(42));
-    val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
-    print(inc(10));
+    print(Array.range(0, 3).length);
+    print(Array.repeat("x", 2).join(","));
 }
 
 import {io.terminal.print} from "std";
@@ -15,62 +12,48 @@ import {io.terminal.print} from "std";
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
--export(['__bp_priv__function_identity'/1, '__bp_priv__function_compose'/2, '__bp_priv__function_flip'/1, '__bp_priv__function_constant'/1, '__bp_priv__pair_of'/2, '__bp_priv__pair_first'/1, '__bp_priv__pair_second'/1, '__bp_priv__pair_swap'/1, '__bp_priv__pair_mapFirst'/2, '__bp_priv__pair_mapSecond'/2, '__bp_priv__main'/0]).
+-export(['__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__main'/0]).
 
-%% behavior Function
+%% behavior Array
 
-function_identity(X) ->
-    X.
-
-function_compose(F, G) ->
-    fun(A) ->
-        G(F(A))
+array_range(Start, Stop) ->
+    case ((Stop - Start) =< 0) of
+        true ->
+            [];
+        false ->
+            case ((Stop - Start) =:= 1) of
+                true ->
+                    [Start];
+                false ->
+                    Count = (Stop - Start),
+                    Low = array_range(Start, (Start + (Count div 2))),
+                    High = array_range((Start + (Count div 2)), Stop),
+                    '__bp_prim_append'(Low, High)
+            end
     end.
 
-function_flip(F) ->
-    fun(B, A) ->
-        F(A, B)
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Half = array_repeat(Value, (Times div 2)),
+            case ((Times rem 2) =:= 0) of
+                true ->
+                    '__bp_prim_append'(Half, Half);
+                false ->
+                    '__bp_prim_append'('__bp_prim_append'(Half, Half), [Value])
+            end
     end.
-
-function_constant(X) ->
-    fun(Ignored) ->
-        X
-    end.
-
-%% behavior Pair
-
-pair_of(First, Second) ->
-    {First, Second}.
-
-pair_first(P) ->
-    erlang:element(1, P).
-
-pair_second(P) ->
-    erlang:element(2, P).
-
-pair_swap(P) ->
-    {erlang:element(2, P), erlang:element(1, P)}.
-
-pair_mapFirst(P, Transform) ->
-    {Transform(erlang:element(1, P)), erlang:element(2, P)}.
-
-pair_mapSecond(P, Transform) ->
-    {erlang:element(1, P), Transform(erlang:element(2, P))}.
 
 main() ->
-    P = pair_of(1, <<"one">>),
-    '__bp_print'([pair_first(P)]),
-    '__bp_print'([function_identity(42)]),
-    Inc = function_compose(fun(X) ->
-        '__bp_int'((X + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:5:41">>)
-    end, fun(Y) ->
-        '__bp_int'((Y * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:5:57">>)
-    end),
-    '__bp_print'([Inc(10)]).
+    '__bp_print'([erlang:length(array_range(0, 3))]),
+    '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, array_repeat(<<"x">>, 2))))]).
 
--compile({inline,['__bp_int'/4]}).
-'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
-'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
+'__bp_prim_append'(Recv, Arg0) when erlang:is_list(Recv) ->
+    (Recv ++ Arg0);
+'__bp_prim_append'(Recv, _) ->
+    erlang:error({bp_unsupported_method, <<"append">>, 1, Recv}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -101,32 +84,15 @@ main() ->
 main(_Args) ->
     '_botopink_main'().
 
-'__bp_priv__function_identity'(A0) -> function_identity(A0).
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
 
-'__bp_priv__function_compose'(A0, A1) -> function_compose(A0, A1).
-
-'__bp_priv__function_flip'(A0) -> function_flip(A0).
-
-'__bp_priv__function_constant'(A0) -> function_constant(A0).
-
-'__bp_priv__pair_of'(A0, A1) -> pair_of(A0, A1).
-
-'__bp_priv__pair_first'(A0) -> pair_first(A0).
-
-'__bp_priv__pair_second'(A0) -> pair_second(A0).
-
-'__bp_priv__pair_swap'(A0) -> pair_swap(A0).
-
-'__bp_priv__pair_mapFirst'(A0, A1) -> pair_mapFirst(A0, A1).
-
-'__bp_priv__pair_mapSecond'(A0, A1) -> pair_mapSecond(A0, A1).
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
 
 '__bp_priv__main'() -> main().
 ```
 
 ----- RUN LOG -----
 ```logs
-1
-42
-22
+3
+x,x
 ```

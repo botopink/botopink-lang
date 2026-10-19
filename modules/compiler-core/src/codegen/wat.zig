@@ -730,7 +730,7 @@ fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
 }
 
 /// Whether `b` is a primitive behavior of the std prelude (`String`, `Array`,
-/// the numeric tower, `Bool`, `Function`, `Pair`) whose declaration already
+/// the numeric tower, `Bool`) whose declaration already
 /// sits in `own` or `linked` with the same members, name for name — the
 /// prelude materialised twice.
 fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: []const ast.DeclKind) bool {
@@ -2856,7 +2856,7 @@ const Emitter = struct {
     /// Top-level fn name → the table slot of its trampoline, for a fn used as
     /// a value.
     fn_refs: std.StringHashMap(u32),
-    /// Interface associated `default fn`s (`Pair.of`), by WAT symbol
+    /// Interface associated `default fn`s (`Array.range`), by WAT symbol
     /// (`Pair_of`), and the ones some call reached (emitted by
     /// `emitPendingFns`).
     iface_assoc: std.StringHashMap(ast.BehaviorMethod),
@@ -3434,7 +3434,7 @@ const Emitter = struct {
                 // refused called or not (decision 146). One with a type
                 // parameter — its own or its behavior's — is still emitted
                 // only when a call reaches it: emitting each of the primitive
-                // behaviors' (`Array.range`, `Pair.of`, …) into every module
+                // behaviors' (`Array.range`, `Array.repeat`, …) into every module
                 // that carries the behavior is `05-wasm`'s to weigh.
                 if (i.genericParams.len + m.genericParams.len == 0) try self.assoc_needed.append(self.alloc, sym);
             },

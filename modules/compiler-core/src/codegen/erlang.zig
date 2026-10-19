@@ -3488,7 +3488,7 @@ const Emitter = struct {
     /// vals as local variables instead.
     top_vals: std.StringHashMap(void),
     /// Interface associated `default fn` qualified names (`"Array.range"`,
-    /// `"Pair.of"`). These pure-botopink fns are emitted as bare local functions
+    /// `"Array.repeat"`). These pure-botopink fns are emitted as bare local functions
     /// (the interface decl is inlined into each consuming module), so an
     /// `Interface.method(...)` call resolves to the local fn, not a remote
     /// `array:range`. Populated by `collectInterfaces`.

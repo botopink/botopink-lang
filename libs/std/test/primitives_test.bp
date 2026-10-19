@@ -7,10 +7,10 @@
 
 import {compiler};
 
-// ── numeric, bool, string, function ──────────────────────────────────────────
+// ── numeric, bool, string ──────────────────────────────────────────
 // Migrated from the former int/float/bool/string/function modules. Rewritten
 // in method syntax (receivers are `val`-bound — literal receivers don't parse).
-// Combinators are called via the interface qualifier: `Function.identity(x)`.
+// The function combinators are std's `functions` module (decision 738).
 
 test "i32 abs" {
     val neg = -5;
@@ -212,41 +212,6 @@ test "string split on the empty separator answers every character" {
 test "string trim" {
     val padded = "  hi  ";
     assert padded.trim() == "hi";
-}
-
-test "function identity" {
-    assert Function.identity(42) == 42;
-    assert Function.identity("hi") == "hi";
-    assert Function.identity(true);
-}
-
-test "function compose left-to-right" {
-    val double: fn(i32) -> i32 = { n -> n * 2 };
-    val addOne: fn(i32) -> i32 = { n -> n + 1 };
-    val f = Function.compose(double, addOne);
-    assert f(3) == 7;
-    assert f(0) == 1;
-}
-
-test "function compose with string transform" {
-    val shout: fn(string) -> string = { s -> s + "!" };
-    val greet: fn(string) -> string = { s -> "Hello, " + s };
-    val greetAndShout = Function.compose(greet, shout);
-    assert greetAndShout("world") == "Hello, world!";
-}
-
-test "function flip reverses arg order" {
-    val sub: fn(i32, i32) -> i32 = { a, b -> a - b };
-    val rsub = Function.flip(sub);
-    assert rsub(3, 10) == 7;
-}
-
-// `constant`'s answer ignores its argument, typed `unknown` (decision 668:
-// no parameter would bind a type for it), so one binding takes any argument.
-test "function constant ignores arg" {
-    val always42 = Function.constant(42);
-    assert always42("anything") == 42;
-    assert always42(0) == 42;
 }
 
 // ── option ────────────────────────────────────────────────────────────────────

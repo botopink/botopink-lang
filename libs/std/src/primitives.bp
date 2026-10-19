@@ -5,8 +5,8 @@
 //// operations carry no `@External.*` — the compiler synthesises them.
 ////
 //// Naming convention: camelCase (the legacy snake_case surface is normalised
-//// here). Method receivers are `self: Self`; free combinators live in the
-//// `Function` interface as associated functions.
+//// here). Method receivers are `self: Self`; the function combinators are
+//// std's `functions` module (decision 738).
 
 import {compiler};
 
@@ -694,68 +694,6 @@ declare fn stringToFloat(
     fraction: string,
     exponent: string,
 ) -> Result<f64, string>;
-
-// ── function combinators ──────────────────────────────────────────────────────
-
-// Pure higher-order combinators for function values. Associated functions
-// (no `self` receiver): `Function.identity(x)`, `Function.compose(f, g)`, …
-// Pure botopink — `default` bodies, no host backing.
-behavior Function {
-    default fn identity<A>(x: A) -> A {
-        return x;
-    }
-
-    default fn compose<A, B, C>(
-        f: fn(a: A) -> B,
-        g: fn(b: B) -> C,
-    ) -> fn(A) -> C {
-        return { a -> g(f(a)) };
-    }
-
-    default fn flip<A, B, C>(f: fn(a: A, b: B) -> C) -> fn(B, A) -> C {
-        return { b, a -> f(a, b) };
-    }
-
-    default fn constant<A>(x: A) -> fn(unknown) -> A {
-        return { ignored -> x };
-    }
-}
-
-// A pair IS a 2-tuple `#(A, B)` — structural, so no own record type. Associated
-// functions (no `self` receiver) over tuples: `Pair.of(a, b)`, `Pair.first(p)`, …
-// Pure botopink — `default` bodies, no host backing.
-behavior Pair<A, B> {
-    // NOTE: named `of` (not `new`) — `new` is a reserved keyword.
-    default fn of(first: A, second: B) -> #(A, B) {
-        return #(first, second);
-    }
-
-    default fn first(p: #(A, B)) -> A {
-        return p._0;
-    }
-
-    default fn second(p: #(A, B)) -> B {
-        return p._1;
-    }
-
-    default fn swap(p: #(A, B)) -> #(B, A) {
-        return #(p._1, p._0);
-    }
-
-    default fn mapFirst<C>(
-        p: #(A, B),
-        transform: fn(value: A) -> C,
-    ) -> #(C, B) {
-        return #(transform(p._0), p._1);
-    }
-
-    default fn mapSecond<C>(
-        p: #(A, B),
-        transform: fn(value: B) -> C,
-    ) -> #(A, C) {
-        return #(p._0, transform(p._1));
-    }
-}
 
 // ── array (eager collection) ──────────────────────────────────────
 // The eager indexed collection — implements the lazy `Iterator<T>` (`next`)

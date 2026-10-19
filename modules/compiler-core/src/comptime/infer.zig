@@ -1603,6 +1603,15 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         return TypeError.custom(msg, "Import it: `import {failure.panic} from \"std\";` (decision 606 (2)).").withLoc(loc);
     }
     return TypeError.unboundVariable(name).withLoc(loc);
+    // Decision 738 — neither `Pair` nor `Function` exists.
+    if (std.mem.eql(u8, name, "Pair")) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — a pair is the tuple `#(A, B)`", .{name});
+        return TypeError.custom(msg, "Build it as `#(a, b)`, read it as `p._0` / `p._1` or `val #(a, b) = p` (decision 738).").withLoc(loc);
+    }
+    if (std.mem.eql(u8, name, "Function")) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — the function combinators are std's `functions` module", .{name});
+        return TypeError.custom(msg, "Import one by path: `import {functions.compose} from \"std\";` (decision 738).").withLoc(loc);
+    }
 }
 
 /// Decision 8 §2.4 — a `pub` declaration whose **inferred** type contains
@@ -2633,7 +2642,7 @@ fn extendStdBehavior(env: *Env, d: ast.BehaviorDecl) InferError!ast.BehaviorDecl
 }
 
 /// Register an interface's associated functions — `default fn` members with no
-/// `self` receiver (`Pair.of`, `Function.compose`, `Array.range`) — under the
+/// `self` receiver (`Array.range`, `Array.repeat`) — under the
 /// qualified name `"<Interface>.<method>"`, so `inferCallExpr` can resolve a
 /// `Interface.method(...)` call as a callable. Interface + method generics are
 /// generalized to `.generic`, so each call site instantiates fresh vars
@@ -2680,7 +2689,7 @@ fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!voi
     }
 }
 
-/// Infer a call to an interface associated function (`Pair.of(a, b)`). `fnTy` is
+/// Infer a call to an interface associated function (`Array.range(0, n)`). `fnTy` is
 /// the registered signature (`.generic` params); each call instantiates fresh
 /// vars, unifies them with the args, and yields the instantiated return type.
 fn inferAssociatedFnCall(
@@ -23341,7 +23350,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             .kind = .{ .ident = rn },
                         } });
                     }
-                    // Associated interface fn receiver (`Pair.of`): `rn` names an
+                    // Associated interface fn receiver (`Array.range`): `rn` names an
                     // interface (a type, not a value). Synthesize the receiver
                     // node; the call resolves to the registered `rn.callee` below.
                     if (env.lookup(rn) == null) {
@@ -23774,8 +23783,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (call.receiver) |recvExpr| {
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const recvName = recvExpr.*.identifier.kind.ident;
-                    // Associated interface fn (`Pair.of(a, b)`, `Array.range(0, n)`,
-                    // `Function.compose(f, g)`): `recvName.callee` is registered by
+                    // Associated interface fn (`Array.range(0, n)`, `Array.repeat(x, n)`):
+                    // `recvName.callee` is registered by
                     // `registerInterfaceAssociatedFns`. Each call instantiates fresh
                     // generics. Guarded by `lookup(recvName) == null` so value
                     // bindings of the same name keep their normal method dispatch.

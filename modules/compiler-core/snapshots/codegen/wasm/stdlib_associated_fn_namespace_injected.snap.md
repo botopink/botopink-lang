@@ -1,11 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val p = Pair.of(1, "one");
-    print(Pair.first(p));
-    print(Function.identity(42));
-    val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
-    print(inc(10));
+    print(Array.range(0, 3).length);
+    print(Array.repeat("x", 2).join(","));
 }
 
 import {io.terminal.print} from "std";
@@ -14,133 +11,231 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_any (array (mut anyref)))
+    (type $arr_i32 (array (mut i32)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (data (i32.const 256) "\03\00\00\00one")
-  (data (i32.const 264) "\2a\00\00\00integer overflow: + on i32 at main.bp:5:41")
-  (data (i32.const 312) "\2a\00\00\00integer overflow: * on i32 at main.bp:5:57")
-  (global $__heap_ptr (mut i32) (i32.const 360))
+  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    (local $p i32)
-    (local $inc i32)
+    i32.const 0
+    i32.const 3
+    call $Array_range
+    array.len
+    call $__print_i32
+    global.get $__s0
+    i32.const 2
+    call $Array_repeat__E_string
+    global.get $__s1
+    call $__arr_join_any
+    call $__print_str
+  )
+  (func $Array_repeat__E_string (param $value (ref null $str)) (param $times i32) (result (ref null $arr_any))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $__fnv0 i32)
-    i32.const 1
-    i32.const 256
-    call $Pair_of__A_i32__B_string
-    local.set $p
-    local.get $p
-    call $Pair_first
-    call $__print_i32
-    i32.const 42
-    call $Function_identity
-    call $__print_i32
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
+    (local $half (ref null $arr_any))
+    local.get $times
     i32.const 0
-    i32.store
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 1
-    i32.store
-    local.get $__mem1
-    call $Function_compose
-    local.set $inc
-    local.get $inc
-    local.set $__fnv0
-    local.get $__fnv0
-    i32.const 10
-    local.get $__fnv0
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    call $__print_i32
-  )
-  (func $Pair_of__A_i32__B_string (param $first i32) (param $second i32) (result i32)
-    (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    local.get $first
-    i32.store
-    local.get $__mem0
-    local.get $second
-    i32.store offset=4
-    local.get $__mem0
+    i32.le_s
+    (if (result (ref null $arr_any))
+      (then
+    array.new_fixed $arr_any 0
+      )
+      (else
+    local.get $value
+    local.get $times
+    i32.const 2
+    i32.div_s
+    call $Array_repeat__E_string
+    local.set $half
+    local.get $times
+    i32.const 2
+    i32.rem_s
+    i32.const 0
+    i32.eq
+    (if (result (ref null $arr_any))
+      (then
+    local.get $half
+    local.get $half
+    call $__arr_concat_any
+      )
+      (else
+    local.get $half
+    local.get $half
+    call $__arr_concat_any
+    local.get $value
+    array.new_fixed $arr_any 1
+    call $__arr_concat_any
+      )
+    )
+      )
+    )
     return
   )
-  (func $__lambda0 (param $__env i32) (param $x i32) (result i32)
-    local.get $x
+  (func $Array_range (param $start i32) (param $stop i32) (result (ref null $arr_i32))
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $count i32)
+    (local $low (ref null $arr_i32))
+    (local $high (ref null $arr_i32))
+    local.get $stop
+    local.get $start
+    global.get $__s2
+    call $__i32_sub_chk
+    i32.const 0
+    i32.le_s
+    (if (result (ref null $arr_i32))
+      (then
+    array.new_fixed $arr_i32 0
+      )
+      (else
+    local.get $stop
+    local.get $start
+    global.get $__s3
+    call $__i32_sub_chk
     i32.const 1
-    i32.const 264
+    i32.eq
+    (if (result (ref null $arr_i32))
+      (then
+    local.get $start
+    array.new_fixed $arr_i32 1
+      )
+      (else
+    local.get $stop
+    local.get $start
+    global.get $__s4
+    call $__i32_sub_chk
+    local.set $count
+    local.get $start
+    local.get $start
+    local.get $count
+    i32.const 2
+    i32.div_s
+    global.get $__s5
     call $__i32_add_chk
-  )
-  (func $__lambda1 (param $__env i32) (param $y i32) (result i32)
-    local.get $y
+    call $Array_range
+    local.set $low
+    local.get $start
+    local.get $count
     i32.const 2
-    i32.const 312
-    call $__i32_mul_chk
-  )
-  (func $Pair_first (param $p i32) (result i32)
-    local.get $p
-    i32.load
+    i32.div_s
+    global.get $__s6
+    call $__i32_add_chk
+    local.get $stop
+    call $Array_range
+    local.set $high
+    local.get $low
+    local.get $high
+    call $__arr_concat_i32
+      )
+    )
+      )
+    )
     return
-  )
-  (func $Function_identity (param $x i32) (result i32)
-    local.get $x
-    return
-  )
-  (func $Function_compose (param $f i32) (param $g i32) (result i32)
-    (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    local.get $g
-    i32.store offset=4 ;; capture g
-    local.get $__mem0
-    local.get $f
-    i32.store offset=8 ;; capture f
-    local.get $__mem0
-    return
-  )
-  (func $__lambda2 (param $__env i32) (param $a i32) (result i32)
-    (local $g i32)
-    (local $f i32)
-    (local $__fnv0 i32)
-    (local $__fnv1 i32)
-    local.get $__env
-    i32.load offset=4
-    local.set $g
-    local.get $__env
-    i32.load offset=8
-    local.set $f
-    local.get $g
-    local.set $__fnv0
-    local.get $__fnv0
-    local.get $f
-    local.set $__fnv1
-    local.get $__fnv1
-    local.get $a
-    local.get $__fnv1
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    local.get $__fnv0
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__arr_join_any (param $xs (ref null $arr_any)) (param $sep (ref null $str)) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $acc (ref null $str))
+    local.get $xs
+    array.len
+    local.set $n
+    i32.const 0
+    array.new_default $str
+    local.set $acc
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    local.get $acc
+    local.get $sep
+    call $__str_concat
+    local.set $acc
+      )
+    )
+    local.get $acc
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+    ref.cast (ref null $str)
+    call $__str_concat
+    local.set $acc
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $acc
+  )
+  (func $__arr_concat_any (param $xs (ref null $arr_any)) (param $ys (ref null $arr_any)) (result (ref null $arr_any))
+    (local $la i32)
+    (local $lb i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $la
+    local.get $ys
+    array.len
+    local.set $lb
+    local.get $la
+    local.get $lb
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $la
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $la
+    local.get $ys
+    i32.const 0
+    local.get $lb
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_concat_i32 (param $xs (ref null $arr_i32)) (param $ys (ref null $arr_i32)) (result (ref null $arr_i32))
+    (local $la i32)
+    (local $lb i32)
+    (local $r (ref null $arr_i32))
+    local.get $xs
+    array.len
+    local.set $la
+    local.get $ys
+    array.len
+    local.set $lb
+    local.get $la
+    local.get $lb
+    i32.add
+    array.new_default $arr_i32
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $la
+    array.copy $arr_i32 $arr_i32
+    local.get $r
+    local.get $la
+    local.get $ys
+    i32.const 0
+    local.get $lb
+    array.copy $arr_i32 $arr_i32
+    local.get $r
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
@@ -322,6 +417,74 @@ import {io.terminal.print} from "std";
       )
     )
   )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
+    local.get $a
+    array.len
+    local.set $alen
+    local.get $b
+    array.len
+    local.set $blen
+    local.get $alen
+    local.get $blen
+    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $a
+    i32.const 0
+    local.get $alen
+    array.copy $str $str
+    local.get $r
+    local.get $alen
+    local.get $b
+    i32.const 0
+    local.get $blen
+    array.copy $str $str
+    local.get $r
+  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -430,7 +593,8 @@ import {io.terminal.print} from "std";
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -438,10 +602,35 @@ import {io.terminal.print} from "std";
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -449,8 +638,10 @@ import {io.terminal.print} from "std";
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -473,7 +664,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -496,7 +687,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -519,7 +710,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -543,7 +734,7 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -567,7 +758,7 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -608,17 +799,62 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
+  (data $__d0 "x")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 ",")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "integer overflow: - on i32 at main.bp:813:25")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "integer overflow: - on i32 at main.bp:815:23")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "integer overflow: - on i32 at main.bp:818:30")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "integer overflow: + on i32 at main.bp:819:48")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "integer overflow: + on i32 at main.bp:820:42")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 44
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 44
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 44
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 44
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 44
+    array.new_data $str $__d6
+    global.set $__s6
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-1
-42
-22
+3
+x,x
 ```

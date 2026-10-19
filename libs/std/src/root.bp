@@ -34,6 +34,7 @@ pub mod string_builder;
 pub mod encoding;
 pub mod hash;
 pub mod escape;
+pub mod functions;
 pub mod async;
 pub mod failure;
 pub mod types;

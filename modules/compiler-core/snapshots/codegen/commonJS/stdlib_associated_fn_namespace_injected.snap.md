@@ -1,11 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val p = Pair.of(1, "one");
-    print(Pair.first(p));
-    print(Function.identity(42));
-    val inc = Function.compose({ x -> x + 1 }, { y -> y * 2 });
-    print(inc(10));
+    print(Array.range(0, 3).length);
+    print(Array.repeat("x", 2).join(","));
 }
 
 import {io.terminal.print} from "std";
@@ -13,6 +10,22 @@ import {io.terminal.print} from "std";
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
+
+function __bp_eq(a, b, d) {
+    if (Object.is(a, b)) {
+        return true;
+    }
+    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+    }
+    const k = Object.keys(a);
+    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+}
+
 function __bp_f64(v) {
     if (Number.isNaN(v)) { return "NaN"; }
     if (!Number.isFinite(v)) { return (v < 0) ? "-Infinity" : "Infinity"; }
@@ -70,70 +83,156 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
-
-// behavior Function
-//   default fn identity(...)
-//   default fn compose(...)
-//   default fn flip(...)
-//   default fn constant(...)
-const Function = {};
-Function.identity = function(x) {
-    return x;
-};
-Function.compose = function(f, g) {
-    return (a) => {
-    return g(f(a));
-};
-};
-Function.flip = function(f) {
-    return (b, a) => {
-    return f(a, b);
-};
-};
-Function.constant = function(x) {
-    return (ignored) => {
-    return x;
-};
-};
-
-// behavior Pair
-//   default fn of(...)
+// behavior Array
+//   length: i32
+//   fn at(...)
+//   fn push(...)
+//   fn pop(...)
+//   default fn slice(...)
+//   fn join(...)
+//   fn reverse(...)
+//   fn indexOf(...)
+//   default fn lastIndexOf(...)
+//   fn forEach(...)
+//   fn map(...)
+//   fn filter(...)
+//   fn zip(...)
+//   fn range(...)
+//   fn repeat(...)
+//   default fn isEmpty(...)
+//   default fn contains(...)
 //   default fn first(...)
-//   default fn second(...)
-//   default fn swap(...)
-//   default fn mapFirst(...)
-//   default fn mapSecond(...)
-const Pair = {};
-Pair.of = function(first, second) {
-    return [first, second];
+//   default fn rest(...)
+//   default fn take(...)
+//   default fn drop(...)
+//   default fn fold(...)
+//   default fn find(...)
+//   default fn count(...)
+//   default fn all(...)
+//   default fn any(...)
+//   default fn append(...)
+//   default fn prepend(...)
+//   default fn flatten(...)
+//   default fn flatMap(...)
+//   default fn toList(...)
+//   default fn some(...)
+//   default fn every(...)
+//   default fn flat(...)
+//   default fn findIndex(...)
+//   default fn fill(...)
+//   default fn chunked(...)
+//   default fn sliding(...)
+//   default fn unique(...)
+Array.range = function(start, stop) { return ((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))(start, stop); };
+Array.repeat = function(value, times) { return ((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))(value, times); };
+Array.prototype.slice = function(start, end) {
+    if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); }
 };
-Pair.first = function(p) {
-    return p[0];
+Array.prototype.zip = function(other) { return this.map((__x, __i) => [__x, (other)[__i]]).slice(0, Math.min(this.length, (other).length)); };
+Array.prototype.isEmpty = function() {
+    return (this.length === 0);
 };
-Pair.second = function(p) {
-    return p[1];
+Array.prototype.contains = function(x) {
+    return (this.indexOf(x) !== (-1));
 };
-Pair.swap = function(p) {
-    return [p[1], p[0]];
+Array.prototype.first = function() {
+    return __bp_array_at(this, 0);
 };
-Pair.mapFirst = function(p, transform) {
-    return [transform(p[0]), p[1]];
+Array.prototype.rest = function() {
+    return this.slice(1, this.length);
 };
-Pair.mapSecond = function(p, transform) {
-    return [p[0], transform(p[1])];
+Array.prototype.take = function(n) {
+    return this.slice(0, n);
+};
+Array.prototype.drop = function(n) {
+    return this.slice(n, this.length);
+};
+Array.prototype.fold = function(initial, f) {
+    let acc = initial;
+    this.forEach((x) => {
+    acc = f(acc, x);
+});
+    return acc;
+};
+Array.prototype.count = function(pred) {
+    return this.filter(pred).length;
+};
+Array.prototype.all = function(pred) {
+    return (this.filter(pred).length === this.length);
+};
+Array.prototype.any = function(pred) {
+    return (this.filter(pred).length !== 0);
+};
+Array.prototype.prepend = function(item) {
+    let out = [item];
+    this.forEach((x) => {
+    return out.push(x);
+});
+    return out;
+};
+Array.prototype.flatten = function() {
+    let out = [];
+    this.forEach((inner) => {
+    out = out.concat(inner);
+});
+    return out;
+};
+Array.prototype.toList = function() {
+    return this;
+};
+Array.prototype.some = function(pred) {
+    return this.any(pred);
+};
+Array.prototype.every = function(pred) {
+    return this.all(pred);
+};
+Array.prototype.flat = function() {
+    return this.flatten();
+};
+Array.prototype.findIndex = function(pred) {
+    let out = (-1);
+    let i = 0;
+    this.forEach((x) => {
+    (() => { if ((out === (-1))) { return (() => { if (pred(x)) { return out = i; } })(); } })();
+    i = (i + 1);
+});
+    return out;
+};
+Array.prototype.fill = function(value) {
+    return Array.repeat(value, this.length);
+};
+Array.prototype.chunked = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const len = this.length;
+    for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
+    (() => { if ((((k % n) + 0) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
+}
+    return out;
+};
+Array.prototype.sliding = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const windows = ((this.length - n) + 1);
+    if ((windows <= 0)) { return out; }
+    for (const k of Array.from({length: Math.max(0, (windows) - (0))}, (_, __i) => (0) + __i)) {
+    out = out.concat([this.slice(k, (k + n))]);
+}
+    return out;
+};
+Array.prototype.unique = function() {
+    let out = [];
+    this.forEach((x) => {
+    return (() => { if ((!out.any((y) => {
+    return __bp_eq(y, x, 0);
+}))) { return out = out.concat([x]); } })();
+});
+    return out;
 };
 
 function main() {
-    const p = Pair.of(1, "one");
-    __bp_print(Pair.first(p));
-    __bp_print(Function.identity(42));
-    const inc = Function.compose((x) => {
-    return __bp_int((x + 1), -2147483648, 2147483647, "+ on i32 at main.bp:5:41");
-}, (y) => {
-    return __bp_int((y * 2), -2147483648, 2147483647, "* on i32 at main.bp:5:57");
-});
-    __bp_print(inc(10));
+    __bp_print(Array.range(0, 3).length);
+    __bp_print(Array.repeat("x", 2).join(","));
 }
 
 function _botopink_main() {
@@ -141,7 +240,7 @@ function _botopink_main() {
 }
 if (require.main === module) _botopink_main();
 
-Object.defineProperty(exports, "__bp_priv__", { value: { Function, Pair, main } });
+Object.defineProperty(exports, "__bp_priv__", { value: { main } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
@@ -151,7 +250,6 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Function, Pair, main } 
 
 ----- RUN LOG -----
 ```logs
-1
-42
-22
+3
+x,x
 ```
