@@ -1,5 +1,5 @@
 //// Decision 539 (6), decision 63 — `Index<K, V>` and `Slice<V>` are ambient behaviors of
-//// `builtins.d.bp`, as `Display` and `Closeable` are: a program names them as a parameter's
+//// `primitives.bp`, as `Display` and `Closeable` are: a program names them as a parameter's
 //// type, with their arguments and no import, and a call on such a value dispatches to the
 //// implementer's method.
 

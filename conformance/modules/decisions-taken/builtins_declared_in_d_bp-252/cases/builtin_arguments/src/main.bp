@@ -1,5 +1,5 @@
 //// Decision 252 — a builtin call is held to its declaration in
-//// `builtins.d.bp`: `panic` declares one parameter, so a second argument is
+//// `primitives.bp`: `panic` declares one parameter, so a second argument is
 //// refused at the call, naming the declaration.
 
 import {failure.panic} from "std";

@@ -800,10 +800,10 @@ test "js: test body ---- try on an Error prints the FAIL line" {
 // The external scanners (`scanDeclareFnExternal` in `commonJS.zig` and
 // `erlang.zig`) read the embedded prelude and stop on a parse failure instead
 // of silently skipping it (decision 67) — so the two files must parse. Front 20
-// made `builtins.d.bp` parseable (generic `declare fn`, `_` params, typed
+// made `primitives.bp`'s compiler section parseable (generic `declare fn`, `_` params, typed
 // behavior `val` members); this pins it where a regression reds a test, not a
 // user's build.
-test "codegen: the embedded prelude parses (builtins.d.bp, primitives.bp)" {
+test "codegen: the embedded prelude parses (primitives.bp, both sections)" {
     const prelude = @import("std_prelude");
     inline for (.{ prelude.builtins, prelude.primitives }) |src| {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

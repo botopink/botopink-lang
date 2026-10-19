@@ -2874,7 +2874,7 @@ const Emitter = struct {
         try self.collectDefaultsAndExternals(program.decls, false);
         try self.collectDefaultsAndExternals(prim_program.decls, true);
         // `print` / `println` / `debug` and the other host-backed free fns of
-        // `builtins.d.bp` lower as any `declare fn` (decision 575 (6)).
+        // `primitives.bp`'s compiler section lower as any `declare fn` (decision 575 (6)).
         if (prelude_cache.builtins()) |bp| {
             for (bp.decls) |d| if (d == .@"fn") try self.collectDefaultsAndExternals(&[_]ast.DeclKind{d}, true);
         }

@@ -13,6 +13,6 @@ error: unknown-builtin: unknown builtin `@pritn` — did you mean `@print`?
 2 │     @pritn("x");
   │     ^
 
-  hint: Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.
+  hint: Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/primitives.bp`'s compiler section for the list.
 ```
 

@@ -5105,7 +5105,7 @@ fn dotCompletion(
         break;
     }
     // Effect-wrapper receivers expose the members the prelude declares for
-    // them (`libs/std/src/builtins.d.bp`, decisions 120/122/128): a sequence
+    // them (`libs/std/src/primitives.bp`'s compiler section, decisions 120/122/128): a sequence
     // steps with `next()`; a Task — and, through the chain, a `@Stream` and a
     // `@Component` — maps with `map()` / `then()`.
     if (receiver_type_name) |rtn| {
@@ -5146,7 +5146,7 @@ const stream_members = [_]WrapperMember{
 };
 const task_members = [_]WrapperMember{ task_map_member, task_then_member };
 
-/// The members `builtins.d.bp` declares on an effect wrapper, following its
+/// The members `primitives.bp`'s compiler section declares on an effect wrapper, following its
 /// `extends` chain (`Stream<T> extends Task`, `Component<R> extends Task`),
 /// or null for a name that is not a wrapper with members. `@Result`'s methods
 /// come from its own behavior and are not listed here.

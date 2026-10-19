@@ -3079,7 +3079,7 @@ pub const union_type_name = "|";
 /// `is` is a keyword, so no user function is called `is`. A source can write
 /// `@is(…)` by hand, and that call carries no `isType`: inference refuses it as
 /// `unknown-builtin` (decision 322 — `is` is only an operator, and
-/// `builtins.d.bp` declares no `is`).
+/// `primitives.bp`'s compiler section declares no `is`).
 ///
 /// **What inference has to do with it** (the checker half of N21): type the call
 /// `bool`, test the *value* by §4.1 (a number by range, converting inside the

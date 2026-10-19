@@ -1,22 +1,45 @@
 /// Compile-time string constants for the stdlib .bp source files.
 /// Imported by the botopink core type checker to preload primitive interfaces.
-/// The .bp/.d.bp sources stay under libs/std/src/ (which is .bp-only); each
+/// The .bp sources stay under libs/std/src/ (which is .bp-only); each
 /// file is exposed as an anonymous import in build.zig (std_bp_files) and
 /// embedded here by name. One `pub const` per stdlib source.
 ///
-/// `primitives.bp` is the controller (numeric tower, Bool, String, Function,
-/// Array<T>) and `builtins.d.bp` holds the builtin model (reflection, io, Result,
-/// the generators, async, Expr<E>, annotations). Both flatten
-/// into the global env. The remaining files are concrete `record`/`enum` modules
+/// `primitives.bp` is the prelude: the controller (numeric tower, Bool,
+/// String, Function, Array<T>) and, in its last section, the compiler's
+/// declarations (reflection, Result, the effect wrappers, the ambient
+/// behaviors, the builtins still written `@name(…)`). The two halves are read
+/// apart (B-139: one file, no `.d.bp`): `primitives` is the part the checker
+/// infers into the global env, `builtins` the section the compiler reads by
+/// itself — padded with the lines before it, so a location in it is the
+/// file's. The remaining files are concrete `record`/`enum` modules
 /// importable via `import {…} from "std";`.
-pub const primitives = @embedFile("primitives.bp");
+const std = @import("std");
+
+const prelude_file = @embedFile("primitives.bp");
+
+/// The line that opens `primitives.bp`'s compiler section.
+pub const compiler_section_marker = "\n// ── the compiler's declarations ";
+
+const compiler_section_at = blk: {
+    @setEvalBranchQuota(100_000_000);
+    break :blk (std.mem.indexOf(u8, prelude_file, compiler_section_marker) orelse
+        @compileError("primitives.bp has no `// ── the compiler's declarations` section")) + 1;
+};
+
+pub const primitives = prelude_file[0..compiler_section_at];
+
+pub const builtins = blk: {
+    @setEvalBranchQuota(100_000_000);
+    const lines = std.mem.count(u8, primitives, "\n");
+    break :blk ("\n" ** lines) ++ prelude_file[compiler_section_at..];
+};
+
 /// `external.bp` (decision 575 (6)): `Implementation`, the enums its `Wasm`
 /// cells take, and `external`, the annotation a `declare fn` names its host
 /// sources with — registered into every environment before the prelude is
 /// inferred (`comptime.zig` `registerExternalPrelude`), so `primitives.bp` and
-/// every std module write `#[external(…)]` with no import.
+/// every std module write `#[compiler.external(…)]`.
 pub const external = @embedFile("external.bp");
-pub const builtins = @embedFile("builtins.d.bp");
 
 // "std" package impl modules — importable via `import {…} from "std";`.
 // These are NOT flattened into the global env (see comptime.zig std_pkg_modules).

@@ -1,5 +1,5 @@
 //! Decision 277 — the hooks a function reaches, as its `@Decl` hands them to a
-//! decorator: `decl.hooks: HookNode[]` (`builtins.d.bp`).
+//! decorator: `decl.hooks: HookNode[]` (`primitives.bp`'s compiler section).
 //!
 //! **One node per function**, holding only what is written in it: each `use
 //! h(…)` (`Use` — the hook's declaration with its own annotations, the `use`'s
@@ -106,7 +106,7 @@ pub const Stage = enum {
     build,
     run,
 
-    /// The variant of `builtins.d.bp`'s `Stage` a decorator reads.
+    /// The variant of `primitives.bp`'s compiler section's `Stage` a decorator reads.
     pub fn spelled(s: Stage) []const u8 {
         return switch (s) {
             .any => "Any",

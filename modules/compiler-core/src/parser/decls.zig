@@ -41,7 +41,7 @@ const freeAnnotations = This.freeAnnotations;
 
 /// True when `kind` can begin a type reference. Mirrors `parser/types.zig`'s
 /// `startsTypeRef`; lifted here for `parseFnBody`'s arrow-less return-type
-/// shortform check (`fn typeOf<T>(val: T) type` in `libs/std/src/builtins.d.bp`).
+/// shortform check (`fn typeOf<T>(val: T) type` in `libs/std/src/primitives.bp`'s compiler section).
 fn isTypeStart(kind: TokenKind) bool {
     return switch (kind) {
         .identifier,
@@ -580,7 +580,7 @@ pub fn parseFnBody(
     {
         // `.d.bp`-style shortform: `fn name(params) Type` with no `->` and no
         // body — implicit declaration. The arrow-less form is the convention
-        // in `libs/std/src/builtins.d.bp` (`fn typeOf<T>(val: T) type`,
+        // in `libs/std/src/primitives.bp`'s compiler section (`fn typeOf<T>(val: T) type`,
         // `fn min<T>(a: T, b: T) T`). Treat as a bodyless `declare fn`.
         returnTypeLoc = parser.Parser.locFromToken(this.peek());
         returnType = try this.parseTypeRef(alloc);

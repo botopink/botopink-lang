@@ -2005,7 +2005,7 @@ targets — refused `unknown type` on the parent), `modules/decisions-taken/defe
 `implement Closeable` with no `close`, refused at the type — accepted on the parent) and
 `modules/behavior/cases/behavior_method_no_return_by_value` (a method declared with no return dispatched by value as a function's last
 statement — wasm's module was refused at load on the parent).
-144 B-107 (every public behavior of `builtins.d.bp` no compiler rule reads is ambient) adds
+144 B-107 (every public behavior of `primitives.bp` no compiler rule reads is ambient) adds
 `modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter` (`Index<string, i32>` and `Slice<i32[]>` as parameters' types, each call answered
 by the implementer, on all four targets — wasm read `at`'s box as its payload and took `slice` for a string's on the
 parent) and `modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_implement_missing_method` (an inline `implement Index<string, i32>` with no `at`,

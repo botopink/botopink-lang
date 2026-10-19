@@ -199,11 +199,11 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
-/// A builtin `builtins.d.bp` declares that no target lowers (`@module()`):
+/// A builtin `primitives.bp`'s compiler section declares that no target lowers (`@module()`):
 /// refused at the `@` instead of typed `void` and emitted verbatim.
 pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// Decision 252 — a builtin call whose arguments its declaration in
-/// `builtins.d.bp` refuses: too many, a parameter without a default missing, a
+/// `primitives.bp`'s compiler section refuses: too many, a parameter without a default missing, a
 /// label naming no parameter (a type that disagrees is the ordinary mismatch).
 pub const builtin_arguments: []const u8 = "builtin-arguments";
 /// Decision 267 — a spread (`f(..xs)`) at a call of a variadic function.

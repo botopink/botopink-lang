@@ -21,7 +21,7 @@
 // the common case). API naming note: `new`/`get` are keyword tokens — use
 // `empty`/`at`.
 //
-// `Dict<K, V>` answers the ambient `Index<K, V>` of `builtins.d.bp`
+// `Dict<K, V>` answers the ambient `Index<K, V>` of `primitives.bp`
 // (decision 63, amended), which is what makes `d["k"]` legal: the index
 // expression has no typing rule of its own and rewrites to `d.at("k")`. The
 // reader was spelled `lookup` until that amendment gave every indexable type
@@ -618,7 +618,7 @@ test "order case over Order" {
   ;; the common case). API naming note: `new`/`get` are keyword tokens — use
   ;; `empty`/`at`.
   ;; 
-  ;; `Dict<K, V>` answers the ambient `Index<K, V>` of `builtins.d.bp`
+  ;; `Dict<K, V>` answers the ambient `Index<K, V>` of `primitives.bp`
   ;; (decision 63, amended), which is what makes `d["k"]` legal: the index
   ;; expression has no typing rule of its own and rewrites to `d.at("k")`. The
   ;; reader was spelled `lookup` until that amendment gave every indexable type

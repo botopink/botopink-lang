@@ -40,7 +40,7 @@ const blockEval = @import("./block_eval.zig");
 const diagnostics = @import("./diagnostics.zig");
 const validation = @import("./error.zig");
 
-/// Reflection of the annotated declaration (`@Decl` in `builtins.d.bp`).
+/// Reflection of the annotated declaration (`@Decl` in `primitives.bp`'s compiler section).
 pub const DeclHandle = struct {
     kind: []const u8,
     name: []const u8,
@@ -116,7 +116,7 @@ pub const TagMeta = struct { typeName: []const u8, repeat: bool, value: Term };
 pub const MethodMeta = struct { method: []const u8, typeName: []const u8, value: Term };
 
 /// One parameter of a reflected function or method (`Param` in
-/// `builtins.d.bp`): its name and its type as the source spells it.
+/// `primitives.bp`'s compiler section): its name and its type as the source spells it.
 pub const ParamHandle = struct { name: []const u8, typeName: []const u8 };
 
 /// An annotation name and the identity of the decorator it names.
@@ -859,7 +859,7 @@ fn typeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![
 
 /// `[#{name => <<"getMapping">>, args => [<<"\"/users\"">>], decorator => <<"web@@getMapping">>}]`
 /// — args keep their raw source lexemes (`DeclAnnotation.args` in
-/// `builtins.d.bp`); `decorator` is the identity of the decorator the name
+/// `primitives.bp`'s compiler section); `decorator` is the identity of the decorator the name
 /// names (`ids`, decision 277).
 fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation, ids: []const DecoratorId) std.mem.Allocator.Error!Term {
     const items = try arena.alloc(Term, anns.len);

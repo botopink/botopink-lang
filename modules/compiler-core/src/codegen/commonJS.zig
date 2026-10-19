@@ -1946,7 +1946,7 @@ const Emitter = struct {
     /// inference's per-loc rename is the only path; this map omits `contains`).
     prim_node_renames: std.StringHashMap([]const u8),
     /// `prim-op-annotation` builtin dispatch (node): callees from
-    /// `builtins.d.bp` with `#[@External.Node(…)]`. Keyed by callee name.
+    /// `primitives.bp`'s compiler section with `#[@External.Node(…)]`. Keyed by callee name.
     builtin_node_dispatch: std.StringHashMap(BuiltinNodeCall),
     /// §A2 user-fn per-callee template dispatch (node): a `declare fn`
     /// whose `#[@External.Node("<template>")]` symbol contains `$0`/`$1`/…
@@ -2097,7 +2097,7 @@ const Emitter = struct {
     // ── collectors ────────────────────────────────────────────────────────────
 
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
-    /// erlang's: the top-level fns of the std prelude (`builtins.d.bp`,
+    /// erlang's: the top-level fns of the std prelude (`primitives.bp`'s compiler section,
     /// `primitives.bp`, parsed once per process, `prelude_cache`) with a
     /// `.JavaScript(…)` implementation, indexed by callee name.
     ///
@@ -6927,7 +6927,7 @@ const Emitter = struct {
         if (try self.paramShapeToString(cc)) |text| return text;
         if (try self.tupleToString(cc)) |text| return text;
         // builtin_node_dispatch: a prelude `declare fn` with a `.JavaScript`
-        // implementation (`primitives.bp`, `builtins.d.bp`). Those are free functions: their templates have
+        // implementation (`primitives.bp`, both sections). Those are free functions: their templates have
         // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.
         if (cc.receiver == null and self.builtin_node_dispatch.contains(cc.callee)) {
@@ -7411,11 +7411,11 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name))
             return self.buildIndexCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
-        // `@panic` annotated in `builtins.d.bp`).
+        // `@panic` annotated in `primitives.bp`'s compiler section).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
 
         // Fallback for `@todo` / `@panic` when the annotation dispatch table is
-        // empty (builtins.d.bp may stop parsing earlier in the file and the
+        // empty (primitives.bp may stop parsing earlier in the file and the
         // collector silently swallows the parse error). Renders the same host
         // template the annotation would have.
         const is_todo = std.mem.eql(u8, cc.callee, "todo");

@@ -4,7 +4,7 @@
 //! `use` or `yield` by writing the effect wrapper as its return type. The
 //! wrappers form a subsumption order, and each level grants everything below
 //! it. The order is declared in botopink, on the wrappers in
-//! `libs/std/src/builtins.d.bp`:
+//! `libs/std/src/primitives.bp`'s compiler section:
 //!
 //!     pub behavior Task<T>                   { … }
 //!     pub behavior Component<R> extends Task      // decisions 128, 354
@@ -32,7 +32,7 @@ const ast = @import("../ast.zig");
 /// One declared clause: `wrapper extends implements`.
 const Clause = struct { wrapper: []const u8, implements: []const u8 };
 
-/// The chain, in the order `builtins.d.bp` declares it. Transitivity is
+/// The chain, in the order `primitives.bp`'s compiler section declares it. Transitivity is
 /// computed by `wrapperImplements`. `@Renderable` is not here: it is the
 /// MARKER a component's `R` implements (decision 354), not a wrapper, and
 /// grants nothing.
@@ -154,11 +154,11 @@ pub fn refusal(arena: std.mem.Allocator, code: []const u8, cap: Capability, eff:
 
 // ── the file is the declaration; these tests are the drift gate ──────────────
 
-/// `libs/std/src/builtins.d.bp`, embedded so the tests below can read the
+/// `libs/std/src/primitives.bp`'s compiler section, embedded so the tests below can read the
 /// clauses the language actually declares rather than a copy of them.
 const builtins_source = @import("std_prelude").builtins;
 
-/// The declaration line of `wrapper` in `builtins.d.bp`, or null.
+/// The declaration line of `wrapper` in `primitives.bp`'s compiler section, or null.
 fn declarationLine(wrapper: []const u8) ?[]const u8 {
     var buf: [64]u8 = undefined;
     const decl = std.fmt.bufPrint(&buf, "pub behavior {s}<", .{wrapper}) catch return null;
@@ -167,17 +167,17 @@ fn declarationLine(wrapper: []const u8) ?[]const u8 {
     return builtins_source[at..end];
 }
 
-test "effect chain: every clause here is declared in builtins.d.bp" {
+test "effect chain: every clause here is declared in primitives.bp" {
     for (clauses) |c| {
         const line = declarationLine(c.wrapper) orelse {
-            std.debug.print("builtins.d.bp declares no `{s}` behavior\n", .{c.wrapper});
+            std.debug.print("primitives.bp declares no `{s}` behavior\n", .{c.wrapper});
             return error.WrapperNotDeclared;
         };
         var buf: [64]u8 = undefined;
         const clause = try std.fmt.bufPrint(&buf, "extends {s} ", .{c.implements});
         if (std.mem.indexOf(u8, line, clause) == null) {
             std.debug.print(
-                "builtins.d.bp: `{s}` does not `extends {s}` — the chain drifted from the file:\n  {s}\n",
+                "primitives.bp: `{s}` does not `extends {s}` — the chain drifted from the file:\n  {s}\n",
                 .{ c.wrapper, c.implements, line },
             );
             return error.ClauseNotDeclared;
@@ -185,7 +185,7 @@ test "effect chain: every clause here is declared in builtins.d.bp" {
     }
 }
 
-test "effect chain: builtins.d.bp declares no clause this module does not carry" {
+test "effect chain: primitives.bp declares no clause this module does not carry" {
     // The other direction: a clause added to the file and forgotten here would
     // otherwise pass the test above.
     var seen: usize = 0;
@@ -203,7 +203,7 @@ test "effect chain: builtins.d.bp declares no clause this module does not carry"
             if (std.mem.startsWith(u8, line, decl)) found = true;
         }
         if (!found) {
-            std.debug.print("builtins.d.bp carries an `extends` this module does not:\n  {s}\n", .{line});
+            std.debug.print("primitives.bp carries an `extends` this module does not:\n  {s}\n", .{line});
             return error.ClauseNotCarried;
         }
     }
@@ -214,7 +214,7 @@ test "effect chain: every effect wrapper is declared, and no removed one is" {
     for (ast.EffectKind.all) |e| {
         if (e == .result) continue; // `Result` is a `type`, not a behavior
         if (declarationLine(e.returnWrapper()) == null) {
-            std.debug.print("builtins.d.bp declares no `{s}` behavior\n", .{e.returnWrapper()});
+            std.debug.print("primitives.bp declares no `{s}` behavior\n", .{e.returnWrapper()});
             return error.WrapperNotDeclared;
         }
     }

@@ -249,7 +249,7 @@ fn unlockRendered() void {
 // ── one emit per declaration ──────────────────────────────────────────────────
 //
 // Every call site used to run `emitComptimeModule`, and with it the re-lex and
-// re-parse of the embedded `builtins.d.bp` and `primitives.bp`
+// re-parse of the embedded `primitives.bp`'s compiler section and `primitives.bp`
 // (`collectBuiltinErlangDispatch`) — 55 % of an N=200 build's samples (front 14
 // step 2). The code is a function of the declarations lowered and of `main/1`'s
 // plan (which slots it binds, and the literal it writes for a slot that has no

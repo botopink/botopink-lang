@@ -13,7 +13,7 @@
 //// `testing/` is the harness (`botopink test` only). `erlang` and `beam` are
 //// the target's surface, outside the criterion.
 ////
-//// The ambient modules (`primitives.bp`, `external.bp`, `builtins.d.bp`) are
+//// The ambient modules (`primitives.bp`, the prelude, and `external.bp`) are
 //// flattened into the global type env rather than imported, so they are wired
 //// separately by the build and are not declared here.
 ////

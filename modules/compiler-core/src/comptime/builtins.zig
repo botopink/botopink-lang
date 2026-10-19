@@ -1,5 +1,5 @@
 //! Decision 252 — the compiler's table of every builtin a program can call as
-//! `@name(…)`, held to its declaration in `libs/std/src/builtins.d.bp` (`print`
+//! `@name(…)`, held to its declaration in `libs/std/src/primitives.bp`'s compiler section (`print`
 //! and `panic` to theirs in `io/terminal.bp` and `failure.bp`, decision 606 (2)).
 //!
 //! Each row is one builtin the checker or a backend implements, with the
@@ -76,7 +76,7 @@ pub const Method = struct {
 
 /// Every builtin method the compiler implements on a builtin type
 /// (`infer.zig` `inferResultOptionMethod`), each held to its `declare fn`
-/// inside the owner's declaration in `builtins.d.bp`.
+/// inside the owner's declaration in `primitives.bp`'s compiler section.
 pub const methods = [_]Method{
     .{ .owner = "Result", .name = "map", .signature = "map<R2>(self: Self<R, E>, transform: fn(R) -> R2) -> Result<R2, E>" },
     .{ .owner = "Result", .name = "flatMap", .signature = "flatMap<R2>(self: Self<R, E>, transform: fn(R) -> Result<R2, E>) -> Result<R2, E>" },
@@ -359,12 +359,12 @@ fn methodName(member: []const u8) []const u8 {
 
 fn printTypeDrift(items: []const TypeDrift) void {
     for (items) |item| switch (item) {
-        .undeclared => |n| std.debug.print("builtin type `{s}` is registered by the compiler (comptime.zig) and builtins.d.bp does not declare it\n", .{n}),
+        .undeclared => |n| std.debug.print("builtin type `{s}` is registered by the compiler (comptime.zig) and primitives.bp does not declare it\n", .{n}),
         .member => |m| if (m.in_mirror)
-            std.debug.print("builtin type `{s}`: the compiler registers `{s}`, builtins.d.bp does not declare it\n", .{ m.type_name, m.member })
+            std.debug.print("builtin type `{s}`: the compiler registers `{s}`, primitives.bp does not declare it\n", .{ m.type_name, m.member })
         else
-            std.debug.print("builtin type `{s}`: builtins.d.bp declares `{s}`, the compiler does not register it\n", .{ m.type_name, m.member }),
-        .method => |m| std.debug.print("builtin method `{s}.{s}`: the compiler implements `{s}`, builtins.d.bp declares `{s}`\n", .{ m.owner, m.name, m.table orelse "(nothing)", m.declared orelse "(nothing)" }),
+            std.debug.print("builtin type `{s}`: primitives.bp declares `{s}`, the compiler does not register it\n", .{ m.type_name, m.member }),
+        .method => |m| std.debug.print("builtin method `{s}.{s}`: the compiler implements `{s}`, primitives.bp declares `{s}`\n", .{ m.owner, m.name, m.table orelse "(nothing)", m.declared orelse "(nothing)" }),
     };
 }
 
@@ -400,9 +400,9 @@ pub fn drift(alloc: std.mem.Allocator, sources: []const []const u8) ![]Drift {
 
 fn printDrift(items: []const Drift) void {
     for (items) |item| switch (item) {
-        .undeclared => |n| std.debug.print("builtin `@{s}` is implemented (comptime/builtins.zig) and builtins.d.bp does not declare it\n", .{n}),
-        .unimplemented => |n| std.debug.print("builtins.d.bp declares `@{s}` and the compiler implements no such builtin\n", .{n}),
-        .signature => |s| std.debug.print("builtin `@{s}`: the compiler implements `{s}`, builtins.d.bp declares `{s}`\n", .{ s.name, s.table, s.declared }),
+        .undeclared => |n| std.debug.print("builtin `@{s}` is implemented (comptime/builtins.zig) and primitives.bp does not declare it\n", .{n}),
+        .unimplemented => |n| std.debug.print("primitives.bp declares `@{s}` and the compiler implements no such builtin\n", .{n}),
+        .signature => |s| std.debug.print("builtin `@{s}`: the compiler implements `{s}`, primitives.bp declares `{s}`\n", .{ s.name, s.table, s.declared }),
     };
 }
 
@@ -479,7 +479,7 @@ test "builtins: a mirror spelled under another name than its declaration is name
     defer arena.deinit();
     const a = arena.allocator();
     // The reflection record a handle's `annotations` hold was mirrored as
-    // `Annotation` while `builtins.d.bp` declares `__Decl__Annotation` (`compiler.DeclAnnotation`, decision 576 (13)).
+    // `Annotation` while `primitives.bp`'s compiler section declares `__Decl__Annotation` (`compiler.DeclAnnotation`, decision 576 (13)).
     const renamed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub type __Decl__Annotation(", "pub type ReflectedAnnotation(");
     const items = try typeDrift(a, &.{ renamed, try stdFns(a) }, &type_mirrors);
     var undeclared: usize = 0;

@@ -30,7 +30,7 @@ pub type Type {
     // `Type.Field<T>` is expected). A key is also a run-time value: stored,
     // passed, compared, matched by `case key { .title -> … }` exhaustively
     // over `T`'s fields. The reflection record `decl.fields` hands out is
-    // still `builtins.d.bp`'s `Field` until `134` step 2 makes it
+    // still `primitives.bp`'s `Field` until `134` step 2 makes it
     // `Type.Field<unknown>`.
     pub type Field<T>(
         name: string,

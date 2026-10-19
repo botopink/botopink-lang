@@ -8,7 +8,7 @@
 //// `-compile({no_auto_import,[fn/arity, …]}).` in the generated module
 //// prelude when a user-defined fn shadows one.
 ////
-//// Why a dedicated `std/erlang` module (not `builtins.d.bp`)? These
+//// Why a dedicated `std/erlang` module (not `primitives.bp`)? These
 //// host-symbol wrappers are not essential to the language surface — the
 //// majority of botopink programs never name them. Keeping them in their
 //// own module avoids polluting the global env (consumers `import { …}

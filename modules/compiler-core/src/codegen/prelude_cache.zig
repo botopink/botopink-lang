@@ -1,4 +1,4 @@
-//! The embedded `primitives.bp` and `builtins.d.bp` preludes (the latter with std's
+//! The embedded prelude, `primitives.bp` and its compiler section (the latter with std's
 //! `print` and `panic`), parsed once for
 //! the life of the process — what the emitters read a `default fn`'s helpers
 //! from (`stringSlice0`'s declared return, its `.Wasm(…)` cell) and the
@@ -53,7 +53,7 @@ pub fn primitives() ?ast.Program {
     return primitives_program;
 }
 
-/// The parsed `builtins.d.bp`, with std's `print` and `panic` as their modules
+/// The parsed `primitives.bp`'s compiler section, with std's `print` and `panic` as their modules
 /// write them (`io/terminal.bp`, `failure.bp`, decision 606 (2)) — the
 /// implementations the backends dispatch those calls by —, or null when it
 /// does not parse.

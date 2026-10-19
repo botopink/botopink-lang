@@ -910,7 +910,7 @@ const Builder = struct {
     /// Decision 319 — `i64`, `isize`, `u64` and `usize` cross to JavaScript as
     /// a number within ±(2^53 − 1) and a `BigInt` beyond.
     /// Decision 519 — `Asset`, the answer of `@embed`, is a prelude record the
-    /// checker registers (`builtins.d.bp`), so no module declares it: it is
+    /// checker registers (`primitives.bp`'s compiler section), so no module declares it: it is
     /// its own shape, `bytes` a `Uint8Array`, `size` an `i64` (decision 538: a number
     /// within ±(2^53 − 1), a `BigInt` beyond), `text()` a method.
     const asset_type: js.TsType = .{ .object = .{ .fields = &.{

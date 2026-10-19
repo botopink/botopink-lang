@@ -6,7 +6,6 @@
   "entry": "root.bp",
   "files": [
     "primitives.bp",
-    "external.bp",
-    "builtins.d.bp"
+    "external.bp"
   ]
 }

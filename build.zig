@@ -843,7 +843,6 @@ fn stdPreludeModule(
     const std_core_files = [_][]const u8{
         "primitives.bp",
         "external.bp",
-        "builtins.d.bp",
     };
     for (std_core_files) |f| {
         std_prelude.addAnonymousImport(f, .{

@@ -640,7 +640,7 @@ const yield_step_decl_src =
     \\}
 ;
 
-test "yield step prelude matches builtins.d.bp" {
+test "yield step prelude matches primitives.bp" {
     const builtins = @import("std_prelude").builtins;
     try std.testing.expect(std.mem.indexOf(u8, builtins, yield_step_src) != null);
     try std.testing.expect(std.mem.endsWith(u8, yield_step_src, yield_step_decl_src));
@@ -2297,7 +2297,7 @@ fn isIdentChar(c: u8) bool {
 
 /// The `@Decl` reflection cluster, in botopink, registered into the global type
 /// env so a decorator body (`fn d(comptime decl: @Decl) { … }`) type-checks. The
-/// canonical/documented copy lives in `libs/std/src/builtins.d.bp`; this minimal
+/// canonical/documented copy lives in `libs/std/src/primitives.bp`'s compiler section; this minimal
 /// mirror exists because that file is not parsed as a standalone program. Keep
 /// the two in sync.
 ///
@@ -2390,7 +2390,7 @@ pub const decl_reflection_src =
 /// global env so a sub-language template body can BUILD a `CustomNode` tree
 /// (`CustomNode(kind: …, span: …, …)`) and hand it to `q.custom`. Like the
 /// `@Decl` cluster this mirrors the surface documented in
-/// `libs/std/src/builtins.d.bp`; registered after `decl_reflection_src` so its
+/// `libs/std/src/primitives.bp`'s compiler section; registered after `decl_reflection_src` so its
 /// `Span` field type resolves. `Decl` (the `ref` field) is what `q.lookup`
 /// answers (decision 415 (2)). Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
@@ -2404,7 +2404,7 @@ const custom_ast_reflection_src =
 ;
 
 /// Decision 248 — the field descriptor `@makeRecord` reads, registered into
-/// the global env; mirrors `libs/std/src/builtins.d.bp`'s `pub type
+/// the global env; mirrors `libs/std/src/primitives.bp`'s compiler section's `pub type
 /// RecordField`. `TypeInfo<T>` (decisions 216, 253) is in the `@Decl` cluster
 /// above, since a `HookUse` names it (decision 277); its static `all` is
 /// reached only as the builtin `@TypeInfo.all`, so the mirror leaves it out.
@@ -2415,7 +2415,7 @@ const type_info_src =
     \\)
 ;
 
-/// Decision 252 — every mirror above of a type `builtins.d.bp` declares, in
+/// Decision 252 — every mirror above of a type `primitives.bp`'s compiler section declares, in
 /// registration order; `comptime/builtins.zig`'s drift test holds each type
 /// they declare to its declaration (fields, variants, instance methods), the
 /// internal `__Decl__X` names read through their aliases.
@@ -2424,8 +2424,8 @@ pub const builtin_type_mirrors = [_][]const u8{ decl_reflection_src, custom_ast_
 /// `YieldStep<T>` (decision 122) — the one step of both sequences, `Yield`
 /// then `Done`, registered into the global env so an annotation, a `case` over
 /// its variants and a `.next()` called by hand type-check. The canonical copy
-/// is `libs/std/src/builtins.d.bp`'s (`comptime/effect_chain.zig`'s drift test
-/// reads it; `yield step prelude matches builtins.d.bp` below reads this one).
+/// is `libs/std/src/primitives.bp`'s compiler section's (`comptime/effect_chain.zig`'s drift test
+/// reads it; `yield step prelude matches primitives.bp` below reads this one).
 /// A module that names it gets `yield_step_decl_src` spliced in
 /// (`withYieldStepDecl`).
 const yield_step_src =
@@ -4047,13 +4047,13 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
     _ = try infer.inferProgram(env, program);
 }
 
-/// Decision 539 (6) — the `pub behavior`s of `builtins.d.bp` a compiler rule
+/// Decision 539 (6) — the `pub behavior`s of `primitives.bp`'s compiler section a compiler rule
 /// reads by name. Every other `pub behavior` declared there is **ambient**
 /// (`isAmbientBehavior`): a program names it with no import, as a type — a
 /// parameter's included, with its arguments (`fn f(m: Index<i32, i32>)`) — and
 /// in an `implement` clause, which is checked against the declaration. Today
 /// that leaves `Display`, `Closeable`, `Index` and `Slice`; a plain behavior
-/// added to `builtins.d.bp` joins them with no compiler change.
+/// added to `primitives.bp`'s compiler section joins them with no compiler change.
 pub const rule_read_behaviors = [_][]const u8{
     // The effect wrappers, written `@Task<…>` / `@Iterator<…>` / … and read
     // by `comptime/effect_chain.zig`.
@@ -4069,7 +4069,7 @@ pub const rule_read_behaviors = [_][]const u8{
     "Decorator",
 };
 
-/// True when `b`, a behavior of `builtins.d.bp`, is ambient: public, and read
+/// True when `b`, a behavior of `primitives.bp`'s compiler section, is ambient: public, and read
 /// by no compiler rule (`rule_read_behaviors`).
 pub fn isAmbientBehavior(b: ast.BehaviorDecl) bool {
     if (!b.isPub) return false;
@@ -4077,7 +4077,7 @@ pub fn isAmbientBehavior(b: ast.BehaviorDecl) bool {
     return true;
 }
 
-test "ambient behaviors: builtins.d.bp's public behaviors no rule reads (decision 539 (6))" {
+test "ambient behaviors: primitives.bp's public behaviors no rule reads (decision 539 (6))" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -4093,12 +4093,12 @@ test "ambient behaviors: builtins.d.bp's public behaviors no rule reads (decisio
     const want = [_][]const u8{ "Display", "Closeable", "Index", "Slice" };
     try std.testing.expectEqual(want.len, ambient.items.len);
     for (want, ambient.items) |w, a| try std.testing.expectEqualStrings(w, a);
-    // A name the list keeps out that builtins.d.bp no longer declares is stale.
+    // A name the list keeps out that primitives.bp no longer declares is stale.
     for (rule_read_behaviors) |name| try std.testing.expect(declared.contains(name));
 }
 
 /// Decision 252 — every builtin's declaration into `env.builtinDecls`: each
-/// top-level `declare fn` of `builtins.d.bp` and std's `print` / `panic`
+/// top-level `declare fn` of `primitives.bp`'s compiler section and std's `print` / `panic`
 /// (`std_calls.declarations`, decision 606 (2)), and each
 /// static `declare fn` of a type there (`TypeInfo.all`). Parsed into
 /// `env.arena`, which the declarations' slices outlive with the env.
@@ -4111,7 +4111,7 @@ fn registerBuiltinDecls(env: *Env) anyerror!void {
         .params = f.params,
         .returnType = f.returnType,
     });
-    for ([_][]const u8{prelude.builtins}, [_][]const u8{"builtins.d"}) |src, name| {
+    for ([_][]const u8{prelude.builtins}, [_][]const u8{"primitives"}) |src, name| {
         const program = try parseEmbeddedStd(env.arena, name, src);
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| if (f.isDeclare) try env.builtinDecls.put(f.name, .{
@@ -4189,8 +4189,8 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // types into the global env so a decorator body type-checks — `decl.kind` /
     // `decl.name` / `decl.fields` / … and `decl.fail(…)`, plus the `Field` /
     // `Method` / `Param` / `Annotation` shapes it reads. This mirrors the surface
-    // documented in `libs/std/src/builtins.d.bp` (kept there for tooling); it is
-    // parsed from a dedicated minimal source here because the full `builtins.d.bp`
+    // documented in `libs/std/src/primitives.bp`'s compiler section (kept there for tooling); it is
+    // parsed from a dedicated minimal source here because the full `primitives.bp`'s compiler section
     // is the tooling/`@Expr` surface and is not consumed as a standalone program.
     try registerReflectionPrelude(env);
     // The internal sources below declare the compiler's own bodyless members.
@@ -4477,9 +4477,29 @@ fn liftedText(allocator: std.mem.Allocator, value: *const ast.Expr) ![]const u8 
 ///
 /// Returns a `ComptimeSession` whose outputs always have `.ok.comptime_script = null`
 /// and `.ok.comptime_vals` empty. Caller must call `session.deinit(allocator)`.
+/// B-139, decision 677 — std's `primitives` module is the prelude
+/// (`registerStdlib`): registered into every environment before any module,
+/// so std's own build, which holds every module under its `src/`, checks it
+/// there. As a module it holds nothing more: its source is not analysed a
+/// second time (its behaviors would redeclare themselves, its compiler
+/// section is the compiler's).
+fn withPreludeModuleEmpty(arena: std.mem.Allocator, modules: []const Module) ![]const Module {
+    for (modules, 0..) |m, i| {
+        if (!isPreludeModule(m)) continue;
+        const out = try arena.dupe(Module, modules);
+        out[i].source = "";
+        return out;
+    }
+    return modules;
+}
+
+fn isPreludeModule(m: Module) bool {
+    return m.std_member and m.package.len == 0 and std.mem.eql(u8, m.path, "primitives");
+}
+
 pub fn compileTypesOnly(
     allocator: std.mem.Allocator,
-    modules: []const Module,
+    modules_in: []const Module,
     eval_ctx: ?envMod.TemplateEvalCtx,
 ) !ComptimeSession {
     var session = ComptimeSession{
@@ -4489,6 +4509,7 @@ pub fn compileTypesOnly(
     errdefer session.arena.deinit();
 
     const arena_alloc = session.arena.allocator();
+    const modules = try withPreludeModuleEmpty(arena_alloc, modules_in);
     var registry = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena_alloc);
     var type_decl_registry = std.StringHashMap(std.StringHashMap(ast.DeclKind)).init(arena_alloc);
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
@@ -4781,7 +4802,7 @@ const CompiledOnce = struct {
 
 fn compileOnce(
     allocator: std.mem.Allocator,
-    modules: []const Module,
+    modules_in: []const Module,
     io: std.Io,
     build_root: ?[]const u8,
     target_name: ?[]const u8,
@@ -4795,6 +4816,7 @@ fn compileOnce(
     errdefer session.arena.deinit();
 
     const arena_alloc = session.arena.allocator();
+    const modules = try withPreludeModuleEmpty(arena_alloc, modules_in);
     var registry = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena_alloc);
     var type_decl_registry = std.StringHashMap(std.StringHashMap(ast.DeclKind)).init(arena_alloc);
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);

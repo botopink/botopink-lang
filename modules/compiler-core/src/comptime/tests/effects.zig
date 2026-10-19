@@ -477,7 +477,7 @@ test "context: Element[] coerces into Children" {
 // `@Component` ⊃ `@Future` ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`,
 // `@ResultGenerator` ⊃ `@Result`, and an annotation grants every body operation at or
 // below its own level. The order itself is `comptime/effect_chain.zig`'s unit
-// tests (and its drift gate against `libs/std/src/builtins.d.bp`); what follows
+// tests (and its drift gate against `libs/std/src/primitives.bp`'s compiler section); what follows
 // is the order as the CHECKER applies it — one cell per granted capability and
 // one per refusal, since a rule that only a table believes is not a rule.
 //

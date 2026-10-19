@@ -3618,7 +3618,7 @@ const Emitter = struct {
     /// catches irreducible cases (list ops, custom comparisons, BIF aliases).
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// `prim-op-annotation` builtin dispatch: top-level `fn` callees from
-    /// `builtins.d.bp` carrying `#[@External.Erlang(…)]` annotations, keyed by
+    /// `primitives.bp`'s compiler section carrying `#[@External.Erlang(…)]` annotations, keyed by
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this map before the hardcoded `@todo`/`@panic`/`@print`
     /// switches in `if (cc.is_builtin)`.
@@ -3780,7 +3780,7 @@ const Emitter = struct {
         };
     }
 
-    /// `prim-op-annotation`: index top-level `fn` decls in `builtins.d.bp`
+    /// `prim-op-annotation`: index top-level `fn` decls in `primitives.bp`'s compiler section
     /// carrying `#[@External.Erlang(…)]` — the dispatch map is keyed by the bare
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this in the `if (cc.is_builtin)` branch before the hardcoded switches.
@@ -3791,7 +3791,7 @@ const Emitter = struct {
     /// instead of being skipped (decision 67).
     fn collectBuiltinErlangDispatch(this: *Emitter) !void {
         try this.registerInlineBuiltinErlangDispatch();
-        // `builtins.d.bp`'s implementations, and `primitives.bp`'s so helpers
+        // `primitives.bp`'s compiler section's implementations, and `primitives.bp`'s so helpers
         // like `stringSlice0`/`stringSlice1` are discovered — the `default fn
         // slice(...)` wrapper calls them. Both parsed once per process
         // (`prelude_cache`).

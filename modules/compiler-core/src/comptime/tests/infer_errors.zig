@@ -1138,7 +1138,7 @@ test "infer error: unknown builtin without a near name" {
 }
 
 test "infer error: hand-written is builtin is refused" {
-    // Decision 322 — `is` is only an operator: `builtins.d.bp` declares no
+    // Decision 322 — `is` is only an operator: `primitives.bp`'s compiler section declares no
     // `is`, so `@is(…)` written by hand is an unknown builtin, located at the
     // `@` and naming `x is T`.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),

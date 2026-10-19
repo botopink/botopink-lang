@@ -1178,12 +1178,12 @@ wins:
 <!-- example: modules/behavior/cases/behavior_default_adopted_across_modules -->
 
 `Display`, `Closeable`, `Index<K, V>` and `Slice<V>` are **ambient** behaviors
-(decision 539 (6)): `builtins.d.bp` declares them, and a program names them with
+(decision 539 (6)): `primitives.bp` declares them, and a program names them with
 no import — as a type, a parameter's included and with its arguments
 (`m: Index<string, i32>`), and in an `implement` clause, which is checked
 against the declaration as a behavior of the module's own is (a required method
 the type does not write is refused at the type). Every public behavior of
-`builtins.d.bp` that no rule of the compiler reads is ambient; `Async`,
+`primitives.bp` that no rule of the compiler reads is ambient; `Async`,
 `Iter`, `AsyncIter`, `Component` and `Renderable`
 each have a rule of their own. A module's own `behavior` of the
 same name, or an imported one, is the one its name reads, and so is a type of
@@ -5398,7 +5398,7 @@ with `@` (`@Result<…>`).
 
 <!-- example: modules/builtin/cases/builtin_print_todo -->
 
-Every builtin the compiler still reads is declared in `libs/std/src/builtins.d.bp`
+Every builtin the compiler still reads is declared in `libs/std/src/primitives.bp`
 (`print` and `panic` are std's `io/terminal.bp` and `failure.bp`, § `print` and `panic`), and the compiler is
 held to the declarations (decision 252): a unit test fails, naming the builtin,
 when the compiler implements one the files do not declare, the files declare one
@@ -5427,7 +5427,7 @@ Builtin names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]
 is only an operator (decision 322): `x is T` tests a type, and a hand-written
 `@is(…)` is `error[unknown-builtin]` naming the operator.
 
-`Decorator` (declared in `builtins.d.bp`, decision 268) is the type of a
+`Decorator` (declared in `primitives.bp`, decision 268) is the type of a
 decorator's name: a name has it when it names a function whose first parameter
 is `syntax` and which has a body — further arguments included —, and
 an array literal of such names is a `Decorator[]`. Nothing else is assignable to

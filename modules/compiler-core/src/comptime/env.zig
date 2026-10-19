@@ -971,7 +971,7 @@ pub const Env = struct {
     /// may write a `std:` cell (`infer.refuseStdBinding`).
     inStd: bool = false,
     /// The module's bodyless declarations are the compiler's (the prelude's
-    /// `builtins.d.bp` / `failure.bp`'s `panic`, the reflection cluster, std's
+    /// `primitives.bp`'s compiler section / `failure.bp`'s `panic`, the reflection cluster, std's
     /// `types.bp`; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
     /// compiler's builtins, which no annotation implements until `#[builtin]`
     /// marks them (decision 575 (2)), so `declare-without-implementation` is
@@ -1491,7 +1491,7 @@ pub const Env = struct {
     /// method (`InstanceLowering.behavior`). Kept apart from
     /// `assocInterfaceDecls`, whose entries codegen emits.
     importedBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
-    /// Decision 539 (6) — the ambient behaviors of `builtins.d.bp` a program
+    /// Decision 539 (6) — the ambient behaviors of `primitives.bp`'s compiler section a program
     /// names with no import (`Display`, `Closeable`), by name. Read last, after a
     /// module's own and its imported behaviors: a parameter typed by one
     /// resolves (`fn f(c: Closeable)`), a call on such a value finds the method,
@@ -1922,7 +1922,7 @@ pub const Env = struct {
     /// lands in `c.args` before dispatch.
     stdlibFnDecls: std.StringHashMap(ast.FnDecl),
     /// Decision 252 — every builtin's declaration, parsed by
-    /// `registerStdlib` from `builtins.d.bp` and std's `print` / `panic` and keyed
+    /// `registerStdlib` from `primitives.bp`'s compiler section and std's `print` / `panic` and keyed
     /// by the name after `@` (`TypeInfo.all` for the static method). A call to
     /// a builtin held `.declaration` (`comptime/builtins.zig`) is checked
     /// against it (`infer.zig` `checkBuiltinArguments`).
@@ -2429,7 +2429,7 @@ pub const Env = struct {
 
     /// The `behavior` declaration `name` names: the module's own (std's
     /// registered ones included), else an imported one, else an ambient one
-    /// of `builtins.d.bp` (decision 539 (6)) — unless a type of that name is
+    /// of `primitives.bp`'s compiler section (decision 539 (6)) — unless a type of that name is
     /// in scope (`type Index(column: string)`, a library's `Slice<T>`): the
     /// module's own type is what the name reads.
     pub fn behaviorDecl(self: *const Env, name: []const u8) ?ast.BehaviorDecl {
@@ -2592,7 +2592,7 @@ pub const Env = struct {
             // `resolveTypeRefInContext` as `any-type-removed`, naming
             // `unknown`, the type that holds any value.
             // The declared return of `@panic` / `todo` / `trap`
-            // (`libs/std/src/failure.bp`'s `panic`, `builtins.d.bp`): a type no
+            // (`libs/std/src/failure.bp`'s `panic`, `primitives.bp`'s compiler section): a type no
             // module declares, so C10's second pass needs it named here.
             "noreturn",
             // special
@@ -2686,7 +2686,7 @@ pub const Env = struct {
         // A `behavior` names a type in annotation position (`-> Counter`)
         // without being a typedef: its decl is recorded here.
         if (self.assocInterfaceDecls.get(name) != null) return true;
-        // An ambient behavior of `builtins.d.bp` (decision 539 (6)).
+        // An ambient behavior of `primitives.bp`'s compiler section (decision 539 (6)).
         if (self.ambientBehaviorDecls.contains(name)) return true;
         return isCompilerKnownTypeName(name);
     }

@@ -1077,7 +1077,7 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
         .behavior => |d| try interfaces.put(d.name, d),
         else => {},
     };
-    // Decision 539 (6) — an ambient behavior of `builtins.d.bp` (`Display`,
+    // Decision 539 (6) — an ambient behavior of `primitives.bp`'s compiler section (`Display`,
     // `Closeable`) is checked as one this program declares, unless the
     // program declares or imports its own of that name.
     var ait = env.ambientBehaviorDecls.iterator();
@@ -1113,7 +1113,7 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
 ///
 /// Interfaces this program neither declares nor reads ambient are skipped,
 /// exactly as `validateImplement` skips them; an ambient behavior of
-/// `builtins.d.bp` (`Display`, `Closeable`) is checked as a declared one
+/// `primitives.bp`'s compiler section (`Display`, `Closeable`) is checked as a declared one
 /// (decision 539 (6)).
 fn validateInlineImplements(
     env: *Env,
@@ -11742,13 +11742,13 @@ fn inferBuiltinCallReturnType(
         return error.TypeError;
     }
     // `@panic` / `@todo` / `@trap` never return: each is declared `-> noreturn`
-    // (`failure.bp`'s `panic`, `builtins.d.bp`), and `noreturn` is the bottom type
+    // (`failure.bp`'s `panic`, `primitives.bp`'s compiler section), and `noreturn` is the bottom type
     // `unify` accepts wherever a value is expected, so `val x: i32 = @todo();`
     // and `return @panic("…");` type in any position. A declared
     // `failure.bp`'s `panic` entry answers its own return; the name list only
     // holds the doc-only `trap`.
     if (builtinsMod.neverReturns(callee)) return env.namedType("noreturn");
-    // `@module()` is declared `-> module` in `builtins.d.bp` but no target
+    // `@module()` is declared `-> module` in `primitives.bp`'s compiler section but no target
     // lowers it (commonJS emitted `@module()` verbatim, erlang `module/0`
     // undefined): refused at the `@` rather than typed `void` in silence.
     if (std.mem.eql(u8, callee, "module")) {
@@ -11764,7 +11764,7 @@ fn inferBuiltinCallReturnType(
     if (isKnownBuiltinName(callee)) return env.namedType("void");
     env.lastError = TypeError.custom(
         try unknownBuiltinMessage(env, callee),
-        "Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.",
+        "Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/primitives.bp`'s compiler section for the list.",
     ).withLoc(loc);
     return error.TypeError;
 }
@@ -11829,7 +11829,7 @@ fn isPrimitiveTypeName(name: []const u8) bool {
 
 /// Decision 252 — a call to a builtin held `.declaration` (`comptime/
 /// builtins.zig`) meets its declaration (`Env.builtinDecls`, from
-/// `builtins.d.bp` / `failure.bp`'s `panic`): no more arguments than it declares,
+/// `primitives.bp`'s compiler section / `failure.bp`'s `panic`): no more arguments than it declares,
 /// every parameter without a default given, a label naming a parameter, and
 /// each argument's type the parameter's (generic parameters fresh per call; a
 /// `type` parameter is the builtin's own to read). Refused at the call as
@@ -11870,8 +11870,8 @@ fn checkDeclaredArguments(
     const refuse = struct {
         fn f(e: *Env, sig: []const u8, comptime fmt: []const u8, args: anytype, l: ast.Loc) InferError {
             const what = std.fmt.allocPrint(e.arena, fmt, args) catch return error.OutOfMemory;
-            const msg = std.fmt.allocPrint(e.arena, "{s}: {s} — `@{s}` is declared in `builtins.d.bp`", .{ diagnostics.builtin_arguments, what, sig }) catch return error.OutOfMemory;
-            e.lastError = TypeError.custom(msg, "Call it as its declaration says (`libs/std/src/builtins.d.bp`, decision 252).").withLoc(l);
+            const msg = std.fmt.allocPrint(e.arena, "{s}: {s} — `@{s}` is declared in `primitives.bp`'s compiler section", .{ diagnostics.builtin_arguments, what, sig }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "Call it as its declaration says (`libs/std/src/primitives.bp`'s compiler section, decision 252).").withLoc(l);
             return error.TypeError;
         }
     }.f;
@@ -12034,7 +12034,7 @@ fn decoratorArgumentType(env: *Env, e: ast.Expr) InferError!?*T.Type {
     return try env.namedType(decorator_type_name);
 }
 
-/// The builtin type of a decorator's name (`builtins.d.bp`, decision 268).
+/// The builtin type of a decorator's name (`primitives.bp`'s compiler section, decision 268).
 const decorator_type_name = "Decorator";
 
 /// Decision 268 — `e`, an argument of a decorator parameter typed `w`, when
@@ -12071,7 +12071,7 @@ fn isDecoratorType(t: *T.Type) bool {
 }
 
 /// Decision 371 — `d.same(other)`, `fn same(self: Self, other: Decorator) ->
-/// bool` of `builtins.d.bp`: `other` is a decorator's name (`serverOnly`,
+/// bool` of `primitives.bp`'s compiler section: `other` is a decorator's name (`serverOnly`,
 /// `markers.serverOnly`, an alias — its declaration's identity, resolved
 /// here) or a `Decorator` value (`b.decorator`); nothing else is a
 /// `Decorator`, so any other argument is the mismatch at the argument. The
@@ -19390,7 +19390,7 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
     if (env.assocInterfaceDecls.get("Result") != null or env.importedBehaviorDecls.contains("Result")) return;
     // The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
     // resolves each; `comptime/builtins.zig` `methods` holds them to
-    // `libs/std/src/builtins.d.bp` (decision 252).
+    // `libs/std/src/primitives.bp`'s compiler section (decision 252).
     if (is_call and builtinsMod.hasMethod("Result", member)) return;
     const msg = try std.fmt.allocPrint(
         env.arena,
@@ -22318,7 +22318,7 @@ fn leftmostLoc(e: *const ast.Expr) ast.Loc {
 }
 
 /// The two method names the index expression rewrites to — the ones
-/// `Index<K, V>` and `Slice<V>` declare in `libs/std/src/builtins.d.bp`.
+/// `Index<K, V>` and `Slice<V>` declare in `libs/std/src/primitives.bp`'s compiler section.
 const index_at_method = "at";
 const index_slice_method = "slice";
 
@@ -23220,7 +23220,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
                     // Decision 322 — `is` is only an operator. The parser's carrier
                     // of `x is T` always sets `isType`; a call without it is a
-                    // hand-written `@is(…)`, and `builtins.d.bp` declares no `is`.
+                    // hand-written `@is(…)`, and `primitives.bp`'s compiler section declares no `is`.
                     if (call.isType == null) {
                         env.lastError = TypeError.custom(
                             diagnostics.unknown_builtin ++ ": unknown builtin `@is` — `is` is an operator",

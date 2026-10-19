@@ -13,6 +13,6 @@ error: unknown-builtin: unknown builtin `@Src` — did you mean `@src`?
 2 │     val loc = @Src();
   │               ^
 
-  hint: Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.
+  hint: Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/primitives.bp`'s compiler section for the list.
 ```
 

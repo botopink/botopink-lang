@@ -21,7 +21,7 @@ stdlib/
 | Const | Source | Consumer |
 |---|---|---|
 | `primitives` | `primitives.bp` | `registerStdlib` — flattened into the global env, but for its private bodied fns (the wasm bodies of 164 s3, decision 565), inferred and then taken out (`hidePreludeBodies`) |
-| `builtins` | `builtins.d.bp` | `registerBuiltinDecls` → `env.builtinDecls` (its builtin fns only — the types stay the documented surface); `comptime/builtins.zig`'s tests (the calls, `@Result`'s methods, and every type `comptime.zig` `builtin_type_mirrors` registers) |
+| `builtins` | `primitives.bp` | `registerBuiltinDecls` → `env.builtinDecls` (its builtin fns only — the types stay the documented surface); `comptime/builtins.zig`'s tests (the calls, `@Result`'s methods, and every type `comptime.zig` `builtin_type_mirrors` registers) |
 | `pkg_modules` | generated `std_pkg` module | `comptime.zig std_pkg_modules` — the `import {…} from "std"` registry |
 
 ## Wiring

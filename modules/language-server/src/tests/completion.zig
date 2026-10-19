@@ -535,7 +535,7 @@ test "completion: dot completes enum variants" {
 // ── effect-wrapper receiver completion (decisions 120/122/128) ────────────────
 //
 // A value typed by an effect wrapper completes the members the prelude
-// declares for it (`libs/std/src/builtins.d.bp`): `@Iterator` steps with
+// declares for it (`libs/std/src/primitives.bp`'s compiler section): `@Iterator` steps with
 // `next`; `@Stream` steps with `next` and, through `extends Task`, maps with
 // `map` / `then`; a `@Task` maps with `map` / `then`.
 

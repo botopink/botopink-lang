@@ -437,11 +437,11 @@ test "files: the manifest's declared surface is read; absent is empty" {
     const arena = arena_inst.allocator();
 
     const cfg = try parse(arena,
-        \\{ "name": "prims", "files": ["primitives.bp", "builtins.d.bp"] }
+        \\{ "name": "prims", "files": ["primitives.bp", "external.bp"] }
     );
     try testing.expectEqual(@as(usize, 2), cfg.files.len);
     try testing.expectEqualStrings("primitives.bp", cfg.files[0]);
-    try testing.expectEqualStrings("builtins.d.bp", cfg.files[1]);
+    try testing.expectEqualStrings("external.bp", cfg.files[1]);
 
     const none = try parse(arena,
         \\{ "name": "p" }

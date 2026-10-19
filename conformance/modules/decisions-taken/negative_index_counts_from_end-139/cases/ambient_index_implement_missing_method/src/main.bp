@@ -1,5 +1,5 @@
 //// Decision 539 (6), decision 63 — an inline `implement` of an ambient behavior is checked
-//// against its declaration in `builtins.d.bp`: `Index<K, V>` requires `at`, and a type that
+//// against its declaration in `primitives.bp`: `Index<K, V>` requires `at`, and a type that
 //// names it without one is refused at the type.
 
 import {io.terminal.print} from "std";

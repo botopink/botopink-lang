@@ -1078,7 +1078,7 @@ test "parser: an unlabelled annotation argument has no label" {
 }
 
 // ── front 20 — the `declare fn` delegate and behavior `val` members take the
-// full signature / type grammar (the two gaps `builtins.d.bp` hit) ─────────────
+// full signature / type grammar (the two gaps `primitives.bp`'s compiler section hit) ─────────────
 
 test "parser: declare fn ---- unannotated with generic params and a comptime param" {
     try h.assertParser(std.testing.allocator, @src(),
