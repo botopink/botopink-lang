@@ -3937,6 +3937,7 @@ const Emitter = struct {
                                     else => null,
                                 };
                             };
+                            if (cc.receiver == null) if (self.genericRetRecord(cc)) |r| break :blk r;
                             const key = self.assocSym(cc) orelse cc.callee;
                             const tn = self.fn_return_types.get(key) orelse break :blk null;
                             break :blk self.resolveRecordName(tn);
@@ -18249,6 +18250,28 @@ const Emitter = struct {
             },
             else => .i32,
         };
+    }
+
+    /// `fn firstOf<T>(xs: T[], keep: …) -> ?T` (or `-> T`): the record the
+    /// argument binding `T` holds — an element of the `T[]` argument, or the
+    /// `T` argument itself — so a `?.field` read on the answer finds its slot.
+    fn genericRetRecord(self: *Emitter, cc: anytype) ?[]const u8 {
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const f = (self.generic_fns.get(callee) orelse return null).decl;
+        var rt = f.returnType orelse return null;
+        if (rt == .optional) rt = rt.optional.*;
+        if (rt != .named or !isGenericParamName(rt.named, f.genericParams, &.{})) return null;
+        for (f.params, 0..) |p, i| {
+            if (i >= cc.args.len or cc.args[i].label != null) continue;
+            const arg = cc.args[i].value.*;
+            if (p.typeRef == .named and std.mem.eql(u8, p.typeRef.named, rt.named)) {
+                if (self.recordTypeOfExpr(arg)) |r| return r;
+            } else if (p.typeRef == .array and p.typeRef.array.* == .named and std.mem.eql(u8, p.typeRef.array.named, rt.named)) {
+                if (self.elemRecordOf(arg)) |r| return r;
+            }
+        }
+        return null;
     }
 
     /// `fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[]`: the element kind

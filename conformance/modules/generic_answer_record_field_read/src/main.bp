@@ -1,0 +1,31 @@
+//// A generic function answering `?T` or `T` over records hands back the record:
+//// `?.field` and `.field` on the answer read its slot on every target (wasm read the
+//// answer as a boxed scalar and printed `0` or an address).
+
+import {io.terminal.print} from "std";
+
+type Post(title: string, n: i32)
+
+fn firstOf<T>(xs: T[], keep: fn(T) -> bool) -> ?T {
+    for (xs) { x ->
+        if (keep(x)) return x;
+    }
+    return null;
+}
+
+fn pick<T>(a: T, b: T, takeA: bool) -> T {
+    if (takeA) return a;
+    return b;
+}
+
+pub fn main() {
+    val ps = [Post(title: "a", n: 7), Post(title: "b", n: 8)];
+    val r = firstOf(ps, { p -> p.n > 7 });
+    print(r?.n);
+    print(r?.title);
+    val none = firstOf(ps, { p -> p.n > 100 });
+    print(none?.n);
+    val q = pick(Post(title: "x", n: 1), Post(title: "y", n: 2), false);
+    print(q.n);
+    print(q.title);
+}
