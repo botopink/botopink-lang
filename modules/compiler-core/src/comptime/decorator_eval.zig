@@ -95,11 +95,20 @@ pub const DeclHandle = struct {
     /// `CustomNode`'s `ref` hands the language server). Null for every other
     /// handle.
     lookup: ?Lookup = null,
+    /// Decision 734 — what `compiler.src()` answers in the decorator's body:
+    /// where the annotated declaration starts, in its file. Never a key of
+    /// the handle's term (`decl.loc` stays absent); the module answers it by
+    /// a `src/0` of its own (`srcForm`). Null when the handle has no place.
+    src: ?SrcPoint = null,
 
     pub fn isTag(self: DeclHandle) bool {
         return std.mem.eql(u8, self.kind, "Element") or std.mem.eql(u8, self.kind, "Component");
     }
 };
+
+/// A place in a file, 1-based (decision 734): the file relative to its
+/// package's root, as `@src().file` writes it.
+pub const SrcPoint = struct { file: []const u8, line: usize, column: usize };
 
 /// What a `q.lookup` handle carries beside a declaration's (decision 415 (2)).
 /// `pending` (372's pattern): a declaration of the module whose `.hooks`
@@ -386,6 +395,61 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     return b.arena.dupe(Ast.Form, &forms);
 }
 
+/// Decision 734 — `src() -> #{file => …, line => …, column => …, fnName =>
+/// <<>>}`: the `SourceLocation` `compiler.src()` (the builtin `src` call the
+/// parser writes) answers in a decorator's body, the annotated declaration's
+/// place. The declaration is at module level, so `fnName` is empty.
+fn srcForm(b: Ast.Builder, at: SrcPoint) Ast.Builder.Error!Ast.Form {
+    const fields = [_]Ast.MapField{
+        Ast.field("file", Ast.str(at.file)),
+        Ast.field("line", .{ .term = .{ .integer = @intCast(at.line) } }),
+        Ast.field("column", .{ .term = .{ .integer = @intCast(at.column) } }),
+        Ast.field("fnName", Ast.str("")),
+    };
+    return b.function("src", &.{}, &.{}, &.{try b.map(&fields)});
+}
+
+/// Whether `dfn`'s body calls the builtin `src` (`compiler.src()`).
+fn callsSrc(dfn: ast.FnDecl) bool {
+    var w = SrcWalk{};
+    for (dfn.body) |*st| w.walk(ast.Expr, &st.expr);
+    return w.found;
+}
+
+const SrcWalk = struct {
+    found: bool = false,
+
+    fn walk(self: *SrcWalk, comptime U: type, ptr: *const U) void {
+        if (self.found) return;
+        if (U == ast.Expr) switch (ptr.*) {
+            .call => |c| if (c.kind == .call and c.kind.call.is_builtin and c.kind.call.receiver == null and std.mem.eql(u8, c.kind.call.callee, "src")) {
+                self.found = true;
+                return;
+            },
+            else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime blockEval.mayHoldNames(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime blockEval.mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime blockEval.mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime blockEval.mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
 /// Whether the (erased) decorator `dfn` reads an argument's text
 /// (`'__bp_argText'/1`, decision 576 (2)).
 fn readsArgText(arena: std.mem.Allocator, dfn: ast.FnDecl) !bool {
@@ -419,6 +483,9 @@ fn buildModule(
     else
         try mainForms(b, dfn, plans, false, texts);
     const resident = try preludeMod.decoratorForms(b);
+    // Decision 734 — `compiler.src()` in the body answers the annotated
+    // declaration's place: only a body that calls it is keyed by the place.
+    const forms_src = if (handle.src) |at| (if (callsSrc(dfn)) try std.mem.concat(arena, Ast.Form, &.{ forms, &.{try srcForm(b, at)} }) else forms) else forms;
 
     const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
     all[0] = .{ .@"fn" = dfn };
@@ -449,7 +516,7 @@ fn buildModule(
             .{ .name = typedMeta.expr_ref_record, .fields = &.{typedMeta.expr_ref_field} },
         },
         .exports = &.{.{ .name = "main", .arity = 1 }},
-        .forms = forms,
+        .forms = forms_src,
         .resident = .{
             .module = preludeMod.decorator_module,
             .forms = resident,
@@ -480,6 +547,12 @@ fn buildModule(
         try kind.append(arena, 3);
         try kind.appendSlice(arena, n.file);
     }
+    // Decision 734 — a body that calls `compiler.src()` holds the annotated
+    // declaration's place (`srcForm`): one emit per place.
+    if (forms_src.len != forms.len) if (handle.src) |at| {
+        try kind.append(arena, 4);
+        try kind.print(arena, "{s}:{d}:{d}", .{ at.file, at.line, at.column });
+    };
     for (decls) |d| switch (d) {
         .@"fn" => |f| for (located) |n| {
             if (std.mem.eql(u8, f.name, n.name)) {

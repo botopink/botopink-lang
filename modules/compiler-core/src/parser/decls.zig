@@ -421,6 +421,7 @@ pub fn checkFnMarker(this: *This, marker: ?FnMarker, returnType: ?TypeRef, bodyl
 
 pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
     const annotations = try this.parseAnnotations(alloc);
+    const startLoc = parser.Parser.locFromToken(this.peek());
     errdefer {
         for (annotations) |*ann| ann.deinit(alloc);
         alloc.free(annotations);
@@ -446,6 +447,7 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
         anon.isDefault = true;
         anon.anonymousDefault = true;
         anon.nameLoc = parser.Parser.locFromToken(fnTok);
+        anon.startLoc = startLoc;
         try applyFnMarker(this, alloc, &anon, marker);
         return anon;
     }
@@ -453,6 +455,7 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
     var fn_decl = try this.parseFnBody(alloc, nameTok.lexeme, isPub, isDeclare, annotations);
     fn_decl.isDefault = isDefault;
     fn_decl.nameLoc = parser.Parser.locFromToken(nameTok);
+    fn_decl.startLoc = startLoc;
     try applyFnMarker(this, alloc, &fn_decl, marker);
     return fn_decl;
 }
@@ -1576,9 +1579,12 @@ pub fn parseTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl 
 
 /// Shorthand: `#[…] [pub] type Name<G>(fields) implement B { … }`.
 pub fn parseShorthandTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
+    const startLoc = parser.Parser.locFromToken(this.peekAt(this.skipAnnotationsLookaheadFrom(0)));
     const p = try this.parseDeclPreamble(alloc, .type, true);
     errdefer freeAnnotations(alloc, p.annotations);
-    return this.parseTypeDeclRest(alloc, p.name, p.annotations, p.isPub);
+    var t = try this.parseTypeDeclRest(alloc, p.name, p.annotations, p.isPub);
+    t.startLoc = startLoc;
+    return t;
 }
 
 /// Everything after `type Name` (shorthand) or `type` (val-form): generic

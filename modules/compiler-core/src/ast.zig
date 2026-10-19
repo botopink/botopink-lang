@@ -4265,6 +4265,10 @@ pub const FnDecl = struct {
     /// of the name points at. `{0,0}` when synthesised; left out of the AST
     /// dump.
     nameLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Where the declaration starts, its annotations aside (`pub fn link` →
+    /// `pub`): what `compiler.src()` answers in a decorator of it (decision
+    /// 734). `{0,0}` when synthesised; left out of the AST dump.
+    startLoc: Loc = .{ .line = 0, .col = 0 },
     docComment: ?[]const u8 = null,
     /// `//` regular comment (last one before the declaration)
     comment: ?[]const u8 = null,
@@ -4328,7 +4332,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "markerLoc", "implementations" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "startLoc", "markerLoc", "implementations" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
@@ -4488,6 +4492,10 @@ pub const TypeDecl = struct {
     /// Where the declaration is written (01 step 9 — the diagnostics about it
     /// are located here). Left out of the AST dump.
     loc: Loc = .{ .line = 0, .col = 0 },
+    /// Where the declaration starts, its annotations aside (`pub type Point`
+    /// → `pub`): what `compiler.src()` answers in a decorator of it (decision
+    /// 734). `{0,0}` when synthesised; left out of the AST dump.
+    startLoc: Loc = .{ .line = 0, .col = 0 },
     /// The name a printed value spells, when it is not `name`: an associated
     /// type is declared `City__Columns` and prints as `City.Columns(…)`
     /// (decision 216). Null — the dump leaves it out — for every type written
@@ -4569,7 +4577,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial" });
+        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial" });
     }
 };
 

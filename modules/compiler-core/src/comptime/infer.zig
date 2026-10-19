@@ -7827,6 +7827,13 @@ fn withoutListed(arena: std.mem.Allocator, fns: []const ast.FnDecl, have: []cons
     return out.items;
 }
 
+/// Decision 734 — the place `compiler.src()` answers in a decorator of the
+/// declaration at `loc` of this module; null for a synthesised one.
+fn declSrc(env: *Env, loc: ast.Loc) ?decoratorEval.SrcPoint {
+    if (loc.line == 0) return null;
+    return .{ .file = env.srcPath, .line = loc.line, .column = loc.col };
+}
+
 fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) InferError!void {
     // Second pass: contributions already spliced. The `.hooks` readers run
     // in the analysis that infers the bodies, whichever it is.
@@ -7846,6 +7853,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .annotations = f.annotations,
                 .hooks = if (phase == .hooksReaders) try declHooksTerm(env, f) else &.{},
                 .params = try paramHandles(env, f.params),
+                .src = declSrc(env, if (f.startLoc.line > 0) f.startLoc else f.nameLoc),
             };
             try runDeclDecorators(env, ctx, program, phase, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
@@ -7864,6 +7872,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .methods = &.{},
                 .returnType = if (v.typeAnnotation) |tr| try declTypeName(env.arena, tr) else "",
                 .annotations = v.annotations,
+                .src = declSrc(env, v.nameLoc),
             };
             try runDeclDecorators(env, ctx, program, phase, v.annotations, h, null, .{ .kind = .val, .isPub = v.isPub });
         },
@@ -7890,6 +7899,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                         .params = try paramHandles(env, m.params),
+                        .src = declSrc(env, m.nameLoc),
                     };
                     try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
                 }
@@ -7900,6 +7910,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .methods = tdecl.methods,
                     .returnType = "",
                     .annotations = tdecl.annotations,
+                    .src = declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
                 };
                 try runDeclDecorators(env, ctx, program, phase, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.recordFields()) |fld| {
@@ -7933,6 +7944,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                         .params = try paramHandles(env, m.params),
+                        .src = declSrc(env, m.nameLoc),
                     };
                     try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
                 }
@@ -7944,6 +7956,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .methods = tdecl.methods,
                     .returnType = "",
                     .annotations = tdecl.annotations,
+                    .src = declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
                 };
                 try runDeclDecorators(env, ctx, program, phase, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
             },
@@ -12246,7 +12259,12 @@ fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr 
         .args = args,
         .trailing = &.{},
     } } } };
-    try env.srcRewrites.put(loc, rewrite);
+    // Decision 734 — in a decorator's body the place is the annotated
+    // declaration's, one per run: the call stays, and the decorator's module
+    // answers it (`decorator_eval.srcForm`).
+    const params = env.currentParams;
+    const inDecorator = (params.len > 0 and params[0].typeRef.isDeclType()) or (params.len > 1 and params[1].typeRef.isDeclType());
+    if (!inDecorator) try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
 }
 
