@@ -36,22 +36,22 @@ test "functions.identity" {
 }
 
 test "functions.compose runs left to right" {
-    val double = { n -> n * 2 };
-    val addOne = { n -> n + 1 };
+    val double: fn(i32) -> i32 = { n -> n * 2 };
+    val addOne: fn(i32) -> i32 = { n -> n + 1 };
     val f = compose(double, addOne);
     assert f(3) == 7;
     assert f(0) == 1;
 }
 
 test "functions.compose with a string transform" {
-    val shout = { s -> s + "!" };
-    val greet = { s -> "Hello, " + s };
+    val shout: fn(string) -> string = { s -> s + "!" };
+    val greet: fn(string) -> string = { s -> "Hello, " + s };
     val greetAndShout = compose(greet, shout);
     assert greetAndShout("world") == "Hello, world!";
 }
 
 test "functions.flip reverses the argument order" {
-    val sub = { a, b -> a - b };
+    val sub: fn(i32, i32) -> i32 = { a, b -> a - b };
     val rsub = flip(sub);
     assert rsub(3, 10) == 7;
 }
