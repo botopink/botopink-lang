@@ -1,0 +1,24 @@
+//// Decision 751 — `compiler.Node` is a closed union alias of its kinds: a
+//// record that is none of them is no node. Where a node's field is typed
+//// `Node` the checker refuses it at the record (`main`); handed whole to
+//// `compiler.ast`, whose argument is checked in the reply, it is refused at
+//// the `ast` call, naming it (`root`).
+
+mod root;
+import {root.whole};
+import {compiler, compiler.Call, compiler.Name, io.terminal.print} from "std";
+
+type Text(text: string, size: i32)
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn nested(syntax q: string) -> anyvalue {
+    return compiler.ast(Call(callee: Name("double"), args: [Text(text: compiler.text(q), size: 1)]));
+}
+
+pub fn main() {
+    print(nested @`x`);
+    print(whole());
+}

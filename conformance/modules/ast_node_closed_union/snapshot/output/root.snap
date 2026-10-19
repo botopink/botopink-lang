@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: ast-ill-formed: `(text: "x", size: 1)` is no `compiler.Node`: its fields are no node's
+at src/root.bp:6:21

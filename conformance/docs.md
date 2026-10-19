@@ -3681,6 +3681,13 @@ language has not, and a `Name` nothing binds where the tree is spliced.
 
 <!-- example: modules/ast_ill_formed_refused -->
 
+`Node` is a closed union alias of its kinds (decision 751): a record that is
+none of them is no node. Where a node's field is typed `Node` the checker
+refuses it where it is written; handed whole to `compiler.ast`, whose argument
+is checked in the reply, it is `ast-ill-formed` at the `ast` call.
+
+<!-- example: modules/ast_node_closed_union -->
+
 ### Decorators
 
 A decorator is a function whose first parameter is `syntax` (decisions 575 (4),
