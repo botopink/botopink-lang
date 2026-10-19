@@ -1728,6 +1728,11 @@ an `unknown` subject tests a primitive-type arm and binds its payload unboxed
 (`unknown_subjects`, `arm_unbox`) — as a plain identifier it was a binding that
 matched everything (`number 364`, a heap address). `conformance/modules/unknown_by_value`
 pins it on four targets.
+A run-time type token (decision 758, `__bp_type_token(T)`) is the address of a static blob
+(`typeTokenAddr`): `[0][n][d0]…` the type's descriptors, or a primitive's test (`[1][lo][hi]` an
+integer type, `[2]` a float, `[3]` `bool`, `[4]` `string`, `[5]` `unknown`); `x is t` over one
+puts `x` in the box and calls `$__is_type_token` (group `is_type_token`, over `unknown`). A GC
+module has no address for it and falls back to linear.
 A TUPLE in the box (`boxTupleAsUnknown`) is `[desc "tuple"][the tuple][arity][box 0]…`:
 the tuple stays the payload's first word, and each element goes in an `unknown`
 box of its own, typed from the literal's elements or the tuple type's, so

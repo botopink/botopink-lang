@@ -9064,6 +9064,10 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.non_null_builtin_name)) return this.nonNullNode(b, cc);
+        // Decision 758 — a run-time type token, and `x is t` over one.
+        if (std.mem.eql(u8, cc.callee, "__bp_type_token") and cc.args.len == 1) return this.typeTokenNode(b, cc.args[0].value.*);
+        if (std.mem.eql(u8, cc.callee, "__bp_is_type") and cc.args.len == 2)
+            return this.genCall(b, .is_type, &.{ try this.exprNode(b, cc.args[0].value.*), try this.exprNode(b, cc.args[1].value.*) });
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
     }
@@ -11016,6 +11020,43 @@ const Emitter = struct {
             .function => |f| return try b.remote("erlang", "is_function", &.{ subject, Ast.Expr.t(Term.int(@intCast(f.params.len))) }),
             .typeparam => return null,
         }
+    }
+
+    /// Decision 758 — a type crossing to run time: `{'__bp_type', Id, Spec}`,
+    /// the shapes its values take or a primitive's test, which
+    /// `'__bp_is_type'/2` (`beam/gen_runtime.zig`) reads as `x is T` tests.
+    fn typeTokenNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        if (e != .identifier or e.identifier.kind != .ident) return this.exprNode(b, e);
+        const n = e.identifier.kind.ident;
+        const A = Ast.Expr.a;
+        const prim: ?Ast.Expr = if (std.mem.eql(u8, n, "string"))
+            A("string")
+        else if (std.mem.eql(u8, n, "bool"))
+            A("bool")
+        else if (isFloatTypeName(n))
+            A("number")
+        else if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any"))
+            A("any")
+        else if (integerPatternRange(n)) |r|
+            try b.tuple(&.{
+                A("int"),
+                if (r.lo) |lo| Ast.Expr{ .number = lo } else A("undefined"),
+                if (r.hi) |hi| Ast.Expr{ .number = hi } else A("undefined"),
+            })
+        else
+            null;
+        if (prim) |spec| return b.tuple(&.{ A("__bp_type"), A(n), spec });
+        var shapes: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (this.record_fields.get(n)) |fields| {
+            try shapes.append(b.arena, try b.tuple(&.{ A(try this.recordTagAtom(n)), Ast.Expr.t(Term.int(@intCast(fields.len + 1))) }));
+        } else if (this.enum_variant_names.get(n)) |variants| {
+            for (variants) |v| {
+                const tag = this.qualifiedVariantTagOf(n, v) orelse v;
+                const arity: usize = if (this.variant_fields.get(v)) |f| f.len + 1 else 0;
+                try shapes.append(b.arena, try b.tuple(&.{ A(tag), Ast.Expr.t(Term.int(@intCast(arity))) }));
+            }
+        }
+        return b.tuple(&.{ A("__bp_type"), A(try this.recordTagAtom(n)), try b.list(shapes.items) });
     }
 
     /// `is_tuple(V) andalso tuple_size(V) =:= N andalso element(1, V) =:= Tag`

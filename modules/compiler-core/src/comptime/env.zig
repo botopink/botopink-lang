@@ -1518,6 +1518,12 @@ pub const Env = struct {
     /// Decision 757 — the reads `t.value` of a type token handed on as a call's
     /// argument (`self.count(t)`), by the read's loc: the type, not refused.
     typeTokenHandOns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 758 — the tests `x is t` over a run-time type token `t:
+    /// type<T>`, by the test's loc: written `__bp_is_type(x, t)`.
+    runtimeTokenTests: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 758 — the types written where a run-time token is taken, by
+    /// the name's loc: written `__bp_type_token(Users)`, the type's identity.
+    runtimeTokenArgs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 308 — a field key at run time: the expression each written
     /// node means, keyed by the node's own loc — a `.title` against a
     /// `Type.Field<T>` (the `Type.Field<T>` record), a `case` over one (the

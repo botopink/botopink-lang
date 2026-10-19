@@ -189,6 +189,14 @@ pub const Helper = enum {
     every,
     /// `(It, F)` → the first `x` with `F(x)`, else `undefined`.
     find,
+    /// `(V, T)` → whether `V` is of the run-time type token `T` (decision
+    /// 758): not a generator helper, but the one other run-time helper the
+    /// two targets share as one text. A token is `{'__bp_type', Id, Spec}`,
+    /// `Spec` the shapes of a record's or an enum's values — `[{Tag, Size}]`,
+    /// `Size` 0 for a bare atom — or a primitive's test (`string`, `bool`,
+    /// `number`, `any`, `{int, Lo, Hi}` with `undefined` for no bound), each
+    /// tested as the literal `x is T` is.
+    is_type,
 
     /// The helper's function name in the erlang module.
     pub fn name(h: Helper) []const u8 {
@@ -209,13 +217,14 @@ pub const Helper = enum {
             .some => "__bp_iter_some",
             .every => "__bp_iter_every",
             .find => "__bp_iter_find",
+            .is_type => "__bp_is_type",
         };
     }
 
     pub fn arity(h: Helper) usize {
         return switch (h) {
             .gen_new, .gen_yield, .step, .close, .to_array => 1,
-            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find => 2,
+            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find, .is_type => 2,
             .foldl, .reduce => 3,
         };
     }
@@ -270,6 +279,14 @@ pub const Helper = enum {
             .every => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++
                 consuming("fun WF() -> case Call(P, next) of [V] -> case __BpA1(V) of true -> WF(); _ -> Call(P, close), false end; [] -> true end end") ++
                 ";\nL -> lists:all(__BpA1, L)\nend",
+            .is_type => "case __BpA1 of\n" ++
+                "{'__bp_type', _, any} -> true;\n" ++
+                "{'__bp_type', _, string} -> erlang:is_binary(__BpA0);\n" ++
+                "{'__bp_type', _, bool} -> erlang:is_boolean(__BpA0);\n" ++
+                "{'__bp_type', _, number} -> erlang:is_number(__BpA0);\n" ++
+                "{'__bp_type', _, {int, Lo, Hi}} -> erlang:is_number(__BpA0) andalso (__BpA0 == erlang:trunc(__BpA0)) andalso ((Lo =:= undefined) orelse (__BpA0 >= Lo)) andalso ((Hi =:= undefined) orelse (__BpA0 =< Hi));\n" ++
+                "{'__bp_type', _, Shapes} -> lists:any(fun({Tag, N}) -> case N of 0 -> __BpA0 =:= Tag; _ -> erlang:is_tuple(__BpA0) andalso (erlang:tuple_size(__BpA0) =:= N) andalso (erlang:element(1, __BpA0) =:= Tag) end end, Shapes)\n" ++
+                "end",
             .find => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++
                 consuming("fun WF() -> case Call(P, next) of [V] -> case __BpA1(V) of true -> Call(P, close), V; _ -> WF() end; [] -> undefined end end") ++
                 ";\nL -> case lists:search(__BpA1, L) of {value, V} -> V; false -> undefined end\nend",

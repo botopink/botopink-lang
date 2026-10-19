@@ -243,6 +243,35 @@ const unknown_int_in = typedFunc("__unknown_int_in", &.{ .{ .name = "v", .ty = .
     op("and"),
 });
 
+/// Decision 758 — `v is t` over a run-time type token, `v` an `unknown` value
+/// and `t` the blob `wat.zig` `typeTokenAddr` lays out: `[0][n][d0]…` a
+/// record's or an enum's descriptors (the value's header is one of them),
+/// `[1][lo][hi]` an integer type, `[2]` a float type, `[3]` `bool`, `[4]`
+/// `string`, `[5]` `unknown` — each the test `x is T` writes for that type.
+const is_type_token = func("__is_type_token", &.{ "v", "t" }, .i32, i32s(&.{ "k", "h", "n", "i" }), &.{
+    get("t"),                                                              load(0),                                                                                   set("k"),
+    get("k"),                                                              c32(5),                                                                                    op("eq"),
+    when(&.{ c32(1), ret }),                                               get("k"),                                                                                  c32(1),
+    op("eq"),                                                              when(&.{ get("v"), get("t"), load(4), get("t"), load(8), call("__unknown_int_in"), ret }), get("k"),
+    c32(2),                                                                op("eq"),                                                                                  when(&.{ get("v"), call("__unknown_kind"), set("h"), get("h"), c32('i'), op("eq"), get("h"), c32('f'), op("eq"), op("or"), ret }),
+    get("k"),                                                              c32(3),                                                                                    op("eq"),
+    when(&.{ get("v"), call("__unknown_kind"), c32('b'), op("eq"), ret }), get("k"),                                                                                  c32(4),
+    op("eq"),                                                              when(&.{ get("v"), call("__unknown_kind"), c32('s'), op("eq"), ret }),                     get("v"),
+    c32(256),                                                              op("lt_u"),                                                                                when(&.{ c32(0), ret }),
+    get("v"),                                                              c32(4),                                                                                    op("sub"),
+    load(0),                                                               set("h"),                                                                                  get("t"),
+    load(4),                                                               set("n"),                                                                                  c32(0),
+    set("i"),
+    loop(&.{
+        get("i"), get("n"),  op("ge_u"),              brk,
+        get("t"), c32(8),    op("add"),               get("i"),
+        c32(4),   op("mul"), op("add"),               load(0),
+        get("h"), op("eq"),  when(&.{ c32(1), ret }), get("i"),
+        c32(1),   op("add"), set("i"),                again,
+    }),
+    c32(0),
+});
+
 /// The payload of a boxed number read as an `i32` (a whole `f64` converted).
 const unknown_as_i32 = func("__unknown_as_i32", &.{"v"}, .i32, &.{}, &.{
     get("v"),                                                                                   call("__unknown_kind"), c32('f'), op("eq"),

@@ -7319,6 +7319,42 @@ const Emitter = struct {
         );
     }
 
+    /// The primitive types a run-time type token may name (decision 758),
+    /// each tested by `isTest` as `x is <name>` is.
+    const token_prims = [_][]const u8{ "string", "bool", "f32", "f64", "float", "i8", "i16", "i32", "u8", "u16", "u32", "i64", "int", "isize", "u64", "uint", "usize" };
+
+    /// Decision 758 — a type crossing to run time as its identity: a record's,
+    /// an enum's or a behavior's class, a primitive's name.
+    fn typeTokenExpr(self: *Emitter, e: ast.Expr) anyerror!js.Expr {
+        if (e == .identifier and e.identifier.kind == .ident) {
+            const n = e.identifier.kind.ident;
+            for (token_prims) |p| if (std.mem.eql(u8, p, n)) return .{ .quoted = n };
+            return .{ .name = n };
+        }
+        return self.buildExpr(e);
+    }
+
+    /// Decision 758 — `x is t` over a run-time type token: `instanceof` the
+    /// class a type's token is, and for a primitive's name the test `x is
+    /// <name>` writes — `((_v, _t) => typeof _t === "function" ? _v instanceof
+    /// _t : _t === "string" ? … : false)(x, t)`.
+    fn buildIsTokenCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        const v: js.Expr = .{ .name = "_v" };
+        const t: js.Expr = .{ .name = "_t" };
+        var acc: js.Expr = .{ .name = "false" };
+        var i: usize = token_prims.len;
+        while (i > 0) {
+            i -= 1;
+            const p = token_prims[i];
+            acc = try self.b.ternary(try self.b.binaryBare("===", t, .{ .quoted = p }), try self.isTest(.{ .named = p }, v), acc);
+        }
+        acc = try self.b.ternary(try self.typeofIs(t, "function"), try self.b.binaryBare("instanceof", v, t), acc);
+        return self.b.call(
+            try self.b.paren(try self.b.arrowExpr(&.{ .{ .pattern = .{ .name = "_v" } }, .{ .pattern = .{ .name = "_t" } } }, acc)),
+            &.{ try self.buildExpr(cc.args[0].value.*), try self.buildExpr(cc.args[1].value.*) },
+        );
+    }
+
     /// `receiver[index]` (`ast.index_builtin_name`, decision 30). One node
     /// carries the element read and the slice, because the index is an ordinary
     /// expression: a `range` index is `.slice(start, end)` — `.slice(start)`
@@ -7343,6 +7379,10 @@ const Emitter = struct {
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
             return self.buildIsCall(cc);
+        if (std.mem.eql(u8, cc.callee, "__bp_type_token") and cc.args.len == 1)
+            return self.typeTokenExpr(cc.args[0].value.*);
+        if (std.mem.eql(u8, cc.callee, "__bp_is_type") and cc.args.len == 2)
+            return self.buildIsTokenCall(cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name))
             return self.buildIndexCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /

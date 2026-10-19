@@ -936,6 +936,10 @@ pub const HelperGroup = enum {
     /// word in. It holds no function: a leaf names the global as it names a
     /// type, and a module that calls such a leaf gets it declared.
     random_state,
+    /// Decision 758 — `$__is_type_token(v, t)`: whether the `unknown` value
+    /// `v` is of the run-time type token `t`, a static blob `wat.zig`
+    /// `typeTokenAddr` lays out.
+    is_type_token,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -960,6 +964,7 @@ pub const HelperGroup = enum {
             .arr_new => &.{.alloc},
             .arr_push => &.{.arr_new},
             .unknown => &.{.str_eq},
+            .is_type_token => &.{.unknown},
             .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
             .print_shaped_unknown => &.{.print_unknown},
             .print_u64 => &.{.print},
@@ -1110,6 +1115,7 @@ pub const Helper = enum {
     i64_nz,
     i32_divs,
     i64_divs,
+    is_type_token,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

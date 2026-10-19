@@ -3572,6 +3572,49 @@ const Emitter = struct {
         }
     }
 
+    /// Decision 758 — a type crossing to run time, as erlang writes it
+    /// (`erlang.zig` `typeTokenNode`): `{'__bp_type', Id, Spec}`.
+    fn typeTokenTerm(self: *Emitter, e: ast.Expr) anyerror!Term {
+        const ar = self.atom_arena.allocator();
+        const n: []const u8 = if (e == .identifier and e.identifier.kind == .ident) e.identifier.kind.ident else "unknown";
+        var head_buf: [32]u8 = undefined;
+        const head = Term.atomOf(try ar.dupe(u8, try atomName("__bp_type", &head_buf)));
+        const prim: ?Term = if (std.mem.eql(u8, n, "string"))
+            Term.atomOf("string")
+        else if (std.mem.eql(u8, n, "bool"))
+            Term.atomOf("bool")
+        else if (isFloatTypeName(n))
+            Term.atomOf("number")
+        else if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any"))
+            Term.atomOf("any")
+        else if (integerPatternRange(n)) |r|
+            Term.tupleOf(try ar.dupe(Term, &.{
+                Term.atomOf("int"),
+                if (r.lo) |lo| Term.int(try std.fmt.parseInt(i64, lo, 10)) else Term.undefined_atom,
+                if (r.hi) |hi| Term.int(try std.fmt.parseInt(i64, hi, 10)) else Term.undefined_atom,
+            }))
+        else
+            null;
+        if (prim) |spec| return Term.tupleOf(try ar.dupe(Term, &.{ head, Term.atomOf(n), spec }));
+        var shapes: std.ArrayListUnmanaged(Term) = .empty;
+        if (self.record_fields.get(n)) |fields| {
+            var tag_buf: [512]u8 = undefined;
+            const tag = try ar.dupe(u8, try atomName(try self.recordTagAtom(n), &tag_buf));
+            try shapes.append(ar, Term.tupleOf(try ar.dupe(Term, &.{ Term.atomOf(tag), Term.int(@as(i64, @intCast(fields.len + 1))) })));
+        } else if (self.enum_variant_names.get(n)) |variants| {
+            for (variants) |v| {
+                const raw = self.qualifiedVariantTagOf(n, v.name) orelse v.name;
+                var tag_buf: [512]u8 = undefined;
+                const tag = try ar.dupe(u8, try atomName(raw, &tag_buf));
+                const arity: i64 = if (v.fields > 0) @intCast(v.fields + 1) else 0;
+                try shapes.append(ar, Term.tupleOf(try ar.dupe(Term, &.{ Term.atomOf(tag), Term.int(arity) })));
+            }
+        }
+        var id_buf: [512]u8 = undefined;
+        const id = try ar.dupe(u8, try atomName(try self.recordTagAtom(n), &id_buf));
+        return Term.tupleOf(try ar.dupe(Term, &.{ head, Term.atomOf(id), Term.listOf(try shapes.toOwnedSlice(ar)) }));
+    }
+
     /// `x is T` in expression position: `true` or `false` in `{x, 0}`.
     fn lowerIsCall(self: *Emitter, cc: anytype) anyerror!void {
         const t = cc.isType orelse return error.InvalidArgs;
@@ -9795,6 +9838,20 @@ const Emitter = struct {
         }
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) {
             try self.lowerIsCall(cc);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+        // Decision 758 — a run-time type token (a literal term), and `x is t`
+        // over one: the helper erlang calls too (`beam/gen_runtime.zig`).
+        if (std.mem.eql(u8, cc.callee, "__bp_type_token") and cc.args.len == 1) {
+            try beamEmitter.writeMoveOp(self.out, .{ .term = try self.typeTokenTerm(cc.args[0].value.*) }, Dst.xr(0));
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+        if (std.mem.eql(u8, cc.callee, "__bp_is_type") and cc.args.len == 2) {
+            const st = try self.stageCall(cc.args[0].value, cc.args[1..], &[_]ast.TrailingLambda{});
+            try self.placeStaged(&st);
+            try self.callGenHelper(.is_type);
             if (mode == .tail) try self.emitReturn();
             return;
         }

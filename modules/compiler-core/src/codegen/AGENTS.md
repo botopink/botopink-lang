@@ -168,6 +168,17 @@ codegen/
   `f64` whose shape nothing recovers prints as an integer — `for (xs) { v ->
   break v * 0.15; }` is the measured case, and a union member (decision 26) is
   the other, since a union carries no single leaf.
+- **A run-time type token** (decision 758): `comptime/type_token.zig` writes a type
+  passed to a `t: type<T>` parameter (no `comptime`) as the builtin
+  `__bp_type_token(Users)` and `x is t` over one as `__bp_is_type(x, t)`, each
+  tested as the literal `x is Users` is. commonJS: the token is the class (a
+  record's, an enum's) or a primitive's name as a string, the test an
+  `instanceof` or that primitive's `isTest`; erlang and beam:
+  `{'__bp_type', Id, Spec}` (the `[{Tag, Size}]` shapes of a record's or an
+  enum's values, or a primitive's test) read by `'__bp_is_type'/2`, a helper of
+  `beam/gen_runtime.zig`'s one text; wasm (linear; a GC module falls back): the
+  address of a static blob of the type's descriptors or primitive test, read by
+  `$__is_type_token` (`wat_prelude.zig`).
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `-> @Result` fns; `try`/`catch` lower to `"error" in _r`
   pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no

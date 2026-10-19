@@ -47,6 +47,10 @@ const Pending = struct { key: []const u8, types: []const []const u8 };
 const Ctx = struct {
     arena: std.mem.Allocator,
     calls: *const std.AutoHashMapUnmanaged(ast.Loc, envMod.TypeTokenCall),
+    /// Decision 758 — the `x is t` tests over a run-time token, and the types
+    /// written where one is taken (`Env.runtimeTokenTests` / `runtimeTokenArgs`).
+    rtTests: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    rtArgs: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     callables: *std.StringArrayHashMapUnmanaged(Callable),
     pending: *std.ArrayListUnmanaged(Pending),
     /// The token parameters of the copy being built, mapped to its types.
@@ -132,10 +136,10 @@ pub fn apply(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.
         },
         else => {},
     };
-    if (callables.count() == 0 and env.typeTokenCalls.count() == 0) return program;
+    if (callables.count() == 0 and env.typeTokenCalls.count() == 0 and env.runtimeTokenTests.count() == 0 and env.runtimeTokenArgs.count() == 0) return program;
 
     var pending: std.ArrayListUnmanaged(Pending) = .empty;
-    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .callables = &callables, .pending = &pending };
+    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .rtTests = &env.runtimeTokenTests, .rtArgs = &env.runtimeTokenArgs, .callables = &callables, .pending = &pending };
 
     // Every body as written, the callables that read a token excepted (only
     // their copies run).
@@ -258,6 +262,26 @@ pub fn apply(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.
     return result;
 }
 
+/// The builtin call `callee(args…)` at `loc` (decision 758's run-time token
+/// forms, which each backend lowers).
+fn builtinCall(ctx: *Ctx, callee: []const u8, loc: ast.Loc, args: []const ast.Expr) !ast.Expr {
+    var out: ast.Expr = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = callee,
+        .is_builtin = true,
+        .args = &.{},
+        .trailing = &.{},
+    } } } };
+    const list = try ctx.arena.alloc(ast.CallArg, args.len);
+    for (args, list) |a, *slot| {
+        const p = try ctx.arena.create(ast.Expr);
+        p.* = a;
+        slot.* = .{ .label = null, .value = p };
+    }
+    out.call.kind.call.args = list;
+    return out;
+}
+
 const Built = struct { name: []const u8, body: []ast.Stmt, ctx: Ctx };
 
 fn joined(arena: std.mem.Allocator, types: []const []const u8) ![]const u8 {
@@ -326,6 +350,8 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         switch (v) {
             .identifier => |id| if (id.kind == .ident) {
                 if (ctx.substOf(id.kind.ident)) |t| out.identifier.kind = .{ .ident = t };
+                // Decision 758 — a type where a run-time token is taken.
+                if (ctx.rtArgs.contains(id.loc)) return builtinCall(ctx, "__bp_type_token", id.loc, &.{out});
                 return out;
             },
             .call => |c| if (c.kind == .call) {
@@ -338,6 +364,12 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
                     call.isType = .{ .named = t };
                 };
                 if (ctx.calls.get(c.loc)) |tc| try rewriteCall(ctx, &call, tc);
+                // Decision 758 — `x is t` over a run-time token: the
+                // target's run-time helper over the value and the token.
+                if (ctx.rtTests.contains(c.loc) and call.isType != null and call.isType.? == .named and call.args.len == 1) {
+                    const token: ast.Expr = .{ .identifier = .{ .loc = c.loc, .kind = .{ .ident = call.isType.?.named } } };
+                    return builtinCall(ctx, "__bp_is_type", c.loc, &.{ call.args[0].value.*, token });
+                }
                 out.call.kind = .{ .call = call };
                 return out;
             },

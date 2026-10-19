@@ -1,0 +1,41 @@
+//// Decision 758 — a run-time type token is handed on as any value is:
+//// `has` passes its `t` to `count`, and `describe` its own to `has`, one
+//// function each for every type.
+
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+pub type Orders(total: i32)
+
+pub type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+}
+
+pub type Registry(entries: unknown[]) {
+    pub fn count<T>(self: Self, t: type<T>) -> i32 {
+        var n = 0;
+        for (self.entries) { e ->
+            if (e is t) n = n + 1;
+        }
+        return n;
+    }
+
+    pub fn has<T>(self: Self, t: type<T>) -> bool {
+        return self.count(t) > 0;
+    }
+}
+
+fn describe<T>(r: Registry, t: type<T>) -> string {
+    return if (r.has(t)) "yes" else "no";
+}
+
+pub fn main() {
+    val order: unknown = Orders(total: 9);
+    val circle: unknown = Shape.Circle(r: 1);
+    val r = Registry(entries: [order, circle]);
+    print(describe(r, Orders));
+    print(describe(r, Users));
+    print(describe(r, Shape));
+}

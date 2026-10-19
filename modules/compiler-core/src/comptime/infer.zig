@@ -14536,6 +14536,25 @@ fn typeTokenRef(env: *const Env, ref: ast.TypeRef) ?ast.TypeRef {
     return p.typeRef.typeparam[0];
 }
 
+/// Decision 758 — `ref`, the type an `is` tests, when it names a run-time type
+/// token `t: type<T>` (no `comptime`) of the body being inferred: the `T` it
+/// stands for. Null for anything else.
+fn runtimeTokenRef(env: *const Env, ref: ast.TypeRef) ?ast.TypeRef {
+    if (ref != .named) return null;
+    const p = runtimeTokenParam(env.bodyParams, ref.named) orelse return null;
+    return p.typeRef.typeparam[0];
+}
+
+/// The parameter `name` of `params` when it is a run-time `t: type<T>` one.
+fn runtimeTokenParam(params: []const ast.Param, name: []const u8) ?ast.Param {
+    for (params) |p| {
+        if (!std.mem.eql(u8, p.name, name)) continue;
+        if (p.modifier != .@"comptime" and p.typeRef == .typeparam and p.typeRef.typeparam.len == 1) return p;
+        return null;
+    }
+    return null;
+}
+
 /// The parameter `name` of `params` when it is a `comptime t: type<T>` one.
 fn typeTokenParam(params: []const ast.Param, name: []const u8) ?ast.Param {
     for (params) |p| {
@@ -14562,6 +14581,16 @@ fn noteTypeTokenArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     for (call.args, 0..) |arg, i| {
         const handed = typeTokenHandOn(env, arg.value.*);
+        // Decision 758 — a type written where a run-time token is taken
+        // crosses to run time as the type's identity (`__bp_type_token`).
+        if (arg.label == null and i < params.len and runtimeTokenParam(params, params[i].name) != null) {
+            if (arg.value.* == .identifier and arg.value.identifier.kind == .ident) {
+                const n = arg.value.identifier.kind.ident;
+                if (runtimeTokenParam(env.bodyParams, n) == null and (isPrimitiveTypeName(n) or env.lookupTypeDef(importedTypeAliasTarget(env, n) orelse n) != null))
+                    try env.runtimeTokenArgs.put(env.arena, arg.value.getLoc(), {});
+            }
+            continue;
+        }
         const isToken = arg.label == null and i < params.len and typeTokenParam(params, params[i].name) != null;
         if (!isToken) {
             // A type token is a type at build: only another call's token
@@ -17609,7 +17638,7 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 // `narrowings` rather than growing a second narrowing
                 // mechanism — and so does the null test below it.
                 if (isNarrowingOf(i.cond.*)) |n| {
-                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse n.ref) });
+                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref) });
                 }
                 // The null test: `if (x != null)` rebinds `x` to the `?T`'s
                 // payload inside the branch, `if (x == null)` rebinds it in the
@@ -23043,7 +23072,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // parameter: the function is specialised per type
                     // argument (`type_token.zig`), so in each copy the test
                     // is the concrete type's; here it narrows `v` to `T`.
-                    const tokenRef = typeTokenRef(env, call.isType.?);
+                    // Decision 758 — `x is t`, `t` a run-time `t: type<T>`:
+                    // the run-time test over the value and the token
+                    // (`type_token.zig` writes it `__bp_is_type(x, t)`).
+                    const runtimeRef = runtimeTokenRef(env, call.isType.?);
+                    if (runtimeRef != null) try env.runtimeTokenTests.put(env.arena, loc, {});
+                    const tokenRef = typeTokenRef(env, call.isType.?) orelse runtimeRef;
                     if (tokenRef orelse call.isType) |tested| {
                         // Decision 332 (question 139-a) — no run-time test
                         // tells a `bigint` from another integer: `is` neither
@@ -23080,7 +23114,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                     .trailing = typedTrailing,
                                     // The tested type is what the backends lower the run-time
                                     // test from; dropping it here left them nothing to read.
-                                    .isType = typeTokenRef(env, call.isType.?) orelse call.isType,
+                                    .isType = tokenRef orelse call.isType,
                                 },
                             },
                         },

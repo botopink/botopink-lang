@@ -12658,6 +12658,25 @@ const Emitter = struct {
             try self.lowerIsCall(cc);
             return;
         }
+        // Decision 758 — a run-time type token (a static blob's address) and
+        // `x is t` over one (`$__is_type_token`). A linear module's: a GC one
+        // falls back.
+        if (std.mem.eql(u8, cc.callee, "__bp_type_token") and cc.args.len == 1) {
+            if (self.mode == .gc) return self.gcFail("a run-time type token");
+            const a = cc.args[0].value.*;
+            const n: []const u8 = if (a == .identifier and a.identifier.kind == .ident) a.identifier.kind.ident else return error.InvalidArgs;
+            const addr = try self.typeTokenAddr(n) orelse
+                return self.refuseUnlessTemplate(self.call_loc, "`{s}` as a run-time type token: the wasm backend has no run-time test for this type (no value of it carries a descriptor)", .{n});
+            try self.emit(try self.constInt(addr));
+            return;
+        }
+        if (std.mem.eql(u8, cc.callee, "__bp_is_type") and cc.args.len == 2) {
+            if (self.mode == .gc) return self.gcFail("an is test over a run-time type token");
+            try self.lowerAsUnknown(cc.args[0].value.*);
+            try self.lowerCoerced(cc.args[1].value.*, .i32);
+            try self.emit(self.builder().helper(.is_type_token));
+            return;
+        }
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println")) {
             // `@println` is `@print`: both end the line on every target.
             // Marks the print helper group even for `@print()` with no
@@ -13288,7 +13307,8 @@ const Emitter = struct {
                     if (isUnwrapOr(cc)) break :blk self.isBoolExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk std.mem.eql(u8, cc.callee, "__bp_result_isOk") or
                         std.mem.eql(u8, cc.callee, "__bp_result_isError") or
-                        (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null);
+                        (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) or
+                        std.mem.eql(u8, cc.callee, "__bp_is_type");
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .bool_;
                     if (self.genericResultArg(cc)) |a| break :blk self.isBoolExpr(a);
                     // `f(a, b)` over a value declared `fn(…) -> bool`.
@@ -23291,6 +23311,34 @@ const Emitter = struct {
         const addr = seg.offset + 4;
         try self.type_descs.put(name, addr);
         return addr;
+    }
+
+    /// Decision 758 — the static blob a run-time type token `name` points at,
+    /// read by `$__is_type_token` (`wat_prelude.zig`): `[0][n][d0]…` a record's
+    /// or an enum's descriptors, `[1][lo][hi]` an integer type, `[2]` a float
+    /// type, `[3]` `bool`, `[4]` `string`, `[5]` `unknown`. Null for a type
+    /// whose values carry no descriptor (an all-unit enum), which `x is T`
+    /// refuses too.
+    fn typeTokenAddr(self: *Emitter, name: []const u8) anyerror!?u32 {
+        var words: std.ArrayListUnmanaged(i32) = .empty;
+        const ar = self.arena();
+        if (primTestOf(.{ .named = name })) |pt| switch (pt) {
+            .int => |r| try words.appendSlice(ar, &.{ 1, r.lo, r.hi }),
+            .float => try words.append(ar, 2),
+            .bool_ => try words.append(ar, 3),
+            .string => try words.append(ar, 4),
+        } else if (std.mem.eql(u8, name, ast.unknown_type_name)) {
+            try words.append(ar, 5);
+        } else {
+            const descs = try self.typeDescriptors(.{ .named = name });
+            if (descs.len == 0) return null;
+            try words.appendSlice(ar, &.{ 0, @intCast(descs.len) });
+            for (descs) |d| try words.append(ar, @bitCast(d));
+        }
+        const bytes = try ar.alloc(u8, words.items.len * 4);
+        for (words.items, 0..) |w, i| std.mem.writeInt(i32, bytes[i * 4 ..][0..4], w, .little);
+        const seg = try self.internString(bytes);
+        return seg.offset + 4;
     }
 
     /// An enum every variant of which is a unit variant: its value is the

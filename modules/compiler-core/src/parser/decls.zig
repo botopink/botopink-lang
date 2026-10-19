@@ -1337,7 +1337,9 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // Meta-kind params (`type`) only exist at compile time — require the
     // `comptime` modifier so the binding-time is visible in the signature.
     // (`@Expr<…>` params get the same rule as a semantic check in inference.)
-    if (typeRef == .typeparam and modifier != .@"comptime") {
+    // Decision 758 — `t: type<T>` without `comptime` is a run-time value, the
+    // type's identity.
+    if (typeRef == .typeparam and typeRef.typeparam.len != 1 and modifier != .@"comptime") {
         typeRef.deinit(alloc);
         this.parseError = ParseErrorInfo.fromToken(.metaKindRequiresComptime, nameTok);
         return ParseError.UnexpectedToken;
