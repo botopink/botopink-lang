@@ -17,7 +17,7 @@
         "params": [],
         "returnType": {
           "generic": {
-            "name": "Stream",
+            "name": "AsyncIter",
             "args": [
               {
                 "generic": {

@@ -6,19 +6,19 @@ fn state(initial: i32) -> Component<i32> {
 fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
-fn fetch(n: i32) -> Task<i32> {
+fn fetch(n: i32) -> Async<i32> {
     return n;
 }
-fn bad(n: i32) -> Iterator<i32> {
+fn bad(n: i32) -> Iter<i32> {
     val w = await fetch(n);
     yield w;
 }
 
 ----- ERROR
-error: iter-await: `await` does not exist in an `@Iterator` — its items are produced synchronously
+error: iter-await: `await` does not exist in an `@Iter` — its items are produced synchronously
   ┌─ main.bp:12:13
   │
 12 │     val w = await fetch(n);
   │             ^
 
-  hint: Use `@Stream<T>` (or a `stream` loop): a stream is the sequence that may wait between items.
+  hint: Use `@AsyncIter<T>` (or a `stream` loop): a stream is the sequence that may wait between items.

@@ -356,10 +356,10 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
 
     try buf.appendSlice(gpa, "\n```");
 
-    // For a fn whose written return is a Task or a sequence (decision 118:
+    // For a fn whose written return is a Async or a sequence (decision 118:
     // the return is the effect), surface what the caller unwraps from it —
     // what `await` hands over, or what a `for` binds per item. Driven by the
-    // return, not `FnDecl.effect`: an `@Iterator` factory (decision 123) has
+    // return, not `FnDecl.effect`: an `@Iter` factory (decision 123) has
     // no effect but its caller still iterates the same items.
     if (b.decl == .@"fn") {
         if (b.decl.@"fn".returnType) |rt| {
@@ -490,10 +490,10 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
 const AsyncItem = struct { kind: ast.EffectKind, type_: ast.TypeRef };
 
 /// The element type of an async/sequence return type, or null: the `T` of
-/// `@Task<T>` / `@Iterator<T>` / `@Stream<T>` and the `R` of `@Component<R>`
+/// `@Async<T>` / `@Iter<T>` / `@AsyncIter<T>` and the `R` of `@Component<R>`
 /// (decision 354). A `@Result` return has
 /// no element — it is consumed by `try` / `case`, not unwrapped — and with
-/// `@Task<@Result<U, E>>` the element is the whole `@Result<U, E>`: `await`
+/// `@Async<@Result<U, E>>` the element is the whole `@Result<U, E>`: `await`
 /// hands the Result over and never propagates (decision 120).
 fn asyncItemTypeRef(tr: ast.TypeRef) ?AsyncItem {
     if (tr != .generic) return null;
@@ -3851,7 +3851,7 @@ pub fn semanticTokens(
         }
 
         // Decision 606 (1) — a prelude wrapper written bare is the builtin
-        // type `@Name` painted as (`Task<…>`, `implement Renderable`).
+        // type `@Name` painted as (`Async<…>`, `implement Renderable`).
         if (tok.kind == .identifier and isPreludeWrapperName(tok.lexeme) and
             (std.mem.eql(u8, tok.lexeme, "Renderable") or nextSignificantKind(tokens, i) == .lessThan))
         {
@@ -3912,7 +3912,7 @@ pub fn semanticTokens(
                 if (fnReturnsEffectWrapper(tokens, i)) mods |= proto.SemanticTokenModifiers.async;
                 generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
-                // `fn counter() -> @Iterator<i32> :gen { … }` — the `:label`
+                // `fn counter() -> @Iter<i32> :gen { … }` — the `:label`
                 // after a return names the fn's generator scope for
                 // `yield :gen v` / `break :gen v`; syntax, not a binding.
                 type_idx = proto.SemanticTokenTypes.keyword;
@@ -4356,12 +4356,12 @@ fn isLabelAt(tokens: []const Token, i: usize) bool {
 
 /// True when the fn whose name token sits at `name_idx` writes an effect
 /// wrapper as its return (decision 118: the return IS the effect) — one of
-/// `@Result`, `@Task`, `@Component`, `@Iterator`, `@Stream`
+/// `@Result`, `@Async`, `@Component`, `@Iter`, `@AsyncIter`
 /// (`ast.EffectKind.fromWrapperName`), spelled with its `@` as the outermost
 /// type. This is what the `async` semantic-token modifier means: the fn's
 /// signature opens an effect (its body may `throw` / `await` / `use` /
 /// `yield`, and its caller receives a wrapped value). It reads the signature,
-/// not the body, so an `@Iterator` factory that never yields (decision 123)
+/// not the body, so an `@Iter` factory that never yields (decision 123)
 /// carries the modifier too; an alias to a wrapper (`-> Job<i32>`) does not.
 fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
     var j = nextSignificantIndex(tokens, name_idx) orelse return false;
@@ -4398,7 +4398,7 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
     if (tokens[j].kind != .rightArrow) return false;
     j = nextSignificantIndex(tokens, j) orelse return false;
     const rt = tokens[j];
-    // Decision 606 (1) — the wrapper is written bare (`-> Task<i32>`); `@Task`
+    // Decision 606 (1) — the wrapper is written bare (`-> Async<i32>`); `@Async`
     // is the spelling it replaced.
     if (rt.kind == .identifier) return ast.EffectKind.fromWrapperName(rt.lexeme) != null;
     if (rt.kind != .builtinIdent or rt.lexeme.len < 2) return false;
@@ -4418,7 +4418,7 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// `anyvalue` and `anytype` are decision 578's (a template's answer, the kind
 /// of types).
 fn isPreludeWrapperName(name: []const u8) bool {
-    for ([_][]const u8{ "Result", "Task", "Component", "Iterator", "Stream", "Renderable" }) |n| if (std.mem.eql(u8, n, name)) return true;
+    for ([_][]const u8{ "Result", "Async", "Component", "Iter", "AsyncIter", "Renderable" }) |n| if (std.mem.eql(u8, n, name)) return true;
     return false;
 }
 
@@ -5119,7 +5119,7 @@ fn dotCompletion(
     }
     // Effect-wrapper receivers expose the members the prelude declares for
     // them (`libs/std/src/primitives.bp`'s compiler section, decisions 120/122/128): a sequence
-    // steps with `next()`; a Task — and, through the chain, a `@Stream` and a
+    // steps with `next()`; a Async — and, through the chain, a `@AsyncIter` and a
     // `@Component` — maps with `map()` / `then()`.
     if (receiver_type_name) |rtn| {
         if (wrapperMembers(rtn)) |members| {
@@ -5147,26 +5147,26 @@ fn dotCompletion(
 
 const WrapperMember = struct { name: []const u8, detail: []const u8 };
 
-const task_map_member: WrapperMember = .{ .name = "map", .detail = "fn map<R>(self: Self, transform: fn(value: T) -> R) -> Task<R>" };
-const task_then_member: WrapperMember = .{ .name = "then", .detail = "fn then<R>(self: Self, next: fn(value: T) -> Task<R>) -> Task<R>" };
+const task_map_member: WrapperMember = .{ .name = "map", .detail = "fn map<R>(self: Self, transform: fn(value: T) -> R) -> Async<R>" };
+const task_then_member: WrapperMember = .{ .name = "then", .detail = "fn then<R>(self: Self, next: fn(value: T) -> Async<R>) -> Async<R>" };
 const iterator_members = [_]WrapperMember{
     .{ .name = "next", .detail = "fn next(self: Self) -> YieldStep<T>" },
 };
 const stream_members = [_]WrapperMember{
-    .{ .name = "next", .detail = "fn next(self: Self) -> Task<YieldStep<T>>" },
+    .{ .name = "next", .detail = "fn next(self: Self) -> Async<YieldStep<T>>" },
     task_map_member,
     task_then_member,
 };
 const task_members = [_]WrapperMember{ task_map_member, task_then_member };
 
 /// The members `primitives.bp`'s compiler section declares on an effect wrapper, following its
-/// `extends` chain (`Stream<T> extends Task`, `Component<R> extends Task`),
+/// `extends` chain (`AsyncIter<T> extends Async`, `Component<R> extends Async`),
 /// or null for a name that is not a wrapper with members. `@Result`'s methods
 /// come from its own behavior and are not listed here.
 fn wrapperMembers(type_name: []const u8) ?[]const WrapperMember {
-    if (std.mem.eql(u8, type_name, "Iterator")) return &iterator_members;
-    if (std.mem.eql(u8, type_name, "Stream")) return &stream_members;
-    if (std.mem.eql(u8, type_name, "Task") or std.mem.eql(u8, type_name, "Component")) return &task_members;
+    if (std.mem.eql(u8, type_name, "Iter")) return &iterator_members;
+    if (std.mem.eql(u8, type_name, "AsyncIter")) return &stream_members;
+    if (std.mem.eql(u8, type_name, "Async") or std.mem.eql(u8, type_name, "Component")) return &task_members;
     return null;
 }
 

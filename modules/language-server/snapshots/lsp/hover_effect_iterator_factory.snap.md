@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
-fn counter() -> Iterator<i32> :gen { yield 1; }
-fn fresh() -> Iterator<i32> { return counter(); }
+fn counter() -> Iter<i32> :gen { yield 1; }
+fn fresh() -> Iter<i32> { return counter(); }
    ↑
 ```
 
@@ -9,7 +9,7 @@ fn fresh() -> Iterator<i32> { return counter(); }
 kind: markdown
 
 ```botopink
-fn fresh() -> Iterator<i32>
+fn fresh() -> Iter<i32>
 ```
 
 ---

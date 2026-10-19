@@ -552,7 +552,7 @@ test "format: multiline string ---- as function argument" {
 
 test "format: await ---- prefix expression" {
     try h.assertFormat(std.testing.allocator,
-        \\fn run() -> Task<Int> {
+        \\fn run() -> Async<Int> {
         \\    val x = await load(url);
         \\    return x;
         \\}
@@ -661,7 +661,7 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[], gen: Stream<i32>) {
+        \\fn f(xs: i32[], gen: AsyncIter<i32>) {
         \\    for :outer (xs) { x ->
         \\        if (x == 2) break :outer;
         \\    }
@@ -702,7 +702,7 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
 
 test "format: the front-24 forms round-trip — async block, the prefixed while / for, try await, yield :label" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[]) -> Task<Result<i32, string>> {
+        \\fn f(xs: i32[]) -> Async<Result<i32, string>> {
         \\    val t = async {
         \\        return try await load(1);
         \\    };
@@ -727,7 +727,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\    return n;
         \\}
         \\
-        \\fn g(xs: i32[]) -> Iterator<i32> :out {
+        \\fn g(xs: i32[]) -> Iter<i32> :out {
         \\    for (xs) { x ->
         \\        yield :out x;
         \\    }
@@ -1611,15 +1611,15 @@ test "format: a label on continue prints as on break" {
 
 test "format: body markers print as written (decision 553)" {
     try h.assertFormat(std.testing.allocator,
-        \\pub async fn one() -> Task<i32> {
+        \\pub async fn one() -> Async<i32> {
         \\    return 1;
         \\}
         \\
-        \\iter fn two() -> Iterator<i32> {
+        \\iter fn two() -> Iter<i32> {
         \\    yield 2;
         \\}
         \\
-        \\async iter fn three() -> Stream<i32> {
+        \\async iter fn three() -> AsyncIter<i32> {
         \\    yield 3;
         \\}
         \\
@@ -1628,7 +1628,7 @@ test "format: body markers print as written (decision 553)" {
         \\}
         \\
         \\type Grid(n: i32) {
-        \\    iter fn each(self: Self) -> Iterator<i32> {
+        \\    iter fn each(self: Self) -> Iter<i32> {
         \\        yield self.n;
         \\    }
         \\}
@@ -1636,21 +1636,21 @@ test "format: body markers print as written (decision 553)" {
         \\behavior Source {
         \\    fn base(self: Self) -> i32;
         \\
-        \\    default async fn scaled(self: Self) -> Task<i32> {
+        \\    default async fn scaled(self: Self) -> Async<i32> {
         \\        return self.base();
         \\    }
         \\}
         \\
-        \\fn main() -> Task<void> {
-        \\    val f: fn(x: i32) -> Task<i32> = { async x -> await one() + x };
-        \\    val g: fn(n: i32) -> Iterator<i32> = { iter n ->
+        \\fn main() -> Async<void> {
+        \\    val f: fn(x: i32) -> Async<i32> = { async x -> await one() + x };
+        \\    val g: fn(n: i32) -> Iter<i32> = { iter n ->
         \\        yield n;
         \\        yield n + 1;
         \\    };
-        \\    val s: fn() -> Stream<i32> = { async iter ->
+        \\    val s: fn() -> AsyncIter<i32> = { async iter ->
         \\        yield await one();
         \\    };
-        \\    val k: fn(x: i32) -> Task<i32> = async fn(x) { await one() };
+        \\    val k: fn(x: i32) -> Async<i32> = async fn(x) { await one() };
         \\    print(await f(1));
         \\}
         \\

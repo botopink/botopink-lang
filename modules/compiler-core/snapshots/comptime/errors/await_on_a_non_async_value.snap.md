@@ -1,11 +1,11 @@
 ----- SOURCE CODE
-fn bad() -> Task<i32> {
+fn bad() -> Async<i32> {
     val x = await 5;
     return x;
 }
 
 ----- ERROR
-error: `await` expects a `@Task<_>` value (or a `@Component<T>`, which extends it)
+error: `await` expects a `@Async<_>` value (or a `@Component<T>`, which extends it)
   ┌─ main.bp:2:13
   │
 2 │     val x = await 5;

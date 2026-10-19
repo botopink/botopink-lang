@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn range(a: i32, b: i32) -> Iterator<i32> {
+fn range(a: i32, b: i32) -> Iter<i32> {
     yield a;
     yield b;
 }
@@ -13,7 +13,7 @@ fn range(a: i32, b: i32) -> Iterator<i32> {
 {attributes, []}.
 {labels, 136}.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, range, 2, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

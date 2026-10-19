@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn loadOne(x: i32) -> Task<i32> {
+pub fn loadOne(x: i32) -> Async<i32> {
     return x;
 }
-pub fn count() -> Iterator<i32> {
+pub fn count() -> Iter<i32> {
     yield 1;
 }
-pub fn pulses() -> Stream<Result<i32, string>> {
+pub fn pulses() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 ```
@@ -18,7 +18,7 @@ pub fn pulses() -> Stream<Result<i32, string>> {
 {attributes, []}.
 {labels, 141}.
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 {function, loadOne, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -31,7 +31,7 @@ pub fn pulses() -> Stream<Result<i32, string>> {
     {deallocate, 1}.
     return.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, count, 0, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
@@ -45,7 +45,7 @@ pub fn pulses() -> Stream<Result<i32, string>> {
     {deallocate, 1}.
     return.
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 {function, pulses, 0, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.

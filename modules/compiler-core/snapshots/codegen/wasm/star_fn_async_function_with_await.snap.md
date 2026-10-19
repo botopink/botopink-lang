@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn loadTwice(x: i32) -> Task<i32> {
+fn loadTwice(x: i32) -> Async<i32> {
     val a = await fetch(x);
     return a + a;
 }
@@ -24,7 +24,7 @@ fn loadTwice(x: i32) -> Task<i32> {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Task — a state machine (decision 392)
+  ;; @Async — a state machine (decision 392)
   (func $fetch (param $x i32) (result (ref null $task))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local
@@ -75,7 +75,7 @@ fn loadTwice(x: i32) -> Task<i32> {
     struct.new $box_i32
     call $__task_settle
   )
-  ;; @Task — a state machine (decision 392)
+  ;; @Async — a state machine (decision 392)
   (func $loadTwice (param $x i32) (result (ref null $task))
     (local $__fr (ref null $frame1))
     struct.new_default $frame1 ;; the frame: the resume index, then every local

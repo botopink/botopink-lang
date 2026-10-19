@@ -428,7 +428,7 @@ test "erlang: a defer body that rebinds a var leaves its group unbound" {
 
 test "erlang: a bare return in a yielding case arm ends the generator" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn items(n: i32) -> Iterator<i32> {
+        \\fn items(n: i32) -> Iter<i32> {
         \\    yield 0;
         \\    case n {
         \\        0 {

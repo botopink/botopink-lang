@@ -39,10 +39,10 @@ declare fn reader() -> unknown;
     .JavaScript("""new Promise((__r) => { $0.q.push([__r, 'line']); $0.pump(); })"""),
     .Erlang("""(fun(__R) -> _ = io:setopts(standard_io, [binary, {encoding, unicode}]), case io:get_line(standard_io, '') of eof -> undefined; {error, _} -> undefined; __L -> __N = byte_size(__L), case (__N >= 1 andalso binary:last(__L) =:= 10) of true -> __M = __N - 1, case (__M >= 1 andalso binary:at(__L, __M - 1) =:= 13) of true -> binary:part(__L, 0, __M - 1); false -> binary:part(__L, 0, __M) end; false -> __L end end end)($0)"""),
 )]
-declare fn readLineHost(reader: unknown) -> Task<?string>;
+declare fn readLineHost(reader: unknown) -> Async<?string>;
 
 // The next line of input without its line terminator, `null` at the end of input.
-pub fn readLine() -> Task<?string> {
+pub fn readLine() -> Async<?string> {
     return await readLineHost(reader());
 }
 
@@ -50,13 +50,13 @@ pub fn readLine() -> Task<?string> {
     .JavaScript("""new Promise((__r) => { $0.q.push([__r, 'chunk']); $0.pump(); })"""),
     .Erlang("""(fun(__R) -> _ = io:setopts(standard_io, [binary, {encoding, unicode}]), __Self = self(), __Start = fun() -> case get(bp_stdin_pend) of undefined -> __Ref = make_ref(), _ = spawn(fun() -> __Self ! {__Ref, io:get_chars(standard_io, '', 1)} end), put(bp_stdin_pend, __Ref); _ -> ok end end, __Next = fun(__T) -> __Start(), __Ref2 = get(bp_stdin_pend), receive {__Ref2, __D} -> erase(bp_stdin_pend), __D after __T -> timeout end end, __Done = fun(__A) -> __S = byte_size(__A), __B1 = binary:at(__A, 1), case {__S, __B1} of {2, 79} -> false; {2, 91} -> false; {_, 79} -> true; {_, 91} -> __L = binary:last(__A), (__L >= 64) andalso (__L =< 126); _ -> true end end, __More = fun __M(__Acc) -> case __Next(50) of __B when is_binary(__B) -> __A2 = <<__Acc/binary, __B/binary>>, case __Done(__A2) of true -> __A2; false -> __M(__A2) end; _ -> __Acc end end, case __Next(infinity) of __C when is_binary(__C) -> case __C =:= <<27>> of true -> __More(__C); false -> __C end; _ -> undefined end end)($0)"""),
 )]
-declare fn readChunkHost(reader: unknown) -> Task<?string>;
+declare fn readChunkHost(reader: unknown) -> Async<?string>;
 
 // What has arrived on standard input — one piece, never empty — or `null` at the end of input.
 // On a terminal in raw mode (`io.terminal.setRaw`) that is the key just pressed, an escape
 // sequence whole. Erlang reads a character at a time: after an Escape it waits 50 ms for the rest
 // of the sequence, so a lone Escape key is told from the start of an arrow key there as well.
-pub fn readChunk() -> Task<?string> {
+pub fn readChunk() -> Async<?string> {
     return await readChunkHost(reader());
 }
 

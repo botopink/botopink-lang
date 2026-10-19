@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn range(a: i32, b: i32) -> Iterator<i32> {
+fn range(a: i32, b: i32) -> Iter<i32> {
     yield a;
     yield b;
 }
@@ -17,7 +17,7 @@ fn range(a: i32, b: i32) -> Iterator<i32> {
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Iterator — a generator state machine (decision 105)
+  ;; @Iter — a generator state machine (decision 105)
   (func $range (param $a i32) (param $b i32) (result (ref null $gen))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local

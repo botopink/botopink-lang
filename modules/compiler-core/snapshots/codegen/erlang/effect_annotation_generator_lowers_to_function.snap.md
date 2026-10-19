@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn range(a: i32, b: i32) -> Iterator<i32> {
+fn range(a: i32, b: i32) -> Iter<i32> {
     yield a;
     yield b;
 }
@@ -11,7 +11,7 @@ fn range(a: i32, b: i32) -> Iterator<i32> {
 -module(test@main).
 -export(['__bp_priv__range'/2]).
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 range(A, B) ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),

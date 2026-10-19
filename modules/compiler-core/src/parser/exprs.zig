@@ -2406,7 +2406,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 /// `loop [:label] { … }` — repeats until `break` (decision 105). With
 /// `generator` set it is `iter loop { … }` / `stream loop { … }` (decision
 /// 125): the body is a generator scope and the node is an expression worth
-/// `@Iterator<T>` / `@Stream<T>`.
+/// `@Iter<T>` / `@AsyncIter<T>`.
 /// `while (…)` is refused at the keyword, naming `for` and `while`.
 pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator, generator: ?ast.EffectKind) ParseError!LoopExpr {
     const loopTok = this.advance(); // consume 'loop'

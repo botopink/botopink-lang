@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn countdown(n: i32) -> Stream<i32> {
+fn countdown(n: i32) -> AsyncIter<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -14,7 +14,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     };
     return t;
 }
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val s = countdown(1);
     print(stepText(await s.next()));
     print(stepText(await s.next()));
@@ -44,7 +44,7 @@ import {io.terminal.print} from "std";
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Stream — a generator state machine (decision 105)
+  ;; @AsyncIter — a generator state machine (decision 105)
   (func $countdown (param $n i32) (result (ref null $gen))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local
@@ -230,7 +230,7 @@ import {io.terminal.print} from "std";
     local.get $t
     return
   )
-  ;; @Task — a state machine (decision 392)
+  ;; @Async — a state machine (decision 392)
   (func $run (result (ref null $task))
     (local $__fr (ref null $frame1))
     struct.new_default $frame1 ;; the frame: the resume index, then every local

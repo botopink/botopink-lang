@@ -10,4 +10,4 @@ error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some la
 2 │     throw "x";
   │     ^
 
-  hint: Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.
+  hint: Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Async<@Result<T, E>>`, `-> @Iter<@Result<T, E>>`, …) or handle the failure where it happens.

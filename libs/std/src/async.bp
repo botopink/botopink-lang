@@ -11,7 +11,7 @@
 ////
 //// THE ERLANG DIVERGENCE, AT THE TOP RATHER THAN IN A FOOTNOTE.
 //// `Async<T>` lowers EAGERLY on the erlang backend: a `-> Async` fn is a plain
-//// function, `await` is identity, and a Task is therefore a value that has
+//// function, `await` is identity, and a Async is therefore a value that has
 //// already run (`codegen/erlang.zig` — the `Async — eager lowering` arm;
 //// `libs/std/src/http.bp` says the same for `http.fetch`). By the time an
 //// `Array<Async<T>>` reaches a combinator on erlang, every element has already
@@ -22,7 +22,7 @@
 ////   STARTED TASKS — `allOf`, `all`, `race`.
 ////   Take `Array<Async<…>>`, the shape the guide writes
 ////   (`async.allOf([fetchUser(1), fetchUser(2)])`). Concurrent on commonJS,
-////   where each Task is a live Promise. On erlang it is honest rather than
+////   where each Async is a live Promise. On erlang it is honest rather than
 ////   concurrent: the Tasks resolved before the call, so `allOf` / `all` read
 ////   values in order and `race` answers ELEMENT ZERO rather than the fastest.
 ////   Both behaviours are asserted by the tests at the foot of this file, so a
@@ -40,7 +40,7 @@
 //// `E` is the tasks' own type, so there is no message to join; `runAll` over
 //// `Async<Result<…>>` thunks answers every `Result` when the caller wants
 //// them all. `allSettled` and `settleOf` left with the rejection they settled:
-//// a Task has no failure to settle, and a `Result` element IS the settled
+//// a Async has no failure to settle, and a `Result` element IS the settled
 //// outcome (`specs/1.0.10-beta/decisions-pending.md` 24-g).
 ////
 //// NO CANCELLATION. `raceOf`'s losers and `timeout`'s expired task keep
@@ -82,12 +82,12 @@ declare fn monoMillis() -> i64;
     .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
     .Wasm(wasi: .Delay),
 )]
-pub declare fn delay<T>(millis: i32, value: T) -> Task<T>;
+pub declare fn delay<T>(millis: i32, value: T) -> Async<T>;
 
-// A Task whose value is `Error(message)` — the failing instrument `allOf` and
+// A Async whose value is `Error(message)` — the failing instrument `allOf` and
 // `timeout` are tested with. On commonJS it rejects with `message` (decision
 // 432); `await` reads it as `Error(message)`.
-pub fn failed<T>(comptime t: type<T>, message: string) -> Task<Result<T, string>> {
+pub fn failed<T>(comptime t: type<T>, message: string) -> Async<Result<T, string>> {
     throw message;
 }
 
@@ -123,7 +123,7 @@ declare fn gateOpen(handle: unknown) -> void;
     .Erlang("""(fun(__G, __Ms) -> BpGateRef = erlang:make_ref(), __G ! {bp_gate_wait, self(), BpGateRef}, receive {BpGateRef, bp_gate_open} -> true after __Ms -> false end end)($0, $1)"""),
     .Wasm(wasi: .GateAwait),
 )]
-declare fn gateAwait(handle: unknown, millis: i32) -> Task<bool>;
+declare fn gateAwait(handle: unknown, millis: i32) -> Async<bool>;
 
 // A new, closed gate.
 pub fn newGate() -> Gate {
@@ -141,7 +141,7 @@ pub fn openGate(gate: Gate) -> void {
 // assertion instead of a hang, so a test gives it a margin no scheduling delay
 // can cross (seconds) and opens every gate it closes. An open gate answers at
 // once and leaves no timer behind.
-pub fn awaitGate(gate: Gate, millis: i32) -> Task<bool> {
+pub fn awaitGate(gate: Gate, millis: i32) -> Async<bool> {
     return await gateAwait(gate.handle, millis);
 }
 
@@ -161,13 +161,13 @@ pub fn errorText<T>(settled: Result<T, string>) -> string {
 
 // ── started tasks ────────────────────────────────────────────────────────────
 
-// The values of every Task, in input order, or the FIRST `Error` in input
+// The values of every Async, in input order, or the FIRST `Error` in input
 // order. The tasks were started by the caller (`allOf([fetchUser(1),
 // fetchUser(2)])`), so on commonJS they run concurrently and this only waits;
 // on erlang they already ran. `allOf([])` answers `Ok([])`.
 pub fn allOf<T, E>(
-    tasks: Array<Task<Result<T, E>>>,
-) -> Task<Result<Array<T>, E>> {
+    tasks: Array<Async<Result<T, E>>>,
+) -> Async<Result<Array<T>, E>> {
     var out: Array<T> = [];
     for (tasks) { t ->
         val v = try await t;
@@ -176,8 +176,8 @@ pub fn allOf<T, E>(
     return out;
 }
 
-// The values of every Task, in input order — the infallible `allOf`.
-pub fn all<T>(tasks: Array<Task<T>>) -> Task<Array<T>> {
+// The values of every Async, in input order — the infallible `allOf`.
+pub fn all<T>(tasks: Array<Async<T>>) -> Async<Array<T>> {
     var out: Array<T> = [];
     for (tasks) { t ->
         val v = await t;
@@ -186,8 +186,8 @@ pub fn all<T>(tasks: Array<Task<T>>) -> Task<Array<T>> {
     return out;
 }
 
-// commonJS: the FASTEST Task to answer, `Promise.race`.
-// ERLANG: ELEMENT ZERO. Every Task resolved before the call, so there is no
+// commonJS: the FASTEST Async to answer, `Promise.race`.
+// ERLANG: ELEMENT ZERO. Every Async resolved before the call, so there is no
 // timing left to measure and this answers the first element of the list. That
 // is not a bug to be fixed here and no server front may depend on it — use
 // `raceOf`, whose tasks are unstarted when it receives them. Both behaviours
@@ -200,7 +200,7 @@ pub fn all<T>(tasks: Array<Task<T>>) -> Task<Array<T>> {
     .Erlang("""(fun(__Fs) -> case __Fs of [] -> erlang:error(<<"async.race: empty task list">>); _ -> hd(__Fs) end end)($0)"""),
     .Wasm(wasi: .Race),
 )]
-pub declare fn race<T>(tasks: Array<Task<T>>) -> Task<T>;
+pub declare fn race<T>(tasks: Array<Async<T>>) -> Async<T>;
 
 // ── unstarted tasks ──────────────────────────────────────────────────────────
 
@@ -222,12 +222,12 @@ pub declare fn race<T>(tasks: Array<Task<T>>) -> Task<T>;
     .Erlang("""(fun(__Ts) -> __Me = self(), BpRef = erlang:make_ref(), lists:foreach(fun(__I) -> erlang:spawn(fun() -> __Me ! {BpRef, __I, try {ok, (lists:nth(__I, __Ts))()} catch __C:__E -> {crash, __C, __E} end} end) end, lists:seq(1, length(__Ts))), [case (receive {BpRef, BpJ, __X} -> __X end) of {ok, __V} -> __V; {crash, __C2, __E2} -> erlang:raise(__C2, __E2, []) end || BpJ <- lists:seq(1, length(__Ts))] end)($0)"""),
     .Wasm(wasi: .SpawnAll),
 )]
-declare fn spawnAll<T>(tasks: Array<fn() -> Task<T>>) -> Task<Array<T>>;
+declare fn spawnAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>>;
 
 // The public face of the cell above: a real function, so a module compiled
 // separately (the BEAM backend links modules by name) can call it — a
 // template-only `declare fn` has no body to export.
-pub fn runAll<T>(tasks: Array<fn() -> Task<T>>) -> Task<Array<T>> {
+pub fn runAll<T>(tasks: Array<fn() -> Async<T>>) -> Async<Array<T>> {
     return await spawnAll(tasks);
 }
 
@@ -242,16 +242,16 @@ pub fn runAll<T>(tasks: Array<fn() -> Task<T>>) -> Task<Array<T>> {
     .Erlang("""(fun(__Ts) -> case __Ts of [] -> erlang:error(<<"async.raceOf: empty task list">>); _ -> __Me = self(), BpRef = erlang:make_ref(), lists:foreach(fun(__I) -> erlang:spawn(fun() -> __Me ! {BpRef, try {ok, (lists:nth(__I, __Ts))()} catch __C:__E -> {error, __C, __E} end} end) end, lists:seq(1, length(__Ts))), case (receive {BpRef, __W} -> __W end) of {ok, __V} -> __V; {error, __C2, __E2} -> erlang:raise(__C2, __E2, []) end end end)($0)"""),
     .Wasm(wasi: .RaceOf),
 )]
-pub declare fn raceOf<T>(tasks: Array<fn() -> Task<T>>) -> Task<T>;
+pub declare fn raceOf<T>(tasks: Array<fn() -> Async<T>>) -> Async<T>;
 
 // `task`'s value as `Ok` — the racer `timeout` puts beside the clock.
-fn answered<T>(task: fn() -> Task<T>) -> Task<Result<T, string>> {
+fn answered<T>(task: fn() -> Async<T>) -> Async<Result<T, string>> {
     return await task();
 }
 
 // `Error("timeout")` after `millis` — the clock `timeout` races against
 // `task`, whose type it answers in (decision 668: `task` binds `T`).
-fn expireAfter<T>(task: fn() -> Task<T>, millis: i32) -> Task<Result<T, string>> {
+fn expireAfter<T>(task: fn() -> Async<T>, millis: i32) -> Async<Result<T, string>> {
     await delay(millis, 0);
     throw "timeout";
 }
@@ -262,9 +262,9 @@ fn expireAfter<T>(task: fn() -> Task<T>, millis: i32) -> Task<Result<T, string>>
 // and neither hides the other. The task KEEPS RUNNING; the caller stops
 // waiting. Expressed over `raceOf` + `delay`.
 pub fn timeout<T>(
-    task: fn() -> Task<T>,
+    task: fn() -> Async<T>,
     millis: i32,
-) -> Task<Result<T, string>> {
+) -> Async<Result<T, string>> {
     return await raceOf(
         [
             { -> answered(task) },
@@ -360,9 +360,9 @@ pub fn nextDelay(policy: RetryPolicy, attempt: i32) -> ?i64 {
 // Internal: attempt number `attempt` of `retry`, and every one after it.
 fn retryFrom<T, E>(
     policy: RetryPolicy,
-    work: fn() -> Task<Result<T, E>>,
+    work: fn() -> Async<Result<T, E>>,
     attempt: i32,
-) -> Task<Result<T, E>> {
+) -> Async<Result<T, E>> {
     val outcome = await work();
     val settled = outcome.isOk() || attempt >= policy.maxAttempts;
     if (settled) return try outcome;
@@ -383,8 +383,8 @@ fn retryFrom<T, E>(
 // `race([])` — not an `Error` a caller could mistake for the work's own.
 pub fn retry<T, E>(
     policy: RetryPolicy,
-    work: fn() -> Task<Result<T, E>>,
-) -> Task<Result<T, E>> {
+    work: fn() -> Async<Result<T, E>>,
+) -> Async<Result<T, E>> {
     val problem = policyProblem(policy);
     if (problem != "") panic(["async.retry: ", problem].join(""));
     return try await retryFrom(policy, work, 1);
@@ -420,7 +420,7 @@ type Probe(id: i32, label: string)
 val gateBudget = 10000;
 
 // `value` once `gate` opens; a value naming the failure when it never does.
-fn gated(gate: Gate, value: string) -> Task<string> {
+fn gated(gate: Gate, value: string) -> Async<string> {
     val opened = await awaitGate(gate, gateBudget);
     return if (opened) value else "gate never opened: " + value;
 }
@@ -428,14 +428,14 @@ fn gated(gate: Gate, value: string) -> Task<string> {
 // Open `mine`, then answer `value` once `theirs` is open. Two of these over the
 // same pair of gates, crossed, can only BOTH answer when they run at the same
 // time: whichever runs first alone waits on a gate the other has not opened.
-fn handshake(mine: Gate, theirs: Gate, value: string) -> Task<string> {
+fn handshake(mine: Gate, theirs: Gate, value: string) -> Async<string> {
     openGate(mine);
     return await gated(theirs, value);
 }
 
 // `value` with no timer at all: resolved in the microtask queue on commonJS,
 // the process's first reply on erlang.
-fn answerNow(value: string) -> Task<string> {
+fn answerNow(value: string) -> Async<string> {
     return value;
 }
 
@@ -490,7 +490,7 @@ test "async: gate ---- a gate nobody opens answers false after its budget" {
 
 // ── allOf and all ────────────────────────────────────────────────────────────
 
-fn slowOk(millis: i32, value: string) -> Task<Result<string, string>> {
+fn slowOk(millis: i32, value: string) -> Async<Result<string, string>> {
     return await delay(millis, value);
 }
 
@@ -511,7 +511,7 @@ test "async: allOf ---- stops at the first error in input order" {
 }
 
 test "async: allOf ---- of no tasks answers no values" {
-    val tasks: Array<Task<Result<string, string>>> = [];
+    val tasks: Array<Async<Result<string, string>>> = [];
     val r = await allOf(tasks);
     assert r.unwrapOr(["x"]).length == 0;
 }
@@ -527,7 +527,7 @@ test "async: race ---- fastest on commonJS, element zero on erlang" {
     // in list order, so `race` answers the FIRST element even though the other
     // one is instant. On commonJS the Promises are live and the one that
     // answers wins — element zero waits on a gate opened only after the race,
-    // so it cannot. (A gate cannot be used on erlang: the eager Task would wait
+    // so it cannot. (A gate cannot be used on erlang: the eager Async would wait
     // on it before `race` is even called.) If a backend change ever makes
     // erlang lazy, this reds.
     if (hostTarget() == "erlang") {
@@ -670,7 +670,7 @@ test "async: timeout ---- an expired task cannot corrupt a later answer" {
 
 // The expired task of the test above: waits for `release`, opens `done` and
 // answers.
-fn ghost(release: Gate, done: Gate) -> Task<string> {
+fn ghost(release: Gate, done: Gate) -> Async<string> {
     val v = await gated(release, "late");
     openGate(done);
     return v;
@@ -696,7 +696,7 @@ declare fn countOf(counter: unknown) -> i32;
 
 // The text a task panics with, `""` when it answered — a panic inside a
 // `-> Async` function is a rejected Promise on commonJS and a raise on erlang.
-fn panicOf<T>(body: fn() -> Task<T>) -> Task<string> {
+fn panicOf<T>(body: fn() -> Async<T>) -> Async<string> {
     val r = await failure.attemptTask(body);
     return case r {
         Ok(_) -> "";
@@ -709,7 +709,7 @@ fn panicOf<T>(body: fn() -> Task<T>) -> Task<string> {
 // counts the call (`flaky(countUp(calls), …)`), so the counter's cells are
 // reached from the tests alone, and a module importing `async` on a target
 // with no counter (wasm) links no call of them.
-fn flaky(n: i32, succeedAt: i32) -> Task<Result<string, string>> {
+fn flaky(n: i32, succeedAt: i32) -> Async<Result<string, string>> {
     if (n < succeedAt) throw ["failure ", n.toString()].join("");
     return ["ok after ", n.toString()].join("");
 }

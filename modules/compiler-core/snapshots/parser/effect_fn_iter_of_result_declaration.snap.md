@@ -7,8 +7,8 @@
         "effect": "iterator",
         "isDeclare": false,
         "isDefault": false,
-        "label": "gen",
-        "name": "gen",
+        "label": null,
+        "name": "fib",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
@@ -17,7 +17,7 @@
         "params": [],
         "returnType": {
           "generic": {
-            "name": "Iterator",
+            "name": "Iter",
             "args": [
               {
                 "named": "Int"
@@ -37,12 +37,12 @@
                 },
                 "kind": {
                   "yield": {
-                    "label": "gen",
+                    "label": null,
                     "value": {
                       "literal": {
                         "loc": {
                           "line": 2,
-                          "col": 16
+                          "col": 11
                         },
                         "kind": {
                           "numberLit": "1"

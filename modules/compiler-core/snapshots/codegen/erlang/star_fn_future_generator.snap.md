@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -11,7 +11,7 @@ fn stream() -> Stream<Result<i32, string>> {
 -module(test@main).
 -export(['__bp_priv__stream'/0]).
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 stream() ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),

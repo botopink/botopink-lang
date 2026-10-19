@@ -6,10 +6,10 @@
 //! it. The order is declared in botopink, on the wrappers in
 //! `libs/std/src/primitives.bp`'s compiler section:
 //!
-//!     pub behavior Task<T>                   { … }
-//!     pub behavior Component<R> extends Task      // decisions 128, 354
-//!     pub behavior Stream<T> extends Task         // decision 122
-//!     pub behavior Iterator<T>                    // no clause
+//!     pub behavior Async<T>                   { … }
+//!     pub behavior Component<R> extends Async      // decisions 128, 354
+//!     pub behavior AsyncIter<T> extends Async         // decision 122
+//!     pub behavior Iter<T>                    // no clause
 //!
 //! `@Result` is NOT a level of the chain (decision 120): only `@Result` fails
 //! (decision 121), and `throw` / `try` read the FALLIBLE CHANNEL — a `@Result`
@@ -37,14 +37,14 @@ const Clause = struct { wrapper: []const u8, implements: []const u8 };
 /// MARKER a component's `R` implements (decision 354), not a wrapper, and
 /// grants nothing.
 pub const clauses = [_]Clause{
-    .{ .wrapper = "Component", .implements = "Task" },
-    .{ .wrapper = "Stream", .implements = "Task" },
+    .{ .wrapper = "Component", .implements = "Async" },
+    .{ .wrapper = "AsyncIter", .implements = "Async" },
 };
 
 /// The wrappers whose body may `yield`. `yield` is not a level of the chain:
 /// it belongs to the two sequence wrappers and is granted by none of the
 /// others, in either direction (decision 122).
-pub const yielding_wrappers = [_][]const u8{ "Iterator", "Stream" };
+pub const yielding_wrappers = [_][]const u8{ "Iter", "AsyncIter" };
 
 /// A body operation whose legality the chain decides. `throw` / `try` are not
 /// here: they follow the fallible channel, not the level (decision 121).
@@ -66,7 +66,7 @@ pub const Capability = enum {
     /// belongs to a set rather than to a level.
     pub fn wrapper(self: Capability) ?[]const u8 {
         return switch (self) {
-            .await_ => "Task",
+            .await_ => "Async",
             .use_ => "Component",
             .yield_ => null,
         };
@@ -122,7 +122,7 @@ pub fn grantingEffects(cap: Capability, buf: *[ast.EffectKind.all.len]ast.Effect
     return buf[0..n];
 }
 
-/// The returns that grant `cap`, spelled — "`@Task<…>`, `@Stream<…>` or
+/// The returns that grant `cap`, spelled — "`@Async<…>`, `@AsyncIter<…>` or
 /// `@Component<…>`".
 pub fn grantingReturnsSpelled(arena: std.mem.Allocator, cap: Capability) ![]const u8 {
     var buf: [ast.EffectKind.all.len]ast.EffectKind = undefined;
@@ -223,8 +223,8 @@ test "effect chain: every effect wrapper is declared, and no removed one is" {
         try std.testing.expect(declarationLine(old) == null);
     }
     try std.testing.expect(std.mem.indexOf(u8, builtins_source, "pub type YieldStep<T> {") != null);
-    // `@Iterator<T>` declares no clause: it neither awaits nor fails.
-    const line = declarationLine("Iterator") orelse return error.WrapperNotDeclared;
+    // `@Iter<T>` declares no clause: it neither awaits nor fails.
+    const line = declarationLine("Iter") orelse return error.WrapperNotDeclared;
     try std.testing.expect(std.mem.indexOf(u8, line, "extends") == null);
 }
 
@@ -233,19 +233,19 @@ test "effect chain: decision 118's table, row by row" {
     try std.testing.expect(!grants(.result, .await_));
     try std.testing.expect(!grants(.result, .use_));
     try std.testing.expect(!grants(.result, .yield_));
-    // `-> @Task<T>` — await.
+    // `-> @Async<T>` — await.
     try std.testing.expect(grants(.task, .await_));
     try std.testing.expect(!grants(.task, .use_));
     try std.testing.expect(!grants(.task, .yield_));
-    // `-> @Component<R>` ⊃ `@Task` — use · await.
+    // `-> @Component<R>` ⊃ `@Async` — use · await.
     try std.testing.expect(grants(.component, .await_));
     try std.testing.expect(grants(.component, .use_));
     try std.testing.expect(!grants(.component, .yield_));
-    // `-> @Iterator<T>` — yield, and nothing else (`iter-await`).
+    // `-> @Iter<T>` — yield, and nothing else (`iter-await`).
     try std.testing.expect(!grants(.iterator, .await_));
     try std.testing.expect(!grants(.iterator, .use_));
     try std.testing.expect(grants(.iterator, .yield_));
-    // `-> @Stream<T>` ⊃ `@Task` — yield · await.
+    // `-> @AsyncIter<T>` ⊃ `@Async` — yield · await.
     try std.testing.expect(grants(.stream, .await_));
     try std.testing.expect(!grants(.stream, .use_));
     try std.testing.expect(grants(.stream, .yield_));
@@ -262,13 +262,13 @@ test "effect chain: the chain grants downwards, never upwards" {
         try std.testing.expect(!grants(e, .use_));
     }
     // `@Result` is outside the chain (decision 120).
-    try std.testing.expect(!wrapperImplements("Result", "Task"));
-    try std.testing.expect(!wrapperImplements("Task", "Result"));
+    try std.testing.expect(!wrapperImplements("Result", "Async"));
+    try std.testing.expect(!wrapperImplements("Async", "Result"));
     try std.testing.expect(!wrapperImplements("Component", "Result"));
-    try std.testing.expect(!wrapperImplements("Task", "Component"));
-    try std.testing.expect(wrapperImplements("Component", "Task"));
-    try std.testing.expect(wrapperImplements("Stream", "Task"));
-    try std.testing.expect(!wrapperImplements("Iterator", "Task"));
+    try std.testing.expect(!wrapperImplements("Async", "Component"));
+    try std.testing.expect(wrapperImplements("Component", "Async"));
+    try std.testing.expect(wrapperImplements("AsyncIter", "Async"));
+    try std.testing.expect(!wrapperImplements("Iter", "Async"));
     // `@Renderable` is a marker, not a level of the chain.
-    try std.testing.expect(!wrapperImplements("Renderable", "Task"));
+    try std.testing.expect(!wrapperImplements("Renderable", "Async"));
 }

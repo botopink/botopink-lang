@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -18,7 +18,7 @@ fn stream() -> Stream<Result<i32, string>> {
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Stream — a generator state machine (decision 105)
+  ;; @AsyncIter — a generator state machine (decision 105)
   (func $stream (result (ref null $gen))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local

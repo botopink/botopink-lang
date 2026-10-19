@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn counter() -> Iterator<i32> {
+fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
 }
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 fn parse(n: i32) -> Result<i32, string> {
@@ -21,11 +21,11 @@ fn parse(n: i32) -> Result<i32, string> {
 -module(test@main).
 -export(['__bp_priv__fetch'/1, '__bp_priv__counter'/0, '__bp_priv__stream'/0, '__bp_priv__parse'/1]).
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 fetch(X) ->
     X.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 counter() ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),
@@ -37,7 +37,7 @@ counter() ->
         end
     end).
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 stream() ->
     '__bp_gen_new'(fun() ->
         __BpGen2 = erlang:make_ref(),

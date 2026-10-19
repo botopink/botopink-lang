@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn loadTwice(x: i32) -> Task<i32> {
+fn loadTwice(x: i32) -> Async<i32> {
     val a = await fetch(x);
     return a + a;
 }
@@ -14,11 +14,11 @@ fn loadTwice(x: i32) -> Task<i32> {
 -module(test@main).
 -export(['__bp_priv__fetch'/1, '__bp_priv__loadTwice'/1]).
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 fetch(X) ->
     X.
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 loadTwice(X) ->
     A = fetch(X),
     '__bp_add'(A, A).

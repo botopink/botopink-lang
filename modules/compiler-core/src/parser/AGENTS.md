@@ -354,7 +354,7 @@ the suffix; never re-add a wrap loop to an arm.**
 with `<…>` wraps, and two additions for record/builder ergonomics:
 
 - **A prelude wrapper written bare is the builtin generic** (decision 606 (1)) —
-  `Result<…>`, `Task<…>`, `Component<…>`, `Iterator<…>`, `Stream<…>` and the
+  `Result<…>`, `Async<…>`, `Component<…>`, `Iter<…>`, `AsyncIter<…>` and the
   marker `Renderable` (`prelude_wrapper_names`) parse as `@Name` did
   (`parseBuiltinTypeTail`, its refusals included), `generic.bare` set so the
   formatter and `TypeRef.format` print them as written — unless the file

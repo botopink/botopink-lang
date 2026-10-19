@@ -2216,7 +2216,7 @@ pub declare fn attempt<T>(f: fn() -> T) -> Result<T, Failure>;
     .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
     .Wasm(body: attemptTaskOnWasm),
 )]
-pub declare fn attemptTask<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>>;
+pub declare fn attemptTask<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>>;
 
 // wasm's form (decision 518): the thunk's value, or the message of the abort
 // it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
@@ -2238,7 +2238,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
+fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -2384,7 +2384,7 @@ fn attemptTaskOnWasm<T>(f: fn() -> Task<T>) -> Task<Result<T, Failure>> {
   )
   ;; The task the thunk started — or the `Failure` it raised before its first
   ;; `await` — and then its value.
-  ;; @Task — a state machine (decision 392)
+  ;; @Async — a state machine (decision 392)
   (func $attemptTaskOnWasm (param $f (ref null $closure)) (result (ref null $task))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local

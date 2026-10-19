@@ -6,7 +6,7 @@ fn state(initial: i32) -> Component<i32> {
 fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
-fn fetch(n: i32) -> Task<i32> {
+fn fetch(n: i32) -> Async<i32> {
     return n;
 }
 fn plain(n: i32) -> i32 {

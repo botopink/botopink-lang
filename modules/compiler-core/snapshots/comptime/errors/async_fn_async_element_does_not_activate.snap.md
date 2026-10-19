@@ -4,7 +4,7 @@ val Request = type(path: string)
 fn request() -> Component<Request> {
     return Request(path: "/");
 }
-fn Page() -> Task<Element> {
+fn Page() -> Async<Element> {
     val r = use request();
     return Element();
 }
@@ -16,5 +16,5 @@ error: use-without-component: `use` needs a `-> @Component<R>` return on the enc
 7 │     val r = use request();
   │             ^
 
-  fn 'Page' returns '@Task<Element>',
+  fn 'Page' returns '@Async<Element>',
   but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)

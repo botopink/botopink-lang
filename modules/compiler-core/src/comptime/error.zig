@@ -69,7 +69,7 @@ pub const ResultOrigin = struct {
 
     pub const Source = enum {
         unknown,
-        /// `await t` on a `@Task<@Result<U, E>>` — answers the `@Result`.
+        /// `await t` on a `@Async<@Result<U, E>>` — answers the `@Result`.
         await_,
         /// a `for` / `for await` item over a sequence of `@Result`s.
         for_item,
@@ -404,7 +404,7 @@ pub const TypeError = struct {
         if (e.* == .typeVar or g.* == .typeVar) return null;
         if (!gIsResult) return try gpa.dupe(u8, generic_result_hint);
         const fix: []const u8 = switch (origin.source) {
-            .await_ => "`await` answers the `@Result` the Task holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
+            .await_ => "`await` answers the `@Result` the Async holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
             .for_item => "a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`",
             .unknown => if (origin.made_at == null)
                 return try gpa.dupe(u8, generic_result_hint)
@@ -424,7 +424,7 @@ pub const TypeError = struct {
     }
 
     /// The hint when nothing says where the `@Result` came from.
-    const generic_result_hint = "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
+    const generic_result_hint = "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Async, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
 
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.

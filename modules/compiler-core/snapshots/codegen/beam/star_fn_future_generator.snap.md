@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -13,7 +13,7 @@ fn stream() -> Stream<Result<i32, string>> {
 {attributes, []}.
 {labels, 136}.
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 {function, stream, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

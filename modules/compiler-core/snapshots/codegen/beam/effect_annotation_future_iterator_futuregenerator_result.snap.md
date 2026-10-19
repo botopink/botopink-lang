@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn counter() -> Iterator<i32> {
+fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
 }
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 fn parse(n: i32) -> Result<i32, string> {
@@ -23,7 +23,7 @@ fn parse(n: i32) -> Result<i32, string> {
 {attributes, []}.
 {labels, 152}.
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -36,7 +36,7 @@ fn parse(n: i32) -> Result<i32, string> {
     {deallocate, 1}.
     return.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, counter, 0, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
@@ -50,7 +50,7 @@ fn parse(n: i32) -> Result<i32, string> {
     {deallocate, 1}.
     return.
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 {function, stream, 0, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.

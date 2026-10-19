@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> Iterator<i32> {
+fn evens(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -31,7 +31,7 @@ import {io.terminal.print} from "std";
 {attributes, []}.
 {labels, 280}.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, evens, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

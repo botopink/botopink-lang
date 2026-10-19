@@ -255,7 +255,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         return parseBuiltinTypeTail(this, alloc, tok, tok.lexeme[1..], false);
     }
     // Decision 606 (1) — a prelude wrapper written bare (`Result<i32,
-    // string>`, `Task<User>`, `implement Renderable`) is the prelude's
+    // string>`, `Async<User>`, `implement Renderable`) is the prelude's
     // declaration unless the file declares or imports one of that name.
     if (this.check(.identifier) and this.peekAt(1).kind != .dot and isPreludeWrapperName(this.peek().lexeme) and
         (std.mem.eql(u8, this.peek().lexeme, "Renderable") or this.peekAt(1).kind == .lessThan) and !preludeNameShadowed(this, this.peek().lexeme))
@@ -268,7 +268,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
 
 /// The prelude's wrappers and markers a type position names bare (decision
 /// 606 (1)): what `@Name` spelled before.
-pub const prelude_wrapper_names = [_][]const u8{ "Result", "Task", "Component", "Iterator", "Stream", "Renderable" };
+pub const prelude_wrapper_names = [_][]const u8{ "Result", "Async", "Component", "Iter", "AsyncIter", "Renderable" };
 
 pub fn isPreludeWrapperName(name: []const u8) bool {
     for (prelude_wrapper_names) |n| if (std.mem.eql(u8, n, name)) return true;
@@ -360,7 +360,7 @@ fn parseBuiltinTypeTail(this: *This, alloc: std.mem.Allocator, tok: parser.Token
             return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true, .bare = bare } };
         }
         // Other builtin types always take their generic parameters
-        // (`@Task<i32>`, never bare `@Task`).
+        // (`@Async<i32>`, never bare `@Async`).
         _ = try this.consume(.lessThan);
         var first_arg_tok = this.peek();
         var args: std.ArrayList(ast.TypeRef) = .empty;
@@ -369,9 +369,9 @@ fn parseBuiltinTypeTail(this: *This, alloc: std.mem.Allocator, tok: parser.Token
             args.deinit(alloc);
         }
         while (!this.checkGenericClose() and !this.check(.endOfFile)) {
-            // Decision 122 — `@Iterator<T, E>`: the second argument is the
+            // Decision 122 — `@Iter<T, E>`: the second argument is the
             // removed error parameter, refused where it is written.
-            if (args.items.len == 1 and std.mem.eql(u8, name, "Iterator")) {
+            if (args.items.len == 1 and std.mem.eql(u8, name, "Iter")) {
                 this.parseError = ParseErrorInfo.fromToken(.iteratorErrorParamRemoved, this.peek());
                 return ParseError.UnexpectedToken;
             }

@@ -98,9 +98,9 @@ std-wasm/
     ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])` — fixed or `D.DDDeE` whichever is shorter, `D.DDDeE` from 2^53 on as OTP writes it —, std's `Float.toString`, and the text commonJS's `__bp_f64` ports (decision 521) (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits; `isDigits`, `integerOf` and `floatOf`, what `String.parseInt` / `parseFloat`'s host helpers convert (`number.isDigits`, `number.toInteger`, `number.toFloat`, `number.integerRefused`, `number.floatRefused`; `floatOf` correctly rounded over `bigint`'s limbs by hand — `std.fmt.parseFloat`'s slow path holds a table of slices)
     ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
     ├── heap.zig   ← the heap (decisions 448, 449): a heap per process, `alloc` on the current one, copying collection (minor and major), the write barrier on mutable cells, a message copied between heaps (a cycle refused, decision 522), a heap released whole, exhaustion an error the program face traps on — § The heap
-    ├── random.zig ← `io/random`'s seeded stream (decision 451): `Stream`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
+    ├── random.zig ← `io/random`'s seeded stream (decision 451): `AsyncIter`, Mulberry32 as the commonJS sidecar draws it; no draw before a seed
     ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
-    ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `Stream`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
+    ├── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`; the seeded stream's state a `.bss` `AsyncIter`, an unseeded draw `env.bp_random_f64`; it also exports every `rt_*` function of the term files under its own name
     ├── env.zig    ← what std-wasm imports from its caller: `bp_alloc` (a program face's value), `bp_term_alloc(n, layout)` and `bp_term_static(n)` (a term's, an atom's), `bp_random_f64`, `bp_call0` … `bp_call4`
     ├── term.zig   ← the Erlang terms (decision 450): cells (each allocated with its layout, `cellLayout`), atoms (`atomRank`; outside every heap, their names copied), numbers, binaries, lists, tuples, funs (`applyFun` through `env.bp_call<N>`), exceptions (`pending`, class, reason, and where the last raise was — `rt_raised_at` / `rt_raised_at_term`, decision 451 (3)), type tests (`Kind`), term order and equality (`compare`: iterative, an explicit work list, never the runtime's stack — decision 471), maps, the operators, the binary builder; `rt_reset`
     ├── term_faces.zig ← each `exports` entry's comptime face over terms, `rt_std_<symbol>` (a comptime `@compileError` refuses an entry without one)
@@ -182,7 +182,7 @@ OTP 28's Unicode 16 tables lack (U+A7CE … U+A7D5, U+16EA0 … U+16ED3), which 
 Unicode 17 and node does. The comptime runtime's `string:uppercase` / `lowercase` /
 `titlecase` answer through the same functions (`text.caseInto`; its old limit 3 is gone).
 
-The seeded random (decision 451) is `random.zig`'s `Stream` — Mulberry32 over one word,
+The seeded random (decision 451) is `random.zig`'s `AsyncIter` — Mulberry32 over one word,
 the commonJS sidecar's (`libs/std/src/sidecars/random.mjs`) draw for draw — bound by the
 `std:` cells on `io/random.bp`'s `seed` / `seededFloat`. It holds no entropy: before any
 seed `next` answers null, and each face decides what that draw is. A program's
@@ -198,7 +198,7 @@ seed answers the same draws on every build and every target.
 ## The heap (decisions 448, 449, 522; front 144 B-30)
 
 `heap.zig` is erlang's memory model for a wasm program and for translated BEAM code: a heap per
-process (a `@Task`; a BEAM process), `alloc` on the current process's heap, collection by copying
+process (a `@Async`; a BEAM process), `alloc` on the current process's heap, collection by copying
 the live values, a value copied between heaps as an erlang message is, a heap released whole when its
 process ends, and memory exhausted a trap — never damaged data (448 (4)). It is in `program`, never
 bound by `std:`, and has no comptime face: the comptime keeps its arena (449 (4)). It allocates nothing
@@ -276,7 +276,7 @@ layout, std-wasm's faces allocating with theirs, the codegen's roots at each col
 frames, scheduler queues, cells) and its `var` stores through `write`; a bounded long-running cell;
 the located `message contains a cycle` at a send — each waits on a choice no decision fixes yet:
 what layout a word typed by a type parameter has (the backend does not monomorphise), where a
-`@Task`'s record lives and how a value reaches another task's heap, and which code may collect
+`@Async`'s record lives and how a value reaches another task's heap, and which code may collect
 (a wasm local is invisible to a collection).
 
 ## How it is built and served

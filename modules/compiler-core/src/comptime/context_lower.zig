@@ -539,7 +539,7 @@ const Lowering = struct {
     }
 
     /// `fn(unknown) -> unknown` — what a component function answers once
-    /// lowered: no effect, so no backend wraps it in a Task.
+    /// lowered: no effect, so no backend wraps it in a Async.
     fn lambdaType(self: *Lowering) !ast.TypeRef {
         const params = try self.arena.alloc(ast.TypeRef, 1);
         params[0] = .{ .named = ast.unknown_type_name };

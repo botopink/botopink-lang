@@ -926,12 +926,12 @@ const TryHead = union(enum) {
     yield_result,
 };
 
-/// True when a return written in source is `@Task<@Result<T, E>>`: a
+/// True when a return written in source is `@Async<@Result<T, E>>`: a
 /// `result: true` binding's rejection is `Error(HostError(…))` (decisions 431,
 /// 490), a flagless one's `Error(<message>)` (decision 126).
 fn isTaskOfResult(rt: ?ast.TypeRef) bool {
     const t = rt orelse return false;
-    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Task")) return false;
+    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Async")) return false;
     if (t.generic.args.len != 1) return false;
     const inner = t.generic.args[0];
     return inner == .generic and inner.generic.is_builtin and std.mem.eql(u8, inner.generic.name, "Result");
@@ -948,7 +948,7 @@ fn resultOkType(rt: ?ast.TypeRef) ?ast.TypeRef {
 /// The record a host declaration's return type names, and the containers the
 /// adoption walks to reach it (`jsPrelude.Helper.adopt`'s path: `a` an array,
 /// `r` an `@Result`'s ok side; `?T` is walked for free, `null` passes). The
-/// commonJS twin of erlang's `recordNameOfReturn`. `@Task` is not looked
+/// commonJS twin of erlang's `recordNameOfReturn`. `@Async` is not looked
 /// through: its answer arrives later.
 const AdoptTarget = struct { rec: []const u8, path: []const u8 };
 
@@ -2077,7 +2077,7 @@ const Emitter = struct {
         return il == tag;
     }
 
-    /// Decision 432 — the operand of a `return` at `loc`: a whole `@Task`
+    /// Decision 432 — the operand of a `return` at `loc`: a whole `@Async`
     /// that may fail (`task_return`) is handed over as the value it settles
     /// with (`__bp_await`), so the `async function` returning it does not
     /// adopt its rejection.
@@ -2087,7 +2087,7 @@ const Emitter = struct {
         return value;
     }
 
-    /// Decision 432 — the body of a `-> @Task<@Result<T, E>>` function, built
+    /// Decision 432 — the body of a `-> @Async<@Result<T, E>>` function, built
     /// one level deeper, as the failing task the function answers:
     ///
     ///     return __bp_task((async () => { …body… })());
@@ -2103,7 +2103,7 @@ const Emitter = struct {
         return self.b.stmts(&.{.{ .return_ = try self.b.call(self.helper(.task), &.{run}) }});
     }
 
-    /// True for a function whose written return is `@Task<@Result<T, E>>` and
+    /// True for a function whose written return is `@Async<@Result<T, E>>` and
     /// whose body is the task (decision 432): a failing task.
     fn isFailingTask(eff: ?ast.EffectKind, ret: ?ast.TypeRef) bool {
         return eff == .task and isTaskOfResult(ret);
@@ -2674,15 +2674,15 @@ const Emitter = struct {
 
     /// The JS shape a botopink effect asks for — read off the return
     /// (decision 118):
-    ///   `-> @Task<T>`          → `async function` (decision 120); a
-    ///                            `-> @Task<@Result<T, E>>` fn or method is
+    ///   `-> @Async<T>`          → `async function` (decision 120); a
+    ///                            `-> @Async<@Result<T, E>>` fn or method is
     ///                            then a failing task (`failingTaskBody`,
     ///                            decision 432)
     ///   `-> @Component<T>`  → `async function`, awaiting or not (decision
     ///                            104: every hook and component answers a
     ///                            Promise and every caller `await`s it)
-    ///   `-> @Iterator<T>`      → `function*` (a body that yields; decision 123)
-    ///   `-> @Stream<T>`        → `async function*`
+    ///   `-> @Iter<T>`      → `function*` (a body that yields; decision 123)
+    ///   `-> @AsyncIter<T>`        → `async function*`
     ///   `-> @Result<T, E>`     → `function` (the checked-Result value)
     ///   none (and a factory)   → `function`
     fn effectShape(eff: ?ast.EffectKind) FnShape {
@@ -2797,7 +2797,7 @@ const Emitter = struct {
 
     /// A `result: true` binding (decisions 431, 489, 490) as a function of the
     /// module: `function name(params) { return __bp_host_result(F, () =>
-    /// <binding>); }` — `__bp_host_result_task` for a `@Task` return — where
+    /// <binding>); }` — `__bp_host_result_task` for a `@Async` return — where
     /// `<binding>` is its template over the parameters, or its `(module,
     /// symbol)` called with them. The arguments are evaluated by the call, so
     /// only the host's raise is caught. An arity-branched binding tests
@@ -2855,7 +2855,7 @@ const Emitter = struct {
     }
 
     /// `value` — a `result: true` binding's host call — run through
-    /// `__bp_host_result_task(F, () => value)` for a `@Task<@Result<T, HostError>>`
+    /// `__bp_host_result_task(F, () => value)` for a `@Async<@Result<T, HostError>>`
     /// return, else `__bp_host_result(F, () => value)` with the ok side adopted
     /// into the record `T` names (`adoptHost`). `F` is std's `failure` module,
     /// which `HostError` comes from (decisions 431, 489, 490).
@@ -3259,7 +3259,7 @@ const Emitter = struct {
             // so a default body never carries one — the implementing `fn` does.
             const params = try self.buildParams(m.params);
             // The adopted body keeps the shape its effect asks for (144 B-119): a
-            // `default fn … -> @Task<T>` that awaits is `async`, as the same
+            // `default fn … -> @Async<T>` that awaits is `async`, as the same
             // method declared on the type itself.
             const eff = methodEffect(m);
             var shape = try self.methodShape(iface_name, m, eff);
@@ -7164,8 +7164,8 @@ const Emitter = struct {
         } else if (cc.receiver) |recv| {
             // Decision 122 — `seq.next()` by hand: the generator's own
             // `{ value, done }` becomes the prelude `YieldStep` —
-            // `__bp_yield_step(it.next())` on an `@Iterator`, and
-            // `s.next().then(__bp_yield_step)` on a `@Stream`, whose `next()`
+            // `__bp_yield_step(it.next())` on an `@Iter`, and
+            // `s.next().then(__bp_yield_step)` on a `@AsyncIter`, whose `next()`
             // is a Promise.
             // An associated host primitive of the prelude
             // (`String.fromCodepoint(cp)`): its template, at the call.

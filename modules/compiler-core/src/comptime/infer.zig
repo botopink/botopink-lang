@@ -4355,7 +4355,7 @@ fn refuseWasmSignature(env: *Env, impl: ast.Implementation, f: ast.FnDecl) Infer
 /// Decisions 431 (2), 488, 490 — `result: true` says the host call can fail
 /// and the backend answers every failure as `Error(HostError(…))`, so the
 /// declared return must be `@Result<…, HostError>` or
-/// `@Task<@Result<…, HostError>>`, `HostError` being std's
+/// `@Async<@Result<…, HostError>>`, `HostError` being std's
 /// `failure.HostError` by module identity (488): a type of another module
 /// that happens to be named `HostError` is not it. Any other return is
 /// refused at the annotation, so the flag has one reading.
@@ -4384,13 +4384,13 @@ fn refuseResultReturn(env: *Env, impl: ast.Implementation, name: []const u8, ret
     const written = if (ret) |r| try std.fmt.allocPrint(env.arena, "{f}", .{r}) else "void";
     return implError(env, impl.loc, try std.fmt.allocPrint(
         env.arena,
-        "`{s}` writes `result: true` on `.{s}`, so it must return `Result<…, HostError>` or `Task<Result<…, HostError>>`, not `{s}`",
+        "`{s}` writes `result: true` on `.{s}`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `{s}`",
         .{ name, variant, written },
     ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.");
 }
 
 /// How a `result: true` binding's return reads: `@Result<T, E>` or
-/// `@Task<@Result<T, E>>` with `E` std's `failure.HostError` (`isStdHostError`)
+/// `@Async<@Result<T, E>>` with `E` std's `failure.HostError` (`isStdHostError`)
 /// — `.host_error`; that shape with `E` a type of another module spelled
 /// `HostError` — `.foreign_error`; anything else — `.other`.
 const HostResultShape = enum { host_error, foreign_error, other };
@@ -4401,7 +4401,7 @@ fn hostResultShape(env: *Env, r: ast.TypeRef, program: ast.Program) HostResultSh
         else => return .other,
     };
     if (!g.is_builtin) return .other;
-    const res = if (std.mem.eql(u8, g.name, "Task")) blk: {
+    const res = if (std.mem.eql(u8, g.name, "Async")) blk: {
         if (g.args.len != 1) return .other;
         break :blk switch (g.args[0]) {
             .generic => |ig| ig,
@@ -6117,7 +6117,7 @@ fn decoratorArgError(env: *Env, a: ast.Annotation, i: usize, message: []const u8
 /// Render a `TypeRef` as the type name a `@Decl` handle exposes: the type as
 /// the source spells it (`TypeRef.format`) — `string`, `Array<string>`,
 /// `string[]`, `fn(i32) -> i32`, `#(string, string)`, `?i32`,
-/// `@Task<HandlerResponse>`. Never erased to a head and never empty: a
+/// `@Async<HandlerResponse>`. Never erased to a head and never empty: a
 /// decorator that admits `Array<string>` must be able to refuse
 /// `Array<Element>`.
 fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
@@ -9278,7 +9278,7 @@ fn inferTypeMethods(
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
         // Decision 118 — the method's return type is its effect, as a free
-        // fn's is; decision 123 — an `@Iterator` return that yields nothing is
+        // fn's is; decision 123 — an `@Iter` return that yields nothing is
         // a factory.
         const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body);
         env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
@@ -9333,7 +9333,7 @@ fn inferTypeMethods(
             env.fnEffect = null;
         }
         // The declared return, whole: a returned value that is already that
-        // wrapper (`return startApp(self)` in a `-> @Task<@Result<…>>` method)
+        // wrapper (`return startApp(self)` in a `-> @Async<@Result<…>>` method)
         // passes through rather than being wrapped `Ok(…)` again
         // (`valuePassesThrough`), as in a free fn.
         const savedReturnWhole = env.returnWhole;
@@ -9402,8 +9402,8 @@ fn inferTypeMethods(
 }
 
 /// The value layer of an effect return — what a `return` carries through the
-/// wrapper (decision 119): `T` of `@Task<T>`, `T` of `@Component<T>`, the
-/// item `T` of `@Iterator<T>` / `@Stream<T>`; the return itself for
+/// wrapper (decision 119): `T` of `@Async<T>`, `T` of `@Component<T>`, the
+/// item `T` of `@Iter<T>` / `@AsyncIter<T>`; the return itself for
 /// `@Result<R, E>`, which IS the fallible layer.
 fn effectValueLayer(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
     const t = retType.deref();
@@ -9423,9 +9423,9 @@ fn isResultType(ty: *T.Type) bool {
 }
 
 /// Decision 121 — the fallible channel: the `E` of the `@Result<U, E>` layer
-/// of an effect return (`@Result<U, E>` itself, `@Task<@Result<U, E>>`,
-/// `@Component<@Result<U, E>>`, `@Iterator<@Result<U, E>>`,
-/// `@Stream<@Result<U, E>>`), or null when no layer is a `@Result`. `throw`
+/// of an effect return (`@Result<U, E>` itself, `@Async<@Result<U, E>>`,
+/// `@Component<@Result<U, E>>`, `@Iter<@Result<U, E>>`,
+/// `@AsyncIter<@Result<U, E>>`), or null when no layer is a `@Result`. `throw`
 /// and `try` read this and nothing else.
 fn fallibleErrorOf(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
     const layer = effectValueLayer(eff, retType) orelse return null;
@@ -9449,7 +9449,7 @@ fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
 /// layer): the value layer of the effect's wrapper — and, when that layer is
 /// `@Result<U, E>`, its `U` — the declared type otherwise. Null when returns
 /// are not checked: no declared return type, a template fn, or a sequence
-/// body (`@Iterator` / `@Stream` that yields, which forbids `return <expr>`).
+/// body (`@Iter` / `@AsyncIter` that yields, which forbids `return <expr>`).
 /// 01 R7 — decision 2: a block is a statement, and a value leaves a body
 /// through `return` (or a `break` of a value block). A plain `fn` whose written
 /// return type has a value and whose body can reach its end without one used
@@ -9458,9 +9458,9 @@ fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
 /// A wrapper return is judged by what a fall-through would hand out: a
 /// `@Result` in any layer (`@Result<void, E>` included) has a value — `Ok` or
 /// `Error` — and its `ok` position is the empty `return;` (decision 74), so it
-/// is refused like any value; a `@Task` / `@Component` whose value layer is a
+/// is refused like any value; a `@Async` / `@Component` whose value layer is a
 /// value type is refused too; one whose value layer is `void` or `noreturn`
-/// falls through as a `void` fn does. `@Iterator` / `@Stream` end by running
+/// falls through as a `void` fn does. `@Iter` / `@AsyncIter` end by running
 /// off their body and are not judged here; neither is a type guard.
 /// 01 R7 — decision 2's other half: an `if` in value position needs both
 /// branches, each ending in a value. `val y = if (c) { 1 };` checked and bound
@@ -9583,7 +9583,7 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
 /// null only in a plain `fn` — so a capability the chain does not grant is
 /// refused rather than falling through an absent context (decision 95 + 67).
 fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) envMod.StarFnCtx {
-    // `iterItem` is the one item channel: only `@Iterator` / `@Stream` carry
+    // `iterItem` is the one item channel: only `@Iter` / `@AsyncIter` carry
     // it, and both `yield <v>` and a sequence-level `break <v>` unify with it
     // (decision 122 — there is no completion channel).
     const yields = effectChain.grants(eff, .yield_);
@@ -13070,15 +13070,15 @@ fn tryUnwrapOrError(env: *Env, rawTy: *T.Type, loc: ast.Loc) InferError!*T.Type 
     return InferError.TypeError;
 }
 
-/// `@Task<T>` -> `T` (decision 120). `@Component<R>` extends `@Task`, and
+/// `@Async<T>` -> `T` (decision 120). `@Component<R>` extends `@Async`, and
 /// decision 104 has every caller `await` a component: it awaits to `R`
-/// (decision 354). `@Stream<T>` is iterated with `for await`, never awaited
-/// whole. Returns null when `ty` is no Task.
+/// (decision 354). `@AsyncIter<T>` is iterated with `for await`, never awaited
+/// whole. Returns null when `ty` is no Async.
 /// Decision 432 — the `task_await` / `task_return` lowerings of a checked
 /// module, put into `out`: an `await` or a whole-wrapper `return` whose
-/// operand is a `@Task<X>` with `X` a `@Result`, or a type left open (a type
+/// operand is a `@Async<X>` with `X` a `@Result`, or a type left open (a type
 /// parameter — a failing task may reach generic code). A `@Component`, and a
-/// `@Task` of any other type, records nothing.
+/// `@Async` of any other type, records nothing.
 pub fn taskLowerings(env: *const Env, out: *std.AutoHashMap(ast.Loc, envMod.InstanceLowering)) !void {
     var ait = env.taskAwaits.iterator();
     while (ait.next()) |e| if (awaitMayFail(e.value_ptr.*)) {
@@ -13255,25 +13255,25 @@ pub fn typeRefOfType(arena: std.mem.Allocator, env: *const Env, ty: *T.Type) any
     }
 }
 
-/// The builtin wrappers a checker type names without `@` (`Result`, `Task`,
+/// The builtin wrappers a checker type names without `@` (`Result`, `Async`,
 /// …): written back as builtin generics.
 fn isBuiltinWrapperName(name: []const u8) bool {
-    for ([_][]const u8{ "Result", "Task", "Component", "Stream", "Future", "Option" }) |w| if (std.mem.eql(u8, name, w)) return true;
+    for ([_][]const u8{ "Result", "Async", "Component", "AsyncIter", "Future", "Option" }) |w| if (std.mem.eql(u8, name, w)) return true;
     return false;
 }
 
 /// True for an `await` whose operand may be a failing task: `taskMayFail`, or
-/// any operand that is not a `@Task` of a settled type nor a `@Component` — a
+/// any operand that is not a `@Async` of a settled type nor a `@Component` — a
 /// call through a record's function field is typed by the value it settles
 /// with (`@Result<…>`) or `unknown`, and the reading leaves a value that is no
 /// failing task as it is.
 fn awaitMayFail(ty: *T.Type) bool {
     const t = ty.deref();
-    if (t.* == .named and (std.mem.eql(u8, t.named.name, "Task") or std.mem.eql(u8, t.named.name, "Component"))) return taskMayFail(ty);
+    if (t.* == .named and (std.mem.eql(u8, t.named.name, "Async") or std.mem.eql(u8, t.named.name, "Component"))) return taskMayFail(ty);
     return true;
 }
 
-/// True for a task that may be a failing one: a `@Task<X>` whose `X` is a
+/// True for a task that may be a failing one: a `@Async<X>` whose `X` is a
 /// `@Result`, `unknown` or not resolved to a named type (a type parameter, an
 /// open variable), and an operand the checker typed `unknown` or left open (a
 /// call through a record's function field answers `unknown`). The reading
@@ -13285,7 +13285,7 @@ fn taskMayFail(ty: *T.Type) bool {
         .typeVar => return true,
         .named => |n| {
             if (std.mem.eql(u8, n.name, "unknown")) return true;
-            if (!std.mem.eql(u8, n.name, "Task") or n.args.len < 1) return false;
+            if (!std.mem.eql(u8, n.name, "Async") or n.args.len < 1) return false;
         },
         else => return false,
     }
@@ -13300,7 +13300,7 @@ fn taskMayFail(ty: *T.Type) bool {
 fn unwrapTaskType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Task") and n.args.len >= 1)
+        .named => |n| if (std.mem.eql(u8, n.name, "Async") and n.args.len >= 1)
             n.args[0]
         else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1)
             n.args[0]
@@ -13336,7 +13336,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// Number of leading required generic arguments for a known builtin wrapper.
 /// Returns null for builtins without a fixed arity (e.g. `@Decl`, `array`,
 /// `optional`, `tuple`) so the resolver leaves their arg-count checks alone.
-///   - `@Task<T>` / `@Iterator<T>` / `@Stream<T>`  → 1 (decisions 120, 122)
+///   - `@Async<T>` / `@Iter<T>` / `@AsyncIter<T>`  → 1 (decisions 120, 122)
 ///   - `@Result<R, E>`                             → 2
 ///   - `@Component<R>`                             → 1 (decision 354: the base
 ///     parameter is gone; the parser refuses `@Component<R>` at `C`)
@@ -13344,9 +13344,9 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@Expr<T>` / `@ExprCustom<T>`               → 1
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
-    if (eq(u8, name, "Task")) return 1;
-    if (eq(u8, name, "Iterator")) return 1;
-    if (eq(u8, name, "Stream")) return 1;
+    if (eq(u8, name, "Async")) return 1;
+    if (eq(u8, name, "Iter")) return 1;
+    if (eq(u8, name, "AsyncIter")) return 1;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Component")) return 1;
     if (eq(u8, name, "Renderable")) return 0;
@@ -17677,7 +17677,7 @@ fn unifyErrorChannel(env: *Env, errType: *T.Type, got: *T.Type, loc: ast.Loc) In
             env.lastError = TypeError.custom(
                 diagnostics.gen_infer_conflicting_errors ++
                     ": the error types of this block's `throw` / `try` do not agree, so its `@Result<U, E>` has no one `E`",
-                "Annotate the value with the error you mean: `val x: @Task<@Result<U, E>> = async { … };` (or `@Iterator<@Result<U, E>>` for a loop), and handle the other error where it happens.",
+                "Annotate the value with the error you mean: `val x: @Async<@Result<U, E>> = async { … };` (or `@Iter<@Result<U, E>>` for a loop), and handle the other error where it happens.",
             ).withLoc(loc);
             return error.TypeError;
         },
@@ -17837,7 +17837,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
             }
             // RI1 (§1I / §2 R14) — `return <expr>;` inside a sequence body
-            // (an `@Iterator` / `@Stream` that yields, or an `iter` / `stream`
+            // (an `@Iter` / `@AsyncIter` that yields, or an `iter` / `stream`
             // loop) is forbidden: a sequence carries no return channel
             // (decision 122). The author writes `break <v>` to emit a last
             // item and end, or bare `break` for a clean end. Bare `return;`
@@ -17877,12 +17877,12 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             else
                 try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
             // Decision 432 — a task handed over whole (`taskLowerings`): the
-            // body's declared return and the returned value are both a `@Task`.
+            // body's declared return and the returned value are both a `@Async`.
             if (valPtr) |vp| if (env.returnWhole) |w| {
                 const wd = w.deref();
                 const vt = vp.getType().deref();
-                if (wd.* == .named and std.mem.eql(u8, wd.named.name, "Task") and
-                    vt.* == .named and std.mem.eql(u8, vt.named.name, "Task"))
+                if (wd.* == .named and std.mem.eql(u8, wd.named.name, "Async") and
+                    vt.* == .named and std.mem.eql(u8, vt.named.name, "Async"))
                     try env.taskReturns.put(env.arena, loc, vp.getType());
             };
             // Decision 119 — inside a body whose return carries a `@Result`
@@ -17999,7 +17999,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         // value is what we got — so unify(expected, got).
                         try unifyErrorChannel(env, errType, vp.getType(), loc);
                         // `throw e` produces the value `{error, E}`: returned
-                        // from a `@Result` / `@Task` / `@Component` body
+                        // from a `@Result` / `@Async` / `@Component` body
                         // (`return __bp_error(e)`), emitted as the last item of
                         // a sequence whose item is the `@Result` (`break
                         // __bp_error(e)`, decision 122 — it never rejects).
@@ -18010,7 +18010,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 .plain => {
                     env.lastError = TypeError.custom(
                         try fallibleChannelRefusal(env, "throw"),
-                        "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.",
+                        "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Async<@Result<T, E>>`, `-> @Iter<@Result<T, E>>`, …) or handle the failure where it happens.",
                     ).withLoc(loc);
                     return error.TypeError;
                 },
@@ -18123,21 +18123,21 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = null } } } };
         },
         .await_ => |e| {
-            // Decision 120 — `await` belongs to `@Task`, so every return whose
-            // wrapper extends `@Task` answers it: `@Task`, `@Component` and
-            // `@Stream`, plus a `stream` loop. `@Iterator` has none (`iter-await`).
+            // Decision 120 — `await` belongs to `@Async`, so every return whose
+            // wrapper extends `@Async` answers it: `@Async`, `@Component` and
+            // `@AsyncIter`, plus a `stream` loop. `@Iter` has none (`iter-await`).
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
                 if (try refuseBehindAlias(env, "await", loc)) return error.TypeError;
                 if (env.starFn != null and env.starFn.?.effect == .iterator) {
                     env.lastError = TypeError.custom(
-                        diagnostics.iter_await ++ ": `await` does not exist in an `@Iterator` — its items are produced synchronously",
-                        "Use `@Stream<T>` (or a `stream` loop): a stream is the sequence that may wait between items.",
+                        diagnostics.iter_await ++ ": `await` does not exist in an `@Iter` — its items are produced synchronously",
+                        "Use `@AsyncIter<T>` (or a `stream` loop): a stream is the sequence that may wait between items.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.await_without_async, .await_, env.fnEffect),
-                    "Write `async fn` (the return becomes `@Task<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
+                    "Write `async fn` (the return becomes `@Async<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -18155,13 +18155,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             env.awaitOperandLoc = prevAwaitOperand;
             const valPtr = try makeTypedPtr(env, valTyped);
             const rawTy = valPtr.getType();
-            // `await @Task<T>` answers `T` and propagates nothing (decision
-            // 120). A resolved non-Task named type is an error; an unresolved
+            // `await @Async<T>` answers `T` and propagates nothing (decision
+            // 120). A resolved non-Async named type is an error; an unresolved
             // type variable stays lenient.
             const deref = rawTy.deref();
             if (deref.* == .named and unwrapTaskType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Task<_>` value (or a `@Component<T>`, which extends it)",
+                    "`await` expects a `@Async<_>` value (or a `@Component<T>`, which extends it)",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
@@ -18193,16 +18193,16 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .yield => |y| {
             // Decision 105 — `yield` feeds the NEAREST generator scope, an
-            // `@Iterator` / `@Stream` fn or an `iter` / `stream` loop, through
+            // `@Iter` / `@AsyncIter` fn or an `iter` / `stream` loop, through
             // every unprefixed loop between them; there is no other target. A
-            // body without one — a plain `fn`, a `@Task`, a `@Result` —
+            // body without one — a plain `fn`, a `@Async`, a `@Result` —
             // refuses it naming the returns that grant it.
             const ctx = env.starFn orelse null;
             if (ctx == null or !ctx.?.allowsYield) {
                 if (try refuseBehindAlias(env, "yield", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.yield_without_iter, .yield_, env.fnEffect),
-                    "A `yield` feeds the nearest generator scope: write `iter fn` (`async iter fn` for a `@Stream<T>`), or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
+                    "A `yield` feeds the nearest generator scope: write `iter fn` (`async iter fn` for a `@AsyncIter<T>`), or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -18214,14 +18214,14 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     if (env.hasLabel(lbl)) {
                         env.lastError = TypeError.custom(
                             diagnostics.yield_label_not_generator ++ ": `yield :<label>` names a loop, and a `yield` feeds a generator scope",
-                            "Label the scope it feeds: `fn … -> @Iterator<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
+                            "Label the scope it feeds: `fn … -> @Iter<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
                         ).withLoc(loc);
                         return error.TypeError;
                     }
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`fn … -> @Iterator<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
+                        "Label a generator fn (`fn … -> @Iter<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
@@ -18609,7 +18609,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             if (n.then_) |ty| try bindNarrowed(env, n.name, ty, &whileSnapshots);
         }
     } else if (lp.awaitLoop) {
-        // `for await (s) { x -> … }` — a `@Stream<T>` where there is an await
+        // `for await (s) { x -> … }` — a `@AsyncIter<T>` where there is an await
         // channel (decision 122); the loop param binds `T`, a `@Result` when
         // `T` is one (no implicit `try`).
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
@@ -18620,13 +18620,13 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             ).withLoc(loc);
             return error.TypeError;
         }
-        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
+        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "AsyncIter") and iterTy.named.args.len >= 1) {
             itemTy = try markResultSource(env, iterTy.named.args[0], .for_item);
             try env.instanceLowerings.put(lp.loc, .{ .sequence_next = .stream });
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
-                "An `@Iterator<T>` is iterated by `for (it) { x -> … }`; only a `@Stream` suspends between items.",
+                diagnostics.for_await_expects_stream ++ ": `for await` expects a `@AsyncIter<T>` value",
+                "An `@Iter<T>` is iterated by `for (it) { x -> … }`; only a `@AsyncIter` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -18643,14 +18643,14 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             itemTy = try env.namedType("i32");
         } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "array")) {
             itemTy = n.args[0];
-        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Stream")) {
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "AsyncIter")) {
             env.lastError = TypeError.custom(
-                diagnostics.for_over_stream ++ ": a `@Stream` suspends between items — iterate it with `for await`",
+                diagnostics.for_over_stream ++ ": a `@AsyncIter` suspends between items — iterate it with `for await`",
                 "`for await (s) { x -> … }` where there is an await channel.",
             ).withLoc(loc);
             return error.TypeError;
-        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Iterator")) {
-            // Decision 122 — `for` over any `@Iterator<X>` is legal in any
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Iter")) {
+            // Decision 122 — `for` over any `@Iter<X>` is legal in any
             // function and hands over each `X`, a `@Result` when `X` is one:
             // there is no implicit `try`.
             itemTy = try markResultSource(env, n.args[0], .for_item);
@@ -18696,8 +18696,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
 }
 
 /// Decision 125 — `iter …` / `stream …`: the body is a generator scope with
-/// exactly the iterator's / stream's capabilities, worth `@Iterator<T>` /
-/// `@Stream<T>`. `T` is the type of its `yield` / `break v`; when the body has
+/// exactly the iterator's / stream's capabilities, worth `@Iter<T>` /
+/// `@AsyncIter<T>`. `T` is the type of its `yield` / `break v`; when the body has
 /// `throw` / `try` of its own the item becomes `@Result<U, E>` on its own,
 /// `U` from the `yield`s and `E` from the `throw` / `try`s. The scope is
 /// closed: the enclosing fn's effect, labels, `use` anchor and throw channel
@@ -20125,8 +20125,8 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
 
 /// Decision 388 (2) — `c.run(scope)` on a `@Component<R>` value: runs the
 /// lambda the component value is with `scope` (a `RenderScope`, std's
-/// `context` module), answering `@Task<Rendered<R>>` — the body's result and
-/// the scope its `use provide`s made for its children; a `@Task` because
+/// `context` module), answering `@Async<Rendered<R>>` — the body's result and
+/// the scope its `use provide`s made for its children; a `@Async` because
 /// whether the node is asynchronous (375) is not in the type. Recorded for
 /// the lowering (`Env.componentRuns`, `context_lower.zig`). Null for any other
 /// receiver or method.
@@ -20151,7 +20151,7 @@ fn inferComponentRun(
     try unifyAt(env, try env.namedType("RenderScope"), typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
     const rendered = try env.namedTypeArgs("Rendered", &.{recvTy.named.args[0]});
     try env.componentRuns.put(env.arena, loc, recvTy.named.args[0]);
-    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs("Task", &.{rendered}), .kind = .{ .call = .{
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs("Async", &.{rendered}), .kind = .{ .call = .{
         .receiver = recvPtr,
         .callee = callee,
         .is_builtin = false,
@@ -20832,7 +20832,7 @@ fn noteInferredResult(env: *Env, result: *T.Type, body: []const ast.Stmt) InferE
 /// `comptime.zig` (`yield_step_src`) and spliced into a module that names it.
 pub const yield_step_type_name = "YieldStep";
 
-/// Decision 122 — `.next()` on an `@Iterator<T>` / `@Stream<T>` receiver, or
+/// Decision 122 — `.next()` on an `@Iter<T>` / `@AsyncIter<T>` receiver, or
 /// null when the call is anything else.
 fn inferSequenceNext(
     env: *Env,
@@ -20845,9 +20845,9 @@ fn inferSequenceNext(
     if (!std.mem.eql(u8, callee, "next") or args.len != 0 or trailing.len != 0) return null;
     const rt = recv.getType().deref();
     if (rt.* != .named or rt.named.args.len != 1) return null;
-    const kind: envMod.SequenceKind = if (std.mem.eql(u8, rt.named.name, "Iterator"))
+    const kind: envMod.SequenceKind = if (std.mem.eql(u8, rt.named.name, "Iter"))
         .iterator
-    else if (std.mem.eql(u8, rt.named.name, "Stream"))
+    else if (std.mem.eql(u8, rt.named.name, "AsyncIter"))
         .stream
     else
         return null;
@@ -20861,7 +20861,7 @@ fn inferSequenceNext(
         .stream => blk: {
             const task_args = try env.arena.alloc(*T.Type, 1);
             task_args[0] = step;
-            break :blk try env.namedTypeArgs("Task", task_args);
+            break :blk try env.namedTypeArgs("Async", task_args);
         },
     };
     return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
@@ -21786,7 +21786,7 @@ fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
     if (target) |t| try env.hookTargets.put(env.arena, loc, .{ .ref = t, .type_ = null });
     const b = env.hookBuilder orelse return;
     // Decision 375 — a `use` the checker cannot follow (`hook: null`), or of
-    // a host hook (no node: a host's `@Component` extends `@Task`), makes
+    // a host hook (no node: a host's `@Component` extends `@Async`), makes
     // the node asynchronous.
     if (target == null) b.is_async = true;
     if (isCall) if (try hostCallee(env, operand.call) != null) {
@@ -21893,7 +21893,7 @@ fn noteComponentValue(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) In
 }
 
 /// Decision 375 — what a call written in the body being recorded says of the
-/// node's asynchrony by itself: a host function answering `@Task` (or
+/// node's asynchrony by itself: a host function answering `@Async` (or
 /// `@Component`, which extends it) makes it asynchronous; a call of a
 /// function value or a method is kept by type, to be read when the body is
 /// done (`finishHookNode`). A call of a declaration is followed through its
@@ -24239,8 +24239,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 }
             }
 
-            // Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
-            // answers `YieldStep<T>`, on a `@Stream<T>` `@Task<YieldStep<T>>`.
+            // Decision 122 — `seq.next()` called by hand on an `@Iter<T>`
+            // answers `YieldStep<T>`, on a `@AsyncIter<T>` `@Async<YieldStep<T>>`.
             // Neither wrapper is a declared type, so no method table answers
             // it: the lowering is recorded per call site for every backend.
             if (typedReceiver) |recvPtr| {
@@ -24250,7 +24250,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // withdrawn from a task: its value is read by `await`, and
                 // every composition of it is an `async { … }` block.
                 const taskRecv = recvPtr.getType().deref();
-                if (taskRecv.* == .named and std.mem.eql(u8, taskRecv.named.name, "Task") and
+                if (taskRecv.* == .named and std.mem.eql(u8, taskRecv.named.name, "Async") and
                     (std.mem.eql(u8, call.callee, "map") or std.mem.eql(u8, call.callee, "then") or
                         std.mem.eql(u8, call.callee, "mapError") or std.mem.eql(u8, call.callee, "catch")))
                 {
@@ -25314,7 +25314,7 @@ fn checkJumpLabel(env: *Env, lbl: []const u8, comptime word: []const u8, loc: as
         env.lastError = TypeError.custom(
             diagnostics.break_label_unbound ++
                 ": `" ++ word ++ " :<label>` targets an unknown label",
-            "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iterator<…> :name`, `iter loop :name {`).",
+            "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iter<…> :name`, `iter loop :name {`).",
         ).withLoc(loc);
         return error.TypeError;
     }
@@ -25749,29 +25749,29 @@ fn checkLambdaMarker(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
             m.returnWrapper(),
             try snapshotMod.typeSignatureOf(env.arena, w.func.ret),
         }),
-        try std.fmt.allocPrint(env.arena, "Each marker answers its wrapper (decision 553): `async` a `@Task`, `iter` an `@Iterator`, `async iter` a `@Stream`, `component` a `@Component`. Write the marker the expected type names, or drop it.", .{}),
+        try std.fmt.allocPrint(env.arena, "Each marker answers its wrapper (decision 553): `async` a `@Async`, `iter` an `@Iter`, `async iter` a `@AsyncIter`, `component` a `@Component`. Write the marker the expected type names, or drop it.", .{}),
     ).withLoc(loc);
     return error.TypeError;
 }
 
-/// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
+/// Decision 124 — `async { … }`: a closed block worth `@Async<T>`, legal in any
 /// function. `T` comes from the block's `return`s (a `return` leaves the
 /// BLOCK, decision 119); when the body has `throw` / `try` of its own
 /// (`ast.bodyFails`) the value becomes `@Result<U, E>` on its own, `E` from
 /// them — two that do not unify are `gen-infer-conflicting-errors`. An
-/// expected `@Task<X>` (an annotated `val`) pins the value: `X` a `@Result`
+/// expected `@Async<X>` (an annotated `val`) pins the value: `X` a `@Result`
 /// opens the fallible channel with its `E`, any other `X` closes it, so a `try`
 /// in the body is then a located refusal. The body starts a new capability
-/// context: it awaits (it IS a Task), never `use`s (not the `@Component`
+/// context: it awaits (it IS a Async), never `use`s (not the `@Component`
 /// body) and never yields; the enclosing labels are closed.
 fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     // Decision 375 — a body that writes `async { … }` is asynchronous.
     if (env.hookBuilder) |b| b.is_async = true;
     const fk = func.kind;
-    // The expected `@Task<X>`, when the position says one (`val t: @Task<i32> = async { … }`).
+    // The expected `@Async<X>`, when the position says one (`val t: @Async<i32> = async { … }`).
     const expectedValue: ?*T.Type = blk: {
         const want = (env.expectedType orelse break :blk null).deref();
-        if (want.* != .named or !std.mem.eql(u8, want.named.name, "Task") or want.named.args.len != 1) break :blk null;
+        if (want.* != .named or !std.mem.eql(u8, want.named.name, "Async") or want.named.args.len != 1) break :blk null;
         break :blk want.named.args[0];
     };
     var errTy: ?*T.Type = null;
@@ -25795,7 +25795,7 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
         value = try env.freshVar();
         target = value;
     }
-    const taskTy = try env.namedTypeArgs("Task", &.{value});
+    const taskTy = try env.namedTypeArgs("Async", &.{value});
 
     const prevStarFn = env.starFn;
     const prevFnEffect = env.fnEffect;

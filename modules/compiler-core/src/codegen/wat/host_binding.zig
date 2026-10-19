@@ -48,20 +48,20 @@ pub const Op = struct {
     yields_bool: bool = false,
 };
 
-/// A type an adapter answering `@Task<T>` spells, over the declaration's one
+/// A type an adapter answering `@Async<T>` spells, over the declaration's one
 /// type parameter `T` (decision 393): checked by shape, never by the word a
 /// `T` happens to be.
 pub const Shape = enum {
     i32,
     /// The type parameter itself.
     t,
-    /// `@Task<T>`.
+    /// `@Async<T>`.
     task_t,
-    /// `@Task<Array<T>>` (`T[]`).
+    /// `@Async<Array<T>>` (`T[]`).
     task_array_t,
-    /// `Array<@Task<T>>` — started tasks.
+    /// `Array<@Async<T>>` — started tasks.
     array_task_t,
-    /// `Array<fn() -> @Task<T>>` — unstarted ones.
+    /// `Array<fn() -> @Async<T>>` — unstarted ones.
     array_thunk_task_t,
     /// `fn() -> T` — a thunk (decision 518's `attempt`).
     thunk_t,
@@ -74,10 +74,10 @@ pub const Shape = enum {
         return switch (sh) {
             .i32 => "i32",
             .t => "T",
-            .task_t => "@Task<T>",
-            .task_array_t => "@Task<Array<T>>",
-            .array_task_t => "Array<@Task<T>>",
-            .array_thunk_task_t => "Array<fn() -> @Task<T>>",
+            .task_t => "@Async<T>",
+            .task_array_t => "@Async<Array<T>>",
+            .array_task_t => "Array<@Async<T>>",
+            .array_thunk_task_t => "Array<fn() -> @Async<T>>",
             .thunk_t => "fn() -> T",
             .result_t => "@Result<T, string>",
             .other => "another type",
@@ -98,10 +98,10 @@ pub const Adapter = struct {
     name: []const u8,
     params: []const Slot = &.{},
     result: ?Slot = null,
-    /// Set for an adapter answering `@Task<T>`: checked by shape instead of
+    /// Set for an adapter answering `@Async<T>`: checked by shape instead of
     /// `params` / `result`.
     task: ?TaskSig = null,
-    /// Set for an adapter over fixed types that answers `@Task<result>` (a
+    /// Set for an adapter over fixed types that answers `@Async<result>` (a
     /// gate's wait): the declared return is that task, never the bare value.
     answers_task: bool = false,
     /// What the adapter answers, for `conformance/docs.md`'s table and the diagnostics.
@@ -165,7 +165,7 @@ pub const Signature = struct {
     /// (decision 393) — null when it declares no type parameter or several.
     shapes: ?[]const Shape = null,
     result_shape: Shape = .other,
-    /// The declared return is a `@Task<…>` (its slot is the task's value).
+    /// The declared return is a `@Async<…>` (its slot is the task's value).
     result_task: bool = false,
 };
 
@@ -199,11 +199,11 @@ pub fn signatureOf(alloc: std.mem.Allocator, f: ast.FnDecl) !Signature {
     return .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape, .result_task = result_task };
 }
 
-/// `@Task<T>` / `@Component<T>` read as their `T` — what a binding's slot
+/// `@Async<T>` / `@Component<T>` read as their `T` — what a binding's slot
 /// is checked by (the backend's `eagerTypeRef`).
 fn eager(t: ast.TypeRef) ast.TypeRef {
     return switch (t) {
-        .generic => |g| if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Task") or std.mem.eql(u8, g.name, "Component")))
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Async") or std.mem.eql(u8, g.name, "Component")))
             eager(g.args[0])
         else
             t,
@@ -229,10 +229,10 @@ fn slotOf(t: ast.TypeRef) ?Slot {
     };
 }
 
-/// The `T` of a `@Task<T>`.
+/// The `T` of a `@Async<T>`.
 fn taskValue(t: ast.TypeRef) ?ast.TypeRef {
     return switch (t) {
-        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task")) g.args[0] else null,
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Async")) g.args[0] else null,
         else => null,
     };
 }
@@ -311,7 +311,7 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result) or sig.result_task != ad.answers_task) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
-            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Task<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
+            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Async<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
             defer alloc.free(answers);
             return refused(alloc, "`.Wasm({s})`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
         }
@@ -392,7 +392,7 @@ fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]u8 {
     return buf.toOwnedSlice(alloc);
 }
 
-/// `(i32, T) -> @Task<T>` — an adapter's shape as `conformance/docs.md` writes it,
+/// `(i32, T) -> @Async<T>` — an adapter's shape as `conformance/docs.md` writes it,
 /// owned by the caller.
 pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -605,12 +605,12 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "wasi:delay", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = &.{.t}, .result_shape = .task_t });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> @Task<T>` over one type parameter `T`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> @Async<T>` over one type parameter `T`") != null);
     }
     {
         const r = try parse(a, "wasi:race_of", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = null });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> @Task<T>>) -> @Task<T>`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> @Async<T>>) -> @Async<T>`") != null);
     }
     {
         const r = try parse(a, "$0 + 1", f64x1);

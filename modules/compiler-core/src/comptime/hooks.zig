@@ -28,7 +28,7 @@
 //! library: what the list means is the reading decorator's.
 //!
 //! **`async`** (decision 375) marks a node asynchronous: a body that writes
-//! `await` / `async { … }`, calls a host function answering `@Task` (or
+//! `await` / `async { … }`, calls a host function answering `@Async` (or
 //! `@Component`, which extends it), calls what the checker cannot follow, or
 //! reaches an asynchronous node — computed over the module's nodes once its
 //! bodies are inferred (`infer.zig` `markHookAsync`), an imported node read
@@ -160,7 +160,7 @@ pub const Node = struct {
     uses: []const Use,
     calls: []const Call,
     /// Decision 375 — the node is asynchronous: its body writes `await` or
-    /// `async { … }`, calls a host function answering `@Task` or
+    /// `async { … }`, calls a host function answering `@Async` or
     /// `@Component`, calls what the checker cannot follow (a function value
     /// or a method answering `@Component<R>`, a `use` with `hook: null`), or
     /// reaches an asynchronous node through a `use` or a call (`infer.zig`

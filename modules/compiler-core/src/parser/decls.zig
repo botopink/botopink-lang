@@ -664,7 +664,7 @@ pub fn parseFnBody(
     return FnDecl{
         .isPub = isPub,
         // Decision 118 — the syntactic return is the effect; decision 123 — an
-        // `@Iterator` / `@Stream` return whose body does not yield is a factory.
+        // `@Iter` / `@AsyncIter` return whose body does not yield is a factory.
         .effect = ast.EffectKind.ofFn(returnType, body, true),
         .isDeclare = isDeclare,
         .label = label,

@@ -172,7 +172,7 @@ test "parser error: deprecated *fn prefix" {
         \\  | ^^^ write a plain `fn` whose return type is the effect wrapper
         \\  |
         \\  = note: the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect
-        \\  = hint: rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`
+        \\  = hint: rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Async`, `@Component`, `@Iter` or `@AsyncIter`
         \\
         \\
     , "*fn parse(n: i32) -> Result<i32, string> { return n; }");

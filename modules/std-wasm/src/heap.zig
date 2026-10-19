@@ -1,5 +1,5 @@
 //! The heap of a wasm program, as erlang's (decisions 448, 449): a heap per
-//! process (a `@Task`; a BEAM process in translated code), allocation on the
+//! process (a `@Async`; a BEAM process in translated code), allocation on the
 //! current process's heap, collection by copying the live values, a value
 //! copied between heaps as an erlang message is, a heap released whole when
 //! its process ends, and a run that exhausts memory trapping — never

@@ -1028,8 +1028,8 @@ pub const LoopKeyword = enum {
 /// Loop expressions: `loop`, `while` and `for` (decision 105).
 /// Flattened: loop fields live directly on the node (no `.kind` indirection).
 /// Every unprefixed loop is a statement typed `void`; a prefixed
-/// `iter …` / `stream …` loop is an expression worth `@Iterator<T>` /
-/// `@Stream<T>` (decision 125).
+/// `iter …` / `stream …` loop is an expression worth `@Iter<T>` /
+/// `@AsyncIter<T>` (decision 125).
 pub fn LoopExprOf(comptime phase: Phase) type {
     return struct {
         loc: Loc,
@@ -1039,7 +1039,7 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         keyword: LoopKeyword = .loop,
         /// `iter …` / `stream …` (decision 125) — `.iterator` or `.stream`; the
         /// body is a generator scope and the node is an expression worth
-        /// `@Iterator<T>` / `@Stream<T>`. Only a `.loop` node carries one: the
+        /// `@Iter<T>` / `@AsyncIter<T>`. Only a `.loop` node carries one: the
         /// parser writes `iter while (c) { … }` / `iter for (xs) { x -> … }` as
         /// the prefixed `loop { <the unprefixed loop>; break; }` it means
         /// (decision 125's own equivalence), and records the written keyword
@@ -1199,7 +1199,7 @@ pub fn FunctionExprOf(comptime phase: Phase) type {
     const Kind = struct {
         /// Surface syntax: `{ a, b -> stmts }` lambda vs `fn(a, b) { stmts }`,
         /// or `async { stmts }` (decision 124): a closed block worth
-        /// `@Task<T>`, which every backend runs as a parameterless closure
+        /// `@Async<T>`, which every backend runs as a parameterless closure
         /// called in place (`(async () => { … })()` on commonJS) — so it
         /// keeps the lambda's shape and `params` is empty.
         syntax: enum { lambda, fnExpr, asyncBlock },
@@ -3802,7 +3802,7 @@ pub const Program = struct {
 /// `isPub` is false for module-private functions.
 /// The effect a function implements — decision 118: the return type IS the
 /// annotation. A body gains a capability by writing the effect wrapper,
-/// literally, as its return type (`-> @Task<User>`); an alias to a wrapper
+/// literally, as its return type (`-> @Async<User>`); an alias to a wrapper
 /// types the function but activates nothing. This enum is the source of truth
 /// for how the function lowers and which body operations (`await` / `yield` /
 /// `use`) its level permits; `throw` / `try` follow the fallible channel (a
@@ -3810,11 +3810,11 @@ pub const Program = struct {
 pub const EffectKind = enum {
     /// `-> @Result<T, E>` — the one fallible wrapper.
     result,
-    /// `-> @Task<T>` — a value that has not arrived yet; never fails (decision 120).
+    /// `-> @Async<T>` — a value that has not arrived yet; never fails (decision 120).
     task,
-    /// `-> @Iterator<T>` whose body yields — a synchronous sequence (decision 122).
+    /// `-> @Iter<T>` whose body yields — a synchronous sequence (decision 122).
     iterator,
-    /// `-> @Stream<T>` whose body yields — an asynchronous sequence (decision 122).
+    /// `-> @AsyncIter<T>` whose body yields — an asynchronous sequence (decision 122).
     stream,
     /// `-> @Component<T>` — the body may `use` a hook (decision 128).
     component,
@@ -3824,18 +3824,18 @@ pub const EffectKind = enum {
     /// value here and nowhere else.
     pub const all = [_]EffectKind{ .result, .task, .iterator, .stream, .component };
 
-    /// The builtin return-type wrapper that activates this effect (`@Task`, …).
+    /// The builtin return-type wrapper that activates this effect (`@Async`, …).
     pub fn returnWrapper(self: EffectKind) []const u8 {
         return switch (self) {
             .result => "Result",
-            .task => "Task",
-            .iterator => "Iterator",
-            .stream => "Stream",
+            .task => "Async",
+            .iterator => "Iter",
+            .stream => "AsyncIter",
             .component => "Component",
         };
     }
 
-    /// Map a builtin wrapper name (`Task`, …) to its effect, or null when the
+    /// Map a builtin wrapper name (`Async`, …) to its effect, or null when the
     /// name is not one of the five effect wrappers.
     pub fn fromWrapperName(name: []const u8) ?EffectKind {
         for (all) |kind| {
@@ -3856,7 +3856,7 @@ pub const EffectKind = enum {
     }
 
     /// The effect of a fn with return `rt` and body `body` (decision 123): an
-    /// `@Iterator` / `@Stream` return whose body neither `yield`s nor
+    /// `@Iter` / `@AsyncIter` return whose body neither `yield`s nor
     /// `break v`s in its own scope is a FACTORY — an ordinary function that
     /// returns a ready iterator — and carries no effect. A bodyless
     /// declaration keeps the wrapper's effect.

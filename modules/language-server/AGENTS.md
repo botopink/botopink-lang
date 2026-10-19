@@ -45,10 +45,10 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `diagnostics_import_unresolved_source`), `formatting`,
   `hover` (full signature + doc comments, incl. qualified `std` members and
   builtin interface methods on primitives/arrays/strings; for a fn whose return
-  is `@Task` / `@Component` / `@Iterator` / `@Stream`, a footer naming what the
-  caller unwraps — the `await` value (`T` of `@Task<T>`, `T` of
-  `@Component<T>`, the whole `@Result<U, E>` of a `@Task<@Result<U, E>>`) or
-  the `for` / `for await` item; driven by the return, so an `@Iterator` factory
+  is `@Async` / `@Component` / `@Iter` / `@AsyncIter`, a footer naming what the
+  caller unwraps — the `await` value (`T` of `@Async<T>`, `T` of
+  `@Component<T>`, the whole `@Result<U, E>` of a `@Async<@Result<U, E>>`) or
+  the `for` / `for await` item; driven by the return, so an `@Iter` factory
   shows it too; the name under the cursor is `engine.identSpanAt`'s, which reads
   a backtick identifier whole, decision 561 — `` `not-found` `` with its
   backticks, `` `count` `` as `count`),
@@ -62,8 +62,8 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `enum` or a `behavior` is `Method`, and so is a `test "name"` block — see below),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + the prelude members of an effect-wrapper
-  receiver — `next` on `@Iterator`, `next` / `map` / `then` on `@Stream`, `map` /
-  `then` on `@Task` / `@Component` + labeled args + sortText + module names),
+  receiver — `next` on `@Iter`, `next` / `map` / `then` on `@AsyncIter`, `map` /
+  `then` on `@Async` / `@Component` + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
   `prepareRename`, rejects keywords),
   `signatureHelp` (incl. builtin interface methods, `self` dropped; parameter
@@ -81,7 +81,7 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   names elsewhere (`g.iter()`, `val stream = 1`, `async.allOf(…)`); a fn's
   `:label` and a loop's label (`for :outer`, `break :outer`) are `keyword`; effect
   fns carry the `async` modifier — a fn whose written return is one of the five
-  effect wrappers `@Result` / `@Task` / `@Component` / `@Iterator` / `@Stream`
+  effect wrappers `@Result` / `@Async` / `@Component` / `@Iter` / `@AsyncIter`
   (decision 118: the return is the effect; an alias return does not count); plus
   a sub-language overlay inside string literals — see below),
   `codeAction` (add type annotation, remove unused import, add missing case

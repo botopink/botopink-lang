@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn two() -> Iterator<i32> {
+fn two() -> Iter<i32> {
     yield 1;
     yield 2;
 }
@@ -28,7 +28,7 @@ import {io.terminal.print} from "std";
 {attributes, []}.
 {labels, 245}.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, two, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

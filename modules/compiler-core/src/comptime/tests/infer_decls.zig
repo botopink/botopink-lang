@@ -974,7 +974,7 @@ test "infer: pub val ---- infers same as private val" {
 
 test "infer: star fn ---- async returns @Future is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> Task<i32> {
+        \\fn fetch(x: i32) -> Async<i32> {
         \\    return x;
         \\}
     );
@@ -982,7 +982,7 @@ test "infer: star fn ---- async returns @Future is valid" {
 
 test "infer: star fn ---- generator returns @ResultGenerator is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn gen() -> Iterator<i32> {
+        \\fn gen() -> Iter<i32> {
         \\    yield 1;
         \\}
     );

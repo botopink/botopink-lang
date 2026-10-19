@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn counter() -> Iterator<i32> {
+fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
     yield 3;
@@ -14,7 +14,7 @@ fn counter() -> Iterator<i32> {
 {attributes, []}.
 {labels, 136}.
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 {function, counter, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

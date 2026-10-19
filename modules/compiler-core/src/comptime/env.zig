@@ -28,7 +28,7 @@ pub const TypeTokenCall = struct {
 // ── type definitions ──────────────────────────────────────────────────────────
 
 /// What `Env.aliasedWrapper` answers: the alias the source wrote and the
-/// builtin wrapper (`"Result"`, `"Task"`, …, without `@`) it expands to.
+/// builtin wrapper (`"Result"`, `"Async"`, …, without `@`) it expands to.
 pub const AliasedWrapper = struct {
     alias: []const u8,
     wrapper: []const u8,
@@ -476,30 +476,30 @@ pub const TypeparamConstraint = struct {
 // ── environment ───────────────────────────────────────────────────────────────
 
 /// Context active while inferring the body of an effect fn (a return of
-/// `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`, decision 118)
+/// `@Result`, `@Async`, `@Component`, `@Iter` or `@AsyncIter`, decision 118)
 /// or of a prefixed `iter` / `stream` loop. Drives validation of `await` and
 /// `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
 /// alludes to was removed in v0.beta.19.)
 pub const StarFnCtx = struct {
-    /// `await` is permitted here — `@Task`, `@Component` or `@Stream`.
+    /// `await` is permitted here — `@Async`, `@Component` or `@AsyncIter`.
     allowsAwait: bool,
-    /// `yield` is permitted here — `@Iterator` / `@Stream`.
+    /// `yield` is permitted here — `@Iter` / `@AsyncIter`.
     allowsYield: bool,
-    /// `@Iterator<T>` / `@Stream<T>` item type that `yield <v>` AND
+    /// `@Iter<T>` / `@AsyncIter<T>` item type that `yield <v>` AND
     /// `break <v>` values unify with (decision 122: `break v` emits `v` and
     /// ends — the last item is an item like the others, there is no
-    /// completion channel); `null` when unknown or absent (`@Task`). When it
+    /// completion channel); `null` when unknown or absent (`@Async`). When it
     /// is `@Result<U, E>`, a `U` is wrapped `Ok(v)`.
     iterItem: ?*T.Type,
-    /// The label declared on the fn signature (`fn … -> @Iterator<T> :name`),
+    /// The label declared on the fn signature (`fn … -> @Iter<T> :name`),
     /// used to scope `break :name` to the generator vs. an enclosing loop.
     /// Drives the §1I REGRAS DE ESCOPO disambiguation in the `.@"break"`
     /// type-checker.
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
-    /// specific rejections (RI* only inside `@Iterator` / `@Stream`, etc.).
+    /// specific rejections (RI* only inside `@Iter` / `@AsyncIter`, etc.).
     effect: ast.EffectKind,
     /// Decision 584 (2) — the generator scope is a marked lambda's
     /// (`{ iter x -> … }`, lowered onto an `iter loop`): its body is a
@@ -594,15 +594,15 @@ pub const InstanceLowering = union(enum) {
     /// its index. A method call records `.type_`; only a field read records
     /// this, so a backend that dispatches natively can ignore it.
     field_of: []const u8,
-    /// Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
-    /// (answers `YieldStep<T>`) or a `@Stream<T>` (answers
-    /// `@Task<YieldStep<T>>`). commonJS maps the generator's `{ value, done }`
+    /// Decision 122 — `seq.next()` called by hand on an `@Iter<T>`
+    /// (answers `YieldStep<T>`) or a `@AsyncIter<T>` (answers
+    /// `@Async<YieldStep<T>>`). commonJS maps the generator's `{ value, done }`
     /// onto the variants; erlang and beam step a generator first (144 B-128:
     /// its next item before the generator itself) and wasm, whose sequence is
     /// the list of its items, does not, then each pops the head and rebinds
     /// the receiver to the rest when it is a local name. Also keyed by a `for` / `for
-    /// await` loop's own loc when what it iterates is an `@Iterator` /
-    /// `@Stream` (144 B-128): erlang and beam step a generator lazily there,
+    /// await` loop's own loc when what it iterates is an `@Iter` /
+    /// `@AsyncIter` (144 B-128): erlang and beam step a generator lazily there,
     /// one item per round.
     sequence_next: SequenceKind,
     /// An arithmetic operator's result type, keyed by its operator's loc —
@@ -631,15 +631,15 @@ pub const InstanceLowering = union(enum) {
     /// read's loc. `arity` is the fn's declared parameter count (no `self`).
     assoc_fn_value: AssocFnValue,
     /// Decision 432 — an `await` (keyed by its loc) whose operand may be a
-    /// failing task: a `@Task<X>` with `X` a `@Result`, `unknown` or a type the
+    /// failing task: a `@Async<X>` with `X` a `@Result`, `unknown` or a type the
     /// checker leaves open (a type parameter), or an operand not typed as a
-    /// `@Task` at all (a call through a record's function field): a failing
+    /// `@Async` at all (a call through a record's function field): a failing
     /// task rejects on commonJS, so the backend reads the settled task back as
     /// the `@Result` (`__bp_await`, which leaves anything else as it is).
-    /// Never recorded for a `@Component`, nor for a `@Task` of any other type.
+    /// Never recorded for a `@Component`, nor for a `@Async` of any other type.
     task_await,
     /// Decision 432 — a `return t` (keyed by the `return`'s loc) whose operand
-    /// is the whole `@Task<X>` wrapper of its function, `X` as for
+    /// is the whole `@Async<X>` wrapper of its function, `X` as for
     /// `task_await`: commonJS hands the task over as the value it settles
     /// with (`__bp_await`), never adopted as it rejects.
     task_return,
@@ -875,7 +875,7 @@ pub const DecoratorSig = struct {
 ///   - `wrap_error`         — `throw e` → `return __bp_error(e)`
 ///   - `unwrap_passthrough` — `return try f()` → `return f()` (unwrap then
 ///                            re-wrap is the identity)
-///   - `yield_ok`           — in an `@Iterator<@Result<U, E>>` / `@Stream<…>`
+///   - `yield_ok`           — in an `@Iter<@Result<U, E>>` / `@AsyncIter<…>`
 ///                            scope, `yield v` / `break v` with `v: U` →
 ///                            `yield __bp_ok(v)` / `break __bp_ok(v)`
 ///   - `break_error`        — in that scope, `throw e` → `break __bp_error(e)`:
@@ -1046,7 +1046,7 @@ pub const Env = struct {
     usesSourceRecord: bool = false,
     /// True once the module referenced the prelude enum `YieldStep<T>`
     /// (decision 122 — an annotation, or a `.next()` called by hand on an
-    /// `@Iterator` / `@Stream`). `comptime.zig` then prepends the enum's
+    /// `@Iter` / `@AsyncIter`). `comptime.zig` then prepends the enum's
     /// declaration to the transformed program, exactly as `usesSourceLocation`
     /// does for the record, so every backend builds and matches `Yield(value)`
     /// / `Done` through the enum path it already has.
@@ -1271,7 +1271,7 @@ pub const Env = struct {
     /// lowers its body as a `component fn`'s, a lambda over the scope.
     componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 432 — every written `await`, by its location, with its
-    /// operand's type; and every `return` of a whole `@Task` wrapper, by the
+    /// operand's type; and every `return` of a whole `@Async` wrapper, by the
     /// `return`'s location. Read once inference is done
     /// (`infer.taskLowerings`), when each type is as resolved as it gets.
     taskAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
@@ -1360,7 +1360,7 @@ pub const Env = struct {
     fnContext: ?FnContext = null,
     /// C1 — the type a `return <value>` in the body currently being inferred
     /// must unify with: the declared return type, or an effect wrapper's inner
-    /// channel (`@Result<R, E>` → R, `@Task<T>` → T — `U` when `T` is
+    /// channel (`@Result<R, E>` → R, `@Async<T>` → T — `U` when `T` is
     /// `@Result<U, E>` —, `@Component<T>` → the `T` of
     /// `@Component<T>`). Null where returns are not checked (no declared
     /// return type, template fns, top level).

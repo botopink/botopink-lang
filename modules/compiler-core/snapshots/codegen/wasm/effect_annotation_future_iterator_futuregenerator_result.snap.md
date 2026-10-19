@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn counter() -> Iterator<i32> {
+fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
 }
-fn stream() -> Stream<Result<i32, string>> {
+fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 fn parse(n: i32) -> Result<i32, string> {
@@ -33,7 +33,7 @@ fn parse(n: i32) -> Result<i32, string> {
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; @Task — a state machine (decision 392)
+  ;; @Async — a state machine (decision 392)
   (func $fetch (param $x i32) (result (ref null $task))
     (local $__fr (ref null $frame0))
     struct.new_default $frame0 ;; the frame: the resume index, then every local
@@ -84,7 +84,7 @@ fn parse(n: i32) -> Result<i32, string> {
     struct.new $box_i32
     call $__task_settle
   )
-  ;; @Iterator — a generator state machine (decision 105)
+  ;; @Iter — a generator state machine (decision 105)
   (func $counter (result (ref null $gen))
     (local $__fr (ref null $frame1))
     struct.new_default $frame1 ;; the frame: the resume index, then every local
@@ -194,7 +194,7 @@ fn parse(n: i32) -> Result<i32, string> {
     )
     i32.const 0 ;; the sequence ended
   )
-  ;; @Stream — a generator state machine (decision 105)
+  ;; @AsyncIter — a generator state machine (decision 105)
   (func $stream (result (ref null $gen))
     (local $__fr (ref null $frame2))
     struct.new_default $frame2 ;; the frame: the resume index, then every local

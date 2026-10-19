@@ -1032,10 +1032,10 @@ declare fn stringIntegerRefused(text: string) -> Result<i64, string>;
 declare fn stringFloatRefused(text: string) -> Result<f64, string>;
 
 // ── array (eager collection) ──────────────────────────────────────
-// The eager indexed collection — implements the lazy `Iterator<T>` (`next`)
+// The eager indexed collection — implements the lazy `Iter<T>` (`next`)
 // and adds `length`/index + host-backed ops, with derived `default fn`.
 
-// NOTE: conceptually `Array<T>` is an `Iterator<T>` (it provides `next`), but the
+// NOTE: conceptually `Array<T>` is an `Iter<T>` (it provides `next`), but the
 // parser puts generics after `extends` (`behavior N extends B <T>`), so a
 // generic-extends-generic clause doesn't parse yet — kept standalone for now.
 //
@@ -1731,9 +1731,9 @@ pub type Result<R, E> {
 //
 //   -> Result<T, E>       throw · try            (the one fallible wrapper)
 //   -> Async<T>            await
-//   -> Component<R>       use · await            Component ⊃ Task
+//   -> Component<R>       use · await            Component ⊃ Async
 //   -> Iter<T>        yield · break v
-//   -> AsyncIter<T>          yield · break v · await   Stream ⊃ Task
+//   -> AsyncIter<T>          yield · break v · await   AsyncIter ⊃ Async
 //
 // Only `Result` fails (decision 121). `Async`, `Component`, `Iter` and
 // `AsyncIter` never fail; when something can, the failure goes INSIDE the value
@@ -1744,9 +1744,9 @@ pub type Result<R, E> {
 // carries `extends`, not the `implement` a `type` writes, and `extends` cannot
 // carry type arguments), so the full clauses are:
 //
-//   Component<R>      extends Task<R>
-//   Stream<T>         extends Task<YieldStep<T>>
-//   Iterator<T>       — NO clause: it neither awaits nor fails.
+//   Component<R>      extends Async<R>
+//   AsyncIter<T>         extends Async<YieldStep<T>>
+//   Iter<T>       — NO clause: it neither awaits nor fails.
 //
 // The compiler reads this order from `comptime/effect_chain.zig`, which
 // restates it and carries tests that read THIS FILE and fail if the two
@@ -1755,20 +1755,20 @@ pub type Result<R, E> {
 // reason), so the drift gate is what keeps one declaration.
 //
 // `return` in an effect body (decision 119) wraps through every layer:
-// `return v` with `v: U` in `-> Async<Result<U, E>>` is a Task holding
+// `return v` with `v: U` in `-> Async<Result<U, E>>` is a Async holding
 // `Ok(v)`; a value already of a layer's type passes through. `throw e` in a
 // body whose return carries `Result<U, E>` is that layer's `Error(e)`.
 
-// `Task<T>` — a value that has not arrived yet; `await` unwraps it. A
+// `Async<T>` — a value that has not arrived yet; `await` unwraps it. A
 // `Async<T>` never fails; `Async<Result<U, E>>` is the task that fails with
 // `E` (decision 432 — on commonJS its Promise rejects with `E` and resolves
 // with the bare `U`): `await t` answers the `Result`, and `try await t`
-// propagates its error. A function with no await channel consumes a Task
+// propagates its error. A function with no await channel consumes a Async
 // through its own functions. A task has no methods (decision 523): its value
 // is read by `await`, a failure by `try await … catch` or `case` on `await`'s
 // `Result`, and every composition — map, bind, recover, map the error — is an
 // `async { … }` block (`async { (try await t catch 0) * 2 }`).
-pub behavior Task<T> {}
+pub behavior Async<T> {}
 
 // ── sequences (decisions 122, 123, 125) ──────────────────────────────────────
 //
@@ -1793,15 +1793,15 @@ pub type YieldStep<T> {
     Done,
 }
 
-// `Iterator<T>` — a synchronous sequence; iterated by `for` in any function.
-pub behavior Iterator<T> {
+// `Iter<T>` — a synchronous sequence; iterated by `for` in any function.
+pub behavior Iter<T> {
     fn next(self: Self<T>) -> YieldStep<T>;
 }
 
-// `Stream<T>` — an asynchronous sequence: finding the next item may need to
+// `AsyncIter<T>` — an asynchronous sequence: finding the next item may need to
 // wait. Iterated by `for await`, which needs an await channel.
-pub behavior Stream<T> extends Task {
-    fn next(self: Self<T>) -> Task<YieldStep<T>>;
+pub behavior AsyncIter<T> extends Async {
+    fn next(self: Self<T>) -> Async<YieldStep<T>>;
 }
 
 // ── display (decision 8 §7, decision 27) ─────────────────────────────────────
@@ -1892,12 +1892,12 @@ pub behavior Slice<V> {
 
 pub behavior Renderable {}
 
-pub behavior Component<R> extends Task {
+pub behavior Component<R> extends Async {
     // Decision 388 (2) — run the component's lambda with `scope` (std's
     // `context.RenderScope`): its result and the scope its body's `use
-    // provide`s made for its children (`context.Rendered<R>`). A `Task`,
+    // provide`s made for its children (`context.Rendered<R>`). A `Async`,
     // since whether the node is asynchronous (375) is not in the type.
-    fn run(self: Self<R>, scope: RenderScope) -> Task<Rendered<R>>;
+    fn run(self: Self<R>, scope: RenderScope) -> Async<Rendered<R>>;
 }
 
 // ── annotation marker ────────────────────────────────────────────────────────
@@ -2017,7 +2017,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // §1C — `use`. The body of a `-> Component<R>` fn may `use` hooks — each
 // one's operand a hook, never a component — and `await` (`Component`
-// extends `Task`); `yield` is not legal there.
+// extends `Async`); `yield` is not legal there.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing

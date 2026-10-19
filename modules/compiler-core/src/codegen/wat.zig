@@ -191,14 +191,14 @@ fn isZeroArgMainCall(e: ast.Expr) bool {
     };
 }
 
-/// The value an eager effect wrapper carries. wasm runs a `@Task<T>` and a
+/// The value an eager effect wrapper carries. wasm runs a `@Async<T>` and a
 /// `@Component<T>` in place (`await` and `use` are identity), so a value of
 /// either type IS its `T`: every question about its representation — a string,
 /// a `@Result` with a string payload, an array, a record — is asked of `T`.
-/// Nested wrappers peel all the way (`@Task<@Task<string>>` is a string).
+/// Nested wrappers peel all the way (`@Async<@Async<string>>` is a string).
 fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     return switch (t) {
-        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task"))
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Async"))
             eagerTypeRef(g.args[0])
         else if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Component"))
             eagerTypeRef(g.args[0])
@@ -208,17 +208,17 @@ fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     };
 }
 
-/// Decision 392 — a `@Task<T>` value is the task that settles with its `T`
+/// Decision 392 — a `@Async<T>` value is the task that settles with its `T`
 /// (`wat_prelude.zig`'s task record): the `i32` word of its address, whatever
 /// `T` is. `await` reads the `T` out of it (`Emitter.lowerAwait`).
 fn isTaskTypeRef(t: ast.TypeRef) bool {
     return switch (t) {
-        .generic => |g| g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task"),
+        .generic => |g| g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Async"),
         else => false,
     };
 }
 
-/// The `T` of a `@Task<T>`.
+/// The `T` of a `@Async<T>`.
 fn taskValueTypeRef(t: ast.TypeRef) ?ast.TypeRef {
     return if (isTaskTypeRef(t)) t.generic.args[0] else null;
 }
@@ -2918,7 +2918,7 @@ const Emitter = struct {
     /// module, with the leaves it calls.
     std_leaves: std.StringArrayHashMapUnmanaged(stdLeaves.Leaf) = .empty,
     /// Decision 392 — the state machine whose body is being lowered: an
-    /// asynchronous function (`-> @Task<T>`, an `async { }` block) suspends
+    /// asynchronous function (`-> @Async<T>`, an `async { }` block) suspends
     /// at its `await`s (`lowerAwait`) and re-enters its statements by
     /// resume index (`emitStmt`'s guard). Null in every other body.
     machine: ?Machine = null,
@@ -2927,7 +2927,7 @@ const Emitter = struct {
     task_kinds: std.ArrayListUnmanaged([]const u8) = .empty,
     /// The function that starts each task kind and its step (`reach.zig`).
     task_edges: std.ArrayListUnmanaged(reach.Edge) = .empty,
-    /// The symbols whose call answers a task (`@Task<T>`): every function
+    /// The symbols whose call answers a task (`@Async<T>`): every function
     /// declaring the return, each specialisation, each bound adapter.
     task_syms: std.StringHashMapUnmanaged(void) = .empty,
     /// Decision 105 (144 B-128) — the body function of every generator
@@ -3342,7 +3342,7 @@ const Emitter = struct {
             if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
             if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
             try self.fn_ret_typerefs.put(f.name, try self.eraseOptTypeParam(&.{}, f.genericParams, rt));
-            // A `-> @Task<T>` answers what binds its `T` once awaited — the
+            // A `-> @Async<T>` answers what binds its `T` once awaited — the
             // shape readers see a task as its value (decision 392).
             if (genericResultIndex(f.genericParams, ptrefs.items, taskValueTypeRef(rt) orelse rt)) |ix|
                 try self.generic_result_arg.put(self.alloc, f.name, ix);
@@ -4015,7 +4015,7 @@ const Emitter = struct {
     }
 
     /// The record an `Ok` payload of `e` is, when `e` is a call whose declared
-    /// return is a `@Result<Rec, _>` (or a `@Task` of one) — `await` and
+    /// return is a `@Result<Rec, _>` (or a `@Async` of one) — `await` and
     /// grouping are looked through, a task being its value here.
     fn resultPayloadRecord(self: *Emitter, e: ast.Expr) ?[]const u8 {
         var cur = e;
@@ -5026,7 +5026,7 @@ const Emitter = struct {
         /// The environment of lifted lambda `n`: a subtype of `closure`
         /// holding the lambda's captures, each typed as the local it copies.
         env: u32,
-        /// Front 164 s2 P4 — a `@Task<T>` (`wat_prelude.zig` § the scheduler
+        /// Front 164 s2 P4 — a `@Async<T>` (`wat_prelude.zig` § the scheduler
         /// in a GC module), what waits on one, a host task pending, an abort's
         /// payload (decision 518), and state machine `n`'s frame: its resume
         /// index, then one mutable field per local (`gc_frames`).
@@ -6842,7 +6842,7 @@ const Emitter = struct {
     /// What the payload of an optional is, from the facts the lowering holds
     /// of it (`OptInfo`); null when they say nothing.
     fn gcOptPayload(self: *Emitter, oi: OptInfo) ?Repr {
-        // A `?@Task<T>`: the task's own nullable reference.
+        // A `?@Async<T>`: the task's own nullable reference.
         if (oi.inner) |tr| if (isTaskTypeRef(tr)) return .{ .ref = .task };
         if (oi.str) return Repr.string;
         if (oi.cell == .f64) return .f64;
@@ -9680,7 +9680,7 @@ const Emitter = struct {
             return;
         }
         const has_result = fnHasResult(f);
-        // Decision 392 — `-> @Task<T>`: the body is a state machine whose
+        // Decision 392 — `-> @Async<T>`: the body is a state machine whose
         // answer is the task's `T` (`emitStateMachine`).
         const is_task = if (f.returnType) |rt| isTaskTypeRef(rt) else false;
         self.fn_tparams = f.genericParams;
@@ -9693,15 +9693,15 @@ const Emitter = struct {
             (if (f.returnType) |rt| resultShapeOfTypeRef(rt) != null else false);
 
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. A `@Task<T>` is
-        // a state machine over the scheduler (decision 392); an `@Iterator` /
-        // `@Stream` runs eagerly. `-> @Component` is a plain function too
+        // checked-Result value), which is a plain function. A `@Async<T>` is
+        // a state machine over the scheduler (decision 392); an `@Iter` /
+        // `@AsyncIter` runs eagerly. `-> @Component` is a plain function too
         // (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try self.itemComment(switch (f.effect.?) {
-                .task => "@Task — a state machine (decision 392)",
-                .iterator => if (self.mode == .gc) "@Iterator — a generator state machine (decision 105)" else "@Iterator — eager lowering",
-                else => if (self.mode == .gc) "@Stream — a generator state machine (decision 105)" else "@Stream — eager lowering",
+                .task => "@Async — a state machine (decision 392)",
+                .iterator => if (self.mode == .gc) "@Iter — a generator state machine (decision 105)" else "@Iter — eager lowering",
+                else => if (self.mode == .gc) "@AsyncIter — a generator state machine (decision 105)" else "@AsyncIter — eager lowering",
             });
         }
         // Params, and the locals the body needs, are registered *before* the
@@ -9725,13 +9725,13 @@ const Emitter = struct {
         if (is_task) try self.beginMachine(f.body);
         defer self.machine = null;
 
-        // An `@Iterator` / `@Stream` body runs eagerly: every `yield` is
+        // An `@Iter` / `@AsyncIter` body runs eagerly: every `yield` is
         // appended to one array, which is what the fn returns.
         const accumulates = if (f.effect) |e|
             (e == .iterator or e == .stream) and has_result and bodyYieldsDeep(f.body)
         else
             false;
-        // Decision 105 (144 B-128) — in a GC module an `@Iterator<T>` body
+        // Decision 105 (144 B-128) — in a GC module an `@Iter<T>` body
         // is a generator machine instead (§ generators).
         const is_gen = accumulates and self.mode == .gc and f.returnType != null and isIteratorTypeRef(f.returnType.?);
         if (is_gen) try self.beginGenMachine(f.body, self.genItemOfTypeRef(f.returnType.?.generic.args[0]), f.label);
@@ -9844,7 +9844,7 @@ const Emitter = struct {
             null;
         defer self.cur_template = outer_template;
         const has_result = m.returnType != null or methodHasResult(body);
-        // Decision 392 — a method answering `@Task<T>` is a state machine
+        // Decision 392 — a method answering `@Async<T>` is a state machine
         // too, its body answering the `T`.
         const is_task = if (m.returnType) |rt| isTaskTypeRef(rt) else false;
         const result_ty: Repr = if (m.returnType) |rt| self.memberRepr(taskValueTypeRef(rt) orelse rt) else .i32;
@@ -9911,13 +9911,13 @@ const Emitter = struct {
         if (is_task) try self.beginMachine(body);
         defer self.machine = null;
 
-        // A method declared `-> @Iterator<T>` / `-> @Stream<T>` runs eagerly
+        // A method declared `-> @Iter<T>` / `-> @AsyncIter<T>` runs eagerly
         // like a fn does (`emitFn`): every `yield` is appended to one array,
         // which is what it returns. Rendered as a plain body, each `yield` was
         // dropped and the method answered `0` — or whatever its last
         // statement left.
         // Decision 105 (144 B-128) — in a GC module a method answering
-        // `@Iterator<T>` is a generator machine (§ generators).
+        // `@Iter<T>` is a generator machine (§ generators).
         const is_gen = has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body) and self.mode == .gc and isIteratorTypeRef(m.returnType.?);
         if (is_gen) try self.beginGenMachine(body, self.genItemOfTypeRef(m.returnType.?.generic.args[0]), null);
         const seq = if (is_gen)
@@ -9945,12 +9945,12 @@ const Emitter = struct {
         try self.item(.{ .func = func });
     }
 
-    /// A method whose declared return is an `@Iterator<T>` / `@Stream<T>` —
+    /// A method whose declared return is an `@Iter<T>` / `@AsyncIter<T>` —
     /// what `FnDecl.effect` says for a fn (a method carries no effect field).
     fn methodYieldsEagerly(m: ast.BehaviorMethod) bool {
         const rt = m.returnType orelse return false;
         return switch (rt) {
-            .generic => |g| g.is_builtin and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")),
+            .generic => |g| g.is_builtin and (std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")),
             else => false,
         };
     }
@@ -11381,7 +11381,7 @@ const Emitter = struct {
                         }
                     } else if (self.fn_has_result) {
                         // A bare `return;` in a function that still has a
-                        // `(result …)` — a `@Task<void>` carries a word —
+                        // `(result …)` — a `@Async<void>` carries a word —
                         // leaves with the neutral value, or the module fails
                         // validation ("expected i32 but nothing on stack").
                         try self.pushZero();
@@ -17733,7 +17733,7 @@ const Emitter = struct {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
+                std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")))
                 g.args[0]
             else
                 return null,
@@ -17780,7 +17780,7 @@ const Emitter = struct {
     }
 
     /// The declared element type of what a `for` walks — an array, an
-    /// `Array<T>`, an eager `@Iterator<T>` / `@Stream<T>` — when its type is
+    /// `Array<T>`, an eager `@Iter<T>` / `@AsyncIter<T>` — when its type is
     /// known.
     /// `e` is declared `Children`, the compiler-known markup child list. Its
     /// coercion is type-level only (`codegen/AGENTS.md`), so a value the
@@ -17796,7 +17796,7 @@ const Emitter = struct {
         return switch (t) {
             .array => |inner| inner.*,
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
+                std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")))
                 g.args[0]
             else
                 null,
@@ -18567,8 +18567,8 @@ const Emitter = struct {
 
     // ── decision 392: an asynchronous function is a state machine ───────────
     //
-    // `fn f(a) -> @Task<T> { … await t … }` (an `async { }` block and a method
-    // answering `@Task` alike) lowers to three functions:
+    // `fn f(a) -> @Async<T> { … await t … }` (an `async { }` block and a method
+    // answering `@Async` alike) lowers to three functions:
     //
     //   $f(a) -> i32          the task: a frame holding every local, the
     //                         arguments stored in it, `$__task_start(kind,
@@ -18632,12 +18632,12 @@ const Emitter = struct {
     }
 
     /// Whether `e` answers a task (decision 392): a call of a function, a
-    /// method or an adapter declaring `@Task<T>`, an `async { }` block, a
+    /// method or an adapter declaring `@Async<T>`, an `async { }` block, a
     /// function value whose type answers one, a name or a field of that
     /// type. Anything else is awaited as the value it is — an eager
     /// `@Component` is its own value here.
     fn isTaskExpr(self: *Emitter, e: ast.Expr) bool {
-        // `o ?? t` over a `?@Task<T>` (front 164 s2 P4, a GC module).
+        // `o ?? t` over a `?@Async<T>` (front 164 s2 P4, a GC module).
         if (self.mode == .gc) if (nullishParts(e)) |nu| return self.isTaskExpr(nu.dflt);
         return switch (e) {
             .function => |f| f.kind.syntax == .asyncBlock,
@@ -18663,7 +18663,7 @@ const Emitter = struct {
     }
 
     /// The type of `val f = { n -> async { … } }` written without an
-    /// annotation — `fn(i32) -> @Task<@Result<V, E>>` (`@Task<V>` when the
+    /// annotation — `fn(i32) -> @Async<@Result<V, E>>` (`@Async<V>` when the
     /// block cannot fail) — read off the block, since the checker's type is
     /// not handed to this backend: `E` is the type of the first `throw`'s
     /// operand and `V` that of the first `return`'s (`i32` where none says).
@@ -18688,7 +18688,7 @@ const Emitter = struct {
         return .{ .function = .{ .params = params, .returnType = ret } };
     }
 
-    /// `val t = async { … throw e … }`: the block's `@Task<@Result<V, E>>`,
+    /// `val t = async { … throw e … }`: the block's `@Async<@Result<V, E>>`,
     /// so `await t` types its answer and `@print` / `Error(e)` read it (a
     /// block that cannot fail keeps the untyped task).
     fn failingAsyncTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
@@ -18696,7 +18696,7 @@ const Emitter = struct {
         return self.asyncBlockTaskType(e, true);
     }
 
-    /// The `@Task<V>` (`@Task<@Result<V, E>>` when the block fails) of the
+    /// The `@Async<V>` (`@Async<@Result<V, E>>` when the block fails) of the
     /// `async { }` block `blk`, read off its `return`s and `throw`s.
     fn asyncBlockTaskType(self: *Emitter, blk: ast.Expr, only_failing: bool) !?ast.TypeRef {
         const body = blk.function.kind.body;
@@ -18719,7 +18719,7 @@ const Emitter = struct {
         }
         const targs = try ar.alloc(ast.TypeRef, 1);
         targs[0] = task_arg;
-        return .{ .generic = .{ .name = "Task", .args = targs, .is_builtin = true } };
+        return .{ .generic = .{ .name = "Async", .args = targs, .is_builtin = true } };
     }
 
     fn operandTypeName(self: *Emitter, v: ast.Expr) []const u8 {
@@ -18867,7 +18867,7 @@ const Emitter = struct {
     }
 
     /// Front 164 s2 P4 — the repr an awaited task `e` settles with in a GC
-    /// module: `T` of its `@Task<T>` (an `async { }` block's by its value);
+    /// module: `T` of its `@Async<T>` (an `async { }` block's by its value);
     /// a task whose `T` nothing here can tell keeps the module in linear
     /// memory, since a box read as another kind traps.
     fn gcAwaitedRead(self: *Emitter, e: ast.Expr) anyerror!GcSettled {
@@ -21592,7 +21592,7 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            // A thunk parameter, `fn() -> T` or `fn() -> @Task<T>` (std's
+            // A thunk parameter, `fn() -> T` or `fn() -> @Async<T>` (std's
             // `failure.attempt` / `attemptTask`, decision 518): `T` is what
             // the argument answers — a `@Result` or any other type included.
             if (p.typeRef == .function) {
@@ -21778,8 +21778,8 @@ const Emitter = struct {
                     .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
                     else => unreachable,
                 };
-                // Decision 392 — `Array<@Task<T>>` (started tasks: the shape
-                // readers see each as its value) and `Array<fn() -> @Task<T>>`
+                // Decision 392 — `Array<@Async<T>>` (started tasks: the shape
+                // readers see each as its value) and `Array<fn() -> @Async<T>>`
                 // (unstarted ones: the first thunk's answer) bind `T` as the
                 // values do; std's `async.all` / `runAll` over strings joined
                 // their addresses as numbers.
@@ -21869,7 +21869,7 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            // `work: fn() -> @Task<@Result<T, E>>` against `{ -> slow(1, "x") }`
+            // `work: fn() -> @Async<@Result<T, E>>` against `{ -> slow(1, "x") }`
             // or a parameter of that function type: every type parameter its
             // answer binds (std's `async.retry`).
             if (p.typeRef == .function) {
@@ -22274,7 +22274,7 @@ const Emitter = struct {
                     if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (isUnknownTypeRef(et)) {
                         for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk et;
                     };
-                    // The same read off an array of tasks answers a `?@Task<T>`:
+                    // The same read off an array of tasks answers a `?@Async<T>`:
                     // `xs[1] ?? t` and `xs.at(1) ?? t` stay tasks, so `await`
                     // settles them instead of printing the handle.
                     if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (isTaskTypeRef(et)) break :blk self.optionalOf(et);
@@ -22445,7 +22445,7 @@ const Emitter = struct {
                 if (f.kind.syntax != .asyncBlock) break :blk null;
                 const args = self.reg_arena.allocator().alloc(ast.TypeRef, 1) catch break :blk null;
                 args[0] = .{ .named = tparam_marker };
-                break :blk .{ .generic = .{ .name = "Task", .args = args, .is_builtin = true } };
+                break :blk .{ .generic = .{ .name = "Async", .args = args, .is_builtin = true } };
             },
             // Decision 392 — `await t` answers the task's `T`; a task adapter's
             // `T` is the argument that binds it.
@@ -22453,7 +22453,7 @@ const Emitter = struct {
                 .await_ => |a| blk: {
                     const inner = self.typeRefOf(a.*);
                     if (inner) |t| if (taskValueTypeRef(t)) |v| {
-                        // `await twice(21)` over `-> @Task<@Result<T, string>>`:
+                        // `await twice(21)` over `-> @Async<@Result<T, string>>`:
                         // the answer with `T` bound by the arguments, so
                         // `@print` and a `case` binder see `@Result<i32, string>`.
                         if (v == .generic) if (self.bindAwaitedGeneric(a.*, v)) |bound| break :blk bound;
@@ -22593,7 +22593,7 @@ const Emitter = struct {
         const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
             .array => |inner| inner.*,
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "Iterator")))
+                std.mem.eql(u8, g.name, "Iter")))
                 g.args[0]
             else
                 return null,
@@ -24229,7 +24229,7 @@ const Emitter = struct {
             .useHook => |uh| self.isStringExpr(uh.kind.inner.*),
             .jump => |j| switch (j.kind) {
                 .try_ => |v| if (v) |x| self.resultOfStringCall(x.*) else false,
-                // `await t` is `t` here (the eager `@Task`).
+                // `await t` is `t` here (the eager `@Async`).
                 .await_ => |a| self.isStringExpr(a.*),
                 else => false,
             },
@@ -24883,14 +24883,14 @@ const Emitter = struct {
 
     // ── decision 105 on wasm: a generator is a resumable state machine ──────
     //
-    // 144 B-128, a GC module. An `@Iterator<T>` is a handle, `$gen`
+    // 144 B-128, a GC module. An `@Iter<T>` is a handle, `$gen`
     // (`GcTy.gen`), and each `next` runs the body up to its next `yield`:
     // nothing of it runs before the first, and an endless body is consumed
     // one item at a time. The body is a state machine as an asynchronous
     // function's is (decision 392): the same frame (`$frame<n>`, every local),
     // the same resume guards (`emitStmt`, `lowerCondition`, `guardStart`),
     // each `yield` its suspension point (`emitGenYield`) where a task has its
-    // `await`s. An `iter fn` (and a method answering `@Iterator<T>`) lowers to
+    // `await`s. An `iter fn` (and a method answering `@Iter<T>`) lowers to
     //
     //   $g(args) -> (ref $gen)    the handle: the frame, the arguments stored
     //                             in it, the body's `kind`; it runs nothing
@@ -24957,12 +24957,12 @@ const Emitter = struct {
         }
     };
 
-    /// `@Iterator<T>`, or `@Stream<T>` — one generator handle in a GC module
+    /// `@Iter<T>`, or `@AsyncIter<T>` — one generator handle in a GC module
     /// (144 B-142: a stream's body is a generator machine too, each `await`
     /// in it run to its end where the step is taken).
     fn isIteratorTypeRef(t: ast.TypeRef) bool {
         return switch (t) {
-            .generic => |g| g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")),
+            .generic => |g| g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")),
             else => false,
         };
     }
@@ -24975,7 +24975,7 @@ const Emitter = struct {
     }
 
     /// Whether `e` is a generator handle in a GC module: an `iter` loop, a
-    /// call answering `@Iterator<T>`, a local holding one, a derived
+    /// call answering `@Iter<T>`, a local holding one, a derived
     /// iterator over one.
     fn isGenExpr(self: *Emitter, e: ast.Expr) bool {
         if (self.mode != .gc) return false;
@@ -24991,7 +24991,7 @@ const Emitter = struct {
                     const r = self.locals.get(rn) orelse self.global_types.get(rn) orelse break :blk false;
                     break :blk r == .ref and r.ref == .gen;
                 },
-                // A record's field declared `@Iterator<T>` / `@Stream<T>`.
+                // A record's field declared `@Iter<T>` / `@AsyncIter<T>`.
                 .identAccess => if (self.typeRefOf(e)) |t| isIteratorTypeRef(eagerTypeRef(t)) else false,
                 else => false,
             },
@@ -25048,7 +25048,7 @@ const Emitter = struct {
         return m;
     }
 
-    /// The item of the `@Iterator<T>` type `t`.
+    /// The item of the `@Iter<T>` type `t`.
     fn genItemOfTypeRef(self: *Emitter, t: ast.TypeRef) GenItem {
         return .{ .repr = self.reprOf(t), .tr = t, .bool_ = isBoolTypeRef(t) };
     }
@@ -26264,7 +26264,7 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(self.resolveName(n)),
                 // A record field (or tuple element) declared as an array, an
-                // `Array<T>` or an eager `@Iterator<T>` / `@Stream<T>` holds
+                // `Array<T>` or an eager `@Iter<T>` / `@AsyncIter<T>` holds
                 // the `[len][e0]…` blob its initialiser built — a `stream loop`
                 // stored in `Ticker(s: …)` included. `for await (t.s)` fell to
                 // the unknown-iterable no-op and yielded nothing. An optional

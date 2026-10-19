@@ -19,7 +19,7 @@
 //! What is here is decision 442 (1)'s list and nothing else: what defines a
 //! value's representation (the heap, boxes, the array and string cells the
 //! codegen lays out), the arithmetic operators' checks, the output (the
-//! I/O — a number's text is std-wasm's) and the language runtime (the `@Task`
+//! I/O — a number's text is std-wasm's) and the language runtime (the `@Async`
 //! scheduler, `unknown`, `assert_fail`). Everything that only computes over
 //! values — text, number-to-text, arrays, `bigint` — is std-wasm's Zig,
 //! transpiled into the module (`std_wasm_link.zig`, decisions 440, 442 (2));
@@ -1781,7 +1781,7 @@ const wasi_attempt = func("__wasi_attempt", &.{"f"}, .i32, i32s(&.{ "v", "r" }),
     get("r"),
 });
 
-// ── decision 392's scheduler (`@Task<T>`, front `01-compiler/140` step 4) ──────
+// ── decision 392's scheduler (`@Async<T>`, front `01-compiler/140` step 4) ──────
 //
 // A task is a 40-byte record: `+0` its state (0 pending, 1 settled), `+4` the
 // head of what waits on it, `+8` its value (8 bytes: an `i32` word, an `i64`

@@ -202,18 +202,18 @@ test "infer: net-new ---- effect marker on a record method" {
     );
 }
 
-// A compound return `@Task<@Result<T, E>>` type-checks: the `#[@future]` body
+// A compound return `@Async<@Result<T, E>>` type-checks: the `#[@future]` body
 // `await`s an inner future and returns a `@Result` produced by a `#[@result]`
 // fn — the two effect layers compose.
-test "infer: net-new ---- compound @Task<@Result> return type-checks" {
+test "infer: net-new ---- compound @Async<@Result> return type-checks" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn parse(n: i32) -> Result<i32, string> {
         \\    return n;
         \\}
-        \\fn ready() -> Task<i32> {
+        \\fn ready() -> Async<i32> {
         \\    return 5;
         \\}
-        \\fn fetch() -> Task<Result<i32, string>> {
+        \\fn fetch() -> Async<Result<i32, string>> {
         \\    val n = await ready();
         \\    return parse(n);
         \\}
@@ -349,14 +349,14 @@ test "context: @Component hook and component compose" {
 // Decision 104 revokes decisions 89 and 90: `@Future` grants no `use`, and
 // nothing is unwrapped to find an owner. The server component that awaits and
 // uses is `fn … -> @Component<Element>` (the next cell).
-test "context error: @Task fn -> @Task<Element> does not activate" {
+test "context error: @Async fn -> @Async<Element> does not activate" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
         \\val Request = type(path: string)
         \\fn request() -> Component<Request> {
         \\    return Request(path: "/");
         \\}
-        \\fn Page() -> Task<Element> {
+        \\fn Page() -> Async<Element> {
         \\    val r = use request();
         \\    return Element();
         \\}
@@ -370,7 +370,7 @@ test "context: @Component fn -> @Component<Element> uses and awaits" {
         \\fn request() -> Component<Request> {
         \\    return Request(path: "/");
         \\}
-        \\fn load() -> Task<i32> {
+        \\fn load() -> Async<i32> {
         \\    return 1;
         \\}
         \\fn Page() -> Component<Element> {
@@ -493,7 +493,7 @@ const chain_preamble =
     \\fn parse(n: i32) -> Result<i32, string> {
     \\    return n;
     \\}
-    \\fn fetch(n: i32) -> Task<i32> {
+    \\fn fetch(n: i32) -> Async<i32> {
     \\    return n;
     \\}
     \\
@@ -508,9 +508,9 @@ test "chain: @Result is the base — it answers `try`" {
     );
 }
 
-test "chain: @Task — `await`; `try` only when its value is a `@Result` (decision 121)" {
+test "chain: @Async — `await`; `try` only when its value is a `@Result` (decision 121)" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn load(n: i32) -> Task<Result<i32, string>> {
+        \\fn load(n: i32) -> Async<Result<i32, string>> {
         \\    val v = try parse(n);
         \\    val w = await fetch(v);
         \\    return w;
@@ -518,18 +518,18 @@ test "chain: @Task — `await`; `try` only when its value is a `@Result` (decisi
     );
 }
 
-test "chain: @Iterator<@Result<…>> — its item answers `try`, and it yields" {
+test "chain: @Iter<@Result<…>> — its item answers `try`, and it yields" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn upTo(n: i32) -> Iterator<Result<i32, string>> {
+        \\fn upTo(n: i32) -> Iter<Result<i32, string>> {
         \\    val limit = try parse(n);
         \\    yield limit;
         \\}
     );
 }
 
-test "chain: @Stream implements @Task — `await`, `yield`; `try` on its @Result item" {
+test "chain: @AsyncIter implements @Async — `await`, `yield`; `try` on its @Result item" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\fn stream(n: i32) -> Stream<Result<i32, string>> {
+        \\fn stream(n: i32) -> AsyncIter<Result<i32, string>> {
         \\    val v = try parse(n);
         \\    val w = await fetch(v);
         \\    yield w;
@@ -537,7 +537,7 @@ test "chain: @Stream implements @Task — `await`, `yield`; `try` on its @Result
     );
 }
 
-test "chain: @Component — @Component implements @Task — `use`, `await`; `try` when `T` is a `@Result`" {
+test "chain: @Component — @Component implements @Async — `use`, `await`; `try` when `T` is a `@Result`" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
         \\fn Widget(n: i32) -> Component<Element> {
         \\    val c = use state(0);
@@ -553,12 +553,12 @@ test "chain: @Component — @Component implements @Task — `use`, `await`; `try
     );
 }
 
-// Decision 103 (question 97 (b)) — `@Iterator<T>` has no error channel and
+// Decision 103 (question 97 (b)) — `@Iter<T>` has no error channel and
 // stays out of the chain. Its cell asserts the REFUSAL, which names
-// `@Iterator<@Result<T, E>>`, the generator that has one.
-test "chain error: `try` inside @Iterator<i32> — the item is no @Result" {
+// `@Iter<@Result<T, E>>`, the generator that has one.
+test "chain error: `try` inside @Iter<i32> — the item is no @Result" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn counted(n: i32) -> Iterator<i32> {
+        \\fn counted(n: i32) -> Iter<i32> {
         \\    val v = try parse(n);
         \\    yield v;
         \\}
@@ -576,9 +576,9 @@ test "chain error: `try` in a plain fn — no effect, no error channel" {
     );
 }
 
-test "chain error: `await` inside @Iterator reds iter-await" {
+test "chain error: `await` inside @Iter reds iter-await" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\fn bad(n: i32) -> Iterator<i32> {
+        \\fn bad(n: i32) -> Iter<i32> {
         \\    val w = await fetch(n);
         \\    yield w;
         \\}
@@ -607,7 +607,7 @@ test "chain error: `yield` inside @Component — the top of the chain still cann
 // comprehension) before the decision.
 test "chain error: `yield` inside a loop still needs a generator scope (decision 105)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn collected() -> Task<i32> {
+        \\fn collected() -> Async<i32> {
         \\    var n = 0;
         \\    for ([1, 2, 3]) { x -> yield x * 2; };
         \\    return n;
@@ -677,10 +677,10 @@ test "hooks: two components, each returning its own `@Renderable` type" {
 // annotation belongs to the implementation (a `behavior` method is declarative
 // and carries none — the R1/R2 error).
 
-test "decision 122: a type exposes a fn iter answering @Iterator<@Result<…>> and a body iterates it with `try`" {
+test "decision 122: a type exposes a fn iter answering @Iter<@Result<…>> and a body iterates it with `try`" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Bag(items: i32[]) {
-        \\    fn iter(self: Self) -> Iterator<Result<i32, string>> {
+        \\    fn iter(self: Self) -> Iter<Result<i32, string>> {
         \\        for (self.items) { x -> yield x; };
         \\    }
         \\}
@@ -694,10 +694,10 @@ test "decision 122: a type exposes a fn iter answering @Iterator<@Result<…>> a
 
 // Decision 103 — a loop over a fallible generator is a `try` in the body that
 // iterates it, so a plain `fn` (no error channel) is refused naming the level;
-// `@Iterator<T>` is infallible and iterable anywhere.
-test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result — no implicit `try` (decision 122)" {
+// `@Iter<T>` is infallible and iterable anywhere.
+test "chain error: `for` over @Iter<@Result<…>> hands over the @Result — no implicit `try` (decision 122)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn upTo(n: i32) -> Iterator<Result<i32, string>> {
+        \\fn upTo(n: i32) -> Iter<Result<i32, string>> {
         \\    yield n;
         \\}
         \\fn total(n: i32) -> i32 {
@@ -714,10 +714,10 @@ test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result —
 // `try` / `throw` that made it one. `conformance/modules/result_hint_*`.
 test "chain error: E3.9 — a @Result from `await` used as its value hints `try await`" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetchCount(n: i32) -> Task<Result<i32, string>> {
+        \\fn fetchCount(n: i32) -> Async<Result<i32, string>> {
         \\    return n;
         \\}
-        \\fn run() -> Task<Result<i32, string>> {
+        \\fn run() -> Async<Result<i32, string>> {
         \\    val count: i32 = await fetchCount(3);
         \\    return count;
         \\}
@@ -729,7 +729,7 @@ test "chain error: E3.9 — an async block made a @Result by its `try` points at
         \\fn parse(s: string) -> Result<i32, string> {
         \\    return 1;
         \\}
-        \\fn run() -> Task<void> {
+        \\fn run() -> Async<void> {
         \\    val t = async {
         \\        val n = try parse("7");
         \\        return n + 1;
@@ -753,9 +753,9 @@ test "chain error: E3.9 — an iter item made a @Result by its `throw` points at
     );
 }
 
-test "chain: a plain fn iterates a @Iterator<T> — infallible, no level needed" {
+test "chain: a plain fn iterates a @Iter<T> — infallible, no level needed" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn upTo(n: i32) -> Iterator<i32> {
+        \\fn upTo(n: i32) -> Iter<i32> {
         \\    yield n;
         \\}
         \\fn total(n: i32) -> i32 {

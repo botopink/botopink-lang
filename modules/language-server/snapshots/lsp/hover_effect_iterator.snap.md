@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn counter() -> Iterator<i32> :gen { yield 1; }
+fn counter() -> Iter<i32> :gen { yield 1; }
    ↑
 ```
 
@@ -8,7 +8,7 @@ fn counter() -> Iterator<i32> :gen { yield 1; }
 kind: markdown
 
 ```botopink
-fn counter() -> Iterator<i32> :gen
+fn counter() -> Iter<i32> :gen
 ```
 
 ---

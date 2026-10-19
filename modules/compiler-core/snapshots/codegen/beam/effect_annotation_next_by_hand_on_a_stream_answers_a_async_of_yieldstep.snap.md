@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn countdown(n: i32) -> Stream<i32> {
+fn countdown(n: i32) -> AsyncIter<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -14,7 +14,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     };
     return t;
 }
-fn run() -> Task<void> {
+fn run() -> Async<void> {
     val s = countdown(1);
     print(stepText(await s.next()));
     print(stepText(await s.next()));
@@ -33,7 +33,7 @@ import {io.terminal.print} from "std";
 {attributes, []}.
 {labels, 252}.
 
-%% @Stream — lazy lowering
+%% @AsyncIter — lazy lowering
 {function, countdown, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -90,7 +90,7 @@ import {io.terminal.print} from "std";
     {deallocate, 5}.
     return.
 
-%% @Task — eager lowering
+%% @Async — eager lowering
 {function, run, 0, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.

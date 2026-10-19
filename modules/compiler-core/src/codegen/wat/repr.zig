@@ -38,9 +38,9 @@ pub const Repr = union(enum) {
         /// A value of the named enum type.
         enum_: []const u8,
         closure,
-        /// A `@Task<T>`.
+        /// A `@Async<T>`.
         task,
-        /// A generator handle (decision 105, 144 B-128): an `@Iterator<T>`,
+        /// A generator handle (decision 105, 144 B-128): an `@Iter<T>`,
         /// the `$gen` struct a resumable body or a derived iterator runs in.
         gen,
         /// A `var`'s mutable cell.
@@ -144,8 +144,8 @@ pub const Repr = union(enum) {
                 .record => |n| n,
                 .enum_ => |n| n,
                 .closure => "function",
-                .task => "@Task",
-                .gen => "@Iterator",
+                .task => "@Async",
+                .gen => "@Iter",
                 .cell => "var cell",
                 .unknown => "unknown",
                 .bytes => "Bytes",

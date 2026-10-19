@@ -16,10 +16,10 @@ const h = @import("helpers.zig");
 
 test "js: star fn ---- async function with await" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> Task<i32> {
+        \\fn fetch(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\fn loadTwice(x: i32) -> Task<i32> {
+        \\fn loadTwice(x: i32) -> Async<i32> {
         \\    val a = await fetch(x);
         \\    return a + a;
         \\}
@@ -28,7 +28,7 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn counter() -> Iterator<i32> {
+        \\fn counter() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -38,7 +38,7 @@ test "js: star fn ---- generator with yield" {
 
 test "js: star fn ---- future generator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn stream() -> Stream<Result<i32, string>> {
+        \\fn stream() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -47,13 +47,13 @@ test "js: star fn ---- future generator" {
 
 test "js: star fn ---- pub typedefs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn loadOne(x: i32) -> Task<i32> {
+        \\pub fn loadOne(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\pub fn count() -> Iterator<i32> {
+        \\pub fn count() -> Iter<i32> {
         \\    yield 1;
         \\}
-        \\pub fn pulses() -> Stream<Result<i32, string>> {
+        \\pub fn pulses() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\}
     );
@@ -63,14 +63,14 @@ test "js: star fn ---- pub typedefs" {
 
 test "js: effect annotation ---- future/iterator/futureGenerator/result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> Task<i32> {
+        \\fn fetch(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\fn counter() -> Iterator<i32> {
+        \\fn counter() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
-        \\fn stream() -> Stream<Result<i32, string>> {
+        \\fn stream() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\}
         \\fn parse(n: i32) -> Result<i32, string> {
@@ -82,7 +82,7 @@ test "js: effect annotation ---- future/iterator/futureGenerator/result" {
 
 test "js: effect annotation ---- generator lowers to function*" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn range(a: i32, b: i32) -> Iterator<i32> {
+        \\fn range(a: i32, b: i32) -> Iter<i32> {
         \\    yield a;
         \\    yield b;
         \\}
@@ -95,7 +95,7 @@ test "js: effect annotation ---- generator lowers to function*" {
 // head and rebind the receiver to the rest.
 test "js: effect annotation ---- next by hand steps an iterator with YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn two() -> Iterator<i32> {
+        \\fn two() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -117,9 +117,9 @@ test "js: effect annotation ---- next by hand steps an iterator with YieldStep" 
     );
 }
 
-test "js: effect annotation ---- next by hand on a stream answers a Task of YieldStep" {
+test "js: effect annotation ---- next by hand on a stream answers a Async of YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn countdown(n: i32) -> Stream<i32> {
+        \\fn countdown(n: i32) -> AsyncIter<i32> {
         \\    var i = n;
         \\    while (i > 0) {
         \\        yield i;
@@ -133,7 +133,7 @@ test "js: effect annotation ---- next by hand on a stream answers a Task of Yiel
         \\    };
         \\    return t;
         \\}
-        \\fn run() -> Task<void> {
+        \\fn run() -> Async<void> {
         \\    val s = countdown(1);
         \\    print(stepText(await s.next()));
         \\    print(stepText(await s.next()));
@@ -987,19 +987,19 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // A `fn -> @Iterator<T>` generator: `for (xs) { x -> yield x; }`
+    // A `fn -> @Iter<T>` generator: `for (xs) { x -> yield x; }`
     // must lower to a real `for…of` with native `yield` (not `.map()`).
     // Recursive delegation (the legacy `return <iter>` shortcut) is forbidden
-    // by RI1 (§1I). A `@Iterator<T>` is infallible, so a plain fn iterates it
+    // by RI1 (§1I). A `@Iter<T>` is infallible, so a plain fn iterates it
     // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fromList<T>(xs: Array<T>) -> Iterator<T> {
+        \\fn fromList<T>(xs: Array<T>) -> Iter<T> {
         \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: Iterator<T>) -> Array<T> {
+        \\fn toList<T>(iter: Iter<T>) -> Array<T> {
         \\    var out = [];
         \\    for (iter) { item ->
         \\        out.push(item);

@@ -7,7 +7,7 @@ pub behavior Shape {
 import {compiler} from "std";
 
 ----- ERROR
-error: `area` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Task<Result<…, HostError>>`, not `i32`
+error: `area` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `i32`
   ┌─ main.bp:2:7
   │
 2 │     #[compiler.external(.JavaScript("area", result: true))]

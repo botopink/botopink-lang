@@ -78,7 +78,7 @@ pub const Helper = enum {
     /// `__bp_host_result(F, () => <call>)` answers `{ ok: v }`, or the throw
     /// through `host_fail`.
     host_result,
-    /// A `result: true` binding declared `-> @Task<@Result<T, HostError>>`
+    /// A `result: true` binding declared `-> @Async<@Result<T, HostError>>`
     /// (decisions 431, 490, 432): `__bp_host_result_task(F, () => <call>)` —
     /// a failing task (`task`) that resolves with the host's `v`, and rejects
     /// with `host_fail`'s `HostError` for a rejection or a throw before the
@@ -93,7 +93,7 @@ pub const Helper = enum {
     /// std's `failure` and the abort guard read an unmarked raise as `crash`.
     host_mark,
     /// Decision 432 — a failing task: `__bp_task(p)` takes the Promise of a
-    /// `@Task<@Result<T, E>>` body, which settles with the `{ ok }` /
+    /// `@Async<@Result<T, E>>` body, which settles with the `{ ok }` /
     /// `{ error }` value the body built, and answers the task botopink's
     /// callers see — resolved with the bare `T`, rejected with the `E`
     /// (a JavaScript caller's `try { await f() } catch (e)`). The task is
@@ -108,7 +108,7 @@ pub const Helper = enum {
     /// `__bp_await(t)` answers, for a task `task` marked, the Promise of the
     /// `@Result` it settles with — `{ ok: v }`, or `{ error: e }` for its
     /// failure (a crash rejects on) — and any other task as it is: a task a
-    /// generic body made (`-> @Task<T>` with `T` a `@Result`) settles with
+    /// generic body made (`-> @Async<T>` with `T` a `@Result`) settles with
     /// the `@Result` value itself, and a rejection of an unmarked task is a
     /// crash. Host code that awaits botopink tasks generically (std's
     /// `async.runAll`, `raceOf`, `race`) spells the same reading inline.

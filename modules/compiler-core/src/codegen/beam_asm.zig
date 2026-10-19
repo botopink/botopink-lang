@@ -4005,16 +4005,16 @@ const Emitter = struct {
 
         try beamEmitter.writeBlankLine(self.out);
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. A `@Task` body is
-        // eager (decision 120: `await` is identity); an `@Iterator` /
-        // `@Stream` that yields is a generator, its body run lazily in a
+        // checked-Result value), which is a plain function. A `@Async` body is
+        // eager (decision 120: `await` is identity); an `@Iter` /
+        // `@AsyncIter` that yields is a generator, its body run lazily in a
         // process of its own (144 B-128, `emitGeneratorBody`).
         // `-> @Component` is a plain function too (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try beamEmitter.writeTopComment(self.out, "{s}", .{switch (f.effect.?) {
-                .task => "@Task — eager lowering",
-                .iterator => "@Iterator — lazy lowering",
-                else => "@Stream — lazy lowering",
+                .task => "@Async — eager lowering",
+                .iterator => "@Iter — lazy lowering",
+                else => "@AsyncIter — lazy lowering",
             }});
         }
         var fn_buf: [256]u8 = undefined;
@@ -4656,7 +4656,7 @@ const Emitter = struct {
         self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body.?);
         // A method's effect is its return's (decision 118) — `BehaviorMethod`
         // has no parsed `effect`, so it is read off the return type as
-        // erlang's `methodEffect` does. An `@Iterator` / `@Stream` method that
+        // erlang's `methodEffect` does. An `@Iter` / `@AsyncIter` method that
         // yields is a generator scope exactly as a free fn is (`emitFn`).
         const gen_fn = effectChain.grants(ast.EffectKind.ofMethod(m.returnType, m.body), .yield_) and m.body.?.len > 0;
         if (gen_fn) {
@@ -7052,7 +7052,7 @@ const Emitter = struct {
                     try self.lowerLambda(f.kind, self.min_live);
                     return;
                 },
-                // `async { … }` (decision 124): the Task is eager here — the
+                // `async { … }` (decision 124): the Async is eager here — the
                 // block's closure, called in place.
                 .asyncBlock => {
                     try self.lowerLambda(f.kind, self.min_live);
@@ -7952,7 +7952,7 @@ const Emitter = struct {
                 // the same shape. Only when inference recorded NOTHING — a
                 // receiver it typed and whose method did not lower keeps the
                 // abort, which is this front's documented backstop.
-                // A method an `@Iterator` answers, on a receiver inference
+                // A method an `@Iter` answers, on a receiver inference
                 // left untyped — what a generator's method call looks like
                 // (144 B-128): the generator runtime's helper, whose list
                 // clause is the Array lowering.
@@ -8766,11 +8766,11 @@ const Emitter = struct {
     /// inference recorded nothing and its locs may collide with the program's)
     /// it is re-derived from `self`'s kind instead.
     /// True when inference recorded nothing for the call at `loc`, or only
-    /// that its receiver is an `@Iterator` / `@Stream` it has no declaration
+    /// that its receiver is an `@Iter` / `@AsyncIter` it has no declaration
     /// of — a generator's method call (144 B-128).
     fn untypedOrSequence(self: *const Emitter, loc: ast.Loc, recv: ast.Expr) bool {
         const il = self.instanceLowering(loc, recv) orelse return true;
-        return il == .unplaced_type and (std.mem.eql(u8, il.unplaced_type, "Iterator") or std.mem.eql(u8, il.unplaced_type, "Stream"));
+        return il == .unplaced_type and (std.mem.eql(u8, il.unplaced_type, "Iter") or std.mem.eql(u8, il.unplaced_type, "AsyncIter"));
     }
 
     fn instanceLowering(self: *const Emitter, loc: ast.Loc, recv: ast.Expr) ?envMod.InstanceLowering {
@@ -12410,7 +12410,7 @@ const Emitter = struct {
     /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
     /// for a statement loop over `iter` whose `body` reassigns outer names.
     /// Returns false (nothing emitted) when the body reassigns none.
-    /// True when the `for` steps an `@Iterator` / `@Stream` (inference keys
+    /// True when the `for` steps an `@Iter` / `@AsyncIter` (inference keys
     /// `.sequence_next` by the loop's own loc, 144 B-128): what it walks may be
     /// a generator, which `beam/gen_runtime.zig`'s helpers step lazily.
     fn stepsSequence(self: *const Emitter, lp: anytype) bool {

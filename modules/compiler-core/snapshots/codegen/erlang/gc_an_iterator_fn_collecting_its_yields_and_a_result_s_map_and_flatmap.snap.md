@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> Iterator<i32> {
+fn evens(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;
@@ -30,7 +30,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export([main/0, '__bp_priv__evens'/1, '__bp_priv__parse'/1]).
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 evens(N) ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),

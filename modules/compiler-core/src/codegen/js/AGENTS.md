@@ -114,7 +114,7 @@ without the `function` word and in a fixed order — `static`, then `async`, the
 `*` — so `ClassMember` carries `is_async` and `is_generator` and `writeClass`
 writes them in that order. The backend fills them from one table
 (`commonJS.zig`'s `effectShape` / `methodEffect`), which is what makes
-`fn each(self: Self) -> @Iterator<i32>` that yields the `*each()` a `for…of` can consume.
+`fn each(self: Self) -> @Iter<i32>` that yields the `*each()` a `for…of` can consume.
 
 `__bp` is what the §7 formatter tests, and it is the reason the formatter needs
 no `constructor` sniffing: a `Map`, a `@Result`'s `{ ok }` and any host object
@@ -269,7 +269,7 @@ same role `raw` plays in `beam/erl_ast.zig`.
 ## What the prelude does not ship
 
 **No `unwrapOrThrow`** (decision 432, which replaces 179): a botopink
-`@Task<@Result<T, E>>` already rejects its Promise with `e` and resolves it
+`@Async<@Result<T, E>>` already rejects its Promise with `e` and resolves it
 with the bare `T`, so a JavaScript caller writes `try { await t } catch (e)`
 and no helper converts anything on its side; the `.d.ts` declares `Promise<T>`
 under `/** @throws {E} */` (`typescript.zig` `taskError`).
@@ -278,16 +278,16 @@ under `/** @throws {E} */` (`typescript.zig` `taskError`).
 
 | Site | Lowering |
 |---|---|
-| `fn f() -> @Task<@Result<T, E>>` (a top-level fn, a record's or an enum's method) | a plain `function` answering `__bp_task((async () => { …body… })())`: the body is built one level deeper, exactly as any `-> @Result` body (`{ ok }` / `{ error }` values, the `try` guards), and `__bp_task` turns its value into the task — resolved with `r.ok`, rejected with `r.error` (`failingTaskBody`) |
+| `fn f() -> @Async<@Result<T, E>>` (a top-level fn, a record's or an enum's method) | a plain `function` answering `__bp_task((async () => { …body… })())`: the body is built one level deeper, exactly as any `-> @Result` body (`{ ok }` / `{ error }` values, the `try` guards), and `__bp_task` turns its value into the task — resolved with `r.ok`, rejected with `r.error` (`failingTaskBody`) |
 | `async { … }` whose value is a `@Result` its body builds (`InstanceLowering.failing_task_block`) | `__bp_task((async () => { … })())` — an arrow, never a `function`: the block keeps the method's `this` (`self`; `conformance/modules/async/cells/async_block_keeps_self`) |
-| `await t`, `t: @Task<X>` with `X` a `@Result`, `unknown` or a type parameter, or `t` not typed as a task (a record's function field) (`InstanceLowering.task_await`) | `await __bp_await(t)` — a task `__bp_task` marked reads back as `{ ok: v }` / `{ error: e }`; any other value as it is |
-| `return t` of a whole `@Task<X>` wrapper, `X` as above (`InstanceLowering.task_return`) | `return __bp_await(t)` — the `async function` must not adopt the rejection |
-| a `result: true` `-> @Task<@Result<…, HostError>>` host binding | `__bp_host_result_task`, a `__bp_task` over the converted Promise (a flagless binding's Promise is the host's, decision 490) |
+| `await t`, `t: @Async<X>` with `X` a `@Result`, `unknown` or a type parameter, or `t` not typed as a task (a record's function field) (`InstanceLowering.task_await`) | `await __bp_await(t)` — a task `__bp_task` marked reads back as `{ ok: v }` / `{ error: e }`; any other value as it is |
+| `return t` of a whole `@Async<X>` wrapper, `X` as above (`InstanceLowering.task_return`) | `return __bp_await(t)` — the `async function` must not adopt the rejection |
+| a `result: true` `-> @Async<@Result<…, HostError>>` host binding | `__bp_host_result_task`, a `__bp_task` over the converted Promise (a flagless binding's Promise is the host's, decision 490) |
 
 `__bp_task` marks the task (`__bp_fails`), sets `__bp_failure` when it rejects with an `E` — a crash
 (a panic, an unannounced host raise) rejects without it and stays a crash for botopink's `await` —
 and attaches a handler of its own, so a failing task nobody has awaited yet is not an unhandled
-rejection. A task a generic body made (`-> @Task<T>`, `T` a `@Result` at the call) is unmarked and
+rejection. A task a generic body made (`-> @Async<T>`, `T` a `@Result` at the call) is unmarked and
 settles with the `@Result` value itself, which `__bp_await` leaves as it is: the mark, not the
 static type, says which reading a task has. Host code that awaits botopink tasks generically
 (std's `async.runAll`, `raceOf`, `race`) spells `__bp_await`'s reading inline. A lambda is never a

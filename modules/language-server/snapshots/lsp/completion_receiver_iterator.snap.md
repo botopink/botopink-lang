@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn gen() -> Iterator<i32> { yield 1; }
+fn gen() -> Iter<i32> { yield 1; }
 val it = gen();
 val first = it.
                ↑

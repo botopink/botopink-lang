@@ -189,7 +189,7 @@ pub type Child(pid: i32, handle: unknown) {
     // `128 + n`, as a shell reports it. The child's output is the parent's: written as the child
     // produces it (inherited on Node; on Erlang the port carries stdout and stderr, written to
     // stdout while `wait` runs). A second `wait` answers the same status.
-    pub fn wait(self: Self) -> Task<i32> {
+    pub fn wait(self: Self) -> Async<i32> {
         return await rawWait(self.handle);
     }
 
@@ -241,7 +241,7 @@ declare fn rawPid(handle: unknown) -> i32;
     .JavaScript("""$0.bpDone"""),
     .Erlang("""(fun(__P) -> case get({bp_child_status, __P}) of undefined -> __L = fun __F() -> receive {__Q, {data, __D}} when __Q =:= __P -> case unicode:characters_to_binary(__D) of __U when is_binary(__U) -> io:put_chars(__U); _ -> io:put_chars(unicode:characters_to_binary(__D, latin1)) end, __F(); {__Q, {exit_status, __S}} when __Q =:= __P -> put({bp_child_status, __P}, __S), __S end end, __L(); __S -> __S end end)($0)"""),
 )]
-declare fn rawWait(handle: unknown) -> Task<i32>;
+declare fn rawWait(handle: unknown) -> Async<i32>;
 
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; if (__h.exitCode !== null || __h.signalCode !== null) return { error: 'gone|' + __h.pid }; try { process.kill(__h.pid, $1); return { ok: 0 }; } catch (__e) { return { error: (__e && __e.code === 'ESRCH' ? 'gone' : 'other') + '|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),

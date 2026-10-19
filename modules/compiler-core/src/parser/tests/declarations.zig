@@ -24,11 +24,11 @@ test "parser: empty interface" {
     try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior {}");
 }
 
-test "parser: a @Task return sets FnDecl.effect" {
+test "parser: a @Async return sets FnDecl.effect" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("fn f() -> @Task<i32> { return 0; }");
+    var lx = Lexer.init("fn f() -> @Async<i32> { return 0; }");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
@@ -921,33 +921,33 @@ test "parser: type guard ---- snapshot round-trip" {
 // v0.beta.19 (see errors.zig's deprecated-*fn test) and the sources had
 // already been migrated to the annotation form.
 
-test "parser: effect fn ---- @Task declaration" {
+test "parser: effect fn ---- @Async declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn fetch(url: string) -> Task<Response> {
+        \\fn fetch(url: string) -> Async<Response> {
         \\    return download(url);
         \\}
     );
 }
 
-test "parser: effect fn ---- @Iterator-of-Result declaration" {
+test "parser: effect fn ---- @Iter-of-Result declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn fib() -> Iterator<Int> {
+        \\fn fib() -> Iter<Int> {
         \\    yield 1;
         \\}
     );
 }
 
-test "parser: effect fn ---- @Stream declaration" {
+test "parser: effect fn ---- @AsyncIter declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn stream() -> Stream<Result<Int, Error>> {
+        \\pub fn stream() -> AsyncIter<Result<Int, Error>> {
         \\    yield 1;
         \\}
     );
 }
 
-test "parser: effect fn ---- @Iterator-of-Result label after return type" {
+test "parser: effect fn ---- @Iter-of-Result label after return type" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn gen() -> Iterator<Int> :gen {
+        \\fn gen() -> Iter<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

@@ -535,9 +535,9 @@ test "completion: dot completes enum variants" {
 // ── effect-wrapper receiver completion (decisions 120/122/128) ────────────────
 //
 // A value typed by an effect wrapper completes the members the prelude
-// declares for it (`libs/std/src/primitives.bp`'s compiler section): `@Iterator` steps with
-// `next`; `@Stream` steps with `next` and, through `extends Task`, maps with
-// `map` / `then`; a `@Task` maps with `map` / `then`.
+// declares for it (`libs/std/src/primitives.bp`'s compiler section): `@Iter` steps with
+// `next`; `@AsyncIter` steps with `next` and, through `extends Async`, maps with
+// `map` / `then`; a `@Async` maps with `map` / `then`.
 
 /// Compiles `decls` + `val it = <call>;`, completes `it.` on the next line and
 /// snapshots the items under `slug`.
@@ -565,21 +565,21 @@ fn wrapperReceiver(slug: []const u8, comptime decls: []const u8, comptime call: 
     try snap.assertCompletion(gpa, slug, edit_source, cursor, items);
 }
 
-test "completion: @Iterator receiver offers next" {
+test "completion: @Iter receiver offers next" {
     try wrapperReceiver("completion_receiver_iterator",
-        \\fn gen() -> Iterator<i32> { yield 1; }
+        \\fn gen() -> Iter<i32> { yield 1; }
     , "gen()");
 }
 
-test "completion: @Stream receiver offers next, map and then" {
+test "completion: @AsyncIter receiver offers next, map and then" {
     try wrapperReceiver("completion_receiver_stream",
-        \\fn pulses() -> Stream<i32> { yield 1; }
+        \\fn pulses() -> AsyncIter<i32> { yield 1; }
     , "pulses()");
 }
 
-test "completion: @Task receiver offers map and then" {
+test "completion: @Async receiver offers map and then" {
     try wrapperReceiver("completion_receiver_task",
-        \\fn load() -> Task<i32> { return 1; }
+        \\fn load() -> Async<i32> { return 1; }
     , "load()");
 }
 

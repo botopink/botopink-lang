@@ -17,7 +17,7 @@
         "params": [],
         "returnType": {
           "generic": {
-            "name": "Task",
+            "name": "Async",
             "args": [
               {
                 "named": "Int"

@@ -405,7 +405,7 @@ codegen/
   plain object used to stay one: its fields read, but it had none of the
   record's methods (a host-backed `Regex.matches` on the object `compile`
   built was `… is not a function`) and printed as `%O`. An instance of the
-  class and `null` pass through. `@Task` is not looked through, and a
+  class and `null` pass through. `@Async` is not looked through, and a
   `(module, symbol)` alias another module imports bypasses it (the consumer
   calls the host symbol directly). The erlang twin is `adoptHostResult`.
   Pinned by `conformance/modules/external/cells/external_method_on_host_record`.
@@ -720,7 +720,7 @@ codegen/
   (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
   `Iface.prototype`. An implementer in another module does not get them yet.
   A copied default takes the shape its effect asks for, as the same method declared on the
-  record: `-> @Task<T>` is `async` (a failing task wrapped as `failingTaskBody` does; 144 B-119,
+  record: `-> @Async<T>` is `async` (a failing task wrapped as `failingTaskBody` does; 144 B-119,
   `modules/behavior/cells/behavior_default_awaits`).
   A module that redeclares a primitive interface (`behavior Number { fn
   max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
@@ -752,7 +752,7 @@ codegen/
   block and an enum's body all route through it, and a class member spells the
   same two modifiers without the `function` word (`static async *name`,
   `js/js_ast.zig`'s `ClassMember.is_async` / `.is_generator`). Reading
-  `ast.FnDecl.effect` alone is what made `fn each(self: Self) -> @Iterator<i32>`
+  `ast.FnDecl.effect` alone is what made `fn each(self: Self) -> @Iter<i32>`
   emit a plain method whose `loop … yield` lowered to a value-dropping
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — it is declarative.
@@ -1579,7 +1579,7 @@ codegen/
 - **The host boundary adopts** (`'__bp_adopt'/3`, `adoptHostResult`): a
   `declare fn` bound to a host whose return type NAMES a record
   (`external_record_returns`, filled in `collectExternals`; `recordNameOfReturn`
-  looks through `?T`, `T[]` and the builtin `@Result<T, E>` / `@Task<T>` /
+  looks through `?T`, `T[]` and the builtin `@Result<T, E>` / `@Async<T>` /
   `@Option<T>` / `Array<T>`, and deliberately NOT through a user generic) has its
   answer adopted into decision 21's shape at the three places a host call is
   written — the `pub` wrapper `externalWrapperForm` emits, and the
@@ -1705,7 +1705,7 @@ codegen/
     A `continue :outer` written under an in-frame `while` inside the fun-walked loop ends the round there (`lowerLabelContinue`,
     `inCondLoop`), and one inner loop that continues several enclosing labels gets one guard per label, outside its break guard
     (`emitLoopCall`) (`modules/decisions-taken/lambda_answers_last_expression-541/run/src/cases/block_jump_label_continue_nested_shapes`).
-  - **A generator scope** — a `@Iterator` / `@Stream`
+  - **A generator scope** — a `@Iter` / `@AsyncIter`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
     annotated `loop` — is lazy (decision 105, 144 B-128): its body is a fun
     handed to `'__bp_gen_new'/1`, which runs it in a process of its own one
@@ -1734,7 +1734,7 @@ codegen/
     cell's last value after the sequence's last statement, unless it is the
     function's own body. `stream loop` is the same generator
     (`await` is identity here). A consumer steps a sequence through the
-    runtime too: a `for` over an `@Iterator` / `@Stream` (inference keys
+    runtime too: a `for` over an `@Iter` / `@AsyncIter` (inference keys
     `.sequence_next` by the loop's loc, `stepsSequence`) is
     `'__bp_iter_foreach'/2` / `'__bp_iter_foldl'/3`, or — walked in a named
     fun — `'__bp_iter_step'/1` per round inside `'__bp_iter_with'/2`, which
@@ -2028,8 +2028,8 @@ codegen/
   `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)` (a closure can't
   rebind a captured var). `classifyFoldStmt` recognizes `acc = e`, `acc += e`,
   `acc.push(x)` and a single-assignment `if`/`else`; anything else is not fused.
-- **Effects**: a non-`@Result` `@Task` fn is lowered eagerly (a `@Task<T>` is
-  `T`); an `@Iterator` / `@Stream` fn that yields is a lazy generator (above;
+- **Effects**: a non-`@Result` `@Async` fn is lowered eagerly (a `@Async<T>` is
+  `T`); an `@Iter` / `@AsyncIter` fn that yields is a lazy generator (above;
   a body of only `yield`s of literals is a list); a failure is the `{error, E}`
   value the transform built, never a `throw` (decision 120).
 - Structural `==`/`!=` is `=:=`/`=/=` (decision B2) — except with an operand
@@ -2219,9 +2219,9 @@ codegen/
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
   as its `f64` cell, `$__box_f64`), and that array is the loop's value — the erlang reading
-  of `break <v>`. In linear memory an `@Iterator` fn body that yields runs
+  of `break <v>`. In linear memory an `@Iter` fn body that yields runs
   eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
-  `@Iterator<T>` is then an array of `T`. In a GC module it is a generator
+  `@Iter<T>` is then an array of `T`. In a GC module it is a generator
   state machine (`wat/AGENTS.md` § Generators as state machines). A bare `break` branches out of the
   loop, `continue` out of the iteration's `(block $__next …)`. A float array
   prints as `[115, 287.5, 460]` (`$__print_arr_f64`).
@@ -2571,7 +2571,7 @@ codegen/
   is used keeps the plain application (and raises `badarity`).
 - **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
   `lists:foreach` fun (`lowerLoop`) — `for await` too — and one over an
-  `@Iterator` / `@Stream` (`stepsSequence`) the generator runtime's
+  `@Iter` / `@AsyncIter` (`stepsSequence`) the generator runtime's
   `'__bp_iter_foreach'/2` (144 B-128), so one that reassigns outer names is the
   same `foldl` (`'__bp_iter_foldl'/3` over a sequence), and
   one whose body propagates a `try` (`bodyPropagates`: through member reads,
@@ -2597,7 +2597,7 @@ codegen/
   matched by the output buffer so a lambda's jumps never take it), and its
   body's slots are counted into the frame (`countLocalsInExpr`). `a...b` is
   `lists:seq(A, B)`, `a..b` `lists:seq(A, B - 1)`.
-  **A generator scope** — a `@Iterator` / `@Stream`
+  **A generator scope** — a `@Iter` / `@AsyncIter`
   fn (`emitGeneratorBody`) or an annotated `loop` (`lowerGeneratorLoop`) — is
   lazy, as on erlang (144 B-128): the scope is lifted into a fun of its own,
   `'-<fn>/<arity>-gen-<n>-'` (`liftGenScope`, its parameters the names the body
@@ -2632,7 +2632,7 @@ codegen/
   type (`ast.EffectKind.ofMethod`, erlang's `methodEffect`). A body that
   yields outside any scope is `error.ConditionLoopValueUnsupported`
   (`condLoopYieldsValue`) — the checker refuses it first. A consumer steps a
-  sequence through the runtime: a `for` over an `@Iterator` / `@Stream`
+  sequence through the runtime: a `for` over an `@Iter` / `@AsyncIter`
   (`stepsSequence`) calls `'__bp_iter_foreach'/2` / `'__bp_iter_foldl'/3` in
   place of `lists:foreach` / `lists:foldl`, `it.next()` steps its receiver
   first, and `take`, `drop`, `map`, `filter`, `forEach`, `toArray`, `reduce`,
@@ -2827,8 +2827,8 @@ codegen/
   emitted twice — once as the case subject, once as the matched arm's body — so
   an effectful subject runs twice. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
   at register level.
-- **Effects**: a non-`@Result` `@Task` fn gets an eager body, an `@Iterator` /
-  `@Stream` fn that yields a lazy generator (above, 144 B-128) (decision 120: a
+- **Effects**: a non-`@Result` `@Async` fn gets an eager body, an `@Iter` /
+  `@AsyncIter` fn that yields a lazy generator (above, 144 B-128) (decision 120: a
   failure is the `{error, E}` value, never a throw).
 - **Known gaps**: a value-less `if` yields `undefined` (B10, checker's
   question); a comptime value the transform parks in a number literal but is
@@ -2908,7 +2908,7 @@ first three are now enforced by the model, not by discipline:
   - `loop` over anything that is not a range or a known array TRAPS
     (`unreachable ;; loop over an iterable wasm cannot walk`; it was a no-op that
     ran the body zero times at exit 0) — `isArrayExpr` accepts an array
-    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
+    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iter<T>`
     parameter or fn result, a record field (or tuple element) declared as one of
     those — a `stream loop` stored in `Ticker(s: …)` and walked by `for await
     (t.s)`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/run/src/cases/stream_loop_no_failure` — an array-returning primitive method,
@@ -3173,17 +3173,17 @@ first three are now enforced by the model, not by discipline:
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
 - **A declared type answers for its eager wrapper and for its binders**:
-  `eagerTypeRef` peels `@Task<T>` and `@Component<T>` to `T` (both run in
+  `eagerTypeRef` peels `@Async<T>` and `@Component<T>` to `T` (both run in
   place here; `await` / `use` are identity) before any shape question —
   `watType`, `isNamedTypeRef`, `typeRefName`, the `@Result` and array readers —
-  so a `-> @Task<string>` fn, an `@Task<string>` record field or a
+  so a `-> @Async<string>` fn, an `@Async<string>` record field or a
   `-> @Component<string>` hook is a string, and `await e` / `use e` has the
   shape of `e`. A `@Result`'s `ResultShape` carries its payload types
   (`ok` / `err`), recovered from a call, a local, a **parameter**
   (`noteParamShape`), a record field or an `await`; a `case` binder `Ok(v)` /
   `Error(e)` gets everything a parameter of that type gets (`noteTypedBinder`:
   string, array, record type, a nested `@Result`), and so does a `for` element
-  over a declared array / `@Iterator` / `@Stream` (`elemTypeRefOf`). Without
+  over a declared array / `@Iter` / `@AsyncIter` (`elemTypeRefOf`). Without
   it a string payload printed its heap address (`error 256`) —
   `modules/result/run/src/cases/result_string_payloads` pins the shapes.
 - **`@print` of an array of strings, a tuple or an array of tuples** (semantics
@@ -3561,7 +3561,7 @@ std-wasm's `array.unique` answers the same (`modules/decisions-taken/array_uniqu
   emitted name was never declared, and the client runtime supplies hook
   semantics through what `f` does. A `-> @Component` body is an `async function`
   on commonJS — a plain `function` when its hooks node is synchronous (decision
-  375, `SyncMarks`) — and a plain function on erlang, wasm and beam (their `@Task` is
+  375, `SyncMarks`) — and a plain function on erlang, wasm and beam (their `@Async` is
   eager; the three eager-lowering sites exclude it beside `-> @Result`). A record/struct with fields (incl. `record implement … { fields }`)
   emits a real constructor (`emitStruct` — field initializers become param
   defaults).
@@ -3610,15 +3610,15 @@ std-wasm's `array.unique` answers the same (`modules/decisions-taken/array_uniqu
 
 `ast.FnDecl.effect` is read off the syntactic return by the parser
 (`ast.EffectKind.ofFn`); a method's by `methodEffect` → `ast.EffectKind.ofMethod`.
-An `@Iterator` / `@Stream` return whose body does not yield is a FACTORY and has
+An `@Iter` / `@AsyncIter` return whose body does not yield is a FACTORY and has
 no effect: it lowers as a plain function on every backend (decision 123).
 
 | Return | commonJS | erlang | beam_asm | wat |
 |---|---|---|---|---|
 | `-> @Result<T, E>` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
-| `-> @Task<T>` | `async function`; `-> @Task<@Result<T, E>>` is a failing task (decision 432): a function answering `__bp_task((async () => { … })())`, whose body is the `-> @Result` lowering — the Promise rejects with `e` for a `throw` / `Error(e)` and resolves with the bare `T`; an `await` of a task that may fail reads it back through `__bp_await` (`js/AGENTS.md` § Failing tasks) | eager (`@Task<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Task` as a state machine) |
-| `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | lazy: a generator process (`beam/gen_runtime.zig`); a body of only `yield`s of literals is one too | lazy: the body lifted into a fun, a generator process | eager body (144 B-128's wasm half open) |
-| `-> @Stream<T>` (yields) | `async function*` | lazy, as `@Iterator` | lazy, as `@Iterator` | eager body |
+| `-> @Async<T>` | `async function`; `-> @Async<@Result<T, E>>` is a failing task (decision 432): a function answering `__bp_task((async () => { … })())`, whose body is the `-> @Result` lowering — the Promise rejects with `e` for a `throw` / `Error(e)` and resolves with the bare `T`; an `await` of a task that may fail reads it back through `__bp_await` (`js/AGENTS.md` § Failing tasks) | eager (`@Async<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Async` as a state machine) |
+| `-> @Iter<T>` (yields) | `function*` (`return <iter>` → `yield*`) | lazy: a generator process (`beam/gen_runtime.zig`); a body of only `yield`s of literals is one too | lazy: the body lifted into a fun, a generator process | eager body (144 B-128's wasm half open) |
+| `-> @AsyncIter<T>` (yields) | `async function*` | lazy, as `@Iter` | lazy, as `@Iter` | eager body |
 | `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method — a type's, an enum's, a `default fn` — marked by its own body, a lambda `async` only when its body awaits); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
 
 A sequence whose item is `@Result<U, E>` (decision 122): the transform writes
@@ -3674,11 +3674,11 @@ located refusal. `catch { e -> … }` binds `e` to the error before the handler 
 version on erlang, a y-slot on beam, a typed local on wasm, `noteTypedBinder`).
 
 The host rows (decisions 431, 489, 490): a binding that writes `result: true`
-answers `@Result<T, HostError>` (or a `@Task` of one), every way the host fails
+answers `@Result<T, HostError>` (or a `@Async` of one), every way the host fails
 `Error(HostError(message, "host", name, detail))` with std's `failure.HostError`.
 commonJS makes it a function of the module (`buildResultBinding`) whose body runs
 the host call through the prelude's `__bp_host_result(F, () => …)` — a
-`try`/`catch` — or, for a `@Task` return, `__bp_host_result_task(F, () => …)`,
+`try`/`catch` — or, for a `@Async` return, `__bp_host_result_task(F, () => …)`,
 which resolves `{ ok: v }` and a rejection (or a throw before the Promise exists)
 `{ error: HostError }`; `F` is `require("…/std/failure.js")` — `require("…/failure.js")` in std's own build, where the module that exports `HostError` is `failure` (`wrapResult`) —, `__bp_host_fail` builds
 the record (an `Error` is `name: Error` with its `message` and `stack`, any other
@@ -3693,7 +3693,7 @@ renders it inline as `(fun(__BpA0, …) -> <wrapped> end)(Args)`
 template's helper (`evalResultTemplate`). wasm has no host that raises: `result:`
 is refused on `op:` / `fn:` (decision 491) and no WASI adapter fails.
 Without the flag a host function promises no failure (decision 490 retired
-decision 126's conversion of a flagless `-> @Task<@Result<T, E>>` Node binding):
+decision 126's conversion of a flagless `-> @Async<@Result<T, E>>` Node binding):
 its value is the host's, and a raise or a rejection is a crash, which std's
 `failure.attempt` / `attemptTask` contain. An Erlang host answers the `{ok, V} | {error, R}`
 pair itself, which is already `@Result`'s shape there. An expression-position
@@ -3719,7 +3719,7 @@ tagged `InstanceLowering.sequence_next`, and answers the prelude enum
 `YieldStep<T>` that `comptime.zig` spliced into the module (`withYieldStepDecl`),
 so each backend builds and matches `Yield(value)` / `Done` as it does any enum.
 commonJS maps the generator's own step: `__bp_yield_step(it.next())` on an
-`@Iterator` and `s.next().then(__bp_yield_step)` on a `@Stream` (prelude
+`@Iter` and `s.next().then(__bp_yield_step)` on a `@AsyncIter` (prelude
 `yield_step`: `r.done ? YieldStep.Done : YieldStep.Yield(r.value)`). erlang
 and beam step the receiver through `'__bp_iter_step'/1` first (144 B-128): a
 generator answers `[Item | Generator]` (the handle itself is the rest) or `[]`,
@@ -3741,15 +3741,15 @@ nothing. `modules/decisions-taken/body_marker_whole_return_type-553/cells/yield_
 `next by hand` rows snapshot them.
 
 Decision 375 (amending 104): `effectShape` answers `async function` for a
-`@Component` body as it does for `@Task`, except a top-level function whose
+`@Component` body as it does for `@Async`, except a top-level function whose
 hooks node is synchronous (`HookNode.async == false`, `OkData.sync_fns`):
 `Emitter.fnShape` makes it a plain `function`. A call or `use` whose target is
 synchronous (`OkData.sync_calls`, by location — the written `await`, the
 checker's spliced one and `use` alike) emits no `await` (`useHookExpr`, the
 `.await_` arm); a call the checker cannot follow keeps it. `typescript.zig`
-maps `@Task<T>` and `@Component<T>` to `Promise<T>` — a synchronous
-top-level `@Component<R>` function to `R` (`fnReturnType`) — `@Iterator<T>` to `IterableIterator<T>` and
-`@Stream<T>` to `AsyncGenerator<T>` (decisions 120, 122, 128).
+maps `@Async<T>` and `@Component<T>` to `Promise<T>` — a synchronous
+top-level `@Component<R>` function to `R` (`fnReturnType`) — `@Iter<T>` to `IterableIterator<T>` and
+`@AsyncIter<T>` to `AsyncGenerator<T>` (decisions 120, 122, 128).
 `conformance/modules/decisions-taken/body_marker_whole_return_type-553/cells/effect_context_await` and `modules/decisions-taken/body_marker_whole_return_type-553/cells/effect_chain` print
 every value from inside the `@Component` body, since a caller reads a promise on
 commonJS and the value elsewhere.

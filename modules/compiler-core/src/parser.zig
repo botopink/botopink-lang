@@ -105,14 +105,14 @@ pub const ParseErrorType = enum {
     /// The same annotation written before a loop: the loop takes the `iter` /
     /// `stream` prefix instead (decision 125).
     effectAnnotationRemovedLoop,
-    /// Decisions 120 / 127 — `@Future<…>` in a type: the wrapper is `@Task<T>`,
-    /// and a failure is `@Task<@Result<T, E>>`.
+    /// Decisions 120 / 127 — `@Future<…>` in a type: the wrapper is `@Async<T>`,
+    /// and a failure is `@Async<@Result<T, E>>`.
     effectTypeRemovedFuture,
-    /// Decisions 122 / 127 — `@Generator<T>` in a type: `@Iterator<T>`.
+    /// Decisions 122 / 127 — `@Generator<T>` in a type: `@Iter<T>`.
     effectTypeRemovedGenerator,
-    /// Decisions 122 / 127 — `@ResultGenerator<T, E>`: `@Iterator<@Result<T, E>>`.
+    /// Decisions 122 / 127 — `@ResultGenerator<T, E>`: `@Iter<@Result<T, E>>`.
     effectTypeRemovedResultGenerator,
-    /// Decisions 122 / 127 — `@FutureGenerator<T, E>`: `@Stream<@Result<T, E>>`.
+    /// Decisions 122 / 127 — `@FutureGenerator<T, E>`: `@AsyncIter<@Result<T, E>>`.
     effectTypeRemovedFutureGenerator,
     /// Decisions 128 / 127 / 354 — `@Use<C, T>`: `@Component<T>`.
     effectTypeRemovedUse,
@@ -131,8 +131,8 @@ pub const ParseErrorType = enum {
     /// (`@AsyncIterator`, `@Iterable`, `@IteratorStep`, `@Yield`): refused,
     /// naming the current one.
     effectTypeRemovedLegacy,
-    /// Decisions 122 / 127 — `@Iterator<T, E>`: the iterator has no error
-    /// parameter; the item carries the failure, `@Iterator<@Result<T, E>>`.
+    /// Decisions 122 / 127 — `@Iter<T, E>`: the iterator has no error
+    /// parameter; the item carries the failure, `@Iter<@Result<T, E>>`.
     iteratorErrorParamRemoved,
     /// R16 / RG1 (§1G) — a generic parameter without a default follows one
     /// with a default. Defaulted generics must be the trailing parameters.
@@ -384,7 +384,7 @@ pub const ParseErrorType = enum {
     /// are `async { … }` (523) and `iter loop { … }` / `stream loop { … }`
     /// (125). Located at the marker.
     markerWithoutArrow,
-    /// Decision 553 (1) — `async fn f() -> @Task<i32>;`, `declare async fn …`,
+    /// Decision 553 (1) — `async fn f() -> @Async<i32>;`, `declare async fn …`,
     /// a behavior's bodyless member: a marker says how a body compiles, and a
     /// declaration has none (open point B-116-b). Located at the marker.
     markerOnDeclaration,
@@ -1269,7 +1269,7 @@ pub const Parser = struct {
 
     /// Whether a written return answers a value its tail can be: not `void`
     /// / `noreturn`, not a wrapper whose value layer is `void`
-    /// (`@Result<void, E>`, `@Task<void>`), not a generator that yields.
+    /// (`@Result<void, E>`, `@Async<void>`), not a generator that yields.
     fn returnHasValue(rt: ast.TypeRef, body: []const Stmt) bool {
         return switch (rt) {
             .named => |n| !std.mem.eql(u8, n, "void") and !std.mem.eql(u8, n, "noreturn"),

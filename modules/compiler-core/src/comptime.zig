@@ -3957,11 +3957,11 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
 /// that leaves `Display`, `Closeable`, `Index` and `Slice`; a plain behavior
 /// added to `primitives.bp`'s compiler section joins them with no compiler change.
 pub const rule_read_behaviors = [_][]const u8{
-    // The effect wrappers, written `@Task<…>` / `@Iterator<…>` / … and read
+    // The effect wrappers, written `@Async<…>` / `@Iter<…>` / … and read
     // by `comptime/effect_chain.zig`.
-    "Task",
-    "Iterator",
-    "Stream",
+    "Async",
+    "Iter",
+    "AsyncIter",
     "Component",
     // Markers whose `implement` a rule of `infer.zig` reads:
     // `implementsAnnotation`, `implementsRenderable` and
@@ -4124,7 +4124,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     }
 
     // `YieldStep<T>` (decision 122): the step `.next()` answers on an
-    // `@Iterator` / `@Stream`.
+    // `@Iter` / `@AsyncIter`.
     {
         const alloc = env.arena;
         var lx = Lexer.init(yield_step_src);

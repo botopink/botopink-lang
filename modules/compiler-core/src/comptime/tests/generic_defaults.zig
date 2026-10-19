@@ -12,7 +12,7 @@
 //!         (`generic-default-before-required`, parser-level, fires at every
 //!         `GenericParamList` site: struct, fn, enum, interface, TypeRef).
 //!   RG2 — `<>` with every param defaulted is legal (no diagnostic).
-//!   RG3 — `@Task<>`/`@Stream<>`/`@Result<i32>` etc.: a required
+//!   RG3 — `@Async<>`/`@AsyncIter<>`/`@Result<i32>` etc.: a required
 //!         (non-defaulted) generic argument missing
 //!         (`generic-required-arg-missing`, comptime, fires at type-ref
 //!         resolution time via `builtinRequiredGenericArgs`).
@@ -22,7 +22,7 @@
 //! Resolution rules (`comptime/types.zig` default-fill for omitted trailing
 //! args) are deferred until F4G compile-side lands; once that ships, the
 //! "RG2 — every default supplied" cases below get matching resolution
-//! assertions (e.g. `@Task<User>` resolves with E = any).
+//! assertions (e.g. `@Async<User>` resolves with E = any).
 
 const std = @import("std");
 const lexerMod = @import("../../lexer.zig");
@@ -109,15 +109,15 @@ test "§1G — defaulted struct trailing param is accepted" {
 
 // ── RG3 — required generic argument missing ─────────────────────────────────
 
-test "§1G RG3 — @Task<> rejects (T is required)" {
+test "§1G RG3 — @Async<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Task<> { return 0; }
+        \\fn empty() -> Async<> { return 0; }
     );
 }
 
-test "§1G RG3 — @Stream<> rejects (T is required)" {
+test "§1G RG3 — @AsyncIter<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Stream<> { break; }
+        \\fn empty() -> AsyncIter<> { break; }
     );
 }
 
@@ -153,27 +153,27 @@ test "§1G RG4 — user-defined skip rejected (nominal TypeRef site)" {
 // any>`, the generators): every builtin wrapper is written with its whole
 // argument list. These cases assert the one-argument wrappers type-check.
 
-test "§1G resolution — @Task<i32> resolves (one argument, no error parameter)" {
+test "§1G resolution — @Async<i32> resolves (one argument, no error parameter)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn fetch(id: i64) -> Task<i32> { return 0; }
+        \\fn fetch(id: i64) -> Async<i32> { return 0; }
     );
 }
 
-test "§1G resolution — @Iterator<@Result<i32, string>> resolves (the item carries E)" {
+test "§1G resolution — @Iter<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn count(n: i32) -> Iterator<i32> { yield n; }
+        \\fn count(n: i32) -> Iter<i32> { yield n; }
     );
 }
 
-test "§1G resolution — @Stream<@Result<i32, string>> resolves (the item carries E)" {
+test "§1G resolution — @AsyncIter<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn run(n: i32) -> Stream<Result<i32, string>> { yield n; }
+        \\fn run(n: i32) -> AsyncIter<Result<i32, string>> { yield n; }
     );
 }
 
-test "§1G resolution — @Iterator<i32> resolves" {
+test "§1G resolution — @Iter<i32> resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn range(a: i32) -> Iterator<i32> { yield a; }
+        \\fn range(a: i32) -> Iter<i32> { yield a; }
     );
 }
 

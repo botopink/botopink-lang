@@ -141,8 +141,8 @@ test "hover: empty bindings returns null" {
 // ── effect returns (decision 118: the return is the effect) ──────────────────
 //
 // The footer names what a caller unwraps from the wrapper the fn writes as its
-// return: `await`'s value for `@Task` / `@Component` (the `T` after the context
-// base), the `for` / `for await` item for `@Iterator` / `@Stream`. A `@Result`
+// return: `await`'s value for `@Async` / `@Component` (the `T` after the context
+// base), the `for` / `for await` item for `@Iter` / `@AsyncIter`. A `@Result`
 // return has no footer — it is consumed, not unwrapped.
 
 /// Compiles `source`, hovers the fn name at (`line`, `col`) and snapshots it.
@@ -158,16 +158,16 @@ fn hoverSnap(slug: []const u8, source: []const u8, line: u32, col: u32) !void {
     try snap.assertHover(gpa, slug, source, h.pos(line, col), result);
 }
 
-test "hover: @Iterator fn shows its for item type" {
+test "hover: @Iter fn shows its for item type" {
     try hoverSnap("hover_effect_iterator",
-        \\fn counter() -> Iterator<i32> :gen { yield 1; }
+        \\fn counter() -> Iter<i32> :gen { yield 1; }
     , 0, 3);
 }
 
-test "hover: @Task<@Result<T, E>> fn shows the whole Result as the await value" {
+test "hover: @Async<@Result<T, E>> fn shows the whole Result as the await value" {
     try hoverSnap("hover_effect_task_result",
         \\pub type User(id: i32, name: string);
-        \\fn fetchUser(id: i32) -> Task<Result<User, string>> {
+        \\fn fetchUser(id: i32) -> Async<Result<User, string>> {
         \\    if (id < 0) { throw "negative"; };
         \\    return User(id: id, name: "ana");
         \\}
@@ -183,19 +183,19 @@ test "hover: @Component<T> fn shows T, not the context base" {
     , 1, 3);
 }
 
-test "hover: @Stream fn shows its for await item type" {
+test "hover: @AsyncIter fn shows its for await item type" {
     try hoverSnap("hover_effect_stream",
-        \\fn pulses() -> Stream<Result<i32, string>> {
+        \\fn pulses() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
     , 0, 3);
 }
 
-test "hover: @Iterator factory (no yield) still shows its item type" {
+test "hover: @Iter factory (no yield) still shows its item type" {
     try hoverSnap("hover_effect_iterator_factory",
-        \\fn counter() -> Iterator<i32> :gen { yield 1; }
-        \\fn fresh() -> Iterator<i32> { return counter(); }
+        \\fn counter() -> Iter<i32> :gen { yield 1; }
+        \\fn fresh() -> Iter<i32> { return counter(); }
     , 1, 3);
 }
 

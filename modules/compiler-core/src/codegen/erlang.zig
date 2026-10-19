@@ -6279,17 +6279,17 @@ const Emitter = struct {
 
     fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. A `@Task<T>` is
-        // `T` (so `await` is identity); an `@Iterator<T>` / `@Stream<T>` that
+        // checked-Result value), which is a plain function. A `@Async<T>` is
+        // `T` (so `await` is identity); an `@Iter<T>` / `@AsyncIter<T>` that
         // yields is a generator, its body run lazily in a process of its own
         // (144 B-128, `generatorFnBody`), whatever its body (144 B-134). `-> @Component` is a plain function too:
         // the return gates `use` in the body (decision 88); nothing about it
         // is async.
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try out.append(b.arena, .{ .comment = Ast.Comment.doc(switch (f.effect.?) {
-                .task => "@Task — eager lowering",
-                .iterator => if (this.untyped) "@Iterator — eager lowering" else "@Iterator — lazy lowering",
-                else => if (this.untyped) "@Stream — eager lowering" else "@Stream — lazy lowering",
+                .task => "@Async — eager lowering",
+                .iterator => if (this.untyped) "@Iter — eager lowering" else "@Iter — lazy lowering",
+                else => if (this.untyped) "@AsyncIter — eager lowering" else "@AsyncIter — lazy lowering",
             }) });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
@@ -7963,7 +7963,7 @@ const Emitter = struct {
     }
 
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
-    /// True when the `for` steps an `@Iterator` / `@Stream` (inference keys
+    /// True when the `for` steps an `@Iter` / `@AsyncIter` (inference keys
     /// `.sequence_next` by the loop's own loc, 144 B-128): what it walks may be
     /// a generator, which `beam/gen_runtime.zig`'s helpers step lazily.
     fn stepsSequence(this: *const Emitter, lp: anytype) bool {
@@ -8193,7 +8193,7 @@ const Emitter = struct {
                         this.genStopThrow(b, this.gen_scope.?)
                     else
                         this.returnNode(b, Ast.Expr.a("undefined"));
-                    // A `@Task` is eager here (decision 120): `return v` is
+                    // A `@Async` is eager here (decision 120): `return v` is
                     // `v`, and a failure is the `{error, E}` value the
                     // transform built — it never throws.
                     return this.returnNode(b, try this.returnOperandNode(b, val.*));
@@ -8685,7 +8685,7 @@ const Emitter = struct {
                 const raw_fun_body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1);
                 const fun_body = if (this.try_throw_used) try this.guardTry(b, raw_fun_body) else raw_fun_body;
                 const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = fun_body } };
-                // `async { … }` (decision 124): the Task is eager here — the
+                // `async { … }` (decision 124): the Async is eager here — the
                 // block's fun, called in place.
                 if (func.kind.syntax == .asyncBlock) return b.applyParen(fun, &.{});
                 return fun;
@@ -11737,7 +11737,7 @@ const Emitter = struct {
         try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
     }
 
-    /// A method an `@Iterator` answers, on a receiver inference left untyped
+    /// A method an `@Iter` answers, on a receiver inference left untyped
     /// — what a generator's method call looks like (144 B-128): the generator
     /// runtime's helper (`beam/gen_runtime.zig`), whose list clause is the
     /// Array lowering. `late` picks the methods the Array fallback below does
@@ -11818,7 +11818,7 @@ const Emitter = struct {
 
     /// The effect a method's return activates (decision 118), as commonJS's
     /// `methodEffect` reads it: `ast.BehaviorMethod` has no parsed `effect`
-    /// field. An `@Iterator` method that yields is a generator scope
+    /// field. An `@Iter` method that yields is a generator scope
     /// (decision 105) exactly as a free fn's is.
     fn methodEffect(m: anytype) ?ast.EffectKind {
         return ast.EffectKind.ofMethod(m.returnType, m.body);

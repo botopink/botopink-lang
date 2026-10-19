@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fromList<T>(xs: Array<T>) -> Iterator<T> {
+fn fromList<T>(xs: Array<T>) -> Iter<T> {
     for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: Iterator<T>) -> Array<T> {
+fn toList<T>(iter: Iter<T>) -> Array<T> {
     var out = [];
     for (iter) { item ->
         out.push(item);
@@ -28,7 +28,7 @@ import {io.terminal.print} from "std";
   (memory (export "memory") 1)
   (data (i32.const 256) "\01\00\00\00,")
   (global $__heap_ptr (mut i32) (i32.const 352))
-  ;; @Iterator — eager lowering
+  ;; @Iter — eager lowering
   (func $fromList (param $xs i32) (result i32)
     (local $item i32)
     (local $__yield_fn i32)

@@ -40,13 +40,13 @@ test "semanticTokens: val binding is a variable declaration" {
 //
 // Three kinds, three classifications: `function [declaration]`,
 // `method [declaration]`, and `function [declaration,async]` for the fn whose
-// return is `@Iterator<i32>` (whose `:gen` label is syntax, not a binding).
+// return is `@Iter<i32>` (whose `:gen` label is syntax, not a binding).
 
 test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
         \\behavior Greeter { fn greet(self: Self) -> string; }
-        \\fn counter() -> Iterator<i32> :gen { yield 1; }
+        \\fn counter() -> Iter<i32> :gen { yield 1; }
     ;
     try run(std.testing.allocator, "semantic_tokens_fn_kinds", source);
 }
@@ -54,8 +54,8 @@ test "semanticTokens: free fn, interface method, and effect fn distinguished" {
 // ── ST3b — the `async` modifier comes from the return wrapper ────────────────
 //
 // Decision 118: the return is the effect. Each of the five wrappers written as
-// the outermost return (`@Result`, `@Task`, `@Component`, `@Iterator`,
-// `@Stream`) marks the fn `async`, generic or not, method or not; a plain
+// the outermost return (`@Result`, `@Async`, `@Component`, `@Iter`,
+// `@AsyncIter`) marks the fn `async`, generic or not, method or not; a plain
 // return, a wrapper nested under a non-wrapper, and a parameter typed by a
 // wrapper do not.
 
@@ -64,14 +64,14 @@ test "semanticTokens: async modifier follows each effect return wrapper" {
         \\val Element = type() implement Renderable
         \\fn plain(a: i32) -> i32 { return a; }
         \\fn fails(a: i32) -> Result<i32, string> { return a; }
-        \\fn waits<T>(a: T) -> Task<T> { return a; }
+        \\fn waits<T>(a: T) -> Async<T> { return a; }
         \\fn hook(a: i32) -> Component<i32> { return a; }
-        \\fn seq() -> Iterator<i32> { yield 1; }
-        \\fn pulses() -> Stream<i32> { yield 1; }
-        \\fn takes(t: Task<i32>) -> i32[] { return [1]; }
-        \\fn opt() -> ?Task<i32> { return null; }
+        \\fn seq() -> Iter<i32> { yield 1; }
+        \\fn pulses() -> AsyncIter<i32> { yield 1; }
+        \\fn takes(t: Async<i32>) -> i32[] { return [1]; }
+        \\fn opt() -> ?Async<i32> { return null; }
         \\type Box(v: i32) {
-        \\    fn load(self: Self) -> Task<i32> { return self.v; }
+        \\    fn load(self: Self) -> Async<i32> { return self.v; }
         \\}
     ;
     try run(std.testing.allocator, "semantic_tokens_effect_returns", source);
@@ -88,7 +88,7 @@ test "semanticTokens: async modifier follows each effect return wrapper" {
 test "semanticTokens: contextual async / iter / stream and loop labels" {
     const source =
         \\import {async} from "std";
-        \\fn f(xs: i32[], g: Grid, http: Http) -> Task<i32> {
+        \\fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
         \\    val t = async { return 1; };
         \\    val all = async.allOf([t]);
         \\    val a = iter loop { yield 1; break; };
@@ -110,12 +110,12 @@ test "semanticTokens: contextual async / iter / stream and loop labels" {
 // `val iter = 2`).
 test "semanticTokens: body markers" {
     const source =
-        \\async fn one() -> Task<i32> { return 1; }
-        \\iter fn two() -> Iterator<i32> { yield 2; }
-        \\async iter fn three() -> Stream<i32> { yield 3; }
+        \\async fn one() -> Async<i32> { return 1; }
+        \\iter fn two() -> Iter<i32> { yield 2; }
+        \\async iter fn three() -> AsyncIter<i32> { yield 3; }
         \\component fn Four() -> Component<i32> { return 4; }
-        \\fn f() -> Task<i32> {
-        \\    val g: fn(x: i32) -> Task<i32> = { async x -> await one() };
+        \\fn f() -> Async<i32> {
+        \\    val g: fn(x: i32) -> Async<i32> = { async x -> await one() };
         \\    val component = 1;
         \\    val iter = 2;
         \\    return await g(component + iter);

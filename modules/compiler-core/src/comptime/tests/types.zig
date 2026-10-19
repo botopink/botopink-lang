@@ -256,7 +256,7 @@ test "types: range ---- iterate 0 to n" {
 }
 
 test "types: generator loop ---- worth the annotation's wrapper, its break v an item" {
-    // Decision 105 — `iter loop { … }` types as `@Iterator<T>` with
+    // Decision 105 — `iter loop { … }` types as `@Iter<T>` with
     // `T` the type of its `yield` / `break v`; the loop that consumes it binds
     // `T`.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
@@ -277,7 +277,7 @@ test "types: generator loop ---- worth the annotation's wrapper, its break v an 
 
 test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn doubles(arr: i32[]) -> Iterator<i32> {
+        \\fn doubles(arr: i32[]) -> Iter<i32> {
         \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };

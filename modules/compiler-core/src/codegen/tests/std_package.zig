@@ -300,7 +300,7 @@ test "js: std package ---- a std module imports failure.HostError by path for re
         \\import {failure, failure.HostError};
         \\
         \\#[compiler.external(.JavaScript("JSON.parse($0)", result: true))]
-        \\declare fn probeHost(s: string) -> Task<Result<i32, HostError>>;
+        \\declare fn probeHost(s: string) -> Async<Result<i32, HostError>>;
         \\
         \\import {compiler} from "std";
         },

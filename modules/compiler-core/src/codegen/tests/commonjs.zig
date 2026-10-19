@@ -415,7 +415,7 @@ test "commonJS: a labelled break leaves the outer loop from a case arm of an inn
 
 test "commonJS: a bare return in a yielding case arm ends the generator" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn items(n: i32) -> Iterator<i32> {
+        \\fn items(n: i32) -> Iter<i32> {
         \\    yield 0;
         \\    case n {
         \\        0 {

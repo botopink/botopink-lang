@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Task<i32> {
+fn fetch(x: i32) -> Async<i32> {
     return x;
 }
 ```
@@ -19,7 +19,7 @@ fn fetch(x: i32) -> Task<i32> {
           "type": "i32"
         }
       ],
-      "return_type": "Task<i32>",
+      "return_type": "Async<i32>",
       "body": [
         {
           "source": "return x;"

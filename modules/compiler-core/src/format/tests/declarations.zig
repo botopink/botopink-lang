@@ -424,7 +424,7 @@ test "format: const tuple ---- with comments" {
 
 test "format: star fn ---- async function" {
     try h.assertFormat(std.testing.allocator,
-        \\fn fetch(url: string) -> Task<Response> {
+        \\fn fetch(url: string) -> Async<Response> {
         \\    return download(url);
         \\}
     );
@@ -432,7 +432,7 @@ test "format: star fn ---- async function" {
 
 test "format: star fn ---- generator with label" {
     try h.assertFormat(std.testing.allocator,
-        \\fn gen() -> Iterator<Int> :gen {
+        \\fn gen() -> Iter<Int> :gen {
         \\    yield :gen 1;
         \\}
     );
@@ -984,7 +984,7 @@ test "format: a wasm cell prints as its labelled argument (decision 481)" {
         \\pub declare fn floorOf(x: f64) -> f64;
         \\
         \\#[compiler.external(.Wasm(wasi: .Delay))]
-        \\declare fn later<T>(millis: i32, value: T) -> Task<T>;
+        \\declare fn later<T>(millis: i32, value: T) -> Async<T>;
         \\
         \\#[compiler.external(.Wasm(std: "hash.contentHash"))]
         \\pub declare fn contentHash(value: string) -> string;

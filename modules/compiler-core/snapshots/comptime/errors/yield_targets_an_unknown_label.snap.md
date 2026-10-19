@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn gen() -> Iterator<i32> {
+fn gen() -> Iter<i32> {
     yield :nope 1;
 }
 
@@ -10,4 +10,4 @@ error: yield-label-unbound: `yield` targets an unknown label
 2 │     yield :nope 1;
   │     ^
 
-  hint: Label a generator fn (`fn … -> @Iterator<T> :name`) or a prefixed loop (`iter loop :name { … }`).
+  hint: Label a generator fn (`fn … -> @Iter<T> :name`) or a prefixed loop (`iter loop :name { … }`).

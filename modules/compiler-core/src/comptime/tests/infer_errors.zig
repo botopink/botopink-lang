@@ -354,9 +354,9 @@ test "infer error: await outside an await channel" {
     );
 }
 
-test "infer error: await on a non-@Task value" {
+test "infer error: await on a non-@Async value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Task<i32> {
+        \\fn bad() -> Async<i32> {
         \\    val x = await 5;
         \\    return x;
         \\}
@@ -365,15 +365,15 @@ test "infer error: await on a non-@Task value" {
 
 test "infer error: yield targets an unknown label" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn gen() -> Iterator<i32> {
+        \\fn gen() -> Iter<i32> {
         \\    yield :nope 1;
         \\}
     );
 }
 
-test "infer error: for await on a non-@Stream value" {
+test "infer error: for await on a non-@AsyncIter value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Task<i32> {
+        \\fn bad() -> Async<i32> {
         \\    for await (5) { x ->
         \\        ping(x);
         \\    }
@@ -431,9 +431,9 @@ test "infer error: an unannotated method's return type comes from its body" {
     );
 }
 
-test "infer error: @Task body using yield" {
+test "infer error: @Async body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Task<i32> {
+        \\fn bad() -> Async<i32> {
         \\    yield 1;
         \\}
     );
@@ -519,7 +519,7 @@ test "infer error: external ---- inline is a bool" {
 
 // Decisions 431 (2), 488, 490 — `result: true` says the host call can fail,
 // answered `Error(HostError(…))`: the return must be `@Result<…, HostError>`
-// (or a `@Task` of one) with std's `failure.HostError`, else the annotation is
+// (or a `@Async` of one) with std's `failure.HostError`, else the annotation is
 // refused.
 test "infer error: external ---- result true on a plain return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
@@ -530,10 +530,10 @@ test "infer error: external ---- result true on a plain return" {
     );
 }
 
-test "infer error: external ---- result true on a Task of a plain value" {
+test "infer error: external ---- result true on a Async of a plain value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[compiler.external(.Erlang("timer:sleep($0)", result: true))]
-        \\pub declare fn pause(ms: i32) -> Task<i32>;
+        \\pub declare fn pause(ms: i32) -> Async<i32>;
         \\
         \\import {compiler} from "std";
     );
@@ -647,15 +647,15 @@ test "infer error: still_reports_unbound ---- a genuinely undefined name still e
     );
 }
 
-test "infer error: RG3 ---- @Task<> rejects (T is required)" {
+test "infer error: RG3 ---- @Async<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Task<> { return 0; }
+        \\fn empty() -> Async<> { return 0; }
     );
 }
 
-test "infer error: RG3 ---- @Stream<> rejects (T is required)" {
+test "infer error: RG3 ---- @AsyncIter<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Stream<> { break; }
+        \\fn empty() -> AsyncIter<> { break; }
     );
 }
 
@@ -690,18 +690,18 @@ test "infer error: R12 ---- let-binding Result.Ok inside @Result reds result-man
     );
 }
 
-test "infer error: decision 123 ---- yield and return <expr> in an @Iterator<@Result<…>> body reds iter-mixed-yield-return" {
+test "infer error: decision 123 ---- yield and return <expr> in an @Iter<@Result<…>> body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iterator<i32> {
+        \\fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    return 42;
         \\}
     );
 }
 
-test "infer error: decision 123 ---- yield and return <expr> in a @Stream body reds iter-mixed-yield-return" {
+test "infer error: decision 123 ---- yield and return <expr> in a @AsyncIter body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Stream<Result<i32, string>> {
+        \\fn nums() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -710,7 +710,7 @@ test "infer error: decision 123 ---- yield and return <expr> in a @Stream body r
 
 test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iterator<Result<i32, string>> :outer {
+        \\fn nums() -> Iter<Result<i32, string>> :outer {
         \\    yield 1;
         \\    break :nonsense 42;
         \\}
@@ -720,18 +720,18 @@ test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
 // Decision 103 — `break <v>` at generator level emits `v` as the last item
 // and ends; `v` is an item of `T`, so this compiles (the RI3 refusal left
 // with the completion channel `C`).
-test "infer: decision 103 ---- break <expr> inside @Iterator-of-Result is the last item" {
+test "infer: decision 103 ---- break <expr> inside @Iter-of-Result is the last item" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> Iterator<Result<i32, string>> {
+        \\fn nums() -> Iter<Result<i32, string>> {
         \\    yield 1;
         \\    break 42;
         \\}
     );
 }
 
-test "infer error: RG5 ---- a second argument on @Task reds generic-arg-count-exceeded" {
+test "infer error: RG5 ---- a second argument on @Async reds generic-arg-count-exceeded" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Task<i32, string> {
+        \\fn nums() -> Async<i32, string> {
         \\    return 1;
         \\}
     );
@@ -762,12 +762,12 @@ test "infer error: RG5 ---- a declared type written with more arguments than it 
     );
 }
 
-test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator and a Task of it on a stream" {
+test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator and a Async of it on a stream" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn two() -> Iterator<i32> {
+        \\fn two() -> Iter<i32> {
         \\    yield 1;
         \\}
-        \\fn ticks() -> Stream<i32> {
+        \\fn ticks() -> AsyncIter<i32> {
         \\    yield 1;
         \\}
         \\fn first() -> i32 {
@@ -777,8 +777,8 @@ test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator a
         \\        Done -> 0;
         \\    };
         \\}
-        \\fn firstTick() -> Task<i32> {
-        \\    val t: Task<YieldStep<i32>> = ticks().next();
+        \\fn firstTick() -> Async<i32> {
+        \\    val t: Async<YieldStep<i32>> = ticks().next();
         \\    val s = await t;
         \\    return case s {
         \\        Yield(v) -> v;
@@ -803,7 +803,7 @@ test "infer error: break <wrongType> in a generator reds a type mismatch against
     // `break v` emits `v` and ends the generator: `v` is an item, so it must
     // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iterator<Result<i32, string>> {
+        \\fn nums() -> Iter<Result<i32, string>> {
         \\    yield 1;
         \\    break "not an i32";
         \\}

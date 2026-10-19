@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fromList<T>(xs: Array<T>) -> Iterator<T> {
+fn fromList<T>(xs: Array<T>) -> Iter<T> {
     for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: Iterator<T>) -> Array<T> {
+fn toList<T>(iter: Iter<T>) -> Array<T> {
     var out = [];
     for (iter) { item ->
         out.push(item);
@@ -27,7 +27,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__fromList'/1, '__bp_priv__toList'/1, '__bp_priv__main'/0]).
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 fromList(Xs) ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),

@@ -43,8 +43,8 @@ pub const effect_annotation_removed: []const u8 = "effect-annotation-removed";
 /// parser, fix-it: the new name.
 pub const effect_type_removed: []const u8 = "effect-type-removed";
 
-/// Decision 122 — `@Iterator<T, E>`: refused by the parser, fix-it
-/// `@Iterator<@Result<T, E>>`.
+/// Decision 122 — `@Iter<T, E>`: refused by the parser, fix-it
+/// `@Iter<@Result<T, E>>`.
 pub const iterator_error_param_removed: []const u8 = "iterator-error-param-removed";
 
 /// Decision 118 rule 1 — a capability (`throw`, `try`, `await`, `use`,
@@ -62,10 +62,10 @@ pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous
 pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
 
 /// Decision 120 — `await` (or `for await`) without an await channel: a
-/// `@Task`, `@Component` or `@Stream` return, or a `stream` loop.
+/// `@Async`, `@Component` or `@AsyncIter` return, or a `stream` loop.
 pub const await_without_async: []const u8 = "await-without-async";
 
-/// Decision 122 — `await` in an `@Iterator` body or an `iter` loop.
+/// Decision 122 — `await` in an `@Iter` body or an `iter` loop.
 pub const iter_await: []const u8 = "iter-await";
 
 /// Decision 123 — `yield` and `return <iterator>` in one body.
@@ -103,9 +103,9 @@ pub const defer_yield: []const u8 = "defer-yield";
 pub const defer_await: []const u8 = "defer-await";
 /// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
 pub const for_over_condition: []const u8 = "for-over-condition";
-/// `for` (not `for await`) over a `@Stream`.
+/// `for` (not `for await`) over a `@AsyncIter`.
 pub const for_over_stream: []const u8 = "for-over-stream";
-/// `for await` over something that is not a `@Stream`.
+/// `for await` over something that is not a `@AsyncIter`.
 pub const for_await_expects_stream: []const u8 = "for-await-expects-stream";
 /// A `use`, or a `break :outer` / `continue :outer`, crossing the border of an
 /// `iter` / `stream` loop — its body is closed like a closure.
@@ -113,7 +113,7 @@ pub const generator_loop_closed_scope: []const u8 = "generator-loop-closed-scope
 /// `yield :label` naming a plain loop's label rather than a generator scope's.
 pub const yield_label_not_generator: []const u8 = "yield-label-not-generator";
 
-/// R8 — `yield` outside a generator scope (an `@Iterator` / `@Stream` return
+/// R8 — `yield` outside a generator scope (an `@Iter` / `@AsyncIter` return
 /// that yields, or an `iter` / `stream` loop).
 pub const yield_without_iter: []const u8 = "yield-without-iter";
 
@@ -458,7 +458,7 @@ pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missi
 pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
 
 /// RG5 — more generic arguments than a builtin wrapper declares
-/// (`@Task<i32, string>`: a Task has no error parameter, decision 120, and an
+/// (`@Async<i32, string>`: a Async has no error parameter, decision 120, and an
 /// argument nothing reads is refused, not dropped).
 pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 

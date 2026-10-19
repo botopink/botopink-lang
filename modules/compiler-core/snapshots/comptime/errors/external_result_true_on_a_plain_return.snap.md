@@ -5,7 +5,7 @@ pub declare fn jsParse(s: string) -> i32;
 import {compiler} from "std";
 
 ----- ERROR
-error: `jsParse` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Task<Result<…, HostError>>`, not `i32`
+error: `jsParse` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `i32`
   ┌─ main.bp:1:3
   │
 1 │ #[compiler.external(.JavaScript("JSON.parse($0)", result: true))]

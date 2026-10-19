@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn two() -> Iterator<i32> {
+fn two() -> Iter<i32> {
     yield 1;
     yield 2;
 }
@@ -31,7 +31,7 @@ import {io.terminal.print} from "std";
 %%   Yield(value)
 %%   Done
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 two() ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),

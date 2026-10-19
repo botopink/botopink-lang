@@ -3,7 +3,7 @@
 /// Iterates over typed bindings and **builds** a declaration model
 /// (`codegen/js/js_ast.zig`: `TsDecl` / `TsMember` / `TsType`); `ts_emitter.zig`
 /// renders it. This file decides what the public contract of a module is —
-/// which bindings surface, how `@Result` / `@Task` / `@Component` erase — and
+/// which bindings surface, how `@Result` / `@Async` / `@Component` erase — and
 /// writes no TypeScript text of its own.
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -512,7 +512,7 @@ const Builder = struct {
         } };
     }
 
-    /// Decision 432 — `E` of a return written `@Task<@Result<T, E>>`: the
+    /// Decision 432 — `E` of a return written `@Async<@Result<T, E>>`: the
     /// task rejects with it, and the declaration says so (`@throws`).
     fn taskError(self: *Builder, rt: ?ast.TypeRef) Error!?js.TsType {
         const res = taskResultArg(rt orelse return null) orelse return null;
@@ -948,7 +948,7 @@ const Builder = struct {
             .named => |n| {
                 if (n.args.len == 0) return namedType(n.name);
                 // Decision 432 — a failing task resolves with the bare `T`.
-                if (std.mem.eql(u8, n.name, "Task") and n.args.len == 1) switch (derefType(n.args[0].*)) {
+                if (std.mem.eql(u8, n.name, "Async") and n.args.len == 1) switch (derefType(n.args[0].*)) {
                     .named => |r| if (std.mem.eql(u8, r.name, "Result") and r.args.len == 2)
                         return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.inferredType(r.args[0].*)}) } },
                     else => {},
@@ -1074,10 +1074,10 @@ const Builder = struct {
                 }), .sep = "; " } },
             }) };
         }
-        // Decisions 120 / 122: `@Task<T>` → `Promise<T>`; `@Iterator<T>` →
-        // `IterableIterator<T>`; `@Stream<T>` → `AsyncGenerator<T>`.
+        // Decisions 120 / 122: `@Async<T>` → `Promise<T>`; `@Iter<T>` →
+        // `IterableIterator<T>`; `@AsyncIter<T>` → `AsyncGenerator<T>`.
         const host: ?[]const u8 =
-            if (std.mem.eql(u8, name, "Task")) "Promise" else if (std.mem.eql(u8, name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, name, "Stream")) "AsyncGenerator" else null;
+            if (std.mem.eql(u8, name, "Async")) "Promise" else if (std.mem.eql(u8, name, "Iter")) "IterableIterator" else if (std.mem.eql(u8, name, "AsyncIter")) "AsyncGenerator" else null;
         if (host) |h| if (args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{args[0]}) } };
         };
@@ -1089,10 +1089,10 @@ const Builder = struct {
 /// `declare fn` member with an `#[@External.Node(…)]` binding is a real class
 /// member there (`commonJS.hostMethodMember`), so it is declared like any other
 /// method. One without a `node` binding has no member and no declaration.
-/// The `@Result<T, E>` of a type written `@Task<@Result<T, E>>` (decision
+/// The `@Result<T, E>` of a type written `@Async<@Result<T, E>>` (decision
 /// 432), or null.
 fn taskResultArg(t: ast.TypeRef) ?@FieldType(ast.TypeRef, "generic") {
-    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Task") or t.generic.args.len != 1) return null;
+    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Async") or t.generic.args.len != 1) return null;
     const inner = t.generic.args[0];
     if (inner != .generic or !inner.generic.is_builtin or !std.mem.eql(u8, inner.generic.name, "Result") or inner.generic.args.len != 2) return null;
     return inner.generic;

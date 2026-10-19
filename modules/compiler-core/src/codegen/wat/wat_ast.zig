@@ -855,7 +855,7 @@ pub const HelperGroup = enum {
     /// `$__print_opt_u64` (+`_raw`) — a `?u64`, the address of its cell,
     /// written through `$__print_u64_raw`. Appended, as the `u64` groups.
     print_opt_u64,
-    /// Decision 392 — the scheduler a `@Task<T>` runs on: the task record
+    /// Decision 392 — the scheduler a `@Async<T>` runs on: the task record
     /// (`$__task_new`, `$__task_start`, `$__task_pending`, `$__task_listen`,
     /// `$__task_wait`), settling once and waking what waits
     /// (`$__task_settle_{i32,i64,f64}`, `$__task_wake`), the ready queue

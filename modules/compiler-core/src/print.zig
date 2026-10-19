@@ -43,9 +43,9 @@ pub const ErrorMessages = struct {
 /// the wrapper its marker names (`detail` is the marker's word).
 fn markerReturnCaption(detail: ?[]const u8) []const u8 {
     const word = detail orelse return "write the return type its marker names";
-    if (std.mem.eql(u8, word, "async")) return "write `-> Task<…>`";
-    if (std.mem.eql(u8, word, "iter")) return "write `-> Iterator<…>`";
-    if (std.mem.eql(u8, word, "async iter")) return "write `-> Stream<…>`";
+    if (std.mem.eql(u8, word, "async")) return "write `-> Async<…>`";
+    if (std.mem.eql(u8, word, "iter")) return "write `-> Iter<…>`";
+    if (std.mem.eql(u8, word, "async iter")) return "write `-> AsyncIter<…>`";
     if (std.mem.eql(u8, word, "component")) return "write `-> Component<…>`";
     return "write the return type its marker names";
 }
@@ -130,13 +130,13 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "marker-type-mismatch",
             .message = "a body marker names its return type, and this function does not write it",
             .caretCaption = "the return type does not match this marker",
-            .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> Task<T>`, `iter fn … -> Iterator<T>`, `async iter fn … -> Stream<T>`, `component fn … -> Component<R>`. Write that return type, or drop the marker.",
+            .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> Async<T>`, `iter fn … -> Iter<T>`, `async iter fn … -> AsyncIter<T>`, `component fn … -> Component<R>`. Write that return type, or drop the marker.",
         },
         .markerReturnMissing => .{
             .code = "marker-type-mismatch",
             .message = "a body marker names its return type, and this function writes none",
             .caretCaption = markerReturnCaption(info.detail),
-            .hint = "Every function writes its return type (decisions 583, 622), and a marker's is the wrapper it names (decisions 553, 584): `async fn … -> Task<T>`, `iter fn … -> Iterator<T>`, `async iter fn … -> Stream<T>`, `component fn … -> Component<R>`.",
+            .hint = "Every function writes its return type (decisions 583, 622), and a marker's is the wrapper it names (decisions 553, 584): `async fn … -> Async<T>`, `iter fn … -> Iter<T>`, `async iter fn … -> AsyncIter<T>`, `component fn … -> Component<R>`.",
         },
         .markerWithoutArrow => .{
             .code = "marker-without-arrow",
@@ -233,7 +233,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a prelude type is written without `@`",
             .caretCaption = "no builtin of this name",
             .lexemeInCaption = true,
-            .hint = "The prelude's types and behaviors are written bare in every module — `Result<T, E>`, `Task<T>`, `Component<R>`, `Iterator<T>`, `Stream<T>`, `implement Renderable` (decision 606 (1)).",
+            .hint = "The prelude's types and behaviors are written bare in every module — `Result<T, E>`, `Async<T>`, `Component<R>`, `Iter<T>`, `AsyncIter<T>`, `implement Renderable` (decision 606 (1)).",
         },
         .builtinNameRemoved => .{
             .code = "unknown-builtin",
@@ -271,45 +271,45 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "the `*fn` prefix was removed in v0.beta.19",
             .caretCaption = "write a plain `fn` whose return type is the effect wrapper",
             .note = "the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect",
-            .hint = "rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`",
+            .hint = "rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Async`, `@Component`, `@Iter` or `@AsyncIter`",
         },
         .effectAnnotationRemoved => .{
             .code = "effect-annotation-removed",
             .message = "effect annotations were removed — the return type is the effect (decision 118)",
             .caretCaption = "remove the annotation; write the wrapper in the return",
-            .note = "`#[@result]` → `-> Result<T, E>`; `#[@future]` → `-> Task<T>` (or `-> Task<Result<T, E>>` when it can fail); `#[@use]` → `-> Component<T>`; `#[@generator]` → `-> Iterator<T>`; `#[@resultGenerator]` → `-> Iterator<Result<T, E>>`; `#[@futureGenerator]` → `-> Stream<Result<T, E>>`",
-            .hint = "Delete the annotation: `fn f() -> Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
+            .note = "`#[@result]` → `-> Result<T, E>`; `#[@future]` → `-> Async<T>` (or `-> Async<Result<T, E>>` when it can fail); `#[@use]` → `-> Component<T>`; `#[@generator]` → `-> Iter<T>`; `#[@resultGenerator]` → `-> Iter<Result<T, E>>`; `#[@futureGenerator]` → `-> AsyncIter<Result<T, E>>`",
+            .hint = "Delete the annotation: `fn f() -> Async<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
         },
         .effectAnnotationRemovedLoop => .{
             .code = "effect-annotation-removed",
             .message = "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)",
             .caretCaption = "remove the annotation; write `iter loop` (or `stream loop`)",
             .note = "`#[@generator] loop` and `#[@resultGenerator] loop` are `iter loop`; `#[@futureGenerator] loop` is `stream loop`; `iter` / `stream` also prefix `while` and `for`",
-            .hint = "`val xs = iter loop { … yield x; … };` is worth `Iterator<T>`; the item becomes `Result<T, E>` on its own when the body has `throw` / `try`.",
+            .hint = "`val xs = iter loop { … yield x; … };` is worth `Iter<T>`; the item becomes `Result<T, E>` on its own when the body has `throw` / `try`.",
         },
         .effectTypeRemovedFuture => .{
             .code = "effect-type-removed",
-            .message = "`@Future` was removed — the wrapper is `@Task<T>`, which never fails (decision 120)",
-            .caretCaption = "write `@Task<@Result<T, E>>` (or `@Task<T>` when it cannot fail)",
-            .hint = "`@Future<T, E>` is `Task<Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `Task<T>`.",
+            .message = "`@Future` was removed — the wrapper is `@Async<T>`, which never fails (decision 120)",
+            .caretCaption = "write `@Async<@Result<T, E>>` (or `@Async<T>` when it cannot fail)",
+            .hint = "`@Future<T, E>` is `Async<Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `Async<T>`.",
         },
         .effectTypeRemovedGenerator => .{
             .code = "effect-type-removed",
-            .message = "`@Generator` was renamed `@Iterator` (decision 122)",
-            .caretCaption = "write `@Iterator<T>`",
-            .hint = "`fn g() -> Iterator<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
+            .message = "`@Generator` was renamed `@Iter` (decision 122)",
+            .caretCaption = "write `@Iter<T>`",
+            .hint = "`fn g() -> Iter<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
         },
         .effectTypeRemovedResultGenerator => .{
             .code = "effect-type-removed",
             .message = "`@ResultGenerator` was removed — the item carries the failure (decision 122)",
-            .caretCaption = "write `@Iterator<@Result<T, E>>`",
-            .hint = "`@ResultGenerator<T, E>` is `Iterator<Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
+            .caretCaption = "write `@Iter<@Result<T, E>>`",
+            .hint = "`@ResultGenerator<T, E>` is `Iter<Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
         },
         .effectTypeRemovedFutureGenerator => .{
             .code = "effect-type-removed",
-            .message = "`@FutureGenerator` was removed — the asynchronous sequence is `@Stream` (decision 122)",
-            .caretCaption = "write `@Stream<@Result<T, E>>` (or `@Stream<T>`)",
-            .hint = "`@FutureGenerator<T, E>` is `Stream<Result<T, E>>`; iterate it with `for await` where there is an await channel.",
+            .message = "`@FutureGenerator` was removed — the asynchronous sequence is `@AsyncIter` (decision 122)",
+            .caretCaption = "write `@AsyncIter<@Result<T, E>>` (or `@AsyncIter<T>`)",
+            .hint = "`@FutureGenerator<T, E>` is `AsyncIter<Result<T, E>>`; iterate it with `for await` where there is an await channel.",
         },
         .effectTypeRemovedUse => .{
             .code = "effect-type-removed",
@@ -344,15 +344,15 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .effectTypeRemovedLegacy => .{
             .code = "effect-type-removed",
             .message = "this sequence type left the language (decisions 103, 122)",
-            .caretCaption = "write `@Stream<T>`, `@Iterator<T>` or `YieldStep<T>`",
-            .note = "`@AsyncIterator<T>` is `Stream<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `Iterator<T>`",
-            .hint = "`fn iter(self: Self) -> Iterator<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
+            .caretCaption = "write `@AsyncIter<T>`, `@Iter<T>` or `YieldStep<T>`",
+            .note = "`@AsyncIterator<T>` is `AsyncIter<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `Iter<T>`",
+            .hint = "`fn iter(self: Self) -> Iter<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
         },
         .iteratorErrorParamRemoved => .{
             .code = "iterator-error-param-removed",
-            .message = "`@Iterator` has no error parameter — the item carries the failure (decision 122)",
-            .caretCaption = "write `@Iterator<@Result<T, E>>`",
-            .hint = "`Iterator<T, E>` is `Iterator<Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
+            .message = "`@Iter` has no error parameter — the item carries the failure (decision 122)",
+            .caretCaption = "write `@Iter<@Result<T, E>>`",
+            .hint = "`Iter<T, E>` is `Iter<Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
         },
         .genericDefaultBeforeRequired => .{
             .message = "generic-default-before-required: default-typed generic parameters must be the trailing parameters of the list.",
@@ -360,7 +360,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .yieldBreakRemoved => .{
             .message = "yield-break-removed: use `break <C>` to end an iterator with a completion value. The `yield break` form was removed in v0.beta.19.",
-            .hint = "Inside an `@Iterator` / `@Stream` body or an `iter` / `stream` loop, write `break <v>` to emit a last item and end, or bare `break` for a clean end.",
+            .hint = "Inside an `@Iter` / `@AsyncIter` body or an `iter` / `stream` loop, write `break <v>` to emit a last item and end, or bare `break` for a clean end.",
         },
         .genericArgSkipForbidden => .{
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",
@@ -495,7 +495,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "loop-annotation-not-generator",
             .message = "a loop takes no annotation — it takes the `iter` / `stream` prefix",
             .caretCaption = "not a loop annotation",
-            .hint = "`iter loop { … }` is worth `Iterator<T>` and `stream loop { … }` `Stream<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
+            .hint = "`iter loop { … }` is worth `Iter<T>` and `stream loop { … }` `AsyncIter<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",

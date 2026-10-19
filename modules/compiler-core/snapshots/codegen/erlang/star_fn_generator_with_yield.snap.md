@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn counter() -> Iterator<i32> {
+fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
     yield 3;
@@ -12,7 +12,7 @@ fn counter() -> Iterator<i32> {
 -module(test@main).
 -export(['__bp_priv__counter'/0]).
 
-%% @Iterator — lazy lowering
+%% @Iter — lazy lowering
 counter() ->
     '__bp_gen_new'(fun() ->
         __BpGen1 = erlang:make_ref(),
