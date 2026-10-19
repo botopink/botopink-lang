@@ -446,7 +446,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
 // language says it is, and the one that answers `?T` on an array of anything.
 // The checker used to answer `void` for this node, which is why two fronts wrote
 // `.length()` around an index rather than indexing; what it answers now is what
-// the method answers, and `conformance/modules/index/cases/index_*` pins that by running.
+// the method answers, and `conformance/modules/index/{run,refused}/src/cases/index_*` and `modules/index/cells/index_*` pins that by running.
 //
 // A tuple keeps a bare JS index, because a tuple's rewrite is `t._0` and a
 // tuple is a JS array. `Array.at` goes through `__bp_array_at`, which answers

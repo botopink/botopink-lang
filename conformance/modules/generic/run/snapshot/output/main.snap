@@ -1,0 +1,88 @@
+botopink-cell 1
+out 3
+out x
+out 5
+out s
+out true
+out 1.5
+out 3.5
+out ["a", "b"]
+out [1, 2]
+out true
+out false
+out found
+out none
+out a
+out true
+out 7
+out loc
+out ab
+out n
+out q
+out true
+out r
+out [1, 2]
+out ["s", "t"]
+out xd
+out yvz
+out k
+out r=k
+out false
+out w!
+out P(x: 4)
+out [5, 5]
+out ["a", "a!"]
+out y
+out n
+out hi
+out P(x: 1)
+out hi
+out hi
+out 3
+out Tree.Leaf(value: "a")
+out true
+out 2
+out <h1>A</h1>
+out x:3
+out A!
+out Post(title: "A", views: 3)
+out Q(items: [7])
+out Q(items: ["a", "b"])
+out Q(items: [true])
+out Q(items: [1.5])
+out Q(items: [W(x: 1)])
+out B(v: "s")
+out B(v: 3)
+out B(v: [1, 2])
+out B(v: false)
+out B(v: W(x: 2))
+out B(v: 4)
+out Tree.Leaf(v: "x")
+out Tree.Node(kids: [1, 2])
+out B(v: "w")
+out B(v: 5)
+out [B(v: "e")]
+out true
+out true
+out false
+out true
+out true
+out true
+out false
+out true
+out true
+out true
+out false
+out true
+out [true]
+out true
+out false
+out true
+out true
+out 2
+out true
+out b
+out 3
+out a
+out 7
+out 0

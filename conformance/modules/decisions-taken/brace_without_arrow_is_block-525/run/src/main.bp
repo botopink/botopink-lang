@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.block_for_return_leaves_function.runCase();
+    cases.block_partial_return.runCase();
+    cases.block_reassigns_enclosing_var.runCase();
+    cases.block_return_leaves_function.runCase();
+    cases.block_tail_value.runCase();
+    cases.block_value_reassigns_enclosing_var.runCase();
+    cases.trailing_lambda_call.runCase();
+}

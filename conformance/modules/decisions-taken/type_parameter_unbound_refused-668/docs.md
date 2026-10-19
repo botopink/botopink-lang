@@ -8,5 +8,5 @@ the declaration is refused at `T`, `type-parameter-unbound`, and the program doe
 it would print `3`, `20`, `null`, `null`.
 
 
-[cases/type_parameter_bound_in_lambda_type/src/main.bp](cases/type_parameter_bound_in_lambda_type/src/main.bp)
-[cases/type_parameter_unbound/src/main.bp](cases/type_parameter_unbound/src/main.bp)
+[cells/type_parameter_bound_in_lambda_type/src/main.bp](cells/type_parameter_bound_in_lambda_type/src/main.bp)
+[cells/type_parameter_unbound/src/main.bp](cells/type_parameter_unbound/src/main.bp)

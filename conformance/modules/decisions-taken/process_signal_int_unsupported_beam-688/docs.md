@@ -4,6 +4,6 @@ The example asks for a handler on `Int` and on `Term`, and prints what each `onS
 
 The program prints `Int installed` (`Int unsupported` on erlang and beam), then `Term installed`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/std_cli_host_primitives-506/cases/std_io_signal_handlers`, `modules/decisions-taken/std_cli_host_primitives-506/cases/std_io_process_forward_signals`.
+Cells in this repository that bear on it: `modules/decisions-taken/std_cli_host_primitives-506/cells/std_io_signal_handlers`, `modules/decisions-taken/std_cli_host_primitives-506/cells/std_io_process_forward_signals`.
 
 [draft/main.bp](draft/main.bp)

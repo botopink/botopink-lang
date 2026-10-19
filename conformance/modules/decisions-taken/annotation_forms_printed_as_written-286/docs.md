@@ -7,6 +7,6 @@ item per line. `mark`, in [draft/comptime/marks.bp](draft/comptime/marks.bp), ap
 three types reads `first second`. `botopink format` leaves all three as written — it neither joins the blocks nor splits
 the list, the comment stays between the blocks, and inside a list the trailing comma alone decides its shape.
 
-Cells that also bear on it: `modules/decisions-taken/bare_variant_expression_refused-587/cases/format_annotation_trailing_comma`.
+Cells that also bear on it: `modules/decisions-taken/bare_variant_expression_refused-587/run/src/cases/format_annotation_trailing_comma`.
 
 [draft/main.bp](draft/main.bp)

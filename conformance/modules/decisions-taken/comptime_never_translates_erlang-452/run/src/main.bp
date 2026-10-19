@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.comptime_erlang_cell_ignored_fn_serves.runCase();
+    cases.comptime_erlang_cell_never_runs_at_build.runCase();
+}

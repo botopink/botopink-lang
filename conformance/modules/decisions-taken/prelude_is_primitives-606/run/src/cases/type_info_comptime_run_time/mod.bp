@@ -1,0 +1,13 @@
+//// Decision 606 (3) — `typeInfo` is a member of `compiler`; in a body that runs when the
+//// program runs it is written under `comptime`, which computes it at build: the answer is a
+//// constant of the program, here the declaration's name.
+
+import {compiler, io.terminal.print} from "std";
+
+type City(name: string, size: i32)
+
+pub fn runCase() {
+    val name = comptime compiler.typeInfo(City).name;
+    print(name);
+    print(comptime compiler.typeInfo(City).name == "City");
+}

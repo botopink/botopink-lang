@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.string_codepoint_slice_and_code.runCase();
+    cases.string_index_of_codepoints.runCase();
+}

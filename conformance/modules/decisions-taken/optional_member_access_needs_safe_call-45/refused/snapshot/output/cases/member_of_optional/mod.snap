@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `b` is read off an optional `?#(i32,string)` — write `?.b`
+at src/cases/member_of_optional/mod.bp:11:20

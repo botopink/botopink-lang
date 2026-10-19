@@ -7,6 +7,6 @@ task. `unmarked` is written like `marked` without the marker, and is refused: `r
 `Async<i32>` is expected, a type mismatch whose hint names `async fn` and `Async.resolve`. A caller sees no difference
 between the first two — `await` reads both. The same holds for `Component<R>` and the `component` marker.
 
-Cells that also bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_type_mismatch`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_async`.
+Cells that also bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async`.
 
 [draft/main.bp](draft/main.bp)

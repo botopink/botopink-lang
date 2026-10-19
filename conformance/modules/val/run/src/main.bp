@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.val_annotated.runCase();
+    cases.val_assert_ok.runCase();
+    cases.val_assert_record_pattern.runCase();
+    cases.val_assert_variant_pattern.runCase();
+    cases.val_binding.runCase();
+    cases.val_nested_ctor_pattern.runCase();
+    cases.val_spread_only_list_pattern.runCase();
+}

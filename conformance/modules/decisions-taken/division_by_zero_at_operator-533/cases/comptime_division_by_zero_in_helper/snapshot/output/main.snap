@@ -1,5 +1,0 @@
-botopink-cell 1
-refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `ratio(6, 0)` (division by zero)
-at src/main.bp:8:14
-from src/main.bp:12:28
-from src/main.bp:12:19

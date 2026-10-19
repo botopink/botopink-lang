@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[annotation-label-equals]: an annotation's labelled argument is written `label: value`
+at src/cases/annotation_label_equals_decorator/mod.bp:15:23
+label write `at:`

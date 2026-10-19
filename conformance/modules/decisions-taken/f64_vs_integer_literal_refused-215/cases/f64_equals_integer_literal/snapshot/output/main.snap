@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comparing f64 with an integer literal — write 2.0
-at src/main.bp:10:16

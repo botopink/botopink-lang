@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() {
+    cases.external_compiler_member.runCase();
+    cases.prelude_name_shadowed.runCase();
+    cases.print_from_io_terminal.runCase();
+    cases.print_local_shadows_import.runCase();
+    cases.type_info_comptime_run_time.runCase();
+}

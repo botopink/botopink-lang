@@ -1,0 +1,10 @@
+mod cases;
+
+pub fn main() {
+    cases.compiler_decorator_three_kinds.runCase();
+    cases.decorator_member_captures.runCase();
+    cases.external_library_source_annotation.runCase();
+    cases.external_library_source_beside_emit.runCase();
+    cases.external_library_source_beside_emit_split.runCase();
+    cases.external_library_source_beside_member.runCase();
+}

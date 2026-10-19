@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: marker-type-mismatch: a lambda marked `iter` answers `@Iterator<…>`, and the function type it is written for returns `Task<i32>`
+at src/cases/marker_lambda_type_mismatch/mod.bp:13:23

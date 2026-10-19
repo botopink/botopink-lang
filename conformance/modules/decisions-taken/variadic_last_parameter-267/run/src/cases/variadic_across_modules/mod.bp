@@ -1,0 +1,13 @@
+//// Decision 267 — a variadic `pub fn` of a sibling module, called from
+//// `main` with three arguments and with none: the call is packed where it is
+//// written, whatever module declares the function.
+
+mod util;
+
+import {cases.variadic_across_modules.util.sum};
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    print(sum(1, 2, 3));
+    print(sum());
+}

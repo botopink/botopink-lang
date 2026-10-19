@@ -1,4 +1,0 @@
-botopink-cell 1
-out 7
-out grid
-out Point(`x pos`: 3, `y-pos`: 4, `type`: "grid")

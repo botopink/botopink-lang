@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `?Pessoa` is neither
-at src/main.bp:15:20

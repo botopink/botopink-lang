@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[inline-type-outside-parameter]: an inline `type(…)` is written only as a parameter's type
+at src/cases/inline_type_in_val_annotation/mod.bp:5:12
+label not a parameter's type

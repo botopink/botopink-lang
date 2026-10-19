@@ -1,0 +1,48 @@
+//// A loop inside a method reads the method's `self` whatever shape the
+//// backend gives it: an `iter loop`, an `iter while` and an `iter for` (each
+//// a generator the method answers or drains), and an `iter loop` nested in a
+//// `for`. The synchronous loop forms are statements or arrows and keep `this`; a
+//// generator cannot be an arrow, and on commonJS its `function*` wrapper lost
+//// `this` (`Cannot read properties of undefined`).
+
+import {io.terminal.print} from "std";
+
+type Counter(start: i32, step: i32) {
+    fn ticks(self: Self) -> Iterator<i32> {
+        var n = self.start;
+        return iter loop {
+            if (n > self.start + 2 * self.step) break;
+            yield n;
+            n = n + self.step;
+        };
+    }
+
+    fn countdown(self: Self) -> Iterator<i32> {
+        var i = self.start;
+        return iter while (i > 0) {
+            yield i;
+            i = i - self.step;
+        };
+    }
+
+    fn scaled(self: Self, xs: i32[]) -> Iterator<i32> {
+        return iter for (xs) { x ->
+            yield x * self.step;
+        };
+    }
+}
+
+fn line(it: Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
+    }
+    return acc;
+}
+
+pub fn runCase() {
+    val c = Counter(start: 4, step: 2);
+    print(line(c.ticks()));
+    print(line(c.countdown()));
+    print(line(c.scaled([1, 2, 3])));
+}

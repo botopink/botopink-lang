@@ -3,7 +3,9 @@
 //! Walks every single-file conformance cell every target refuses
 //! (`conformance/modules/<cell>/src/main.bp` alone, its
 //! `snapshot/output/main.snap` holding a `refused` record — the former
-//! `tests/language/reject/` cells) through the same `comptime.compile` the CLI
+//! `tests/language/reject/` cells), and every single-file case of a module's
+//! `refused/` package (decision 779: `src/cases/<case>/mod.bp` alone, its
+//! `snapshot/output/cases/<case>/mod.snap` refused), through the same `comptime.compile` the CLI
 //! runs, and requires each type error to carry a `loc`. An unlocated error renders as a message with no ` --> file:L:C`
 //! line and no source excerpt: the reader is told what is wrong and not
 //! where. The checker's own unit tests hold the same line from the other side
@@ -40,9 +42,37 @@ fn refusedSingleFile(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name
     return try src.readFileAlloc(io, "main.bp", gpa, .unlimited);
 }
 
+/// The single-file refused cases of a `refused/` package (decision 779), each as
+/// `<package>/src/cases/<case>` and its one source `mod.bp`, appended to `out`.
+fn refusedCases(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []const u8, out: *std.ArrayList([2][]u8)) !void {
+    var pkg = cells.openDir(io, name, .{}) catch return;
+    defer pkg.close(io);
+    var cases = pkg.openDir(io, "src/cases", .{ .iterate = true }) catch return;
+    defer cases.close(io);
+    var it = cases.iterate();
+    while (try it.next(io)) |e| {
+        if (e.kind != .directory) continue;
+        const snap_path = try std.fmt.allocPrint(gpa, "snapshot/output/cases/{s}/mod.snap", .{e.name});
+        defer gpa.free(snap_path);
+        const snap = pkg.readFileAlloc(io, snap_path, gpa, .limited(1024 * 1024)) catch continue;
+        defer gpa.free(snap);
+        if (std.mem.indexOf(u8, snap, "\nrefused ") == null) continue;
+        var case = try cases.openDir(io, e.name, .{ .iterate = true });
+        defer case.close(io);
+        var files = case.iterate();
+        var sources: usize = 0;
+        while (try files.next(io)) |f| {
+            if (f.kind != .file or !std.mem.eql(u8, f.name, "docs.md")) sources += 1;
+        }
+        if (sources != 1) continue;
+        const src = case.readFileAlloc(io, "mod.bp", gpa, .unlimited) catch continue;
+        try out.append(gpa, .{ try std.fmt.allocPrint(gpa, "{s}/src/cases/{s}", .{ name, e.name }), src });
+    }
+}
+
 /// Every cell under `dir` as a path relative to it: a directory holding a
-/// `botopink.json` (the modules keep their cells under `<module>/cases/`; a
-/// decision's `draft/` is no cell).
+/// `botopink.json` (a module keeps its cells under `<module>/cells/`, its packages
+/// at `<module>/run/` and `<module>/refused/`; a decision's `draft/` is no cell).
 fn collectCells(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, prefix: []const u8, out: *std.ArrayList([]u8)) !void {
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
@@ -84,9 +114,22 @@ test "C-21: every type error a reject cell raises carries a location" {
     var unlocated: std.ArrayList(u8) = .empty;
     defer unlocated.deinit(gpa);
     var walked: usize = 0;
+    var sources: std.ArrayList([2][]u8) = .empty;
+    defer {
+        for (sources.items) |s| {
+            gpa.free(s[0]);
+            gpa.free(s[1]);
+        }
+        sources.deinit(gpa);
+    }
     for (names.items) |name| {
-        const src = (try refusedSingleFile(gpa, io, dir, name)) orelse continue;
-        defer gpa.free(src);
+        if (try refusedSingleFile(gpa, io, dir, name)) |src| {
+            try sources.append(gpa, .{ try gpa.dupe(u8, name), src });
+        } else try refusedCases(gpa, io, dir, name, &sources);
+    }
+    for (sources.items) |s| {
+        const name = s[0];
+        const src = s[1];
         walked += 1;
         var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src }}, io, build_root, null);
         defer session.deinit(gpa);

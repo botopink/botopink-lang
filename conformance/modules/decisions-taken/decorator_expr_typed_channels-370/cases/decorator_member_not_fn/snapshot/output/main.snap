@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-member-not-fn: `decl.addMember(name, f)` takes the member as a function expression written at the call
-at src/main.bp:14:36

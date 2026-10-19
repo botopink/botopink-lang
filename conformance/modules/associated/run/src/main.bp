@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() {
+    cases.associated_fn_as_value.runCase();
+    cases.associated_fn_default.runCase();
+    cases.associated_fn_of_type_default.runCase();
+    cases.associated_fn_value_answers_record.runCase();
+}

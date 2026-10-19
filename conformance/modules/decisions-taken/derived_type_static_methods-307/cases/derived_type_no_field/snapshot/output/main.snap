@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-fields: `Type.pick` takes at least one field after the type
-at src/main.bp:10:24

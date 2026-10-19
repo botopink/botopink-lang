@@ -1,0 +1,12 @@
+//// Two modules each declare `pub type Order` with members of one name: each
+//// is its own module's type, and each module's code reaches its own members
+//// (144 B-10, decision 430).
+
+pub mod shop;
+import {cases.two_modules_one_type_name.shop.a.aLabel, cases.two_modules_one_type_name.shop.b.bLabel};
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    print(aLabel(2));
+    print(bLabel(2));
+}

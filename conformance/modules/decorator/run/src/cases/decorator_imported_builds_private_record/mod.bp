@@ -1,0 +1,15 @@
+//// A decorator imported from another module whose body builds a record
+//// private to its module runs where it annotates: the evaluator reaches the
+//// record through the decorator's own module, not through what it exports
+//// (144 B-19). The meta it recorded is read here.
+
+pub mod orm;
+import {cases.decorator_imported_builds_private_record.orm.entity, cases.decorator_imported_builds_private_record.orm.Entity};
+import {io.terminal.print, compiler} from "std";
+
+#[entity("cities")]
+type City(name: string)
+
+pub fn runCase() {
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unknown-associated-fn: `City` has no associated fn `table`
+at src/cases/associated_fn_unknown/mod.bp:6:16

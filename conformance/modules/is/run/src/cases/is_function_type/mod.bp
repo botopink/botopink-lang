@@ -1,0 +1,13 @@
+import {io.terminal.print} from "std";
+
+type Clock(zone: string)
+
+fn build(factory: unknown) -> string {
+    if (factory is fn() -> Clock) return factory().zone;
+    return "not a factory";
+}
+
+pub fn runCase() {
+    print(build({ -> Clock(zone: "UTC") }));
+    print(build(42));
+}

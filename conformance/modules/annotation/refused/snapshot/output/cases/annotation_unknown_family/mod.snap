@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unknown-annotation: `#[@TotallyMadeUp.Nonsense]` names no annotation family
+at src/cases/annotation_unknown_family/mod.bp:8:3

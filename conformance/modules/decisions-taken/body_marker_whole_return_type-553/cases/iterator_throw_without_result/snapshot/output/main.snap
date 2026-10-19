@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — the item of `@Iterator<T>` has to be `@Result<T, E>` to use `throw` / `try`; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`
-at src/main.bp:10:5

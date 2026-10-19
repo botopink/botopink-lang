@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-not-top-level: `use` inside an `iter` / `stream` loop — a `use` is written at the top level of a `@Component` body and runs on every call (decision 357)
-at src/main.bp:18:17

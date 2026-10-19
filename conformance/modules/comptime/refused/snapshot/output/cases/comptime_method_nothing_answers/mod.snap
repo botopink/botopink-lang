@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unknown-primitive-method: `string` has no method `frobnicate`
+at src/cases/comptime_method_nothing_answers/mod.bp:11:15

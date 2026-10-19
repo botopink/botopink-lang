@@ -4,6 +4,6 @@ The example's build layer, [draft/comptime/validation.bp](draft/comptime/validat
 
 The program prints `0` for a valid account and `passwords match; handle free` for one that breaks both rules.
 
-Cells in this repository that bear on it: `modules/decisions-taken/decorator_four_output_places-216/cases/decorator_add_member_duplicate`, `modules/meta/cases/meta_typed_records`, `modules/meta/cases/meta_expr_rule`.
+Cells in this repository that bear on it: `modules/decisions-taken/decorator_four_output_places-216/refused/src/cases/decorator_add_member_duplicate`, `modules/meta/cells/meta_typed_records`, `modules/meta/cells/meta_expr_rule`.
 
 [draft/main.bp](draft/main.bp)

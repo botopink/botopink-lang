@@ -1,0 +1,29 @@
+//// A decorator reaches two DIFFERENT functions named `wrap`: its own
+//// module's, and `text`'s, which the imported `shout` calls. A decorator runs
+//// as one module, where one name is one function, so one `wrap` would answer
+//// for the other; the decorator is refused where it is applied.
+
+pub mod text;
+import {cases.decorator_imported_function_name_conflict.text.shout};
+import {compiler, io.terminal.print} from "std";
+
+fn wrap(s: string) -> string {
+    return "[" + s + "]";
+}
+
+fn tag(syntax decl: unknown) {
+    @emit(
+        "pub fn tagged() -> string { return \""
+            + wrap(shout(compiler.name(decl)!))
+            + "\"; }",
+    );
+}
+
+#[tag]
+fn tick() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    print(tagged());
+}

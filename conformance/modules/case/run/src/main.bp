@@ -1,0 +1,16 @@
+mod cases;
+
+pub fn main() {
+    cases.case_alternatives_and_arrays.runCase();
+    cases.case_arm_block_comment.runCase();
+    cases.case_arm_ending_in_for.runCase();
+    cases.case_arm_lambda_value.runCase();
+    cases.case_arm_name_is_also_a_type.runCase();
+    cases.case_bool_literal_arms.runCase();
+    cases.case_catch_all_binder_record.runCase();
+    cases.case_dot_variant_patterns.runCase();
+    cases.case_exhaustive_nested_variants.runCase();
+    cases.case_function_typed_arms.runCase();
+    cases.case_generic_variant_tuple_payload.runCase();
+    cases.case_or_pattern_alternatives.runCase();
+}

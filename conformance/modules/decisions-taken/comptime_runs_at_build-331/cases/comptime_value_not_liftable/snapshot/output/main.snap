@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-value-not-liftable: the value is a lambda that captures the comptime block's state — only a declared function, or a lambda reading nothing the block declares, is lifted
-at src/main.bp:8:15

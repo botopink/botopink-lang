@@ -669,7 +669,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
     // project, `require("../module")` inside a dependency, which is how a
     // library's examples built and then died (04-js step 5). The path is the
     // sibling's own, relative to the importing module, in both shapes; the
-    // RUN LOG is `conformance/modules/sibling/cases/sibling_import_in_a_dependency`'s.
+    // RUN LOG is `conformance/modules/sibling/cells/sibling_import_in_a_dependency`'s.
     try h.assertConsumerJs(std.testing.allocator, &.{
         .{ .path = "leaf", .source = "pub type Leaf(v: i32)\n" },
         .{ .path = "", .source =

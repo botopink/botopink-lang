@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() {
+    cases.variant_leading_dot_expected.runCase();
+    cases.variant_leading_dot_two_enums_case.runCase();
+    cases.variant_name_collision.runCase();
+    cases.variant_payload_wildcard_and_nested.runCase();
+    cases.variant_positional_payload_same_name.runCase();
+}

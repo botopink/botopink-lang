@@ -1,0 +1,46 @@
+botopink-cell 1
+out closed front
+out closed back
+out closed side
+out $7
+out then closed
+out 11
+out else closed
+out 21
+out zero closed
+out 100
+out other closed
+out 200
+out lambda 1
+out lambda 2
+out 2
+out inner
+out outer
+out Error panic: from defer
+out arm released
+out Error panic: in arm
+out other released
+out Ok 1
+out branch released
+out Error panic: in branch
+out Ok 2
+out work local
+out close global
+out in branch
+out close global
+out after
+out close global
+out close b
+out Error panic: x
+out close c
+out Error panic: y
+out close d
+out Ok 2
+out close e
+out Error panic: boom
+out close g
+out Ok 3
+out close h
+out Error panic: boom
+out close i
+out Ok 4

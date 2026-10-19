@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.narrowing_null_check.runCase();
+    cases.narrowing_null_guard_clause.runCase();
+}

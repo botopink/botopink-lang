@@ -1,4 +1,4 @@
 # smoke
 
-[cases/smoke/src/main.bp](cases/smoke/src/main.bp)
-[cases/smoke_refused/src/main.bp](cases/smoke_refused/src/main.bp)
+[cells/smoke/src/main.bp](cells/smoke/src/main.bp)
+[cells/smoke_refused/src/main.bp](cells/smoke_refused/src/main.bp)

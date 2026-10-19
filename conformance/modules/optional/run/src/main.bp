@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() {
+    cases.optional_case_null_binder.runCase();
+    cases.optional_chain_method.runCase();
+    cases.optional_chain_method_on_dict_field.runCase();
+    cases.optional_enum_method_sibling.runCase();
+}

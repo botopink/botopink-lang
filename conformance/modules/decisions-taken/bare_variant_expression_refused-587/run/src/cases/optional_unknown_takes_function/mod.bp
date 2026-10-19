@@ -1,0 +1,23 @@
+//// Decision 587 — a `?unknown` parameter admits a function value: the
+//// `Implementation.Wasm(body: reverseBody)` of a source annotation names the
+//// function it runs, and a function handed where `?unknown` is expected is a
+//// value like any other.
+
+import {io.terminal.print} from "std";
+
+pub type Hook { Run(body: ?unknown = null, note: string = "") }
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+fn has(h: Hook) -> bool {
+    return case h {
+        Run(body, note) -> body != null;
+    };
+}
+
+pub fn runCase() {
+    print(has(Hook.Run(body: reverseBody)));
+    print(has(Hook.Run(note: "none")));
+}

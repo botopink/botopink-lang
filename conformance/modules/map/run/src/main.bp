@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.map_record_field_length.runCase();
+    cases.map_record_field_strings.runCase();
+}

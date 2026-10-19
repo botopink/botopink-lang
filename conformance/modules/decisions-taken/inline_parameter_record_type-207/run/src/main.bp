@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.inline_param_type.runCase();
+    cases.template_builds_inline_props.runCase();
+}

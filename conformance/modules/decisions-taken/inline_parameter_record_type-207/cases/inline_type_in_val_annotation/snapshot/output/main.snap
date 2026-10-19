@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[inline-type-outside-parameter]: an inline `type(…)` is written only as a parameter's type
-at src/main.bp:5:12
-label not a parameter's type

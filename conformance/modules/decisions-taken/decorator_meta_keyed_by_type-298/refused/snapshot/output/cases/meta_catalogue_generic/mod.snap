@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: typeinfo-meta-type: `metaAll(Check)` on a catalogue entry names a generic record, whose type arguments this read cannot spell
+at src/cases/meta_catalogue_generic/mod.bp:28:25

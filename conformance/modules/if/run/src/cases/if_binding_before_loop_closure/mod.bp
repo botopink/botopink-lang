@@ -1,0 +1,28 @@
+//// An `if (x) { v -> … }` binding is bound in its then-branch alone: a later
+//// closure (a `for` body) that binds the same name in its own `if` reads its
+//// own binding, never the earlier one — on every target, whether the earlier
+//// optional was present or absent.
+
+import {io.terminal.print} from "std";
+
+fn joined(first: ?string, parts: string[], sep: ?string) -> string {
+    var out = "";
+    if (first) {
+        v ->
+        out = v;
+    }
+    for (parts) { s ->
+        if (sep) {
+            v ->
+            out = out + v;
+        }
+        out = out + s;
+    }
+    return out;
+}
+
+pub fn runCase() {
+    print(joined("<", ["a", "b"], "|"));
+    print(joined(null, ["a", "b"], "-"));
+    print(joined("<", ["a", "b"], null));
+}

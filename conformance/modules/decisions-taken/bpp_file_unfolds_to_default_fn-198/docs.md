@@ -11,7 +11,7 @@ imports the default by the file's name, `components.Card`, passes the props by l
 `<h1>{props.title}</h1>`. The manifest that names the package in `"bpp"` is written when the draft is promoted; a
 phase-1 draft carries none.
 
-Cells that also bear on it: `modules/bpp/cases/bpp_unfold_props`, `modules/bpp/cases/bpp_roles_found`, `modules/bpp/cases/bpp_beside_bp`,
-`modules/decisions-taken/bpp_declaration_after_statement_refused-552/cases/bpp_declaration_after_statement`, `modules/bpp/cases/bpp_diagnostics_located`.
+Cells that also bear on it: `modules/bpp/cells/bpp_unfold_props`, `modules/bpp/cells/bpp_roles_found`, `modules/bpp/cells/bpp_beside_bp`,
+`modules/decisions-taken/bpp_declaration_after_statement_refused-552/cells/bpp_declaration_after_statement`, `modules/bpp/cells/bpp_diagnostics_located`.
 
 [draft/main.bp](draft/main.bp)

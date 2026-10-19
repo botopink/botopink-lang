@@ -1,0 +1,17 @@
+//// `std/failure` (decisions 431, 489, 492) — `HostError` carries a message, kind
+//// `host`, a `HostErrorName` and an optional stack; `Failure` is a message and
+//// a kind, `panic`, `host` or `crash`.
+
+import {failure, failure.HostErrorName, io.terminal.print} from "std";
+
+pub fn runCase() {
+    val h = failure.HostError(message: "ENOENT", kind: "host", name: HostErrorName.Error, detail: null);
+    print(h.message);
+    print(h.kind);
+    print(h.detail == null);
+    val kinds = ["panic", "host", "crash"];
+    for (kinds) { k ->
+        val f = failure.Failure(message: "x", kind: k);
+        print(f.kind + ":" + f.message);
+    }
+}

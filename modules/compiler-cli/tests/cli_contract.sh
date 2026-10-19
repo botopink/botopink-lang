@@ -1294,13 +1294,13 @@ fi
 # `'__bp_load_siblings'/0` compiles that `.erl` itself, so only the `.S` files
 # are assembled here; on erlang every `.erl` of `out/erl/` is compiled, because
 # a plain erlang build carries no sibling loader yet (02-erlang step 9).
-# The program is the conformance cell `conformance/modules/erlang/cases/erlang_host_sidecar_shipped`;
+# The program is the conformance cell `conformance/modules/erlang/cells/erlang_host_sidecar_shipped`;
 # what it prints is its `snapshot/output/main.snap`'s `out` lines.
 echo "==> a built erlang / beam program loads its .erl sidecar under erl -pa"
 if have erl && have erlc; then
   for T in erlang beam; do
     P="$WORK/built-sidecar-$T"; rm -rf "$P"
-    cp -R "$REPO_ROOT/conformance/modules/erlang/cases/erlang_host_sidecar_shipped" "$P"
+    cp -R "$REPO_ROOT/conformance/modules/erlang/cells/erlang_host_sidecar_shipped" "$P"
     run "$P" build --target "$T"
     expect_code 0 "build --target $T"
     D="$P/out/$([[ "$T" == erlang ]] && echo erl || echo beam)"
@@ -1693,12 +1693,12 @@ else
 fi
 
 echo "==> a dependency's modules are one set under every command (decisions 514, 575 (1))"
-# conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency: its dependency's `shapes.bp`
+# conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency: its dependency's `shapes.bp`
 # declares `Rect`, which the cell's main builds. `check` and `test` keep
 # a dependency's modules as `build` does — one module set, one
 # level B entry — so `check` answers what `build` answers.
 DBP="$WORK/dbp-dependency"
-rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency" "$DBP"
+rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency" "$DBP"
 rm -rf "$DBP/snapshot" "$DBP/docs.md"
 run "$DBP" check
 expect_code 0 "check of a consumer building a type its dependency declares"

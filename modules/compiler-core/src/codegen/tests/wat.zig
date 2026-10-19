@@ -1159,7 +1159,7 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
     );
 }
 
-// The shapes `conformance/modules/decisions-taken/record_field_assignment_refused-37/cases/index_expression` asks for that the three
+// The shapes `conformance/modules/decisions-taken/record_field_assignment_refused-37/run/src/cases/index_expression` asks for that the three
 // fixtures above do not reach: an index whose element is itself an array
 // (`rows[1][0]`, which is `rows.at(1).at(0)` — a method call on a `?T`
 // receiver, which the checker lets flow), a slice's length, and a tuple
@@ -1335,7 +1335,7 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 // (`toUpperCase`, JavaScript's own, which `primitives.bp` gives `toUpper`
 // through `#[@External.Node("toUpperCase")]`) used to be lowered here too; the
 // checker refuses them now (pending 0203-a, answered (b):
-// `conformance/modules/primitive/cases/primitive_method_undeclared`).
+// `conformance/modules/primitive/refused/src/cases/primitive_method_undeclared`).
 test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -1352,7 +1352,7 @@ test "wat: string ---- toUpper and toLower answer" {
 // §7's F2 (`Point(x: 1, y: 2)`) and F3 (`Shape.Square(side: 4)`) need a value
 // that knows which named type it is at run time. Before it did, the wasm
 // numeric printer answered the value's **heap address** with exit 0 and no
-// diagnostic: `modules/print/cases/print_formatter` printed `328`, `336`, `344` where §7
+// diagnostic: `modules/print/run/src/cases/print_formatter` printed `328`, `336`, `344` where §7
 // wants three names, and `@print([Point(x: 1, y: 2)])` wrote `[256]`; the
 // interim was a trap.
 //
@@ -1379,7 +1379,7 @@ test "wat: print ---- a record and a variant print their names and fields" {
 
 // ── step 3: the two halves of `Dict.at` answering the fallback ───────────
 //
-// `modules/std/cases/std_import` printed `0` where `1` is stored, exit 0, no diagnostic.
+// `modules/std/run/src/cases/std_import` printed `0` where `1` is stored, exit 0, no diagnostic.
 // The suspect named in the step was the closure — a `forEach` writing an outer
 // local — and it is innocent: the first two prints below worked before the fix.
 // The two that did not, each a `?T` whose writer and reader disagreed about the
@@ -1489,7 +1489,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // and what `s[i]` rewrites to. It had no wasm lowering at all: the call fell
 // through `primCallRes` and emitted
 // `unreachable ;; prim method not lowered on wasm: string.at/1`, so
-// `conformance/modules/decisions-taken/negative_index_counts_from_end-139/cases/index_at_optional` died at exit 134 on this backend
+// `conformance/modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_at_optional` died at exit 134 on this backend
 // while commonJS, erlang and beam all answered. std-wasm's `text.at` is
 // `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test, after a
 // negative index has been counted from the end (`i + len`, decision 139) — one
@@ -1504,7 +1504,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // A RUN LOG and not a snapshot: `String.at` already answers on the other three
 // backends, so an all-backend fixture would move
 // `snapshots/codegen/{commonJS,erlang,beam}/`, which this front does not own.
-// `conformance/modules/decisions-taken/negative_index_counts_from_end-139/cases/string_at` is the cross-backend half.
+// `conformance/modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/string_at` is the cross-backend half.
 test "wat: prim method ---- String.at answers a one-character string, and null out of range" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
@@ -1532,7 +1532,7 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
 // OLD `n` — the arguments are on the stack before any parameter is re-bound.
 //
 // A RUN LOG and not a snapshot: the depth is the point, and the other three
-// backends already answer it. `conformance/modules/tail/cases/tail_self_call` is the
+// backends already answer it. `conformance/modules/tail/run/src/cases/tail_self_call` is the
 // cross-backend half.
 test "wat: tail call ---- a self-call in return position runs in one frame" {
     try h.assertWasmRunLog(std.testing.allocator,
@@ -1607,7 +1607,7 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 // array helpers std-wasm's `array.unique`, `array.flatten` (`flatMap` is `map` then
 // it, as `primitives.bp`'s body is), `array.chunked`, `array.sliding`,
 // `array.fill`. The answers are commonJS's, erlang's and beam's for the same
-// program (`conformance/modules/string/cases/string_lines_words`, `array_unique.bp`,
+// program (`conformance/modules/string/run/src/cases/string_lines_words`, `array_unique.bp`,
 // `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
 test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
     try h.assertWasmRunLog(std.testing.allocator,
@@ -1724,7 +1724,7 @@ test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches f
 
 // Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an
 // `unknown` slot carries a header naming what it holds, and `is`, a type arm,
-// `==` and `@print` read it — `conformance/modules/unknown/cases/unknown_by_value` pins the
+// `==` and `@print` read it — `conformance/modules/unknown/run/src/cases/unknown_by_value` pins the
 // answers on four targets. A payload declared as a type parameter (`value: T`)
 // is not typed by this backend, which does not monomorphise: a constructor
 // written where its value is an `unknown` boxes that payload by its static
@@ -2015,8 +2015,8 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
 // Decision 152 refuses a second binding of one name in one body, and decision
 // 205 makes the body the whole function: an inner block's `val`, a loop's
 // binder and a `case` arm's binder over a name visible there are refused by the
-// checker (`modules/decisions-taken/shadowing_in_inner_blocks_refused-205/cases/binding_shadows_in_inner_block`,
-// `modules/decisions-taken/shadowing_in_inner_blocks_refused-205/cases/case_arm_binder_reuses_name`). What stays legal is a lambda — a
+// checker (`modules/decisions-taken/shadowing_in_inner_blocks_refused-205/refused/src/cases/binding_shadows_in_inner_block`,
+// `modules/decisions-taken/shadowing_in_inner_blocks_refused-205/refused/src/cases/case_arm_binder_reuses_name`). What stays legal is a lambda — a
 // function of its own — binding a name its enclosing function holds, as a
 // parameter or a `val` of its body, and two sibling blocks each binding one
 // name. One wasm function is one local namespace and a HOF's lambda is inlined
@@ -2055,7 +2055,7 @@ test "wat: scope ---- a lambda's binding shadows the outer one only inside it" {
 }
 
 // Decision 214 — the NaN half of `f64`'s total-order `==`, which the
-// four-target cell `modules/decisions-taken/f64_equality_total_order-214/cases/f64_equality_total_order` cannot carry (erlang and
+// four-target cell `modules/decisions-taken/f64_equality_total_order-214/run/src/cases/f64_equality_total_order` cannot carry (erlang and
 // beam never produce a NaN): `NaN == NaN` is `true` bare and inside a record,
 // a tuple, an array and a variant, `NaN != NaN` is `false`, and NaN against a
 // number is unequal. `<` stays IEEE (`NaN < 1.0` is `false`).
@@ -2818,7 +2818,7 @@ test "wat: fn ---- an empty body is emitted and called, never taken for a declar
 // private cell of its own, never an import of `testing.asserts`, whose
 // host-only `canonical` the import linked into it — its wasm refusal then named
 // `canonical` at `asserts.bp` instead of its own host cell, and every cell
-// pinning that refusal went red (`conformance/modules/std/cases/std_decorator_*`). The
+// pinning that refusal went red (`conformance/modules/std/{run,refused}/src/cases/std_decorator_*` and `modules/std/cells/std_decorator_*`). The
 // module is refused on wasm for one of ITS host cells, never a linked one's.
 test "wat: std ---- testing.mocks is refused on wasm for its own host cell, never a linked module's" {
     var outputs = try codegen.generateWith(std.testing.allocator, &.{.{ .path = "", .source =
@@ -2865,7 +2865,7 @@ test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
 
 // Decision 445 — a `std:` cell is std's alone: outside std it is refused at
 // the annotation, naming the std function to call instead (also
-// `conformance/modules/decisions-taken/std_cell_is_std_only-445/cases/external_wasm_std_outside_std`); inside std, a name
+// `conformance/modules/decisions-taken/std_cell_is_std_only-445/cells/external_wasm_std_outside_std`); inside std, a name
 // std-wasm lacks and a declaration of other types are refused there (decision
 // 440 (3)) — what only std can now write.
 test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an export of its types" {
@@ -3213,7 +3213,7 @@ test "wat: template ---- a lone float hole is a string, as a val, an element and
 // A module-level tuple's `bool` element read inside a function. `print_shape_locals` is cleared
 // per function and held only locals, so `t.flag` (a labelled tuple, the shape a template's
 // `@expr(#(server, debug))` lifts) had no shape for a global `t` and printed `1`, where every
-// other target prints `true`. `conformance/modules/global/cases/global_tuple_bool_field` is the cross-backend
+// other target prints `true`. `conformance/modules/global/cells/global_tuple_bool_field` is the cross-backend
 // half.
 test "wat: print ---- a bool element of a module-level tuple prints true / false" {
     try h.assertWasmRunLog(std.testing.allocator,

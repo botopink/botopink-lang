@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-source-not-record: `Type.partial` takes a record type; `i32` is a primitive type
-at src/main.bp:5:33

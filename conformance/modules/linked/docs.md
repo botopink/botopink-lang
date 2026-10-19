@@ -1,4 +1,4 @@
 # linked
 
-[cases/linked_fn_name_collision/src/main.bp](cases/linked_fn_name_collision/src/main.bp)
-[cases/linked_val_name_collision/src/main.bp](cases/linked_val_name_collision/src/main.bp)
+[run/src/cases/linked_fn_name_collision/mod.bp](run/src/cases/linked_fn_name_collision/mod.bp)
+[run/src/cases/linked_val_name_collision/mod.bp](run/src/cases/linked_val_name_collision/mod.bp)

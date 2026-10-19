@@ -1,0 +1,27 @@
+//// A value of an enum with payloads prints as `Enum.Variant(…)` however it reaches `terminal.print`: built
+//// in place, bound by a `val`, in an array, the enum declared here or imported (aliased or not).
+//// wasm printed a name bound to one as the value's address.
+
+mod modes;
+
+import {cases.enum_payload_value_prints.modes.Mode};
+import {cases.enum_payload_value_prints.modes.Mode as AMode};
+import {io.terminal.print} from "std";
+
+type Shape {
+    Dot,
+    Circle(radius: i32),
+}
+
+pub fn runCase() {
+    print(Shape.Circle(radius: 2));
+    val c = Shape.Circle(radius: 3);
+    print(c);
+    print(Mode.Slow(n: 2));
+    val m = Mode.Named(label: "x");
+    print(m);
+    print(AMode.Slow(2));
+    val a = AMode.Slow(n: 5);
+    print(a);
+    print([AMode.Slow(4), Mode.Fast]);
+}

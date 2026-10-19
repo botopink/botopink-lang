@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-meta-on-member: `#[column]` on the field `name` calls `decl.setMeta`, and meta describes a top-level declaration
-at src/main.bp:11:13

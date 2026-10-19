@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: shorthand-import: unresolved import `splitPath` — `splitPath` names no module of this package, and no module of it declares `splitPath` `pub`
-at src/main.bp:5:9

@@ -17,7 +17,7 @@
 #               it never drops a target (decision 67).
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
-#   --only      run one cell or suite (e.g. modules/case/cases/case_range_value,
+#   --only      run one cell or suite (e.g. modules/case/run,
 #               test/case_arms.bp, test/pub_val_in_a_test); may repeat
 #   --jobs      parallel jobs; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel jobs below
@@ -39,8 +39,9 @@
 #               --cold` passes it
 #
 # Three kinds, every job (a share of cells, § run) in its own scratch directory:
-#   modules/<m>/cases/<c>/  a cell of a module of cases (decision 765); `--only modules/<m>`
-#                      stands for the module's cases
+#   modules/<m>/run/, modules/<m>/refused/, modules/<m>/cells/<c>/  a module's packages of
+#                      cases and its cells (decision 779; 765's `cases/<c>/` while one remains);
+#                      `--only modules/<m>` stands for all of them
 #   modules/<cell>/    a cell (decisions 457, 475): `botopink.json`, `src/`,
 #                      `snapshot/output/<module>.snap`, `snapshot/targets/<t>/
 #                      <module>.snap` where a target departs, `docs.md`.
@@ -326,16 +327,16 @@ if [ ${#only[@]} -gt 0 ]; then
 else
     while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ modules/*/ 2>/dev/null | sed 's:/$::'; } | sort)
 fi
-# A module of cases (decision 765) is not a cell: `modules/<m>/cases/<c>` are, one job each.
-# A path naming such a module stands for its cases.
+# A module (decisions 765, 779) is not a cell: its packages `run/` and `refused/`, its
+# `cells/<c>` and a 765 `cases/<c>` are, one job each. A path naming a module stands for them.
 expanded=()
 for f in "${files[@]}"; do
     f="${f%/}"
     case "$f" in
-        modules/*/cases/*) expanded+=("$f") ;;
+        modules/*/cases/*|modules/*/cells/*|modules/*/run|modules/*/refused) expanded+=("$f") ;;
         modules/*)
-            if [ -d "$here/$f/cases" ]; then
-                while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/cases/*/ 2>/dev/null | sed 's:/$::' | sort)
+            if [ -d "$here/$f/cases" ] || [ -d "$here/$f/cells" ] || [ -d "$here/$f/run" ] || [ -d "$here/$f/refused" ]; then
+                while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/run/ "$f"/refused/ "$f"/cells/*/ "$f"/cases/*/ 2>/dev/null | sed 's:/$::' | sort)
             else
                 expanded+=("$f")
             fi ;;

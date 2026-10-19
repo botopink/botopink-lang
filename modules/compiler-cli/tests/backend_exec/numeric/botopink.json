@@ -1,7 +1,7 @@
 {
   "name": "numeric",
   "version": "0.0.1",
-  "description": "The wasm core module's --invoke main fixture of backend_exec.sh: main() returns 55. What the program answers on every target is conformance/modules/tail/cases/tail_recursive_sum.",
+  "description": "The wasm core module's --invoke main fixture of backend_exec.sh: main() returns 55. What the program answers on every target is conformance/modules/tail/run/src/cases/tail_recursive_sum.",
   "target": "commonJS",
   "src": "src/"
 }

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn 'Page' (it returns '@Task<Element>'): only a `@Component` body activates a hook
+at src/cases/use_future_without_owner/mod.bp:12:13

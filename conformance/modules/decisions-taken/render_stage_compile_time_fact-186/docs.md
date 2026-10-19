@@ -6,6 +6,6 @@ In [draft/pages.bp](draft/pages.bp), `Search` uses `searchParams`, a `#[serverOn
 
 The program prints `S` and `D`. Written by the markup library, the same reading refuses a `#[serverOnly]` hook used inside a `#[client]` component, at the `use`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/context_named_by_value_type-379/cases/decl_hooks_context`, `modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_meta_hooks_pending`.
+Cells in this repository that bear on it: `modules/decisions-taken/context_named_by_value_type-379/cells/decl_hooks_context`, `modules/decisions-taken/query_template_assembled_at_build-415/refused/src/cases/template_lookup_meta_hooks_pending`.
 
 [draft/main.bp](draft/main.bp)

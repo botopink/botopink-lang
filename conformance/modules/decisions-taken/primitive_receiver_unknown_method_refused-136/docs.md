@@ -7,6 +7,6 @@ JavaScript's own spelling of `toUpper`, the host template behind the declared me
 the language; the refusal suggests `toUpper` because that is the declared method whose host spelling was written. Before
 this rule the call typed as anything and each target answered differently.
 
-Cells that also bear on it: `modules/primitive/cases/primitive_method_undeclared`, `modules/primitive/cases/primitive_method_unknown`.
+Cells that also bear on it: `modules/primitive/refused/src/cases/primitive_method_undeclared`, `modules/primitive/refused/src/cases/primitive_method_unknown`.
 
 [draft/main.bp](draft/main.bp)

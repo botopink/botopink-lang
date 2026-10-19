@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unbound variable 'missing'
+at src/cases/template_hole_error_on_later_line/mod.bp:40:19

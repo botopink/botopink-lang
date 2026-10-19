@@ -1,0 +1,2 @@
+pub mod val_assign_local;
+pub mod val_assign_module;

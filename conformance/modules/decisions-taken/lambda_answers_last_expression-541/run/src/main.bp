@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() {
+    cases.block_continue_reaches_loop.runCase();
+    cases.block_jump_label_continue_nested_shapes.runCase();
+    cases.block_jump_label_continue_reaches_loop.runCase();
+    cases.block_jump_label_reaches_loop.runCase();
+    cases.case_arm_return_in_yielding_arm.runCase();
+}

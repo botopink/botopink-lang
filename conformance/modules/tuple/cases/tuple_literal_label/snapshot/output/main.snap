@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[tuple-literal-label]: a tuple literal is positional
-at src/main.bp:8:15
-label no label here

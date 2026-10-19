@@ -1,0 +1,17 @@
+//// Decision 216 (2) — meta travels with the declaration: an importer reads it
+//// through a plain import, an alias (the declaration's own name answers
+//// `.name`) and the module as a namespace (`models.Person`).
+
+pub mod orm;
+pub mod models;
+import {cases.decorator_meta_import.models.City};
+import {cases.decorator_meta_import.models.City as Town};
+import {cases.decorator_meta_import.orm.Entity};
+import {io.terminal.print, compiler} from "std";
+
+pub fn runCase() {
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(Town).meta(Entity)?.table ?? "none");
+    print(comptime compiler.typeInfo(Town).name);
+    print(comptime compiler.typeInfo(models.Person).meta(Entity)?.table ?? "none");
+}

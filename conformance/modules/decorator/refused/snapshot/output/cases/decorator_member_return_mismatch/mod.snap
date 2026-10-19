@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: type mismatch: expected i32, got string
+at src/cases/decorator_member_return_mismatch/mod.bp:10:3
+from src/cases/decorator_member_return_mismatch/mod.bp:7:14

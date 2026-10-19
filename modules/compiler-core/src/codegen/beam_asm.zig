@@ -4346,7 +4346,7 @@ const Emitter = struct {
     /// gets its own back: sharing the cache, a helper a METHOD reached first
     /// was reserved in the type's unit, and the file's next call site asked its
     /// own table for it — `UnknownFunction`, no location
-    /// (`modules/narrowing/cases/narrowing_null_guard_clause`: an optional reader in a record
+    /// (`modules/narrowing/run/src/cases/narrowing_null_guard_clause`: an optional reader in a record
     /// method and one in a top-level `fn`).
     const HelperNames = struct {
         at: ?[]const u8,
@@ -10919,7 +10919,7 @@ const Emitter = struct {
     /// spread's value when the literal has one. The spread arrives in one of
     /// two fields: `spreadExpr` for an expression, `spread` for a bare name
     /// (`[1, 2, ..rest]`) — which used to be dropped, so the literal was its
-    /// own elements and `list[3]` read past the end (`modules/array/cases/array_spread_literal`).
+    /// own elements and `list[3]` read past the end (`modules/array/run/src/cases/array_spread_literal`).
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
         if (al.spreadExpr) |se| return self.lowerListOf(al.elems, se.*);
         if (al.spread) |name| if (name.len > 0) {
@@ -12334,7 +12334,7 @@ const Emitter = struct {
     /// becomes a forward jump to the back edge, `Top` is left with backward
     /// references alone, its forward scan drops it as unreachable, and
     /// `beam_clean` stops on `{undefined_label, Top}` (log's
-    /// `stripLineNumbers`, `modules/decisions-taken/own_module_import_without_from-206/cases/import_bundled_package_beside_own_module`).
+    /// `stripLineNumbers`, `modules/decisions-taken/own_module_import_without_from-206/cells/import_bundled_package_beside_own_module`).
     /// The `{line, …}` anchor ends the entry sequence and no back edge holds
     /// one — an anchor is always followed by its own `Top` — so the entry
     /// never equals another sequence and keeps falling into `Top`. Its
@@ -13242,7 +13242,7 @@ const Emitter = struct {
             }
             // The name identifies a record only when nothing else in the
             // PROGRAM declares it — not only what this file imported
-            // (`modules/field/cases/field_name_collision`: `Ctx` imported, `Hit` not).
+            // (`modules/field/cells/field_name_collision`: `Ctx` imported, `Hit` not).
             if (self.programFieldDeclarers(member) > 1) return null;
             break :blk found orelse return null;
         };
@@ -13340,9 +13340,9 @@ const Emitter = struct {
     /// value (decision 21): its element 1 is its type's module, whose method
     /// takes the receiver first — `erlang:apply(element(1, V), Method, [V |
     /// Args])`. Used when no type is known for the receiver but some type of
-    /// the program declares the method (`modules/method/cases/method_name_collision`: two
+    /// the program declares the method (`modules/method/run/src/cases/method_name_collision`: two
     /// `toArray/1`, a generic return), and when the type's NAME is declared by
-    /// two modules (`modules/type/cases/type_name_collision`).
+    /// two modules (`modules/type/run/src/cases/type_name_collision`).
     fn lowerDynamicMethodCall(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         try self.placeStaged(&st);

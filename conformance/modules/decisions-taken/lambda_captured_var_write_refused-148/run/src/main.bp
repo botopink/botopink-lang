@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.captured_var_write_threaded.runCase();
+    cases.closure_capture_statement_position.runCase();
+}

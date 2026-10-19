@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'print' — `print` is std's `io.terminal.print`, imported where it is used
-at src/main.bp:11:5

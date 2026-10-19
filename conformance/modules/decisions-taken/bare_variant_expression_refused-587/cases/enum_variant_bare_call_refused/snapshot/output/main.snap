@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Square` is a variant, and a bare variant is no expression — write `Shape.Square(…)`, or `.Square(…)` where the position expects the enum
-at src/main.bp:16:13

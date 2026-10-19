@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.narrow_after_null_return.runCase();
+    cases.narrow_in_logical_operands.runCase();
+}

@@ -6,7 +6,7 @@ The example imports `html` the way the decision writes it: `import html, {Elemen
 
 A draft carries no manifest and no dependency, so the `"bpp"` key and `rakun-bpp` are what the promoted cell's `botopink.json` will add.
 
-Cells in this repository that also bear on it: `modules/bpp/cases/bpp_roles_found`, `modules/bpp/cases/bpp_html_missing`, `modules/bpp/cases/bpp_html_twice`.
+Cells in this repository that also bear on it: `modules/bpp/cells/bpp_roles_found`, `modules/bpp/cells/bpp_html_missing`, `modules/bpp/cells/bpp_html_twice`.
 
 [draft/main.bp](draft/main.bp)
 

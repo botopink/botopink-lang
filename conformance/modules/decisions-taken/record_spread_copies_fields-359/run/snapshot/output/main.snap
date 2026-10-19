@@ -1,0 +1,53 @@
+botopink-cell 1
+out Pessoa(nome: "Ana", email: "bia@a", telefone: "2", idade: 20)
+out Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20)
+out Pessoa(nome: "Caio", email: "c@a", telefone: "3", idade: 20)
+out Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20)
+out Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20)
+out Pessoa(nome: "Duda", email: "c@a", telefone: "3", idade: 30)
+out Pessoa(nome: "Edu", email: "s@a", telefone: "4", idade: 50)
+out Pessoa(nome: "Fê", email: "f@a", telefone: "5", idade: 61)
+out fonte
+out Pessoa(nome: "Rui", email: "novo@a", telefone: "1", idade: 40)
+out fonte
+out Gil
+out 40
+out 4
+out t
+out Pessoa(nome: "Ana", email: "ana@a", idade: 30)
+out Pessoa(nome: "Bia", email: "ana@a", idade: 41)
+out Pessoa(nome: "Caio", email: "caio@a", idade: 30)
+out Pessoa(nome: "Duda", email: "duda@a", idade: 51)
+out Pessoa(nome: "Edu", email: "edu@a", idade: 30)
+out Cadastro(nome: "Edu", email: "edu@a")
+out mais
+out Pessoa(nome: "Caio", email: "bia@a", idade: 41)
+out padrao
+out Pessoa(nome: "Ana", email: "ana@a", idade: 33)
+out padrao
+out mais
+out Pessoa(nome: "Ana", email: "ana@a", idade: 32)
+out contatoDe
+out Pessoa(nome: "Duda", email: "d@a", idade: 20)
+out contatoDe
+out mais
+out Pessoa(nome: "Edu", email: "bia@a", idade: 43)
+out Pessoa(nome: "Bia", email: "bia@a", idade: 40)
+out Pessoa(nome: "Ana", email: "ana@a", telefone: "1", idade: 30)
+out Pessoa(nome: "Bia", email: "ana@a", telefone: "1", idade: 41)
+out Contato(email: "ana@a", telefone: "1")
+out Pessoa(nome: "Caio", email: "caio@a", telefone: "2", idade: 30)
+out Pessoa(nome: "Caio", email: "ana@a", telefone: "1", idade: 30)
+out Contato(email: "duda@a", telefone: "3")
+out Contato(email: "duda@a", telefone: "4")
+out Pessoa(nome: "Duda", email: "duda@a", telefone: "5", idade: 30)
+out Equipe(lider: Pessoa(nome: "Ana", idade: 31), vice: Pessoa(nome: "Ana", idade: 30), titulo: "A")
+out Equipe(lider: Pessoa(nome: "Ana", idade: 31), vice: Pessoa(nome: "Bia", idade: 31), titulo: "A")
+out Pessoa(nome: "Bia", idade: 40)
+out Pessoa(nome: "Caio", idade: 50)
+out Pessoa(nome: "Duda", idade: 30)
+out Pessoa(nome: "Ana", idade: 1)
+out Pessoa(nome: "Ana", idade: 31)
+out Pessoa(nome: "Edu", idade: 30)
+out Pessoa(nome: "Ana", idade: 30)
+out Pessoa(nome: "Ana", idade: 31)

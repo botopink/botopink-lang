@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+
+val x = 42;
+
+val greeting = "hello";
+
+pub fn runCase() {
+    print(x); // 42
+    print(greeting); // hello
+}

@@ -1,0 +1,14 @@
+mod cases;
+
+pub fn main() {
+    cases.generic_body_specialized.runCase();
+    cases.generic_call_result_shape.runCase();
+    cases.generic_field_fn_value_nested.runCase();
+    cases.generic_fn_and_type.runCase();
+    cases.generic_method_lambda_param_typed.runCase();
+    cases.generic_record_nested_field_concat.runCase();
+    cases.generic_record_prints_its_arguments.runCase();
+    cases.generic_string_equality.runCase();
+    cases.generic_type_through_imported_function.runCase();
+    cases.generic_value_widens_to_optional.runCase();
+}

@@ -96,8 +96,11 @@ if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
     [ -n "$query_cell" ] || { echo "tsc-check: query's generic_loader_binding cell not found under ../query or repository/query" >&2; exit 1; }
-    # `conformance/modules/*/cases/*/` — the cases of a module (decision 765); a module of cases holds no manifest of its own.
-    for p in libs/std/ "$query_cell/" conformance/modules/*/ conformance/modules/*/cases/*/ conformance/test/*/; do
+    # A module holds no manifest of its own: its packages `run/` and `refused/` and its `cells/*/` are the projects
+    # (decision 779), `cases/*/` while a module still holds 765's layout.
+    for p in libs/std/ "$query_cell/" conformance/modules/*/ conformance/modules/*/cases/*/ \
+             conformance/modules/*/{run,refused}/ conformance/modules/*/cells/*/ \
+             conformance/modules/decisions-taken/*/{run,refused}/ conformance/modules/decisions-taken/*/cells/*/ conformance/test/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         refused_on_commonjs "$p" && continue

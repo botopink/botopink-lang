@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+
+val count: i32 = 42;
+
+val names: string[] = ["alice", "bob"];
+
+pub fn runCase() {
+    print(count); // 42
+    print(names); // ["alice", "bob"]
+}

@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    val t = #(1, "a");
+    val n: i32 = t[0];
+    val label: string = t[1];
+    print(n); // 1
+    print(label); // a
+}

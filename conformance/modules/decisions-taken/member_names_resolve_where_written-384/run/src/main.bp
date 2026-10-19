@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.decorator_member_fn_imported_name.runCase();
+    cases.decorator_member_type_travels.runCase();
+}

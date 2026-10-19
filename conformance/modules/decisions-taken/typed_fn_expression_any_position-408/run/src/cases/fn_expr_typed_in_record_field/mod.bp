@@ -1,0 +1,22 @@
+//// Decision 408 — the typed function expression is legal as a record field's
+//// value and an array element, checked against the field's `fn(x: i32) -> i32`;
+//// its tail (409) or its `return` is its answer, and a lambda beside it in the
+//// array takes its types from the element type.
+
+import {io.terminal.print} from "std";
+
+type Op(name: string, run: fn(x: i32) -> i32)
+
+fn apply(op: Op, v: i32) -> i32 { op.run(v) }
+
+pub fn runCase() {
+    val inc = Op(name: "inc", run: fn(x: i32) -> i32 { x + 1 });
+    val dbl = Op(name: "dbl", run: fn(x: i32) -> i32 {
+        return x * 2;
+    });
+    print(inc.name);
+    print(apply(inc, 5));
+    print(apply(dbl, 5));
+    val fs = [fn(x: i32) -> i32 { x - 1 }, { x -> x * 10 }];
+    print(fs.map({ f -> f(3) }));
+}

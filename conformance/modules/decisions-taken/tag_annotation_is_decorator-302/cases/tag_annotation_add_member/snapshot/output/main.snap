@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: tag-annotation-output: `#[withMember]` on the tag `div` calls `decl.addMember`, and an annotation on a tag records typed meta only
-at src/main.bp:10:27

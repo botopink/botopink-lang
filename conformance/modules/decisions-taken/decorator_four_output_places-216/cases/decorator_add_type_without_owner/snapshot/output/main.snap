@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-type-without-owner: `#[helper]` on the function `work` calls `decl.addType`, and an associated type belongs to a type
-at src/main.bp:10:3

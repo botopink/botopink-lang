@@ -1,0 +1,43 @@
+//// An associated fn read as a value answers what it declares, wherever it
+//// was written: `City.make`, a member a decorator adds, passed to a
+//// higher-order function and bound by `val`, and a hand-written one bound by
+//// `val` and by a parameter typed `fn(string) -> Town` — each call's record
+//// read by its field, on every target (144 B-19).
+
+import {compiler, io.terminal.print} from "std";
+
+fn maker(syntax decl: unknown) {
+    compiler.addMember(
+        "pub fn make(name: string) -> "
+            + compiler.name(decl)!
+            + " { return "
+            + compiler.name(decl)!
+            + "(name: name); }",
+    );
+}
+
+#[maker]
+type City(name: string)
+
+type Town(name: string) {
+    fn of(name: string) -> Town {
+        return Town(name: "<" + name + ">");
+    }
+}
+
+fn apply(s: string, f: fn(string) -> City) -> City {
+    return f(s);
+}
+
+fn first(f: fn(string) -> Town) -> string {
+    return f("q").name;
+}
+
+pub fn runCase() {
+    print(apply("x", City.make).name);
+    val m = City.make;
+    print(m("y").name);
+    val t = Town.of;
+    print(t("z").name);
+    print(first(Town.of));
+}

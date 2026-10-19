@@ -2045,7 +2045,7 @@ fn emitErlangModule(
     // module fall through to a bare local `slice/3` the module never defines —
     // an `.erl` `erlc` refuses. Five std modules were dead on this row at once:
     // `path`, `querystring`, `queue`, `snapshots`, `url`. Pinned by
-    // `conformance/modules/std/cases/std_default_fn_in_a_std_module` and its `test/` twin.
+    // `conformance/modules/std/run/src/cases/std_default_fn_in_a_std_module` and its `test/` twin.
     // The parse is the process-wide `prelude_cache`, whose arena outlives every
     // emission: the reached bodies are lowered from it and borrow its strings.
     try em.collectPreludeInstanceDefaults();
@@ -6379,7 +6379,7 @@ const Emitter = struct {
     /// the generator ends and emits nothing more —
     /// `throw({'__bp_gen_stop', Key})`, which `genEndCatch` answers with `ok`.
     /// It was the loop's `'__bp_break'`, which no scope catches:
-    /// `{nocatch,'__bp_break'}` (`modules/decisions-taken/body_marker_whole_return_type-553/cases/generator_break_value`).
+    /// `{nocatch,'__bp_break'}` (`modules/decisions-taken/body_marker_whole_return_type-553/cells/generator_break_value`).
     fn genStopThrow(this: *Emitter, b: Ast.Builder, gs: GenScope) anyerror!Ast.Expr {
         this.gen_stop_used = true;
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(gs.key) })});
@@ -9327,7 +9327,7 @@ const Emitter = struct {
                 // A labelled argument fills the slot of the field it names, as
                 // a record constructor's does (`conformance/docs.md` § Parameters with
                 // defaults): zipped by position, `Shape.Rect(height: 2,
-                // width: 5)` was built `{…rect, 2, 5}` (`modules/labelled/cases/labelled_arguments`
+                // width: 5)` was built `{…rect, 2, 5}` (`modules/labelled/run/src/cases/labelled_arguments`
                 // printed `205` for `502`). The same declared fields a `case`
                 // pattern's labels read (`variant_fields`).
                 if (this.variant_fields.get(cc.callee)) |decl| if (decl.len == cc.args.len) {

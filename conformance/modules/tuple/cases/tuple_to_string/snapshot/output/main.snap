@@ -1,5 +1,0 @@
-botopink-cell 1
-out #(1, 2)
-out #("a", true, 2.5)
-out #(1, #("x", 2))
-out pair: #(1, 2)

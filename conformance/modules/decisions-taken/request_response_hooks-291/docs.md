@@ -4,6 +4,6 @@ The example reads the request and writes the response through two hooks, `reques
 
 The program prints `no page at /missing`, `status 404, Cache-Control: no-store`, `D` and `S`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/context_named_by_value_type-379/cases/decl_hooks_context`.
+Cells in this repository that bear on it: `modules/decisions-taken/context_named_by_value_type-379/cells/decl_hooks_context`.
 
 [draft/main.bp](draft/main.bp)

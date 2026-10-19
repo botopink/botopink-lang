@@ -6,7 +6,7 @@ The example's `card.bpp` declares `pub type Props(title: string, tags: string[] 
 
 A `.bpp` file is unfolded onto the package that the manifest's `"bpp"` key names. Here that is `rakun-bpp`'s `#[bpp.html]` function, and a draft carries no manifest and no dependency.
 
-Cells in this repository that also bear on it: `modules/bpp/cases/bpp_unfold_props`, `modules/decisions-taken/anonymous_default_function-289/cases/bpp_unfold_without_props`, `modules/decisions-taken/bpp_declaration_after_statement_refused-552/cases/bpp_declaration_after_statement`.
+Cells in this repository that also bear on it: `modules/bpp/cells/bpp_unfold_props`, `modules/decisions-taken/anonymous_default_function-289/cells/bpp_unfold_without_props`, `modules/decisions-taken/bpp_declaration_after_statement_refused-552/cells/bpp_declaration_after_statement`.
 
 [draft/main.bp](draft/main.bp)
 

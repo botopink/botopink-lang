@@ -1,0 +1,12 @@
+mod cases;
+
+pub fn main() {
+    cases.string_char_code_after_slice.runCase();
+    cases.string_char_code_non_ascii.runCase();
+    cases.string_code_points_every_width.runCase();
+    cases.string_lines_words.runCase();
+    cases.string_literal_unicode_escape.runCase();
+    cases.string_parse_float_every_target.runCase();
+    cases.string_slice_in_if_branch.runCase();
+    cases.string_split_empty_separator.runCase();
+}

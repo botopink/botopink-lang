@@ -1,0 +1,45 @@
+//// Decisions 331, 434 (5) — a function named as a value and passed as an
+//// argument (`r.flatMap(half)`, `xs.map(double)`, `apply(double, 4)`) runs at
+//// build as it does when the program runs, in a function a `comptime` reaches.
+
+import {io.terminal.print} from "std";
+
+fn half(n: i32) -> Result<i32, string> {
+    if (n % 2 != 0) throw "odd";
+    return n / 2;
+}
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
+    return f(n);
+}
+
+fn measure(text: string) -> Result<i32, string> {
+    if (text == "nope") throw "no text";
+    return text.length();
+}
+
+fn summary(text: string) -> string {
+    val halved = measure(text).flatMap(half).unwrapOr(-1);
+    val doubled = measure(text).map(double).unwrapOr(0);
+    val listed = [1, 2, 3].map(double);
+    return halved.toString()
+        + " "
+        + doubled.toString()
+        + " "
+        + listed.join(",")
+        + " "
+        + apply(double, 4).toString();
+}
+
+pub fn runCase() {
+    val a = comptime summary("abcd");
+    print(a);
+    print(a == summary("abcd"));
+    val b = comptime summary("abc");
+    print(b);
+    print(b == summary("abc"));
+}

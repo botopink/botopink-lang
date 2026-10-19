@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+
+fn add(x: i32, y: i32) -> i32 {
+    return x + y;
+}
+
+pub fn runCase() {
+    print(add(1, 2)); // 3
+}

@@ -1,0 +1,2 @@
+pub mod template_method_behavior_method;
+pub mod template_method_own_method;

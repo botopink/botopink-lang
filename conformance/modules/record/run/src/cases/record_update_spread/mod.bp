@@ -1,0 +1,11 @@
+import {io.terminal.print} from "std";
+
+type Point(x: i32, y: i32)
+
+val p = Point(x: 1, y: 2);
+
+val q = Point(..p, y: 5); // Point(x: 1, y: 5)
+
+pub fn runCase() {
+    print(q); // Point(x: 1, y: 5)
+}

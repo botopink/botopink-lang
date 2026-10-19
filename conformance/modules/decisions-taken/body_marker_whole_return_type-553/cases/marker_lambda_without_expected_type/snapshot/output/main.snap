@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: marker-lambda-without-expected-type: a lambda marked `async` needs the function type it is written for
-at src/main.bp:12:13

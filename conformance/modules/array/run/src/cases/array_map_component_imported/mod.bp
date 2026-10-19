@@ -1,0 +1,12 @@
+//// A component written in a module another module imports is lowered with
+//// that module's own checked types: its calls on literals — `5.toString()`,
+//// `[1, 2].map(Card)` — resolve there, whether or not the importer calls it.
+
+pub mod cards;
+
+import {cases.array_map_component_imported.cards.Page};
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    print("built");
+}

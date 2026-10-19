@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.result_four_ways.runCase();
+    cases.result_i64_map_flat_map.runCase();
+    cases.result_method_throw.runCase();
+    cases.result_pattern_beside_enum_variant.runCase();
+    cases.result_string_payloads.runCase();
+    cases.result_throw_try.runCase();
+    cases.result_try_each_operand.runCase();
+}

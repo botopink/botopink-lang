@@ -6,6 +6,6 @@ std documents. `later` writes the same adapter as the prefixed string `"wasi:del
 the program is refused there — at the string, the message naming the labelled form `.Wasm(wasi: .Delay)` to write
 instead. The refusal is the checker's on every target, not only under `--target wasm`, so nothing of `run` is printed.
 
-Cells that also bear on it: `modules/external/cases/external_wasm_prefixed_wasi_refused`, `modules/decisions-taken/external_wasm_labelled_cells-481/cases/external_wasm_wasi_cell_not_enum`.
+Cells that also bear on it: `modules/external/refused/src/cases/external_wasm_prefixed_wasi_refused`, `modules/decisions-taken/external_wasm_labelled_cells-481/refused/src/cases/external_wasm_wasi_cell_not_enum`.
 
 [draft/main.bp](draft/main.bp)

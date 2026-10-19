@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the literal `-129` does not fit `i8` (at least -128)
-at src/main.bp:7:18

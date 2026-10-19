@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.generator_body_lazy.runCase();
+    cases.generator_captured_var_shared.runCase();
+    cases.generator_defer_lazy.runCase();
+    cases.generator_handle_stateful.runCase();
+    cases.generator_item_untyped_lazy.runCase();
+    cases.generator_to_array_printed.runCase();
+    cases.generator_walk_lazy.runCase();
+}

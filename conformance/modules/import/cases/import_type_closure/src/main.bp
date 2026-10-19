@@ -1,9 +1,0 @@
-pub mod users;
-
-import {users.User, users.makeUser};
-import {io.terminal.print} from "std";
-
-pub fn main() {
-    val u: User = makeUser();
-    print(u.roleName());
-}

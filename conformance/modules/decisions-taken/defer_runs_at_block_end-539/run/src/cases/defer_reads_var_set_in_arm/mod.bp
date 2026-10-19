@@ -1,0 +1,80 @@
+//// Decision 539 (amended) — the deferred expression reads a `var` when it
+//// runs, and a reassignment inside a nested arm counts: an arm that
+//// reassigns and then panics hands the defer the new value.
+
+import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
+
+fn boom() -> i32 {
+    panic("boom");
+}
+
+fn viaIf(c: bool) -> i32 {
+    var f = "a";
+    defer print("close " + f);
+    if (c) {
+        f = "b";
+        panic("x");
+    }
+    return 1;
+}
+
+fn viaCase(n: i32) -> i32 {
+    var f = "a";
+    defer print("close " + f);
+    case n {
+        0 {
+            f = "c";
+            panic("y");
+        }
+        _ {
+            f = "d";
+        }
+    }
+    return 2;
+}
+
+fn viaValueCase(n: i32) -> i32 {
+    var f = "a";
+    defer print("close " + f);
+    val r = case n {
+        0 {
+            f = "e";
+            boom()
+        }
+        _ {
+            f = "g";
+            3
+        }
+    };
+    return r;
+}
+
+fn viaValueIf(c: bool) -> i32 {
+    var f = "a";
+    defer print("close " + f);
+    val r = if (c) {
+        f = "h";
+        boom();
+    } else {
+        f = "i";
+        4;
+    };
+    return r;
+}
+
+fn show(r: Result<i32, Failure>) {
+    case r {
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn runCase() {
+    show(failure.attempt({ -> viaIf(true) }));
+    show(failure.attempt({ -> viaCase(0) }));
+    show(failure.attempt({ -> viaCase(1) }));
+    show(failure.attempt({ -> viaValueCase(0) }));
+    show(failure.attempt({ -> viaValueCase(1) }));
+    show(failure.attempt({ -> viaValueIf(true) }));
+    show(failure.attempt({ -> viaValueIf(false) }));
+}

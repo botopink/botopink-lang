@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: syntax-call-outside-syntax: `#[sql(…)]` names the template `sql`, which is written `#[sql @`…`]`
-at src/main.bp:14:3

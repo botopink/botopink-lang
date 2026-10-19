@@ -4,6 +4,6 @@ In the example every `bigint` is known to be one from its type alone. `big` is t
 
 The program prints `9007199254740993`, `9007199254741000`, `5` and `18014398509481986`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_type_test`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_into_unknown`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_comptime`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_arithmetic`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_in_containers`.
+Cells in this repository that bear on it: `modules/decisions-taken/bigint_decimal_strict_json-332/refused/src/cases/bigint_type_test`, `modules/decisions-taken/bigint_decimal_strict_json-332/refused/src/cases/bigint_into_unknown`, `modules/decisions-taken/bigint_decimal_strict_json-332/refused/src/cases/bigint_comptime`, `modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_arithmetic`, `modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_in_containers`.
 
 [draft/main.bp](draft/main.bp)

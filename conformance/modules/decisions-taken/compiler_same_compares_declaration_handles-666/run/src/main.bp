@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.decorator_argument_decorator_alias.runCase();
+    cases.decorator_argument_decorator_name.runCase();
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `.Wasm(op: "f64.flor")` on `floorOf`: `f64.flor` is not a wasm numeric instruction a binding names (an `op:` names one opcode, e.g. `op: "f64.floor"`)
+at src/cases/external_wasm_op_unknown/mod.bp:6:3

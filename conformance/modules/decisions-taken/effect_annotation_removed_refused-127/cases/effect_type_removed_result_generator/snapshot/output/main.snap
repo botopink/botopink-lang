@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[effect-type-removed]: `@ResultGenerator` was removed — the item carries the failure (decision 122)
-at src/main.bp:6:20
-label write `@Iterator<@Result<T, E>>`

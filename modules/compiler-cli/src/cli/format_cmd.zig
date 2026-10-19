@@ -16,8 +16,8 @@
 /// directory holding `snapshot/output/`, decisions 457 and 475) whose
 /// `snapshot/output/<module>.snap` holds a `refused` record — a module every
 /// target refuses, written to be refused, which `format` may not be able to
-/// parse by design (`conformance/modules/decisions-taken/refusal_snap_claims_label-485/cases/case_bare_name_arm/src/main.bp`,
-/// `conformance/modules/lexer/cases/lexer_error_in_imported_module/src/pattern.bp`).
+/// parse by design (`conformance/modules/decisions-taken/refusal_snap_claims_label-485/cells/case_bare_name_arm/src/main.bp`,
+/// `conformance/modules/lexer/cells/lexer_error_in_imported_module/src/pattern.bp`).
 /// Decided by the cell's own evidence: a module only some targets refuse
 /// (a `snapshot/targets/<t>/` departure) is reached like any other file. There
 /// is no skip list, no pragma and no environment variable, and this file must

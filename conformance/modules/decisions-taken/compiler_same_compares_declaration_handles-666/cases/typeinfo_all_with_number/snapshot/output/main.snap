@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected Decorator | Decorator[], got i32
-at src/main.bp:8:31

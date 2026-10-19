@@ -1,0 +1,27 @@
+//// Decision 359 — a spread's source may be a type derived in another
+//// module: `contatos` derives `Contato`, `Cadastro` and `Ficha` from the
+//// record `pessoas.Pessoa`, and `main` derives `SoEmail` from `contatos`'s
+//// `Cadastro`; each spreads into `Pessoa`, in the module that derived it
+//// and in this one, on the four targets.
+
+pub mod pessoas;
+pub mod contatos;
+
+import {cases.record_spread_across_modules.pessoas.Pessoa};
+import {cases.record_spread_across_modules.contatos.Contato, cases.record_spread_across_modules.contatos.Cadastro, cases.record_spread_across_modules.contatos.Ficha, cases.record_spread_across_modules.contatos.completar};
+import {types.Type, io.terminal.print} from "std";
+
+val SoEmail = Type.pick(Cadastro, .email);
+
+pub fn runCase() {
+    val c = Contato(email: "ana@a");
+    print(completar(c, "Ana"));
+    print(Pessoa(..c, nome: "Bia", idade: 41));
+    val cad = Cadastro(nome: "Caio", email: "caio@a");
+    print(Pessoa(..cad));
+    val f = Ficha(nome: "Duda", email: "duda@a", idade: 50, nota: "ok");
+    print(Pessoa(..f, idade: 51));
+    val e = SoEmail(email: "edu@a");
+    print(Pessoa(..e, nome: "Edu"));
+    print(Cadastro(..e, nome: "Edu"));
+}

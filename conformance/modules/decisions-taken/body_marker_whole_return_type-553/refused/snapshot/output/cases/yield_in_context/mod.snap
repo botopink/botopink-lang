@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: yield-without-iter: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Component<…>`, which does not
+at src/cases/yield_in_context/mod.bp:15:5

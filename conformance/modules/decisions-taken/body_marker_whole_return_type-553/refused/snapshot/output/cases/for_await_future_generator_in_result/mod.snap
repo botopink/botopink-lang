@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: await-without-async: `await` needs `-> @Task<…>`, `-> @Stream<…>` or `-> @Component<…>` return — this fn returns `@Result<…>`, which does not
+at src/cases/for_await_future_generator_in_result/mod.bp:14:5

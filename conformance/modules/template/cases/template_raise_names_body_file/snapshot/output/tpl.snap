@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: {error,{panic,<<"boom hi">>}}
-at src/tpl.bp:5:5
-from src/main.bp:12:11

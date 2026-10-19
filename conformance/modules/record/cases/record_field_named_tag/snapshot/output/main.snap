@@ -1,7 +1,0 @@
-botopink-cell 1
-out Box(value: 1, tag: "t")
-out Box(value: "s", tag: "u")
-out Label(tag: "big", size: 3)
-out [Label(tag: "a", size: 1)]
-out Shape.Circle(radius: 2)
-out Shape.Dot

@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    for ([1, 2, 3]) { i ->
+        defer print("end " + i.toString());
+        if (i == 2) continue;
+        if (i == 3) break;
+        print("body " + i.toString());
+    }
+}

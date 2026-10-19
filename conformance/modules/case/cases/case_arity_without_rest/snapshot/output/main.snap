@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: missing required field 'height' on type 'Rect'
-at src/main.bp:13:9

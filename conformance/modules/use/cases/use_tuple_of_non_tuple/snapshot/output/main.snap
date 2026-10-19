@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-tuple-arity: `val #(…)` binds 2 name(s) but the hook yields 'i32', which is not a tuple
-at src/main.bp:12:5

@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[number-suffix-integer-on-float]: a literal with a fraction or an exponent is floating and takes `f` or `d` only
+at src/cases/number_suffix_integer_on_float/mod.bp:7:16
+label an integer suffix

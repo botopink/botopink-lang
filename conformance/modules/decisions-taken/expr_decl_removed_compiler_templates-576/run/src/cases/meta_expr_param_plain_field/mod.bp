@@ -1,0 +1,18 @@
+//// Decisions 370 (1), 576 (12) — a meta record's field is written `T`, with
+//// no field modifier: a `syntax` parameter handed to a `string` field fills
+//// it with the tree of the annotation's argument, read as `"cities"`.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn entity(syntax decl: unknown, syntax table: string) {
+    compiler.setMeta(Entity(table: table));
+}
+
+#[entity("cities")]
+type City(name: string)
+
+pub fn runCase() {
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+}

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected bool, got ?string
-at src/main.bp:17:5

@@ -1,7 +1,0 @@
-botopink-cell 1
-out Pessoa(nome: "Ana", email: "ana@a", idade: 30)
-out Pessoa(nome: "Bia", email: "ana@a", idade: 41)
-out Pessoa(nome: "Caio", email: "caio@a", idade: 30)
-out Pessoa(nome: "Duda", email: "duda@a", idade: 51)
-out Pessoa(nome: "Edu", email: "edu@a", idade: 30)
-out Cadastro(nome: "Edu", email: "edu@a")

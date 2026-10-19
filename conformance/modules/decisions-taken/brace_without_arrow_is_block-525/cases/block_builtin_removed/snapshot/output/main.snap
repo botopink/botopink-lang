@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[removed-block-builtin]: `@block` was removed (decision 525)
-at src/main.bp:7:13
-label write the block `{ … }`

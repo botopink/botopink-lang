@@ -2,6 +2,6 @@
 
 Every primitive type is written lowercase, and each holds its own methods and statics: `string.fromCodepoint(65)` is `string`'s static and answers `A`, `array.range(0, 3)` is `array`'s and answers `[0, 1, 2]` (an `array<i32>`, spelt `i32[]`), `bytes.fromUtf8("hi")` is `bytes`'s, and `bool`, `i64` and `f64` are written the same way. The first line prints `A [0, 1, 2] 2 true 6 1.5`. A capitalised name is never one of those types: it is a contract several types share — `abs` comes from `Signed`, `isEven` and `isOdd` from `Integer` — and the second line prints `5 true true` for `i32` and `i64` alike. `String`, `Bool`, `BigInt`, `Bytes` and `Array` are no names at all: writing `String` is an unknown name.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversions_exact`, `modules/primitive/cases/primitive_method_undeclared`, `modules/primitive/cases/primitive_type_name_taken`.
+Cells in this repository that also bear on it: `modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/integer_conversions_exact`, `modules/primitive/refused/src/cases/primitive_method_undeclared`, `modules/primitive/refused/src/cases/primitive_type_name_taken`.
 
 [draft/main.bp](draft/main.bp)

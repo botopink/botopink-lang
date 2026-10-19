@@ -6,6 +6,6 @@ The example has one parameter of each modifier. `traced(syntax value: i32)` rece
 
 A decorator's first parameter is a `syntax` parameter too, `syntax decl: unknown`, the annotated declaration as written. The modifier is `syntax` in every position, a declaration, an expression or a lambda, and the older `expr` no longer exists.
 
-Cells in this repository that bear on it: `modules/comptime/cases/comptime_value_or_type_param`, `modules/decisions-taken/syntax_node_spliced_as_written-638/cases/ast_syntax_node_typed_at_splice`.
+Cells in this repository that bear on it: `modules/comptime/cells/comptime_value_or_type_param`, `modules/decisions-taken/syntax_node_spliced_as_written-638/cells/ast_syntax_node_typed_at_splice`.
 
 [draft/main.bp](draft/main.bp)

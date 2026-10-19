@@ -1,0 +1,17 @@
+//// A function-typed record field called on a `for` loop's element answers
+//// its declared type: `op.run(5)` is an `i32`, so `.toString()` is the
+//// integer's.
+
+import {io.terminal.print} from "std";
+
+type Op(name: string, run: fn(x: i32) -> i32)
+
+pub fn runCase() {
+    val ops = [
+        Op(name: "inc", run: { x -> x + 1 }),
+        Op(name: "dbl", run: { x -> x * 2 }),
+    ];
+    for (ops) { op ->
+        print(op.name + "=" + op.run(5).toString());
+    }
+}

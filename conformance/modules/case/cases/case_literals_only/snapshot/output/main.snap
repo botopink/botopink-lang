@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `case` on 'i32' is not exhaustive: nothing covers the remaining values — use `_ { … }`
-at src/main.bp:7:13

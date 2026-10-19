@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-outside-val: a derived type is the whole initializer of a module-level `val`
-at src/main.bp:12:22

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: template-annotation-only: `sql` takes the annotated declaration (`syntax decl: unknown`), so it is written as an annotation `#[sql @`…`]`, never called
+at src/cases/template_annotation_called/mod.bp:15:13

@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.section_numeric_leaf_standalone.runCase();
+    cases.section_path_resolution.runCase();
+}

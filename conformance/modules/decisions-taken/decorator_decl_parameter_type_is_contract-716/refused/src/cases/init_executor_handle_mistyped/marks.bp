@@ -1,0 +1,10 @@
+//// The decorator: its executor registers the annotated declaration itself.
+
+import {cases.init_executor_handle_mistyped.registry.add};
+import {cases.init_executor_handle_mistyped.registry.Module};
+import {compiler} from "std";
+
+pub fn module(syntax decl: fn() -> string, comptime lifecycle: string) {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> add(Module(name: name, lifecycle: lifecycle, make: decl)) });
+}

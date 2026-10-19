@@ -1,3 +1,3 @@
 # ternary
 
-[cases/ternary_absent/src/main.bp](cases/ternary_absent/src/main.bp)
+[cells/ternary_absent/src/main.bp](cells/ternary_absent/src/main.bp)

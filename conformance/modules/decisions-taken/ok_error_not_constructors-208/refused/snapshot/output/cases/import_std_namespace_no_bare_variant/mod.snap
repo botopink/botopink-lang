@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unbound variable 'Error'
+at src/cases/import_std_namespace_no_bare_variant/mod.bp:10:13

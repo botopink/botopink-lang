@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-host-cell-unavailable: `tag` is reached at comptime and has no `.Wasm(std: "…")` cell (std-wasm) and no `.Wasm(body: …)` cell — the two cells the comptime runtime answers by; an `.Erlang` cell never runs at build (decisions 434, 452)
-at src/main.bp:16:11

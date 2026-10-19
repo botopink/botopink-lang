@@ -2,6 +2,6 @@
 
 `#[mark(label: "x")]` names a function, `mark`, whose first parameter is `syntax decl` — the annotated declaration — and whose other parameter is the annotation's argument, `comptime label`. The data the annotation carries is a plain record, `Mark`, that the decorator records with `compiler.setMeta`; a reader asks for it by its type, `compiler.typeInfo(Widget).meta(Mark)`, and the program prints `x` for `Widget` and `-` for `Plain`, which has no such annotation. No type is an annotation by implementing a behavior — there is no `Annotation` — and there is no `Decorator` type: `#[audited]` walks the declaration's annotations, and each one's `decorator` is a declaration handle, compared with `compiler.same(a.decorator, mark)`. The program prints `true` for `Widget` and `false` for `Plain`. std's own annotations follow the same form: `#[stage(.Any)]` and `#[beamMemory(.Ets)]` are decorators taking the enum as their argument.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/local_type_beside_aliased_import-603/cases/annotation_argument_enum_identity`, `modules/annotation/cases/annotation_not_decorator_value`, `modules/annotation/cases/annotation_unknown_family`.
+Cells in this repository that also bear on it: `modules/decisions-taken/local_type_beside_aliased_import-603/cells/annotation_argument_enum_identity`, `modules/annotation/refused/src/cases/annotation_not_decorator_value`, `modules/annotation/refused/src/cases/annotation_unknown_family`.
 
 [draft/main.bp](draft/main.bp) · [draft/comptime/marks.bp](draft/comptime/marks.bp)

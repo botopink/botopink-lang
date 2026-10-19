@@ -1,0 +1,13 @@
+import {io.terminal.print, failure.panic} from "std";
+
+fn greet() {
+    print("hello");
+}
+
+fn notReady() -> i32 {
+    panic("not implemented");
+}
+
+pub fn runCase() {
+    greet(); // hello
+}

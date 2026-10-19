@@ -1,0 +1,10 @@
+mod cases;
+
+pub fn main() {
+    cases.float_text_at_run_time.runCase();
+    cases.float_text_everywhere.runCase();
+    cases.generic_float_text.runCase();
+    cases.optional_chain_string_text.runCase();
+    cases.string_lower_final_sigma.runCase();
+    cases.string_trim_keeps_nbsp.runCase();
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: #[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `page` is not a function
+at src/cases/bpp_html_on_val/mod.bp:7:3

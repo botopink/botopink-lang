@@ -1,0 +1,7 @@
+pub mod expr_call_outside_expr;
+pub mod template_annotation_call_form;
+pub mod template_annotation_unknown_hole;
+pub mod template_hole_error_far_in_built_code;
+pub mod template_hole_error_on_later_line;
+pub mod template_hole_typed_at_caller;
+pub mod template_signature;

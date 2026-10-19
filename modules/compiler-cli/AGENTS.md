@@ -156,7 +156,7 @@ bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, ra
 > fails the script. **What a program answers is not here**: the language half
 > these scripts held moved to conformance cells in 144 B-29 step H, each run on
 > the four targets by `botopink cell check` — `backend_exec.sh`'s numeric
-> program (`conformance/modules/tail/cases/tail_recursive_sum`: `55` everywhere, beam
+> program (`conformance/modules/tail/run/src/cases/tail_recursive_sum`: `55` everywhere, beam
 > included, which the script had left out), its records / enum / `case` /
 > lambda program (`record_enum_case_lambda`, wasm included) and the `mod` /
 > `pub mod` package (`modules`, the former `examples/modules`, on all four);
@@ -243,7 +243,7 @@ loader compiles the shipped `.erl`. `out/erl/` runs the same way once **every**
 `.erl` in it is compiled (`erlc -o out/erl out/erl/*.erl`): a plain erlang build
 emits no sibling loader (the emitter's half, 02-erlang step 9), so compiling the
 entry alone leaves the sidecar `undef`. Pinned by `tests/cli_contract.sh` on
-`conformance/modules/erlang/cases/erlang_host_sidecar_shipped`.
+`conformance/modules/erlang/cells/erlang_host_sidecar_shipped`.
 
 ### The erlang runner reaches one module
 
@@ -256,10 +256,10 @@ code path:
 
 | project | escript today | emitted call |
 |---|---|---|
-| `conformance/modules/two/cases/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
-| `conformance/modules/mod/cases/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
-| `conformance/modules/std/cases/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
-| `conformance/modules/modules/cases/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
+| `conformance/modules/two/run/src/cases/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
+| `conformance/modules/mod/cells/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
+| `conformance/modules/std/run/src/cases/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
+| `conformance/modules/modules/cells/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
 
 The shape that works is the one the beam arm of the language runner (`tests/language/run.sh`, before 144 B-29 step H) already
 uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
@@ -267,7 +267,7 @@ file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
 atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
 `-pa <out_dir>` looks — then `erl -noshell -pa <out_dir> -eval "<module>:main([]), halt()."`.
 `main([])` and not `main()`: `main/1` is always exported, while `main/0` is
-emitted only when `main` is `pub` (`conformance/modules/modules/cases/modules` declares `fn main()` and
+emitted only when `main` is `pub` (`conformance/modules/modules/cells/modules` declares `fn main()` and
 exports just `'_botopink_main'/0, main/1`). A crash's exit status moves from
 escript's `127` to `erl`'s `1`.
 
@@ -331,7 +331,7 @@ What each command promises. A row the code does not meet yet is marked
 | `run [--target T] [--module M] [--out D] [--cold] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** what `erlc -o D/erl` over every emitted `.erl` does — a job of the command's `erl` session (`cli/otp.zig`), the VM that answered the release and ran `build`'s check, reading the files from a list file, so no command line grows with the program (`cli/arglist.zig`) — and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (with `+sbwt none +sbwtdcpu none +sbwtdio none` first: no scheduler busy wait, the default scheduler count); on **beam** the same for `erlc +from_asm -o D/beam` over every emitted `.S`, and then `erl -noshell -pa D/beam -eval "'M':main([]), halt()."` — the entry's `'__bp_load_siblings'/0` compiles and loads the host `.erl` files the build shipped beside them | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json] [--cold]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `<id>.tmp` sibling is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR` and removed with it. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript` / `erl`, after one `erlc +from_asm` over the run's `.S` on beam) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
-| `format [paths…]` | the files and directories named, else the current directory — every `.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a conformance cell's refused module: a `.bp` under a cell (a directory holding `snapshot/output/`, decisions 457, 475) whose `snapshot/output/<module>.snap` holds a `refused` record — a module every target refuses, written to be refused (every former `reject/` cell, and `conformance/modules/lexer/cases/lexer_error_in_imported_module/src/pattern.bp`); a refusal only a `snapshot/targets/<t>/` departure states, an answer, no snapshot or no cell leaves the file in the walk (144 B-29 step H; `format_cmd.zig`'s tests). The exemption is the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
+| `format [paths…]` | the files and directories named, else the current directory — every `.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a conformance cell's refused module: a `.bp` under a cell (a directory holding `snapshot/output/`, decisions 457, 475) whose `snapshot/output/<module>.snap` holds a `refused` record — a module every target refuses, written to be refused (every former `reject/` cell, and `conformance/modules/lexer/cells/lexer_error_in_imported_module/src/pattern.bp`); a refusal only a `snapshot/targets/<t>/` departure states, an answer, no snapshot or no cell leaves the file in the walk (144 B-29 step H; `format_cmd.zig`'s tests). The exemption is the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. No gate stage calls it: the formatter is applied by the commit hook, never checked (decision 524) |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links, and `.botopinkbuild/cache/`, every build cache, and `.botopinkbuild/build/comptime/`, the compiled comptime modules `build`, `check` and `test` keep under their cache root through `bp.comptime_runtime.useCompiledCache` — decision 543, `--cold` reading none), and in a workspace member the workspace root's `.botopinkbuild/cache/` and `.botopinkbuild/analysis/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
@@ -390,22 +390,22 @@ Cross-command rules:
   located at the source string with an excerpt, writing the brace form as the
   fix (`"geometry" is a module of this package — write import
   {geometry.area};`, `resolver.braceForm`; pinned by
-  `conformance/modules/decisions-taken/own_module_import_without_from-206/cases/import_own_module_with_from`). A `from` naming the
+  `conformance/modules/decisions-taken/own_module_import_without_from-206/cells/import_own_module_with_from`). A `from` naming the
   package ITSELF is the same refusal, std included,
   in `src/`, `test/` and a dependency's own sources alike (decision 309:
   `"shapes" is this package — write import {geometry.area};`;
-  `conformance/modules/decisions-taken/package_imports_itself_by_path-309/cases/import_own_package_with_from`,
+  `conformance/modules/decisions-taken/package_imports_itself_by_path-309/cells/import_own_package_with_from`,
   `dependency_imports_itself_with_from`, `tests/cli_contract.sh`); anything else is
   `unresolved import source "<name>" — declare it in botopink.json
   "dependencies"`, located at the source string with an excerpt. Only a
   **direct** dependency is importable (decision 242): a package another
   dependency brings into the build (`core` under a declared `starter`) is
   refused the same way until this package declares it
-  (`conformance/modules/decisions-taken/only_direct_dependency_importable-242/cases/transitive_package_import`, four targets). A
+  (`conformance/modules/decisions-taken/only_direct_dependency_importable-242/cells/transitive_package_import`, four targets). A
   dependency's own modules answer the same rule against THEIR manifest when a
   consumer loads them (`libs.loadOne` → `resolver.checkSources`), located at
   the dependency's file relative to the working directory
-  (`conformance/modules/decisions-taken/only_direct_dependency_importable-242/cases/dependency_imports_undeclared_package`). A module of the package is
+  (`conformance/modules/decisions-taken/only_direct_dependency_importable-242/cells/dependency_imports_undeclared_package`). A module of the package is
   imported by its path inside the braces (`import {shapes.circle.name};`), and
   a path that names a module which *does* exist but does not export the leaf
   is the other error (`imported symbol is not exported by the named module`),
@@ -413,7 +413,7 @@ Cross-command rules:
   It is not raised against a module that does not lex or parse
   (`Analysis.broken`): its export list is unknown, not empty, and the compile
   reports the module's own located error instead (onze F8,
-  `conformance/modules/lexer/cases/lexer_error_in_imported_module`).
+  `conformance/modules/lexer/cells/lexer_error_in_imported_module`).
   Before this, an import naming nothing bound nothing and said nothing: exit 0,
   with code emitted.
 - **Two loaders, one import rule.** `src/` is a package and loads through
@@ -811,7 +811,7 @@ release tags). Bump it in the same change you want tagged.
 **only the file it is handed**. Every cross-module call in a multi-module program
 was therefore `undefined function <mod>:<fn>` at run time, with correct and
 correctly qualified emitted code — three `conformance/modules/*` cells and
-`conformance/modules/modules/cases/modules` failed on erlang for that reason alone.
+`conformance/modules/modules/cells/modules` failed on erlang for that reason alone.
 
 Two shapes that look like the fix and are not:
 
@@ -835,7 +835,7 @@ Two details that are load-bearing:
 - **`main([])`, not `main()`.** `main/1` is always exported — it is the escript
   entry point — while `main/0` is emitted only when `main` is `pub`. A runner
   calling `main:main()` fails with `undef` on any project whose entry is a plain
-  `fn main()`, `conformance/modules/modules/cases/modules` included. The asymmetry itself lives in
+  `fn main()`, `conformance/modules/modules/cells/modules` included. The asymmetry itself lives in
   `codegen/erlang.zig` and is not changed here.
 - **A crashing program now exits `1`.** `erl` returns 1 where `escript` returned
   127 (measured on a `1 / 0` program). The 127 was escript's artefact, nothing

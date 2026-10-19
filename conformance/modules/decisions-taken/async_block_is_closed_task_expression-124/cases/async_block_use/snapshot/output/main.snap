@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-without-component: `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it
-at src/main.bp:11:28

@@ -251,7 +251,7 @@ test "decision 8 N22: a name alone is not an arm" {
 }
 
 // The `pattern -> value` arm is judged too: an unguarded lower-case name is no
-// pattern there either (144 B-22; `conformance/modules/case/cases/case_bare_name_arrow_arm`).
+// pattern there either (144 B-22; `conformance/modules/case/refused/src/cases/case_bare_name_arrow_arm`).
 test "decision 8 N22: a name alone is not an arrow arm" {
     try expectParseError(std.testing.allocator,
         \\error[case-bare-name-arm]: a name alone is not a pattern

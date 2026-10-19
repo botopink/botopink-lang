@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.module_fn_named_like_bif.runCase();
+    cases.module_var_self_registration.runCase();
+}

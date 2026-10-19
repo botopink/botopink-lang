@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.bigint_arithmetic.runCase();
+    cases.bigint_in_containers.runCase();
+}

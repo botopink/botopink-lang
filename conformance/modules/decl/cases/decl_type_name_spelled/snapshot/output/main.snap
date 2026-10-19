@@ -1,9 +1,0 @@
-botopink-cell 1
-out a: Array<string>
-out b: Array<#(string, string)>
-out c: string[]
-out d: fn(i32) -> i32
-out e: #(string, string)
-out f: ?i32
-out g: string
-out pick(Self, i32[], ?string) -> Array<i32>

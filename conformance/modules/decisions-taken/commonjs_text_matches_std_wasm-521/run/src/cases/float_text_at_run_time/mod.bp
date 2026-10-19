@@ -1,0 +1,17 @@
+//// Decisions 441, 521 (144 B-00e, B-78): a float's text at run time is
+//// std-wasm's on every target, which is erlang's and beam's — OTP's
+//// `float_to_binary(F, [short])`: `5.0` in a template, `1.0e21`, `1.0e-7`,
+//// the scientific form where it is shorter (`1000.0` is `1.0e3`, `0.00001`
+//// is `1.0e-5`) and from 2^53 on (`9.007199254740992e15`). commonJS writes
+//// the same text through its helper, never the JS engine's number text.
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    val five = 5.0;
+    print("${five}");
+    print(1.0e21);
+    print(1.0e-7);
+    print(1000.0, "${1200.0}", 0.00001, 1.0e20, 123456.0);
+    print(9007199254740991.0, 9007199254740992.0, -9007199254740992.0);
+}

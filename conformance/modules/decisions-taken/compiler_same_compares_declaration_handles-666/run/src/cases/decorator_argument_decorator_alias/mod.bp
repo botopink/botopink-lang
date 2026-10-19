@@ -1,0 +1,20 @@
+//// Decision 268 — a decorator's name handed to a `Decorator` parameter is
+//// resolved where it is written: through the namespace of the module that
+//// declares it (`markers.email`) and under an import's alias (`lower`), it is
+//// the same declaration's identity (`same`, decision 371), in an array of
+//// names too (144 B-10, decision 430).
+
+pub mod markers;
+import {cases.decorator_argument_decorator_alias.markers.each, cases.decorator_argument_decorator_alias.markers.all, cases.decorator_argument_decorator_alias.markers.lowercased as lower};
+import {io.terminal.print} from "std";
+
+type Invite(
+    #[each(markers.email)] guests: Array<string>,
+    #[each(lower)] #[all([markers.email, lower])] hosts: Array<string>,
+)
+
+pub fn runCase() {
+    print(Invite.guestsEach());
+    print(Invite.hostsEach());
+    print(Invite.hostsAll());
+}

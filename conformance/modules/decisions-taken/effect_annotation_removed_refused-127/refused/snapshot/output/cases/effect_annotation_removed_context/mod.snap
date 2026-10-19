@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[effect-annotation-removed]: effect annotations were removed — the return type is the effect (decision 118)
+at src/cases/effect_annotation_removed_context/mod.bp:11:3
+label remove the annotation; write the wrapper in the return

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unbound variable 'nothingHere'
+at src/cases/behavior_default_fn_body_checked/mod.bp:12:16

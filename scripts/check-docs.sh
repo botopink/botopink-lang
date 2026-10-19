@@ -8,7 +8,8 @@
 #   --doc       a markdown file to check (relative to the repository, or
 #               absolute); repeatable, default `conformance/docs.md`,
 #               every `conformance/modules/*/docs.md`, every
-#               `conformance/modules/*/cases/*/docs.md` and `README.md`
+#               every case's and cell's `docs.md` under `conformance/modules/`
+#               (decision 779) and `README.md`
 #   --list      print every reference, `<doc>:<line>\t<path>`, and exit
 #   --self-test run only the harness's own contract (below) and exit
 #
@@ -16,8 +17,10 @@
 # a line
 #
 #   <!-- example: modules/<cell> -->     a cell of conformance/modules/
-#   <!-- example: modules/<m>/cases/<c> -->  a case of a module (decision 765);
-#   <!-- example: modules/decisions-taken/<slug>-<N>/cases/<c> --> a case of a decision's module
+#   <!-- example: modules/<m>/run/src/cases/<c> -->      a case of a module's run package (decision 779);
+#   <!-- example: modules/<m>/refused/src/cases/<c> -->  a case of its refused package;
+#   <!-- example: modules/<m>/cells/<c> -->              a cell of a module;
+#   (<m> is `<prefix>` or `decisions-taken/<slug>-<N>`)
 #   <!-- example: test/<suite> -->       a suite of conformance/test/
 #
 # whose path is relative to `conformance/`, rendered from the cell's `src/` and
@@ -25,8 +28,9 @@
 # `zig build test-conformance` checks it on every target; this script checks
 # that the reference and the suite agree on what exists:
 #
-#   - a `modules/<cell>` or `modules/<m>/cases/<c>` reference names a directory holding `botopink.json`
-#     and `src/main.bp`, and a `docs.md` that is not empty — beside each cell
+#   - a `modules/…` reference names a cell — a directory holding `botopink.json`
+#     and `src/main.bp` — or a case of a package, `<package>/src/cases/<c>/` holding
+#     `mod.bp` beside the package's `botopink.json` (decision 779); either with a `docs.md` that is not empty — beside each cell
 #     the reference names, the reference text it shows (decision 462); a
 #     `test/<suite>` reference names a `.bp` file or a directory holding
 #     `botopink.json` under `conformance/test/`;
@@ -70,7 +74,9 @@ if [ "$have_docs" -eq 0 ]; then
     for d in "$repo"/conformance/modules/*/docs.md; do
         [ -f "$d" ] && docs+=("${d#"$repo"/}")
     done
-    for d in "$repo"/conformance/modules/*/cases/*/docs.md "$repo"/conformance/modules/decisions-taken/*/cases/*/docs.md; do
+    for d in "$repo"/conformance/modules/*/{run,refused}/src/cases/*/docs.md "$repo"/conformance/modules/*/cells/*/docs.md \
+             "$repo"/conformance/modules/decisions-taken/*/{run,refused}/src/cases/*/docs.md "$repo"/conformance/modules/decisions-taken/*/cells/*/docs.md \
+             "$repo"/conformance/modules/*/cases/*/docs.md "$repo"/conformance/modules/decisions-taken/*/cases/*/docs.md; do
         [ -f "$d" ] && docs+=("${d#"$repo"/}")
     done
     docs+=(README.md)
@@ -101,7 +107,7 @@ scan() {
         }
         /^<!--[[:space:]]*example:/ {
             line = $0
-            if (line ~ /^<!-- example: (modules\/[A-Za-z0-9_.-]+\/cases\/[A-Za-z0-9_.-]+|modules\/decisions-taken\/[A-Za-z0-9_.-]+\/cases\/[A-Za-z0-9_.-]+|modules\/[A-Za-z0-9_.-]+|test\/[A-Za-z0-9_.-]+) -->[[:space:]]*$/) {
+            if (line ~ /^<!-- example: (modules\/[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*|test\/[A-Za-z0-9_.-]+) -->[[:space:]]*$/) {
                 sub(/^<!-- example: /, "", line); sub(/ -->[[:space:]]*$/, "", line)
                 printf "ref\t%s:%d\t%s\n", doc, NR, line
             } else {
@@ -115,13 +121,15 @@ scan() {
 exists() {
     local root="$1" p="$2"
     case "$p" in
-        modules/*)  # modules/<cell> or modules/<m>/cases/<c> (decision 765)
-            if [ -f "$root/$p/botopink.json" ] && [ -f "$root/$p/src/main.bp" ]; then
+        modules/*)  # a cell, or a case of a package (decision 779)
+            local pkg="${p%/src/cases/*}"
+            if { [ -f "$root/$p/botopink.json" ] && [ -f "$root/$p/src/main.bp" ]; } ||
+               { [ "$pkg" != "$p" ] && [ -f "$root/$pkg/botopink.json" ] && [ -f "$root/$p/mod.bp" ]; }; then
                 [ -s "$root/$p/docs.md" ] && return 0
                 printf 'names a cell whose docs.md is empty or missing: conformance/%s/docs.md quotes the reference text the cell shows (decision 462)' "$p"
                 return 1
             fi
-            printf 'names no cell: conformance/%s has no botopink.json and src/main.bp' "$p" ;;
+            printf 'names no cell: conformance/%s is no cell (botopink.json and src/main.bp) and no case of a package (<package>/src/cases/<c>/mod.bp)' "$p" ;;
         test/*)
             { [ -f "$root/$p" ] && [ "${p%.bp}" != "$p" ]; } && return 0
             [ -f "$root/$p/botopink.json" ] && return 0
@@ -162,6 +170,10 @@ self_test() {
     echo '{ "name": "c", "version": "0.0.1", "src": "src/" }' >"$root/modules/m/cases/c/botopink.json"
     echo 'pub fn main() {}' >"$root/modules/m/cases/c/src/main.bp"
     echo '> the case text' >"$root/modules/m/cases/c/docs.md"
+    mkdir -p "$root/modules/n/run/src/cases/k"
+    echo '{ "name": "n-run" }' >"$root/modules/n/run/botopink.json"
+    echo 'pub fn run() {}' >"$root/modules/n/run/src/cases/k/mod.bp"
+    echo '> the packaged case text' >"$root/modules/n/run/src/cases/k/docs.md"
     echo '{ "name": "there", "version": "0.0.1", "src": "src/" }' >"$root/modules/there/botopink.json"
     echo 'pub fn main() {}' >"$root/modules/there/src/main.bp"
     echo '> the reference text' >"$root/modules/there/docs.md"
@@ -183,6 +195,8 @@ fn f() {}
 <!-- example: modules/gone -->
 ```
 <!-- example: modules/m/cases/c -->
+<!-- example: modules/n/run/src/cases/k -->
+<!-- example: modules/n/run/src/cases/gone -->
 MD
     tally="$work/self/tally"
     : >"$tally"
@@ -191,13 +205,14 @@ MD
 doc.md:4
 doc.md:5
 doc.md:8
-doc.md:9'
-    if [ "$out" != "$expected" ] || [ "$(cat "$tally")" != "5 2 3" ]; then
+doc.md:9
+doc.md:15'
+    if [ "$out" != "$expected" ] || [ "$(cat "$tally")" != "7 3 3" ]; then
         printf '%s✗ check-docs.sh: the harness contract failed — refused lines:\n%s\ntally: %s%s\n' \
             "$RED" "$out" "$(cat "$tally")" "$NC" >&2
         return 1
     fi
-    echo "check-docs.sh: harness contract — 8 verdicts as expected"
+    echo "check-docs.sh: harness contract — 10 verdicts as expected"
 }
 
 if [ "$list" -eq 1 ]; then

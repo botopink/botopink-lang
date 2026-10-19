@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[unknown-builtin]: a prelude type is written without `@`
-at src/main.bp:4:24
-label no builtin of this name `@Result`

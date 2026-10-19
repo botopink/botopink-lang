@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.program_array_behavior_default.runCase();
+    cases.program_primitive_behavior_extends_std.runCase();
+}

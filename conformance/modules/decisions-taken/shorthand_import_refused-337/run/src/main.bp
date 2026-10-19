@@ -1,0 +1,7 @@
+mod cases;
+
+pub fn main() {
+    cases.mod_namespace_cascade.runCase();
+    cases.mod_reexport_by_val.runCase();
+    cases.optional_record_carrier.runCase();
+}

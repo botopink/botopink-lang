@@ -1,0 +1,39 @@
+//// An `f64` written as text keeps its decimal part on every target (decision
+//// 8 § 7, the numbers' text; decision 521): in a template hole, through
+//// `toString()`, beside a string in a `+` and through `terminal.print`. commonJS has
+//// one number type, so it spells the float through `__bp_f64` wherever the
+//// checker types it `f64` — an imported record's field and an `f64` a
+//// generic method answers included — and a record carries its float fields'
+//// shape when it prints. Before it, `"${5.0}"` was `5` there, `p.x` of an
+//// imported `Pt` printed `1`, and `Dict<string, f64>.insert`'s `3.0` printed `3`.
+
+pub mod geo;
+import {cases.float_text_everywhere.geo.Pt, cases.float_text_everywhere.geo.origin};
+import {collections.Dict, io.terminal.print} from "std";
+
+pub fn runCase() {
+    val five = 5.0;
+    print("${5.0}");
+    print(5.0.toString());
+    print("x" + 2.0);
+    print("${1.0e21}");
+    print("${-3.0}");
+    print("${0.25}");
+    print("${-0.5}");
+    print("v=${five}");
+    print(five.toString());
+    print("a" + five + "b");
+
+    val p = Pt(x: 1.0, n: 3);
+    print(p.x);
+    print("x=${p.x}");
+    print("x=" + p.x);
+    print(origin().x);
+    print([p.x, 2.5]);
+    print(p);
+
+    val counts: Dict<string, f64> = Dict.empty();
+    val stored = counts.insert("a", 3.0);
+    print(stored.at("a"));
+    print("a=${stored.at("a") ?? 0.0}");
+}

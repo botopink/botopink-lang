@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.comptime_text_one_answer.runCase();
+    cases.string_case_unicode.runCase();
+}

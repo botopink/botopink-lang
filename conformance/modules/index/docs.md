@@ -1,4 +1,4 @@
 # index
 
-[cases/index_and_slice_sugar/src/main.bp](cases/index_and_slice_sugar/src/main.bp)
-[cases/index_tuple_literal/src/main.bp](cases/index_tuple_literal/src/main.bp)
+[run/src/cases/index_and_slice_sugar/mod.bp](run/src/cases/index_and_slice_sugar/mod.bp)
+[run/src/cases/index_tuple_literal/mod.bp](run/src/cases/index_tuple_literal/mod.bp)

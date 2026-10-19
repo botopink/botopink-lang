@@ -1,0 +1,34 @@
+//// Decision 328 — a lambda bound with no annotation takes its parameter's type
+//// from the call that uses it: `later(2)` makes `n` an `i32`, so `n.toString()`
+//// is `i32`'s method on every target. wasm refused it, "cannot resolve the call
+//// `toString/0`", while `n` was still free when the body was checked.
+
+import {io.terminal.print} from "std";
+
+fn show(r: Result<string, string>) {
+    case r {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
+    }
+}
+
+fn run() -> Task<void> {
+    val later = { n ->
+        async {
+            if (n < 0) throw "negative " + n.toString();
+            return "got " + n.toString();
+        }
+    };
+    show(await later(2));
+    show(await later(-3));
+}
+
+pub fn runCase() {
+    val label = { n -> "n=" + n.toString() };
+    print(label(7));
+    val width = { n -> n.toString().length() };
+    print(width(12345));
+    val shout = { s -> s.toUpper() };
+    print(shout("hey"));
+    run();
+}

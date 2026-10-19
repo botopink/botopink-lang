@@ -7,6 +7,6 @@ holding the rule written in the annotation — a `syntax` argument, kept as code
 generic record has no reading through a catalogue entry, where the type argument would be lost; the catalogue itself is
 gone (665), each declaration's meta read through its own type. `main` prints `[]` and `["small"]`.
 
-Cells that also bear on it: `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_catalogue_generic`, `modules/decisions-taken/decorator_expr_typed_channels-370/cases/meta_expr_field`.
+Cells that also bear on it: `modules/decisions-taken/decorator_meta_keyed_by_type-298/refused/src/cases/meta_catalogue_generic`, `modules/decisions-taken/decorator_expr_typed_channels-370/cells/meta_expr_field`.
 
 [draft/main.bp](draft/main.bp)

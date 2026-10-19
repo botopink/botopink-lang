@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.generator_levels.runCase();
+    cases.generator_result_items_lazy.runCase();
+    cases.iterator_factory.runCase();
+    cases.iterator_fibonacci.runCase();
+    cases.iterator_result_item.runCase();
+    cases.iterator_result_items.runCase();
+    cases.stream_pages.runCase();
+}

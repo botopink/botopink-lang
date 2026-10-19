@@ -1,0 +1,18 @@
+//// A lambda written as the argument of a generic type's method is written
+//// against the function type the method declares, with the type's parameters
+//// bound by the receiver: `Bag(items: [1, 2])` is a `Bag<i32>`, so the `x` of
+//// `map({ x -> x.toString() })` is an `i32` and `toString` is the integer's.
+
+import {io.terminal.print} from "std";
+
+type Bag<T>(items: Array<T>) {
+    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Bag<U> {
+        return Bag(items: self.items.map(f));
+    }
+}
+
+pub fn runCase() {
+    val b = Bag(items: [1, 2]).map({ x -> x.toString() });
+    print(b.items.at(0) == "1");
+    print(b.items.at(1));
+}

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: #[bpp.html] annotates a template function, whose first parameter is `syntax q: string` — `page` answers `i32`
-at src/main.bp:7:3

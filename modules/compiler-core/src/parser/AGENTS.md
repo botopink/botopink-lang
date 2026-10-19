@@ -520,7 +520,7 @@ enclosing scope is `val assert <Pattern> = <expr>;` (decision 8 §9), and a
 second spelling for one meaning is what decision 67 refuses. Three DOCUMENTED
 SKIPs used to pin the parse error and promise the form —
 `comptime/tests/narrowing.zig` ×2 and `codegen/tests/narrowing.zig` ×1; they are
-gone, and `conformance/modules/decisions-taken/pattern_as_binding_refused-11/cases/assert_is_pattern` pins the refusal instead.
+gone, and `conformance/modules/decisions-taken/pattern_as_binding_refused-11/cells/assert_is_pattern` pins the refusal instead.
 
 ## `case` arms and patterns (decision 8 §5, 06 N22)
 
@@ -549,7 +549,7 @@ keeps the `fields` shape every existing consumer knows, anything else becomes
 (`isPlainBinder`): `Box(label: null, n: k)` is `literals`, and every backend
 tests the field (`commonJS` `isKeywordLiteralPattern`, erlang's `undefined`
 atom, beam's `is_eq_exact`, wasm's `eqz`) — kept as `fields` it was bound as a
-name `null` (`conformance/modules/case/cases/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
+name `null` (`conformance/modules/case/cells/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
 owes it.
 
 Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
@@ -564,10 +564,10 @@ mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
 judged for `case-bare-name-arm` alone: an unguarded single pattern
 (`k -> k + 1`), and every subject of a multi-subject arm, guarded or not
 (decision 602: `Square(side), m -> …` is refused at `m`, `rejectArm` locating
-each refusal at its own subject's first token; `conformance/modules/decisions-taken/multi_subject_bare_name_refused-602/cases/case_multi_subject_bare_name`).
+each refusal at its own subject's first token; `conformance/modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_bare_name`).
 A guarded single name (`x if x > 3 -> 1`) still binds, and an
 upper-case name in the arrow form is a variant written bare (`NFKC -> true`), never a
-constant (`conformance/modules/case/cases/case_bare_name_arrow_arm`).
+constant (`conformance/modules/case/refused/src/cases/case_bare_name_arrow_arm`).
 
 ### Decision 54 — an optional is matched by `null` and a binder
 

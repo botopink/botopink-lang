@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-of-non-context-fn: `use` takes a hook, and this is a component (its `R` implements `@Renderable`) — a component is called, not `use`d
-at src/main.bp:14:12

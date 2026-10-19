@@ -7,7 +7,7 @@ prints its whole path too, and so does every other place that writes a value as 
 `picked Token.Color.Black`, a template hole the same text, and a list prints each item's path. No name of the
 backend's own — a section's wrapper record, `_inner`, `__Token__Color` — reaches the output, on any of the four targets.
 
-Cells that also bear on it: `modules/decisions-taken/comptime_runs_at_build-331/cases/comptime_enum_section_value`, `modules/enum/cases/enum_section_expected_type`,
-`modules/enum/cases/enum_section_ambiguous_path`, `modules/enum/cases/enum_section_leaf_beside_variant`.
+Cells that also bear on it: `modules/decisions-taken/comptime_runs_at_build-331/run/src/cases/comptime_enum_section_value`, `modules/enum/run/src/cases/enum_section_expected_type`,
+`modules/enum/refused/src/cases/enum_section_ambiguous_path`, `modules/enum/run/src/cases/enum_section_leaf_beside_variant`.
 
 [draft/main.bp](draft/main.bp)

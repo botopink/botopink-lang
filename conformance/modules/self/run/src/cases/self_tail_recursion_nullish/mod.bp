@@ -1,0 +1,23 @@
+//// 144 B-22 row "`??` lowering defeats the self-tail-call loop" (was `04-js`
+//// rows): commonJS lowered `a ?? b` to an immediately invoked arrow reading the
+//// function's parameters, the tail-call rewrite counted it a closure capture and
+//// left a plain JS call — one frame per element, `RangeError` on a deep input.
+//// A pin: the row no longer reproduces (the arrow is scanned in the caller's
+//// zone), the cell guards it on every target.
+////
+//// The bound is a VARIABLE and 20 000 deep, as in `self_tail_recursion`: above
+//// the old commonJS ceiling, below the one wasm's recursion still has.
+
+import {io.terminal.print} from "std";
+
+fn sumAll(xs: i32[], i: i32, acc: i32) -> i32 {
+    if (i == xs.length) return acc;
+    val x = xs.at(i) ?? 0;
+    return sumAll(xs, i + 1, acc + x);
+}
+
+pub fn runCase() {
+    val bound = 20000;
+    val xs = Array.repeat(1, bound);
+    print(sumAll(xs, 0, 0));
+}

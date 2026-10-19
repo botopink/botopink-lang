@@ -1,0 +1,30 @@
+//// Decision 562 — a constant of the module (a `val` whose value reads no
+//// run-time variable) is build data: `VERBOSE` decides the condition and
+//// `PREFIX` is written into each emitted `say` while the call is expanded.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
+declare fn say(line: string);
+
+fn sayBody(line: string) {
+    print(line);
+}
+
+val VERBOSE = false;
+
+val PREFIX = "> ";
+
+fn show(comptime lines: string[]) {
+    for (lines) { line ->
+        if (VERBOSE) say("verbose: " + line) else say(PREFIX + line);
+    }
+}
+
+pub fn runCase() {
+    show(["a", "b"]);
+}

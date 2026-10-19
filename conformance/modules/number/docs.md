@@ -1,5 +1,5 @@
 # number
 
-[cases/number_literal_erlang_spellings/src/main.bp](cases/number_literal_erlang_spellings/src/main.bp)
-[cases/number_literal_method/src/main.bp](cases/number_literal_method/src/main.bp)
-[cases/number_method_call/src/main.bp](cases/number_method_call/src/main.bp)
+[run/src/cases/number_literal_erlang_spellings/mod.bp](run/src/cases/number_literal_erlang_spellings/mod.bp)
+[run/src/cases/number_literal_method/mod.bp](run/src/cases/number_literal_method/mod.bp)
+[run/src/cases/number_method_call/mod.bp](run/src/cases/number_method_call/mod.bp)

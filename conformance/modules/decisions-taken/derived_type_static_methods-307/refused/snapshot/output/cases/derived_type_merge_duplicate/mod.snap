@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: derived-type-merge-duplicate: field `name` is on both sides of `Type.merge(Dog, Pet)`
+at src/cases/derived_type_merge_duplicate/mod.bp:10:34

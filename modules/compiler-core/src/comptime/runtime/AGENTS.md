@@ -108,6 +108,6 @@ every core); `rm -rf .botopinkbuild` and `botopink clean` delete the cache with 
   the engine's choice changes no snapshot and no cell. Exception handling is answered at
   build (518) — std's `failure.attempt` answers in a `comptime` body,
   a template or a decorator as in a wasm program (`../host_cells.zig` `attemptAtBuild`, cell
-  `conformance/modules/decisions-taken/wasm_attempt_by_exception_handling-518/cases/comptime_attempt_at_build`).
+  `conformance/modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/comptime_attempt_at_build`).
 - **A body's output** (`io:format`) goes to a buffer in the module's own memory, never to the
   compiler's stdout.

@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: unknown type 'Missing'
+at src/cases/decorator_assoc_type_error_at_annotation/mod.bp:12:3
+from src/cases/decorator_assoc_type_error_at_annotation/mod.bp:9:14

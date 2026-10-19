@@ -1,4 +1,4 @@
 # tail
 
-[cases/tail_recursive_sum/src/main.bp](cases/tail_recursive_sum/src/main.bp)
-[cases/tail_self_call/src/main.bp](cases/tail_self_call/src/main.bp)
+[run/src/cases/tail_recursive_sum/mod.bp](run/src/cases/tail_recursive_sum/mod.bp)
+[run/src/cases/tail_self_call/mod.bp](run/src/cases/tail_self_call/mod.bp)

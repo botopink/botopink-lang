@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: external-field-unlabelled: a cell's field is written by its label — write `result: true`
-at src/main.bp:8:53

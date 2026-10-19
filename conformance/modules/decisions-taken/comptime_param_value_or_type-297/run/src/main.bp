@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.value_or_type_param.runCase();
+    cases.value_or_type_param_imported.runCase();
+}

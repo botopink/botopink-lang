@@ -1,3 +1,3 @@
 # display
 
-[cases/display_print/src/main.bp](cases/display_print/src/main.bp)
+[cells/display_print/src/main.bp](cells/display_print/src/main.bp)

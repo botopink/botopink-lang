@@ -1,0 +1,12 @@
+mod cases;
+
+pub fn main() {
+    cases.template_destructuring_init.runCase();
+    cases.template_in_argument.runCase();
+    cases.template_in_case_arm.runCase();
+    cases.template_in_field_default.runCase();
+    cases.template_in_lambda.runCase();
+    cases.template_in_module_val_lambda.runCase();
+    cases.template_in_type_method.runCase();
+    cases.template_name_shadowed_by_local.runCase();
+}

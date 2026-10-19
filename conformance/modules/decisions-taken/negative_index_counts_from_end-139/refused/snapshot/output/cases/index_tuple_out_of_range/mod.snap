@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: this tuple has 2 element(s), so `[2]` names no position
+at src/cases/index_tuple_out_of_range/mod.bp:10:12

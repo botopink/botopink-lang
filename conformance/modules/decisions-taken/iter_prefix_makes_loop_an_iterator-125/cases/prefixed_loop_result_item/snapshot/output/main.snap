@@ -1,8 +1,0 @@
-botopink-cell 1
-out try ok 1
-out try error negative -2
-out try done
-out throw ok 1
-out throw ok 2
-out throw error stop at 3
-out throw done

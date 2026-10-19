@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-meta-field-type: the field `run: fn() -> i32` of the meta record `Hook` holds no data the compiler rebuilds where the meta is read
-at src/main.bp:15:22

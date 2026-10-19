@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn 'label' (it returns 'string'): only a `@Component` body activates a hook
-at src/main.bp:10:13

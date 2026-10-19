@@ -82,7 +82,7 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
     // `_ { { x -> x * n } }` — the arm block's tail is a lambda, so it is the
     // value the `case` answers (decision 525). It ran as a statement, the arm
     // answered `ok`, and applying it was `{badfun, ok}`
-    // (`modules/case/cases/case_arm_lambda_value`).
+    // (`modules/case/run/src/cases/case_arm_lambda_value`).
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn scaleBy(n: i32) -> fn(x: i32) -> i32 {
         \\    val f = case n {
@@ -297,7 +297,7 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
     // reason lived in the emitter's `atom_arena`, which `em.deinit` freed
     // before the caller rendered the diagnostic: the message read freed memory
     // — the right text on glibc, garbage on macos-14
-    // (`conformance/modules/external/cases/external_template_refused_on_beam`). Under
+    // (`conformance/modules/external/cells/external_template_refused_on_beam`). Under
     // `std.testing.allocator` freed memory is poisoned, so this reads it.
     try h.assertBeamRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
@@ -530,7 +530,7 @@ test "beam: a member call through a library's default handle is a call into the 
     // fn with no run-time binding, so the receiver used to lower as an unbound
     // name and the call aborted with `{unresolved_method, make, 1}`. It is the
     // remote call into the module that declares `make` (144 B-50;
-    // `conformance/modules/default/cases/default_handle_member` runs it).
+    // `conformance/modules/default/cells/default_handle_member` runs it).
     try h.assertConsumerBeam(std.testing.allocator, &.{
         .{ .path = "qlib/qlib", .source =
         \\pub fn make(x: i32) -> i32 {

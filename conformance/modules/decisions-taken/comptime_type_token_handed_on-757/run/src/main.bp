@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.is_comptime_type_parameter.runCase();
+    cases.type_parameter_bound_by_token.runCase();
+}

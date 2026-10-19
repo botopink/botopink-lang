@@ -2,7 +2,7 @@
 
 The example is a program that uses `kit-link`, a declared dependency. Its package builds for commonJS and erlang, and `kit-link`'s manifest names commonJS alone, so the build is refused at `kit-link`'s line of the dependant's `botopink.json`, `dependency-target-missing`, naming the package and the missing erlang target, whichever target is being built. The same check runs down the graph, each dependency's dependencies against its own targets. A draft carries no manifest and no dependency, so the refusal waits for the promoted cell's `botopink.json` and its `kit-link` package.
 
-Cells in this repository that also bear on it: `modules/manifest/cases/manifest_targets_host_binding`.
+Cells in this repository that also bear on it: `modules/manifest/cells/manifest_targets_host_binding`.
 
 
-[cases/init_order_packages/src/main.bp](cases/init_order_packages/src/main.bp)
+[cells/init_order_packages/src/main.bp](cells/init_order_packages/src/main.bp)

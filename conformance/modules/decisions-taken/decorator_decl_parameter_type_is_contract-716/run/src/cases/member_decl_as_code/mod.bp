@@ -1,0 +1,27 @@
+//// Decision 716 (3) — `decl` is the annotated declaration as code in every
+//// tree, a member included: the member `shout` reads `decl.label()`, typed
+//// by `syntax decl: Named` at the decorator, and on `Users` it is
+//// `Users.label()`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Named {
+    fn label() -> string;
+}
+
+fn shouted(syntax decl: Named) {
+    compiler.addMember("shout", fn() -> string {
+        return decl.label() + "!";
+    });
+}
+
+#[shouted]
+pub type Users() implement Named {
+    fn label() -> string {
+        return "users";
+    }
+}
+
+pub fn runCase() {
+    print(Users.shout());
+}

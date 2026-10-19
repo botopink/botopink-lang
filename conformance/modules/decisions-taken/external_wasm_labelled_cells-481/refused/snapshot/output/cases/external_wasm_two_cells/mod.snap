@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `.Wasm` on `floorOf` writes a second cell, `body:` — a wasm binding is one cell (decision 481)
+at src/cases/external_wasm_two_cells/mod.bp:9:28

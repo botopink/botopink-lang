@@ -1,0 +1,13 @@
+import {io.terminal.print} from "std";
+
+fn show(x: ?i32) {
+    if (x) {
+        n ->
+        print(n);
+    }
+}
+
+pub fn runCase() {
+    show(5); // 5
+    show(null); // nothing
+}

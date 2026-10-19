@@ -1,0 +1,7 @@
+mod cases;
+
+pub fn main() {
+    cases.comptime_random_seeded.runCase();
+    cases.comptime_std_host_function.runCase();
+    cases.decorator_host_cells.runCase();
+}

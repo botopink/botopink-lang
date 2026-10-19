@@ -1,0 +1,16 @@
+pub mod parse;
+
+import {cases.import_type_alias.parse.Parser, cases.import_type_alias.parse.Port, cases.import_type_alias.parse.portOf};
+import {io.terminal.print} from "std";
+
+// `Parser` and `Port` are imported like types; `ParseError`, which `Parser`'s
+// target names, comes with them (01 R2).
+fn relay(s: string) -> Parser<Port> {
+    return portOf(s);
+}
+
+pub fn runCase() {
+    val p: Port = try relay("x") catch 0;
+    print(p);
+    print(try relay("") catch 7);
+}

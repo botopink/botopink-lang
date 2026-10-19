@@ -3,7 +3,7 @@
 //// holds, whatever the message, and `try` on an `Result` that holds a value
 //// answers the value. A failing assertion's message and a failing `try`'s error
 //// string, as the runner reports them, are the CLI's contract and stay in the
-//// script; `modules/assert/cases/assert_message_aborts` is the failing `assert` outside a test.
+//// script; `modules/assert/cells/assert_message_aborts` is the failing `assert` outside a test.
 
 fn double(n: i32) -> i32 {
     return n * 2;

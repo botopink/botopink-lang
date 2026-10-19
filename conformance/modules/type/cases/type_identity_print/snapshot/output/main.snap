@@ -1,5 +1,0 @@
-botopink-cell 1
-out Point(x: 1, y: 2)
-out Shape.Dot
-out Shape.Circle(radius: 4)
-out [Point(x: 1, y: 2), Point(x: 3, y: 4)]

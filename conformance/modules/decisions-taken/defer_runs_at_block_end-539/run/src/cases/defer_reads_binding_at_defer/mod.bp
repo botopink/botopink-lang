@@ -1,0 +1,30 @@
+//// Decision 539 (amended) — names bind where `defer` is written, only the
+//// value is read late: a `val` written after the `defer` that shadows a
+//// name the deferred code reads is another binding, and the deferred code
+//// does not see it.
+
+import {io.terminal.print} from "std";
+
+val name = "global";
+
+fn work() {
+    defer print("close " + name);
+    val name = "local";
+    print("work " + name);
+}
+
+fn viaBranch(c: bool) {
+    defer print("close " + name);
+    if (c) {
+        val name = "branch";
+        print("in " + name);
+        return;
+    }
+    print("after");
+}
+
+pub fn runCase() {
+    work();
+    viaBranch(true);
+    viaBranch(false);
+}

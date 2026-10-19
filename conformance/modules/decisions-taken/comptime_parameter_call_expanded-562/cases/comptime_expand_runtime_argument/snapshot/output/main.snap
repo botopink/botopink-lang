@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-arg-not-known: `box` is a run-time value, and the parameter `rows` is `comptime` — its argument is known while the program compiles
-at src/main.bp:29:12

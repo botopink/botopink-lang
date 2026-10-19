@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `roundOf` binds wasm twice for host 'wasi' — one `.Wasm(…)` per host
+at src/cases/external_wasm_host_twice/mod.bp:7:3

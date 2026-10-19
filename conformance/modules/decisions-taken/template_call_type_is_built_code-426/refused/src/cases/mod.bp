@@ -1,0 +1,4 @@
+pub mod template_build_outside_bound;
+pub mod template_build_outside_bound_component;
+pub mod template_call_expected_mismatch;
+pub mod template_note_on_mismatch;

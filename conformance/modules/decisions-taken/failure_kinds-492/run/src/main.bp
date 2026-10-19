@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.std_failure_attempt_abort_kinds.runCase();
+    cases.std_failure_types.runCase();
+}

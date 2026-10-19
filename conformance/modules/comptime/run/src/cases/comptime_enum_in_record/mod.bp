@@ -1,0 +1,40 @@
+//// An enum value crosses a `comptime` inside a record's field as it does
+//// alone: `make()` answers a `Theme` whose `mode` is `Mode.Dark`, and the
+//// `comptime` writes it back as `Theme(mode: Mode.Dark, …)`; a generic
+//// record's field typed by its parameter (`Boxed<Mode>`) too.
+
+import {io.terminal.print} from "std";
+
+type Mode {
+    Light,
+    Dark,
+}
+
+type Theme(mode: Mode, size: i32)
+
+type Boxed<T>(item: T)
+
+fn make() -> Theme {
+    return Theme(mode: Mode.Dark, size: 3);
+}
+
+fn boxed() -> Boxed<Mode> {
+    return Boxed(item: Mode.Light);
+}
+
+pub val t = comptime make();
+
+pub val b = comptime boxed();
+
+fn name(m: Mode) -> string {
+    return case m {
+        .Light -> "light";
+        .Dark -> "dark";
+    };
+}
+
+pub fn runCase() {
+    print(name(t.mode));
+    print(t.size);
+    print(name(b.item));
+}

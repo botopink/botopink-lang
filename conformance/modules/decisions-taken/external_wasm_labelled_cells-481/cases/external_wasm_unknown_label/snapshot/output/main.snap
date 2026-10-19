@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Implementation.Wasm` has no parameter named `js`
-at src/main.bp:6:84

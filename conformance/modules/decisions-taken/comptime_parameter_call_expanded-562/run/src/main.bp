@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.comptime_expand_banner.runCase();
+    cases.comptime_expand_constant_at_build.runCase();
+}

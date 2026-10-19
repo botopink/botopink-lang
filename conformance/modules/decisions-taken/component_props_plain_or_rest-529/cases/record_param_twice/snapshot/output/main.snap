@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-param-twice: `Card` already takes `..card` as its record parameter — a function has at most one
-at src/main.bp:10:28

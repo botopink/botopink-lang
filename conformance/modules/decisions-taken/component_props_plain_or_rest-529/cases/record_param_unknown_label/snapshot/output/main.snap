@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-param-label: `color` names neither a parameter of `Card` nor a field of `CardProps`, the type of `..props`
-at src/main.bp:13:41

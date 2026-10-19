@@ -4,6 +4,6 @@ The example makes a directory with one file and one link, `gone.bp`, which point
 
 The program prints `page.bp` and then `fs.walk: dangling link "gone.bp"`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/std_fs_walk_root_spellings` (the dangling link under two spellings of the root).
+Cells in this repository that bear on it: `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/std_fs_walk_root_spellings` (the dangling link under two spellings of the root).
 
 [draft/main.bp](draft/main.bp)

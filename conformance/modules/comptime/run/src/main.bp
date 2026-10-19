@@ -1,0 +1,7 @@
+mod cases;
+
+pub fn main() {
+    cases.comptime_block_value.runCase();
+    cases.comptime_enum_in_record.runCase();
+    cases.comptime_interpolation_in_called_fn.runCase();
+}

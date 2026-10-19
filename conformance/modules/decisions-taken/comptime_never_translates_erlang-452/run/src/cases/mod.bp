@@ -1,0 +1,2 @@
+pub mod comptime_erlang_cell_ignored_fn_serves;
+pub mod comptime_erlang_cell_never_runs_at_build;

@@ -13,6 +13,6 @@ records the statement inventory as the behavior's own meta, the list a `/actuato
 `find (query): select * from User where id = ${id} limit 1` and
 `named (native): select * from users where name = :name`.
 
-Cells that also bear on it: `modules/decisions-taken/template_called_with_raw_text-577/cases/compiler_template_forms`.
+Cells that also bear on it: `modules/decisions-taken/template_called_with_raw_text-577/run/src/cases/compiler_template_forms`.
 
 [draft/main.bp](draft/main.bp)

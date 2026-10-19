@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected i64, got bigint
-at src/main.bp:6:18

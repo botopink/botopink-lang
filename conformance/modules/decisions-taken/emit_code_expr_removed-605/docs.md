@@ -2,6 +2,6 @@
 
 The example's build layer, [draft/comptime/register.bp](draft/comptime/register.bp), declares two decorators. `register` is written as decision 605 maps the old outputs. The registration is a `compiler.init` executor over a name read at build (`val name = compiler.name(decl)!; compiler.init({ -> recordRoute(name) });`). The generated helper is a typed static member, `compiler.addMember("describe", fn() -> string { … })`, reached as `Account.describe()`. `legacy` writes the same registration with `@emit`, which no longer exists, so it is refused at that call, `unknown-builtin`. `@code` and `@expr` are refused in the same way. In its place a generated type is a template text handed to `compiler.addType`, a generated function a typed `addMember`, and `@expr(v)` is plain `v`. The program never builds; without `legacy` it would print `account` and `Account`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main`, `modules/decisions-taken/decorator_four_output_places-216/cases/decorator_add_type`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/builtin_module_not_lowered`.
+Cells in this repository that bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main`, `modules/decisions-taken/decorator_four_output_places-216/run/src/cases/decorator_add_type`, `modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/builtin_module_not_lowered`.
 
 [draft/main.bp](draft/main.bp)

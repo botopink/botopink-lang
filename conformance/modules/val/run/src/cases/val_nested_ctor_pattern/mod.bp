@@ -1,0 +1,49 @@
+//// 1.0.12-beta `144-botopink-lang` B-22 step 13 (was `01-checker` s13, JS-4; `03-beam`
+//// s1; the `05-wasm` row): a constructor pattern nested in a `val` binding is a plain
+//// destructure when every constructor in it is its type's only variant —
+//// `val Pair(Circle(r), n) = p;` binds `r` off the inner record and `n` off the outer
+//// one, at any depth, beside a wildcard and inside a record's own constructor.
+
+import {io.terminal.print} from "std";
+
+type Shape {
+    Circle(r: i32),
+}
+
+type Pair {
+    Pair(s: Shape, n: i32),
+}
+
+type Inner {
+    In(a: i32, b: string),
+}
+
+type Outer {
+    Out(x: Inner, c: i32),
+}
+
+type Deep {
+    D(o: Outer),
+}
+
+type Boxed(s: Shape, k: i32)
+
+fn radiusPlusCount(p: Pair) -> i32 {
+    val Pair(Circle(r), n) = p;
+    return r + n;
+}
+
+pub fn runCase() {
+    val p = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
+    val Pair(Circle(r), n) = p;
+    print(r);
+    print(n);
+    print(radiusPlusCount(p));
+    val Out(In(a, b), c) = Outer.Out(x: Inner.In(a: 7, b: "x"), c: 9);
+    print("${a} ${b} ${c}");
+    val D(Out(In(_, w), z)) = Deep.D(o: Outer.Out(x: Inner.In(a: 1, b: "deep"), c: 2));
+    print(w);
+    print(z);
+    val Boxed(Circle(q), k) = Boxed(s: Shape.Circle(r: 5), k: 6);
+    print(q * k);
+}

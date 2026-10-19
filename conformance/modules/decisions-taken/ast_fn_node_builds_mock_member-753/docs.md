@@ -7,6 +7,6 @@ code of `fn(self: Self, name: string) -> string { return ${word} + ", " + name; 
 literal — no text is parsed back, and nothing escapes into a raw string. Each annotated type gets its own `greet`, and
 the program prints `Hello, Ana` and `Olá, Bia`. `testing/mocks` builds each mock member the same way.
 
-Cells that also bear on it: `modules/decisions-taken/template_marked_by_syntax_text-578/cases/compiler_template_expr_return`.
+Cells that also bear on it: `modules/decisions-taken/template_marked_by_syntax_text-578/run/src/cases/compiler_template_expr_return`.
 
 [draft/main.bp](draft/main.bp)

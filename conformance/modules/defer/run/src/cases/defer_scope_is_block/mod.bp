@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    {
+        defer print("inner");
+        print("in");
+    }
+    print("out");
+}

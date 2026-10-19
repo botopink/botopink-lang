@@ -1,0 +1,17 @@
+//// Decision 578 (3) — `compiler.buildType(source)` builds a type from its
+//// text, the one way a type is built: `compiler.addType(name, compiler.buildType(…))`
+//// gives the annotated type an associated type, read `City.Columns`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn columns(syntax decl: unknown) {
+    compiler.addType("Columns", compiler.buildType("(code: string, size: i32)"));
+}
+
+#[columns]
+pub type City(name: string)
+
+pub fn runCase() {
+    val c = City.Columns(code: "x", size: 3);
+    print(c.code + " " + c.size.toString());
+}

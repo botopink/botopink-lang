@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: variadic-spread: `sum` is variadic, and a call passes its arguments one by one — there is no spread at a call
-at src/main.bp:13:17

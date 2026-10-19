@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch`
-at src/main.bp:12:33

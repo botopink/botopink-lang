@@ -1,0 +1,14 @@
+mod cases;
+
+pub fn main() {
+    cases.decorator_calls_imported_function.runCase();
+    cases.decorator_calls_module_function.runCase();
+    cases.decorator_emitted_proxies_dispatch.runCase();
+    cases.decorator_imported_builds_private_record.runCase();
+    cases.decorator_imported_calls_module_function.runCase();
+    cases.decorator_lambda_many_locals.runCase();
+    cases.decorator_member_record_update.runCase();
+    cases.decorator_negative_argument.runCase();
+    cases.decorator_random_seeded_commonjs.runCase();
+    cases.decorator_same_refuses_mark.runCase();
+}

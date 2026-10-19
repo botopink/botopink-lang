@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: yield-without-iter: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn's return type is no effect wrapper
-at src/main.bp:9:9

@@ -1,0 +1,37 @@
+//// Decision 525 — a block used as a value that reassigns `var`s of the
+//// enclosing function: the reassignments are visible after the block, and the
+//// block's value is its tail — from the body's end, from an `if` / `else` at
+//// its end and after a loop. On erlang a block that was a fun could not
+//// rebind what it captured.
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    var acc = 1;
+    var label = "a";
+    val r = {
+        acc = acc + 10;
+        label = label + "b";
+        acc * 2
+    };
+    print(acc, label, r);
+
+    val s = {
+        if (acc > 5) {
+            acc = acc - 5;
+            "big";
+        } else {
+            acc = 0;
+            "small";
+        }
+    };
+    print(acc, s);
+
+    val t = {
+        for ([1, 2]) { x ->
+            acc = acc + x;
+        }
+        acc * 10
+    };
+    print(acc, t);
+}

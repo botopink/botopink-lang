@@ -143,9 +143,9 @@ Two measurements, each recording every comptime module's Erlang text
 
 | Cell | Where | Erlang template | Served by |
 |---|---|---|---|
-| `hash.contentHash` (std) | `modules/decisions-taken/libraries_run_at_build_on_wasm-594/cases/decorator_host_cells`, `modules/decisions-taken/libraries_run_at_build_on_wasm-594/cases/comptime_std_host_function`, `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cases/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
-| `bang` (test cell) | `modules/decisions-taken/libraries_run_at_build_on_wasm-594/cases/decorator_host_cells`, `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cases/decorator_imported_host_function`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
-| `wrap` (test cell) | `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cases/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | beam-to-wasm |
+| `hash.contentHash` (std) | `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/decorator_host_cells`, `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/comptime_std_host_function`, `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cells/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
+| `bang` (test cell) | `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/decorator_host_cells`, `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cells/decorator_imported_host_function`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
+| `wrap` (test cell) | `modules/decisions-taken/decorator_calls_host_comptime_cell-341/cells/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | beam-to-wasm |
 
 Their `.beam` (the compiler's assembler): `label`, `func_info`, `int_code_end`, `call_ext`,
 `allocate`, `test_heap`, `deallocate`, `return`, `is_binary`, `jump`, `move`, `put_list`,

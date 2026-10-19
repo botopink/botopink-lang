@@ -1,0 +1,7 @@
+pub mod comptime_block_with_loop;
+pub mod comptime_enum_section_value;
+pub mod comptime_function_reference;
+pub mod comptime_imported_section_path;
+pub mod comptime_record_pattern;
+pub mod comptime_val_after_import;
+pub mod comptime_wide_literal;

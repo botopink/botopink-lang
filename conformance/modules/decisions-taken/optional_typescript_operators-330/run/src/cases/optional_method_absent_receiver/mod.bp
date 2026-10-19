@@ -1,0 +1,27 @@
+//// Decision 330 — `recv?.m(args)` calls the method only on a present
+//// receiver: an absent one makes the whole call absent, on every target. The
+//// receiver is the optional itself here (a local, a call, an array element),
+//// not a link continuing a chain (`modules/optional_chain_method`).
+
+import {io.terminal.print} from "std";
+
+fn find(key: string) -> ?string {
+    return if (key == "a") "found" else null;
+}
+
+pub fn runCase() {
+    val absent = find("b");
+    val present = find("a");
+    print(absent?.length() ?? -1);
+    print(present?.length() ?? -1);
+    print(find("b")?.length());
+    print(find("a")?.length());
+    print(find("b")?.toUpper() ?? "none");
+    print(find("a")?.toUpper() ?? "none");
+    print(find("b")?.contains("ou") ?? false);
+    print(find("a")?.contains("ou") ?? false);
+    val words = ["alpha", "be"];
+    print(words.at(5)?.length() ?? -7);
+    print(words.at(0)?.slice(1, 3) ?? "none");
+    print(words.at(5)?.slice(1, 3) ?? "none");
+}

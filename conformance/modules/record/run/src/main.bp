@@ -1,0 +1,14 @@
+mod cases;
+
+pub fn main() {
+    cases.record_construct_read.runCase();
+    cases.record_empty.runCase();
+    cases.record_enum_case_lambda.runCase();
+    cases.record_field_named_tag.runCase();
+    cases.record_field_reserved_word.runCase();
+    cases.record_method.runCase();
+    cases.record_method_named_length.runCase();
+    cases.record_optional_float_field.runCase();
+    cases.record_update_on_lambda_parameter.runCase();
+    cases.record_update_spread.runCase();
+}

@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[if-operand]: an `if` expression begins an expression; it is not an operand
-at src/main.bp:7:13
-label bind it first: `val x = if …;`

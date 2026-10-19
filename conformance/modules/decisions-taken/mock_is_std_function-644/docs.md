@@ -4,6 +4,6 @@ The example mocks a behavior with std's function `mock`, called on the behavior 
 
 The program prints `true`, `hi ana` and `true`.
 
-Cells in this repository that bear on it: `modules/std/cases/std_decorator_through_namespace` (the `#[mocks.mock]` form this replaces).
+Cells in this repository that bear on it: `modules/std/cells/std_decorator_through_namespace` (the `#[mocks.mock]` form this replaces).
 
 [draft/main.bp](draft/main.bp)

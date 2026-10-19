@@ -4,6 +4,6 @@ The example crosses between the build and the run in the two directions, each wi
 
 The program prints `title` and `Book`.
 
-Cells in this repository that bear on it: `modules/comptime/cases/comptime_block_value`, `modules/decisions-taken/comptime_evaluated_and_lifted-266/cases/comptime_block_in_body`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main`.
+Cells in this repository that bear on it: `modules/comptime/run/src/cases/comptime_block_value`, `modules/decisions-taken/comptime_evaluated_and_lifted-266/run/src/cases/comptime_block_in_body`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_comptime_block_in_run`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main`.
 
 [draft/main.bp](draft/main.bp)

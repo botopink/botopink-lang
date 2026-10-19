@@ -1,0 +1,32 @@
+//// Decision 45 — `xs.at(i)?.b` on an ABSENT element answers absent: the label
+//// is read only when the tuple is there, so `?? d` answers `d`, and a present
+//// element whose label holds `0`, `false` or `""` is that value, not absence
+//// (the present half is `tuple_label_through_optional`). One function holds
+//// `??` over an integer, a float and a bool, each its own width.
+
+import {io.terminal.print} from "std";
+
+fn rows() -> #(a: i32, b: string)[] {
+    return [#(1, "x"), #(0, "")];
+}
+
+fn flags() -> #(x: f64, ok: bool)[] {
+    return [#(1.5, false)];
+}
+
+pub fn runCase() {
+    val es: #(a: i32, b: string)[] = [];
+    print(es.at(0)?.b ?? "none");
+    print(es.at(3)?.a ?? 0);
+    val rs = rows();
+    print(rs.at(5)?.a ?? -1);
+    print(rs.at(1)?.a ?? 7);
+    print(rs.at(1)?.b ?? "none");
+    print(rs.at(1)?.a);
+    print(rs.at(9)?.a);
+    val fs = flags();
+    print(fs.at(0)?.x ?? 0.0);
+    print(fs.at(4)?.x ?? 9.5);
+    print(fs.at(0)?.ok ?? true);
+    print(fs.at(4)?.ok ?? true);
+}

@@ -1,9 +1,0 @@
-botopink-cell 1
-out 103
-out 1
-out 70
-out 0
-out Signal.Red
-out Signal.High(db: 2)
-out light
-out sound

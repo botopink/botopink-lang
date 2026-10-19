@@ -1,0 +1,13 @@
+//// Decision 302 — the template body reads one record back by type,
+//// `d.meta(T)` (`?T`), on the `@Decl` `q.annotate` answered. The annotation,
+//// written without arguments, sees what the tag offers: `decl.attr(name)` is
+//// `null` for an attribute the tag does not carry, `decl.component` is `null`
+//// on an element.
+
+pub mod tags;
+import {cases.tag_decl_meta_read.tags.markup, cases.tag_decl_meta_read.tags.hydrated};
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    print(markup @`<section #[hydrated]>hi</section>`);
+}

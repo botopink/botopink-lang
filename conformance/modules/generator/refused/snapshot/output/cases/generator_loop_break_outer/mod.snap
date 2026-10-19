@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: generator-loop-closed-scope: `break :outer` crosses the border of an `iter` loop — its body is a closure and cannot leave a loop outside it
+at src/cases/generator_loop_break_outer/mod.bp:11:26

@@ -1,0 +1,14 @@
+pub mod registry;
+pub mod component;
+import {cases.module_var_self_registration.registry.registered, cases.module_var_self_registration.registry.register, cases.module_var_self_registration.registry.unregisterLast};
+import {cases.module_var_self_registration.component.componentName};
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    print(componentName());
+    print(registered());
+    register("second");
+    print(registered());
+    print(unregisterLast());
+    print(registered());
+}

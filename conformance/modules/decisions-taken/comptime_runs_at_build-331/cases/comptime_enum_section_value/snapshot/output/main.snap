@@ -1,8 +1,0 @@
-botopink-cell 1
-out pad-all-8
-out pad-all-4,bold,pad-x-2
-out hover(pad-all-4,hover(pad-x-2))
-out pad-all-8
-out pad-x-2
-out pad-all-4,hover(pad-all-8),bold
-out true

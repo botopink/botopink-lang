@@ -1,0 +1,28 @@
+botopink-cell 1
+out number 3
+out other
+out empty text
+out text hi
+out other
+out i32
+out string
+out other
+out bool
+out true
+out false
+out true
+out 3
+out 0
+out false
+out true
+out true
+out hi
+out 3
+out -1
+out -2
+out 3
+out 2
+out 0
+out true
+out true
+out 2

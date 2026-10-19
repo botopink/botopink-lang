@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() {
+    cases.imported_enum_field.runCase();
+    cases.imported_fn_as_value.runCase();
+    cases.imported_fn_field_call.runCase();
+    cases.imported_variant_positional_payload.runCase();
+}

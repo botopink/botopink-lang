@@ -4,6 +4,6 @@ The example hands three typed function expressions to `run<R>(make: fn() -> R)`,
 
 The program prints `2`, `1`, `2` and `3`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_async`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_iter`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_without_expected_type`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_type_mismatch`.
+Cells in this repository that bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_iter`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_without_expected_type`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_type_mismatch`.
 
 [draft/main.bp](draft/main.bp)

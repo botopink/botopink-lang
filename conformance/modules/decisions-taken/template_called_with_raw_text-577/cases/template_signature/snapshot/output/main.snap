@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: template-signature: the template `repeat` takes its text and nothing else, and declares `times`
-at src/main.bp:8:29

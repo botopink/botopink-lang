@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `1.5` is an `f64` where an `f32` is expected — write `1.5f`
-at src/main.bp:11:17

@@ -1,0 +1,17 @@
+mod cases;
+
+pub fn main() {
+    cases.array_fill.runCase();
+    cases.array_fill_large.runCase();
+    cases.array_flat_forms.runCase();
+    cases.array_last_index_of.runCase();
+    cases.array_map_component_imported.runCase();
+    cases.array_pop_rebinds_var.runCase();
+    cases.array_pop_removes.runCase();
+    cases.array_push_rebinds_var.runCase();
+    cases.array_range_and_repeat.runCase();
+    cases.array_reverse_answers_a_new_array.runCase();
+    cases.array_slice_reverse.runCase();
+    cases.array_spread_literal.runCase();
+    cases.array_windows.runCase();
+}

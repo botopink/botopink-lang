@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-member-without-type: `#[helper]` on the function `work` calls `decl.addMember`, and a member belongs to a type
-at src/main.bp:13:3

@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: unknown field 'nope' on type 'Town'
+at src/cases/decorator_output_error_one_per_annotation/mod.bp:21:3
+from src/cases/decorator_output_error_one_per_annotation/mod.bp:9:18

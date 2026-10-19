@@ -4,6 +4,6 @@ The example declares two contexts whose values are bare numbers: `rateContext` o
 
 The program prints `1.5`, `1.5 x 100` and `2.25 x 100`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope`, `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope`, `modules/decisions-taken/context_named_by_value_type-379/cases/context_default`.
+Cells in this repository that bear on it: `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_wide_number_through_scope`, `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope`, `modules/decisions-taken/context_named_by_value_type-379/cells/context_default`.
 
 [draft/main.bp](draft/main.bp)

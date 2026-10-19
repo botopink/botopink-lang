@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: callee-not-a-function: `settings` is a value of type `Settings`, not a function — it cannot be called
-at src/main.bp:11:11

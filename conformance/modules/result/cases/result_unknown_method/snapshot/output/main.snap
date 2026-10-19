@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: result-member-not-a-method: `get` is not a member of a `@Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `@Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`
-at src/main.bp:14:19

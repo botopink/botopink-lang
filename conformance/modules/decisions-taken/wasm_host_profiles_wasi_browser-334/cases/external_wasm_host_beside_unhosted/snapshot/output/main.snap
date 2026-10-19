@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `roundOf` binds wasm twice for host 'browser' — one `.Wasm(…)` per host
-at src/main.bp:7:3

@@ -1,0 +1,2 @@
+pub mod two_modules;
+pub mod two_modules_one_type_name;

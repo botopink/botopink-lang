@@ -183,7 +183,7 @@ test "js: dispatch ---- multi-module extension activated via star import" {
 //     `val c: Counter = Counter.zero(); c.bump()` → `'Counter_zero'/0` remotely,
 //     then `'Counter_bump'/1` remotely;
 //   * a method on the value an imported plain `fn` answers — `make().bump()`,
-//     the shape `conformance/modules/two/cases/two_modules` runs.
+//     the shape `conformance/modules/two/run/src/cases/two_modules` runs.
 //
 // Verified by hand on a real project (`botopink build --target beam`, then
 // `erlc +from_asm out/*.S`, then `erl -noshell -pa . -eval

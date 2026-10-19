@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[spread-dot-dot-dot]: `...` is the inclusive range, not a spread
-at src/main.bp:11:18
-label write `..`

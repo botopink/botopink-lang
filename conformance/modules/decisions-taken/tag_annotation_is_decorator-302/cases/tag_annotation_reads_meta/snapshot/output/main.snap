@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: typeinfo-meta-type: `decl.meta(T)` reads a tag's meta, and `decl` is the declaration this decorator annotates
-at src/main.bp:18:18

@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)
+at src/cases/decorator_random_float_unseeded/mod.bp:11:13
+from src/cases/decorator_random_float_unseeded/mod.bp:17:3

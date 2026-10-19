@@ -1,0 +1,12 @@
+mod cases;
+
+pub fn main() {
+    cases.index_answer_typed_optional.runCase();
+    cases.index_at_optional.runCase();
+    cases.index_dict.runCase();
+    cases.index_negative_from_end.runCase();
+    cases.index_past_the_end_is_null.runCase();
+    cases.index_tuple.runCase();
+    cases.index_user_type.runCase();
+    cases.string_at.runCase();
+}

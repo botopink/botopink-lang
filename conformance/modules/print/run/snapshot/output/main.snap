@@ -1,0 +1,23 @@
+botopink-cell 1
+out null
+out null
+out hi
+out 5.0
+out true
+out [1, 2]
+out ["a", "b"]
+out #(1, "a")
+out Point(x: 1, y: 2)
+out Shape.Square(side: 4)
+out Shape.Nothing
+out ["hi"]
+out ["a\"b"]
+out ["c\\d"]
+out ["x\ny"]
+out Ok(81)
+out Error("negative")
+out Ok(Point(x: 2, y: 3))
+out Error(-3)
+out [Ok(1), Error("negative")]
+out Report(label: "a", outcome: Ok(5))
+out Report(label: "b", outcome: Error("negative"))

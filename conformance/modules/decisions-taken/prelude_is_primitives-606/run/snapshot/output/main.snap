@@ -1,0 +1,13 @@
+botopink-cell 1
+out 42
+out 3 own
+out dishes
+out one 2 true
+out Point(x: 1, y: 2) [3, 4]
+out aliased
+out
+out after the empty line
+out widths [0, 3]
+out done
+out City
+out true

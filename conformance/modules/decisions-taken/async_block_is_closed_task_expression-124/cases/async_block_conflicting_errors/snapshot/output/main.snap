@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: gen-infer-conflicting-errors: the error types of this block's `throw` / `try` do not agree, so its `@Result<U, E>` has no one `E`
-at src/main.bp:25:17

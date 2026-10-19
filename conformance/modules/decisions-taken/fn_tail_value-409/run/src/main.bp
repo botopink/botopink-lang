@@ -1,0 +1,13 @@
+mod cases;
+
+pub fn main() {
+    cases.decorator_member_fn_tail.runCase();
+    cases.fn_expr_tail_value.runCase();
+    cases.fn_tail_after_loop_return.runCase();
+    cases.fn_tail_case_arm_block.runCase();
+    cases.fn_tail_comptime.runCase();
+    cases.fn_tail_if_else_chain.runCase();
+    cases.fn_tail_result.runCase();
+    cases.fn_tail_void_call.runCase();
+    cases.method_tail_value.runCase();
+}

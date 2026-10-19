@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() {
+    cases.backtick_name_binding.runCase();
+    cases.backtick_name_field.runCase();
+    cases.backtick_name_function.runCase();
+    cases.backtick_name_import_item.runCase();
+    cases.backtick_name_module_segment.runCase();
+    cases.backtick_name_parameter.runCase();
+    cases.backtick_name_type.runCase();
+}

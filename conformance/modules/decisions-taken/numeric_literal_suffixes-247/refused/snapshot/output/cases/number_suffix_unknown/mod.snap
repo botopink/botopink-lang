@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[number-suffix-unknown]: the letters after this number are not a numeric suffix
+at src/cases/number_suffix_unknown/mod.bp:7:15
+label not a suffix: `px`

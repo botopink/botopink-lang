@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: callee-not-a-function: `g` is a value of type `G`, not a function — it cannot be called
-at src/main.bp:17:11

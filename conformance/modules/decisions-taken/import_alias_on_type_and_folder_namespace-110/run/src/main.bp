@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.import_alias_on_type.runCase();
+    cases.import_alias_static_call.runCase();
+}

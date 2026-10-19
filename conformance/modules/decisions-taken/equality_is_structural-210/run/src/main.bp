@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.record_structural_equality.runCase();
+    cases.type_identity_equality.runCase();
+}

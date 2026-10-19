@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() {
+    cases.member_names_its_parameter.runCase();
+    cases.member_reads_compiler_name.runCase();
+    cases.member_reads_compiler_text.runCase();
+    cases.member_texts_its_expression.runCase();
+}

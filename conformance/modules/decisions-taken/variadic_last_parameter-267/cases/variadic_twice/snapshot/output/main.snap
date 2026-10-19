@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[variadic-twice]: a function has at most one variadic parameter
-at src/main.bp:6:21
-label a second variadic

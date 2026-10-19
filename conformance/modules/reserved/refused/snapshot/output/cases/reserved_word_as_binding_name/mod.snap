@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[reserved-word-as-name]: a reserved word cannot be a name
+at src/cases/reserved_word_as_binding_name/mod.bp:6:9
+label reserved word `unknown`

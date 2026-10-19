@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: binding-redeclared: `y` is already bound in this function, by the binding at 10:5
-at src/main.bp:12:9

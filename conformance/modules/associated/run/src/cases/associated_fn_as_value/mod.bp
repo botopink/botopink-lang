@@ -1,0 +1,50 @@
+//// An associated function is a value: `Box.wrap`, named without a call, is
+//// passed as a function argument and bound by `val` like a free function, on
+//// every target (144 B-10, decision 430). The same through an imported type
+//// and an enum.
+
+pub mod shapes;
+import {cases.associated_fn_as_value.shapes.Tag};
+import {io.terminal.print} from "std";
+
+type Box(n: i32) {
+    fn wrap(n: i32) -> Box {
+        return Box(n: n + 1);
+    }
+}
+
+type Size {
+    Small,
+    Large,
+
+    fn of(n: i32) -> Size {
+        return if (n > 9) Size.Large else Size.Small;
+    }
+
+    fn name(self: Self) -> string {
+        return case self {
+            Small -> "small";
+            Large -> "large";
+        };
+    }
+}
+
+fn sizeOf(n: i32, f: fn(i32) -> Size) -> string {
+    return f(n).name();
+}
+
+fn apply(x: i32, f: fn(i32) -> Box) -> Box {
+    return f(x);
+}
+
+fn applyTag(s: string, f: fn(string) -> Tag) -> Tag {
+    return f(s);
+}
+
+pub fn runCase() {
+    print(apply(1, Box.wrap).n);
+    val w = Box.wrap;
+    print(w(10).n);
+    print(applyTag("x", Tag.of).label);
+    print(sizeOf(12, Size.of));
+}

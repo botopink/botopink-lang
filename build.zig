@@ -643,7 +643,7 @@ pub fn build(b: *std.Build) void {
     // `conformance/test/` suite run by `botopink test --json`, through
     // `conformance/run.sh` against the installed `botopink`; a red cell fails
     // the step. Forwards `--` args, e.g.
-    //   zig build test-conformance -- --only modules/case/cases/case_range_value
+    //   zig build test-conformance -- --only modules/case/cells/case_range_value
     // NOT wired into `zig build test` (spawns node/erl/wasmtime per cell).
     const test_conformance_run = b.addSystemCommand(&.{ "bash", "conformance/run.sh" });
     test_conformance_run.step.dependOn(b.getInstallStep());

@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.index_expression.runCase();
+    cases.record_update.runCase();
+}

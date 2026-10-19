@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: type mismatch: expected `T`, got `?T` — the second holds the first, so the two are never one type
+at src/cases/generic_optional_never_narrows/mod.bp:7:12

@@ -1,0 +1,10 @@
+mod cases;
+
+pub fn main() {
+    cases.lambda_element_method.runCase();
+    cases.lambda_expression_body.runCase();
+    cases.lambda_method_chain.runCase();
+    cases.lambda_param_shared_field.runCase();
+    cases.lambda_rebinds_case_binders.runCase();
+    cases.lambda_tail_iter_loop.runCase();
+}

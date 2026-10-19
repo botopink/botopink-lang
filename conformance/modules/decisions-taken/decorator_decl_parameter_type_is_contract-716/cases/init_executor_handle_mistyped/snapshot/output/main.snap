@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[module]` expects a declaration of type `fn() -> string`, and `count` is `fn() -> i32`
-at src/main.bp:17:3

@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.self_tail_recursion.runCase();
+    cases.self_tail_recursion_nullish.runCase();
+}

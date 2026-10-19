@@ -1,0 +1,19 @@
+//// 01-compiler/01-checker step 26 (decision 297) — a value-or-type parameter
+//// across a module boundary: an importer passes a value, a type of its own
+//// and a primitive, under the declared name and under an alias.
+
+pub mod atoms;
+import {cases.value_or_type_param_imported.atoms.Box, cases.value_or_type_param_imported.atoms.describe};
+import {cases.value_or_type_param_imported.atoms.describe as d};
+import {io.terminal.print} from "std";
+
+type User(name: string)
+
+pub fn runCase() {
+    val a: i32 = describe(Box(value: 2), 0);
+    val b: User = describe(User, User(name: "bo"));
+    val c: string = d(string, "s");
+    print(a);
+    print(b.name);
+    print(c);
+}

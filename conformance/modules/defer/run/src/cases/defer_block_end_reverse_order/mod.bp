@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+fn work() {
+    defer print("a");
+    defer print("b");
+    print("body");
+}
+
+pub fn runCase() {
+    work();
+    print("after");
+}

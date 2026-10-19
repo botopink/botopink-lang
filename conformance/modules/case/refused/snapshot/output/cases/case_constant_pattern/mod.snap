@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[case-constant-pattern]: a constant is not a pattern
+at src/cases/case_constant_pattern/mod.bp:10:9
+label use _ when (x == MAX) { … } to compare with it

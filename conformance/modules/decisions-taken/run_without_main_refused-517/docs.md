@@ -6,6 +6,6 @@ is refused before anything runs, with one located message on every target and ho
 `wasi:cli/run` export, wasm in the browser and commonJS exited 0 having done nothing, and erlang and beam failed with a
 raw `error:undef`.
 
-Cells that also bear on it: `modules/run/cases/run_without_main`, `modules/fn/cases/fn_empty_main`.
+Cells that also bear on it: `modules/run/cells/run_without_main`, `modules/fn/run/src/cases/fn_empty_main`.
 
 [draft/main.bp](draft/main.bp)

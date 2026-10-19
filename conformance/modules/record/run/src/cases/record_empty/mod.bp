@@ -1,0 +1,13 @@
+import {io.terminal.print} from "std";
+
+pub type RequestBase()
+
+type MathOps() {
+    fn double(self: Self, x: i32) -> i32 {
+        return x * 2;
+    }
+}
+
+pub fn runCase() {
+    print(MathOps().double(4)); // 8
+}

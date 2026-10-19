@@ -1,0 +1,27 @@
+//// `m.make().run(scope)`: `make` is a record field holding a component lambda, the
+//// call answers a component, and `.run(scope)` is the method call on that answer,
+//// on every target (a `.run/2` that does not exist was emitted on erlang).
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Module(name: string, make: fn() -> Component<View>)
+
+type Scope(render: RenderScope) {
+    pub fn mount(self: Self, m: Module) -> string {
+        val c: Component<View> = m.make();
+        val a = c.run(self.render);
+        val b = m.make().run(self.render);
+        return a.value.text + "/" + b.value.text;
+    }
+}
+
+fn Card() -> Component<View> {
+    return View(text: "card");
+}
+
+pub fn runCase() {
+    val m = Module(name: "card", make: { -> Card() });
+    print(Scope(render: RenderScope.root()).mount(m));
+}

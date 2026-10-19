@@ -1,0 +1,19 @@
+//// Decision 105 — a generator's `toArray()` printed directly runs the body when
+//// it is called, not when the handle is made: a print before and after the first
+//// `yield` comes out after the handle is made, before the array.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iterator<i32> {
+    print("before");
+    yield 1;
+    print("after");
+    yield 2;
+}
+
+pub fn runCase() {
+    val g = counted();
+    print("made");
+    print(g.toArray());
+    print(counted().take(1).toArray());
+}

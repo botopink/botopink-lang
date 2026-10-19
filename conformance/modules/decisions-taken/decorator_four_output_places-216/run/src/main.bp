@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() {
+    cases.decorator_add_member.runCase();
+    cases.decorator_add_member_import.runCase();
+    cases.decorator_add_type.runCase();
+    cases.decorator_add_type_import.runCase();
+    cases.decorator_meta_import.runCase();
+}

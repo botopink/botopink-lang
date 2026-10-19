@@ -1,9 +1,0 @@
-botopink-cell 1
-out 1:a:off:txt
-out 2:b:off:img
-out 1:z:on:txt
-out 2:b:on:img
-out 10:a:off:txt
-out 20:b:off:img
-out 101:a:on:txt
-out 102:b:on:img

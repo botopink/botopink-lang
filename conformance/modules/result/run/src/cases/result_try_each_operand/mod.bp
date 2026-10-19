@@ -1,0 +1,19 @@
+import {io.terminal.print} from "std";
+
+fn total(
+    a: Result<i32, string>,
+    b: Result<i32, string>,
+) -> Result<i32, string> {
+    return try a
+        + try b; // `(try a) + (try b)`: each operand is its own `try` (decision 537)
+}
+
+fn parse(s: string) -> Result<i32, string> {
+    if (s == "") throw "empty";
+    return s.length;
+}
+
+pub fn runCase() {
+    print(total(parse("ab"), parse("abc")).unwrapOr(-1)); // 5
+    print(total(parse("ab"), parse("")).unwrapOr(-1)); // -1
+}

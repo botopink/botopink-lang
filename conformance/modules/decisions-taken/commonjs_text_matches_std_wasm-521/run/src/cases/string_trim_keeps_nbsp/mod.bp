@@ -1,0 +1,11 @@
+//// Decisions 441, 521: `trim` removes std-wasm's whitespace set — space, tab,
+//// LF, CR, VT, FF — and a NBSP (U+00A0) stays, on every target. commonJS
+//// trims through its helper, never the JS engine's `trim`, which removes the
+//// NBSP too.
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() {
+    val s = "\u{a0}x\u{a0} ";
+    print("[" + s.trim() + "]");
+}

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: typeinfo-all-needs-member: `#[component]` is carried by the type `Box`, and a type is no value: name the associated fn each entry calls
-at src/main.bp:16:11

@@ -2,6 +2,6 @@
 
 The example imports `greet.hello` from the dependency `greeter`. `greet.bp` is importable because it sits in `greeter`'s `src/` tree outside `src/internal/`, and no `files` list in `greeter`'s manifest is consulted. A manifest that still writes `files` is refused at the key, naming `src/internal/` as the way to keep a module private. A draft carries no manifest and no dependency, so the example waits for the promoted cell's `greeter` package.
 
-Cells in this repository that also bear on it: `modules/dependency/cases/dependency_files_order`.
+Cells in this repository that also bear on it: `modules/dependency/cells/dependency_files_order`.
 
 [draft/main.bp](draft/main.bp)

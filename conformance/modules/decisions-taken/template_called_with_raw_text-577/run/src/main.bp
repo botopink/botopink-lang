@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() {
+    cases.compiler_template_forms.runCase();
+    cases.template_call_in_built_code.runCase();
+}

@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'userId'
-at src/main.bp:22:7
-from src/main.bp:11:14
