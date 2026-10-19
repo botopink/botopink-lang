@@ -1120,6 +1120,14 @@ the top-level `After` while one over the section matches the leaf.
 
 <!-- example: modules/enum/refused/src/cases/enum_variant_duplicate -->
 
+A value of a section prints as the leaf's whole path, as written —
+`Token.Color.White`, `Token.Layout.Break.After`, a leaf at the top level
+`Token.After` — on every target, in `print`, a template hole, `string + enum` and
+a list; no name of the backend's own (the section's wrapper record, `_inner`)
+reaches the output.
+
+<!-- example: modules/enum_section_prints_full_path -->
+
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
 from the position the path is written in — a `val`'s annotation, a declared

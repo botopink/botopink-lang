@@ -3263,6 +3263,27 @@ const Emitter = struct {
         return getters;
     }
 
+    /// `display()` of a section wrapper variant (decision 601): the enum's
+    /// printed name, the section's name and the inner value's text without its
+    /// own head, so `Token.Color(_inner: __Token__Color.White)` prints
+    /// `Token.Color.White`. A nested wrapper answers the same shape and the
+    /// head of each is stripped in turn.
+    fn sectionDisplay(self: *Emitter, e: ast.TypeDecl, v: ast.EnumVariant, existing: []const js.Class.ClassMember) ![]const js.Class.ClassMember {
+        const inner = try self.b.member(.this, "_inner");
+        const text = try self.b.call(self.helper(.text), &.{inner});
+        const stmts = try self.arena().alloc(js.Stmt, 2);
+        stmts[0] = .{ .decl = .{ .pattern = .{ .name = "t" }, .value = text } };
+        const t: js.Expr = .{ .name = "t" };
+        const dot = try self.b.call(try self.b.member(t, "indexOf"), &.{.{ .quoted = "." }});
+        const tail = try self.b.call(try self.b.member(t, "slice"), &.{try self.b.binary("+", dot, .{ .number = "1" })});
+        const head = try std.fmt.allocPrint(self.arena(), "{s}.{s}.", .{ e.printedName(), v.name });
+        stmts[1] = .{ .return_ = try self.b.binary("+", .{ .quoted = head }, tail) };
+        const out = try self.arena().alloc(js.Class.ClassMember, existing.len + 1);
+        @memcpy(out[0..existing.len], existing);
+        out[existing.len] = .{ .kind = .method, .name = "display", .body = .{ .stmts = stmts, .indent = 1 } };
+        return out;
+    }
+
     fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
         const prev_self_type = self.eq_self_type;
         self.eq_self_type = e.name;
@@ -3301,11 +3322,17 @@ const Emitter = struct {
                 });
             }
 
+            var variant_members = try self.positionalGetters(v);
+            if (v.fields.len == 1 and std.mem.eql(u8, v.fields[0].name, "_inner")) {
+                // An enum section's wrapper prints as the leaf's whole path
+                // (decision 601): `Token.Color.White`, never `_inner`.
+                variant_members = try self.sectionDisplay(e, v, variant_members);
+            }
             try tail.append(self.arena(), .{ .class = .{
                 .name = class_name,
                 .extends = e.name,
                 .ctor = ctor,
-                .members = try self.positionalGetters(v),
+                .members = variant_members,
             } });
             try tail.append(self.arena(), .{ .expr = try self.b.assign(
                 try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "tag"),

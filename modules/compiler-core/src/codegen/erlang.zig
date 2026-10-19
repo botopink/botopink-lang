@@ -2588,6 +2588,7 @@ const SavedUnitState = struct {
     needs_field_helper: bool,
     needs_method_helper: bool,
     needs_adopt_helper: bool,
+    needs_show_helper: bool,
     needs_index_helper: bool,
     needs_slice_helper: bool,
     needs_add_helper: bool,
@@ -3693,6 +3694,9 @@ const Emitter = struct {
     needs_method_helper: bool = false,
     /// A host-boundary wrapper adopted an answer into a record (`'__bp_adopt'/3`).
     needs_adopt_helper: bool = false,
+    /// An enum section's wrapper (decision 601) renders through `'__bp_show'/2`,
+    /// so its type module carries the show helpers beside `'__bp_format'/1`.
+    needs_show_helper: bool = false,
     /// Set when an index expression (decision 30's `[]` builtin) lowered to
     /// `'__bp_index'/2`; the module then emits `index_helper_form`.
     needs_index_helper: bool = false,
@@ -11830,6 +11834,27 @@ const Emitter = struct {
                 }
                 pattern = .{ .tuple = slots };
             }
+            if (v.fields.len == 1 and std.mem.eql(u8, v.fields[0].name, "_inner")) {
+                // An enum section's wrapper (decision 601): its text is the path
+                // as written, `Token.Color.White` — the inner value's text without
+                // its own head, after the section's.
+                this.needs_show_helper = true;
+                const split_pat = try b.arena.create(Ast.Expr);
+                split_pat.* = .{ .list = try b.arena.dupe(Ast.Expr, &.{ Ast.Expr.v("_"), Ast.Expr.v("Rest") }) };
+                const split_val = try b.arena.create(Ast.Expr);
+                split_val.* = .{ .call = .{ .module = "string", .name = "split", .args = try b.arena.dupe(Ast.Expr, &.{
+                    try b.call("__bp_show", &.{ Ast.Expr.v("F0"), Ast.Expr.a("false") }),
+                    .{ .string = "." },
+                }) } };
+                clauses[ci] = .{
+                    .patterns = try b.exprs(&.{pattern}),
+                    .body = try b.body(&.{
+                        .{ .match = .{ .pattern = split_pat, .value = split_val } },
+                        try b.tuple(&.{ Ast.Expr.a("text"), .{ .list = try b.arena.dupe(Ast.Expr, &.{ .{ .string = written }, .{ .string = "." }, Ast.Expr.v("Rest") }) } }),
+                    }),
+                };
+                continue;
+            }
             clauses[ci] = .{
                 .patterns = try b.exprs(&.{pattern}),
                 .body = try b.body(&.{try b.tuple(&.{ Ast.Expr.a("variant"), .{ .string = written }, .{ .list = pairs } })}),
@@ -11873,6 +11898,7 @@ const Emitter = struct {
             .needs_field_helper = this.needs_field_helper,
             .needs_method_helper = this.needs_method_helper,
             .needs_adopt_helper = this.needs_adopt_helper,
+            .needs_show_helper = this.needs_show_helper,
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
@@ -11892,6 +11918,7 @@ const Emitter = struct {
         this.needs_field_helper = false;
         this.needs_method_helper = false;
         this.needs_adopt_helper = false;
+        this.needs_show_helper = false;
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
@@ -11958,7 +11985,7 @@ const Emitter = struct {
         if (this.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
         if (this.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
-        if (this.needs_print_helper or this.needs_text_helper) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        if (this.needs_print_helper or this.needs_text_helper or this.needs_show_helper) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
         try appendGenHelperForms(b, forms, this.gen_helpers);
     }
 
@@ -11974,6 +12001,7 @@ const Emitter = struct {
             .needs_field_helper = this.needs_field_helper,
             .needs_method_helper = this.needs_method_helper,
             .needs_adopt_helper = this.needs_adopt_helper,
+            .needs_show_helper = this.needs_show_helper,
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
@@ -11992,6 +12020,7 @@ const Emitter = struct {
         this.needs_field_helper = false;
         this.needs_method_helper = false;
         this.needs_adopt_helper = false;
+        this.needs_show_helper = false;
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
@@ -12120,6 +12149,7 @@ const Emitter = struct {
         this.needs_field_helper = unit.needs_field_helper;
         this.needs_method_helper = unit.needs_method_helper;
         this.needs_adopt_helper = unit.needs_adopt_helper;
+        this.needs_show_helper = unit.needs_show_helper;
         this.needs_index_helper = unit.needs_index_helper;
         this.needs_slice_helper = unit.needs_slice_helper;
         this.needs_add_helper = unit.needs_add_helper;

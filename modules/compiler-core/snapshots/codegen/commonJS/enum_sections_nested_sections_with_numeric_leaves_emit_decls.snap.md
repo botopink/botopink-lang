@@ -93,6 +93,11 @@ class __Token__Color$Red extends __Token__Color {
         super();
         this._inner = _inner;
     }
+
+    display() {
+        const t = __bp_text(this._inner);
+        return ("__Token__Color.Red." + t.slice((t.indexOf(".") + 1)));
+    }
 }
 __Token__Color$Red.prototype.tag = "Red";
 
@@ -125,6 +130,11 @@ class Token$Color extends Token {
     constructor(_inner) {
         super();
         this._inner = _inner;
+    }
+
+    display() {
+        const t = __bp_text(this._inner);
+        return ("Token.Color." + t.slice((t.indexOf(".") + 1)));
     }
 }
 Token$Color.prototype.tag = "Color";

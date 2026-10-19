@@ -1,0 +1,7 @@
+botopink-cell 1
+out Token.Color.White
+out Token.Layout.Break.After
+out Token.After
+out picked Token.Color.Black
+out in a hole: Token.Color.Black
+out [Token.Color.White, Token.Layout.Break.Before]

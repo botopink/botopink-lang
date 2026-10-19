@@ -112,6 +112,11 @@ class Token$Text extends Token {
         super();
         this._inner = _inner;
     }
+
+    display() {
+        const t = __bp_text(this._inner);
+        return ("Token.Text." + t.slice((t.indexOf(".") + 1)));
+    }
 }
 Token$Text.prototype.tag = "Text";
 

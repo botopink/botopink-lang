@@ -4250,6 +4250,16 @@ const Emitter = struct {
     /// constructor builds, each answering `{variant, "Enum.Variant", [{…}]}`.
     fn emitEnumFormat(self: *Emitter, type_name: []const u8, e: ast.TypeDecl, unit: *SavedBeamUnit) !void {
         const name = "'__bp_format'";
+        // An enum section's wrapper (decision 601) renders through
+        // `'__bp_show'/2`, which this module then carries.
+        var section_show: ?FnLabels = null;
+        for (e.variants()) |v| {
+            if (v.fields.len == 1 and std.mem.eql(u8, v.fields[0].name, "_inner")) {
+                _ = try self.ensurePrintHelper();
+                section_show = try self.fnLabelsFor("'__bp_show'", 2);
+                break;
+            }
+        }
         try self.reserveFn(name, 1);
         try unit.exports.append(self.alloc, .{ .name = name, .arity = 1 });
         const l = try self.fnLabelsFor(name, 1);
@@ -4280,6 +4290,38 @@ const Emitter = struct {
             } else {
                 try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
                 try beamEmitter.writeTest(w, .is_tagged_tuple, next, &.{ Op.xr(0), .{ .untagged = @as(i64, @intCast(v.fields.len + 1)) }, Op.atom(tag_atom) });
+                if (section_show) |show_l| if (v.fields.len == 1 and std.mem.eql(u8, v.fields[0].name, "_inner")) {
+                    // `{text, [Written, ".", Rest]}`: the inner value's text
+                    // without its own head, after the section's path.
+                    const no_split = self.allocLabel();
+                    try beamEmitter.writeMoveOp(w, Op.int(2), Dst.xr(0));
+                    try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+                    try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+                    try beamEmitter.writeMoveOp(w, Op.atom("false"), Dst.xr(1));
+                    try beamEmitter.writeCall(w, .normal, 2, .{ .local = show_l.entry }, 0);
+                    try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(1));
+                    try beamEmitter.writeMoveOp(w, Op.str("."), Dst.xr(1));
+                    try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "string", .function = "split" } }, 0);
+                    try beamEmitter.writeTest(w, .is_nonempty_list, no_split, &.{Op.xr(0)});
+                    try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(1), Dst.xr(2));
+                    try beamEmitter.writeTest(w, .is_nonempty_list, no_split, &.{Op.xr(2)});
+                    try beamEmitter.writeGetList(w, Op.xr(2), Dst.xr(3), Dst.xr(4));
+                    try beamEmitter.writeMoveOp(w, Op.xr(3), Dst.yr(1));
+                    try beamEmitter.writeTestHeap(w, 9, 0);
+                    try beamEmitter.writePutList(w, Op.yr(1), Op.nil, Dst.xr(1));
+                    try beamEmitter.writePutList(w, Op.str("."), Op.xr(1), Dst.xr(1));
+                    try beamEmitter.writePutList(w, Op.str(written), Op.xr(1), Dst.xr(1));
+                    try beamEmitter.writePutTuple2(w, Dst.xr(0), &.{ Op.atom("text"), Op.xr(1) });
+                    try beamEmitter.writeDeallocate(w, 2);
+                    try beamEmitter.writeReturn(w);
+                    try beamEmitter.writeLabel(w, no_split);
+                    try beamEmitter.writeTestHeap(w, 3, 0);
+                    try beamEmitter.writePutTuple2(w, Dst.xr(0), &.{ Op.atom("text"), Op.yr(1) });
+                    try beamEmitter.writeDeallocate(w, 2);
+                    try beamEmitter.writeReturn(w);
+                    try beamEmitter.writeLabel(w, next);
+                    continue;
+                };
                 try beamEmitter.writeMoveOp(w, Op.nil, Dst.yr(1));
                 var i: usize = v.fields.len;
                 while (i > 0) {

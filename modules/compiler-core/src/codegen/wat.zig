@@ -3638,7 +3638,14 @@ const Emitter = struct {
                 .enum_ => {
                     try self.enums.put(tdecl.name, tdecl.variants());
                     if (tdecl.genericParams.len > 0) try self.enum_generics.put(ra, tdecl.name, tdecl.genericParams);
-                    if (tdecl.displayName) |shown| try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
+                    if (tdecl.displayName) |shown| {
+                        try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
+                    } else if (std.mem.startsWith(u8, tdecl.name, "__")) {
+                        // An enum section's inner enum (`__Token__Color`) prints as
+                        // the section's path, `Token.Color` (decision 601).
+                        const shown = try std.mem.replaceOwned(u8, ra, tdecl.name[2..], "__", ".");
+                        try self.printed_names.put(ra, tdecl.name, shown);
+                    }
                 },
             },
             .@"fn" => |f| {
@@ -8492,12 +8499,15 @@ const Emitter = struct {
                 try self.emit(.@"return");
             };
         }
-        try self.gcPutStr(shown);
-        if (fnames.len > 0) try self.gcPutStr("(");
+        // An enum section's wrapper prints as its inner value alone, which
+        // carries the whole path (decision 601).
+        const section_wrapper = variant != null and fnames.len == 1 and std.mem.eql(u8, fnames[0], "_inner");
+        if (!section_wrapper) try self.gcPutStr(shown);
+        if (fnames.len > 0 and !section_wrapper) try self.gcPutStr("(");
         for (fnames, 0..) |fname, i| {
             if (i >= trefs.len) return self.gcFail("a field with no type");
             const label = try std.fmt.allocPrint(ar, "{s}{s}: ", .{ if (i > 0) ", " else "", fname });
-            try self.gcPutStr(label);
+            if (!section_wrapper) try self.gcPutStr(label);
             const gen: ?[]const ast.GenericParam = if (variant == null) self.record_generics.get(rec) else self.enum_generics.get(rec);
             const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else if (variant == null) blk: {
                 const wide: ?u8 = switch (trefs[i]) {
@@ -8512,7 +8522,7 @@ const Emitter = struct {
             try self.emit(.{ .struct_get = .{ .ty = tidx, .field = @intCast(i) } });
             try self.emit(.{ .call = px });
         }
-        if (fnames.len > 0) try self.gcPutStr(")");
+        if (fnames.len > 0 and !section_wrapper) try self.gcPutStr(")");
         const body = self.seal(&c, .none);
         try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
             .name = sym,
