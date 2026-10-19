@@ -144,7 +144,7 @@ pool_check_jobs "$jobs" run.sh
 # target of the run the suite excludes, `botopink build --target <t>` in the
 # project must REFUSE it on a host binding —
 #
-#     `f` has no `#[@External.<Target>(…)]` for the <t> backend
+#     `f` has no implementation for the <t> backend   (commonJS: `node`)
 #     std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t>'
 #     `#[@BeamMemory]` has no meaning on the <t> backend
 #
@@ -207,7 +207,9 @@ self_test() {
     }
     # Backed: the BEAM binds the function, commonJS refuses it.
     project_suite backed '["erlang", "beam"]' <<'BP'
-#[@External.Erlang("""1""")]
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("""1"""))]
 declare fn host() -> i32;
 
 pub fn one() -> i32 {
@@ -243,7 +245,7 @@ BP
     # runs each, and the red one names its candidate.
     for c in green red; do
         mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot/output"
-        printf 'pub fn main() {\n    @print("ok");\n}\n' >"$suite/modules/$c/src/main.bp"
+        printf 'import {io.terminal.print} from "std";\n\npub fn main() {\n    print("ok");\n}\n' >"$suite/modules/$c/src/main.bp"
         printf '{ "name": "%s", "version": "0.0.1", "src": "src/" }\n' "$c" >"$suite/modules/$c/botopink.json"
     done
     printf 'botopink-cell 1\nout ok\n' >"$suite/modules/green/snapshot/output/main.snap"
@@ -486,7 +488,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the suite — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
-    elif grep -qF -e 'has no `#[@External.<Target>(' -e 'std-unsupported-on-target:' -e '`#[@BeamMemory]` has no meaning on the '"$t"' backend' "$dir/all.txt"; then
+    elif grep -qF -e 'has no implementation for the '"$t"' backend' -e 'has no implementation for the node backend' -e 'std-unsupported-on-target:' -e '`#[@BeamMemory]` has no meaning on the '"$t"' backend' "$dir/all.txt"; then
         printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
     else
         local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"
