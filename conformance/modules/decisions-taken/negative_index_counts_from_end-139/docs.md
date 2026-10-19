@@ -1,0 +1,17 @@
+# Decision 139 — A negative index counts from the end, on every backend
+
+[cases/ambient_index_implement_missing_method/src/main.bp](cases/ambient_index_implement_missing_method/src/main.bp)
+[cases/ambient_index_parameter/src/main.bp](cases/ambient_index_parameter/src/main.bp)
+[cases/generic_index_answers_optional/src/main.bp](cases/generic_index_answers_optional/src/main.bp)
+[cases/generic_index_optional_return/src/main.bp](cases/generic_index_optional_return/src/main.bp)
+[cases/index_answer_is_optional/src/main.bp](cases/index_answer_is_optional/src/main.bp)
+[cases/index_answer_typed_optional/src/main.bp](cases/index_answer_typed_optional/src/main.bp)
+[cases/index_at_optional/src/main.bp](cases/index_at_optional/src/main.bp)
+[cases/index_dict/src/main.bp](cases/index_dict/src/main.bp)
+[cases/index_negative_from_end/src/main.bp](cases/index_negative_from_end/src/main.bp)
+[cases/index_past_the_end_is_null/src/main.bp](cases/index_past_the_end_is_null/src/main.bp)
+[cases/index_tuple/src/main.bp](cases/index_tuple/src/main.bp)
+[cases/index_tuple_computed/src/main.bp](cases/index_tuple_computed/src/main.bp)
+[cases/index_tuple_out_of_range/src/main.bp](cases/index_tuple_out_of_range/src/main.bp)
+[cases/index_user_type/src/main.bp](cases/index_user_type/src/main.bp)
+[cases/string_at/src/main.bp](cases/string_at/src/main.bp)

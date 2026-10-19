@@ -87,7 +87,7 @@ test "js: narrow ---- early return with print" {
 
 // `assert <expr> is <Pattern>` was a DOCUMENTED SKIP here. C-08 decided the
 // form does not land; see `comptime/tests/narrowing.zig` for the argument, and
-// `conformance/modules/assert_is_pattern` for the refusal it keeps giving.
+// `conformance/modules/decisions-taken/pattern_as_binding_refused-11/cases/assert_is_pattern` for the refusal it keeps giving.
 
 // ── type guard narrowing ──────────────────────────────────────────────────────
 

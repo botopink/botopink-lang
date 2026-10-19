@@ -1,4 +1,4 @@
-//// `modules/module_var_self_registration` under `botopink test`: the test
+//// `modules/module/cases/module_var_self_registration` under `botopink test`: the test
 //// imports the component, so its module-level `val` runs before the test
 //// reads what it registered.
 

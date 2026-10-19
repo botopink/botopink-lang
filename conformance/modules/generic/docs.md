@@ -1,0 +1,18 @@
+# generic
+
+[cases/generic_body_specialized/src/main.bp](cases/generic_body_specialized/src/main.bp)
+[cases/generic_call_result_shape/src/main.bp](cases/generic_call_result_shape/src/main.bp)
+[cases/generic_field_float/src/main.bp](cases/generic_field_float/src/main.bp)
+[cases/generic_field_fn_value/src/main.bp](cases/generic_field_fn_value/src/main.bp)
+[cases/generic_field_fn_value_nested/src/main.bp](cases/generic_field_fn_value_nested/src/main.bp)
+[cases/generic_fn_and_type/src/main.bp](cases/generic_fn_and_type/src/main.bp)
+[cases/generic_method_array_join/src/main.bp](cases/generic_method_array_join/src/main.bp)
+[cases/generic_method_lambda_param_typed/src/main.bp](cases/generic_method_lambda_param_typed/src/main.bp)
+[cases/generic_method_map/src/main.bp](cases/generic_method_map/src/main.bp)
+[cases/generic_missing_argument/src/main.bp](cases/generic_missing_argument/src/main.bp)
+[cases/generic_optional_never_narrows/src/main.bp](cases/generic_optional_never_narrows/src/main.bp)
+[cases/generic_record_nested_field_concat/src/main.bp](cases/generic_record_nested_field_concat/src/main.bp)
+[cases/generic_record_prints_its_arguments/src/main.bp](cases/generic_record_prints_its_arguments/src/main.bp)
+[cases/generic_string_equality/src/main.bp](cases/generic_string_equality/src/main.bp)
+[cases/generic_type_through_imported_function/src/main.bp](cases/generic_type_through_imported_function/src/main.bp)
+[cases/generic_value_widens_to_optional/src/main.bp](cases/generic_value_widens_to_optional/src/main.bp)

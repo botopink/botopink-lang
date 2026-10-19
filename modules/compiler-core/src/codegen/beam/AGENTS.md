@@ -175,7 +175,7 @@ to remove on this backend. Two reasons, both checkable:
   statements **in the current frame**, as every `case` arm's block does: its
   `return` is the enclosing function's, thrown to the loop's call site from a
   loop's fun (`exprPropagates` reads a braced arm's body for it,
-  `modules/block_return_leaves_function`).
+  `modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_return_leaves_function`).
 - beam's other block-as-value producer was **already removed**, by this front's
   `ae813cc8`: a `case` arm written `Pattern { body }` reaches the backend as a
   lambda (`ast.Expr.function`, `.lambda`), and lowering it as an expression used

@@ -8,6 +8,6 @@ the annotation wrote, `English()`, resolved where the annotation stands. The sta
 `self`-less functions live, a member of the contract and never a host cell. `main` binds the answer to a `Greeter`,
 calls through the behavior, and prints `Hello, Ana`.
 
-Cells that also bear on it: `modules/decl_behavior_contract_refused`.
+Cells that also bear on it: `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decl_behavior_contract_refused`.
 
 [draft/main.bp](draft/main.bp)

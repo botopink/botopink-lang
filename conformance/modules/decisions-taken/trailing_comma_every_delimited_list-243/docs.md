@@ -4,6 +4,6 @@ The example writes each kind of delimited list in both shapes, and `botopink for
 
 The program prints `red 1:one 3 4`.
 
-Cells in this repository that bear on it: `modules/format_annotation_trailing_comma`.
+Cells in this repository that bear on it: `modules/decisions-taken/bare_variant_expression_refused-587/cases/format_annotation_trailing_comma`.
 
 [draft/main.bp](draft/main.bp)

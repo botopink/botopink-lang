@@ -67,11 +67,11 @@ SKIP_FILES = ("std/src/builtins.d.bp", "std/src/builtins_fns.d.bp", "std/src/com
 # B-136's refusal cells whose sources spell what the codemod removes, on purpose.
 # 579's cells of a file without the import — `compiler` unbound, or an ordinary
 # local — which `--imports` would otherwise give one.
-SKIP_CELLS = ("conformance/modules/removed_type_bare_param/", "conformance/modules/expr_param_method/",
-              "conformance/modules/compiler_import_missing/", "conformance/modules/compiler_ordinary_name/")
+SKIP_CELLS = ("conformance/modules/decisions-taken/no_declaration_files_compiler_value-575/cases/removed_type_bare_param/", "conformance/modules/decisions-taken/expr_decl_removed_compiler_templates-576/cases/expr_param_method/",
+              "conformance/modules/decisions-taken/compiler_is_std_value-579/cases/compiler_import_missing/", "conformance/modules/decisions-taken/compiler_is_std_value-579/cases/compiler_ordinary_name/")
 # Refusal cells of 577 (3): their template call `name("lit")` / `#[name("lit")]` is the refused shape.
-KEEP_TEMPLATE_CALLS = ("conformance/modules/expr_call_outside_expr/",
-                       "conformance/modules/template_annotation_call_form/")
+KEEP_TEMPLATE_CALLS = ("conformance/modules/decisions-taken/template_called_with_raw_text-577/cases/expr_call_outside_expr/",
+                       "conformance/modules/decisions-taken/template_called_with_raw_text-577/cases/template_annotation_call_form/")
 SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", ".git", "snapshot"}
 
 TEMPLATE_MODEL = ("source", "context", "lookup", "bindings")

@@ -6,6 +6,9 @@ The example reads one context, `themeContext`, in `Card`, and provides it three 
 
 The program prints `plain`, `dark`, `live` and `plain`.
 
-Cells in this repository that bear on it: `modules/context_provide_read`, `modules/context_nearest_wins`, `modules/context_default_imported`.
+Cells in this repository that bear on it: `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_read`, `modules/decisions-taken/context_named_by_value_type-379/cases/context_nearest_wins`, `modules/decisions-taken/context_read_by_value-722/cases/context_default_imported`.
 
-[draft/main.bp](draft/main.bp)
+
+[cases/context_provide_made_in_body/src/main.bp](cases/context_provide_made_in_body/src/main.bp)
+[cases/context_read_by_value/src/main.bp](cases/context_read_by_value/src/main.bp)
+[cases/context_read_of_parameter/src/main.bp](cases/context_read_of_parameter/src/main.bp)

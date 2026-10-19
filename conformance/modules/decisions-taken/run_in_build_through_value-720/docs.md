@@ -9,7 +9,7 @@ that reads the host's clock, the build's runtime raises `run-in-build` at `f()`,
 and the body being run. The program is refused there and does not run. Written directly, `comptime clock.nowMillis()`
 is refused by the checker at the call instead.
 
-Cells that also bear on it: `modules/stage_comptime_block_in_run`, `modules/stage_of_functions`,
-`modules/stage_build_and_run`.
+Cells that also bear on it: `modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions`,
+`modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`.
 
 [draft/main.bp](draft/main.bp)

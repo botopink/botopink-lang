@@ -6,6 +6,9 @@ The example passes the type as a run-time value: `t: type<T>`, with no `comptime
 
 The program prints `2`, `1 of Orders`, `1` and `1`.
 
-Cells in this repository that bear on it: `modules/value_or_type_param`, `modules/typeinfo_of_value`.
+Cells in this repository that bear on it: `modules/decisions-taken/comptime_param_value_or_type-297/cases/value_or_type_param`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/typeinfo_of_value`.
 
-[draft/main.bp](draft/main.bp)
+
+[cases/is_type_parameter_refused/src/main.bp](cases/is_type_parameter_refused/src/main.bp)
+[cases/type_token_handed_on_run_time/src/main.bp](cases/type_token_handed_on_run_time/src/main.bp)
+[cases/type_token_run_time_value/src/main.bp](cases/type_token_run_time_value/src/main.bp)

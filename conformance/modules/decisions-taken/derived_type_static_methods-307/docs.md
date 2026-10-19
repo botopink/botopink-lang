@@ -1,0 +1,18 @@
+# Decision 307 — A derived type is a compile-time function that answers a new type, bound by a `val`; the five are static methods of one std type, `Type`:
+
+[cases/derived_type_bare_name/src/main.bp](cases/derived_type_bare_name/src/main.bp)
+[cases/derived_type_decorated/src/main.bp](cases/derived_type_decorated/src/main.bp)
+[cases/derived_type_field_repeated/src/main.bp](cases/derived_type_field_repeated/src/main.bp)
+[cases/derived_type_field_string/src/main.bp](cases/derived_type_field_string/src/main.bp)
+[cases/derived_type_functions/src/main.bp](cases/derived_type_functions/src/main.bp)
+[cases/derived_type_imported/src/main.bp](cases/derived_type_imported/src/main.bp)
+[cases/derived_type_merge_duplicate/src/main.bp](cases/derived_type_merge_duplicate/src/main.bp)
+[cases/derived_type_no_field/src/main.bp](cases/derived_type_no_field/src/main.bp)
+[cases/derived_type_not_record/src/main.bp](cases/derived_type_not_record/src/main.bp)
+[cases/derived_type_omit_empty/src/main.bp](cases/derived_type_omit_empty/src/main.bp)
+[cases/derived_type_outside_val/src/main.bp](cases/derived_type_outside_val/src/main.bp)
+[cases/derived_type_primitive/src/main.bp](cases/derived_type_primitive/src/main.bp)
+[cases/derived_type_two_packages/src/main.bp](cases/derived_type_two_packages/src/main.bp)
+[cases/derived_type_unknown_field/src/main.bp](cases/derived_type_unknown_field/src/main.bp)
+[cases/derived_type_var/src/main.bp](cases/derived_type_var/src/main.bp)
+[cases/std_types_module/src/main.bp](cases/std_types_module/src/main.bp)

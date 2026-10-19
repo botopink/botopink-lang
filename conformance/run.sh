@@ -17,7 +17,7 @@
 #               it never drops a target (decision 67).
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
-#   --only      run one cell or suite (e.g. modules/case_range_value,
+#   --only      run one cell or suite (e.g. modules/case/cases/case_range_value,
 #               test/case_arms.bp, test/pub_val_in_a_test); may repeat
 #   --jobs      parallel jobs; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel jobs below

@@ -137,8 +137,8 @@ def cells_of(modules):
 
     def walk(d):
         for e in sorted(d.iterdir()):
-            if not e.is_dir():
-                continue
+            if not e.is_dir() or e.name == "draft":
+                continue  # a decision's draft/ is no cell (front 166): the row has none yet
             if (e / "botopink.json").exists():
                 found.append(e)
             else:

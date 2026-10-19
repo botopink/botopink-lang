@@ -6,6 +6,6 @@ Each field is a `?T = null`, which is absent when `null`, or a `bool`, which is 
 
 The program prints `<a href="/docs" target="_blank" tabindex="2" aria-label="Docs" hidden>Read</a>`, and then `<a href="/">Home</a>` for a record that sets only `href`. Because the props are a record, a misspelt attribute (`AnchorProps(hreff: "/x")`, which is `<a hreff="/x">` in markup) is refused at `hreff`, and `tabIndex: "abc"` is refused at the value. The markup half, where a tag exists only when the prelude names its builder, a custom element is an error at the tag, and `onClick` is refused at its name, is the markup library's.
 
-Cells in this repository that bear on it: `modules/derived_type_declarations`, `modules/derived_type_merge_duplicate`.
+Cells in this repository that bear on it: `modules/derived/cases/derived_type_declarations`, `modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_merge_duplicate`.
 
 [draft/main.bp](draft/main.bp)

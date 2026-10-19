@@ -9,6 +9,6 @@ folded after every annotation of `User` ran — before `main`, the program print
 `#[entity]` ran first; that read is refused, located at the call in
 [draft/comptime/entity.bp](draft/comptime/entity.bp), and the program does not run.
 
-Cells that also bear on it: `modules/decorator_hooks_output`.
+Cells that also bear on it: `modules/decisions-taken/hooks_decorator_runs_last-372/cases/decorator_hooks_output`.
 
 [draft/main.bp](draft/main.bp)

@@ -82,7 +82,7 @@ test "js: primitive behavior default fn ---- return and throw build the @Result"
 }
 
 // Decision 214 — the NaN half of `f64`'s total-order `==`, which the
-// four-target cell `modules/f64_equality_total_order` cannot carry (erlang and
+// four-target cell `modules/decisions-taken/f64_equality_total_order-214/cases/f64_equality_total_order` cannot carry (erlang and
 // beam never produce a NaN): `NaN == NaN` is `true` bare and inside a record,
 // a tuple, an array and a variant (`Object.is`, and the per-type equality's
 // field compare), `NaN != NaN` is `false`, and NaN against a number is

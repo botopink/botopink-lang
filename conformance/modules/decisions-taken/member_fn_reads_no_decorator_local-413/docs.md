@@ -8,6 +8,6 @@ and spliced as `"City"`; and it reads the type's reflection in its own body, und
 type parameter `T`, which names the annotated type. The program prints `record: City with 2 fields`. A local whose
 value is no literal — a record, a handle — read inside the member stays refused (759).
 
-Cells that also bear on it: `modules/decorator_member_captures`.
+Cells that also bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/decorator_member_captures`.
 
 [draft/main.bp](draft/main.bp)

@@ -1,0 +1,17 @@
+# std
+
+[cases/std_decorator_leaf_import/src/main.bp](cases/std_decorator_leaf_import/src/main.bp)
+[cases/std_decorator_through_namespace/src/main.bp](cases/std_decorator_through_namespace/src/main.bp)
+[cases/std_decorator_unknown_through_handle/src/main.bp](cases/std_decorator_unknown_through_handle/src/main.bp)
+[cases/std_default_fn_in_a_std_module/src/main.bp](cases/std_default_fn_in_a_std_module/src/main.bp)
+[cases/std_encoding_on_every_target/src/main.bp](cases/std_encoding_on_every_target/src/main.bp)
+[cases/std_erlang_node/src/main.bp](cases/std_erlang_node/src/main.bp)
+[cases/std_generic_primitives/src/main.bp](cases/std_generic_primitives/src/main.bp)
+[cases/std_import/src/main.bp](cases/std_import/src/main.bp)
+[cases/std_namespace_calls_same_name/src/main.bp](cases/std_namespace_calls_same_name/src/main.bp)
+[cases/std_namespace_fn_as_value/src/main.bp](cases/std_namespace_fn_as_value/src/main.bp)
+[cases/std_namespace_type_in_signature/src/main.bp](cases/std_namespace_type_in_signature/src/main.bp)
+[cases/std_path_relative/src/main.bp](cases/std_path_relative/src/main.bp)
+[cases/std_querystring_on_every_target/src/main.bp](cases/std_querystring_on_every_target/src/main.bp)
+[cases/std_type_ctor_through_namespace/src/main.bp](cases/std_type_ctor_through_namespace/src/main.bp)
+[cases/std_unsupported_names_the_call/src/main.bp](cases/std_unsupported_names_the_call/src/main.bp)

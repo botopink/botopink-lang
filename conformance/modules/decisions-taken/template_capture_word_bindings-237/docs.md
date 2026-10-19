@@ -6,6 +6,6 @@ The first call's text is `<Card title="x"><Badge/></Card>`. Its words `Card` and
 
 The program prints `[Card, Badge]`, `[]` and `[Card, Badge]`.
 
-Cells in this repository that bear on it: `modules/template_bindings_decls`, `modules/template_lookup_decl`.
+Cells in this repository that bear on it: `modules/decisions-taken/query_template_assembled_at_build-415/cases/template_bindings_decls`, `modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_decl`.
 
 [draft/main.bp](draft/main.bp)

@@ -7134,7 +7134,7 @@ const Emitter = struct {
     /// enum's class: the receiver evaluated once, the arguments only when it
     /// is there, `undefined` when it is not (what a native `?.` answers).
     /// `doc.field("src")?.str()` over std's `Json` failed at run time with
-    /// `…?.str is not a function` (`modules/optional_enum_method_call`).
+    /// `…?.str is not a function` (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_call`).
     fn optEnumCall(self: *Emitter, recv: js.Expr, call: js.Expr) !js.Expr {
         const param: js.Expr = .{ .name = opt_recv_param };
         const guarded = try self.b.ternary(

@@ -8,7 +8,7 @@ If `home.bpp` imported or declared its own `Card`, or if a second marked item na
 
 In the promoted cell `kit/` becomes `deps/kit`, which the cell's `botopink.json` declares as a dependency and names in `"bpp"`. A draft carries neither.
 
-Cells in this repository that also bear on it: `modules/bpp_prelude_holds_declaration`, `modules/bpp_prelude_twice`, `modules/bpp_prelude_on_fn`, `modules/bpp_roles_found`.
+Cells in this repository that also bear on it: `modules/bpp/cases/bpp_prelude_holds_declaration`, `modules/bpp/cases/bpp_prelude_twice`, `modules/decisions-taken/std_bpp_role_annotations-361/cases/bpp_prelude_on_fn`, `modules/bpp/cases/bpp_roles_found`.
 
 [draft/main.bp](draft/main.bp)
 

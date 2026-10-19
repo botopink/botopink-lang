@@ -7,7 +7,7 @@
 # The language half of this script — the numeric program (`55` on the four
 # targets), records with an enum / `case` / a lambda, and the multi-folder
 # `mod` / `pub mod` package — is conformance cells since 144 B-29 step H:
-# `conformance/modules/tail_recursive_sum`, `record_enum_case_lambda` and
+# `conformance/modules/tail/cases/tail_recursive_sum`, `record_enum_case_lambda` and
 # `modules` (each on every target `botopink cell check` runs it on). What stays
 # here is the CLI's: a `wasi` build is a component, and its core module runs
 # on its own.

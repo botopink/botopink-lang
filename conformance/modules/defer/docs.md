@@ -1,0 +1,16 @@
+# defer
+
+[cases/defer_async_after_awaits/src/main.bp](cases/defer_async_after_awaits/src/main.bp)
+[cases/defer_block_end_reverse_order/src/main.bp](cases/defer_block_end_reverse_order/src/main.bp)
+[cases/defer_in_loop_break_continue/src/main.bp](cases/defer_in_loop_break_continue/src/main.bp)
+[cases/defer_panic_attempt_catches/src/main.bp](cases/defer_panic_attempt_catches/src/main.bp)
+[cases/defer_reads_latest_value/src/main.bp](cases/defer_reads_latest_value/src/main.bp)
+[cases/defer_refuses_await/src/main.bp](cases/defer_refuses_await/src/main.bp)
+[cases/defer_refuses_break/src/main.bp](cases/defer_refuses_break/src/main.bp)
+[cases/defer_refuses_continue/src/main.bp](cases/defer_refuses_continue/src/main.bp)
+[cases/defer_refuses_return/src/main.bp](cases/defer_refuses_return/src/main.bp)
+[cases/defer_refuses_yield/src/main.bp](cases/defer_refuses_yield/src/main.bp)
+[cases/defer_return_value_before_defers/src/main.bp](cases/defer_return_value_before_defers/src/main.bp)
+[cases/defer_scope_is_block/src/main.bp](cases/defer_scope_is_block/src/main.bp)
+[cases/defer_stream_consumer_stops/src/main.bp](cases/defer_stream_consumer_stops/src/main.bp)
+[cases/defer_try_and_throw_propagate/src/main.bp](cases/defer_try_and_throw_propagate/src/main.bp)

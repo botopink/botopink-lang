@@ -1,6 +1,0 @@
-import {context.createContext} from "std";
-
-pub type Theme(primary: string, radius: i32)
-
-// The context value: its type is the context's identity, its value the default.
-pub val themeContext = comptime createContext(Theme(primary: "#e11d48", radius: 4));

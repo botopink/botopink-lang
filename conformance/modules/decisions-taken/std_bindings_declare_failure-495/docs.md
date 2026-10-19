@@ -4,6 +4,6 @@ The example calls two std functions that differ in whether their host call can f
 
 The program prints `not found no-such-file.txt` and `true`.
 
-Cells in this repository that bear on it: `modules/fs_error_variants`, `modules/fs_error_message`.
+Cells in this repository that bear on it: `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants`, `modules/decisions-taken/fs_error_message_text-563/cases/fs_error_message`.
 
 [draft/main.bp](draft/main.bp)

@@ -16,7 +16,8 @@
 # a line
 #
 #   <!-- example: modules/<cell> -->     a cell of conformance/modules/
-#   <!-- example: modules/<m>/cases/<c> -->  a case of a module (decision 765)
+#   <!-- example: modules/<m>/cases/<c> -->  a case of a module (decision 765);
+#   <!-- example: modules/decisions-taken/<slug>-<N>/cases/<c> --> a case of a decision's module
 #   <!-- example: test/<suite> -->       a suite of conformance/test/
 #
 # whose path is relative to `conformance/`, rendered from the cell's `src/` and
@@ -69,7 +70,7 @@ if [ "$have_docs" -eq 0 ]; then
     for d in "$repo"/conformance/modules/*/docs.md; do
         [ -f "$d" ] && docs+=("${d#"$repo"/}")
     done
-    for d in "$repo"/conformance/modules/*/cases/*/docs.md; do
+    for d in "$repo"/conformance/modules/*/cases/*/docs.md "$repo"/conformance/modules/decisions-taken/*/cases/*/docs.md; do
         [ -f "$d" ] && docs+=("${d#"$repo"/}")
     done
     docs+=(README.md)
@@ -100,7 +101,7 @@ scan() {
         }
         /^<!--[[:space:]]*example:/ {
             line = $0
-            if (line ~ /^<!-- example: (modules\/[A-Za-z0-9_.-]+\/cases\/[A-Za-z0-9_.-]+|modules\/[A-Za-z0-9_.-]+|test\/[A-Za-z0-9_.-]+) -->[[:space:]]*$/) {
+            if (line ~ /^<!-- example: (modules\/[A-Za-z0-9_.-]+\/cases\/[A-Za-z0-9_.-]+|modules\/decisions-taken\/[A-Za-z0-9_.-]+\/cases\/[A-Za-z0-9_.-]+|modules\/[A-Za-z0-9_.-]+|test\/[A-Za-z0-9_.-]+) -->[[:space:]]*$/) {
                 sub(/^<!-- example: /, "", line); sub(/ -->[[:space:]]*$/, "", line)
                 printf "ref\t%s:%d\t%s\n", doc, NR, line
             } else {

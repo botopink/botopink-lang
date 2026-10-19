@@ -10,6 +10,6 @@ first two name a rule and the field the violation is reported at, written `.conf
 meta and applies each rule: the first account breaks nothing and prints `[]`, the second prints
 `["confirm: The passwords differ", "handle: That handle is taken"]`.
 
-Cells that also bear on it: `modules/annotation_argument_dot_variant`, `modules/annotation_label_equals_decorator`.
+Cells that also bear on it: `modules/annotation/cases/annotation_argument_dot_variant`, `modules/decisions-taken/compiler_annotation_labelled_arguments-305/cases/annotation_label_equals_decorator`.
 
 [draft/main.bp](draft/main.bp)

@@ -675,7 +675,7 @@ fn checkCell(ctx: *Ctx, cell: []const u8) !bool {
     };
 
     // Build and run in a scratch copy of the cell, one per target: a program
-    // that writes into its working directory (`conformance/modules/std_fs_walk_root_spellings`
+    // that writes into its working directory (`conformance/modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/std_fs_walk_root_spellings`
     // makes a tree and a dangling link) finds on every target the directory it
     // would find alone.
     var observed: [ALL_TARGETS.len]?Answer = @splat(null);

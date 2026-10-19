@@ -1,0 +1,16 @@
+# Decision 541 — What decision 525 leaves open about blocks
+
+[cases/await_in_case_block_arm/src/main.bp](cases/await_in_case_block_arm/src/main.bp)
+[cases/block_await_reaches_function/src/main.bp](cases/block_await_reaches_function/src/main.bp)
+[cases/block_break_reaches_loop/src/main.bp](cases/block_break_reaches_loop/src/main.bp)
+[cases/block_continue_reaches_loop/src/main.bp](cases/block_continue_reaches_loop/src/main.bp)
+[cases/block_ends_function_body_is_tail/src/main.bp](cases/block_ends_function_body_is_tail/src/main.bp)
+[cases/block_jump_label_continue_nested_shapes/src/main.bp](cases/block_jump_label_continue_nested_shapes/src/main.bp)
+[cases/block_jump_label_continue_reaches_loop/src/main.bp](cases/block_jump_label_continue_reaches_loop/src/main.bp)
+[cases/block_jump_label_reaches_loop/src/main.bp](cases/block_jump_label_reaches_loop/src/main.bp)
+[cases/block_yield_reaches_generator/src/main.bp](cases/block_yield_reaches_generator/src/main.bp)
+[cases/case_arm_break_value_removed/src/main.bp](cases/case_arm_break_value_removed/src/main.bp)
+[cases/case_arm_return_in_yielding_arm/src/main.bp](cases/case_arm_return_in_yielding_arm/src/main.bp)
+[cases/init_executor_discarded_value/src/main.bp](cases/init_executor_discarded_value/src/main.bp)
+[cases/lambda_last_statement_semicolon/src/main.bp](cases/lambda_last_statement_semicolon/src/main.bp)
+[cases/lambda_semicolon_not_a_value/src/main.bp](cases/lambda_semicolon_not_a_value/src/main.bp)

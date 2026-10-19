@@ -2657,7 +2657,7 @@ const Emitter = struct {
     /// type parameters it substituted. `fieldTypeIn` / `fieldTypeRefIn`
     /// answer a field of the owner declared as one of them by its
     /// substitution — `self.left == self.right` over `Pair<string>`
-    /// compared WORDS while the fields read as `A` (`modules/generic_string_equality`).
+    /// compared WORDS while the fields read as `A` (`modules/generic/cases/generic_string_equality`).
     field_subs_owner: []const u8 = "",
     /// The names a `val` / `var` of the function being emitted has bound so
     /// far (`bindTarget`), and the aliases a re-binding of one installed,
@@ -16956,7 +16956,7 @@ const Emitter = struct {
             if (self.elemTypeRefOf(recv)) |et| if (et == .generic and self.record_generics.contains(et.generic.name)) try self.local_typerefs.put(p, et);
             // An element of an `unknown[]` is an `unknown` (its own header):
             // `v is i32` reads the box, not a guess at a static type
-            // (`modules/is_truth_table`).
+            // (`modules/is/cases/is_truth_table`).
             if (self.elemTypeRefOf(recv)) |et| if (isUnknownTypeRef(et)) try self.local_typerefs.put(p, et);
             // The parameter is one ELEMENT, so it has the element's record
             // type. Without it a field read off it had no receiver type and
@@ -18585,7 +18585,7 @@ const Emitter = struct {
     /// state machine like the component's lambda around it, so a task the
     /// host still holds suspends both instead of trapping in
     /// `$__task_block_on`. A `return` in it leaves the closure, as in an
-    /// async block (`modules/component_try_then_awaits_host_task`).
+    /// async block (`modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task`).
     fn innerClosureBlock(e: ast.Expr) ?ast.Expr {
         if (e != .call or e.call.kind != .call) return null;
         const cc = e.call.kind.call;
@@ -22198,7 +22198,7 @@ const Emitter = struct {
                     };
                     // `xs.map({ n -> Y(…) })` holds what its lambda answers:
                     // unregistered, `built.at(1)?.id` read the field off the
-                    // element as an address (`modules/optional_member_default`).
+                    // element as an address (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_member_default`).
                     if (std.mem.eql(u8, cc.callee, "map") and cc.receiver != null and cc.args.len == 1) {
                         if (lambdaArg(cc.args[0].value)) |lam| {
                             const body = lam.function.kind.body;
@@ -28146,7 +28146,7 @@ const Emitter = struct {
                 if (o.inner) |tr| try self.local_typerefs.put(name, tr);
                 // A record payload types the binder, so `h.rest` reads the
                 // declared slot rather than guessing one by the field's name
-                // (`modules/field_name_collision` answered `0` / `0`).
+                // (`modules/field/cases/field_name_collision` answered `0` / `0`).
                 const rec: ?[]const u8 = o.rec orelse if (o.inner) |tr| switch (tr) {
                     .named => |n| self.resolveRecordName(n),
                     .generic => |g| self.resolveRecordName(g.name),

@@ -9,6 +9,6 @@ directories, and a second call on the same path is `Ok` too, the directories bei
 the way, `made/file/below` is an `Error`. So the program prints `true`, `true`, `true`, `0`, `2`, `3`, `true`, `true`,
 `true`, `false`, `true`.
 
-Cells that also bear on it: `modules/fs_whole_file_shortcuts`.
+Cells that also bear on it: `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts`.
 
 [draft/main.bp](draft/main.bp)

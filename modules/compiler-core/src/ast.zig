@@ -164,7 +164,7 @@ pub const ImportSource = union(enum) {
     /// module at all, so it narrowed nothing and every lookup fell through to
     /// the whole program — where two modules declaring one `pub` name made the
     /// import that said which module it meant `ambiguous-import-use`
-    /// (`conformance/modules/import_same_fn_name_by_module`).
+    /// (`conformance/modules/import/cases/import_same_fn_name_by_module`).
     pub fn namesModule(this: ImportSource, path: []const u8) bool {
         const m = switch (this) {
             .root => return false,
@@ -187,7 +187,7 @@ pub const ImportSource = union(enum) {
     ///   `from "web"` inside `web`'s own modules says which. Without it a
     ///   package handle narrowed nothing, and every such name in either
     ///   library was refused as ambiguous
-    ///   (`conformance/modules/import_same_name_from_two_packages`).
+    ///   (`conformance/modules/import/cases/import_same_name_from_two_packages`).
     /// - `path` is the module the source names BELOW a package: a module of a
     ///   package names a sibling by its path under the package's own root
     ///   (`from "sql/rows"`, `from "app.page"`), and the registries key that
@@ -195,7 +195,7 @@ pub const ImportSource = union(enum) {
     ///   dependency. Without it such a source named nothing, and the import
     ///   was refused as soon as any other module of the program — a std
     ///   module included — declared the name
-    ///   (`conformance/modules/import_sibling_path_beside_std_name`,
+    ///   (`conformance/modules/import/cases/import_sibling_path_beside_std_name`,
     ///   `import_same_fn_name_in_dependency`).
     ///
     /// The full path is `namesModule`'s and is tried first, so a project's

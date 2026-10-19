@@ -7,7 +7,7 @@
 unary `-`: negating the lowest `i32` is not caught, and the program aborts with `panic: integer overflow: - on i32` on
 stderr, on every target alike.
 
-Cells that also bear on it: `modules/int_overflow_negate_i32`, `modules/int_overflow_sub_i64_min`,
-`modules/abort_text_overflow`.
+Cells that also bear on it: `modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_negate_i32`, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/int_overflow_sub_i64_min`,
+`modules/decisions-taken/runtime_abort_prints_failure-535/cases/abort_text_overflow`.
 
 [draft/main.bp](draft/main.bp)

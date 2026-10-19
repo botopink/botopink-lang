@@ -1,0 +1,175 @@
+# Ambiguity (generated): 162 cells with more than one candidate row not in consolidate-homes.txt, 6 rows with more than 20 cases
+
+## Cells
+
+abort_text_overflow: home 535 (reason b) of candidates 535, 527, 264
+annotation_argument_enum_identity: home 603 (reason b) of candidates 603, 310
+async_block_return: home 124 (reason b) of candidates 124, 119
+async_retry_policy: home 432 (reason b) of candidates 432, 319
+beam_memory_ets_keyed_bump_reads_itself: home 340 (reason b) of candidates 340, 168
+bigint_division_by_zero: home 332 (reason b) of candidates 332, 264
+bigint_plus_int_literal: home 332 (reason b) of candidates 332, 247
+bigint_to_i64_aborts: home 332 (reason b) of candidates 332, 264
+bigint_unsuffixed_literal: home 332 (reason b) of candidates 332, 247
+block_tail_value: home 525 (reason b) of candidates 525, 409
+bpp_not_found_unaliased: home 561 (reason b) of candidates 561, 289, 213
+bpp_unfold_without_props: home 289 (reason b) of candidates 289, 285, 221
+call_spread: home 359 (reason b) of candidates 359, 267
+catch_lowest_precedence: home 537 (reason b) of candidates 537, 523
+compiler_template_expr_return: home 578 (reason b) of candidates 578, 577
+component_alias_answers_value: home 553 (reason b) of candidates 553, 388
+component_hook_and_component: home 553 (reason b) of candidates 553, 388
+component_result_try_await: home 553 (reason b) of candidates 553, 121
+component_try_catch_then_awaits_host_task: home 504 (reason b) of candidates 504, 121
+component_try_element: home 553 (reason b) of candidates 553, 121
+component_try_in_body: home 388 (reason b) of candidates 388, 121
+component_try_then_awaits_host_task: home 504 (reason b) of candidates 504, 121
+comptime_block_with_loop: home 331 (reason b) of candidates 331, 266
+comptime_decorator_section_value: home 364 (reason b) of candidates 364, 331
+comptime_erlang_cell_never_runs_at_build: home 452 (reason b) of candidates 452, 434
+comptime_expression_erlang_cell_never_runs: home 452 (reason b) of candidates 452, 434, 341
+comptime_expression_static_call: home 266 (reason b) of candidates 266, 255
+comptime_function_value_argument: home 434 (reason b) of candidates 434, 331
+comptime_host_cell_unavailable: home 452 (reason b) of candidates 452, 434, 341
+comptime_host_cell_unavailable_erlang_only: home 452 (reason b) of candidates 452, 434
+comptime_primitives_at_build: home 434 (reason b) of candidates 434, 331
+comptime_random_float_unseeded: home 456 (reason b) of candidates 456, 451
+comptime_result_methods: home 434 (reason b) of candidates 434, 331
+comptime_text_one_answer: home 443 (reason b) of candidates 443, 441, 434
+comptime_val_after_import: home 331 (reason b) of candidates 331, 266
+comptime_wide_literal: home 331 (reason b) of candidates 331, 247
+context_default: home 379 (reason b) of candidates 379, 378
+context_default_imported: home 722 (reason b) of candidates 722, 378
+context_nearest_wins: home 379 (reason b) of candidates 379, 354
+context_read_by_value: home 723 (reason b) of candidates 723, 722
+context_read_of_parameter: home 723 (reason b) of candidates 723, 722
+context_sheet_registers: home 354 (reason b) of candidates 354, 352
+context_use: home 553 (reason b) of candidates 553, 378
+context_val_alias: home 379 (reason b) of candidates 379, 378
+context_wide_number_through_scope: home 388 (reason b) of candidates 388, 379, 354
+decl_hooks_context: home 379 (reason b) of candidates 379, 354, 277
+decl_hooks_type_args: home 293 (reason b) of candidates 293, 277
+declaration_named_like_module: home 582 (reason b) of candidates 582, 337
+decorator_arg_unknown_field: home 308 (reason b) of candidates 308, 280
+decorator_arguments_check: home 364 (reason b) of candidates 364, 308, 280
+decorator_field_key_unknown: home 308 (reason b) of candidates 308, 280
+decorator_field_keys: home 308 (reason b) of candidates 308, 280, 267
+decorator_hooks_output_member_fn: home 372 (reason b) of candidates 372, 370
+decorator_member_captures: home 575 (reason b) of candidates 575, 370
+decorator_member_fn_tail: home 409 (reason b) of candidates 409, 408
+decorator_random_float_unseeded: home 456 (reason b) of candidates 456, 451
+decorator_record_argument_string: home 281 (reason b) of candidates 281, 280
+decorator_type_argument_string: home 281 (reason b) of candidates 281, 280
+decorator_value_not_comptime: home 364 (reason b) of candidates 364, 280
+derived_type_unknown_field: home 307 (reason b) of candidates 307, 280
+dsl_hygiene_consumer_alias: home 112 (reason b) of candidates 112, 110
+effect_annotation_removed_future_generator_loop: home 127 (reason b) of candidates 127, 125
+effect_annotation_removed_generator_loop: home 127 (reason b) of candidates 127, 125
+effect_annotation_removed_result_generator_loop: home 127 (reason b) of candidates 127, 125
+effect_chain: home 553 (reason b) of candidates 553, 121
+external_fn_body_every_target: home 610 (reason b) of candidates 610, 305, 263, 238
+external_node_prefixed_op_refused: home 481 (reason b) of candidates 481, 305
+external_result_erlang_exit: home 489 (reason b) of candidates 489, 431
+external_result_host_method: home 490 (reason b) of candidates 490, 489, 431
+external_result_not_bool: home 490 (reason b) of candidates 490, 487
+external_result_return: home 490 (reason b) of candidates 490, 488, 431
+external_result_return_accepted: home 490 (reason b) of candidates 490, 488, 487, 431
+external_result_task_plain_value: home 490 (reason b) of candidates 490, 432, 431
+external_wasm_needs_unknown: home 518 (reason b) of candidates 518, 516
+external_wasm_task_adapter_shape: home 393 (reason b) of candidates 393, 238
+float_shortest_text: home 441 (reason b) of candidates 441, 440
+float_text_at_run_time: home 521 (reason b) of candidates 521, 441
+fs_file_defer_close: home 540 (reason b) of candidates 540, 539
+generator_levels: home 553 (reason b) of candidates 553, 121
+generic_float_record_text: home 530 (reason b) of candidates 530, 521
+getcontext_removed: home 379 (reason b) of candidates 379, 354
+host_node_task_result: home 490 (reason b) of candidates 490, 489, 431, 126
+i64_full_range: home 319 (reason b) of candidates 319, 264
+import_std_type_through_module: home 111 (reason b) of candidates 111, 110
+import_two_types_one_name_unaliased: home 310 (reason b) of candidates 310, 170
+index_dict: home 139 (reason b) of candidates 139, 46
+index_user_type: home 139 (reason b) of candidates 139, 27
+init_executor_calls_host_fn: home 580 (reason b) of candidates 580, 575
+init_executor_compiler_arg_at_run_time: home 642 (reason b) of candidates 642, 614
+init_executor_handle_not_module_name: home 716 (reason b) of candidates 716, 613
+init_executor_handle_on_method: home 716 (reason b) of candidates 716, 613
+init_executor_handle_on_type: home 716 (reason b) of candidates 716, 613
+init_executor_handle_on_type_as_value: home 716 (reason b) of candidates 716, 613
+init_executor_handle_typed: home 716 (reason b) of candidates 716, 581
+init_order_packages: home 676 (reason a) of candidates 676, 660
+inject_default_imported: home 416 (reason b) of candidates 416, 379
+int_division_by_zero_is_panic: home 527 (reason b) of candidates 527, 518
+int_overflow_mul_i64: home 319 (reason b) of candidates 319, 264
+int_overflow_sub_i64_min: home 319 (reason b) of candidates 319, 264
+is_comptime_type_parameter: home 757 (reason a) of candidates 757, 667
+is_type_parameter_refused: home 758 (reason a) of candidates 758, 667
+iterator_result_item: home 553 (reason b) of candidates 553, 121
+iterator_throw_without_result: home 553 (reason b) of candidates 553, 121
+lambda_last_statement_semicolon: home 541 (reason b) of candidates 541, 409
+marker_lambda_async: home 553 (reason b) of candidates 553, 537
+marker_lambda_type_mismatch: home 553 (reason b) of candidates 553, 147
+marker_lambda_without_expected_type: home 553 (reason b) of candidates 553, 147
+marker_without_arrow: home 553 (reason b) of candidates 553, 125
+meta_expr_field_literal: home 576 (reason b) of candidates 576, 370
+meta_expr_param_plain_field: home 576 (reason b) of candidates 576, 370
+mod_namespace_callable_default: home 582 (reason b) of candidates 582, 337
+namespace_import_module: home 337 (reason b) of candidates 337, 107
+namespace_type_self: home 329 (reason b) of candidates 329, 138
+panic_from_failure: home 606 (reason b) of candidates 606, 535
+record_param_spread_other_type: home 529 (reason b) of candidates 529, 359
+record_spread_derived_partial: home 629 (reason a) of candidates 629, 600
+record_spread_required: home 629 (reason a) of candidates 629, 600
+record_update_base_not_a_name: home 529 (reason b) of candidates 529, 359, 37
+result_hint_await: home 553 (reason b) of candidates 553, 121
+result_hint_inferred_async: home 124 (reason b) of candidates 124, 121
+result_hint_inferred_iter: home 553 (reason b) of candidates 553, 125
+shorthand_import_several_candidates: home 337 (reason b) of candidates 337, 170
+std_asserts_host_cell_on_wasm: home 518 (reason b) of candidates 518, 503
+std_asserts_throws_over_attempt: home 527 (reason b) of candidates 527, 493, 431
+std_failure_attempt: home 527 (reason b) of candidates 527, 518, 492, 431
+std_failure_attempt_abort_kinds: home 492 (reason b) of candidates 492, 264
+std_failure_attempt_host: home 527 (reason b) of candidates 527, 492, 489
+std_failure_types: home 492 (reason b) of candidates 492, 489, 431
+std_host_error_variants: home 486 (reason b) of candidates 486, 431
+std_math_on_every_target: home 263 (reason b) of candidates 263, 259, 238
+std_random_on_every_target: home 451 (reason b) of candidates 451, 238
+std_type_field_associated: home 330 (reason b) of candidates 330, 308
+std_unicode_on_every_target: home 333 (reason b) of candidates 333, 262
+stream_pages: home 553 (reason b) of candidates 553, 121
+string_index_of_codepoints: home 320 (reason b) of candidates 320, 240, 169
+string_parse_int_i64_range: home 319 (reason b) of candidates 319, 176
+syntax_fn_run_time_return: home 719 (reason b) of candidates 719, 578
+tag_annotation_reads_meta: home 302 (reason b) of candidates 302, 298
+task_await_result: home 553 (reason b) of candidates 553, 121, 119
+task_compose_by_async_block: home 523 (reason b) of candidates 523, 375
+task_return_layers: home 553 (reason b) of candidates 553, 119
+task_throw_without_result: home 553 (reason b) of candidates 553, 121
+task_try_await_without_result: home 553 (reason b) of candidates 553, 121
+template_annotation: home 577 (reason b) of candidates 577, 311
+template_annotation_call_form: home 577 (reason b) of candidates 577, 311
+template_annotation_unknown_hole: home 577 (reason b) of candidates 577, 311
+template_answer_component: home 578 (reason b) of candidates 578, 426
+template_lookup_decl: home 415 (reason b) of candidates 415, 112
+template_lookup_decl_wrap_with: home 714 (reason b) of candidates 714, 415
+template_lookup_meta_expr_field: home 415 (reason b) of candidates 415, 370
+template_lookup_meta_hooks_pending: home 415 (reason b) of candidates 415, 372
+template_lookup_meta_same_module: home 415 (reason b) of candidates 415, 372
+template_method_behavior_method: home 397 (reason b) of candidates 397, 311
+template_method_call: home 415 (reason b) of candidates 415, 397, 311
+template_method_not_in_scope: home 415 (reason b) of candidates 415, 397
+template_method_own_method: home 397 (reason b) of candidates 397, 311
+template_method_receiver_mismatch: home 397 (reason b) of candidates 397, 311
+template_stringify_marker: home 239 (reason b) of candidates 239, 164
+typeinfo_all_registration: home 254 (reason b) of candidates 254, 216
+typeinfo_all_unknown_value: home 256 (reason b) of candidates 256, 254
+wasm_host_async: home 394 (reason b) of candidates 394, 393, 392
+wide_literal_past_js_safe_integer: home 319 (reason b) of candidates 319, 247
+
+## Rows with more than 20 cases
+
+553: 54 cases
+330: 26 cases
+127: 25 cases
+575: 22 cases
+280: 22 cases
+216: 22 cases

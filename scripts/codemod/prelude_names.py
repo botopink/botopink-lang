@@ -48,7 +48,7 @@ SKIP_DIRS = {".botopinkbuild", "node_modules", "out", "zig-out", ".zig-cache", "
 # The declarations the compiler still reads by name (B-139's removal piece deletes them).
 SKIP_FILES = ("std/src/builtins.d.bp", "std/src/builtins_fns.d.bp")
 # The cells whose sources write the spelling a refusal is about, on purpose.
-SKIP_CELLS = ("conformance/modules/external_beam_removed/", "conformance/modules/builtin_print_removed/", "conformance/modules/prelude_name_with_sigil/")
+SKIP_CELLS = ("conformance/modules/decisions-taken/external_erlang_binds_beam-437/cases/external_beam_removed/", "conformance/modules/decisions-taken/prelude_is_primitives-606/cases/builtin_print_removed/", "conformance/modules/decisions-taken/prelude_is_primitives-606/cases/prelude_name_with_sigil/")
 
 WRAPPERS = ("Result", "Task", "Component", "Iterator", "Stream")
 PRINTS = ("print", "debug", "println")

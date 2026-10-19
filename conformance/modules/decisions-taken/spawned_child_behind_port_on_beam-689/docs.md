@@ -8,6 +8,6 @@ terminal or not. Every target then
 prints `exit 0`. A port program that hands the parent's descriptors over is a step of its own, taken when a library
 needs it.
 
-Cells that also bear on it: `modules/std_io_process_spawn`, `modules/std_io_process_forward_signals`.
+Cells that also bear on it: `modules/decisions-taken/std_cli_host_primitives-506/cases/std_io_process_spawn`, `modules/decisions-taken/std_cli_host_primitives-506/cases/std_io_process_forward_signals`.
 
 [draft/main.bp](draft/main.bp)

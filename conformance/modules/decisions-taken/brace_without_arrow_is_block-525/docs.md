@@ -1,0 +1,20 @@
+# Decision 525 — A `{` without `->` is a block, never a closure; `@block` is removed; a block used as a value answers its last expression written without `;` (409).
+
+[cases/async_block_tail_case/src/main.bp](cases/async_block_tail_case/src/main.bp)
+[cases/async_block_tail_value/src/main.bp](cases/async_block_tail_value/src/main.bp)
+[cases/block_argument_not_function/src/main.bp](cases/block_argument_not_function/src/main.bp)
+[cases/block_builtin_removed/src/main.bp](cases/block_builtin_removed/src/main.bp)
+[cases/block_for_return_leaves_function/src/main.bp](cases/block_for_return_leaves_function/src/main.bp)
+[cases/block_partial_return/src/main.bp](cases/block_partial_return/src/main.bp)
+[cases/block_reassigns_enclosing_var/src/main.bp](cases/block_reassigns_enclosing_var/src/main.bp)
+[cases/block_return_leaves_function/src/main.bp](cases/block_return_leaves_function/src/main.bp)
+[cases/block_tail_value/src/main.bp](cases/block_tail_value/src/main.bp)
+[cases/block_trailing_not_function/src/main.bp](cases/block_trailing_not_function/src/main.bp)
+[cases/block_value_reassigns_enclosing_var/src/main.bp](cases/block_value_reassigns_enclosing_var/src/main.bp)
+[cases/block_void_value_refused/src/main.bp](cases/block_void_value_refused/src/main.bp)
+[cases/case_arm_no_value/src/main.bp](cases/case_arm_no_value/src/main.bp)
+[cases/comptime_block_break_value/src/main.bp](cases/comptime_block_break_value/src/main.bp)
+[cases/trailing_lambda_call/src/main.bp](cases/trailing_lambda_call/src/main.bp)
+
+Proved also by [comptime_block_in_body](../comptime_evaluated_and_lifted-266/cases/comptime_block_in_body/src/main.bp)
+Proved also by [comptime_expression_is_block](../type_application_versus_comparison-255/cases/comptime_expression_is_block/src/main.bp)

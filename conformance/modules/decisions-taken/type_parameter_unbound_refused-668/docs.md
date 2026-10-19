@@ -7,4 +7,6 @@ names `T` only in its return type: nothing at a call fixes `T` but the caller's 
 the declaration is refused at `T`, `type-parameter-unbound`, and the program does not run. Written with `absent`'s token
 it would print `3`, `20`, `null`, `null`.
 
-[draft/main.bp](draft/main.bp)
+
+[cases/type_parameter_bound_in_lambda_type/src/main.bp](cases/type_parameter_bound_in_lambda_type/src/main.bp)
+[cases/type_parameter_unbound/src/main.bp](cases/type_parameter_unbound/src/main.bp)

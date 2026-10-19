@@ -1437,7 +1437,7 @@ fn refuseAmbiguousVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc
     } else false;
     if (!isCtor) return;
     // The erlang emitter's own refusal of the same program reads this way
-    // (`modules/variant_name_ambiguous`); the checker now says it first, for
+    // (`modules/variant/cases/variant_name_ambiguous`); the checker now says it first, for
     // every target.
     var names: std.ArrayListUnmanaged(u8) = .empty;
     var spellings: std.ArrayListUnmanaged(u8) = .empty;

@@ -10,7 +10,7 @@ task of its tree and every other answers the tree at once; the root is always as
 the marked lambdas it meets while descending. The program prints `Page: direct`, `Header: direct`, `Comments: async`,
 `Pause: async`, `Counted: direct`.
 
-Cells that also bear on it: `modules/decl_hooks_async`, `modules/decl_hooks_async_imported`,
-`modules/decl_hooks_component_value`, `modules/decl_hooks_function_value`.
+Cells that also bear on it: `modules/decisions-taken/async_marked_by_hooks_list-375/cases/decl_hooks_async`, `modules/decisions-taken/async_marked_by_hooks_list-375/cases/decl_hooks_async_imported`,
+`modules/decisions-taken/component_value_is_hooks_node-389/cases/decl_hooks_component_value`, `modules/decisions-taken/decl_hooks_reachable_components-277/cases/decl_hooks_function_value`.
 
 [draft/main.bp](draft/main.bp)

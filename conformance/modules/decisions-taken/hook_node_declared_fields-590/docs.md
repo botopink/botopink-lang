@@ -8,7 +8,7 @@ called `function`, never `fn`, a reserved word. `App` provides `themeContext` an
 the meta holds `App uses themeContext` and `Label uses themeContext`, and `main` prints those two lines, reading the meta
 from another module under `comptime`.
 
-Cells that also bear on it: `modules/decl_hooks_context`, `modules/decl_hooks_direct`, `modules/decl_hooks_graph`,
-`modules/decl_hooks_all_nodes`.
+Cells that also bear on it: `modules/decisions-taken/context_named_by_value_type-379/cases/decl_hooks_context`, `modules/decisions-taken/decl_hooks_reachable_components-277/cases/decl_hooks_direct`, `modules/decl/cases/decl_hooks_graph`,
+`modules/decisions-taken/decl_hooks_reachable_components-277/cases/decl_hooks_all_nodes`.
 
 [draft/main.bp](draft/main.bp)

@@ -9,6 +9,6 @@ declaration. `Card` takes one `#[emilia]` and its meta reads back its class and 
 second is refused at its annotation, `decorator-meta-twice` — the tokens belong in one list —, so the program does not
 run.
 
-Cells that also bear on it: `modules/decorator_same_refuses_mark`.
+Cells that also bear on it: `modules/decorator/cases/decorator_same_refuses_mark`.
 
 [draft/main.bp](draft/main.bp)

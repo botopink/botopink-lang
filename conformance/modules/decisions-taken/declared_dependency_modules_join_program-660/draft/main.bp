@@ -1,9 +1,0 @@
-//// Decision 660 — (a): every module of every declared dependency is part of the program — it joins the build and its `compiler.init` executors join the init list whether or not anything imports it — and the init list is ordered by dependency resolution: a package that depends on nothing first, a package after every package it depends on, the ones with most dependencies last; two packages at the same level in the order their dependant's `botopink.json` lists them; inside a package, 580's order (modules in dependency order, declarations in source order).
-
-import {io.terminal} from "std";
-
-// Nothing here imports `plugin`: being part of the package is what puts it in
-// the program, so its `#[register]` executor runs before `main`.
-pub fn main() -> void {
-    terminal.print("main");
-}

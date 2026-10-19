@@ -1,0 +1,15 @@
+# array
+
+[cases/array_fill/src/main.bp](cases/array_fill/src/main.bp)
+[cases/array_fill_large/src/main.bp](cases/array_fill_large/src/main.bp)
+[cases/array_flat_forms/src/main.bp](cases/array_flat_forms/src/main.bp)
+[cases/array_last_index_of/src/main.bp](cases/array_last_index_of/src/main.bp)
+[cases/array_map_component_imported/src/main.bp](cases/array_map_component_imported/src/main.bp)
+[cases/array_pop_rebinds_var/src/main.bp](cases/array_pop_rebinds_var/src/main.bp)
+[cases/array_pop_removes/src/main.bp](cases/array_pop_removes/src/main.bp)
+[cases/array_push_rebinds_var/src/main.bp](cases/array_push_rebinds_var/src/main.bp)
+[cases/array_range_and_repeat/src/main.bp](cases/array_range_and_repeat/src/main.bp)
+[cases/array_reverse_answers_a_new_array/src/main.bp](cases/array_reverse_answers_a_new_array/src/main.bp)
+[cases/array_slice_reverse/src/main.bp](cases/array_slice_reverse/src/main.bp)
+[cases/array_spread_literal/src/main.bp](cases/array_spread_literal/src/main.bp)
+[cases/array_windows/src/main.bp](cases/array_windows/src/main.bp)

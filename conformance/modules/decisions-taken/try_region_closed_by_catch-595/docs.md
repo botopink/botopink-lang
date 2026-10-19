@@ -10,7 +10,7 @@ fallback `-1l`. `sum` has no `catch`: its region is the function itself, which n
 fails with one error type, `ParseError`; `parse` itself turns `parseInt`'s `string` error into a `ParseError` with `catch throw`. The program prints `5`, `0`, `20`, `empty`, `not a number: x`, `9`, `true`, `7`,
 `fallback for `, `-1` and `2`.
 
-Cells that also bear on it: `modules/catch_lowest_precedence`, `modules/try_start_positions`,
-`modules/try_catch_handler_mismatch`, `modules/try_await_prefix_operators`, `modules/try_in_plain_fn`.
+Cells that also bear on it: `modules/decisions-taken/await_try_prefix_catch_infix-537/cases/catch_lowest_precedence`, `modules/try/cases/try_start_positions`,
+`modules/try/cases/try_catch_handler_mismatch`, `modules/decisions-taken/await_try_prefix_catch_infix-537/cases/try_await_prefix_operators`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/try_in_plain_fn`.
 
 [draft/main.bp](draft/main.bp)

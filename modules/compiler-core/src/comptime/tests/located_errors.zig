@@ -40,6 +40,25 @@ fn refusedSingleFile(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name
     return try src.readFileAlloc(io, "main.bp", gpa, .unlimited);
 }
 
+/// Every cell under `dir` as a path relative to it: a directory holding a
+/// `botopink.json` (the modules keep their cells under `<module>/cases/`; a
+/// decision's `draft/` is no cell).
+fn collectCells(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, prefix: []const u8, out: *std.ArrayList([]u8)) !void {
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .directory or std.mem.eql(u8, entry.name, "draft")) continue;
+        const rel = if (prefix.len == 0) try gpa.dupe(u8, entry.name) else try std.fmt.allocPrint(gpa, "{s}/{s}", .{ prefix, entry.name });
+        var sub = try dir.openDir(io, entry.name, .{ .iterate = true });
+        defer sub.close(io);
+        if (sub.access(io, "botopink.json", .{})) {
+            try out.append(gpa, rel);
+        } else |_| {
+            defer gpa.free(rel);
+            try collectCells(gpa, io, sub, rel, out);
+        }
+    }
+}
+
 test "C-21: every type error a reject cell raises carries a location" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
@@ -52,11 +71,7 @@ test "C-21: every type error a reject cell raises carries a location" {
         for (names.items) |n| gpa.free(n);
         names.deinit(gpa);
     }
-    var it = dir.iterate();
-    while (try it.next(io)) |entry| {
-        if (entry.kind != .directory) continue;
-        try names.append(gpa, try gpa.dupe(u8, entry.name));
-    }
+    try collectCells(gpa, io, dir, "", &names);
     std.mem.sort([]u8, names.items, {}, struct {
         fn lt(_: void, a: []u8, b: []u8) bool {
             return std.mem.lessThan(u8, a, b);

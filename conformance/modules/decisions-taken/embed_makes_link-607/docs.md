@@ -8,8 +8,8 @@ package, an existing file — records the file as an input of the build, and ans
 the file deployed with the program, and closes it with `defer`. Every read answers a `Result<…, FsError>`, handled here
 with `catch panic(…)`. The program prints `src/greeting.txt`, `hello from the build` and `true`.
 
-Cells that also bear on it: `modules/embed_text_file`, `modules/embed_binary_file`, `modules/embed_path_absolute`,
-`modules/embed_path_outside_package`, `modules/embed_file_missing`, `modules/embed_path_not_known`,
-`modules/fs_asset_opens_as_file`.
+Cells that also bear on it: `modules/decisions-taken/embed_returns_asset-519/cases/embed_text_file`, `modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_path_absolute`,
+`modules/decisions-taken/embed_returns_asset-519/cases/embed_path_outside_package`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_file_missing`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_path_not_known`,
+`modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file`.
 
 [draft/main.bp](draft/main.bp)

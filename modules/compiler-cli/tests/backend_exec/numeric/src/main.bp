@@ -1,7 +1,7 @@
 // The wasm core module's `--invoke main` fixture (../../backend_exec.sh):
 // `main()` returns 55, which `wasmtime --invoke main` prints from the
 // component's core module. What the program answers on every target is the
-// conformance cell `conformance/modules/tail_recursive_sum`.
+// conformance cell `conformance/modules/tail/cases/tail_recursive_sum`.
 
 fn sumTo(n: i32, acc: i32) -> i32 {
     if (n == 0) return acc;

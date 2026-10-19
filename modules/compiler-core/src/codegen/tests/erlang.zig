@@ -98,7 +98,7 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
     // `erl` opens `standard_io` in the host locale's encoding: under `LANG=C`
     // `@print("é")` wrote the latin1 byte `0xE9` and `"\u{1F600}"` the text
     // `\x{1F600}`. The program sets it itself, first, so its output is the
-    // same bytes under any locale (`modules/string_literal_unicode_escape` run
+    // same bytes under any locale (`modules/string/cases/string_literal_unicode_escape` run
     // with `LANG=C` is the measurement; this harness has the host's locale).
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub fn main() {

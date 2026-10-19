@@ -8,6 +8,6 @@ writes `implement Shape` on its own declaration, so a `Circle` is a `Shape` and 
 written on the block, not on `Square` — no backend dispatches a behavior call to a block. The same refusal stands for a
 return or a context of the behavior's type.
 
-Cells that also bear on it: `modules/implement_clause_for`.
+Cells that also bear on it: `modules/implement/cases/implement_clause_for`.
 
 [draft/main.bp](draft/main.bp)

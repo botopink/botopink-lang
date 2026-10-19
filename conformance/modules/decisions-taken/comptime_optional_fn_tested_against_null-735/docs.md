@@ -4,4 +4,5 @@ The example's `describe` takes `rule`, an optional function known at build. It t
 
 Cells in this repository that also bear on it: none.
 
-[draft/main.bp](draft/main.bp)
+
+[cases/comptime_optional_fn_tested_against_null/src/main.bp](cases/comptime_optional_fn_tested_against_null/src/main.bp)

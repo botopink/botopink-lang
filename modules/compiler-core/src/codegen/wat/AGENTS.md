@@ -152,7 +152,7 @@ in the arena, put back after.
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point; the GC group as `(rec (type $t (struct (field $f …) …)) …)`, a `(ref null $t)` spelled by its type's name, a reference global initialised `(ref.null …)`, a passive segment `(data $name "…")`). `renderComponent(alloc, w, Module)` (decision 334, § The `wasi` host's component): the module embedded as `(core module $main …)` — its `(start …)` dropped and the start function exported `__bp_init` — inside the fixed frame `component_imports` / `component_adapter_*` / `component_run_export` (the preview 2 imports, the preview 1 shim, scratch and adapter modules, the table fixup, `wasi:cli/run`); a `wasi_snapshot_preview1` import outside `preview1_adapted` (`fd_write`, `random_get`) is `UnadaptedPreview1Import`, which `wat.zig` refuses located. A name after `$` goes through `id` (decision 561): one holding a backtick identifier has each byte that is no WAT `idchar`, and `\` itself, written `\` and two hex digits (`` $`add\20one` ``), any other name as it is. Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · tag (13, decision 518) · global · export · start · element · data count (12, when a segment is passive) · code · data · the module's custom sections (`botopink.needs`), LEB128, the GC types first as one `rec` group (`0x4E`; type `k` of the group is type index `k`, `Encoder.defs`), then one type per distinct signature (imports' and functions' types first, then the tags', then each `call_indirect`'s), a `(ref null $t)` written `0x63` and the index (`valTypeInto`), a GC instruction `0xFB` and its opcode, locals as runs of one type; `throw` as `0x08` and `try_table` as `0x1F` with its `catch` clauses (§ Exceptions and needs); `memory.size` / `memory.grow` as `0x3F 0x00` / `0x40 0x00` (decision 261, a test pins the bytes). Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `opcodes` is public for `std_wasm_link.zig`, which decodes by the same table. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
 | `host_binding.zig` | **Decision 238's closed vocabulary**, pure (text and value types in, a `Binding` or a message out): `parse(alloc, text, Signature)` reads the binding text the parser makes of each labelled cell (decision 481, `ast.translateExternalCells`: `op: "f64.floor"` → `op:f64.floor`) — `op:` against `findOp`'s table (the MVP numeric instructions by shape — integer `clz`/`ctz`/`popcnt`/`eqz`, the binary ops, the comparisons; float `abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`/`sqrt`, `add`…`copysign`, the comparisons; the conversions — no memory, control, local or global instruction) and checks the declared parameter and return types are exactly the opcode's (a comparison or `eqz` answers `bool`); splits `fn:` (the module resolves it); reads `wasi:` against `adapters` (`.RandomF64` names `random_f64`; the task adapters `.Delay`, `.Race`, `.RaceOf`, `.SpawnAll`, checked by `Shape` over one type parameter — decision 393; `.Attempt`, `fn() -> T` → `@Result<T, string>`, the shapes `thunk_t` / `result_t` — decision 518); reads `std:` against `std_wasm.exports` (decision 440 (3): `Binding.std_`, its types checked by the caller — `wat.zig` with `std_wasm.matches`, the checker on every target). `signatureOf(alloc, f)` is the `Signature` a `declare fn` writes (the numeric slots, `self` skipped, `@Task<T>` read as `T`; the shapes over one type parameter) — the one reading `wat.zig` `checkHostBinding` and the checker's `infer.refuseWasmSignature` (every target) both pass to `parse`. `instrOf` gives an `op:`'s instruction. Anything else is a `Refused` message, naming the cell as written (`ast.wasmCellDisplay`). `codegen/tests/wat.zig` holds `adapters` and `conformance/docs.md` § Host bindings' table to each other |
-| `wat_prelude.zig` | The runtime helpers decision 442 (1) keeps, as `Func` nodes — what defines a value's representation or talks to the host, and nothing that only computes over values (§ What stays in `wat_prelude`): `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64` (the I/O; the text is std-wasm's `number.floatToString`), `arr_at`, `str_concat`, `str_eq` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned: the program's one heap, std-wasm's too), `i32_abs`/`i32_min`/`i32_max`, `arr_new`, `arr_push`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `panic_raise` / `wasi_attempt` (decision 518's exception helpers, § Exceptions and needs), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `l`/`u` (an `i64` / `u64` cell; `print_shaped` requires `print_i64` and `print_u64`), `[X`, `(XY…)`, `?X` / `!X`, `R<ok><err>` (a `@Result`'s `{ tag, payload }` pair, written `Ok(x)` / `Error(y)` by the shape of its side; `typeRefShape` builds it from a declared `@Result<A, B>`, `printShapeOf` from an expression `resultShapeOf` knows) — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216` —, the host's entropy, which std-wasm's `random.seededFloat` also draws before any seed, decision 451 (2)); decision 392's scheduler (`task`, `task_resume`, `task_poll`, `task_host`, `task_delay`, `task_race`, `task_race_of`, `task_spawn_all`, with `task_host_poll_wasi`, `bp_ready` and the `bp_host_*` imports — § `@Task` as a state machine); and § Numbers' groups: `box_f64`, `print_i64` (the I/O of std-wasm's `number.i64Text`), `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`), `i32_range_chk` / `i64_range_chk` (decision 264's narrower types, groups of their own), and decision 319's `print_u64` (`number.u64Text`), `u64_chk`, `print_opt_u64`; decision 332's `bigint` — no function: the marker of a module that prints a `bigint` in a container, which substitutes `print_shaped_items_bigint` (the shaped printer with the `n` code, calling std-wasm's `bigint.toString`); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell); `text_capture` (the global `$__cap`, `$__cap_begin` / `$__cap_end`) — a value's printed text as a string: while a capture is open, `$__write_bytes` appends to a copy of the capture string instead of calling `fd_write` (`print_items_capture`, substituted for `print` in a module holding the group), so `lowerConcatOperand` writes a template hole or a `string +` of an enum value as `@print` writes it (`isEnumValueExpr`; `conformance/modules/enum_value_template_hole`) — the ordinal's digits or a cell's address before —, and of every value that is no string, boolean, float, `i64` or known integer (`lowerCapturedPrint`: a record, an array, a tuple, an optional — `null` when absent, where `undefined` was written —, a `Display` type; decision 530, `conformance/modules/template_hole_prints_every_value`), where the value's address was written. A tuple's `toString()` is that capture too (`isTupleToString`, 144 B-122: the call lowers to `lowerCapturedPrint` of the receiver and `isStringExpr` knows its answer is a string). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs, `gcItems(group, capture)` a group's form in a GC module (front 164 s2: its own items when it moves no string; `$__print_str`/`_raw`, `$__print_f64_raw`, `$__str_concat`, `$__str_eq`, `text_capture`'s `$__cap` and the capturing `$__write_bytes` over `(ref null $str)`, `print_shaped`'s `$__print_quoted_raw` over a GC string alone — the shape walker and the tagged printer are generated per module, § WasmGC in the model —, `panic_fail`'s `$__panic_fail` over a GC string, `display_of` none; null for a group with no GC form yet), `gcDeps` the groups a GC form adds (the marshal arena's `alloc`), `std_marshal` (`$__gc_to_lin_str`, `$__lin_to_gc_str`), `gc_str_def`/`gc_str_index`/`gc_str_ref` the `$str` type, `stdSymbol` the program symbol of a std-wasm function a helper calls (`HelperGroup.stdCalls` names each group's, so a module holding the group links them). Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits. An `i64`'s and a `u64`'s text is std-wasm's workspace (`number.i64Text` / `u64Text`), a float's std-wasm's (§ std-wasm in the program). |
+| `wat_prelude.zig` | The runtime helpers decision 442 (1) keeps, as `Func` nodes — what defines a value's representation or talks to the host, and nothing that only computes over values (§ What stays in `wat_prelude`): `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64` (the I/O; the text is std-wasm's `number.floatToString`), `arr_at`, `str_concat`, `str_eq` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned: the program's one heap, std-wasm's too), `i32_abs`/`i32_min`/`i32_max`, `arr_new`, `arr_push`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `panic_raise` / `wasi_attempt` (decision 518's exception helpers, § Exceptions and needs), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `l`/`u` (an `i64` / `u64` cell; `print_shaped` requires `print_i64` and `print_u64`), `[X`, `(XY…)`, `?X` / `!X`, `R<ok><err>` (a `@Result`'s `{ tag, payload }` pair, written `Ok(x)` / `Error(y)` by the shape of its side; `typeRefShape` builds it from a declared `@Result<A, B>`, `printShapeOf` from an expression `resultShapeOf` knows) — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216` —, the host's entropy, which std-wasm's `random.seededFloat` also draws before any seed, decision 451 (2)); decision 392's scheduler (`task`, `task_resume`, `task_poll`, `task_host`, `task_delay`, `task_race`, `task_race_of`, `task_spawn_all`, with `task_host_poll_wasi`, `bp_ready` and the `bp_host_*` imports — § `@Task` as a state machine); and § Numbers' groups: `box_f64`, `print_i64` (the I/O of std-wasm's `number.i64Text`), `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`), `i32_range_chk` / `i64_range_chk` (decision 264's narrower types, groups of their own), and decision 319's `print_u64` (`number.u64Text`), `u64_chk`, `print_opt_u64`; decision 332's `bigint` — no function: the marker of a module that prints a `bigint` in a container, which substitutes `print_shaped_items_bigint` (the shaped printer with the `n` code, calling std-wasm's `bigint.toString`); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell); `text_capture` (the global `$__cap`, `$__cap_begin` / `$__cap_end`) — a value's printed text as a string: while a capture is open, `$__write_bytes` appends to a copy of the capture string instead of calling `fd_write` (`print_items_capture`, substituted for `print` in a module holding the group), so `lowerConcatOperand` writes a template hole or a `string +` of an enum value as `@print` writes it (`isEnumValueExpr`; `conformance/modules/enum/cases/enum_value_template_hole`) — the ordinal's digits or a cell's address before —, and of every value that is no string, boolean, float, `i64` or known integer (`lowerCapturedPrint`: a record, an array, a tuple, an optional — `null` when absent, where `undefined` was written —, a `Display` type; decision 530, `conformance/modules/decisions-taken/template_hole_writes_print_text-530/cases/template_hole_prints_every_value`), where the value's address was written. A tuple's `toString()` is that capture too (`isTupleToString`, 144 B-122: the call lowers to `lowerCapturedPrint` of the receiver and `isStringExpr` knows its answer is a string). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs, `gcItems(group, capture)` a group's form in a GC module (front 164 s2: its own items when it moves no string; `$__print_str`/`_raw`, `$__print_f64_raw`, `$__str_concat`, `$__str_eq`, `text_capture`'s `$__cap` and the capturing `$__write_bytes` over `(ref null $str)`, `print_shaped`'s `$__print_quoted_raw` over a GC string alone — the shape walker and the tagged printer are generated per module, § WasmGC in the model —, `panic_fail`'s `$__panic_fail` over a GC string, `display_of` none; null for a group with no GC form yet), `gcDeps` the groups a GC form adds (the marshal arena's `alloc`), `std_marshal` (`$__gc_to_lin_str`, `$__lin_to_gc_str`), `gc_str_def`/`gc_str_index`/`gc_str_ref` the `$str` type, `stdSymbol` the program symbol of a std-wasm function a helper calls (`HelperGroup.stdCalls` names each group's, so a module holding the group links them). Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits. An `i64`'s and a `u64`'s text is std-wasm's workspace (`number.i64Text` / `u64Text`), a float's std-wasm's (§ std-wasm in the program). |
 | `scope_carry.zig` | Decision 504 (§ Components): `carry(arena, Program) → Program` — a copy of the module's declarations that hold a written `@Component<…>` or a call of the scope lowering's functions (`needs`), with `@Component<R>` written `fn(unknown) -> unknown` (a host declaration's types stay, `isHost`), `bpScopePush__` / `bpScopeRendered__` calls renamed to one wrapper each (`bpScopeRaw__push` / `bpScopeRaw__rendered`), and each `bpScopeFind__<T>` / `bpScopeValue__<R>` and each run `(c)(scope)` carrying `Rendered<R>` a call of a wrapper of its own (`bpScopeRaw__find<n>`, `…value<n>`, `…run<n>`) declared to answer that type, appended to the module. `push` and `rendered` keep the type they carry, and `valueArg` names the position of the value they carry in: a float or an `i64` crosses as its cell's address (§ Components). No type at all leaves the call as written. `isWrapper` names the wrappers (a mangled one too). |
 | `std_wasm_link.zig` | Decision 440 (2): `link(arena, wanted, floor, *Diag) → Linked{ items, end }` — the functions of `std_wasm.wasm` (embedded, `module_bytes`) the program reaches, decoded into the model: the exports `wanted` names (`<module>.<function>`, emitted as `entryName` — `__std_number_floatToString`) and what they call, each other function `__std_f<n>`, locals `p<n>`/`l<n>`, every block, loop and `if` labelled `b<n>` (a branch to the function's own block wraps the body in `block $fn`); the stack-pointer global `$__std_sp`, the raw data segments at the first 8-aligned address at or past `floor`, the functions. `global.get $__memory_base` is the constant base, `env.bp_alloc` is `$__alloc` (`env.bp_term_alloc` and `env.bp_term_static`, the term library's, are bound to nothing: no program function reaches a term), `__stack_pointer` is `$__std_sp`, initialised to the top of a stack sized from the code (each prologue's `global.get $sp; i32.const N; i32.sub`, summed along the deepest call chain); every prologue's new pointer passes through `$__std_sp_check` (`stack_check`, emitted beside the global: the pointer, or a trap below the stack's floor — decision 447 (3)), and a read of `__stack_pointer` that is no prologue is refused; `end`, past data and stack, is where the heap starts. `env.bp_random_f64` is `$__wasi_random_f64` (`random_import`, decision 451 (2)): `Linked.random` says a linked function calls it, and `wat.zig` then holds the `wasi_random_f64` group and its `random_get` import. std-wasm's data is placed only when a function the program reaches reads `__memory_base` (a function that addresses no table, literal or `var` of std-wasm's links none of it). A start function that only zeroes `.bss` (what wasm-ld writes for a Zig `var`) is dropped — a fresh instance's memory is zero. A module that is no side module (`dylink.0`), or holds a function table, another start function, a global of its own, another import, an export not named `std:<module>.<function>`, a passive segment, a recursive call, a read of the stack pointer outside a prologue, an `f32.const` or an opcode outside the MVP and bulk memory is `error.Unsupported`, named in `Diag`. `linkModule` takes other bytes (the tests). `Linked.funcs` lists, in the order of the functions among `items`, each one's symbol, label (`std:<module>.<function>` for an export, the symbol for a helper) and `hash` — the first 12 hex of the sha256 of its code-section entry in `std_wasm.wasm`; `emitWat` copies it into `GenerateResult.std_funcs`, and `snapshot.zig` writes each such function as the one line `;; <label> — from std_wasm.wasm (sha256 <hash>)` with its body omitted (decision 446) — the snapshot's rendering only: the emitter, `botopink build --target wasm` and the binary the RUN LOG runs keep every body. A test flips a byte inside one function and expects exactly one hash to move. |
 
@@ -247,7 +247,7 @@ inside a `try_table` catching the tag; what escapes is written as `@panic`
 writes it (`$__panic_fail`) and traps, so an uncaught abort answers exactly
 what it answered before. `$__panic_fail` writes `panic: ` (scratch `188`), the message and a newline — the line
 commonJS, erlang and beam write (decision 535): `@panic`, `@todo` with a message and `assert` do on wasm
-(`conformance/modules/abort_text_panic`); so do an integer overflow and an integer division or remainder by zero
+(`conformance/modules/decisions-taken/runtime_abort_prints_failure-535/cases/abort_text_panic`); so do an integer overflow and an integer division or remainder by zero
 (decision 527 (3), § Checked integer arithmetic). The adapter `wasi: .Attempt` (`host_binding.zig`,
 shapes `fn() -> T` → `@Result<T, string>`) is `$__wasi_attempt(f)`
 (`wasi_attempt`): the thunk called through the table inside a `try_table`
@@ -452,7 +452,7 @@ linked one — through `scope_carry.carry` before anything is registered:
   -> T`, `bpScopeRaw__value<n>(r) -> R`, `bpScopeRaw__run<n>(c, s) -> Rendered<R>` — so every
   reader (a field, a concatenation, a printer, a destructure) asks a declared return as of any
   function; the wrapper's `return` passes the word as it is (`Emitter.raw_return`), or loads the
-  cell of a declared float or `i64` (`modules/context_wide_number_through_scope`);
+  cell of a declared float or `i64` (`modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope`);
 - **`@Component<R>` is written `fn(unknown) -> unknown`** wherever a program writes it (a
   parameter, a field, an annotation): the value is the lambda's closure cell;
 - a call of std's `find` / `valueOf` outside a wrapper — the checker left the type unresolved — is
@@ -468,12 +468,12 @@ linked one — through `scope_carry.carry` before anything is registered:
   awaited inside a machine (`emitSuspension` with the mark: it suspends only on a pending task,
   and reads the settled value only of a task), run to its end elsewhere (`$__task_block_on`). A
   synchronous component pays nothing, and a task's address is never told from a `Rendered` by its
-  word (`modules/component_awaits_host_task`);
+  word (`modules/decisions-taken/components_compose_by_data-504/cases/component_awaits_host_task`);
 - **a body that keeps a bare `try` runs its tail as an inner closure** (`context_lower`
   `lowerComponentBody`), awaited in place when the tail awaits — `await ({ -> rest })()`. That
   awaited call is lowered as an `async { rest }` block (`innerClosureBlock`): the closure is a
   state machine inside the component's, so a task the host still holds suspends both instead of
-  trapping in `$__task_block_on` (`modules/component_try_then_awaits_host_task`).
+  trapping in `$__task_block_on` (`modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task`).
 
 The general rows the component cells met, each kept: a lambda captures the names of a called
 expression too (`collectIdents` reads `calleeExpr`: `(state(start))(scope)` captured `start`);
@@ -536,7 +536,7 @@ first thunk's answer (std's `async.all`, `runAll`); a function-typed parameter (
 std's `async.retry` and the `retryFrom` it passes `work` on to). A call through a namespace item
 (`async.delay(…)`, the namespace its receiver) is the plain call to every shape reader and to
 specialisation (`isNamespaceReceiver`). Each was a word read for a string at exit 0
-(`conformance/modules/std_async_on_every_target`, `generic_thunk_result_binds`).
+(`conformance/modules/decisions-taken/std_async_on_every_target-690/cases/std_async_on_every_target`, `generic_thunk_result_binds`).
 
 **A generic body traps only where no execution meets it.** A `fn` with type
 parameters, a method of a generic `type` and a lambda lifted out of either are
@@ -595,7 +595,7 @@ compile and fails if wasm ever starts accepting one.
 answering a value — and emit `fn f() {}`, which does nothing. Reading an empty body
 as bodyless emitted no `pub fn main() {}` for `_start` to call (`compilation failed
 UndefinedCall`) and refused every call of an empty `fn`
-(`conformance/modules/fn_empty_main`, `modules/fn_empty_body_call`).
+(`conformance/modules/fn/cases/fn_empty_main`, `modules/fn/cases/fn_empty_body_call`).
 
 **A method of a behavior only a host builds is refused on the host binding** (`lowerPlainCall`):
 `g.greet("ana")` over `behavior Greeter` that no type of the program implements has no function
@@ -603,7 +603,7 @@ to call — the value comes from a `declare fn` answering `Greeter` (`external_m
 such function to the named type it answers). When one of them has no wasm cell, the call is refused
 as that function's missing `#[@external(.Wasm(…))]`, not as an unresolved call, so a `"targets"`
 narrowing (`conformance/test/behavior_host_dispatch/`) stands on a host binding as the runner's
-audit requires (`conformance/modules/behavior_host_value_wasm_refused`).
+audit requires (`conformance/modules/behavior/cases/behavior_host_value_wasm_refused`).
 
 **A function that reaches such a cell is refused where the call is written,
 called or not** (decision 146 — "an error for whatever has no target"). Every
@@ -612,8 +612,8 @@ bodied function is emitted — `emitDecl` lowers each `fn` and each method, and
 type parameter — so a body that calls an `external_missing` cell meets
 `lowerPlainCall`'s refusal whether or not anything calls the function: the rule
 commonJS, erlang and beam hold by emitting every function, and the diagnostic
-they print (`conformance/modules/external_wrapper_keeps_refusal`,
-`modules/external_wrapper_associated_default`). wasm used to drop such a
+they print (`conformance/modules/external/cases/external_wrapper_keeps_refusal`,
+`modules/external/cases/external_wrapper_associated_default`). wasm used to drop such a
 function and refuse only a call of it (`collectHostBound` / `host_bound` /
 `MissingExternal.via`, all gone), which let a module import on wasm when some
 of its functions needed a host; no module does now. **One shape is still lowered
@@ -636,7 +636,7 @@ module reports its own diagnostic in its own file; each consumer that links it
 `std/testing/asserts`, which this import links `` at that import
 (`run/std_asserts_on_every_target.wasm.expect`,
 `run/std_asserts_host_cell_on_wasm.wasm.expect`,
-`modules/labelled_call_by_label/wasm.expect`).
+`modules/labelled/cases/labelled_call_by_label/wasm.expect`).
 
 A **bodyless `declare fn` with no `#[@external(.<Target>(…))]` at all** is
 refused at its call too (`lowerPlainCall`); it kept the old trap until
@@ -648,7 +648,7 @@ consulted first in `lowerPrintArg`). Decision 8 §7's F2 and F3 want
 `Point(x: 1, y: 2)` and `Shape.Square(side: 4)`; both need a value that knows
 which named type it is at run time, which is `13-module-identity`'s subject, not
 this backend's. Until then the numeric printer wrote the value's heap address —
-`conformance/modules/print_formatter` printed `328`, `336`, `344`. A value
+`conformance/modules/print/cases/print_formatter` printed `328`, `336`, `344`. A value
 that carries its header prints by it now; what is left with no printed form is
 refused at the argument. commonJS needs no such interim: a class instance
 carries its constructor's name and already answers §7's text.
@@ -684,10 +684,10 @@ may be a scalar, and a present `0` has to differ from absence: the writer —
 inside the generic body, where `owner_tparams` / `fn_tparams` put `V` in scope —
 boxes into `$__box_i32`, and the reader — at the call, where the method's
 registered return reads `?__tparam` (`eraseOptTypeParam`) — unboxes. Unboxed,
-the absent key printed `0` (`modules/index_dict`, `modules/index_at_optional`). A method
+the absent key printed `0` (`modules/decisions-taken/negative_index_counts_from_end-139/cases/index_dict`, `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_at_optional`). A method
 declared `-> ?i32` boxes its `return` like a fn (`cur_ret_typeref` is set in
 `emitMemberFn`), and a `?T[]` of a scalar prints as the array or `null`
-(`arrayScalarCode`, `modules/index_user_type`).
+(`arrayScalarCode`, `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_user_type`).
 
 **A call that binds a type parameter to a string, a bool or a float calls a
 specialisation** (`specializedCallee` / `specializeFor` for a free `fn` and a
@@ -717,7 +717,7 @@ the shapes that bound a string and still reached the one body:
   `Array<#(string, f64)>`, so a `forEach` / `filter` binder over it knows its
   tuple shape `(sf)` and `p._1` is read through its `f64` cell — before, it was
   read as an `i32` word and converted, and `Dict<string, f64>.at` answered the
-  cell's address (`8976.0` for `1.5`, `modules/dict_float_value`). A copy also
+  cell's address (`8976.0` for `1.5`, `modules/dict/cases/dict_float_value`). A copy also
   types its own `self` (`Emitter.emitMemberFn`: `local_typerefs` `self` is the
   copy's `Self<string, f64>` under the owner's name), so a call on `self` inside
   it (`bump`'s `self.at(key)`) specialises by the receiver's arguments too, not
@@ -734,7 +734,7 @@ the shapes that bound a string and still reached the one body:
   (`recordTypeOfExpr`'s `identAccess` arm applies `recvTypeArg`):
   `route.data.title` of `route: Route<string, Post>` reads `Post`'s slot —
   it was an unknown record, so `"<h1>" + route.data.title` printed the
-  string's address (`modules/generic_record_nested_field_concat`);
+  string's address (`modules/generic/cases/generic_record_nested_field_concat`);
 - **a generic fn NAMED as an argument** whose parameter is written as a
   function type, or **bound** to a `val` written with one, is the copy that
   type binds (`specializeByFnType`, `specCopy`): `apply(same, s, "ab")`
@@ -750,7 +750,7 @@ binds `T` from a field written `Array<T>` / `T[]` by its elements, `bindParam`),
 resolves as the integer's (`primKindAt` reads a parameter's `local_typerefs`), `bindMethodRet`
 types the answer `Bag<string>`, and a composite field read through that receiver is
 `Array<string>` (`recvTypeArgRef` writes the receiver's arguments into `Array<T>`). It was
-`cannot resolve the call toString/0` (`conformance/modules/generic_method_lambda_param_typed`).
+`cannot resolve the call toString/0` (`conformance/modules/generic/cases/generic_method_lambda_param_typed`).
 
 **A function in a generic record's field answers its declared return**
 (`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):
@@ -763,16 +763,16 @@ array (`isArrayExpr` / `elemKindOf` read `valueCallTypeRef`); a generic record
 built in place keeps its own type arguments (`Box(value: Box(value: hi))` is a
 `Box<Box<fn() -> string>>`, and `recvTypeArg` names a generic argument by its
 record), as does any argument whose type is written (`typeRefOf`) —
-`conformance/modules/generic_field_fn_value_nested`. A function value answering
+`conformance/modules/generic/cases/generic_field_fn_value_nested`. A function value answering
 an `f64` is still refused (`call_indirect` answers an `i32`).
 
 **A lambda argument is typed by the parameter it is passed for.** A call of a
 module function sets `expected_fn` from the parameter's declared function type
 (`fn_param_typerefs`), so `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa` reads
 `Pessoa`'s field and `{ s -> "a" + s }` for `fn(string) -> string`
-concatenates (`modules/lambda_param_shared_field`). A call of a module-level
+concatenates (`modules/lambda/cases/lambda_param_shared_field`). A call of a module-level
 `val` written as a lambda (`global_lambdas`) is judged as a closure local's is
-(`modules/template_in_module_val_lambda`).
+(`modules/decisions-taken/template_call_expands_any_expression-425/cases/template_in_module_val_lambda`).
 
 **A lambda in such a field is typed where it is used, or is refused.** The field
 says nothing (`T`), so `lowerRecordCtor` leaves the lifted lambda's
@@ -789,10 +789,10 @@ wasm backend can see`, `Lifted.loc`) — the record passed through a generic fn
 and called on the result is that shape. It printed `300?` for `"d" + "?"` at
 exit 0, then trapped at the lambda's entry. Any other lambda keeps
 `param_known` true: its slot types it, or an integer reading is what it always
-had (`modules/generic_field_fn_value`, `tests/wat.zig`'s refusal fixture).
+had (`modules/generic/cases/generic_field_fn_value`, `tests/wat.zig`'s refusal fixture).
 
-`modules/generic_string_equality` pins every way a type parameter gets a
-string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
+`modules/generic/cases/generic_string_equality` pins every way a type parameter gets a
+string bound on four targets, `modules/method/cases/method_on_unimported_type` (`Dict.at`
 with a key `split` built) included — it already passed at the open, through
 `specializeMethod`. **What stays**: a call whose arguments and context say
 nothing about the type keeps the one generic body — a generic fn stored in
@@ -803,7 +803,7 @@ type-parameter values compares words (a composite bound where the body
 compares with `==` IS specialised, § Structural equality); so is a method of a generic `type` whose receiver binds a record and whose body compares with `==` or calls a method on `self` or a parameter — `Set<Point>.contains` / `union` — and a type-qualified call such as `Set.fromList(xs)` takes the same path (`specializeMethod`) and `elemKindOfTypeRef` reads a type
 parameter as `.i32`. A string carries no header (it is a bare
 `[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
-the only cure, and `modules/generic_body_specialized` pins the shapes that
+the only cure, and `modules/generic/cases/generic_body_specialized` pins the shapes that
 reach it. `fieldSub` is owner-wide: inside a copy of `Pair<string>`'s method,
 a `Pair` of another instantiation reads its fields as `string` too.
 
@@ -850,7 +850,7 @@ call reaching it unspecialised is refused —, and `@print` of a tuple with no s
 as its address. A generic method's declared `#(Q<T>, ?T)` is read at the call
 with its `?T` erased to `?__tparam` (`eraseOptTypeParam` walks a tuple's
 elements), the box its body wrote — `Queue.dequeue()._1.unwrapOr(-1)` printed
-the box's address. `modules/tuple_optional_element`; the `tests/wat.zig` RUN LOGs
+the box's address. `modules/tuple/cases/tuple_optional_element`; the `tests/wat.zig` RUN LOGs
 `a ?T element prints and reads as its payload or null` and `the answer keeps
 the payload's tuple shape`.
 
@@ -934,9 +934,9 @@ the build's host: a misspelt `.Browser` `fn:` is refused on a `wasi` build. The
 checker refuses `host:` on another variant, a value other than `.Wasi` /
 `.Browser`, and a second binding for one host (an unhosted binding beside a
 hosted one included) — `refuseHostArg`, `refuseWasmHostTwice`; cells
-`modules/external_wasm_host_unknown`, `modules/external_host_on_node`,
-`modules/external_wasm_host_twice`, `modules/external_wasm_host_beside_unhosted`,
-`modules/external_wasm_host_binding`, `modules/wasm_host_from_manifest`.
+`modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/external_wasm_host_unknown`, `modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/external_host_on_node`,
+`modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/external_wasm_host_twice`, `modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/external_wasm_host_beside_unhosted`,
+`modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/external_wasm_host_binding`, `modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cases/wasm_host_from_manifest`.
 
 `std/math` is the first user: `abs`, `floor`, `trunc`, `sqrt`, `minF`, `maxF`
 are `op:`; `round` is `fn: roundHalfUp` (V8's ceil-based rule — `f64.nearest`
@@ -975,7 +975,7 @@ binding `hash` and `io/random`, and each still open:
 | `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, tuple element, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
 | a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
 | `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in the prelude's float text | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
-| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `.JavaScript` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array_range_and_repeat` | fixed |
+| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `.JavaScript` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array/cases/array_range_and_repeat` | fixed |
 
 ## Numbers: a float's text, the 8-byte cells, integers that do not wrap
 
@@ -1039,11 +1039,11 @@ class beside them. What each number is here, and what is refused:
   written against); a top-level function's trampoline does the same from its
   signature. Both sides read the written function type, so a caller and a
   callee that know it agree; a caller that does not refuses the argument
-  (`modules/optional_float_function_value`).
+  (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_float_function_value`).
 - **An `if` with a `null` arm into a `?T` slot boxes arm by arm**
   (`lowerBoxedIfArms`): `val n: ?i32 = if (c) 3 else null` boxes the `3` and
   leaves the `null` arm the `0` of absence — boxing the whole `if` made an
-  absent `n` a present `0` (`modules/optional_if_null_initializer`).
+  absent `n` a present `0` (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_if_null_initializer`).
   `Option.map` over or to a cell type is refused at the call.
 - **Arithmetic over a boxed optional is refused** (`lowerBinOp`): `xs[i]`
   answers `?T`, and `[1, 2][0] + 1` added to the box's address (`269`).
@@ -1055,13 +1055,13 @@ class beside them. What each number is here, and what is refused:
   `OptInfo`). A `?.()` over a function answering a plain value boxes its
   answer as a `?T` of that type is (`optLinkBoxInfo`: the link's type, else the
   return of the `?fn(…) -> T` the operand holds; `lowerIfExpr`), so `?? d` and
-  `@print` read it as any `?T` (`modules/optional_call_operator`,
-  `modules/optional_call_plain_answers`); a link whose type is not known here is
+  `@print` read it as any `?T` (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_call_operator`,
+  `modules/decisions-taken/optional_typescript_operators-330/cases/optional_call_plain_answers`); a link whose type is not known here is
   refused at the operand. `o ?? d` reads its shape and
   its bool-ness as `o.unwrapOr(d)` does (`nullishParts`):
   `(rs.at(1) ?? #("", ""))._1` printed the string's address. `xs.map({ n -> Y(…) })`
   holds the record its lambda answers (`elemRecordOf`), so `built.at(1)?.id` reads the field
-  (`modules/optional_member_default`).
+  (`modules/decisions-taken/optional_typescript_operators-330/cases/optional_member_default`).
 - **A cell enters only where its reader knows it.** An array's elements share
   one kind (`lowerElemWord`: a float anywhere in a literal makes every slot a
   cell, `[1, 2.5]`); a float pushed or prepended into an array no type says
@@ -1082,7 +1082,7 @@ class beside them. What each number is here, and what is refused:
   (`val { class, id } = t`, `localBindDestruct` `.names`) types each binder by
   its field as the constructor form `val Tag(c, i) = t` does (`str_locals`,
   `bool_locals`, `local_types`): a string binder concatenated as a number
-  (`modules/record_field_reserved_word`).
+  (`modules/record/cases/record_field_reserved_word`).
 - **Integers do not wrap** (`emitArith`, `int_chk`): an `i32` `+`/`-`/`*`
   (and a negation, a `+=`) is computed in `i64` and checked back — except a
   type's minimum written as itself (`-2147483648`, `-9223372036854775808l`,
@@ -1106,12 +1106,12 @@ class beside them. What each number is here, and what is refused:
   `?u64` a null test narrowed (`isNarrowedName`) as a `u64`. Division keeps wasm's
   own traps (`/ 0`, `MIN / -1`), where erlang raises too.
 
-Cells (four targets, one `.out`): `modules/float_shortest_text`,
-`modules/float_slot_keeps_f64`, `modules/i64_full_width`, `modules/u64_tuple_slot`,
-`modules/u64_record_field_print`, `modules/optional_u64_to_string`; refused on wasm
-(`.wasm.expect`): `modules/optional_index_arithmetic`, `modules/i64_in_array_slot`,
-`modules/fn_value_float_argument`, `modules/untyped_array_float_push`
-(`modules/generic_field_float` is answered since 164 s2 P3: a float in a generic slot is boxed). `tests/wat.zig` pins the forms erlang spells
+Cells (four targets, one `.out`): `modules/decisions-taken/wasm_prints_std_wasm_text-441/cases/float_shortest_text`,
+`modules/float/cases/float_slot_keeps_f64`, `modules/i64/cases/i64_full_width`, `modules/u64/cases/u64_tuple_slot`,
+`modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/u64_record_field_print`, `modules/optional/cases/optional_u64_to_string`; refused on wasm
+(`.wasm.expect`): `modules/optional/cases/optional_index_arithmetic`, `modules/i64/cases/i64_in_array_slot`,
+`modules/fn/cases/fn_value_float_argument`, `modules/untyped/cases/untyped_array_float_push`
+(`modules/generic/cases/generic_field_float` is answered since 164 s2 P3: a float in a generic slot is boxed). `tests/wat.zig` pins the forms erlang spells
 otherwise or cannot make (`1e+21`, `5e-324`, `Infinity`, `NaN`) and the
 overflow trap as RUN LOGs.
 
@@ -1288,7 +1288,7 @@ against the parent compiler (`browser` host, binary and `.wat` bytes):
 |---|---|---|
 | hello world | 530, 4 444 | byte for byte the same — nothing linked |
 | `@print(1.5)` | 7 303, 76 087 | 7 327 (+24), 76 358 — the check and one `call` per prologue |
-| a `bigint` program (`modules/bigint_arithmetic`) | 13 428, 142 849 | 13 477 (+49), 143 420 |
+| a `bigint` program (`modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_arithmetic`) | 13 428, 142 849 | 13 477 (+49), 143 420 |
 | `seed(42)` then `@print(seededFloat())` | 10 429, 108 232 | 10 489 (+60), 108 808 — the stream is std-wasm's, its state a `.bss` word in std-wasm's data |
 
 A program that links std-wasm's data at all carries the stream's state with it
@@ -1304,7 +1304,7 @@ the binary):
 | `@print(1.5)` | 7 202-byte binary, 75 123-byte `.wat` | 7 303 (+101), 76 075 |
 | text methods (`split` / `join`, `indexOf`, `replaceAll`, `padStart`) | 1 996-byte binary, 20 678-byte `.wat` | 3 542 (+1 546), 36 939 |
 | `@print("straße é".toUpper())` (decision 443) | 708-byte binary, 6 387-byte `.wat` — and it printed `STRAßE é` | 11 899 (+11 191), 243 380 — `STRASSE É`: the case tables are code (`case_tables.zig`), linked only where case is mapped, never std-wasm data |
-| a `bigint` program (`modules/bigint_arithmetic`) | 12 021-byte binary, 124 781-byte `.wat` | 13 428 (+1 407), 142 837 |
+| a `bigint` program (`modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_arithmetic`) | 12 021-byte binary, 124 781-byte `.wat` | 13 428 (+1 407), 142 837 |
 | onze's blog (`examples/blog`, `wasi`): the page refused alike (std `json`, `io/fs`); its 59 modules that build | 2 581 307 bytes of `.wat` | 3 006 854 (+16 %): 30 modules change, e.g. `routing/match` 135 437 → 154 055, `std/encoding` 88 294 → 111 861, `actions/state` 93 319 → 117 079 |
 
 The cost is Zig's code against the hand-written WAT it replaces, and the
@@ -1403,8 +1403,8 @@ array's compare it by `bigint.compare` (`emitValueEq`, `emitTupleEq`, `eqTypeOfS
 element is a pointer (`elemIsPointer`), so `xs.at(i)` / `xs[i]` answer it unboxed, `0` its absence.
 A `?bigint` prints `null` or the digits. Refused, located: a `bigint` in a union
 (`lowerAsUnknown`, "has no `bigint` in a union yet" — erlang, beam and commonJS run it; the checker
-keeps a `bigint` out of `unknown` and out of `is`). `modules/bigint_arithmetic`,
-`modules/bigint_in_containers`, `modules/bigint_to_i64_aborts` and `modules/bigint_division_by_zero` (`.exit`
+keeps a `bigint` out of `unknown` and out of `is`). `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_arithmetic`,
+`modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_in_containers`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_to_i64_aborts` and `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_division_by_zero` (`.exit`
 alone: a trap writes no text) run here on both hosts.
 
 ## String indices count codepoints (decision 240)
@@ -1417,7 +1417,7 @@ reads. `lowerStringMethod`, `lowerIndex`, `lowerStrSlice`, the `.length` of
 `text.at`, `text.indexOf`, `text.lastIndexOf` and `text.slice`, which count
 the bytes that are not `10xxxxxx` continuations; `text.slice` normalises its
 bounds as `slice` does (a negative one from the end, clamped, an end before
-the start is the start), so an open end is the largest i32. `modules/string_index_of_codepoints`:
+the start is the start), so an open end is the largest i32. `modules/decisions-taken/string_index_counts_codepoints-320/cases/string_index_of_codepoints`:
 `"a—bXc".indexOf("X")` is `3` and `.at(3)` is `X` on four targets (it was `5`
 and a broken byte on wasm).
 
@@ -1428,7 +1428,7 @@ and a broken byte on wasm).
 `registerSymbols` / `typeFnValueGlobals` once every signature is known), as a
 written `fn(…) -> string` already did — so `g()` prints the string, `y()` a
 bool. It printed the string's address (`256`) at exit 0
-(`modules/fn_value_bound_by_val`).
+(`modules/fn/cases/fn_value_bound_by_val`).
 
 ## The carrier of a `?T` (`00 · 05-wasm`, 1.0.10-beta)
 
@@ -1493,8 +1493,8 @@ binder is one ELEMENT, so `for (es) { e -> @print(e.key) }` and
 the unique-field guess and prints the field's ADDRESS — `284` for `"abc"`, exit
 0. Two `local_types` registrations, at the two binders.
 
-`modules/optional_record_carrier` pins the whole family on all four targets, and
-`modules/optional_length_method` lost its `.targets` sidecar with it.
+`modules/decisions-taken/shorthand_import_refused-337/cases/optional_record_carrier` pins the whole family on all four targets, and
+`modules/optional/cases/optional_length_method` lost its `.targets` sidecar with it.
 
 **A `case` used as a VALUE is a string in BOTH arm spellings** (`armIsString`).
 A BRACE arm — `case x { 5 { "five" } … }` — parses its body as a parameterless
@@ -1503,12 +1503,12 @@ pointer, so `isStringExpr` said no, `val a = case …` was typed `i32` and
 `@print(a)` wrote the arm's heap address (`256`) at exit 0. The ARROW spelling
 (`5 -> "five";`) was right all along, which is what made the defect
 syntax-dependent. `armIsString` is the only position allowed to look through a
-lambda node, and `modules/case_value_string_arms` pins both spellings on four
+lambda node, and `modules/case/cases/case_value_string_arms` pins both spellings on four
 targets.
 A brace arm with a binder (`_ { n -> "max " + n.toString(); }`) is a lambda node
 with one parameter, and `armIsString` reads its block too (`armLambda`): it
 said no, and `val s = case d.age { 3 { "three"; } _ { n -> … } }` printed the
-string's address. `modules/case_binder_arm_string_value`.
+string's address. `modules/case/cases/case_binder_arm_string_value`.
 
 **A `map`'s element shape is asked with the element bound** (`holdElemParam` /
 `releaseElemParam`, in `elemKindOf`'s `map` arm). The shape of `es.map({ e ->
@@ -1520,8 +1520,8 @@ array, and `ks.at(0)?.length()` read the box as a string pointer (`276`, exit
 **an optional-binding `if` is a string when EITHER arm proves it**
 (`isStringExpr`'s `.if_` arm): `a ?? b` is written as one, its payload arm reads
 a binder nothing typed, and requiring both arms made `["x", "yz"].at(1) ??
-"none"` print the string's address. `modules/map_record_field_strings` and
-`modules/map_record_field_length` pin both.
+"none"` print the string's address. `modules/map/cases/map_record_field_strings` and
+`modules/map/cases/map_record_field_length` pin both.
 
 **A method on the rest of a `?.` chain runs under the chain's guard**
 (`lowerChainedCall`, `00 · 05-wasm` step 9). `?.` short-circuits everything
@@ -1535,22 +1535,22 @@ the receiver's family read off the chain (`chainPayloadKind`: the previous
 guarded link's result, a field's declared type, a string). The whole expression
 is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
 prints `null` or its value. A float result has no box here and keeps the
-unguarded path. `modules/optional_chain_method` pins it. The link written with
+unguarded path. `modules/optional/cases/optional_chain_method` pins it. The link written with
 A field written as an array read through `?.` is an array payload
 (`chainPayloadKind`: `m?.list.join(",")` resolves `join/1`, the payload bound with its
-element shape — `modules/meta_list_method_on_optional`), and `elemKindOf` reads a `o ?? d`'s
+element shape — `modules/meta/cases/meta_list_method_on_optional`), and `elemKindOf` reads a `o ?? d`'s
 elements off the optional's type, an empty `[]` default adding none
-(`(m?.list ?? []).join(",")` joins strings as strings — `modules/meta_list_coalesced_method`).
+(`(m?.list ?? []).join(",")` joins strings as strings — `modules/meta/cases/meta_list_coalesced_method`).
 A lifted lambda keeps the `rewrites`, `instance_lowerings` and `global_renames` of the module
 it is written in (`Lifted.rewrites` / `lowerings` / `renames`, swapped in by `emitPendingFns`): it is
 lowered after its module's declarations, when the emitter holds another module's, and a linked
 component's `5.toString()` or `[1, 2].map(Card)` lost their primitive methods
-(`modules/array_map_component_imported`, `modules/decl_hooks_dynamic_call`).
+(`modules/array/cases/array_map_component_imported`, `modules/decisions-taken/component_value_is_hooks_node-389/cases/decl_hooks_dynamic_call`).
 `?.` itself (`s?.length()`, `find(k)?.contains("x")`, `xs.at(i)?.slice(1, 3)`)
 is lowered the same way (`chainedCallKind`: the plan inference recorded, else
 the family of the receiver's `?T` payload — its type, or a string element's
 `OptInfo`); an absent `s` read a length off address 0
-(`modules/optional_method_absent_receiver`).
+(`modules/decisions-taken/optional_typescript_operators-330/cases/optional_method_absent_receiver`).
 `recv?.m(args)` over a method of a record or an enum the program declares is
 guarded the same way (`lowerOptionalTypedMethod`, `optionalTypedMethod`): the
 receiver once, `0` when absent, else `<Owner>_<method>` called on the payload
@@ -1560,8 +1560,8 @@ an all-unit enum's ordinal has no header to dispatch on), its answer boxed as a
 `optInfoOf` answers; `wasmTypeOf` says `i32`), a method answering an optional
 left as it is. Unguarded, an enum's dispatcher trapped on an absent receiver, a
 record's method read its fields off address 0, and a present `0` read as absent
-(`modules/optional_record_method_absent_receiver`,
-`modules/optional_enum_method_absent_receiver`).
+(`modules/decisions-taken/optional_typescript_operators-330/cases/optional_record_method_absent_receiver`,
+`modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_absent_receiver`).
 
 A `val c: ?T = …` keeps the VALUE's carrier (`opt_locals` from `optInfoOf` of
 the initializer, not only when unannotated): `cs[1]` over an all-unit enum's
@@ -1569,7 +1569,7 @@ array is a box, and read as the bare ordinal `c == Color.Green` answered
 `false`. An optional-binding `if`'s binder is the then-arm's name only
 (`restoreBinderFlags`): every `a ?? b` binds `__bp_nullish`, and a string
 payload left in `str_locals` made the next `??` over an `i32` print as a
-string. `conformance/modules/index_answer_typed_optional`. A binder of another
+string. `conformance/modules/decisions-taken/negative_index_counts_from_end-139/cases/index_answer_typed_optional`. A binder of another
 width than the local its name already holds (`x ?? 0.0` after `n ?? 0` in one
 function) is a local of its own the arm's reads resolve to (`binder_alias`), and
 the `if`'s value type reads the binder's width off the condition
@@ -1582,7 +1582,7 @@ scalar element goes in a box (a present `0` is not absence), a float's or an
 that is itself optional its own carrier (`optInfoOfElemShape`, from the
 receiver's payload shape, `optTupleElemShapeOf`). It loaded from address `0`
 and answered whatever the WASI iovec held (`8`).
-`conformance/modules/tuple_label_through_absent_optional`.
+`conformance/modules/decisions-taken/optional_member_access_needs_safe_call-45/cases/tuple_label_through_absent_optional`.
 
 A record's `?f64` (`?i64`) field holds the `?`'s box — the value's cell, `0`
 absent — and is read as that box, not as the field's number (`fieldCellIn`: an
@@ -1590,14 +1590,14 @@ optional field has no cell of its own to load; the constructor, a field read, a
 destructuring `val`, whose binder is an optional local, and `wasmTypeOf` all ask
 it). Read through the bare name (`fieldTypeIn` drops the `?`), `F(x: null)`
 stored a `0.0` cell and `f.x` loaded the `f64` into `$__print_opt_f64`, which
-validation refused. `conformance/modules/record_optional_float_field`.
+validation refused. `conformance/modules/record/cases/record_optional_float_field`.
 
 A `?Place` over an enum with a payload variant is the variant's tagged cell or
 `0`, and prints through `$__print_opt_tagged` (`optPayloadEnumOf`: a local, a
 field, a call); the integer printer answered the cell's address and `null` as
 `0`. A leading-dot unit variant names its enum's descriptor (`dotIdent`): with
 the enum unnamed it carried descriptor `0` and printed `R(q: )`.
-`conformance/modules/optional_payload_enum_value`.
+`conformance/modules/optional/cases/optional_payload_enum_value`.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
@@ -1607,7 +1607,7 @@ scope and ends it — `emitGenBreak` appends `v` and branches out of the
 `iter` loop's `$__gen{n}` block, or returns a generator fn's array; a bare
 `break` at a generator fn's own level ends it the same way (`emitGenEnd`,
 decision 103); a bare `return` in a generator fn does the same from any arm
-(`conformance/modules/case_arm_return_in_yielding_arm`).
+(`conformance/modules/decisions-taken/lambda_answers_last_expression-541/cases/case_arm_return_in_yielding_arm`).
 
 **A loop's label is read** (front 164 s2c): `wat.zig`'s `loop_stack` holds the
 loops being lowered with their labels (`for :outer (…)`). A labelled loop gets two
@@ -1626,7 +1626,7 @@ closure, so its jumps take the same `br`; `bodyContinues` looks for a `continue`
 variant-tag path, found no variant named `""` and answered `0` for every value.
 Now it is `subj >= low and subj <= high` (`emitRangeBound`), a float bound
 truncated like a `numberLit` pattern's; a string bound has no ordering here and
-answers `0`. `conformance/modules/case_range_value` pins the five points.
+answers `0`. `conformance/modules/case/cases/case_range_value` pins the five points.
 
 **A `case` subject keeps its wasm type** (`lowerCase`). A subject is lowered as
 `wasmTypeOf` says (`i64` for an `i64`, a `u64` and a `u32`; `f64` for a float), its
@@ -1637,7 +1637,7 @@ among several is compared whole. A number pattern against such a subject is `<ty
 + `<ty>.eq`, a range bound `<ty>.ge_s` / `le_s` (`ge_u` / `le_u` for a `u64` subject,
 `u64_subjects`, so a value past `i64`'s top is above the bounds; `ge` / `le` for a float), and
 a binder or an arm's lambda parameter takes the subject local's type (`bindPattern`,
-`lowerArmBody`). `conformance/modules/case_wide_integer_scrutinee`.
+`lowerArmBody`). `conformance/modules/case/cases/case_wide_integer_scrutinee`.
 
 ## The value knows its own declaration (2026-09-21, `13-module-identity` half 3)
 
@@ -1671,7 +1671,7 @@ each `valueShapeOf` its argument). The descriptor stays one per declaration, so
 identity tests are untouched; `$__print_tagged_raw` walks those shapes (`q`) at
 each `G`. `Q(items: [7])` over `Q<T>(items: Array<T>)` printed `Q(items: 308)`,
 and `B(v: o)` over a `?i32` the box's address
-(`conformance/modules/generic_record_prints_its_arguments`). A `?T` field keeps
+(`conformance/modules/generic/cases/generic_record_prints_its_arguments`). A `?T` field keeps
 its declared box shape, a record or enum argument its header. A value built where
 the argument's shape is unknown (a parameter typed `T` of a generic body) reads
 as a word, `i`.
@@ -1686,7 +1686,7 @@ as a word, `i`.
   over an all-unit enum `!E…`, `?string` `?s`); each fell to `i` and printed the
   cell's address (`place: 316`). `@print` of a name or a field DECLARED as such
   an enum (`payloadEnumOfName`, read before `namedShapeOf`) is the tagged
-  printer for the same reason (`modules/imported_enum_field`).
+  printer for the same reason (`modules/imported/cases/imported_enum_field`).
 * `x is T` and a `case` arm naming a type are `subj >= 256 && load(subj - 4) ==
   <descriptor>`, an enum's variants joined by `or` (`lowerIsCall`,
   `emitNamedTypeTest`). The bounds guard is load-bearing: an `i32` that is not a
@@ -1726,7 +1726,7 @@ its operand in the box and asks (`lowerIsCall` → `emitPrimTest`); `if (x is T)
 reads an unboxed alias of `x` inside the branch (`narrowUnknown`); a `case` over
 an `unknown` subject tests a primitive-type arm and binds its payload unboxed
 (`unknown_subjects`, `arm_unbox`) — as a plain identifier it was a binding that
-matched everything (`number 364`, a heap address). `conformance/modules/unknown_by_value`
+matched everything (`number 364`, a heap address). `conformance/modules/unknown/cases/unknown_by_value`
 pins it on four targets.
 A run-time type token (decision 758, `__bp_type_token(T)`) is the address of a static blob
 (`typeTokenAddr`): `[0][n][d0]…` the type's descriptors, or a primitive's test (`[1][lo][hi]` an
@@ -1741,7 +1741,7 @@ primitive or named `is` does — by value, `#(2.0, "a") is #(i32, string)` holds
 An element nothing types (a nested tuple, a function, an `i64` cell) writes arity
 `-1`, and `is` over that box traps. An element of an `unknown[]` walked by
 `map`/`filter`/… is an `unknown` local (`elemTypeRefOf`), not a value to box.
-`conformance/modules/is_truth_table` holds §4.1 × §4.2 on four targets.
+`conformance/modules/is/cases/is_truth_table` holds §4.1 × §4.2 on four targets.
 
 **§7's `Display` half is answered by the module, not the descriptor**
 (`00 · 05-wasm` step 1 F4). `$__print_tagged_raw` first asks `$__display_of(v)`
@@ -1753,7 +1753,7 @@ and a `<Type>_display` method: one `v >= 256 && load(v - 4) == <descriptor>`
 compare per such type, calling the method. It is written after lowering, from
 the interned descriptor addresses, rather than as a table index stored in the
 descriptor — table indices are handed out as lambdas are lifted, so one interned
-during lowering would shift. `conformance/modules/display_print` prints `$5`
+during lowering would shift. `conformance/modules/display/cases/display_print` prints `$5`
 and `[$1, $2]` on all four targets. An enum's methods are not consulted, as on
 commonJS (`js/AGENTS.md` § What a value is).
 
@@ -1770,23 +1770,23 @@ behavior's one declared type. A record recovered from the receiver expression
 is no longer used for a behavior call — `Array<Request>`'s elements were all
 read as the first literal's type. A lambda written against a declared function
 type also types a record parameter (`Lambda.param_rec`), so `out.tag` reads
-`Out`'s slot. `conformance/modules/behavior_method_dispatch_by_value`.
+`Out`'s slot. `conformance/modules/behavior/cases/behavior_method_dispatch_by_value`.
 `exprTail` reads the same first implementer's signature for a call inference
 placed (`.by_value`, or a `.type_` naming no record or enum): a method declared
 with no return pushes nothing, so a function ending in `c.close()` takes no
-`(result i32)` it never fills (`conformance/modules/behavior_method_no_return_by_value`).
+`(result i32)` it never fills (`conformance/modules/behavior/cases/behavior_method_no_return_by_value`).
 A `.by_value` method whose name a function of the module or its imports also
 holds (`r.find(1)` beside std `context`'s `find`, which the scope lowering links)
 dispatches by the value before the function is considered
 (`behaviorMethodShadowsFn`, in `lowerPlainCall` and `resolvedCallSym`): the
 function took the receiver's place and answered `0`.
-`conformance/modules/context_behavior_method_find`.
+`conformance/modules/decisions-taken/inject_rides_context_tree-416/cases/context_behavior_method_find`.
 A `.by_value` call answers what its implementers declare when every one declares the
 same (`byValueRetTypeRef`, read first by `typeRefOf`): the dispatcher calls
 `<Type>_<method>`, so `m.at(k) ?? -1` on an `Index<string, i32>` reads `Registry.at`'s
 `?i32` as the box it is — it read the box's address. And a `slice` dispatched by value
 (`answeredByValue`) is not the string slice the untyped fallback `isStrSlice` takes,
-in `lowerExpr` and `isStringExpr` alike (`conformance/modules/ambient_index_parameter`).
+in `lowerExpr` and `isStringExpr` alike (`conformance/modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter`).
 
 **A `@Result`'s `map` / `flatMap`** inline their closure (`lowerResultOptionOp`).
 A function named as a value (`r.flatMap(half)`, a local holding one) is the
@@ -1797,7 +1797,7 @@ was read as a word and printed the cell's address — and a `flatMap` answers it
 closure's tail's shape. Inside the body the parameter carries the payload's type
 (`local_typerefs`), so a primitive method on it (`{ n -> n.toString() }`) finds its
 family where inference recorded no lowering (`primKindAt`).
-`conformance/modules/result_i64_map_flat_map`.
+`conformance/modules/result/cases/result_i64_map_flat_map`.
 
 **Every header read is guarded against a value below the heap floor**
 (`emitHeaderLoad`): wasm's `i32.and` does not short-circuit, so `x is T` and a
@@ -1807,7 +1807,7 @@ arm whose name is BOTH a record of the module and some enum's variant
 (`type Block(…)` beside `Token.Layout { Block, … }`) tests both — the record's
 header, `or` the variant's identity (`emitVariantIdentityTest`: an all-unit
 ordinal, or a payload variant's descriptor, never a load of a record's first
-field as a tag); `conformance/modules/case_arm_record_named_like_a_variant`.
+field as a tag); `conformance/modules/case/cases/case_arm_record_named_like_a_variant`.
 
 **An all-unit enum's value prints by name** (`unitEnumOf`,
 `unitEnumShape`): its value is the ordinal, with no header, so the print shape
@@ -1817,7 +1817,7 @@ field, a call and an `if` value typed by the enum take it, as do an array, a
 tuple and a record field of one (`typeRefShape`). `?Color` is a BOX like
 `?i32` (`optInfoOfTypeRef`): unboxed, a present `Color.Red` (ordinal `0`) was
 absent. A literal trapped and a name printed the ordinal
-(`conformance/modules/unit_enum_print_by_name`).
+(`conformance/modules/unit/cases/unit_enum_print_by_name`).
 
 **A `case` reads a bare or dot-shorthand arm in its subject's enum**
 (`enumOfSubject` → `subject_enums` → `case_enum_hint`, read by
@@ -1825,25 +1825,25 @@ absent. A literal trapped and a name printed the ordinal
 section written as a path (`Token.Layout.Break` → `__Token__Layout__Break`).
 Set for the WHOLE subject only — a payload's own pattern keeps the
 program-wide lookup. One flat table answered the first enum declaring the name
-(`modules/variant_leading_dot_two_enums_case`,
-`modules/enum_section_leaf_beside_variant`).
+(`modules/variant/cases/variant_leading_dot_two_enums_case`,
+`modules/enum/cases/enum_section_leaf_beside_variant`).
 
 **A multi-subject `case a, n { … }`** lowers each subject once, into
 `<subject local>_<i>` (`multiSubjectLocal`); a `.multi` arm tests and binds
 each pattern against its own subject, a primitive type over an `unknown`
 subject by its box. It tested nothing, and the first arm answered every call
-(`modules/case_multi_subject_patterns`).
+(`modules/decisions-taken/multi_subject_bare_name_refused-602/cases/case_multi_subject_patterns`).
 
 **A record's constructor pattern** (`val assert Person(n, a) = p catch …`)
 tests the value's header (`recordPatternType`, `emitNamedTypeTest`) and binds
 each name from the field it stands at, by label when one is written
 (`recordPatternField`, `recordFieldAccess` — the ordinary field read, a boxed
 float included). It tested and bound nothing
-(`modules/val_assert_record_pattern`). Each binder carries the field's whole
+(`modules/val/cases/val_assert_record_pattern`). Each binder carries the field's whole
 declared type (`noteFieldBinder` → `noteTypedBinder`, as a parameter does), so
 `Dog(age: a)` over `age: ?i32` is a `?i32` and `"${a ?? 0}"` unboxes it — read
 as a plain word it printed the box's address
-(`modules/case_record_labelled_fields`).
+(`modules/case/cases/case_record_labelled_fields`).
 
 **A generic call answers its argument's shape** (`generic_result_arg`,
 `genericResultArg`): `fn ident<T>(x: T) -> T` has one body, so `ident("a")`
@@ -1852,20 +1852,20 @@ asks the argument. `o.unwrapOr(d)` answers the payload's shape — an
 `@Result`'s declared payload, the optional's own, else a container default's
 (an empty `[]` says nothing) — so `r.unwrapOr([])` over an `@Result<Array<#(
 string, string)>, …>` and `rows.at(1).unwrapOr(#("", ""))._1` print their
-strings, not addresses (`modules/std_querystring_on_every_target`). A string
-printed as its address (`modules/generic_call_result_shape`); a string, a bool
+strings, not addresses (`modules/std/cases/std_querystring_on_every_target`). A string
+printed as its address (`modules/generic/cases/generic_call_result_shape`); a string, a bool
 or a float bound to a type parameter calls a specialisation (above).
 
 **A function named as an array method's argument** (`xs.map(inc)`, an imported
 fn, a local holding one) is inlined as the lambda `{ p -> inc(p) }`
 (`hofLambdaAt`), the arity the method hands it. It trapped (`map needs a literal
-lambda`; `modules/hof_named_function`).
+lambda`; `modules/hof/cases/hof_named_function`).
 
 **A value `if` has its own type** (`ifValueType`, `emitBranchValue`): an arm
 yielding a float makes it an `f64` wherever it stands, each arm converted to
 it. It took the enclosing function's result type, so an `f64` `if` in a
 function answering nothing was `(if (result i32)` around two `f64`s — the
-module refused (`modules/if_value_float`; `testing.asserts.approxEquals` binds
+module refused (`modules/if/cases/if_value_float`; `testing.asserts.approxEquals` binds
 one). With no float arm it is the first arm's integer type, not the function's:
 `val d = if (c < 58) c - 48 else c - 87` in a function answering `f64` was
 `(if (result f64)` around two `i32`s (`tests/wat.zig` `an integer
@@ -1880,7 +1880,7 @@ Three pattern shapes had no wasm test, and two of them answered at exit 0:
 | a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float is read from its slot's cell); `..` skips the rest |
 | a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to std-wasm's `array.slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
 | `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
-| `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`modules/case_record_field_null`) |
+| `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`modules/case/cases/case_record_field_null`) |
 
 The subject local carries what the patterns read (`noteSubjectShape`, in
 `lowerCase` and `lowerAssertPattern`): a tuple's or an array's print shape,
@@ -1898,7 +1898,7 @@ re-run with prints, answering erlang's values).
 value written `Maybe<#(i32, i32)>` records the subject's written type, and a
 variant pattern's nested pattern (`.Some(#(a, b))`) is bound from a payload read
 as the argument (`#(i32, i32)`) instead of the bare `T`, so a tuple pattern finds
-its element types (`conformance/modules/case_generic_variant_tuple_payload`; it
+its element types (`conformance/modules/case/cases/case_generic_variant_tuple_payload`; it
 was refused as "does not know the element types of this tuple pattern's
 subject").
 
@@ -1924,7 +1924,7 @@ What is typed, and where:
 | a generic enum constructor written where its value is an `unknown` (`val s: unknown = Maybe.Some(value: "abc")`, an `unknown` argument, a return) | `ctor_box = .all`: `lowerEnumCtor` boxes every payload declared as one of the enum's type parameters (`lowerAsUnknown`, by the argument's static type) — `boxesInto` / `isGenericEnumCtor` |
 | the same constructor where a `Name<…>` with an `unknown` / union argument is expected (`innerSize(Maybe.Some(value: "abc"))` over `Maybe<i32 \| string>`) | `ctor_box = .args`: only the parameters whose argument is an `unknown` / union are boxed (`ctorUnionArgs`, `ctorBoxes`) |
 | `bindPayloadName` | a payload declared as a type parameter is typed by `tparamArgOf`: the matching argument of the subject's recorded `Name<…>` type (`lowerCase` records the subject's `typeRefOf` for its `__case_<n>` local), else the `unknown` of an `unknown` subject; a binder of an `unknown` / union is an `unknown` (`local_typerefs`), of a plain type an ordinary typed binder |
-| `case` / `if` in an `unknown` slot (`return case m { … }` in a fn answering `i32 \| string`; `val v = if (c) 2 else "two"`) | the value of each arm goes in on its own: `pending_case_box` → `case_box` read by `lowerArmBody`, and `lowerBoxedIf` with `force` for an `if`. Each arm is boxed by the checker's type of that arm when the checker typed the `case` / `if` a union (`InstanceLowering.union_value` at its loc, decision 150 — `unionValueOf`, `unionArmTypes`; `pending_case_arms` → `case_arm_types` → `arm_box_as` → `box_as`, which `lowerAsUnknown` reads before the value's own shape), else by the one type the whole `case` / `if` is boxed as: a block arm's tail a local nothing annotates (`Circle(r) { val d = r * 2; d; }`) is boxed by it, where it was refused ("nothing gives it a static type here"). An unannotated `val` bound to such a `case` / `if` is a local typed by the recorded union (`local_typerefs`), its value boxed arm by arm — whatever the arms' shape (values, blocks, lambda arms), over an `unknown` subject, in a state machine; before the record, a probe re-derived the arms' members in the backend and missed every shape but plain values, and `case v { i32 {…} string {…} }` read a string's address as a number at exit 0 (`conformance/modules/case_value_union_binding`, `conformance/modules/case_if_union_value_shapes`) |
+| `case` / `if` in an `unknown` slot (`return case m { … }` in a fn answering `i32 \| string`; `val v = if (c) 2 else "two"`) | the value of each arm goes in on its own: `pending_case_box` → `case_box` read by `lowerArmBody`, and `lowerBoxedIf` with `force` for an `if`. Each arm is boxed by the checker's type of that arm when the checker typed the `case` / `if` a union (`InstanceLowering.union_value` at its loc, decision 150 — `unionValueOf`, `unionArmTypes`; `pending_case_arms` → `case_arm_types` → `arm_box_as` → `box_as`, which `lowerAsUnknown` reads before the value's own shape), else by the one type the whole `case` / `if` is boxed as: a block arm's tail a local nothing annotates (`Circle(r) { val d = r * 2; d; }`) is boxed by it, where it was refused ("nothing gives it a static type here"). An unannotated `val` bound to such a `case` / `if` is a local typed by the recorded union (`local_typerefs`), its value boxed arm by arm — whatever the arms' shape (values, blocks, lambda arms), over an `unknown` subject, in a state machine; before the record, a probe re-derived the arms' members in the backend and missed every shape but plain values, and `case v { i32 {…} string {…} }` read a string's address as a number at exit 0 (`conformance/modules/case/cases/case_value_union_binding`, `conformance/modules/decisions-taken/mixed_literals_infer_union-150/cases/case_if_union_value_shapes`) |
 | `case x { Pat when (v is T) { … v … } }` | `emitGuardChain` narrows `v` in the arm body as `if (v is T)` does in its block (`narrowUnknown`) |
 
 A typed generic value that flows into an `unknown` without being a constructor
@@ -1936,7 +1936,7 @@ is re-decided on every `case` (`__case_<n>` names repeat across functions; a
 stale entry read a later `case n { i32 { m -> … } }` as a test of an `unknown`).
 Fixtures: `tests/wat.zig`'s `a type parameter's slot matched out of an
 unknown is an unknown` and `a field read on a guard-narrowed type parameter's
-slot`; the cell `conformance/modules/unknown_generic_payload`.
+slot`; the cell `conformance/modules/unknown/cases/unknown_generic_payload`.
 
 ## A re-binding is a local of its own (decisions 152, 205)
 
@@ -1979,7 +1979,7 @@ program no longer reaches them.
 function of its own). An inlined HOF body's `val k` and its parameter `e`
 over an enclosing `k` / `e` take the same `bindTarget` local and are undone at
 the body's end, so the enclosing names keep their values;
-`conformance/modules/lambda_binds_name_of_enclosing_fn` (02-erlang's cell)
+`conformance/modules/decisions-taken/shadowing_in_inner_blocks_refused-205/cases/lambda_binds_name_of_enclosing_fn` (02-erlang's cell)
 pins it on four targets. A lifted lambda (`{ e -> e * 2 }` as a value) is a
 function of its own already.
 
@@ -2076,12 +2076,12 @@ record a tested arm names when the arm names one (`arm_record`, set by
 `emitArmChain`, read and cleared by `lowerArmBody` so a nested `case` binds its
 own), else the subject's type: over a `DogB | CatB` union it took the subject's,
 which a union has none of, and `d.name` printed an address
-(`modules/case_record_union_binder`). A block `{ … }` (decision 525; `@block`
+(`modules/case/cases/case_record_union_binder`). A block `{ … }` (decision 525; `@block`
 is removed) is a `case true { _ { … } }` (`ast.CollectionExpr.case.isBlock`),
 lowered as any `case`; `exprYields` / `exprHasYield` read its body in place, and
 the `case` string classifier skips an arm whose block ends in a `return` /
 `throw` (`bodyTail(…) == .terminated`), so a block whose tail is a `case` with a
-returning arm concatenates as a string (`modules/block_return_leaves_function`).
+returning arm concatenates as a string (`modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_return_leaves_function`).
 
 `blockReturnValue` reads an `async { … }` block's first returned value (its
 tail is the block's `return`, decision 525) for `asyncBlockValue`, the shape the
@@ -2133,7 +2133,7 @@ answered, and each was a red wasm cell of `conformance`:
   of `Shape.label` had a type variable for a receiver and no lowering —
   `unresolved call: toString/0`, a trap in `Sq_label`. `Sq_twice -> i32` says
   it is an integer; the fallback answers only a primitive whose table has the
-  method (`modules/behavior_default_adopted_by_two_types`, 02-erlang's cell).
+  method (`modules/behavior/cases/behavior_default_adopted_by_two_types`, 02-erlang's cell).
 - **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
   `methodsWithDefaults`): each one the type does not write is emitted as its own
   `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over
@@ -2170,9 +2170,9 @@ answered, and each was a red wasm cell of `conformance`:
   module the item names `<namespace>.<fn>`, and the call becomes the plain
   mangled one, its receiver dropped. That call dropped the receiver and
   called the bare name — `url.parse(…).host` read `querystring`'s array and
-  printed `0` at exit 0 (`modules/std_namespace_calls_same_name`). Before, the first declaration
+  printed `0` at exit 0 (`modules/std/cases/std_namespace_calls_same_name`). Before, the first declaration
   won and `import {parse as parse2} from "two"` answered `one`'s `parse`
-  (`modules/linked_fn_name_collision`, `modules/namespace_import_module`). A
+  (`modules/linked/cases/linked_fn_name_collision`, `modules/decisions-taken/shorthand_import_refused-337/cases/namespace_import_module`). A
   module-level `val` / `var` two modules declare is mangled the same way
   (`link_mangled_vals`), but its reads are not rewritten in the AST — a
   parameter or a local of the same name must still shadow it. They resolve
@@ -2182,7 +2182,7 @@ answered, and each was a red wasm cell of `conformance`:
   answers the mangled global for a name no local holds — so every shape
   predicate and every `global.get` / `global.set` reads the module's own. It
   read the first declaration's value at exit 0
-  (`modules/linked_val_name_collision`). A `type` (record or enum), a
+  (`modules/linked/cases/linked_val_name_collision`). A `type` (record or enum), a
   `behavior`, an `implement` and an `extend` block two modules declare are
   mangled the same way (`link_mangled_types`, `linkTypeRenames`,
   `renameLinkedTypes`): the later declaration is registered as
@@ -2195,8 +2195,8 @@ answered, and each was a red wasm cell of `conformance`:
   prints under is the bare name again (`displayTypeName`). Before, such a
   declaration was DROPPED at link time: two packages each declaring `type
   Response` linked the first one's layout into both and `ok().html` printed
-  `0` at exit 0 (`modules/import_same_name_from_two_packages`,
-  `modules/import_same_enum_name_from_two_packages`). A plain call of a
+  `0` at exit 0 (`modules/import/cases/import_same_name_from_two_packages`,
+  `modules/import/cases/import_same_enum_name_from_two_packages`). A plain call of a
   function declared to answer an enum is a variant to the print path
   (`enumReturnedBy`, `namedShapeOf`, `isTaggedValue`): `@print(stop())` over
   a linked module's `fn stop() -> Signal` printed the value's address.
@@ -2254,7 +2254,7 @@ each fixed where the shape is decided:
 | `[[1], [2]].reverse()`, `bs.filter(…)` | the rows' addresses | `[[2], [1]]` | `printShapeOf` reads a `keepsElements` method's receiver |
 | `var names: string[] = []; names.push("a")`, `var rows: i32[][] = []` | `[256]`, `[280]` | `["a"]`, `[[1]]` | `noteAnnotatedArray`: a written array type decides a local's shape, element kind and record over what the initialiser suggested — `[]` says nothing. It moved std's `Dict.display` (`var parts: string[] = []` … `parts.join(", ")`) from `$__arr_join_i32` to `_str`: three `std_package_*` wasm snapshots' text, no RUN LOG |
 | `xs.map({ x -> x > 1 })` | `[0, 1]` | `[false, true]` | `newArrShape`'s `map` arm |
-| `[3, "abcd"]`, `val ys: (i32 \| string)[] = [2, "b", 3]`, `xs[1]`, `xs.at(7)`, `for (xs) { x -> size(x) }` | `[3, 256]`, a trap in `$__print_unknown_raw` | `[3, "abcd"]`, `abcd`, `null`, `7` | decision 150: an array literal whose elements disagree (`unionArrayLitTypeRef`, numbers alone widen instead) or that stands where a union array is written (`expected_union_array`: a `val`'s annotation, a parameter, the return) holds each element in `lowerAsUnknown`'s box; its shape is `[U`, which `$__print_shaped_raw` prints by the box (`print_shaped_unknown`, a marker group as `bigint` is); an element read (`xs[i]`, `at`, `first`, `last`, `pop`) is the union's box, `0` absent (`elemIsPointer`). `conformance/modules/array_literal_union_elements` |
+| `[3, "abcd"]`, `val ys: (i32 \| string)[] = [2, "b", 3]`, `xs[1]`, `xs.at(7)`, `for (xs) { x -> size(x) }` | `[3, 256]`, a trap in `$__print_unknown_raw` | `[3, "abcd"]`, `abcd`, `null`, `7` | decision 150: an array literal whose elements disagree (`unionArrayLitTypeRef`, numbers alone widen instead) or that stands where a union array is written (`expected_union_array`: a `val`'s annotation, a parameter, the return) holds each element in `lowerAsUnknown`'s box; its shape is `[U`, which `$__print_shaped_raw` prints by the box (`print_shaped_unknown`, a marker group as `bigint` is); an element read (`xs[i]`, `at`, `first`, `last`, `pop`) is the union's box, `0` absent (`elemIsPointer`). `conformance/modules/decisions-taken/mixed_literals_infer_union-150/cases/array_literal_union_elements` |
 
 `snapshots/codegen/wasm/index_a_nested_index_a_slice_s_length_and_a_tuple_element`
 recorded `304` and `376` for `rows[1]` and `ps[1]`; it records `[3, 4]` and
@@ -2273,7 +2273,7 @@ OLD `n` in both — and `br $__tail` restarts the body, which `emitFn` wraps in
 function's text moves. Only the explicit `return f(…)` spelling is recognised
 (reached through `if` arms and loop bodies, never through a lambda); a method, a
 lifted lambda, a destructured parameter and an accumulating (generator) body
-keep `call`. `conformance/modules/tail_self_call` pins it on four targets.
+keep `call`. `conformance/modules/tail/cases/tail_self_call` pins it on four targets.
 
 ## Structural equality (decision 210)
 
@@ -2321,7 +2321,7 @@ optional's box, `.cell`), written only when called: both NaN (`x != x`, which
 canonicalises every NaN payload) `or` the same bits (`i64.reinterpret_f64`,
 then `eq`). There is no `f32` anywhere: a declared `f32` is held as the `f64`
 it is on commonJS. `<`, `>`, `<=`, `>=`
-keep the IEEE `f64.lt` family. `conformance/modules/f64_equality_total_order`
+keep the IEEE `f64.lt` family. `conformance/modules/decisions-taken/f64_equality_total_order-214/cases/f64_equality_total_order`
 pins the zeros on four targets; the NaN half is `tests/wat.zig`'s `f64 ---- NaN
 equals NaN under ==` RUN LOG, since erlang and beam never produce a NaN. No hash is
 computed at construction, nothing is interned, and there is no global table.
@@ -2334,7 +2334,7 @@ copy with `T` written as the composite (`eqBindParam`, `specializeFor`): the
 copy's `a == b` is `call $__eq_<T>`. `same(Person(…), Person(…))` is
 `same__T_Person`, `same(#(1, "a"), …)` `same__T_Tuple2_i32_string`. What stays is
 the **What stays** limit above (§ Where this backend refuses to answer): a call nothing specialises keeps the one body and
-compares words. `conformance/modules/record_structural_equality`.
+compares words. `conformance/modules/decisions-taken/equality_is_structural-210/cases/record_structural_equality`.
 
 ## Rules
 

@@ -9,6 +9,6 @@ no parameter, and the one-line rule covers it like any other: `{ -> 3 + 4 }`. Th
 closing `) -> string {` on its own line — the trailing comma being what the formatter reads to keep that shape (166,
 345). Run, it prints `2`, `4`, `7` and `pen x3 = 450`.
 
-Cells that also bear on it: `modules/format_annotation_trailing_comma`, `modules/print_formatter`.
+Cells that also bear on it: `modules/decisions-taken/bare_variant_expression_refused-587/cases/format_annotation_trailing_comma`, `modules/print/cases/print_formatter`.
 
 [draft/main.bp](draft/main.bp)

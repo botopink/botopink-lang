@@ -1,0 +1,22 @@
+# Decision 319 — `i64` is a real 64-bit integer on every target.
+
+[cases/i64_dict_key_across_safe_edge/src/main.bp](cases/i64_dict_key_across_safe_edge/src/main.bp)
+[cases/i64_full_range/src/main.bp](cases/i64_full_range/src/main.bp)
+[cases/i64_number_methods_past_js_safe/src/main.bp](cases/i64_number_methods_past_js_safe/src/main.bp)
+[cases/int_overflow_add_u64_max/src/main.bp](cases/int_overflow_add_u64_max/src/main.bp)
+[cases/int_overflow_mul_i64/src/main.bp](cases/int_overflow_mul_i64/src/main.bp)
+[cases/int_overflow_sub_i64_min/src/main.bp](cases/int_overflow_sub_i64_min/src/main.bp)
+[cases/integer_conversion_to_f64_inexact_aborts/src/main.bp](cases/integer_conversion_to_f64_inexact_aborts/src/main.bp)
+[cases/integer_conversion_to_i32_aborts/src/main.bp](cases/integer_conversion_to_i32_aborts/src/main.bp)
+[cases/integer_conversion_u64_to_i64_aborts/src/main.bp](cases/integer_conversion_u64_to_i64_aborts/src/main.bp)
+[cases/integer_conversions_exact/src/main.bp](cases/integer_conversions_exact/src/main.bp)
+[cases/integer_literal_below_minimum/src/main.bp](cases/integer_literal_below_minimum/src/main.bp)
+[cases/integer_literal_type_minimum/src/main.bp](cases/integer_literal_type_minimum/src/main.bp)
+[cases/integer_literal_unsuffixed_default_out_of_range/src/main.bp](cases/integer_literal_unsuffixed_default_out_of_range/src/main.bp)
+[cases/integer_literal_unsuffixed_out_of_range/src/main.bp](cases/integer_literal_unsuffixed_out_of_range/src/main.bp)
+[cases/std_io_i64_canonical/src/main.bp](cases/std_io_i64_canonical/src/main.bp)
+[cases/string_parse_int_i64_range/src/main.bp](cases/string_parse_int_i64_range/src/main.bp)
+[cases/u64_record_field_print/src/main.bp](cases/u64_record_field_print/src/main.bp)
+[cases/wide_literal_past_js_safe_integer/src/main.bp](cases/wide_literal_past_js_safe_integer/src/main.bp)
+
+Proved also by [async_retry_policy](../task_result_rejects_with_error-432/cases/async_retry_policy/src/main.bp)
