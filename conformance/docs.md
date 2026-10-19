@@ -1723,6 +1723,11 @@ namespace.
 
 <!-- example: modules/nullish_beside_logical -->
 
+A value of `T` is a value of `?T` for every `T`, a function type included: a
+field typed `?fn(string) -> string` takes a named function as it stands.
+
+<!-- example: modules/optional_function_field_from_fn_value -->
+
 A `?.` makes the rest of its chain conditional: at the first absent link the whole
 chain is absent, and a member or a method after the link runs only on a present
 value — along record fields, and for a primitive's, a record's or an enum's method:
