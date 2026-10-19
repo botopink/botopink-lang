@@ -1020,12 +1020,14 @@ const moduleOutput = @import("../codegen/moduleOutput.zig");
 
 /// The fields of `GenerateResult` CODE never stores: a failure (a unit is
 /// stored only when every module of its entry emitted), the warnings (the
-/// analysis carries them, `OkData.warnings`), a run's output and a test unit
+/// analysis carries them, `OkData.warnings`), the build's output (as
+/// `OkData.build_output`, decision 788 (3)), a run's output and a test unit
 /// (a dependency has none, and a test unit is never cached — decision 513 (3)).
 pub const code_skips = [_]Skip{
     .{ .T = moduleOutput.GenerateResult, .field = "diagnostic" },
     .{ .T = moduleOutput.GenerateResult, .field = "comptime_err" },
     .{ .T = moduleOutput.GenerateResult, .field = "warnings" },
+    .{ .T = moduleOutput.GenerateResult, .field = "build_output" },
     .{ .T = moduleOutput.GenerateResult, .field = "run_output" },
     .{ .T = moduleOutput.GenerateResult, .field = "test_unit" },
 };

@@ -632,7 +632,9 @@ fn emitProgramOptsX(
             // Test blocks are the test unit's (`emitTestUnit`, decision 513).
             .@"test" => |t| try tests.append(alloc, t),
             // Decision 579 — a builtin value lowers to nothing: the compiler gives it.
-            .builtinVal => {},
+            // Decision 788 — a top-level `comptime` block was read onto its
+            // decorator by the parser (`parser/comptime_blocks.zig`).
+            .builtinVal, .comptimeBlock => {},
             .comment => |c| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
                 .style = if (c.is_doc) .doc else if (c.is_module) .module else .line,
                 .text = c.text,

@@ -2211,7 +2211,9 @@ fn emitBeamAsm(
                 }
             },
             // Decision 579 — a builtin value lowers to nothing: the compiler gives it.
-            .builtinVal => {},
+            // Decision 788 — a top-level `comptime` block was read onto its
+            // decorator by the parser (`parser/comptime_blocks.zig`).
+            .builtinVal, .comptimeBlock => {},
             .comment => |c| try beamEmitter.writeSourceComment(em.out, .{
                 .level = if (c.is_module) .module else if (c.is_doc) .doc else .line,
                 .text = c.text,

@@ -3711,6 +3711,21 @@ pub const BuiltinValDecl = struct {
     }
 };
 
+/// Decision 788 — a top-level `comptime { … }`: a build body of the module,
+/// run once per build in the order written. `Parser.parse` reads it onto a
+/// decorator over an anchor (`parser/comptime_blocks.zig`), so only the
+/// formatter (`Parser.keep_surface`) sees this node.
+pub const ComptimeBlockDecl = struct {
+    /// Where `comptime` is written.
+    loc: Loc = .{ .line = 0, .col = 0 },
+    body: []Stmt,
+
+    pub fn deinit(this: *ComptimeBlockDecl, allocator: std.mem.Allocator) void {
+        for (this.body) |*s| s.deinit(allocator);
+        allocator.free(this.body);
+    }
+};
+
 pub const DeclKind = union(enum) {
     type_: TypeDecl,
     /// `[pub] type Name<T> = Target;` — see `TypeAliasDecl`.
@@ -3725,6 +3740,8 @@ pub const DeclKind = union(enum) {
     /// Decision 579 — `#[builtin] pub default declare val <name>: <Type>;`.
     builtinVal: BuiltinValDecl,
     @"test": TestDecl,
+    /// Decision 788 — `comptime { … }` at module level (`ComptimeBlockDecl`).
+    comptimeBlock: ComptimeBlockDecl,
     /// A standalone comment at the top level (not attached to any declaration).
     /// `text` is the comment content without the `//` / `///` / `////` prefix.
     /// `is_module` is true for `////` module-level comments.
@@ -3773,6 +3790,7 @@ pub const DeclKind = union(enum) {
             .val => |*v| v.deinit(allocator),
             .builtinVal => |*v| v.deinit(allocator),
             .@"test" => |*t| t.deinit(allocator),
+            .comptimeBlock => |*c| c.deinit(allocator),
             .mod => {},
             .comment => {},
         }

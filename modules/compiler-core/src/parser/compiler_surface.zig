@@ -26,6 +26,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const diagnostics = @import("../comptime/diagnostics.zig");
 const memberFn = @import("../comptime/member_fn.zig");
+const comptime_blocks = @import("comptime_blocks.zig");
 
 /// The builtin a refusal of this pass is written as: `@<name>("<code>",
 /// "<message>", "<hint>")`. No source can spell it (`@` takes a name).
@@ -212,7 +213,7 @@ threadlocal var compiler_name: ?[]const u8 = null;
 
 /// The local name of `import {compiler} from "std";` / `import {compiler};`
 /// (a std module's), or null when the module does not import it.
-fn boundCompilerName(program: ast.Program) ?[]const u8 {
+pub fn boundCompilerName(program: ast.Program) ?[]const u8 {
     for (program.decls) |d| if (d == .use) {
         const u = d.use;
         const fromStd = switch (u.source) {
@@ -474,6 +475,12 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     const args = c.args;
     if (member.kind == .output) {
         const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) { compiler.setMeta(…); }` (decision 575 (3)).");
+        // Decision 788 — a top-level `comptime { … }` has no annotated
+        // declaration (its handle is the anchor `parser/comptime_blocks.zig`
+        // gives it): it registers `compiler.init` and writes to no
+        // declaration.
+        if (std.mem.eql(u8, d, comptime_blocks.handle_name) and !std.mem.eql(u8, name, "init"))
+            return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and a top-level `comptime` block has none", .{name}), "A top-level `comptime { … }` declares nothing outside itself (decision 788): write the output in a decorator — a function whose first parameter is `syntax` (decision 575 (3)).");
         // Decision 615 — `compiler.init(f)` is the handle's executor output,
         // `decl.compile(f)` to the machinery (`member_fn.compile_name`).
         const handleName = if (std.mem.eql(u8, name, "init")) "compile" else name;

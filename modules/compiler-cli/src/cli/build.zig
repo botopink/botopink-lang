@@ -136,6 +136,11 @@ pub fn run(
     // type-check or pass comptime validation carries its diagnostic instead of
     // an artifact, rendered here.
     diagnostics.renderWarnings(gpa, io, arena, outputs.items);
+    // Decision 788 (3) — what the build bodies printed is the build's output,
+    // on stdout, module by module in build order; the CLI's own messages stay
+    // on stderr. A cell check's in-process build (`reporter.sink` set) keeps
+    // it out of its own output.
+    if (reporter.sink == null) for (outputs.items) |o| if (o.result.build_output.len > 0) reporter.stdout(io, o.result.build_output);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Write what compiled; remove any previous artifact of a module that did not,

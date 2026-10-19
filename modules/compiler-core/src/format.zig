@@ -2299,13 +2299,13 @@ pub const Formatter = struct {
                 .val => |v| v.docComment,
                 .@"test" => |v| v.docComment,
                 .mod => |v| v.docComment,
-                .builtinVal, .comment => null,
+                .builtinVal, .comptimeBlock, .comment => null,
             };
             const prefix = try this.fmtDocPrefix(docComment);
             // Add semicolon after declarations that don't have a body
             const needsSemi = switch (d) {
                 .@"fn" => false,
-                .@"test" => false,
+                .@"test", .comptimeBlock => false,
                 .val, .builtinVal => true,
                 // 1.0.3 declarations end with `)` or `}` and take no `;`.
                 .type_ => false,
@@ -2391,6 +2391,8 @@ pub const Formatter = struct {
             .val => |v| this.fmtValDecl(v),
             .builtinVal => |v| this.fmtBuiltinValDecl(v),
             .@"test" => |t| this.fmtTestDecl(t),
+            // Decision 788 — `comptime { … }` at module level.
+            .comptimeBlock => |c| this.concatAll(&.{ try this.text("comptime "), try this.fmtBody(c.body) }),
             // `[pub] [default] mod Name;`. `default` names the package handle
             // that `import <pkg>` resolves to (`comptime.zig`'s package-default
             // DSL); dropping it silently unbinds every consumer of a package

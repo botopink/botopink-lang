@@ -179,6 +179,11 @@ pub const ComptimeOutput = struct {
         /// Decision 57 — the warnings inference recorded for this module
         /// (`Env.warnings`), each located, none of them failing the module.
         warnings: []const TypeError = &.{},
+        /// Decision 788 (3) — what this module's build bodies printed
+        /// (`Env.buildOutput`): the build's output, which `botopink build`
+        /// and `run` write to stdout. Kept in the analysis entry, so a build
+        /// served from the code cache prints it as the build that ran it did.
+        build_output: []const u8 = "",
         /// Decision 375 — this module's top-level functions whose hooks node
         /// is synchronous (`Env.syncFns`): commonJS emits one answering
         /// `@Component<R>` as a plain `function`, its typedef the value.
@@ -1574,6 +1579,7 @@ fn withNested(arena: std.mem.Allocator, assoc: []const []const u8, t: ast.TypeDe
 /// runtime traces over, ahead of any pass-2 (template) evaluations.
 fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
     try pass_two.comptimeTraces.insertSlice(pass_two.arena, 0, pass_one.comptimeTraces.items);
+    try pass_two.buildOutput.insertSlice(pass_two.arena, 0, pass_one.buildOutput.items);
 }
 
 /// Pass-2 of decorator `@emit` expansion: re-infer on the merged program
@@ -4633,6 +4639,7 @@ pub fn compileTypesOnly(
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
+                        .build_output = succ.env.buildOutput.items,
                         .template_expansions = succ.env.templateExpansions.count(),
                         .warnings = succ.env.warnings.items,
                         .sync_fns = succ.env.syncFns,
@@ -4971,6 +4978,7 @@ fn compileOnce(
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
+                        .build_output = succ.env.buildOutput.items,
                         .template_expansions = succ.env.templateExpansions.count(),
                         .warnings = succ.env.warnings.items,
                         .sync_fns = succ.env.syncFns,

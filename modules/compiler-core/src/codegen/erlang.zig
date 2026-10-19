@@ -1745,6 +1745,35 @@ const tagged_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_tagged", .c
     }),
 }} } };
 
+/// Decision 788 (3) — `'__bp_print'/1` in a comptime module: a line a build
+/// body prints is the build's output, kept in the process dictionary
+/// (`'__bp_printed'`, newest first) for the evaluator's reply
+/// (`comptime/decorator_eval.zig`), never on the compiler's stdout.
+pub const printed_key = "__bp_printed";
+const comptime_print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .clauses = &.{.{
+    .patterns = &.{Ast.Expr.v("Values")},
+    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.r(
+        \\Line = unicode:characters_to_binary([lists:join(" ", ['__bp_show'(V, true) || V <- Values]), $\n]),
+        \\    Printed = case erlang:get('__bp_printed') of
+        \\        undefined -> [];
+        \\        P -> P
+        \\    end,
+        \\    erlang:put('__bp_printed', [Line | Printed]),
+        \\    ok
+    ) }}),
+    .layout = .inline_,
+}} } };
+
+/// Decision 788 (3) — `'__bp_tagged'/2` in a comptime module: a body that
+/// runs at build prints through `'__bp_show'/2` as the program does, but the
+/// comptime runtime loads no module by name (`code:ensure_loaded/1`), and its
+/// records are untagged maps, so a tagged tuple keeps the `~p` form.
+const comptime_tagged_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_tagged", .clauses = &.{.{
+    .patterns = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
+    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+    .layout = .inline_,
+}} } };
+
 /// Decision 532 — `'__bp_push'(File, Line, Col, Reason)`: one frame of the chain
 /// `Reason`'s raise is crossing, kept in the process dictionary (`'__bp_frames'`)
 /// with the reason it belongs to; a frame of another reason starts a chain.
@@ -2381,9 +2410,12 @@ fn emitErlangModule(
         if (decl == .typeAlias) continue;
         // Decision 579 — a builtin value lowers to nothing: the compiler gives it.
         if (decl == .builtinVal) continue;
+        // Decision 788 — a top-level `comptime` block was read onto its
+        // decorator by the parser (`parser/comptime_blocks.zig`).
+        if (decl == .comptimeBlock) continue;
         try forms.append(b.arena, .blank);
         switch (decl) {
-            .typeAlias, .builtinVal => unreachable,
+            .typeAlias, .builtinVal, .comptimeBlock => unreachable,
             // A `_`-named statement has no reader and no unique atom, so it lives
             // in `'_botopink_init'/0` alone (see `initForms`); every named `val`
             // keeps its 0-arity form (see `top_vals`). This does not depend on
@@ -2490,8 +2522,8 @@ fn emitErlangModule(
         if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         const typed_text = em.needs_text_helper and comptime_module == null;
         if (typed_text) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
-        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
-        if (em.needs_print_helper or typed_text) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, if (comptime_module != null) comptime_print_helper_form else print_helper_form });
+        if (em.needs_print_helper or typed_text) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, if (comptime_module != null) comptime_tagged_helper_form else tagged_helper_form, .blank, render_helper_form });
         try appendGenHelperForms(b, &forms, em.gen_helpers);
     }
 

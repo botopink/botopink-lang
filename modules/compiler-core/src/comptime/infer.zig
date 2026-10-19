@@ -6255,7 +6255,7 @@ fn runDeclDecorators(
         // in the decorator's, which the diagnostic then names
         // (`srcPathOfModule`).
         const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, try withOwner(env, try withMethodMeta(env, handle, memberOwner), if (declared == null) memberOwner else null)), plain, capture, &env.comptimeTraces, &env.buildOutput) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
@@ -10980,7 +10980,7 @@ fn runTagAnnotation(
     }
     const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
     const located = try locatedFns(env, dfn, srcPathOfModule(env, owner), support[0..found.fns.len]);
-    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces) catch {
+    const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, srcPathOfModule(env, owner), try syntaxParam.eraseForRun(rs, runDfn, true), runSupport, located, reached.types, try completeHandle(env, base), plain, null, &env.comptimeTraces, &env.buildOutput) catch {
         return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
     };
     var metas: std.ArrayListUnmanaged(decoratorEval.TagMeta) = .empty;

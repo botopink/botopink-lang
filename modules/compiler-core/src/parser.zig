@@ -14,6 +14,7 @@ const template_markers = @import("parser/template_markers.zig");
 const implementations = @import("parser/implementations.zig");
 const syntax_params = @import("parser/syntax_params.zig");
 pub const compiler_surface = @import("parser/compiler_surface.zig");
+pub const comptime_blocks = @import("parser/comptime_blocks.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -605,6 +606,12 @@ pub const Parser = struct {
             }, failure.tok);
             return ParseError.UnexpectedToken;
         }
+        // Decision 788: each top-level `comptime { … }` read onto a decorator
+        // over an anchor (`parser/comptime_blocks.zig`).
+        if (!this.keep_surface) comptime_blocks.expandProgram(alloc, &program) catch |err| {
+            program.deinit(alloc);
+            return if (err == error.OutOfMemory) ParseError.OutOfMemory else ParseError.UnexpectedToken;
+        };
         // Decision 364: a non-template function's `comptime x: @Expr<T>`
         // carries `T` in its `typeRef` (`parser/syntax_params.zig`).
         syntax_params.unwrapProgram(alloc, &program);
@@ -616,6 +623,13 @@ pub const Parser = struct {
             return ParseError.OutOfMemory;
         };
         return program;
+    }
+
+    /// The declarations of the tokens as written, read onto nothing (no
+    /// pass of `parse` runs): `parser/comptime_blocks.zig` builds its
+    /// declarations from text with it.
+    pub fn parseRawDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
+        return this.parseDecls(alloc);
     }
 
     fn parseDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
@@ -691,6 +705,13 @@ pub const Parser = struct {
                 const d = try this.parseShorthandExtendDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .extend = d };
+            } else if (this.check(.@"comptime") and this.peekAt(1).kind == .leftBrace) blk: {
+                // Decision 788 — a top-level `comptime { … }`: a build body of
+                // the module (`parser/comptime_blocks.zig`).
+                const tok = this.advance();
+                const body = try this.parseFnBodyInBraces(alloc);
+                _ = this.match(.semicolon);
+                break :blk .{ .comptimeBlock = .{ .loc = locFromToken(tok), .body = body } };
             } else if (this.check(.@"test")) blk: {
                 const d = try this.parseTestDecl(alloc);
                 _ = this.match(.semicolon);

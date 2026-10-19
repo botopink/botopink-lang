@@ -439,7 +439,7 @@ const Builder = struct {
             .use => |u| try self.use(u),
             // Test blocks never surface in the public typedef; `mod` declares a
             // submodule that carries its own typedef, so it emits nothing here.
-            .@"test", .mod, .comment, .builtinVal => .none,
+            .@"test", .mod, .comment, .builtinVal, .comptimeBlock => .none,
             .typeAlias => |a| try self.typeAlias(a),
         };
     }

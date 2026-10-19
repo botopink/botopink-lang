@@ -207,6 +207,10 @@ pub const GenerateResult = struct {
     /// owned here, so `build` and `test` print them as `check` does (front 26
     /// step 4). None fails the module.
     warnings: []Diagnostic.TypeDiagnostic = &.{},
+    /// Decision 788 (3) — what the module's build bodies printed
+    /// (`OkData.build_output`), owned here; `botopink build` / `run` write it
+    /// to stdout. Empty when they printed nothing.
+    build_output: []u8 = &.{},
     run_output: ?[]u8 = null,
 
     /// The module produced no artifact: a comptime validation error or a
@@ -239,6 +243,7 @@ pub const GenerateResult = struct {
         if (self.diagnostic) |*d| d.deinit(allocator);
         for (self.warnings) |w| allocator.free(w.message);
         if (self.warnings.len > 0) allocator.free(self.warnings);
+        if (self.build_output.len > 0) allocator.free(self.build_output);
     }
 };
 

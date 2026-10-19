@@ -48,7 +48,7 @@ import {compiler} from "std";
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -57,7 +57,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 128
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
@@ -69,7 +69,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 136
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -100,7 +100,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 192
+  i32.const 232
   i32.add
   i32.const 11
   call $rt_atom
@@ -135,7 +135,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 232
+  i32.const 272
   i32.add
   i32.const 6
   call $rt_atom
@@ -170,7 +170,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 256
+  i32.const 296
   i32.add
   i32.const 8
   call $rt_atom
@@ -205,7 +205,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 312
+  i32.const 352
   i32.add
   i32.const 7
   call $rt_atom
@@ -236,12 +236,12 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 320
+  i32.const 360
   i32.add
   i32.const 15
   call $rt_bin
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -253,7 +253,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 336
+  i32.const 376
   i32.add
   i32.const 25
   call $rt_bin
@@ -265,7 +265,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 368
+  i32.const 408
   i32.add
   i32.const 6
   call $rt_bin
@@ -306,7 +306,7 @@ import {compiler} from "std";
   (block $L18
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -316,7 +316,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF5
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -330,7 +330,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -378,7 +378,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 144
+  i32.const 184
   i32.add
   i32.const 2
   call $rt_bin
@@ -386,7 +386,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -398,7 +398,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -411,7 +411,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 160
+  i32.const 200
   i32.add
   i32.const 4
   call $rt_atom
@@ -424,7 +424,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 168
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -469,7 +469,7 @@ import {compiler} from "std";
   (block $L8
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -479,7 +479,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF1
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -493,7 +493,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -523,7 +523,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 184
+  i32.const 224
   i32.add
   i32.const 1
   call $rt_bin
@@ -567,7 +567,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 208
+  i32.const 248
   i32.add
   i32.const 7
   call $rt_bin
@@ -575,7 +575,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -587,7 +587,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 216
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -595,7 +595,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 264
   i32.add
   i32.const 8
   call $rt_atom
@@ -630,7 +630,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $V_Out@5
   global.get $__lit
-  i32.const 192
+  i32.const 232
   i32.add
   i32.const 11
   call $rt_atom
@@ -678,7 +678,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 144
+  i32.const 184
   i32.add
   i32.const 2
   call $rt_bin
@@ -686,7 +686,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -698,7 +698,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -711,7 +711,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 160
+  i32.const 200
   i32.add
   i32.const 4
   call $rt_atom
@@ -724,7 +724,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 168
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -769,7 +769,7 @@ import {compiler} from "std";
   (block $L8
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -779,7 +779,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF3
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -793,7 +793,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -823,7 +823,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 184
+  i32.const 224
   i32.add
   i32.const 1
   call $rt_bin
@@ -867,7 +867,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 240
+  i32.const 280
   i32.add
   i32.const 9
   call $rt_bin
@@ -914,7 +914,7 @@ import {compiler} from "std";
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 264
+  i32.const 304
   i32.add
   i32.const 0
   call $rt_bin
@@ -942,7 +942,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s3
   global.get $__lit
-  i32.const 272
+  i32.const 312
   i32.add
   i32.const 6
   call $rt_atom
@@ -969,7 +969,7 @@ import {compiler} from "std";
   drop
   local.get $s1
   global.get $__lit
-  i32.const 280
+  i32.const 320
   i32.add
   i32.const 8
   call $rt_bin
@@ -977,7 +977,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -989,7 +989,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -1001,7 +1001,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 288
+  i32.const 328
   i32.add
   i32.const 3
   call $rt_bin
@@ -1009,7 +1009,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 296
+  i32.const 336
   i32.add
   i32.const 10
   call $rt_atom
@@ -1057,7 +1057,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -1069,7 +1069,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 216
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -1077,7 +1077,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 264
   i32.add
   i32.const 8
   call $rt_atom
@@ -1089,7 +1089,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 264
+  i32.const 304
   i32.add
   i32.const 1
   call $rt_bin
@@ -1178,7 +1178,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 424
+  i32.const 448
   i32.add
   i32.const 21
   call $rt_atom
@@ -1187,7 +1187,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 448
+  i32.const 472
   i32.add
   i32.const 4
   call $rt_bin
@@ -1298,7 +1298,7 @@ import {compiler} from "std";
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 416
+  i32.const 440
   i32.add
   i32.const 4
   call $rt_atom
@@ -1423,7 +1423,7 @@ import {compiler} from "std";
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -1432,7 +1432,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 128
+  i32.const 168
   i32.add
   i32.const 1
   call $rt_bin
@@ -1444,7 +1444,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 136
+  i32.const 176
   i32.add
   i32.const 1
   call $rt_bin
@@ -1475,7 +1475,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 192
+  i32.const 232
   i32.add
   i32.const 11
   call $rt_atom
@@ -1510,7 +1510,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 232
+  i32.const 272
   i32.add
   i32.const 6
   call $rt_atom
@@ -1545,7 +1545,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 256
+  i32.const 296
   i32.add
   i32.const 8
   call $rt_atom
@@ -1580,7 +1580,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s2
   global.get $__lit
-  i32.const 312
+  i32.const 352
   i32.add
   i32.const 7
   call $rt_atom
@@ -1611,12 +1611,12 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 320
+  i32.const 360
   i32.add
   i32.const 15
   call $rt_bin
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -1628,7 +1628,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 336
+  i32.const 376
   i32.add
   i32.const 25
   call $rt_bin
@@ -1640,7 +1640,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 368
+  i32.const 408
   i32.add
   i32.const 6
   call $rt_bin
@@ -1681,7 +1681,7 @@ import {compiler} from "std";
   (block $L18
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -1691,7 +1691,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF5
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -1705,7 +1705,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -1753,7 +1753,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 144
+  i32.const 184
   i32.add
   i32.const 2
   call $rt_bin
@@ -1761,7 +1761,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -1773,7 +1773,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -1786,7 +1786,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 160
+  i32.const 200
   i32.add
   i32.const 4
   call $rt_atom
@@ -1799,7 +1799,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 168
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -1844,7 +1844,7 @@ import {compiler} from "std";
   (block $L8
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -1854,7 +1854,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF1
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -1868,7 +1868,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -1898,7 +1898,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 184
+  i32.const 224
   i32.add
   i32.const 1
   call $rt_bin
@@ -1942,7 +1942,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 208
+  i32.const 248
   i32.add
   i32.const 7
   call $rt_bin
@@ -1950,7 +1950,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -1962,7 +1962,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 216
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -1970,7 +1970,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 264
   i32.add
   i32.const 8
   call $rt_atom
@@ -2005,7 +2005,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $V_Out@5
   global.get $__lit
-  i32.const 192
+  i32.const 232
   i32.add
   i32.const 11
   call $rt_atom
@@ -2053,7 +2053,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 144
+  i32.const 184
   i32.add
   i32.const 2
   call $rt_bin
@@ -2061,7 +2061,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -2073,7 +2073,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -2086,7 +2086,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 160
+  i32.const 200
   i32.add
   i32.const 4
   call $rt_atom
@@ -2099,7 +2099,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 168
+  i32.const 208
   i32.add
   i32.const 1
   call $rt_bin
@@ -2144,7 +2144,7 @@ import {compiler} from "std";
   (block $L8
   local.get $s1
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -2154,7 +2154,7 @@ import {compiler} from "std";
   local.get $s2
   local.set $V___BpF3
   global.get $__lit
-  i32.const 176
+  i32.const 216
   i32.add
   i32.const 7
   call $rt_bin
@@ -2168,7 +2168,7 @@ import {compiler} from "std";
   br_if $raise
   drop
   global.get $__lit
-  i32.const 104
+  i32.const 144
   i32.add
   i32.const 5
   call $rt_atom
@@ -2198,7 +2198,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 184
+  i32.const 224
   i32.add
   i32.const 1
   call $rt_bin
@@ -2242,7 +2242,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 240
+  i32.const 280
   i32.add
   i32.const 9
   call $rt_bin
@@ -2289,7 +2289,7 @@ import {compiler} from "std";
   local.get $a1
   local.set $s1
   global.get $__lit
-  i32.const 264
+  i32.const 304
   i32.add
   i32.const 0
   call $rt_bin
@@ -2317,7 +2317,7 @@ import {compiler} from "std";
   call $rt_make_fun
   local.get $s3
   global.get $__lit
-  i32.const 272
+  i32.const 312
   i32.add
   i32.const 6
   call $rt_atom
@@ -2344,7 +2344,7 @@ import {compiler} from "std";
   drop
   local.get $s1
   global.get $__lit
-  i32.const 280
+  i32.const 320
   i32.add
   i32.const 8
   call $rt_bin
@@ -2352,7 +2352,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -2364,7 +2364,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 152
+  i32.const 192
   i32.add
   i32.const 1
   call $rt_bin
@@ -2376,7 +2376,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 288
+  i32.const 328
   i32.add
   i32.const 3
   call $rt_bin
@@ -2384,7 +2384,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 296
+  i32.const 336
   i32.add
   i32.const 10
   call $rt_atom
@@ -2432,7 +2432,7 @@ import {compiler} from "std";
   local.set $s1
   local.get $s1
   global.get $__lit
-  i32.const 120
+  i32.const 160
   i32.add
   i32.const 4
   call $rt_atom
@@ -2444,7 +2444,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 216
+  i32.const 256
   i32.add
   i32.const 1
   call $rt_bin
@@ -2452,7 +2452,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 224
+  i32.const 264
   i32.add
   i32.const 8
   call $rt_atom
@@ -2464,7 +2464,7 @@ import {compiler} from "std";
   call $rt_pending
   br_if $raise
   global.get $__lit
-  i32.const 264
+  i32.const 304
   i32.add
   i32.const 1
   call $rt_bin
@@ -2553,7 +2553,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 424
+  i32.const 448
   i32.add
   i32.const 21
   call $rt_atom
@@ -2562,7 +2562,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 448
+  i32.const 472
   i32.add
   i32.const 4
   call $rt_bin
@@ -2673,7 +2673,7 @@ import {compiler} from "std";
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 416
+  i32.const 440
   i32.add
   i32.const 4
   call $rt_atom

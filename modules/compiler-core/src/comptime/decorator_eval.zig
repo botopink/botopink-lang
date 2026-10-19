@@ -217,6 +217,9 @@ pub fn evaluate(
     capture: ?*const template.CapturedExpr,
     /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
+    /// Decision 788 (3) — receives what the body printed, the build's output
+    /// (allocated with `arena`); null drops it.
+    printed: ?*std.ArrayListUnmanaged(u8),
 ) EvalError!Outcome {
     _ = build_root;
     // The module's source, its tree, the encoded argument and the runtime's
@@ -260,6 +263,7 @@ pub fn evaluate(
     }
     const t_outcome = stages.start();
     defer stages.stop(.outcome, t_outcome);
+    if (printed) |out| if (response == .ok) try out.appendSlice(arena, printedOf(scratch, response.ok));
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
@@ -321,6 +325,25 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
             return bb.remote("json", "encode", &.{try bb.map(fields)});
         }
     }.json;
+    // Decision 788 (3) — an `ok` or `error` reply carries `printed`, the lines
+    // the body printed (`'__bp_print'/1` of a comptime module,
+    // `codegen/erlang.zig`), oldest first: the build's output. A body that
+    // printed nothing replies as before. `variable` is the reply's own (a
+    // `try`'s body and its `catch` bind none in common).
+    const encodePrinted = struct {
+        fn json(bb: Ast.Builder, fields: []const Ast.MapField, variable: []const u8) Ast.Builder.Error!Ast.Expr {
+            const reply = try bb.map(fields);
+            const lines = try bb.remote("unicode", "characters_to_binary", &.{try bb.remote("lists", "reverse", &.{Ast.Expr.v(variable)})});
+            const withPrinted = try bb.remote("maps", "put", &.{ Ast.Expr.a("printed"), lines, reply });
+            const subject = try bb.arena.create(Ast.Expr);
+            subject.* = try bb.remote("erlang", "get", &.{Ast.Expr.a(erlang.printed_key)});
+            const clauses = try bb.arena.dupe(Ast.Clause, &.{
+                .{ .patterns = try bb.exprs(&.{Ast.Expr.a("undefined")}), .body = try bb.body(&.{reply}) },
+                .{ .patterns = try bb.exprs(&.{Ast.Expr.v(variable)}), .body = try bb.body(&.{withPrinted}) },
+            });
+            return bb.remote("json", "encode", &.{.{ .case_ = .{ .subject = subject, .clauses = clauses } }});
+        }
+    }.json;
 
     const all_catches = [_]Ast.Clause{
         .{
@@ -344,11 +367,11 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
         },
         .{
             .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
-            .body = try b.body(&.{try encode(b, &.{
+            .body = try b.body(&.{try encodePrinted(b, &.{
                 Ast.field("kind", Ast.str("error")),
                 Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
                 Ast.field("frames", try b.call("__bp_frames", &.{V("Reason")})),
-            })}),
+            }, "PrintedRaised")}),
         },
     };
     const catches: []const Ast.Clause = if (annotation)
@@ -365,10 +388,10 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
         .{ .try_catch = .{
             .body = try b.body(&.{
                 invoke,
-                try encode(b, &.{
+                try encodePrinted(b, &.{
                     Ast.field("kind", Ast.str("ok")),
                     Ast.field("contributions", try b.remote("lists", "reverse", &.{emitted})),
-                }),
+                }, "PrintedOk"),
             }),
             .catches = catches,
         } },
@@ -377,10 +400,10 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
         .{ .try_catch = .{
             .body = try b.body(&.{
                 invoke,
-                try encode(b, &.{
+                try encodePrinted(b, &.{
                     Ast.field("kind", Ast.str("ok")),
                     Ast.field("contributions", try b.remote("lists", "reverse", &.{emitted})),
-                }),
+                }, "PrintedOk"),
             }),
             .catches = catches,
         } },
@@ -984,6 +1007,14 @@ const ReplySpan = struct {
     line: usize = 0,
     arg: ?usize = null,
 };
+
+/// Decision 788 (3) — the reply's `printed`: what the body printed, `""`
+/// when it printed nothing or the reply does not read.
+fn printedOf(scratch: std.mem.Allocator, stdout: []const u8) []const u8 {
+    const Printed = struct { printed: []const u8 = "" };
+    const r = std.json.parseFromSliceLeaky(Printed, scratch, stdout, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch return "";
+    return r.printed;
+}
 
 fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome {
     const reply = std.json.parseFromSliceLeaky(Reply, arena, stdout, .{

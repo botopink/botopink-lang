@@ -1733,6 +1733,10 @@ pub const Env = struct {
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
     comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
+    /// Decision 788 (3) — what the module's build bodies printed (a
+    /// decorator's, a top-level `comptime { … }`'s), in the order they ran:
+    /// the build's output (`OkData.build_output`).
+    buildOutput: std.ArrayListUnmanaged(u8) = .empty,
     /// Question s29-b — the typed meta a method's decorators recorded
     /// (decision 298 on a method, 313), in recording order: the owner's own
     /// decorators run after its methods' and read it on `decl.methods`

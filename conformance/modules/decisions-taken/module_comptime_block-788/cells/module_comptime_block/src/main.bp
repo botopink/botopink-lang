@@ -1,0 +1,25 @@
+//// Decision 788 — two top-level `comptime` blocks run at build in the order
+//// written; `f`, whose every parameter is `comptime`, is expanded at each
+//// call, and the `compiler.init` it writes runs at program start, in the
+//// order the blocks registered it, before `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+// Expanded where a block calls it: its `print` is the build's output.
+fn f(comptime n: string) -> void {
+    print("build " + n);
+    compiler.init({ -> print("init " + n) });
+}
+
+comptime {
+    print("first block");
+    f("a");
+}
+
+pub fn main() {
+    print("main");
+}
+
+comptime {
+    f("b");
+}

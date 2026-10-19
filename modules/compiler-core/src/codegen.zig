@@ -79,6 +79,12 @@ fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput,
             .ok => |ok| ok,
             else => continue,
         };
+        // Decision 788 (3) — the build's output travels the same way.
+        if (ok.build_output.len > 0) for (outputs) |*o| {
+            if (!std.mem.eql(u8, o.name, ct.name) or o.result.build_output.len > 0) continue;
+            o.result.build_output = try allocator.dupe(u8, ok.build_output);
+            break;
+        };
         if (ok.warnings.len == 0) continue;
         for (outputs) |*o| {
             if (!std.mem.eql(u8, o.name, ct.name) or o.result.warnings.len > 0) continue;
