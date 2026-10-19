@@ -1,0 +1,11 @@
+//// Decision 695 — A caller's argument that breaks an expanded generic body (562) is refused at the caller's argument — the argument's copy stays the caller's node.
+
+import {io.terminal} from "std";
+import {loud.shout};
+
+pub fn main() -> void {
+    terminal.print(shout("hi"));
+    // `shout` is expanded here, and its body calls `toUpper` on this `7`:
+    // the refusal is located at the `7`, in this file.
+    terminal.print(shout(7));
+}

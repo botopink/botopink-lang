@@ -1,0 +1,50 @@
+//// Decision 593 — (c), and a type may be a component — every form behaves and is called as a `fn` component.
+
+import {io.terminal} from "std";
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(cls: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(cls: "plain"));
+
+// A `fn` component.
+component fn Badge(label: string) -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: t.cls + "(" + label + ")");
+}
+
+// The same thing as a type: its fields are the props, `render` the body,
+// `item` an ordinary helper.
+type Menu(items: string[], title: string = "Menu") implement Component<Element> {
+    component fn render(self: Self) -> Component<Element> {
+        val t = use context(themeContext);
+        return Element(text: t.cls + ":" + self.title + "[" + self.items.map({ i -> self.item(i) }).join(",") + "]");
+    }
+
+    fn item(self: Self, i: string) -> string {
+        return "<" + i + ">";
+    }
+}
+
+// A lambda answering a component is one too.
+val shout: fn(string) -> Component<Element> = { component word ->
+    val t = use context(themeContext);
+    Element(text: t.cls + "!" + word.toUpper())
+};
+
+component fn Page() -> Component<Element> {
+    use provide(createContext(Theme(cls: "dark")));
+    val b = Badge("new");
+    val m = Menu(items: ["a", "b"]);
+    val s = shout("hey");
+    return Element(text: b.text + " " + m.text + " " + s.text);
+}
+
+pub async fn main() -> Async<void> {
+    val page = await Page();
+    terminal.print(page.text);
+    val alone = await Menu(items: ["x"], title: "Principal");
+    terminal.print(alone.text);
+}

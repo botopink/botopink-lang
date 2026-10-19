@@ -1,0 +1,26 @@
+//// Decision 422 — `Type.required` removes a field's `?` and its `null` default together.
+
+import {io.terminal} from "std";
+import {types.Type} from "std";
+
+type Recipe(title: string, description: ?string = null, servings: ?i32 = 2)
+
+// `description: ?string = null` becomes `description: string`, with no
+// default; `servings: ?i32 = 2` becomes `servings: i32 = 2`.
+pub val FullRecipe = Type.required(Recipe);
+
+fn summary(r: FullRecipe) -> string {
+    return r.title
+        + " ("
+        + r.description.length().toString()
+        + " chars, serves "
+        + r.servings.toString()
+        + ")";
+}
+
+pub fn main() -> void {
+    val draft = Recipe(title: "soup");
+    terminal.print(draft.description ?? "no description");
+    val full = FullRecipe(title: "soup", description: "hot");
+    terminal.print(summary(full));
+}

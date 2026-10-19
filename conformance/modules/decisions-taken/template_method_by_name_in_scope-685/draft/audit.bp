@@ -1,0 +1,8 @@
+//// Another template method over `store.Memory`: the one `main` imports.
+
+import {code, compiler} from "std";
+import {store.Memory};
+
+pub fn read(syntax self: Memory, syntax q: string) -> string {
+    return code @`"audit " + ${self}.fetch(${compiler.text(q)})`;
+}

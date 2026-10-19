@@ -1,0 +1,32 @@
+//// Decision 608 — (a), as 606 and 607 narrowed it: `compiler.bp` is self-contained and the first std module; there is no `reflection.bp`.
+
+import {io.terminal} from "std";
+import {compiler, compiler.SourceLocation, compiler.DeclKind} from "std";
+
+// `SourceLocation` and `DeclKind` are imported from `compiler` like any std
+// type: `compiler.bp` declares every type the `Compiler` behavior names.
+fn here() -> SourceLocation {
+    return comptime compiler.src();
+}
+
+type Kind(name: string, isFn: bool)
+
+fn kindOf(syntax decl: unknown) -> void {
+    val kind: DeclKind = compiler.kind(decl);
+    compiler.setMeta(Kind(name: compiler.name(decl)!, isFn: kind == DeclKind.Fn));
+}
+
+#[kindOf]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() -> void {
+    val at = here();
+    terminal.print(at.file + " " + at.fnName);
+    val k = comptime compiler.typeInfo(home).meta(Kind);
+    if (k) {
+        m -> terminal.print(m.name + " is a function: " + m.isFn.toString())
+    }
+    terminal.print(home());
+}

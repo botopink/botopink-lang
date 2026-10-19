@@ -1,0 +1,10 @@
+//// Decision 703 — `botopink.json`'s `files` is gone: what a consumer may import is the tree (every module under `src/` outside `src/internal/`, 592 (8)); once B-69 / B-75 land, a manifest still writing `files` is refused, located, naming `src/internal/`; `workspaces` stays (512).
+
+import {io.terminal} from "std";
+import {greet.hello} from "greeter";
+
+// `greeter` exposes its tree: `greet.bp` is importable because it sits under
+// `src/` outside `src/internal/`, not because a `files` list names it.
+pub fn main() -> void {
+    terminal.print(hello("ana"));
+}

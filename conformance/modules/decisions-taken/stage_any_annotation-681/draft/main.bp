@@ -1,0 +1,31 @@
+//// Decision 681 — A function's stage is written only as `#[stage(.Any)]` (663's spelling of `#[Stage.Any]`), `stage` imported from the std module that owns it; `Build` and `Run` follow from resources and are never written — `#[stage(.Build)]` / `#[stage(.Run)]` are refused by `stage` itself at the argument.
+
+import {io.terminal} from "std";
+import {compiler, compiler.stage} from "std";
+
+fn tripleBody(x: i32) -> i32 {
+    return x * 3;
+}
+
+// A host function is `Run` unless it says `Any`: written `#[stage(.Any)]`, it
+// may be called inside a `comptime`, its wasm form answering at build.
+#[compiler.external(
+    .JavaScript("($0 * 3)"),
+    .Erlang("($0 * 3)"),
+    .Wasm(body: tripleBody),
+)]
+#[stage(.Any)]
+declare fn triple(x: i32) -> i32;
+
+// `Build` and `Run` are never written: `label` is `Build` because it reads a
+// `comptime` parameter, and `main` is `Run` because it prints.
+fn label(comptime name: string) -> string {
+    return "[" + name + "]";
+}
+
+pub fn main() -> void {
+    val atBuild = comptime triple(14);
+    terminal.print(atBuild);
+    terminal.print(triple(14));
+    terminal.print(label("any"));
+}

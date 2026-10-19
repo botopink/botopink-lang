@@ -1,0 +1,13 @@
+//// Decision 669 — Code a decorator writes resolves in the decorator's module, a type it builds included; the one way to a caller's names is `compiler.lookup`.
+
+import {io.terminal} from "std";
+import {stamp.stamped};
+
+// This module imports the decorator alone: neither `Clock` nor `stampOf`.
+#[stamped]
+type Order(id: i32)
+
+pub fn main() -> void {
+    terminal.print(Order.stampAt(3));
+    terminal.print(Order(id: 7).id);
+}

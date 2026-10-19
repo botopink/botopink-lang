@@ -1,0 +1,10 @@
+//// Decision 709 — The `bpp` roles are checked whenever the manifest's key is present, `.bpp` file or not, on every `build` / `check` / `run` / `test`; a key that cannot be honoured is refused where it is written.
+
+import {io.terminal} from "std";
+
+// No `.bpp` file here; the manifest's `"bpp"` key names a package, and its
+// roles are checked on every build all the same: a package with no
+// `#[bpp.html]` function is refused at the key.
+pub fn main() -> void {
+    terminal.print("no markup");
+}

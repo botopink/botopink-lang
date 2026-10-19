@@ -1,0 +1,35 @@
+//// Decision 755 — (a): `use memo` is std's hook `memo<T>(make: fn() -> T) -> Component<T>` — computed on the component's first render, kept for that component instance, never recomputed; no dependency list.
+
+import {io.terminal} from "std";
+import {context.createContext, context.provide, context.context} from "std";
+import {hooks.memo} from "std";
+
+type Theme(dark: bool)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(dark: false));
+
+component fn Label() -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: if (t.dark) "dark" else "light");
+}
+
+// `App` makes the context it provides from its own parameter, at run time:
+// `memo` runs `make` on the instance's first render and keeps its answer.
+component fn App(name: string, dark: bool) -> Component<Element> {
+    val c = use memo({ ->
+        terminal.print("context made for " + name);
+        createContext(Theme(dark: dark))
+    });
+    use provide(c);
+    val l = Label();
+    return Element(text: name + ": " + l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val a = await App("night", true);
+    terminal.print(a.text);
+    val b = await App("day", false);
+    terminal.print(b.text);
+}

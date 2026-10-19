@@ -1,0 +1,26 @@
+//// Decision 165 — A trailing lambda whose body is one expression prints on one line when it fits, arrow or not (`h1 { "my blog" }`), as it
+
+import {io.terminal} from "std";
+
+fn h1(view: fn() -> string) -> string {
+    return "<h1>" + view() + "</h1>";
+}
+
+fn twice(n: i32, step: fn(i32) -> i32) -> i32 {
+    return step(step(n));
+}
+
+pub fn main() -> void {
+    // A trailing lambda whose body is one expression prints on one line when
+    // it fits, however it was written (`botopink format` joins it).
+    val title = h1 { -> "my blog" };
+    val four = twice(1) { n -> n * 2 };
+    // A body of two statements keeps its lines.
+    val nine = twice(1) { n ->
+        val m = n + 1;
+        m * m - 1
+    };
+    terminal.print(title);
+    terminal.print(four);
+    terminal.print(nine);
+}
