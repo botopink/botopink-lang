@@ -1,0 +1,10 @@
+//// Decision 583 (amends 328) — a later call does not type a lambda: bound to
+//// a `val` with no annotation, `{ n -> n.toString() }` is typed by nothing,
+//// though `later(2)` follows, and is refused `lambda-untyped` at the lambda.
+
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    val later = { n -> "n=" + n.toString() };
+    print(later(2));
+}

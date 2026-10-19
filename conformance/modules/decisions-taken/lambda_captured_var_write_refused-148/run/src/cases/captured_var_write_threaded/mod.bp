@@ -13,7 +13,7 @@ pub fn runCase() {
     print(total);
 
     var count = 0;
-    val bump = { ->
+    val bump: fn() = { ->
         count = count + 1;
     };
     bump();

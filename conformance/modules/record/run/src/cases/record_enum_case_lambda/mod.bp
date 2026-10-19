@@ -17,7 +17,7 @@ fn sides(s: Shape) -> i32 {
 }
 
 fn area(b: Box) -> i32 {
-    val twice = { x -> x * 1 };
+    val twice: fn(i32) -> i32 = { x -> x * 1 };
     return twice(b.w * b.h);
 }
 

@@ -882,8 +882,8 @@ test "js: lambda ---- multi-statement body" {
 
 test "js: lambda ---- standalone with params" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val add = { x, y ->
-        \\    x + y;
+        \\val add: fn(i32, i32) -> i32 = { x, y ->
+        \\    x + y
         \\};
         \\val result = add(10, 20);
         \\fn main() {

@@ -2,8 +2,8 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Tasks):
 
-> The lambda's type is the same written or not: bound without an annotation
-> (`val failing = { n -> async { throw "inner"; } }`) it is still a function
-> answering `Async<Result<…>>`, and its `await` reads back as `Error(e)`; a
-> lambda a function or method returns takes its parameters from the declared
-> `fn(n: i32) -> …`, so `n.toString()` in it resolves:
+> A lambda answering an `async { }` block is typed where it is written, as any
+> lambda is (decision 583): bound without an annotation (`val failing = { n ->
+> async { throw "inner"; } }`) it is refused `lambda-untyped`; a lambda a
+> function or method returns takes its parameters from the declared `fn(n:
+> i32) -> …`, so `n.toString()` in it resolves:

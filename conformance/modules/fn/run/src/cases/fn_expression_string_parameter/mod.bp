@@ -1,6 +1,6 @@
 //// An untyped fn expression whose parameter is a `string` writes its text, however it
 //// is reached: called where it is written, passed to a parameter that expects
-//// `fn(string) -> string`, or bound to a `val`. The parameter's type comes from its
+//// `fn(string) -> string`, or bound to a `val` so annotated. The parameter's type comes from its
 //// use (what the checker inferred), so `s + "x"` is a concatenation on every target.
 
 import {io.terminal.print} from "std";
@@ -16,7 +16,7 @@ pub fn runCase() {
     print(apply(fn(s) {
         return s + "y";
     }, "b"));
-    val g = fn(s) {
+    val g: fn(string) -> string = fn(s) {
         return s + "z";
     };
     print(g("c"));

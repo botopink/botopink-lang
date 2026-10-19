@@ -12,16 +12,18 @@ fn bump(n: i32) -> i32 {
     return n + 1;
 }
 
-fn each(xs: i32[], f: fn(i32) -> void) {
-    for (xs) { x -> f(x); }
+fn each(xs: i32[], f: fn(i32)) {
+    for (xs) { x ->
+        f(x);
+    }
 }
 
 pub fn main() {
-    val inc = { x -> x + 1 };
+    val inc: fn(i32) -> i32 = { x -> x + 1 };
     print(inc(1));
     print([1, 2].map({ n -> n * 3 }));
     each([7, 8], { x -> bump(x); });
-    val dbl = fn(x) {
+    val dbl: fn(i32) -> i32 = fn(x) {
         x * 2;
     };
     print(dbl(4));

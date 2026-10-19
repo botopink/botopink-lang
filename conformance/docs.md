@@ -1961,17 +1961,16 @@ it calls the function:
 
 <!-- example: modules/dependency/cells/dependency_prints_with_fold_join -->
 
-A lambda bound with no annotation takes its parameters' types from the calls
-that use it: `val later = { n -> async { … n.toString() … } }` called as
-`later(2)` types `n` as `i32`, and `n.toString()` is `i32`'s method on every
-target. A parameter that no position, annotation or call types cannot choose a
-method: a method called on it is refused at the call, `cannot infer the type
-of `n`` (decision 328). A lambda passed where a parameter receives it is typed
+A lambda is typed where it is written (decision 583): bound to a `val` with
+no annotation, it is typed by nothing, and a later call does not type it
+after the fact — `val later = { n -> … }` followed by `later(2)` is refused
+`lambda-untyped` at the lambda, a parameterless `{ -> … }` and a module-level
+`val` too. A lambda passed where a parameter receives it is typed
 by that parameter, a type parameter of the callee included: `{ req, chain ->
 chain.next(req) }` handed to `register<Rq, Ch>(…, entry: fn(req: Rq, chain:
 Ch) -> string)` is not refused:
 
-<!-- example: modules/decisions-taken/lambda_types_from_context-328/run/src/cases/lambda_param_typed_by_later_call -->
+<!-- example: modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_typed_by_later_call -->
 
 <!-- example: modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_untyped_method_refused -->
 
@@ -3288,11 +3287,11 @@ method answers:
 
 <!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_async_block_in_lambda -->
 
-The lambda's type is the same written or not: bound without an annotation
-(`val failing = { n -> async { throw "inner"; } }`) it is still a function
-answering `Async<Result<…>>`, and its `await` reads back as `Error(e)`; a
-lambda a function or method returns takes its parameters from the declared
-`fn(n: i32) -> …`, so `n.toString()` in it resolves:
+A lambda answering an `async { }` block is typed where it is written, as any
+lambda is (decision 583): bound without an annotation (`val failing = { n ->
+async { throw "inner"; } }`) it is refused `lambda-untyped`; a lambda a
+function or method returns takes its parameters from the declared `fn(n:
+i32) -> …`, so `n.toString()` in it resolves:
 
 <!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_lambda_result_unannotated -->
 

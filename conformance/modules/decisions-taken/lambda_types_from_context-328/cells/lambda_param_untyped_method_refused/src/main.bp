@@ -1,6 +1,6 @@
-//// Decision 328 — a lambda's types come from where it is used. A parameter
-//// that no position, annotation or call types cannot choose a method: the call
-//// on it is refused, located, on every target.
+//// Decision 583 (amends 328) — a lambda no position, annotation or call types
+//// is refused `lambda-untyped` at the lambda, before its body is read: the
+//// method its parameter calls no longer reds as `cannot infer the type of n`.
 
 import {io.terminal.print} from "std";
 

@@ -7,7 +7,7 @@ fn shout(syntax q: string) -> string {
     return compiler.build("\"template " + compiler.text(q) + "\"");
 }
 
-val g = { -> shout @`x` };
+val g: fn() -> string = { -> shout @`x` };
 
 pub fn runCase() {
     print(g());

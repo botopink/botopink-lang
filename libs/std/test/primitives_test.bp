@@ -221,22 +221,22 @@ test "function identity" {
 }
 
 test "function compose left-to-right" {
-    val double = { n -> n * 2 };
-    val addOne = { n -> n + 1 };
+    val double: fn(i32) -> i32 = { n -> n * 2 };
+    val addOne: fn(i32) -> i32 = { n -> n + 1 };
     val f = Function.compose(double, addOne);
     assert f(3) == 7;
     assert f(0) == 1;
 }
 
 test "function compose with string transform" {
-    val shout = { s -> s + "!" };
-    val greet = { s -> "Hello, " + s };
+    val shout: fn(string) -> string = { s -> s + "!" };
+    val greet: fn(string) -> string = { s -> "Hello, " + s };
     val greetAndShout = Function.compose(greet, shout);
     assert greetAndShout("world") == "Hello, world!";
 }
 
 test "function flip reverses arg order" {
-    val sub = { a, b -> a - b };
+    val sub: fn(i32, i32) -> i32 = { a, b -> a - b };
     val rsub = Function.flip(sub);
     assert rsub(3, 10) == 7;
 }

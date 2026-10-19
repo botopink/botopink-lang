@@ -2501,20 +2501,25 @@ its instance lowering (a backend without native method dispatch refused the call
 conformance cell `task_lambda_method_to_string`.
 
 Decision 583 — every function is typed where it is written: a lambda bound to a `val` / `var` with
-no annotation is refused `lambda-untyped` at the lambda (`inferExprTyped`'s `localBind` arm), so a
-later call no longer types it (328 amended); cell `modules/lambda_typed_by_position`. The machinery
-below is what 328 built; the cells that tested inference from later calls are 583's migration.
-A lambda written where no type is expected (`inferFunctionExpr` sets
-`Env.lambdaWithoutExpected`) records each parameter's fresh variable in `Env.freeLambdaParams`; a
-lambda a parameter receives is typed by it, a free type parameter of the callee included. A method call whose receiver is still a free variable when checked
-(`val f = { n -> n.toString() }; f(2)`: `n` is `i32` only once `f(2)` is) is typed by a fresh
+no annotation — a local one (`inferBindingExpr`'s `localBind` arm) or a module-level one
+(`inferDeclTyped`'s `.val` arm), with parameters or none (`{ -> 1 }`) — is refused `lambda-untyped`
+at the lambda (`refuseUntypedLambdaBinding`), so a later call no longer types it (328 amended);
+cell `modules/lambda_typed_by_position`; 328's `lambda_param_typed_by_later_call` and
+`lambda_param_untyped_method_refused` are its refusal cases. A typed
+`fn` expression, a marked lambda and an `async { }` block are not refused there.
+The machinery below is what 328 built; no binding reaches it now, but a lambda in another untyped
+position still does. A lambda written where no type is expected (an immediately called
+`(fn(n) { … })(2)`, an argument of a free type parameter `id({ n -> … })`, an array element;
+`inferFunctionExpr` sets `Env.lambdaWithoutExpected`) records each parameter's fresh variable in
+`Env.freeLambdaParams`; a lambda a parameter receives is typed by it, a free type parameter of the
+callee included. A method call whose receiver is still a free variable when checked
+(`(fn(n) { n.toString() })(2)`: `n` is `i32` only once the call is) is typed by a fresh
 variable and kept in `Env.pendingReceiverCalls`; `resolvePendingReceiverCalls` (once the module's
 bodies and the `.hooks` readers ran, before `checkPendingTypeNames`) answers each with the receiver's
 type now known — the instance lowering, the commonJS rename and the primitive method's return type,
 or `unknown-method` — so wasm, erlang and beam lower it as commonJS dispatches it. A lambda
-parameter still free there is refused at the call, "cannot infer the type of `n`" (decision 328);
-a receiver that is no lambda parameter stays permissive. Cells
-`modules/decisions-taken/lambda_types_from_context-328/run/src/cases/lambda_param_typed_by_later_call`, `modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_untyped_method_refused`,
+parameter still free there is refused at the call, "cannot infer the type of `n`" (decision 328,
+`[{ n -> n.toString() }]`); a receiver that is no lambda parameter stays permissive. Cell
 `modules/decisions-taken/lambda_types_from_context-328/run/src/cases/lambda_arg_generic_param_method`.
 
 Because the lambda now UNIFIES its return with the expectation, the expectation a plain call reads

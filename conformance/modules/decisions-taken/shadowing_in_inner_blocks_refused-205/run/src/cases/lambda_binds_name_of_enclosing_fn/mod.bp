@@ -18,7 +18,7 @@ pub fn runCase() {
     [1, 2].forEach({ e ->
         print(e)
     });
-    val twice = { e -> e * 2 };
+    val twice: fn(i32) -> i32 = { e -> e * 2 };
     print(twice(3));
     print(e);
 }

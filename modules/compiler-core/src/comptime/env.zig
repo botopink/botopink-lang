@@ -216,8 +216,8 @@ pub const DeferredMetaRead = struct {
 };
 
 /// Decision 328 — a method call whose receiver was still a free type variable
-/// when it was checked (`{ n -> n.toString() }` bound with no annotation, its
-/// `n` typed only by a later `f(2)`): answered once the module's bodies are
+/// when it was checked (`(fn(n) { n.toString() })(2)`, its `n` typed only by
+/// the call; a binding no longer reaches it, decision 583): answered once the module's bodies are
 /// inferred (`infer.zig` `resolvePendingReceiverCalls`), so every backend sees
 /// the lowering its receiver's type asks for. `param` names the lambda
 /// parameter the receiver is, when it is one.
@@ -1213,7 +1213,8 @@ pub const Env = struct {
     /// (`PendingReceiverCall`).
     pendingReceiverCalls: std.ArrayListUnmanaged(PendingReceiverCall) = .empty,
     /// Decision 328 — each parameter of a lambda written where no type is
-    /// expected (an unannotated `val`): the fresh variable it was bound to,
+    /// expected (an immediate call's callee, an array element; an unannotated
+    /// `val` is refused `lambda-untyped`, 583): the fresh variable it was bound to,
     /// and its name.
     freeLambdaParams: std.AutoHashMapUnmanaged(*T.Type, []const u8) = .empty,
     /// Decision 328 — the lambda `inferFunctionExpr` is about to check is

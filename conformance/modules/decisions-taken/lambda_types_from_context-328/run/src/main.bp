@@ -2,5 +2,4 @@ mod cases;
 
 pub fn main() {
     cases.lambda_arg_generic_param_method.runCase();
-    cases.lambda_param_typed_by_later_call.runCase();
 }

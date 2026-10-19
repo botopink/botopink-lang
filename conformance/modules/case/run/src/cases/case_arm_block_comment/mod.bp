@@ -42,7 +42,7 @@ fn pick(n: i32) -> i32 {
             }
         }
         _ {
-            val f = { x -> x + 1 };
+            val f: fn(i32) -> i32 = { x -> x + 1 };
             // before the lambda is called
             f(40)
         }

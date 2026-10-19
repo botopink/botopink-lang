@@ -30,7 +30,7 @@ pub fn runCase() {
     print(p.y);
     print(element("k", "v"));
     print(apply({ n -> n * 2 }, p.x));
-    val twice = { n -> n * 2 };
+    val twice: fn(i32) -> i32 = { n -> n * 2 };
     print(twice(p.y));
     print(length("abc"));
     print("abcd".length());

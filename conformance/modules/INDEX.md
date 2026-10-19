@@ -1038,7 +1038,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/lambda_last_statement_semicolon | modules/decisions-taken/lambda_answers_last_expression-541/cells/lambda_last_statement_semicolon | 541 | 409 | b |
 | modules/lambda_method_chain | modules/lambda/run/src/cases/lambda_method_chain |  |  | c |
 | modules/lambda_param_shared_field | modules/lambda/run/src/cases/lambda_param_shared_field |  |  | c |
-| modules/lambda_param_typed_by_later_call | modules/decisions-taken/lambda_types_from_context-328/run/src/cases/lambda_param_typed_by_later_call | 328 |  | b |
+| modules/lambda_param_typed_by_later_call | modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_typed_by_later_call | 328 |  | b |
 | modules/lambda_param_untyped_method_refused | modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_untyped_method_refused | 328 |  | b |
 | modules/lambda_rebinds_case_binders | modules/lambda/run/src/cases/lambda_rebinds_case_binders |  |  | c |
 | modules/lambda_result_return_try | modules/decisions-taken/lambda_return_is_expected_type-147/run/src/cases/lambda_result_return_try | 147 |  | b |

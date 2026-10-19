@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: cannot infer the type of `n`: the lambda's parameter calls `toString` and nothing gives it a type
-at src/main.bp:8:36
+refused error: lambda-untyped: nothing types this lambda — write fn(n: T) -> R { … } or type the val
+at src/main.bp:8:20

@@ -3,7 +3,7 @@
 
 fn counter(start: i32) -> #(value: i32, bump: fn(n: i32) -> i32) {
     val value = start;
-    val bump = { n -> n + 1 };
+    val bump: fn(i32) -> i32 = { n -> n + 1 };
     return #(value, bump);
 }
 

@@ -1326,6 +1326,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
                 resolveAnnotationAt(env, ann, v.value.getLoc(), v.typeLoc) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
             else
                 null;
+            if (annType == null) try refuseUntypedLambdaBinding(env, v.value.*);
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const prevDeclSite = env.contextDeclSite;
@@ -8245,7 +8246,7 @@ fn refuseCapturedVarWrite(env: *Env, name: []const u8, loc: ast.Loc) InferError!
     const d = env.localBindDepth(name) orelse return;
     if (d >= env.lambdaDepth) return;
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `{s}`", .{ diagnostics.captured_var_write, name, name });
-    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[compiler.beamMemory(…)]` mode.").withLoc(loc);
+    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump: fn() -> void = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[compiler.beamMemory(…)]` mode.").withLoc(loc);
     return error.TypeError;
 }
 
@@ -18541,6 +18542,19 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
         .label = lp.label,
     } };
 }
+/// Decision 583 — every function is typed where it is written: a lambda bound
+/// to a `val` / `var` with no annotation — a local or a module-level one,
+/// with parameters or none — is typed by nothing (a later call no longer
+/// types it, 328 amended), and is refused at the lambda.
+fn refuseUntypedLambdaBinding(env: *Env, value: ast.Expr) InferError!void {
+    if (value != .function) return;
+    const fk = value.function.kind;
+    if (fk.syntax == .asyncBlock or fk.marker != null or (fk.syntax == .fnExpr and fk.isTyped())) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: nothing types this lambda — write fn(n: T) -> R {{ … }} or type the val", .{diagnostics.lambda_untyped});
+    env.lastError = TypeError.custom(msg, "A lambda `{ x -> … }` is written where its position fixes its type: the parameter it is passed to, an annotated `val`, a typed return (decision 583).").withLoc(value.function.loc);
+    return error.TypeError;
+}
+
 /// Infer type for binding expressions (variable declarations and assignments)
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
@@ -18554,18 +18568,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 resolveAnnotationAt(env, ann, loc, lb.typeLoc) catch |err| return locateTypeRefError(env, err, loc)
             else
                 null;
-            // Decision 583 — every function is typed where it is written: a
-            // lambda bound to a `val` / `var` with no annotation is typed by
-            // nothing (a later call no longer types it, 328 amended), and is
-            // refused at the lambda.
-            if (annType == null and lb.value.* == .function) {
-                const fk = lb.value.function.kind;
-                if (fk.syntax != .asyncBlock and fk.marker == null and !(fk.syntax == .fnExpr and fk.isTyped())) {
-                    const msg = try std.fmt.allocPrint(env.arena, "{s}: nothing types this lambda — write fn(n: T) -> R {{ … }} or type the val", .{diagnostics.lambda_untyped});
-                    env.lastError = TypeError.custom(msg, "A lambda `{ x -> … }` is written where its position fixes its type: the parameter it is passed to, an annotated `val`, a typed return (decision 583).").withLoc(lb.value.function.loc);
-                    return error.TypeError;
-                }
-            }
+            if (annType == null) try refuseUntypedLambdaBinding(env, lb.value.*);
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             // Decision 148 — a local closure called only at statement
@@ -20598,8 +20601,9 @@ fn inferSequenceNext(
 /// method carrying its type name (the backend resolves local vs imported owner).
 /// commonJS ignores the table (it dispatches natively).
 /// Decision 328 — a lambda's types come from where it is used. A method call
-/// whose receiver was still free when its body was checked (`val f = { n ->
-/// n.toString() }; f(2)`: `n` is `i32` only once `f(2)` is) is answered here,
+/// whose receiver was still free when its body was checked (`(fn(n) {
+/// n.toString() })(2)`: `n` is `i32` only once the call is; a binding no
+/// longer reaches it, decision 583) is answered here,
 /// after the module's bodies: the receiver's type now known, the call records
 /// the lowering and the return type a call on that type records when it is
 /// checked, so wasm, erlang and beam lower it as commonJS dispatches it. A
@@ -24297,8 +24301,8 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // so they don't error here.
                 const callTy = try env.freshVar();
                 // Decision 328 — a receiver still free (a lambda's parameter
-                // typed only by a later call, `val f = { n -> n.toString() };
-                // f(2)`) is answered once the module's bodies are inferred,
+                // typed only by the call that applies it, `(fn(n) {
+                // n.toString() })(2)`) is answered once the module's bodies are inferred,
                 // when its type is known (`resolvePendingReceiverCalls`).
                 if (recvPtr.getType().isUnbound()) {
                     const param: ?[]const u8 = if (call.receiver) |re| blk: {
@@ -25401,7 +25405,8 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
     // marked lambda is too (147).
     const typedExpected = if ((func.kind.syntax == .fnExpr and func.kind.isTyped()) or func.kind.marker != null) env.expectedType else null;
     // Decision 328 — a lambda written where nothing expects a type (an
-    // unannotated `val`): its parameters are typed only by later calls.
+    // immediate call's callee; an unannotated `val` is refused, 583): its
+    // parameters are typed only by the call that applies it.
     env.lambdaWithoutExpected = env.expectedType == null;
     env.expectedType = null;
     return inferFunctionExprExpected(env, func, loc, typedExpected orelse fallibleExpected, false);

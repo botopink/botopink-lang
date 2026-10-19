@@ -154,7 +154,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "nested-fn-decl",
             .message = "a `fn` is declared at module level, not inside a body",
             .caretCaption = "bind a lambda instead",
-            .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
+            .hint = "Inside a body a function is a value: `val inner: fn(i32) -> i32 = { x -> x + 1 };` — or move the declaration to module level.",
         },
         .sectionBodyMethod => .{
             .code = "section-body-method",

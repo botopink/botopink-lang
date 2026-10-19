@@ -12,7 +12,7 @@ fn fnBody() -> i32 {
 }
 
 fn lambdaBody() -> i32 {
-    val f = { x ->
+    val f: fn(i32) -> i32 = { x ->
         val y = x + 1;
         y
         // last

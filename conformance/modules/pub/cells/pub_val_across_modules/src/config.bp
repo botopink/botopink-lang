@@ -31,6 +31,6 @@ pub val scaled = limit * unit;
 
 pub val name = "cfg";
 
-pub val twice = { x -> x * 2 };
+pub val twice: fn(i32) -> i32 = { x -> x * 2 };
 
 pub val counted = announce("counted evaluated");

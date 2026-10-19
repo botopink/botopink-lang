@@ -36,11 +36,11 @@ fn reassigned() -> i32 {
 fn siblings() -> i32 {
     var total = 0;
     for ([1, 2]) { k ->
-        val f = { -> k };
+        val f: fn() -> i32 = { -> k };
         total = total + f();
     }
     for ([3]) { k ->
-        val f = { -> k * 10 };
+        val f: fn() -> i32 = { -> k * 10 };
         total = total + f();
     }
     return total;

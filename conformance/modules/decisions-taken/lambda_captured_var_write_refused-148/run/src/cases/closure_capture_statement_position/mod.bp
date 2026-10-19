@@ -16,7 +16,7 @@ pub fn runCase() {
     [1, 2, 3].forEach({ x ->
         n = n + x;
     });
-    val bump = { ->
+    val bump: fn() = { ->
         n = n + 10;
     };
     bump();
