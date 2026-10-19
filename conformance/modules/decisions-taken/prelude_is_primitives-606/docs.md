@@ -8,4 +8,5 @@
 [cases/prelude_name_shadowed/src/main.bp](cases/prelude_name_shadowed/src/main.bp)
 [cases/prelude_name_with_sigil/src/main.bp](cases/prelude_name_with_sigil/src/main.bp)
 [cases/print_from_io_terminal/src/main.bp](cases/print_from_io_terminal/src/main.bp)
+[cases/print_local_shadows_import/src/main.bp](cases/print_local_shadows_import/src/main.bp)
 [cases/type_info_comptime_run_time/src/main.bp](cases/type_info_comptime_run_time/src/main.bp)
