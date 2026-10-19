@@ -779,6 +779,12 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // is inferred. Bail out early when contributions exist — the spliced
     // re-analysis does the real inference.
     try registerStdImportDecorators(env, program);
+    // Decision 380 — an annotation's argument may call a std function
+    // through a namespace the module imports (`revalidate: clock.hours(1)`,
+    // 290): the std imports are bound before the arguments are checked.
+    for (program.decls) |d| if (d == .use) {
+        _ = try markStdImports(env, d.use);
+    };
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try refuseHooksReaderOutputs(env, program);
@@ -953,6 +959,12 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // generated decl failed spuriously, which blocked `@emit` under `botopink
     // test`. The serialized handles read only the AST, so no body inference is
     // needed first.)
+    // Decision 380 — an annotation's argument may call a std function
+    // through a namespace the module imports (`revalidate: clock.hours(1)`,
+    // 290): the std imports are bound before the arguments are checked.
+    for (program.decls) |d| if (d == .use) {
+        _ = try markStdImports(env, d.use);
+    };
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try refuseHooksReaderOutputs(env, program);
@@ -5567,6 +5579,13 @@ fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: u
                 for (call.args) |arg| if (decoratorArgNotKnownAt(env, program, arg.value.*, depth + 1)) |l| return l;
                 return null;
             }
+            // Decision 380 — a call of a function computed at build (an `Any`
+            // one, `callFoldable`) over arguments known there is known there:
+            // `revalidate: clock.hours(1)` (290).
+            if (callFoldable(env, c)) {
+                for (call.args) |arg| if (decoratorArgNotKnownAt(env, program, arg.value.*, depth + 1)) |l| return l;
+                return null;
+            }
             return c.loc;
         },
         .identifier => |id| switch (id.kind) {
@@ -6111,6 +6130,10 @@ fn runDeclDecorators(
         // leading-dot variants (`.Erlang(…)` is `Implementation.Erlang(…)`).
         var hosts = try hostCells.Writer.init(env, program.decls);
         const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
+        // Decision 380 — an argument is written in this module: its std calls
+        // (`clock.hours(1)`, 290) are this module's to rename, and the std
+        // functions they reach travel with it.
+        for (builtFns.items) |*bf| bf.* = try hosts.rewrite(bf.*);
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, found.fns, builtFns.items });
         const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "__DeclKind", ast.decl_type_name }) else &.{ "__DeclKind", "__Span", "DeclKind", "Span", ast.decl_type_name }, if (tfn != null) "" else owner);
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
@@ -6133,7 +6156,12 @@ fn runDeclDecorators(
             const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
             erasedSupport[k] = try syntaxParam.eraseForRun(rs, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
-        const runSupport = if (local) try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
+        const runSupport = if (local)
+            try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(rs, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) })
+        else if (builtFns.items.len > 0)
+            try std.mem.concat(rs, ast.FnDecl, &.{ erasedSupport, try withoutListed(rs, try hostCells.hostSupport(env, &env.fnDecls, builtFns.items), erasedSupport) })
+        else
+            erasedSupport;
         // Decision 451 (3) — the calls of the decorator and of the functions
         // of its module it reaches are located: in this module's own file, or
         // in the decorator's, which the diagnostic then names
@@ -7786,6 +7814,17 @@ fn noteDefaultQueries(env: *Env, program: ast.Program) InferError!void {
         one[0] = rq;
         try r.templateQueries.put(r.arena, try reflectionMod.Reflection.defaultKey(r.arena, env.modulePath, dq.fn_name, dq.param), one);
     }
+}
+
+/// `fns` less the functions `have` already lists by name: the std functions
+/// a decorator argument reaches beside the decorator's own closure, each once.
+fn withoutListed(arena: std.mem.Allocator, fns: []const ast.FnDecl, have: []const ast.FnDecl) InferError![]const ast.FnDecl {
+    var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    outer: for (fns) |f| {
+        for (have) |h| if (std.mem.eql(u8, h.name, f.name)) continue :outer;
+        try out.append(arena, f);
+    }
+    return out.items;
 }
 
 fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) InferError!void {
