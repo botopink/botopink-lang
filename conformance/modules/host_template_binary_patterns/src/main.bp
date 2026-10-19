@@ -1,0 +1,42 @@
+//// An `#[@external(.Erlang("""…"""))]` template may match a binary with any fixed-size
+//// byte segment, on erlang and beam alike: a literal prefix, `Rest/binary`, a sized
+//// `/binary`, a literal followed by an integer field, and an integer of whole bytes read
+//// little-endian or signed.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("""case $0 of <<"ab", R/binary>> -> R; <<_/binary>> -> <<"other">> end"""))]
+declare fn stripAb(s: string) -> string;
+
+#[compiler.external(.Erlang("""case $0 of <<_:3/binary, R/binary>> -> R; _ -> <<>> end"""))]
+declare fn dropThree(s: string) -> string;
+
+#[compiler.external(.Erlang("""case $0 of <<A:2/binary, _/binary>> -> A; _ -> <<>> end"""))]
+declare fn takeTwo(s: string) -> string;
+
+#[compiler.external(.Erlang("""case $0 of <<"x", Y, _/binary>> -> Y; _ -> 0 end"""))]
+declare fn afterX(s: string) -> i32;
+
+#[compiler.external(.Erlang("""case $0 of <<A:16/little, _/binary>> -> A; _ -> 0 end"""))]
+declare fn little(s: string) -> i32;
+
+#[compiler.external(.Erlang("""case $0 of <<A:8/signed, _/binary>> -> A; _ -> 0 end"""))]
+declare fn signedFirst(s: string) -> i32;
+
+#[compiler.external(.Erlang("""case $0 of <<A:16/signed, _/binary>> -> A; _ -> 0 end"""))]
+declare fn signed16(s: string) -> i32;
+
+pub fn main() {
+    print(stripAb("abcd"));
+    print(stripAb("zz"));
+    print(dropThree("abcdef"));
+    print(dropThree("ab"));
+    print(takeTwo("xyz"));
+    print(afterX("xy"));
+    print(afterX("zy"));
+    print(little("ab"));
+    print(signedFirst("a"));
+    print(signed16("ab"));
+    print(signedFirst("é"));
+    print(signed16("é"));
+}

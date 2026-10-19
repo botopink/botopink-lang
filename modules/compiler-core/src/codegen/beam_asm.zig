@@ -7868,6 +7868,18 @@ const Emitter = struct {
                     try self.lowerDynamicMethodCall(recv_expr, cc, mode);
                     return;
                 }
+                // `toString()` on a value no primitive interface types (a tuple):
+                // the text `@print` writes for it.
+                if (std.mem.eql(u8, cc.callee, "toString") and total_arity == 1) {
+                    try self.lowerExprIntoX0(recv_expr.*);
+                    const helper = try self.ensureStringifyHelper();
+                    const helper_labels = try self.fnLabelsFor(helper, 1);
+                    switch (mode) {
+                        .non_tail => try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = helper_labels.entry }, 0),
+                        .tail => try beamEmitter.writeCall(self.out, .last, 1, .{ .local = helper_labels.entry }, self.num_y),
+                    }
+                    return;
+                }
                 try self.materializeCallArgs(cc.args, cc.trailing);
                 try self.emitUnresolvedAbort("unresolved_method", cc.callee, total_arity);
                 if (mode == .tail) try self.emitReturn();
@@ -8593,9 +8605,19 @@ const Emitter = struct {
         var tail: std.Io.Writer.Allocating = .init(self.alloc);
         defer tail.deinit();
         self.out = &tail.writer;
-        try self.emitUnresolvedAbort("unresolved_method", shim.callee, arity);
-        try beamEmitter.writeDeallocate(self.out, self.num_y);
-        try beamEmitter.writeReturn(self.out);
+        if (std.mem.eql(u8, shim.callee, "toString") and shim.argc == 0) {
+            // No kind answered `toString()`: the text `@print` writes for the
+            // value (a tuple), as erlang's `'__bp_text'/1` fallback clause.
+            const helper = try self.ensureStringifyHelper();
+            const helper_labels = try self.fnLabelsFor(helper, 1);
+            self.out = &tail.writer;
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .last, 1, .{ .local = helper_labels.entry }, self.num_y);
+        } else {
+            try self.emitUnresolvedAbort("unresolved_method", shim.callee, arity);
+            try beamEmitter.writeDeallocate(self.out, self.num_y);
+            try beamEmitter.writeReturn(self.out);
+        }
         try sections.append(self.alloc, try tail.toOwnedSlice());
 
         self.cur_line += 1;
@@ -8793,6 +8815,9 @@ const Emitter = struct {
     /// prelude's), or one imported from another module.
     fn externalDeclFor(self: *const Emitter, name: []const u8) ?ast.FnDecl {
         if (self.reg_map.contains(name)) return null;
+        // The program's own `fn run` / `fn size` is the program's, not the
+        // std host binding of the same bare name another module declares.
+        if (self.top_fns.contains(name)) return null;
         if (self.externals.get(name)) |f| return f;
         if (self.crossOwnerOf(name, .@"fn") == null) return null;
         for (self.all_outputs) |*other| {

@@ -939,6 +939,12 @@ nothing, and a call of a `fn` written `{}` runs and answers nothing, on every ta
 
 <!-- example: modules/fn_empty_body_call -->
 
+A program's own function is the program's whatever a std module names the same: `fn run` and `fn size`
+are called as written, also where the program imports `io.process` (which declares `run`) and
+`io.terminal` (which declares `size`):
+
+<!-- example: modules/user_fn_named_like_std -->
+
 ## Types
 
 ### Primitives
@@ -4621,6 +4627,12 @@ A decorator argument that is a variant constructor (`Shape.Circle(radius: 2)`, `
 <!-- example: modules/format_annotation_trailing_comma -->
 
 <!-- example: modules/external_wasm_host_binding -->
+
+An Erlang template that matches a binary may use any fixed-size byte segment — a literal prefix,
+`Rest/binary`, a sized `/binary`, a literal followed by an integer field, an integer of whole bytes
+read `little` or `signed` — and erlang and beam answer the same:
+
+<!-- example: modules/host_template_binary_patterns -->
 
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it

@@ -80,9 +80,10 @@ site (beam target) (an Erlang cell never runs at build, decision 452); there is 
 `maybe`, records (`#name{…}`), macros (`?NAME`); from the lowering, a call
 through a computed module or function name, a `fun` with no clause, unary
 operators other than `-`/`not`/`bnot`, a map update or a computed/unbound key
-in a pattern, a binary pattern other than literal bytes plus an optional
-`Rest/binary` tail or fixed-size unsigned big-endian integer fields (plus the
-same tail once they fill whole bytes), a string `++` pattern with a
+in a pattern, a binary pattern other than fixed-size byte segments (literal
+bytes, `Size/binary`, integers of whole bytes, `little` or `signed`) or
+fixed-size unsigned big-endian bit fields, each with an optional `Rest/binary`
+tail (a `utf8` or unit segment is refused), a string `++` pattern with a
 non-literal prefix, a binary construction segment that is sized (other than
 `integer:8`), `/float`, or of any type but `binary`/`bytes`/`integer`/`utf8`,
 a binary generator other than `<<C/utf8>>` / `<<B>>` over one segment, a guard

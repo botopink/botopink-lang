@@ -1,0 +1,1 @@
+{ "name": "host_template_binary_patterns", "targets": ["erlang", "beam"] }

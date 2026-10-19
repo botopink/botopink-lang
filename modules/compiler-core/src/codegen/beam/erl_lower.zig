@@ -1372,7 +1372,18 @@ fn binaryPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32) Erro
     const last = segs[segs.len - 1];
     const rest_ok = last.types.len == 1 and std.mem.eql(u8, last.types[0], "binary") and last.size == null and last.value == .variable;
     const lit_prefix = if (rest_ok) try literalBinary(f.ar(), segs[0 .. segs.len - 1]) else null;
-    if (lit_prefix == null) return integerSegmentsPattern(f, segs, subject, fail, rest_ok);
+    if (lit_prefix == null) {
+        const fields = if (rest_ok) segs[0 .. segs.len - 1] else segs;
+        // Bit-level integer fields (`<<A:32, _:4, B:12>>`) are the bit reader's;
+        // any other fixed-size byte segment (a literal, a sized `/binary`, a
+        // little-endian or signed integer) is read by position.
+        var bit_level = true;
+        for (fields) |s| {
+            if (s.value == .string or integerSegmentBits(s) == null) bit_level = false;
+        }
+        if (bit_level) return integerSegmentsPattern(f, segs, subject, fail, rest_ok);
+        return byteSegmentsPattern(f, segs, subject, fail, rest_ok);
+    }
     const prefix = lit_prefix.?;
     try f.move(subject, Arg.xr(0));
     try f.emit(.is_binary, &.{ Arg.lbl(fail), Arg.xr(0) });
@@ -1399,6 +1410,131 @@ fn binaryPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32) Erro
     const rest = f.temp();
     try f.move(Arg.xr(0), rest);
     try pattern(f, last.value, rest, fail);
+}
+
+/// One fixed-size byte segment of a binary pattern, read by position.
+const ByteSegment = union(enum) {
+    /// Literal bytes the subject must hold.
+    literal: []const u8,
+    /// An integer of `bytes` bytes.
+    integer: struct { bytes: u64, little: bool, signed: bool },
+    /// A `/binary` of `bytes` bytes.
+    binary: u64,
+};
+
+/// The byte layout of a non-tail pattern segment, or null for one the reader
+/// cannot place (a `utf8` or float segment, a size that is not a literal
+/// whole number of bytes, a unit).
+fn byteSegmentOf(f: *Fn, s: ep.Segment) Error!?ByteSegment {
+    if (s.value == .string or (s.value == .int and s.types.len == 0 and s.size == null)) {
+        if (try literalBinary(f.ar(), &.{s})) |bytes| return .{ .literal = bytes };
+    }
+    var little = false;
+    var signed = false;
+    var is_binary = false;
+    var is_integer = false;
+    for (s.types) |t| {
+        if (std.mem.eql(u8, t, "little")) {
+            little = true;
+        } else if (std.mem.eql(u8, t, "signed")) {
+            signed = true;
+        } else if (std.mem.eql(u8, t, "binary") or std.mem.eql(u8, t, "bytes")) {
+            is_binary = true;
+        } else if (std.mem.eql(u8, t, "integer")) {
+            is_integer = true;
+        } else if (!(std.mem.eql(u8, t, "unsigned") or std.mem.eql(u8, t, "big"))) return null;
+    }
+    if (is_binary and (is_integer or little or signed)) return null;
+    const n: u64 = if (s.size) |sz| switch (sz) {
+        .int => |v| if (v > 0) @intCast(v) else return null,
+        else => return null,
+    } else if (is_binary) return null else 8;
+    if (is_binary) return .{ .binary = n };
+    if (n % 8 != 0) return null;
+    return .{ .integer = .{ .bytes = n / 8, .little = little, .signed = signed } };
+}
+
+/// A binary pattern of fixed-size byte segments — literals, `Size/binary`,
+/// integers of whole bytes in either endianness and either sign — optionally
+/// followed by a `/binary` tail. The size is tested, then each segment is
+/// `binary_part/3` at its position and matched as a pattern (an integer read
+/// by `binary:decode_unsigned/2`, a signed one corrected with `bxor`/`-`).
+fn byteSegmentsPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32, has_tail: bool) Error!void {
+    const l = f.l;
+    const fields = if (has_tail) segs[0 .. segs.len - 1] else segs;
+    const layout = try f.ar().alloc(ByteSegment, fields.len);
+    var total: u64 = 0;
+    for (fields, 0..) |s, i| {
+        layout[i] = (try byteSegmentOf(f, s)) orelse
+            return l.refuse("a binary pattern segment other than a fixed-size literal, integer or /binary", .{});
+        total += switch (layout[i]) {
+            .literal => |b| b.len,
+            .integer => |g| g.bytes,
+            .binary => |n| n,
+        };
+    }
+    try f.move(subject, Arg.xr(0));
+    try f.emit(.is_binary, &.{ Arg.lbl(fail), Arg.xr(0) });
+    const size = f.temp();
+    try f.emit(.gc_bif1, &.{ Arg.lbl(fail), Arg.uint(1), Arg.extFn("erlang", "byte_size", 1), Arg.xr(0), size });
+    try f.move(size, Arg.xr(0));
+    if (has_tail) {
+        try f.emit(.is_ge, &.{ Arg.lbl(fail), Arg.xr(0), Arg.int(@as(i64, @intCast(total))) });
+    } else {
+        try f.emit(.is_eq_exact, &.{ Arg.lbl(fail), Arg.xr(0), Arg.int(@as(i64, @intCast(total))) });
+    }
+    var off: u64 = 0;
+    for (fields, layout) |s, g| {
+        const len: u64 = switch (g) {
+            .literal => |b| b.len,
+            .integer => |x| x.bytes,
+            .binary => |n| n,
+        };
+        const skip = s.value == .variable and std.mem.eql(u8, s.value.variable, "_") and g != .literal;
+        if (!skip) {
+            try f.move(subject, Arg.xr(0));
+            try f.move(Arg.int(@as(i64, @intCast(off))), Arg.xr(1));
+            try f.move(Arg.int(@as(i64, @intCast(len))), Arg.xr(2));
+            try f.emit(.call_ext, &.{ Arg.uint(3), Arg.extFn("erlang", "binary_part", 3) });
+            switch (g) {
+                .literal => |b| try f.emit(.is_eq_exact, &.{ Arg.lbl(fail), Arg.xr(0), Arg.lit(Term.str(b)) }),
+                .binary => {
+                    const v = f.temp();
+                    try f.move(Arg.xr(0), v);
+                    try pattern(f, s.value, v, fail);
+                },
+                .integer => |x| {
+                    try f.move(Arg.atomOf(if (x.little) "little" else "big"), Arg.xr(1));
+                    try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("binary", "decode_unsigned", 2) });
+                    if (x.signed) {
+                        const half: i64 = if (x.bytes * 8 - 1 <= 59) @as(i64, 1) << @intCast(x.bytes * 8 - 1) else return l.refuse("a signed binary pattern integer of more than 60 bits", .{});
+                        try f.move(Arg.int(half), Arg.xr(1));
+                        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "bxor", 2) });
+                        try f.move(Arg.int(half), Arg.xr(1));
+                        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "-", 2) });
+                    }
+                    const v = f.temp();
+                    try f.move(Arg.xr(0), v);
+                    try pattern(f, s.value, v, fail);
+                },
+            }
+        }
+        off += len;
+    }
+    if (has_tail) {
+        const rest_len = f.temp();
+        try f.move(size, Arg.xr(0));
+        try f.move(Arg.int(@as(i64, @intCast(total))), Arg.xr(1));
+        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "-", 2) });
+        try f.move(Arg.xr(0), rest_len);
+        try f.move(subject, Arg.xr(0));
+        try f.move(Arg.int(@as(i64, @intCast(total))), Arg.xr(1));
+        try f.move(rest_len, Arg.xr(2));
+        try f.emit(.call_ext, &.{ Arg.uint(3), Arg.extFn("erlang", "binary_part", 3) });
+        const rest = f.temp();
+        try f.move(Arg.xr(0), rest);
+        try pattern(f, segs[segs.len - 1].value, rest, fail);
+    }
 }
 
 /// The size in bits of an integer pattern segment — big-endian, unsigned, a
