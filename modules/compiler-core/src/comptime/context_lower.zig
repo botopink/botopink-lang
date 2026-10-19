@@ -19,7 +19,7 @@
 //!   return v             →  return bpScopeRendered__(v, <kids>)
 //!
 //! and a body that ends without a `return` answers `rendered(null, <kids>)`.
-//! A `component { x -> body }` lambda (decision 574, `Env.componentLambdas`)
+//! A `{ component x -> body }` lambda (decision 574, `Env.componentLambdas`)
 //! is lowered the same way, its tail made its `return`:
 //! `{ x -> return { bpScope__ -> body' }; }` — its parameters and what it
 //! captures closed over by the inner lambda.
@@ -356,7 +356,7 @@ const Lowering = struct {
                 return true;
             },
             .function => |*f| {
-                // Decision 574 — a `component { -> … }` lambda is a
+                // Decision 574 — a `{ component -> … }` lambda is a
                 // `component fn`: its body becomes the lambda over the scope,
                 // the lambda's parameters and captures closed over by it.
                 if (f.kind.marker == .component) if (self.env.componentLambdas.get(f.loc)) |r| {
@@ -470,7 +470,7 @@ const Lowering = struct {
         return out;
     }
 
-    /// Decision 574 — `component { x -> body }` as `{ x -> return { bpScope__
+    /// Decision 574 — `{ component x -> body }` as `{ x -> return { bpScope__
     /// -> body' }; }`, the body a `component fn`'s (`lowerComponentBody`).
     /// The tail the body answers (decision 541 (1)) is its `return`, so it
     /// is rendered as a `return` is.

@@ -324,15 +324,20 @@ Where the `E` is inferred (`env.inferredErrorScope`: an unannotated block, or an
 joins it through `unifyErrorChannel`, and two errors that do not unify are
 `gen-infer-conflicting-errors`.
 
-**Decision 553 (4) — a marked lambda.** The parser writes `async { x -> b }`, `iter { x -> b }` and
-`async iter { x -> b }` as the unmarked lambda returning the block form they name
+**Decision 553 (4) — a marked lambda.** The parser writes `{ async x -> b }`, `{ iter x -> b }` and
+`{ async iter x -> b }` as the unmarked lambda returning the block form they name
 (`parser/AGENTS.md`), `FunctionExpr.kind.marker` set, so the block's own context admits `await` /
 `yield` and the four backends lower nothing new. `inferFunctionExpr` keeps the position's expectation
 for a marked lambda, and `checkLambdaMarker` (the top of `inferFunctionExprExpected`) reads the marker
 against it (147): none, or a type still free, is `marker-lambda-without-expected-type`, an expected
 function type whose return is another wrapper is `marker-type-mismatch`, both at the marker; an
 expected return still free agrees (the body makes the wrapper). A typed `fn` expression's marker is
-the parser's to check. A `component { -> … }` lambda (decision 574) is a `component fn`: its body is checked as a component body
+the parser's to check. A marked trailing lambda (`f(1) { async x -> … }`) carries its marker into the
+argument `ast.lowerTrailingLambdas` makes. Decision 584 (2) — a marked lambda's body is a function
+body: `inferGeneratorLoop` reads a `markedLambda` loop with `loopDepth` 0 (a top-level `continue` is
+`continue-outside-loop`, a bare `break` still ends the generator) and `StarFnCtx.markedLambda` set, so a
+`break <value>` aimed at it is `marker-lambda-break-value` and a `return <value>` is read as an
+`iter fn`'s (`iter-mixed-yield-return`, until 553 (iii) gives the iterator its `R`). A `{ component -> … }` lambda (decision 574) is a `component fn`: its body is checked as a component body
 (`starFn` `.component`, `inContextFn`, an annotated `fnContext`, no `useConstruct`, no hook node of the
 enclosing function's), its `return`s and its tail answer the `R` of the expected `@Component<R>`, and the
 lambda answers `@Component<R>`; `Env.componentLambdas` records it by location with its `R`, and

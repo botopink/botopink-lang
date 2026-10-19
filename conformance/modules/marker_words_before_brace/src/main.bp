@@ -1,0 +1,23 @@
+//// Decision 584 (1) — `{ async`, `{ iter`, `{ component` open a marked
+//// lambda, and before a brace the words are names: `async { … }` is always
+//// the block (523), whatever its body starts with, and a function named
+//// `iter` or `component` takes a trailing lambda as any function does, no
+//// parentheses needed.
+
+import {io.terminal.print} from "std";
+
+fn iter(f: fn(x: i32) -> i32) -> i32 {
+    return f(20);
+}
+
+fn component(f: fn() -> string) -> string {
+    return f() + "!";
+}
+
+pub fn main() -> Task<void> {
+    print(iter { x -> x + 1 });
+    print(component { -> "named" });
+    val x = 7;
+    val t = async { x };
+    print(await t);
+}

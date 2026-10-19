@@ -173,14 +173,21 @@ by `fn`. A declaration takes it right before `fn` — `[#[…]] [pub] [default] 
 (`marker-type-mismatch`; an implement method's return is checked when written). `FnDecl.marker` /
 `BehaviorMethod.marker` / `ImplementMethod.marker` keep it, and a marked `FnDecl`'s `effect` is the
 marker's (an unmarked one keeps `EffectKind.ofFn`). In an expression `exprs.parseMarkedAhead` reads
-`<marker> { params -> … }` and `<marker> fn(…) { … }` (`lambdaHeadAt` tells the lambda from a block):
-`async { … }` without `->` stays the block, and `iter` / `async iter` / `component` before a `{`
-without `->` are `marker-without-arrow` at statement start (`parseExpr`) and a name in an operand
-(`parsePrimary`: `case iter { … }`). `desugarMarked` writes the marked function as the unmarked one it
-means, `FunctionExpr.kind.marker` set: `async { x -> b }` is `{ x -> return async { b }; }`,
-`iter { x -> b }` is `{ x -> return iter loop { b; break; }; }` and `async iter` the same with a
-`stream loop` (the `return` is `tail = .returned`); `component` keeps its body. A marked trailing
-lambda (`f(1) async { … }`) is not parsed. A body's tail `await e` / `try e` is its value
+`<marker> fn(…) { … }` and `async { … }`, always the block (decision 584 (1)): before a brace the other
+words are names (`iter { x -> … }` calls a function named `iter`). A lambda writes its marker inside the
+brace, before the parameters (584 (1)): `exprs.lambdaMarkerAhead`, read just after the `{` by
+`parsePrimary`'s lambda arm and by `parseTrailingLambdas`, takes `{ async x -> … }`, `{ iter -> … }`,
+`{ async iter x -> … }`, `{ component -> … }`; a marker word an expression continues (`{ iter.next() }`,
+`{ async { … } }`, `{ iter loop { … } }`, `{ async, b -> … }`) is no marker, and one followed by what
+starts a statement with no `->` (`{ iter yield 1; }`, `{ async x }`) is `marker-without-arrow` at the
+marker. `desugarMarked` / `desugarMarkedBody` write the marked function as the unmarked one it
+means, `FunctionExpr.kind.marker` (or `TrailingLambda.marker`) set: `{ async x -> b }` is
+`{ x -> return async { b }; }`, `{ iter x -> b }` is `{ x -> return iter loop { b; break; }; }` and
+`async iter` the same with a `stream loop` (the `return` is `tail = .returned`; the loop is
+`markedLambda`, read by the checker as the lambda's function body, 584 (2)); `component` keeps its body.
+A marked lambda's location is its marker's. `checkFnMarker` refuses a marked `fn` with no return type
+as `markerReturnMissing` (code `marker-type-mismatch`, its caption naming the type to write, 584 (3)).
+A body's tail `await e` / `try e` is its value
 (`tailLeaves`, decision 537), so `returnTail` / `jumpTail` wrap it in the `return`.
 A trailing lambda stays a `TrailingLambda` in the parser's tree (the formatter prints it as written); the checker
 lowers it to the call's last argument (`ast.lowerTrailingLambdas`, `comptime/AGENTS.md`).

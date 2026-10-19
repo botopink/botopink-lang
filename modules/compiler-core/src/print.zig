@@ -39,6 +39,17 @@ pub const ErrorMessages = struct {
     note: ?[]const u8 = null,
 };
 
+/// Decision 584 (3) — the caption of a marker written with no return type:
+/// the wrapper its marker names (`detail` is the marker's word).
+fn markerReturnCaption(detail: ?[]const u8) []const u8 {
+    const word = detail orelse return "write the return type its marker names";
+    if (std.mem.eql(u8, word, "async")) return "write `-> Task<…>`";
+    if (std.mem.eql(u8, word, "iter")) return "write `-> Iterator<…>`";
+    if (std.mem.eql(u8, word, "async iter")) return "write `-> Stream<…>`";
+    if (std.mem.eql(u8, word, "component")) return "write `-> Component<…>`";
+    return "write the return type its marker names";
+}
+
 /// Returns the (message, hint) pair for a given parse error.
 pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
     return switch (info.kind) {
@@ -121,11 +132,17 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "the return type does not match this marker",
             .hint = "Each marker writes its wrapper as the return type (decision 553): `async fn … -> Task<T>`, `iter fn … -> Iterator<T>`, `async iter fn … -> Stream<T>`, `component fn … -> Component<R>`. Write that return type, or drop the marker.",
         },
+        .markerReturnMissing => .{
+            .code = "marker-type-mismatch",
+            .message = "a body marker names its return type, and this function writes none",
+            .caretCaption = markerReturnCaption(info.detail),
+            .hint = "Every function writes its return type (decisions 583, 622), and a marker's is the wrapper it names (decisions 553, 584): `async fn … -> Task<T>`, `iter fn … -> Iterator<T>`, `async iter fn … -> Stream<T>`, `component fn … -> Component<R>`.",
+        },
         .markerWithoutArrow => .{
             .code = "marker-without-arrow",
-            .message = "a marker before `{` opens a lambda, which writes `->`",
-            .caretCaption = "no block form: write `iter loop { … }`, or `iter { -> … }`",
-            .hint = "A marked lambda is `iter { x -> … }`, `async iter { x -> … }` or `component { -> … }` (decision 553); the block forms are `async { … }` (523), `iter loop { … }` and `stream loop { … }` (125). A function named `iter`, `async` or `component` called with a trailing lambda writes its parentheses: `iter() { … }`.",
+            .message = "a marker inside `{` opens a lambda, which writes `->`",
+            .caretCaption = "no block form: write `iter loop { … }`, or `{ iter -> … }`",
+            .hint = "A marked lambda writes its marker inside the brace, before the parameters: `{ async x -> … }`, `{ iter -> … }`, `{ async iter x -> … }`, `{ component -> … }` (decision 584); the block forms are `async { … }` (523), `iter loop { … }` and `stream loop { … }` (125).",
         },
         .markerOnDeclaration => .{
             .code = "marker-on-declaration",

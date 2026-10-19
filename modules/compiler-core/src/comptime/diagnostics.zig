@@ -826,8 +826,8 @@ pub const context_behavior_not_implemented: []const u8 = "context-behavior-not-i
 /// a declaration's written return (the parser, `print.zig`), a marked lambda's
 /// expected function type (147, the checker). Located at the marker.
 pub const marker_type_mismatch: []const u8 = "marker-type-mismatch";
-/// Decision 553 (1) — `iter { … }`, `async iter { … }`, `component { … }`
-/// without `->`: refused by the parser (`print.zig`).
+/// Decision 584 (1) — `{ iter yield 1; }`, `{ async x }`: a marker inside a
+/// lambda's brace without `->`, refused by the parser (`print.zig`).
 pub const marker_without_arrow: []const u8 = "marker-without-arrow";
 /// Decision 553 (4), 147 — a marked lambda with no expected function type and
 /// no written return type. Located at the marker.
@@ -835,6 +835,9 @@ pub const marker_lambda_without_expected_type: []const u8 = "marker-lambda-witho
 /// Decision 553 (1) — a marker on a bodyless declaration: refused by the
 /// parser (`print.zig`, open point B-116-b).
 pub const marker_on_declaration: []const u8 = "marker-on-declaration";
+/// Decision 584 (2) — `break <value>` in a marked lambda's body, a function
+/// body (`{ iter x -> … break v; }`). Located at the `break`.
+pub const marker_lambda_break_value: []const u8 = "marker-lambda-break-value";
 
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
@@ -1036,6 +1039,7 @@ pub const all_codes = [_][]const u8{
     marker_without_arrow,
     marker_lambda_without_expected_type,
     marker_on_declaration,
+    marker_lambda_break_value,
     declare_without_implementation,
     declare_in_behavior,
     implementation_twice,

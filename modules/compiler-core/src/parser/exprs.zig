@@ -91,20 +91,16 @@ fn parseAsyncBlockAhead(this: *This, alloc: std.mem.Allocator) ParseError!?Expr 
     return try parsePostfixChain(this, alloc, block);
 }
 
-/// Decision 553 (1) — a marked lambda or `fn` expression at the cursor:
-/// `async { x -> … }`, `iter { -> … }`, `async iter { x -> … }`,
-/// `component { -> … }`, and `<marker> fn(…) { … }`. `->` tells a lambda from
-/// the block forms: `async { … }` stays the block (523), and `iter { … }`,
-/// `async iter { … }`, `component { … }` without it are `marker-without-arrow`
-/// (the iterator's block is `iter loop { … }`, 125). Only the bare word before
-/// `{` or `fn` is a marker: `x.iter { -> }` is a member call, and a function
-/// named `iter` called with a trailing lambda writes its parentheses (525).
-/// `iter loop` / `stream loop` are `genLoopPrefixAhead`'s. Null when the
-/// cursor is on none of them. `atStart` is false for an operand
-/// (`parsePrimary`), where a `{` after a name may be the enclosing
-/// construct's (`case iter { … }` matches a value named `iter`): there a
-/// marker without `->` is left a name, and the refusal is `parseExpr`'s.
-fn parseMarkedAhead(this: *This, alloc: std.mem.Allocator, comptime atStart: bool) ParseError!?Expr {
+/// Decision 553 (1) — a marked `fn` expression at the cursor,
+/// `<marker> fn(…) { … }`, or the `async { … }` block (523): `async {` is
+/// always the block (decision 584 (1)). A marked lambda writes its marker
+/// inside the brace (`{ async x -> … }`, `parsePrimary`'s lambda arm and
+/// `parseTrailingLambdas`), so `iter { … }`, `component { … }` before a brace
+/// are names — a function named `iter` called with a trailing lambda. Only the
+/// bare word before `fn` is a marker: `x.iter` is a member. `iter loop` /
+/// `stream loop` are `genLoopPrefixAhead`'s. Null when the cursor is on none
+/// of them.
+fn parseMarkedAhead(this: *This, alloc: std.mem.Allocator) ParseError!?Expr {
     const m = this.markerAt(0) orelse return null;
     const next = this.peekAt(m.len).kind;
     if (next == .@"fn" and this.peekAt(m.len + 1).kind == .leftParenthesis) {
@@ -118,39 +114,54 @@ fn parseMarkedAhead(this: *This, alloc: std.mem.Allocator, comptime atStart: boo
         try desugarMarked(alloc, &e.function, m.kind, markerTok);
         return e;
     }
-    if (next != .leftBrace) return null;
-    if (!lambdaHeadAt(this, this.current + m.len + 1)) {
-        // `async { … }` — the block (decision 124).
-        if (m.kind == .task and m.len == 1) return parseAsyncBlockAhead(this, alloc);
-        if (!atStart) return null;
-        this.parseError = ParseErrorInfo.fromToken(.markerWithoutArrow, this.peek());
-        return ParseError.UnexpectedToken;
-    }
-    const markerTok = this.advance();
-    if (m.len == 2) _ = this.advance();
-    var e = try this.parsePrimary(alloc);
-    errdefer e.deinit(alloc);
-    try desugarMarked(alloc, &e.function, m.kind, markerTok);
-    return e;
+    // `async { … }` — the block (decision 124), whatever its body starts with.
+    if (m.kind == .task and m.len == 1 and next == .leftBrace) return parseAsyncBlockAhead(this, alloc);
+    return null;
 }
 
-/// Decision 553 (1) — a marked function written as the unmarked one it means,
-/// so the checker's block forms and the four backends' lowering serve it
-/// unchanged: `async { x -> b }` is `{ x -> async { b } }`, `iter { x -> b }`
-/// is `{ x -> iter loop { b; break; } }` and `async iter` the same with a
-/// `stream loop`. The marker stays on the node: the checker reads it against
-/// the expected type (147) and the formatter prints the marked form back. The
-/// function `return`s the block (`tail = .returned`): a typed `fn`
-/// expression's tail would not be its value, and the `return` is the shape
-/// every backend lowers for a generator a lambda answers.
-/// `component` keeps its body as written; the checker checks it and refuses
-/// its lowering until 144 B-116 (iii) (open point B-116-e).
+/// Decision 584 (1) — the marker a lambda writes inside its brace, the cursor
+/// just after the `{`: `{ async x -> … }`, `{ iter -> … }`,
+/// `{ async iter x -> … }`, `{ component -> … }`. Null when the brace opens
+/// no marked lambda — no marker word, or one an expression continues
+/// (`{ async.allOf(…) }`, `{ iter loop { … } }`, `{ async { … } }`, a value
+/// named `iter`). A marker followed by what starts a statement and no `->`
+/// (`{ iter yield 1; }`, `{ async x }`) is `marker-without-arrow`, at the
+/// marker: `{ async` / `{ iter` / `{ component` is always a lambda.
+pub fn lambdaMarkerAhead(this: *This) ParseError!?This.MarkerAt {
+    const m = this.markerAt(0) orelse return null;
+    if (lambdaHeadAt(this, this.current + m.len)) return m;
+    const after = this.peekAt(m.len);
+    const startsStatement = switch (after.kind) {
+        .identifier, .yield, .await, .val, .@"var", .@"return" => true,
+        else => false,
+    };
+    if (!startsStatement) return null;
+    this.parseError = ParseErrorInfo.fromToken(.markerWithoutArrow, this.peek());
+    return ParseError.UnexpectedToken;
+}
+
+/// Decision 553 (1), 584 — a marked function written as the unmarked one it
+/// means, so the checker's block forms and the four backends' lowering serve
+/// it unchanged: `{ async x -> b }` is `{ x -> async { b } }`,
+/// `{ iter x -> b }` is `{ x -> iter loop { b; break; } }` and `async iter`
+/// the same with a `stream loop` — the compiler's own lowering (584 (2)): the
+/// loop is marked `markedLambda`, so the checker reads its body as a function
+/// body (no top-level `continue`, no `break <value>`). The marker stays on
+/// the node: the checker reads it against the expected type (147) and the
+/// formatter prints the marked form back. The function `return`s the block
+/// (`tail = .returned`): a typed `fn` expression's tail would not be its
+/// value, and the `return` is the shape every backend lowers for a generator
+/// a lambda answers. `component` keeps its body as written.
 fn desugarMarked(alloc: std.mem.Allocator, func: *FunctionExpr, kind: ast.EffectKind, markerTok: Token) ParseError!void {
-    const loc = locFromToken(markerTok);
-    func.loc = loc;
+    func.loc = locFromToken(markerTok);
     func.kind.marker = kind;
-    if (kind == .component) return;
-    const body = func.kind.body;
+    func.kind.body = try desugarMarkedBody(alloc, func.kind.body, kind, markerTok);
+}
+
+/// `desugarMarked`'s body half, shared with a marked trailing lambda.
+pub fn desugarMarkedBody(alloc: std.mem.Allocator, body: []Stmt, kind: ast.EffectKind, markerTok: Token) ParseError![]Stmt {
+    const loc = locFromToken(markerTok);
+    if (kind == .component) return body;
     const inner: Expr = switch (kind) {
         .task => blk: {
             try This.jumpTail(alloc, body, .@"return");
@@ -184,6 +195,7 @@ fn desugarMarked(alloc: std.mem.Allocator, func: *FunctionExpr, kind: ast.Effect
                 .body = loopBody,
                 .awaitLoop = false,
                 .label = null,
+                .markedLambda = true,
             } };
         },
         .result, .component => unreachable,
@@ -192,11 +204,11 @@ fn desugarMarked(alloc: std.mem.Allocator, func: *FunctionExpr, kind: ast.Effect
     const value = try alloc.create(Expr);
     value.* = inner;
     outer[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = value } } }, .tail = .returned };
-    func.kind.body = outer;
+    return outer;
 }
 
 pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
-    if (try parseMarkedAhead(this, alloc, true)) |e| return e;
+    if (try parseMarkedAhead(this, alloc)) |e| return e;
     // The removed `record { … }` literal, before the call-chain path reads
     // `record { … }` as a call with a trailing lambda (see `parsePrimary`).
     if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "record") and
@@ -1412,7 +1424,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return this.failRemovedAt(.removedRecordLiteral, 0);
     }
 
-    if (try parseMarkedAhead(this, alloc, false)) |e| return e;
+    if (try parseMarkedAhead(this, alloc)) |e| return e;
 
     // `try` / `await` are prefix operators binding as the unary `-` does
     // (decision 537): the operand is the next primary with its postfix chain
@@ -1450,8 +1462,17 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.leftBrace)) {
         const braceTok = this.advance();
 
+        // Decision 584 (1) — `{ async x -> … }`: the marker inside the brace,
+        // before the parameters.
+        const marker = try lambdaMarkerAhead(this);
+        const markerTok = this.peek();
+        if (marker) |m| {
+            _ = this.advance();
+            if (m.len == 2) _ = this.advance();
+        }
+
         // Check if this is a lambda by looking ahead for `->` or params followed by `->`
-        const isLambda = lambdaHeadAt(this, this.current);
+        const isLambda = marker != null or lambdaHeadAt(this, this.current);
 
         if (isLambda) {
             // Parse lambda: `{ params? -> body }`
@@ -1485,11 +1506,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .bracedTail = true,
             });
 
-            return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
+            var func: FunctionExpr = .{ .loc = locFromToken(braceTok), .kind = .{
                 .syntax = .lambda,
                 .params = try paramList.toOwnedSlice(alloc),
                 .body = body,
-            } } };
+            } };
+            if (marker) |m| try desugarMarked(alloc, &func, m.kind, markerTok);
+            return Expr{ .function = func };
         } else {
             return parseBlockValueBody(this, alloc, braceTok);
         }
@@ -2304,6 +2327,15 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 
         const braceTok = try this.consume(.leftBrace);
 
+        // Decision 584 (1) — a marked lambda goes wherever a lambda goes,
+        // trailing included: `f(1) { async x -> … }`.
+        const marker = try lambdaMarkerAhead(this);
+        const markerTok = this.peek();
+        if (marker) |m| {
+            _ = this.advance();
+            if (m.len == 2) _ = this.advance();
+        }
+
         // Detect params
         var paramList: std.ArrayList([]const u8) = .empty;
         errdefer paramList.deinit(alloc);
@@ -2328,19 +2360,21 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
         // body were the catch-all at the `}` while `{ x -> f(x) }` as a value
         // parsed (front 15 step 4b; C-11's `arrow_when_empty` is the printer
         // half). Strictly accepting: every body that parsed still does.
-        const body = try this.parseBlockBody(alloc, .{
+        var body = try this.parseBlockBody(alloc, .{
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .requiredExceptLast,
             .markTail = true,
         });
+        if (marker) |m| body = try desugarMarkedBody(alloc, body, m.kind, markerTok);
 
         try lambdas.append(alloc, .{
             .label = label,
             .params = try paramList.toOwnedSlice(alloc),
             .body = body,
             .isBlock = isBlock,
-            .loc = locFromToken(braceTok),
+            .marker = if (marker) |m| m.kind else null,
+            .loc = if (marker != null) locFromToken(markerTok) else locFromToken(braceTok),
         });
     }
 

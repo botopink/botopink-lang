@@ -1,12 +1,12 @@
-//// Decision 553 (1) — a marker before `{` opens a lambda, which writes `->`.
-//// `iter { … }` is no block: the iterator's block is `iter loop { … }`
-//// (decision 125), so the brace without an arrow is refused at the marker,
-//// `marker-without-arrow`.
+//// Decisions 553 (1), 584 (1) — a marker inside `{` opens a lambda, which
+//// writes `->`. `{ iter … }` is no block: the iterator's block is
+//// `iter loop { … }` (decision 125), so the brace without an arrow is refused
+//// at the marker, `marker-without-arrow`.
 
 import {io.terminal.print} from "std";
 
 pub fn main() {
-    val xs = iter {
+    val xs = { iter
         yield 1;
         yield 2;
     };

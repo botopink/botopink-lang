@@ -20,7 +20,7 @@ fn Shell() -> Component<View> {
 
 pub fn main() -> Task<void> {
     val suffix = "!";
-    val Card: fn(name: string) -> Component<View> = component { name ->
+    val Card: fn(name: string) -> Component<View> = { component name ->
         val p = use context(string);
         print("ran " + name);
         View(text: p + name + suffix)

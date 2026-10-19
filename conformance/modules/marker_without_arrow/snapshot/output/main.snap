@@ -1,4 +1,4 @@
 botopink-cell 1
-refused error[marker-without-arrow]: a marker before `{` opens a lambda, which writes `->`
-at src/main.bp:9:14
-label no block form: write `iter loop { … }`, or `iter { -> … }`
+refused error[marker-without-arrow]: a marker inside `{` opens a lambda, which writes `->`
+at src/main.bp:9:16
+label no block form: write `iter loop { … }`, or `{ iter -> … }`

@@ -893,7 +893,7 @@ pub const Formatter = struct {
             },
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
             .function => |func| if (func.kind.marker) |m| try this.fmtMarkedFn(func, m) else switch (func.kind.syntax) {
-                .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
+                .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true, null),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body, func.kind.paramTypes, func.kind.returnType),
                 // `async { … }` (decision 124): the block's statements, one per
                 // line, like any body.
@@ -1793,7 +1793,7 @@ pub const Formatter = struct {
                 try parts.append(this.arena, try this.text(lbl));
                 try parts.append(this.arena, try this.text(": "));
             }
-            try parts.append(this.arena, try this.fmtTrailingLambda(tl.params, tl.body));
+            try parts.append(this.arena, try this.fmtTrailingLambda(tl.params, if (tl.marker) |m| try this.markedBody(tl.body, m) else tl.body, tl.marker));
         }
 
         return this.concatAll(parts.items);
@@ -1827,11 +1827,10 @@ pub const Formatter = struct {
     /// the `iter loop`'s without the `break;` the parser appended.
     fn fmtMarkedFn(this: *Formatter, func: ast.FunctionExpr, marker: ast.EffectKind) !*const Doc {
         const body = try this.markedBody(func.kind.body, marker);
+        // Decision 584 (1) — a lambda's marker is printed inside its brace.
+        if (func.kind.syntax != .fnExpr) return this.fmtLambdaAt(func.loc.line, func.kind.params, body, true, marker);
         const word = try this.text(try std.fmt.allocPrint(this.arena, "{s} ", .{marker.markerWord()}));
-        return this.concat(word, switch (func.kind.syntax) {
-            .fnExpr => try this.fmtFnExpr(func.kind.params, body, func.kind.paramTypes, func.kind.returnType),
-            else => try this.fmtLambdaAt(func.loc.line, func.kind.params, body, true),
-        });
+        return this.concat(word, try this.fmtFnExpr(func.kind.params, body, func.kind.paramTypes, func.kind.returnType));
     }
 
     /// The statements a marked function was written with.
@@ -1853,7 +1852,24 @@ pub const Formatter = struct {
         return body;
     }
 
-    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+    /// The text a lambda opens with up to its arrow: `{ a, b ->`, `{ ->`, and
+    /// with a marker inside the brace (decision 584 (1)) `{ async x ->`,
+    /// `{ iter ->`. `inline_` adds the space after the arrow.
+    fn lambdaHead(this: *Formatter, params: []const []const u8, marker: ?ast.EffectKind, inline_: bool) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try parts.append(this.arena, try this.text("{ "));
+        if (marker) |m| try parts.append(this.arena, try this.text(try std.fmt.allocPrint(this.arena, "{s} ", .{m.markerWord()})));
+        if (params.len > 0) {
+            var paramDocs = try this.arena.alloc(*const Doc, params.len);
+            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+            try parts.append(this.arena, try this.join(paramDocs, try this.text(", ")));
+            try parts.append(this.arena, try this.text(" "));
+        }
+        try parts.append(this.arena, try this.text(if (inline_) "-> " else "->"));
+        return this.concatAll(parts.items);
+    }
+
+    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool, marker: ?ast.EffectKind) !*const Doc {
         if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
             const inlineValue = switch (body[0].expr) {
                 .binding, .jump => false,
@@ -1870,15 +1886,7 @@ pub const Formatter = struct {
                 if (std.mem.indexOfScalar(u8, flat, '\n') == null) {
                     // `{ ` + params + ` -> ` — a parameterless lambda keeps the
                     // bare arrow, without which the braces re-parse as a block.
-                    const head: *const Doc = if (params.len > 0) blk: {
-                        var paramDocs = try this.arena.alloc(*const Doc, params.len);
-                        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
-                        break :blk try this.concatAll(&.{
-                            try this.text("{ "),
-                            try this.join(paramDocs, try this.text(", ")),
-                            try this.text(" -> "),
-                        });
-                    } else try this.text("{ -> ");
+                    const head = try this.lambdaHead(params, marker, true);
                     // Decision 409 — a `;` written after the value is kept.
                     return this.concatAll(&.{
                         head,
@@ -1888,7 +1896,7 @@ pub const Formatter = struct {
                 }
             }
         }
-        return this.fmtLambda(params, body, arrow_when_empty);
+        return this.fmtLambda(params, body, arrow_when_empty, marker);
     }
 
     /// A trailing lambda (decision 165): a body of one value expression prints on
@@ -1900,8 +1908,8 @@ pub const Formatter = struct {
     /// lambda with no parameter keeps its arrow (`f(x) { -> … }`); one written
     /// without it (`TrailingLambda.isBlock`, which the checker refuses) is
     /// written back with it — `botopink format` migrates the old spelling.
-    fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
-        const open = try this.fmtLambda(params, body, true);
+    fn fmtTrailingLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, marker: ?ast.EffectKind) !*const Doc {
+        const open = try this.fmtLambda(params, body, true, marker);
         if (body.len != 1) return open;
         const inlineValue = switch (body[0].expr) {
             .binding, .jump => false,
@@ -1911,15 +1919,7 @@ pub const Formatter = struct {
         if (!inlineValue) return open;
         const flatValue = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
         if (std.mem.indexOfScalar(u8, flatValue, '\n') != null) return open;
-        const head: *const Doc = if (params.len > 0) blk: {
-            var paramDocs = try this.arena.alloc(*const Doc, params.len);
-            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
-            break :blk try this.concatAll(&.{
-                try this.text("{ "),
-                try this.join(paramDocs, try this.text(", ")),
-                try this.text(" -> "),
-            });
-        } else try this.text("{ -> ");
+        const head = try this.lambdaHead(params, marker, true);
         // Decision 409 — a `;` written after the value is kept.
         const flat = try this.concatAll(&.{ head, try this.text(flatValue), try this.text(if (body[0].tail == .none) "; }" else " }") });
         const flatText = try render(this.arena, flat, std.math.maxInt(u32));
@@ -1927,7 +1927,7 @@ pub const Formatter = struct {
         return this.widthChoice(flat, open, flatText.len + 1);
     }
 
-    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool, marker: ?ast.EffectKind) !*const Doc {
         // An empty body stays inline — `{ next -> }`, `{ -> }`, `{}`
         // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 2).
         // The open form had nothing to put between the two hardlines, so it
@@ -1938,42 +1938,21 @@ pub const Formatter = struct {
         // `fmtBody` already answers `{}` for an empty `fn` body; this is the
         // same answer for the same question.
         if (body.len == 0) {
-            if (params.len == 0) return this.text(if (arrow_when_empty) "{ -> }" else "{}");
-            var paramDocs = try this.arena.alloc(*const Doc, params.len);
-            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
-            return this.concatAll(&.{
-                try this.text("{ "),
-                try this.join(paramDocs, try this.text(", ")),
-                try this.text(" -> }"),
-            });
+            if (params.len == 0 and marker == null) return this.text(if (arrow_when_empty) "{ -> }" else "{}");
+            return this.concat(try this.lambdaHead(params, marker, true), try this.text("}"));
         }
 
         // A lambda's (and a `case` arm's) last statement is its value.
         this.nextSeqIsValue = true;
         const inner = try this.fmtStmtSeq(body);
 
-        if (params.len == 0 and !arrow_when_empty) {
+        if (params.len == 0 and marker == null and !arrow_when_empty) {
             return this.surroundBreak("{", inner, "}");
         }
-        if (params.len == 0) {
-            return this.forceBreak(try this.concatAll(&.{
-                try this.text("{ ->"),
-                try this.nest(INDENT, try this.concat(this.hardline(), inner)),
-                this.hardline(),
-                try this.text("}"),
-            }));
-        }
 
-        // `{ a, b -> ... }`
-        var paramDocs = try this.arena.alloc(*const Doc, params.len);
-        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
-        const paramList = try this.join(paramDocs, try this.text(", "));
-
-        // `{ a, b ->\n    body\n}`
+        // `{ a, b ->\n    body\n}`, `{ ->`, `{ async x ->` (decision 584 (1))
         return this.forceBreak(try this.concatAll(&.{
-            try this.text("{ "),
-            paramList,
-            try this.text(" ->"),
+            try this.lambdaHead(params, marker, false),
             try this.nest(INDENT, try this.concat(this.hardline(), inner)),
             this.hardline(),
             try this.text("}"),
@@ -2114,7 +2093,7 @@ pub const Formatter = struct {
                 guardDoc,
                 if (isBlockArm) try this.text(" ") else try this.text(" -> "),
                 if (isBlockArm)
-                    try this.fmtLambda(arm.body.function.kind.params, armBody, false)
+                    try this.fmtLambda(arm.body.function.kind.params, armBody, false, null)
                 else
                     try this.fmtExpr(arm.body),
                 if (isBlockArm) this.nil() else try this.text(";"),

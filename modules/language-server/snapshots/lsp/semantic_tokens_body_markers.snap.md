@@ -5,7 +5,7 @@ iter fn two() -> Iterator<i32> { yield 2; }
 async iter fn three() -> Stream<i32> { yield 3; }
 component fn Four() -> Component<i32> { return 4; }
 fn f() -> Task<i32> {
-    val g: fn(x: i32) -> Task<i32> = async { x -> await one() };
+    val g: fn(x: i32) -> Task<i32> = { async x -> await one() };
     val component = 1;
     val iter = 2;
     return await g(component + iter);
@@ -49,7 +49,7 @@ fn f() -> Task<i32> {
   (5,17) +3  type [defaultLibrary]  "i32"
   (5,25) +4  type [defaultLibrary]  "Task"
   (5,30) +3  type [defaultLibrary]  "i32"
-  (5,37) +5  keyword  "async"
+  (5,39) +5  keyword  "async"
   (5,45) +1  parameter  "x"
   (5,50) +5  keyword  "await"
   (5,56) +3  function  "one"

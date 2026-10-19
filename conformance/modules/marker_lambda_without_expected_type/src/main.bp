@@ -9,7 +9,7 @@ fn double(x: i32) -> Task<i32> {
 }
 
 pub fn main() -> Task<void> {
-    val f = async { x ->
+    val f = { async x ->
         await double(x)
     };
     print(await f(2));

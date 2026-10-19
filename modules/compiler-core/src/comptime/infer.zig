@@ -16798,7 +16798,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // a body that RETURNS an iterator and never yields is a factory,
             // and mixing the two is `iter-mixed-yield-return`.
             if (r != null and (inEffectContext(env, .iterator) or inEffectContext(env, .stream))) {
-                const inLoop = env.generatorLoopDepth > 0;
+                // Decision 584 (2) — a marked lambda's loop is its function
+                // body: its `return <value>` reads as an `iter fn`'s.
+                const inLoop = env.generatorLoopDepth > 0 and !(env.starFn != null and env.starFn.?.markedLambda);
                 env.lastError = if (inLoop) TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
                         ": a sequence has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly",
@@ -17019,6 +17021,16 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (b.value) |expr| {
                 const targetsGenerator = inGenerator and (b.label == null or
                     (ctx.?.fnLabel != null and std.mem.eql(u8, b.label.?, ctx.?.fnLabel.?)));
+                if (targetsGenerator and ctx.?.markedLambda) {
+                    // Decision 584 (2) — a marked lambda's body is a function
+                    // body: no `break <value>` ends it.
+                    env.lastError = TypeError.custom(
+                        diagnostics.marker_lambda_break_value ++
+                            ": a marked lambda's body is a function body — `break <value>` does not end it",
+                        "Write `yield <value>;` and then `return;`, which ends the iteration (decision 584); a bare `break` leaves the nearest loop.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
                 if (targetsGenerator) {
                     const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
                     if (ctx.?.iterItem) |item| try unifyItem(env, item, typedPtr.getType(), loc);
@@ -17557,6 +17569,7 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     env.labelStack.shrinkRetainingCapacity(0);
     if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
     env.starFn = starCtxFromEffect(eff, wrapper, lp.label);
+    env.starFn.?.markedLambda = lp.markedLambda;
     env.fnEffect = eff;
     // `throw` / a failing `try` emit `Error(e)` as the last item when the
     // item became a `@Result` (decision 122); with no `throw` / `try` in the
@@ -17566,7 +17579,10 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     env.inContextFn = false;
     env.aliasWrapper = null;
     env.returnWhole = null;
-    env.loopDepth = 1;
+    // Decision 584 (2) — a marked lambda's loop is its function body: no loop
+    // encloses its top level, so a `continue` there is `continue-outside-loop`
+    // (a bare `break` still ends the generator scope).
+    env.loopDepth = if (lp.markedLambda) 0 else 1;
     env.breakScope = .loop;
     env.generatorLoopDepth += 1;
 
@@ -24721,7 +24737,7 @@ fn inferFunctionExprExpectedInner(
     // `case` arm's block keeps it: `await` / `yield` reach the enclosing
     // function (decision 541 (2)).
     if (!armBlock) env.starFn = null;
-    // Decision 553 (1), 574 — a `component { -> … }` lambda's body is a
+    // Decision 553 (1), 574 — a `{ component -> … }` lambda's body is a
     // component body, as a `component fn`'s: `use` and `await` are its, its
     // `return`s and its tail answer the `R` of the expected `@Component<R>`,
     // and its hooks are its own, not the enclosing function's node. The other
