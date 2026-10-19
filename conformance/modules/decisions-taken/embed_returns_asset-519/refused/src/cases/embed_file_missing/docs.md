@@ -1,6 +1,6 @@
 # embed_file_missing
 
-The reference text this cell shows (from `conformance/docs.md`, § `@embed` and `Asset`):
+The reference text this cell shows (from `conformance/docs.md`, § `Asset`):
 
 > An absolute path is `error[embed-path-absolute]` and a path with a `..` segment
 > `error[embed-path-outside-package]`, at the argument; a path that names no file

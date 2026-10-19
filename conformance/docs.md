@@ -19,7 +19,7 @@ A first program:
 |---|---|
 | *Syntax changes* | what the 1.0.4-beta surface removed |
 | *Program structure* | modules, a module's default function, imports, std and the libraries |
-| *Bindings* | `val`, `var`, `beamMemory`, `fn` |
+| *Bindings* | `val`, `var`, `compiler.beamMemory`, `fn` |
 | *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, spread, unions and `is`, narrowing |
 | *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, blocks, `if`, `case`, loops, `assert`, `use` |
 | *Functions* | recursion, inline parameter types, defaults, variadics, record parameters, effects, results, tasks, iterators and streams |
@@ -104,8 +104,8 @@ The move from the previous surface, declaration by declaration, is in
 
 ## Program structure
 
-A Botopink program is a sequence of declarations — bindings, functions, types,
-imports, and module declarations. Execution starts at `fn main()`.
+A Botopink program is a sequence of declarations — bindings, functions, types
+and imports. Execution starts at `fn main()`.
 
 <!-- example: modules/hello/cells/hello -->
 
@@ -118,17 +118,12 @@ on commonJS, erlang, beam and wasm, under the `wasi` and the `browser` host:
 
 ### Modules
 
-Projects use an explicit, Rust-style module tree. The root module (`main.bp`
-for a binary, `root.bp` for a library) declares which submodules to include;
-the compiler follows these declarations instead of compiling every `.bp` it
-finds.
-
-<!-- example: modules/modules/cells/modules -->
-
-Leaf modules are single files; folder modules use a `mod.bp` entry point.
-`pub mod` is visible through the parent; a plain `mod` is private to its
-declaring module's subtree. Only `pub` declarations are visible outside their
-module.
+Every `.bp` under `src/` is a module of the package, its path its name
+(`pages.home`, `comptime.route`); there is no `lib.bp` and no module declaration
+(decision 592 (1)). `src/main.bp` is an executable's entry (`pub fn main()`),
+imported by no module; a library has none (592 (2)). Only `pub` declarations are
+visible outside their module, and `src/internal/` is private to its package
+(592 (8)).
 
 A type is its declaring module's. Two modules that each declare `pub type
 Order` keep two types, and each module's `Order(…)`, `Order.make(…)` and
@@ -138,31 +133,9 @@ Order` keep two types, and each module's `Order(…)`, `Order.make(…)` and
 <!-- example: modules/two/run/src/cases/two_modules_one_type_name -->
 <!-- example: test/two_test_modules_one_type_name -->
 
-**`mod` binds the module it declares** (decision 337). In the module that
-declares it, `mod config;` (or `pub mod config;`) binds `config` as a namespace,
-as `import {config};` binds it elsewhere — `config.splitPath(x)`, a type
-`config.Pair` in a signature, a constructor `config.Pair(…)`, a variant path,
-a function as a value, with no import. The namespace walks a folder module's
-tree: with `src/text/mod.bp` declaring `pub mod split;`, `mod text;` alone
-reaches `text.split.splitPath(x)` — each step a `pub mod` and the leaf `pub`; a
-plain `mod split;` is private to `text`'s subtree, and `text.split` from outside
-it is `private-module` at `split`. A sibling or nested module reaches `config`
-only by import (`import {config};`, `import {text.split};`). There is no
-combined form and no re-export syntax: a folder's `mod.bp` exposes a
-submodule's declaration with a value or a type of the same name — `pub val
-splitPath = split.splitPath;`, `pub type Pair = split.Pair;` — which is that
-declaration, not a second one, so the name has one public path
-(`text.splitPath`) and the submodule can stay private.
-
-<!-- example: modules/mod/cells/mod_namespace_reexport -->
-
-In the declaring module `import {config};` is a second spelling of the
-namespace, `redundant-module-import` at the item (delete it); a top-level
-declaration named like a declared module is `module-item-collision` at the
-declaration (decision 582 (4): `config` would name both the item and the module),
-its message naming the `mod` line.
-
-<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cells/declaration_named_like_module -->
+There is no combined form and no re-export syntax (decision 337 (3)). `a.b` names
+either an item of `a.bp` or the module `a/b.bp`; a package holding both is refused
+`module-item-collision`, located at both (decision 582 (4)).
 
 #### A module's default function
 
@@ -211,12 +184,10 @@ separator line is markup only. The file unfolds to a module:
 
 A decorator written on the header's last line, before the separator line,
 annotates the unfolded function, whose `compiler.name(decl)` is the file's name; no
-decorator comes from the file's name. `mod x;` resolves `x.bp`, then
-`x.bpp`, then `x/mod.bp`; the importer names the default function
-(`import {components.Card};`). A file whose name is no identifier is declared
-and imported by it between backticks (decision 561, § Bindings): `` pub mod
-`not-found`; `` resolves `not-found.bpp`, `` import {pages.`not-found` as
-NotFound}; `` binds its default function as `NotFound`, and without an alias
+decorator comes from the file's name. The importer names the default function
+(`import {components.Card};`). A file whose name is no identifier is imported
+by it between backticks (decision 561, § Bindings): `` import {pages.`not-found` as
+NotFound}; `` resolves `not-found.bpp` and binds its default function as `NotFound`, and without an alias
 (`` import {pages.`not-found`}; ``) the bound name is `` `not-found` `` — an
 alias is optional. A diagnostic in the file is reported at its own
 line and column — the header's, the markup's and the style section's alike.
@@ -310,7 +281,7 @@ name `pub`, every candidate when several do, `unresolved import` when none does
 `shorthand_import_several_candidates` and `modules/decisions-taken/shorthand_import_refused-337/refused/src/cases/shorthand_import`):
 
 ```text
-// src/main.bp — `pub mod geometry;` declares `pub fn perimeter`
+// src/main.bp — `src/geometry.bp` declares `pub fn perimeter`
 import {perimeter};
 
 error: shorthand-import: `perimeter` names no module of this package — write import {geometry.perimeter};
@@ -447,7 +418,7 @@ does what it wants.
 
 | Where | Modules |
 |---|---|
-| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`; a `Set` member is compared by `==`, so two structurally equal records are one member on every target, decision 210), `math`, `decimal` (`Decimal`, `Rounding`), `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
+| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`; a `Set` member is compared by `==`, so two structurally equal records are one member on every target, decision 210), `math`, `decimal` (`Decimal`, `Rounding`), `path`, `url`, `querystring`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.mocks` (`testing.snapshots` is the `snap` library, decision 391) |
 
@@ -646,7 +617,7 @@ in `dependencies`:
   "src": "src/",
   "target": "commonJS",
   "dependencies": {
-    "erika": { "git": "https://github.com/botopink/erika", "branch": "feat" }
+    "query": { "git": "https://github.com/botopink/query", "branch": "feat" }
   }
 }
 ```
@@ -657,7 +628,7 @@ route-table / `k` / `z` / URL-rule wires, the `nav:` navigation signals, the
 `:param` grammar), `actions` (the server-action protocol), `validation`
 (constraints, `#[validated]`, the violation report), `http` (the codecs of HTTP
 semantics) and `log` (levels, renderers, the error digest) — is a repository of
-its own, declared in `dependencies` like `erika` above:
+its own, declared in `dependencies` like `query` above:
 
 ```text
 import {match.matchPath, table.parseTable} from "routing";
@@ -798,10 +769,11 @@ each once.
 
 ### var — mutable binding
 
-A `var` may be reassigned. Inside a `fn` it is a local; at module level it is
-**one value per execution context** — the whole program on commonJS and wasm,
-the **process** on erlang and beam. Two writes through a `fn` and one read
-print `2`:
+A `var` may be reassigned. Inside a `fn` it is a local; at module level its data
+is immutable (`counts = counts.insert(k, v)`) and, without any annotation, it is
+**one value for the whole program** on every target — on the BEAM a one-row ETS
+table, on commonJS a variable, on wasm a permanent root (decision 547). Two writes
+through a `fn` and one read print `2`:
 
 <!-- example: modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var -->
 
@@ -810,68 +782,34 @@ that module's functions:
 
 <!-- example: modules/module/cells/module_var_in_dependency -->
 
-On the BEAM the annotation `#[compiler.beamMemory(.<member>)]` widens where a module `var`
-lives beyond the process (§ `beamMemory`). Off the BEAM the annotation is
-refused where it is written — ``error: `#[beamMemory]` has no meaning on the
-commonJS backend`` — because a target with one execution context has no BEAM
-storage to name; a `var` there is one value for the whole program. A
+On the BEAM the annotation `#[compiler.beamMemory(.<member>)]` names where a module `var`
+lives (§ `compiler.beamMemory`); off the BEAM it is accepted and has no effect (decision 547). A
 hand-written `import { beam } from "std"` — the host primitives themselves — is
-`std-unsupported-on-target` there for the same reason (decisions 43, 167).
+`std-unsupported-on-target` off the BEAM (decisions 43, 167).
 
-### beamMemory — where a module var lives on the BEAM
+### `compiler.beamMemory` — where a module var lives on the BEAM
 
 `#[compiler.beamMemory(.<member>)]` above a module `var` names its memory on erlang and
-beam. The member is one of `ProcessDict` (the default, which a bare `var`
-already means — writing it out loud records the choice where it is read), `Ets`
-or `PersistentTerm`. The only argument is `keyed: true | false`, default
-`false`, and it is a `Dict`-only argument: an `i32` has no key and neither has a
-list, which stores its whole value. Every part is checked at `botopink check`,
-in a project whose target is erlang or beam:
+beam. The member is one of a closed enum: `Ets`, the default, which a bare `var`
+already means, and `PersistentTerm`; any other value is refused at the annotation
+(decision 547). Every part is checked at `botopink check`, in a project whose target
+is erlang or beam:
 
 <!-- example: modules/beam/cells/beam_memory_annotations -->
 
-**`ProcessDict`** — one value per BEAM process, in the process dictionary: no
-setup, no owner, erased when the process ends. It is what a bare `var` means,
-and the spelling exists so that a file whose other bindings are `Ets` can say
-"per-process, on purpose" where it is read. A request handler that counts under
-`ProcessDict` counts its own requests only.
+**`Ets`** — one value for the whole program, in a one-row ETS table: the program's
+runtime creates every module `var`'s table at boot, in a process that lives as long
+as the program, and runs the initializers once (decision 547 (i)). A reassignment
+that reads the `var` it writes (`x = f(x)`) is atomic — read, compute,
+`ets:select_replace` against the value read, retried — so no write is lost; a plain
+`x = v` is one insert (547 (ii)). A module `var` whose type holds an `Async` is
+refused, located, on every target (547 (iii)). **`Ets` is cache and counting memory,
+not where the truth lives** — a balance, an order, a paid session belong in a
+supervised process or a database.
 
-**`Ets`** — one value per node, in a named public ETS table the module owns
-through a registered owner process, so the table survives the process that
-first touched it and is re-created and re-seeded from the declaration if the
-owner dies. `hits += 1` and `hits = hits + 1` on an `i32` or `i64` are one
-atomic `ets:update_counter`; any other read-modify-write — `hits = hits * 2 +
-1`, or `+=` on an `f64`, `bool` or `string` — is refused, because two processes
-running it would lose one of the two writes. The initialiser must be a literal
-or a `comptime` expression: it is re-run at a moment nobody chose. **`Ets` is
-cache and counting memory, not where the truth lives** — a balance, an order, a
-paid session belong in a supervised process or a database. Under **`keyed:
-false`** (the default) a `Dict` is stored as **one** value: a write copies the
-whole dict, and two processes writing *different* keys at the same time lose one
-of the writes — measured, 20 000 writes each to two keys finished at `19 996`
-and `20 000`. Under **`keyed: true`** each key is its own row: the seed is
-`Dict.empty()` or `Dict.ofEntries([#("a", 1)])` of literals, a row is read as
-`counts.at(k)`, written as `counts = counts.insert(k, v)` and counted as
-`counts = counts.bump(k, n)` (`Dict.bump`, integer values, an absent key counting from 0 — one
-atomic `ets:update_counter`, so concurrent bumps of one key lose none), and nothing else
-names the var — measured, two processes writing 20 000 times each to their own
-key finish at `20000` and `20000`; at 10 keys a write is 5× cheaper, at 10 000
-keys 5 000×. Choose `keyed: true` whenever more than one process writes; keep
-the default when the dict is replaced whole.
-
-<!-- example: modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump -->
-
-`bump` is atomic only on integer rows (decision 340): on a keyed `Dict` of `f64` it is refused at
-the write, naming the rows' type. A `bump` whose key or amount reads the var, and the increment
-written out — `counts = counts.insert(k, (counts.at(k) ?? 0) + n)`, which is not recognised as a
-`bump` — are the recompose refusal, as any row computed from the var's own rows is:
-
-<!-- example: modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump_non_integer -->
-<!-- example: modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump_reads_itself -->
-<!-- example: modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_read_modify_write -->
-
-On any other `Dict`, `bump(key, by)` is `insert(key, (at(key) ?? 0) + by)`, on every target: an
-absent key counts from 0, and the dict it was called on is unchanged:
+`Dict.bump(key, by)` is a plain `Dict` method, `insert(key, (at(key) ?? 0) + by)`, on every target: an
+absent key counts from 0, and the dict it was called on is unchanged; on a module `var` of the BEAM,
+`counts = counts.bump(k, n)` is atomic as any `x = f(x)` is (decision 547 (ii)):
 
 <!-- example: modules/decisions-taken/dict_bump_counts-340/cells/dict_bump -->
 
@@ -993,7 +931,7 @@ target holds it. `bytes` does not widen to `unknown` (so `print` does not take i
 and `is` does not test it — erlang holds it and a `string` alike. A `bytes` value
 may exist at build (decision 520): a `comptime` computes one, and the artifact
 carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
-wasm data segment (`@embed`'s `Asset.bytes`, § `@embed` and `Asset`).
+wasm data segment (`@embed`'s `Asset.bytes`, § `Asset`).
 
 <!-- example: modules/decisions-taken/bytes_primitive-346/cells/bytes_round_trip -->
 <!-- example: modules/bytes/cells/bytes_length_property -->
@@ -1308,14 +1246,14 @@ function's.
 
 A function's or a method's type parameter is **bound by a parameter** (decision
 668): it occurs in a parameter's type — directly (`x: T`), inside one
-(`items: Array<T>`, `f: fn(T) -> R`, `self: Self<Array<E>>`), or as the type
+(`items: array<T>`, `f: fn(T) -> R`, `self: Self<array<E>>`), or as the type
 token `comptime t: type<T>` —, and the return type follows from the arguments.
 The return type alone never binds one: `fn first<T>(r: Registry) -> ?T` is
 `type-parameter-unbound` at the declaration, naming `T`, since nothing at a call
 would fix `T` but the caller's wish. A caller that names the type passes it as
 the token (`fn failed<T>(comptime t: type<T>, message: string)`, called
 `failed(i32, "down")`); a method that holds only for some receivers says so in
-`self`'s type (`flatten<E>(self: Self<Array<E>>)`); where no type is meant the
+`self`'s type (`flatten<E>(self: Self<array<E>>)`); where no type is meant the
 answer is `unknown`.
 
 <!-- example: modules/decisions-taken/type_parameter_unbound_refused-668/cells/type_parameter_unbound -->
@@ -1392,7 +1330,7 @@ written: a parameter, a return, a field, an annotation, a constructor call
 
 Refused, each at what it is about: a field written as a string
 (`derived-type-field-string`, naming `.title`), a field the source does not
-declare (the `Type.Field<T>` error, `unknown field 'titel' on type 'Recipe'`), a
+declare (the `compiler.Field<T>` error, `unknown field 'titel' on type 'Recipe'`), a
 field named twice, `pick` / `omit` with no field or an `omit` leaving none
 (`derived-type-fields`), a source that is not a record — an enum, a namespace
 type, a primitive, a record with type parameters, an imported alias
@@ -1404,30 +1342,16 @@ type annotation — a local, a `var`, an argument (`derived-type-outside-val`).
 
 #### Field keys
 
-`pub val RecipeKey = Type.keys(Recipe);` names `Type.Field<Recipe>` — the same
-type, never a copy nor an enum (decision 308): its values are the fields of
-`Recipe`'s declaration, written `.title` where a `Type.Field<Recipe>` is
-expected (a field `Recipe` does not declare is the `Type.Field<T>` error at the
-`.name`). A key is a value at run time as at compile time:
-
-- stored, passed and compared like any value (`key == .title`);
-- `key.name` is the field's name;
-- `case key { .title -> …; .description | .servings -> … }` is exhaustive over
-  `Recipe`'s fields — a field added to `Recipe` makes a `case` without its arm
-  (and without `_`) an error at the `case`;
-- `RecipeKey.of(text)` is the key named `text`, or `null`; `RecipeKey.all()`
-  every key, in declaration order.
-
-`Type.keys` is bound by a module-level `val` as a derived type is; its argument
-is a record by its name.
-
-<!-- example: modules/decisions-taken/field_build_time_value-599/run/src/cases/field_key_runtime -->
-
-A generic constructor's type parameter is pinned by the position's written type as by the call's own
-type arguments, so a key resolves there too: `val t: Sort<Book> = Sort(by: .title)` is
-`Sort<Book>(by: .title)`.
-
-<!-- example: modules/decisions-taken/field_build_time_value-599/run/src/cases/field_key_under_annotation -->
+`compiler.Field<T>` is a build-time value (decision 599 (3)): the fields of `T`'s
+declaration, `.field` written where a `compiler.Field<T>` is expected in a
+decorator's argument (`#[index(.state)]`), checked against `T`'s fields. The
+run-time key is gone — `Type.keys`, `Field.of`, `Field.all`, a key matched by
+`case` (599 (1), (2)). A field has a run-time form, its constructor over the owner
+type and the name: a `comptime` whose value holds a field splices
+`Field(Book, "pages")`, which prints, compares (`≠ Field(Author, "pages")` by the
+owner) and keys a `Dict`, `.name` → `"pages"`; `type`, `annotations` and
+`defaultValue` are build members, refused in a run-time body
+(`` `annotations` is a build member of `Field` ``, decision 631).
 
 ### Spread
 
@@ -1751,7 +1675,7 @@ pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }
 pub behavior Slice<V>    { fn slice(self: Self<V>, start: i32, end: ?i32) -> V; }
 ```
 
-So indexing is not a privilege of the three built-in collections. `Array<T>`
+So indexing is not a privilege of the three built-in collections. `array<T>`
 answers `Index<i32, T>` and `Slice<T[]>`, `string` answers `Index<i32, string>`
 and `Slice<string>`, `Dict<K, V>` answers `Index<K, V>` — and **your own type
 becomes indexable by answering them**, with nothing added to the compiler:
@@ -1928,7 +1852,7 @@ The range is the type's on every target (decision 319). On commonJS an `i64`
 ±(2^53 − 1) and a `BigInt` beyond, always in that canonical form, so `==`, a
 `Dict` key and a `Set` member compare by value across 2^53; an operation keeps
 the number's fast path and computes in `BigInt` only when its result leaves
-that range. A Node host template receives and answers such a value as
+that range. A JavaScript host template receives and answers such a value as
 `number | bigint` in the canonical form, and the emitted `.d.ts` types it so.
 The narrower integers stay JS numbers. An integer `/` or `%` by zero aborts on
 every target (commonJS names it `integer division by zero`). A `%` never leaves its type.
@@ -3080,13 +3004,12 @@ what it answers:
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_on_declaration -->
 
-Before a lambda's brace the marker makes a marked lambda — `async { x -> … }`,
-`iter { n -> … }`, `async iter { n -> … }` — and before `fn(…)` a marked
-function expression; `->` tells the lambda from the block forms `async { … }`
-and `iter loop { … }`. A marked lambda is typed by the function type it is
-written for (decision 147): an annotated `val`, a parameter. It answers what the
-lambda returning the block form would — `async { x -> b }` is
-`{ x -> async { b } }`, `iter { x -> b }` is `{ x -> iter loop { b; break; } }`:
+Inside a lambda's brace, before the parameters, the marker makes a marked lambda —
+`{ async x -> … }`, `{ iter n -> … }`, `{ async iter n -> … }` — and before `fn(…)` a marked
+function expression; `async {` is always the block form and `iter loop {` the loop. A marked
+lambda is typed by the function type it is written for (decision 147): an annotated `val`, a
+parameter. Its body is a function body — `return v` is the iterator's `R`, a top-level
+`continue` is refused `continue-outside-loop`, `break v` is refused (decision 584 (2)):
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_iter -->
@@ -3101,7 +3024,7 @@ without `->` is `marker-without-arrow` — a function named `iter`, `async` or
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_type_mismatch -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_without_arrow -->
 
-A `component { x -> … }` lambda is a `component fn` (decision 574): typed by
+A `{ component x -> … }` lambda is a `component fn` (decision 574): typed by
 the function type it is written for, `fn(x: T) -> Component<R>`, its body is a
 component body — it `use`s and `await`s, and its `return`s and its last
 expression answer `R` — and calling it only makes the component, which runs
@@ -3408,7 +3331,7 @@ a next item may need waiting. Both answer one step type (decision 122):
 Nothing of the body runs before the first `next`, and nothing past the `yield` that
 answered the last one: a print before and after a `yield` comes out between the
 items, and an endless generator is consumed by `take(n)` — on every form, an
-`iter fn`, an `iter loop` and a marked lambda `iter { -> … }`.
+`iter fn`, an `iter loop` and a marked lambda `{ iter -> … }`.
 
 <!-- example: modules/generator/run/src/cases/generator_body_lazy -->
 
@@ -3596,12 +3519,13 @@ tuple does not have is refused where it is read, located:
 <!-- example: modules/yamlconf/cells/yamlconf_unknown_label -->
 
 The code a template builds has two authors, and each name in it resolves in
-the scope of whoever wrote it (decision 112). Text the library writes in
-`compiler.build` resolves in the **library's** module, its private functions
+the scope of whoever wrote it (decision 112). A name the library's tree writes
+(§ `compiler.ast`) resolves in the **library's** module, its private functions
 included, and names that declaration wherever the template is expanded; the
-text from `compiler.text(e)` resolves at the **call site**, with the consumer's
-imports, aliases and locals. So `compiler.build("double(" + compiler.text(e) + ")")` calls
-the library's `double` even where the consumer declares its own, and
+caller's code — a `Syntax` splice of a `syntax` value, a hole of the template
+text — resolves at the **call site**, with the consumer's imports, aliases and
+locals. So a tree's `Name(name: "double")` calls the library's `double` even
+where the consumer declares its own, and
 `` shapesdsl @`surface(4, 5)` `` reaches `area` through the consumer's
 `import {area as surface}`. `compiler.lookup(e, name)` resolves at the call site and
 answers the declaration — its own name and module, never the alias (below) —,
@@ -3721,7 +3645,7 @@ is data — each field a string, a number, a `bool`, a variant, an array or an
 optional of those; a field the value left out reads its default. A record with
 a field that holds a tree (filled from a `syntax` parameter, § Typed meta) holds
 code the program runs, and its read is refused, naming the field
-(`template-lookup-meta-expr-field`); `@typeInfo(X).meta(T)` in a template body
+(`template-lookup-meta-expr-field`); `compiler.typeInfo(X).meta(T)` in a template body
 stays `typeinfo-meta-at-build`.
 
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/run/src/cases/template_lookup_meta -->
@@ -3785,8 +3709,7 @@ functions build an inline parameter type as the written calls do (decisions
 A body that runs at build — a decorator, a template, a function called at
 build, a `comptime { … }` block — talks to the compiler through `compiler`
 (decisions 575 (3), 579). It is no keyword: it is the default of std's module
-`compiler.bp`, `#[builtin] pub default declare val compiler: Compiler;`, whose
-value the compiler gives at each point — the annotated declaration in a
+`compiler.bp`, whose value the compiler gives at each point — the annotated declaration in a
 decorator, the call site elsewhere —, and a file binds it by importing it:
 `import {compiler} from "std";` (`import {compiler};` in a std module), an
 alias included. `compiler.Span` and the other types of the module are imported
@@ -3951,13 +3874,12 @@ the outputs a decorator's only (`compiler-output-outside-decorator`):
 | Place | Written | Read |
 |---|---|---|
 | a member of the annotated type | `compiler.addMember("table", fn() -> string { … })` — the member a function expression at the call | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
-| comptime meta, a typed value keyed by its type (decision 298) | `compiler.setMeta(Entity(table: "cities"))`, `compiler.addMeta(Index(column: "name"))` | `@typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and on a `@TypeInfo.all` entry — the values written back where they are read |
-| an associated type | `compiler.addType("Columns", compiler.buildType("(name: string)"))` — a type built from its text (decision 578 (3)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
-| the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point (`compiler.find(with: entity)` is the same query) |
+| comptime meta, a typed value keyed by its type (decision 298) | `compiler.setMeta(Entity(table: "cities"))`, `compiler.addMeta(Index(column: "name"))` | `compiler.typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and `compiler.meta<Entity>(d)` / `compiler.metaAll<Index>(d)` on a handle — the values written back where they are read |
+| an associated type | `compiler.addType("Columns", compiler.buildType(…))` — a type built from its fields, never from record text (decisions 625 (3), 629 (1)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
+| the run-time registry | `compiler.init({ -> themes.set(decl); })` — the decorator registers its own declaration (decision 665) | the registry, read by the program at run time |
 
-A marker is a decorator with an empty body (decision 604): `fn registered(comptime decl: @Decl) {}`
-annotates declarations, runs nothing, and is read back by its marking —
-`@TypeInfo.all(with: registered)` lists what it marks:
+A marker is a decorator with an empty body (decision 604): `fn registered(syntax decl: unknown) {}`
+annotates declarations and runs nothing:
 
 <!-- example: modules/decisions-taken/bodyless_declarations_two_only-604/cells/decorator_marker_empty_body -->
 
@@ -3982,10 +3904,7 @@ to the type that owns it; a function and a module-level `val` have none
 (`decorator-member-without-type`, `decorator-type-without-owner`). A decorator
 on a `val` runs like one on a `fn` (decision 356): `compiler.kind(decl)` is
 `DeclKind.Val`, `compiler.returnType(decl)` the declared type as written (`""`
-when none), `compiler.setMeta` is legal, and the `val` is an entry of
-`@TypeInfo.all` — one query answers functions, `val`s or types, never two
-of them
-(`typeinfo-all-mixed`). A decorator adds and never replaces: a name
+when none), and `compiler.setMeta` is legal. A decorator adds and never replaces: a name
 the type already has is `decorator-member-duplicate` / `decorator-type-duplicate`.
 Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val`
 (`decorator-meta-on-member` from a field's or a method's decorator).
@@ -4031,8 +3950,8 @@ that module's own file, and the use is its `called from` line.
 A decorator is reached by its name, an alias or a namespace (decision 386):
 `import {markers} from "web";` registers the module's decorators under
 `markers.<name>`, as std's are, so `#[markers.tag]` runs `tag` as `#[tag]`
-imported by name does, and `markers.serverOnly` is a `Decorator` value
-(`a.decorator.same(markers.serverOnly)`).
+imported by name does, and `markers.serverOnly` names a declaration handle
+(`compiler.same(a.decorator, markers.serverOnly)`).
 
 <!-- example: modules/decisions-taken/namespaced_decorator_runs-386/cells/decorator_through_namespace -->
 
@@ -4062,8 +3981,7 @@ is an ordinary function body, however many locals a lambda in it holds.
 <!-- example: modules/decorator/run/src/cases/decorator_lambda_many_locals -->
 
 **An annotation's labelled argument is `label: value`** (decision 305), in every
-annotation — a decorator's (`#[check(…, at: .confirm)]`), `beamMemory`'s
-(`keyed: true`), `compiler.external`'s sources (`inline: true`, `body: powBody`) — as a call's
+annotation — a decorator's (`#[check(…, at: .confirm)]`), `compiler.external`'s sources (`inline: true`, `body: powBody`) — as a call's
 labelled argument is, and `botopink format` prints it so. `label = value` is
 refused where it is written, at the label, naming `label:`:
 
@@ -4083,9 +4001,7 @@ where they are written, as a call's are:
    parameter. A `comptime` parameter may take a default, which an annotation
    that leaves it out gets — a literal, `null`, a variant `.Name`, or an array
    or tuple of those; outside a decorator no call fills one, and a `comptime`
-   default there is `comptime-default-outside-decorator` at the default — but for a top-level
-   function's default that is a `@TypeInfo.all(…)` query (decision 551,
-   § Typed meta).
+   default there is `comptime-default-outside-decorator` at the default.
 2. **An argument may be of any type** — a string, a number, an array, a
    record built by its constructor (directly or through a module `val`), a
    variant, a function, a type (`comptime t: type<T>`), a field. It is checked
@@ -4105,8 +4021,7 @@ where they are written, as a call's are:
    unknown` binds `E` to the function's parameter type. A declaration that does
    not fit is refused at the annotation, both shapes spelled; `syntax decl:
    unknown` fits any.
-4. **`Type.Field<T>` and `.name`** — a field of `T` (decision 308, std's
-   `types.bp`); `.name` resolves against the `T` the parameter expects, a field
+4. **`compiler.Field<T>` and `.name`** — a field of `T` (decisions 308, 599 (3)); `.name` resolves against the `T` the parameter expects, a field
    `T` does not declare is refused at the `.name`, and the body reads it as the
    record `compiler.fields(decl)` hands out (`name`, `typeName`, `annotations`). A
    variant against an enum parameter resolves the same way. Either is named
@@ -4190,7 +4105,7 @@ type of that name declared there is `import-name-collision` at the annotation.
 In the member, `compiler.typeInfo(T)` of the decorator's type parameter reads the
 annotated type's typed meta (decision 395): typed in the decorator's body,
 answered where the member joins the type, the list written under `comptime`
-(`for (comptime @typeInfo(T).metaAll(Check)) { c -> … }`). A method or a field
+(`for (comptime compiler.typeInfo(T).metaAll(Check)) { c -> … }`). A method or a field
 read on a `syntax` parameter (`rule.text()`) is `expr-param-method` (370 (3)).
 The other channel is typed meta whose record holds a tree filled from a `syntax`
 parameter (§ Typed meta below).
@@ -4246,8 +4161,7 @@ the program's own.
 
 The root package is a package like any other (decision 677): every module
 under its `src/` is in the program, imported or not, and its executors run
-in the order above, after every dependency's. A module no `mod` names and
-no module imports
+in the order above, after every dependency's. A module no module imports
 is checked, compiled and linked, so a type error in it refuses the build.
 
 <!-- example: modules/decisions-taken/root_package_unimported_modules_in_program-677/cells/root_module_unimported_in_program -->
@@ -4331,23 +4245,23 @@ decorator is `compiler-output-outside-decorator`, at the member.
 A decorator's meta is a typed value keyed by its record type, never by the
 decorator's name: `compiler.setMeta(Entity(table: table))` records one
 `Entity` on the declaration, `compiler.addMeta(Index(column: c))` one more
-`Index` each time. A reader names the type — `@typeInfo(City).meta(Entity)` is
-an `?Entity` (`null` when nothing recorded one), `@typeInfo(City).metaAll(Index)`
+`Index` each time. A reader names the type — `compiler.typeInfo(City).meta(Entity)` is
+an `?Entity` (`null` when nothing recorded one), `compiler.typeInfo(City).metaAll(Index)`
 an `Index[]`, `compiler.meta<Entity>(d)` and `compiler.metaAll<Index>(d)` the
 same on a declaration handle —, so a renamed decorator changes no reader, two
 decorators may write one type, and who may read is who sees the type. The values are built at
 build time and written back as their constructors where they are read: each
 field is a string, an integer, a float, a `bool`, a variant of an enum without
-payloads, a `Type.Field<T>`, an array, an optional or a tuple of those
+payloads, a `compiler.Field<T>`, an array, an optional or a tuple of those
 (`decorator-meta-field-type`; a record field is not rebuilt yet), and
 the value is the record's constructor written at the call
 (`decorator-meta-not-record`), in the decorator's own body.
 
 <!-- example: modules/meta/cells/meta_typed_records -->
 
-A tuple is rebuilt as written (`#(1, 9)`) and a `Type.Field<T>` as its key
+A tuple is rebuilt as written (`#(1, 9)`) and a `compiler.Field<T>` as its key
 (`.pages`): a generic meta record whose one parameter types the key
-(`Sort<T>(by: Type.Field<T>)`) is read with that parameter the annotated
+(`Sort<T>(by: compiler.Field<T>)`) is read with that parameter the annotated
 declaration (`Sort<Book>(by: .pages)`, decision 308).
 
 <!-- example: modules/decisions-taken/field_has_runtime_form-631/cells/meta_field_tuple_and_field_key -->
@@ -4373,152 +4287,29 @@ module is reached, a same-named function of the reader is not.
 
 <!-- example: modules/meta/cells/meta_expr_rule -->
 
-`@typeInfo` is the one reflection builtin (decision 248): `.name` reads a
-declaration, `.meta(T)` / `.metaAll(T)` its
-typed meta (§ Typed meta), the static `@TypeInfo.all(…)` of
-its type the program (decision 253; `@typeInfo.all` is `typeinfo-all-on-function`),
-and `@typeInfo(T)` used as a value is a `TypeInfo<T>` (decision 253; its members
-other than `name` and `meta` are `typeinfo-unknown-member` until they are answered). In a body that runs at build, `compiler.typeInfo(T)` reads the same. The lowercase
-`@typeinfo` is `typeinfo-lowercase`, naming `@typeInfo`.
+`compiler.typeInfo(T)` answers `compiler.Info<T>` (decisions 606 (3), 630): `.name`
+reads the declaration, `.meta(T)` / `.metaAll(T)` its typed meta (§ Typed meta); in a
+body that runs when the program runs it is written under `comptime` (§ `compiler`).
 
-<!-- example: modules/decisions-taken/one_typeinfo_reflection_builtin-248/refused/src/cases/typeinfo_lowercase -->
+**No catalogue** (decision 665). Nothing reads the set of marked declarations at
+build: a decorator registers its own declaration with an executor
+(`compiler.init({ -> themes.set(decl); })`, § Decorators) and the program reads the
+registry at run time; a `compiler.*` read inside the executor
+(`compiler.meta<Entity>(decl)`) is folded at build after every annotation of the
+declaration ran, so it reads a settled value and a declaration's meta travels into
+its entry (decision 680). A second `#[theme]` is the registering executor's refusal
+at init, before `main`. No `comptime` default is a catalogue query: a framework's
+`boot` is a plain function over the registry — `pub fn boot(modules: Module[] =
+registry.modules()) -> App`, called `rakun.boot();` from anywhere (decision 664).
 
-`@TypeInfo.all(with: d)` answers every declaration of the program that carries
-`d`, so an entry point builds its catalogue explicitly — no module registers
-itself when it loads. The answer is always a `Declared<unknown>[]` (decision 254)
-— one type whatever the program declares —, each entry a
-`Declared<unknown>(name, module, meta, returnTypeName, value, typedMeta)`: `meta` is what `d` set on it,
-`d.meta(T)` / `d.metaAll(T)` the typed meta its decorators recorded (decision
-298; carried in `typedMeta`, one thunk per value, and built through an import
-the answer adds, so the record type is `pub` — `typeinfo-all-private`; a
-generic record is read through `@typeInfo` — question `130-s8-d`; not in a
-decorator's or a template's body, `typeinfo-meta-at-build`),
-`returnTypeName` a function's declared return type as written (`""` for a type, decision 256),
-`value` the function itself, or for a type a thunk calling the associated fn
-named by `member:` (`@TypeInfo.all(with: component, member: "register")`), typed
-`unknown`, so a use tests it with `is` before it calls it. It sees every module of
-the build — the package, its dependencies, std — in module-path order, then
-declaration order, and the reading module's own declarations; a module that
-reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
-it answers from another module is `pub` (`typeinfo-all-private`).
-`compiler.find(with: d, member: …)` is the same query spelled through
-`compiler`.
-A template function's body may read the catalogue too (decision 353): there,
-`@TypeInfo.all(with: d)` answers for the program that expands the call — every
-module's declarations carrying `d`, every module's decorators applied —, not for
-the library that declares the template, so a library's `pub default fn` finds
-the application's `#[theme]`. Such a module is no reader (it may be imported); a
-query written in a function the template only calls still makes its module one.
-A program that declares no `#[theme]` hands such a template an empty catalogue,
-and the template's own refusal is located at the literal it expands:
-
-<!-- example: modules/decisions-taken/theme_always_declared-358/cells/template_catalogue_no_theme -->
-
-The catalogue's rules hold, refused at the expansion; an entry's `name`,
-`module`, `meta` and `returnTypeName` are answered. Its `value` is the
-declaration's value at build only for a `val` whose initializer is `comptime`
-(decision 356): the value the program computed while it compiled, lifted into
-the template's module as a literal — a string, a number, a `bool`, `null`, or
-an array or a tuple of those (a record's or a variant's build value is not
-lifted yet). A body that reads `value` is refused at an expansion whose answer
-holds any other entry (`typeinfo-all-template-value`) — at the read when the
-template is the expanding module's own, else at the expansion, naming the read.
-
-<!-- example: modules/decisions-taken/val_decorator_runs_catalogued-356/cells/template_reads_val_build_value -->
-
-<!-- example: modules/decisions-taken/val_decorator_runs_catalogued-356/cells/template_val_value_not_comptime -->
-
-An import of a reader's default function
-(`import pkg from "pkg"`) is `typeinfo-all-imported` at the handle.
-`with:` may list several decorators (decision 235):
-`@TypeInfo.all(with: [service, repository], member: "make")` answers every
-declaration carrying any of them in the same one order, a declaration carrying
-two of them once, its `meta` what the listed decorators set; a decorator listed
-twice is `typeinfo-all-arguments`.
-
-<!-- example: modules/typeinfo/cells/typeinfo_all_with_decorator -->
-
-**A decorator names the behavior its declarations implement** (decision 564).
+**A decorator names the behavior its declarations implement** (decision 716).
 `pub fn module(syntax decl: Module) { … }`, `Module` a `behavior`:
 `#[module]` on a type that does not `implement Module` is refused at the
 annotation, naming the type and the behavior (`` `#[module]` needs a type
-implementing `Module` — `City` does not ``). `@TypeInfo.all(with: module)`
-answers `Declared<Module>[]`, with no `member:`; a query over several
-decorators answers the behavior they all name, and `Declared<unknown>[]` when
-they name different ones; a decorator whose first parameter names no behavior answers
-`Declared<unknown>[]` as above (`member:` still names a type's associated fn
-there). The annotation is the opt-in: implementing a behavior catalogues no
-type by itself. Calling a function of the behavior on an entry's `value`
-(`d.value.make()`) is legal only inside a function expanded at its call site
-(decision 562, below), where each entry is a concrete type; elsewhere it is
-refused at the call.
+implementing `Module` — `City` does not ``). The annotation is the opt-in:
+implementing a behavior registers no type by itself.
 
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/refused/src/cases/decorator_decl_behavior_not_implemented -->
-
-<!-- example: modules/typeinfo/cells/typeinfo_all_behavior_typed -->
-
-<!-- example: modules/decisions-taken/typeinfo_all_with_list-235/cells/typeinfo_all_behavior_shared -->
-
-<!-- example: modules/typeinfo/cells/typeinfo_all_behavior_none_shared -->
-
-<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/refused/src/cases/typeinfo_all_behavior_call_outside_expansion -->
-
-The catalogue's reach is the build, not the program's imports: a declaration
-carrying `d` in a dependency — one the package declares, or one a dependency
-declares — is an entry of the program's queries though no module of the program
-imports it, so declaring a package in `botopink.json` is all a program does for
-what that package contributes to be listed, and removing the dependency removes
-its entries. The entry's `module` is the dependency's module path,
-`<package>/<module>`, ordered with the others by it. A dependency read back from
-the code cache answers the entries its analysis recorded, with their meta, as
-one analysed again does: the program's catalogue is the union of every
-package's.
-
-<!-- example: modules/decisions-taken/decorator_four_output_places-216/cells/typeinfo_all_dependency_declarations -->
-
-A reader that a dependency declares — a decorator whose body reads the catalogue
-— answers for that dependency alone (decision 551): it is analysed after the
-other modules of its own package and before the packages that import it, so a
-module of another package imports it freely; only a module of its own package
-that imports it is `typeinfo-all-imported`.
-
-<!-- example: modules/decisions-taken/executor_decl_handle_typed-581/cells/decorator_reads_catalogue_dependency -->
-
-A package that does not declare `Declared` reads its fields all the same: `d.name`, `d.module` and `d.meta` of an
-entry the program hands it answer the field, directly, through a function, inside `map` and inside `for`.
-
-<!-- example: modules/declared/cells/declared_field_read_other_module -->
-
-A library reads the program's catalogue itself through a `comptime` parameter
-whose default is a `@TypeInfo.all(…)` query (decision 551): `pub fn
-boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m))`,
-and a program writes `boot();`. The names the default writes resolve in the
-declaring module, and a call that leaves the parameter out is answered for the
-program it is compiled in, as the program's own entry point would answer
-`@TypeInfo.all(with: m)` there: every module's declarations carrying `m`, every
-package's, every module's decorators applied, each `value` the declaration
-itself — never read at build; `modules` hands the array on. The query is
-resolved when the library is analysed and travels with its package, a package
-read back from the code cache included; the calling package is the program's.
-The parameter's type is the answer's, `Declared<unknown>[]`, held at the
-default. The declaring module is no reader (its importers stay legal); a
-`@TypeInfo.all` anywhere else in a library's body still answers for the
-library's own build.
-
-<!-- example: modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller -->
-
-A call that leaves such a default out is written only in the package's root —
-`src/main.bp`, or the root file the manifest's `entry` names (s23-i (d) (1)):
-anywhere else it is `typeinfo-all-default-outside-root` at the call, naming the
-root. No module imports a root whose call was answered so.
-
-<!-- example: modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_outside_root -->
-
-The argument is still the caller's to pass: `boot(@TypeInfo.all(with:
-other))` and `boot([])` are answered with what they pass, the first a
-catalogue the calling module reads as an entry point.
-
-<!-- example: modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_override -->
 
 #### The hooks a function reaches — `compiler.hooks`
 
@@ -4535,7 +4326,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 | Record | Fields |
 |---|---|
 | `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375), `stage: Stage` (decision 376) |
-| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context value a `use context(ctx)` names, or the `val` that declares the default of the type a `use provide(…)` gives, decisions 354 (4), 379, 723; `null` for any other hook) |
+| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: compiler.Info<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context value a `use context(ctx)` names, or the `val` that declares the default of the type a `use provide(…)` gives, decisions 354 (4), 379, 723; `null` for any other hook) |
 | `HookCall` — one call of a `Component` function | `callee: Declared<unknown>`, `at: string` |
 
 A call a template builds from a tag counts as written. `at` is
@@ -4551,10 +4342,8 @@ cannot follow — a function value answering `Component<R>`, a `use` with
 `hook: null`; a call of a method it resolves (a type's, an enum's, a `default fn`
 through the adopting type's `implement`) follows that method's own mark. A cycle is asynchronous when any node in it is; every
 other node is synchronous (a page may then be rendered without streaming), and
-commonJS emits a synchronous component as a plain `function`. In a decorator body a `Declared`'s `value` is
-`null` (no function of the program runs while it compiles) and its `meta` is
-every entry its declaration's decorators set, keyed `<decorator>.<key>`. A
-`DeclAnnotation`'s `decorator` is the `Decorator` its name names — an alias
+commonJS emits a synchronous component as a plain `function`. A
+`DeclAnnotation`'s `decorator` is the declaration handle its name names — an alias
 (`#[srv]` after `import {serverOnly as srv}`) and a namespace give the
 declaration, never the spelling.
 
@@ -4586,21 +4375,15 @@ clock read is a `Run` function.
 **A function expanded at its call site** (decision 562). A function whose
 every parameter is `comptime` and whose body reads a `comptime` parameter's value has no
 run-time body: each call is replaced by the code its body emits, written where
-the call is — for `boot()` in `main`, in `main`. Its loops over a `comptime`
-value, its conditions, its `val`s and its calls answered from build data alone
-(a `Declared`'s `name`, `module` and `meta`, a literal, another `comptime`
-value, a constant `val` of the module, std's functions over them) run at build,
-and `compiler.fail(…, at: x)` reports there, at the argument. Each statement that reaches a
-run-time value — a `Declared`'s `value`, a host call, a `Stage.Run` function, a
-local the expansion emitted — is emitted, in order, once per iteration of the
-loop that holds it, its build-known parts written into it as constants:
-`say("starting " + d.name); start(d.value);` over three modules emits three
-pairs of calls, in the modules' order. Nothing iterates the catalogue when the
-program runs, and no entry's `value` is called at build. Reading a `comptime` parameter's value
+the call is. Its loops over a `comptime` value, its conditions, its `val`s and
+its calls answered from build data alone (a literal, another `comptime` value, a
+constant `val` of the module, std's functions over them) run at build, and
+`compiler.fail(…, at: x)` reports there, at the argument. Each statement that
+reaches a run-time value — a host call, a `Stage.Run` function, a local the
+expansion emitted — is emitted, in order, once per iteration of the loop that
+holds it, its build-known parts written into it as constants. Reading a `comptime` parameter's value
 gives such a function no stage of its own (it amends 376 (1)); its stage is
 what the rest of its body reaches.
-
-<!-- example: modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/comptime_expand_boot -->
 
 <!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/run/src/cases/comptime_expand_banner -->
 
@@ -4610,10 +4393,7 @@ build data: it decides a condition and is written into what is emitted.
 <!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/run/src/cases/comptime_expand_constant_at_build -->
 
 A loop's bound or a condition that needs a run-time value is refused at it,
-`run-in-build`, naming the value: `if (d.value is fn() -> string)` is decided
-at build, where `d.value` is not.
-
-<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/refused/src/cases/comptime_expand_condition_run_time -->
+`run-in-build`, naming the value.
 
 Such a function meets `comptime` values and constants alone: each argument is
 known at build, and a run-time variable passed — a field of one included — is
@@ -4647,20 +4427,16 @@ bodies are checked with every member and type already there, then each
 decorator that reads `compiler.hooks` (in its body or a function it reaches) runs over
 them. So a page may call a member another decorator of its module adds
 (`Account(…).validate()` above `#[check(…)] pub type Account`). Such a
-decorator records meta or refuses, nothing else: `@emit`, `compiler.addMember` (a
-source or a typed `fn…`) and `compiler.addType` in it are `decorator-hooks-output`, at the call, whether or not
-it annotates anything. A `@typeInfo(X).meta` read of its meta in the same module
-is answered once it ran; a `@TypeInfo.all(with: d)` in the module of a
-declaration `#[d]` annotates is `typeinfo-all-hooks-reader` at `d` — its answer
-is built before `d` runs (read the catalogue from another module).
+decorator records meta or refuses, nothing else: `compiler.addMember` and
+`compiler.addType` in it are `decorator-hooks-output`, at the call, whether or not
+it annotates anything. A `compiler.typeInfo(X).meta` read of its meta in the same module
+is answered once it ran.
 
-**Comparing decorators** (decision 371). `a.decorator.same(other)` answers
-whether two decorators are one declaration: `other` is a decorator's name — an
-alias and a namespace resolved where it is written — or another `Decorator`
-(`b.decorator`); a same-named decorator of another module or package is
-`false`, and anything else is no `Decorator` (a string spelling the name is a
-type mismatch at the argument). `is` stays a keyword and `==` on two
-`Decorator`s has no meaning.
+**Comparing decorators** (decision 666). `compiler.same(a.decorator, other)` answers
+whether two handles are one declaration: `other` is a decorator's name — an
+alias and a namespace resolved where it is written — or another handle
+(`b.decorator`); a same-named declaration of another module or package is
+`false`. `==` on handles keeps no meaning.
 
 <!-- example: modules/decl/run/src/cases/decl_hooks_graph -->
 
@@ -4736,9 +4512,8 @@ declaration alike.
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta -->
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta_read -->
 
-Refused at the annotation, in the caller's text: `compiler.addMember`,
-`compiler.addType` and `@emit`
-(`tag-annotation-output`); a second `compiler.setMeta` of one type on the tag (`decorator-meta-twice`); a name the
+Refused at the annotation, in the caller's text: `compiler.addMember` and
+`compiler.addType` (`tag-annotation-output`); a second `compiler.setMeta` of one type on the tag (`decorator-meta-twice`); a name the
 caller's scope does not declare, and one that names no decorator. Inside an
 annotation `compiler.meta<T>(decl)` is refused (question B-15-c): meta is read
 by the code that consumes it, after every annotation ran, so annotations do not
@@ -4746,7 +4521,6 @@ depend on their written order.
 
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_add_member -->
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_add_type -->
-<!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_emit -->
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_meta_twice -->
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_unknown_name -->
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_not_decorator -->
@@ -4798,9 +4572,10 @@ never tried.
 Each invocation is independent (decision 343): a decorator's answer depends
 on the declaration it annotates alone, so a body writing a module-level `var`
 — directly or through a function of its module — is refused at the write
-(`decorator-writes-module-var`). A catalogue, and a duplicate across
-declarations, is read at the entry point with `@TypeInfo.all(with: …)` and
-refused there, at compile time, naming both declarations.
+(`decorator-writes-module-var`). A duplicate across declarations — two
+`#[provides]` of one type, two handlers of one route — is the registering
+executor's refusal at init, before `main`, naming both (decisions 665, 343 as
+amended).
 
 ### Host bindings
 
@@ -4818,12 +4593,11 @@ from the declaration and is no source (§ The manifest schema, `"typings"`):
 #[compiler.external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"), .Wasm(op: "f64.floor"))]
 ```
 
-Inside std the annotation is written `#[external(…)]`. A source is checked as
-the enum's constructor is: a label its variant does not declare, a value of
-another type, a variant the enum does not declare are the constructor's
-refusals, at the argument. `external` hands each source to
-`compiler.implement`, and the compiler reads a declaration's implementations
-alone, one per target:
+Inside std it is written the same, `compiler` imported as `import {compiler};`. A
+source is checked as the enum's constructor is: a label its variant does not
+declare, a value of another type, a variant the enum does not declare are the
+constructor's refusals, at the argument. The compiler reads a declaration's
+implementations alone, one per target:
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/implementation_twice -->
 
@@ -4843,7 +4617,7 @@ a type's static function alike:
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/declare_without_implementation_static -->
 
-No bodyless declaration exists but two: one with `#[external(…)]`, and the
+No bodyless declaration exists but two: one with `#[compiler.external(…)]`, and the
 compiler's own `declare val compiler` (decision 604). A decorator is no
 exception — its marker is a decorator with an empty body, so a bodyless one is
 refused at the declaration like any other:
@@ -4856,25 +4630,17 @@ A behavior declares a member's signature, or a `default fn` with a body;
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/declare_in_behavior -->
 
 A library writes its own source annotation the way `external` is written: a
-decorator that hands `compiler.implement` an `Implementation`:
+decorator that hands `compiler.external` an `Implementation`:
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/run/src/cases/external_library_source_annotation -->
 
-`compiler.implement` takes an `Implementation`, so its argument may be the dot shorthand: `compiler.implement(.Erlang(module + ":reverse($0)"))`.
+`compiler.external` takes `Implementation`s, so its argument may be the dot shorthand: `compiler.external(.Erlang(module + ":reverse($0)"))`.
 
 <!-- example: modules/decisions-taken/bare_variant_expression_refused-587/run/src/cases/external_library_source_dot_shorthand -->
 
-A library's `compiler.implement` survives the module's re-analysis: a decorator of the same module that adds a member (`compiler.addMember`) does not lose it.
+A library's `compiler.external` survives the module's re-analysis: a decorator of the same module that adds a member (`compiler.addMember`) does not lose it.
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/run/src/cases/external_library_source_beside_member -->
-
-Nor does a decorator of the same module that emits a declaration.
-
-<!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/run/src/cases/external_library_source_beside_emit -->
-
-Nor does a decorator whose emitted text is one declaration across two `@emit` calls, so that the module is re-analysed on its spliced source.
-
-<!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/run/src/cases/external_library_source_beside_emit_split -->
 
 A variant constructor called with labels and with its defaulted fields left out answers one value on every target: the fields written keep their labels' values and the others take their defaults.
 
@@ -4911,7 +4677,7 @@ read `little` or `signed` — and erlang and beam answer the same:
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
 has no name for is written `_` (`declare fn typeInfo<T>(comptime _: type<T>) ->
-TypeInfo<T>;`); `_` is a bodyless declaration's placeholder, and a
+compiler.Info<T>;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
@@ -5081,7 +4847,7 @@ asked to fill a record it does not know about.
 
 **A host that answers later** is declared with a `Async` return (decision 126).
 With `result: true` and `-> Async<Result<T, HostError>>`, a rejected Promise
-(Node) or a raise or `{error, R}` (Erlang) becomes `Error(HostError(…))`;
+(JavaScript) or a raise or `{error, R}` (Erlang) becomes `Error(HostError(…))`;
 declared `-> Async<T>`, a rejection is a fatal host failure — that form is for a
 host that guarantees it does not fail.
 
@@ -5173,7 +4939,7 @@ The functions a `std:` binding names, and the std declarations that bind them
 | `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text: `print`, `"${x}"`, `"x" + x` |
 | `text.length` | `(string) -> i32` | `string.length` (code points) |
 | `text.split`, `text.chars`, `text.lines`, `text.words` | `(string, string) -> string[]`, `(string) -> string[]` | `string.split`, `chars`, `lines`, `words` |
-| `text.contains`, `text.startsWith`, `text.endsWith` | `(string, string) -> bool` | the `String` methods of those names |
+| `text.contains`, `text.startsWith`, `text.endsWith` | `(string, string) -> bool` | the `string` methods of those names |
 | `text.indexOf`, `text.lastIndexOf` | `(string, string) -> i32` | `string.indexOf`, `lastIndexOf` |
 | `text.at`, `text.charCodeAt` | `(string, i32) -> ?string`, `(string, i32) -> i32` | `string.at`, `charCodeAt` |
 | `text.padStart`, `text.padEnd`, `text.repeat` | `(string, i32, string) -> string`, `(string, i32) -> string` | `string.padStart`, `padEnd`, `repeat` |
@@ -5269,9 +5035,9 @@ record's field.
 |---|---|---|
 | `.RandomF64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
 | `.Delay` | `(i32, T) -> Async<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
-| `.Race` | `(Array<Async<T>>) -> Async<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
-| `.RaceOf` | `(Array<fn() -> Async<T>>) -> Async<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
-| `.SpawnAll` | `(Array<fn() -> Async<T>>) -> Async<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+| `.Race` | `(array<Async<T>>) -> Async<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
+| `.RaceOf` | `(array<fn() -> Async<T>>) -> Async<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
+| `.SpawnAll` | `(array<fn() -> Async<T>>) -> Async<array<T>>` | each thunk called in order; the answers in input order once the last has settled |
 | `.GateNew` | `() -> unknown` | a closed gate (std's `async` gates): a pending task no host answers |
 | `.GateOpen` | `(unknown) -> void` | the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped first, so an open gate leaves no timer behind; opening an open gate changes nothing |
 | `.GateAwait` | `(unknown, i32) -> Async<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
@@ -5449,7 +5215,7 @@ inside its scope and reads as the local; the import still binds `print` outside 
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/cells/panic_from_failure -->
 
 There is no `@name`: `@print(…)`, `@panic(…)`, `@todo(…)`, `@typeInfo(…)`, `@src()` and
-`#[compiler.external(…)]` are `error[unknown-builtin]` at the name, and so is a prelude type written
+`#[@external(…)]` are `error[unknown-builtin]` at the name, and so is a prelude type written
 with `@` (`@Result<…>`).
 
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/refused/src/cases/builtin_print_removed -->
@@ -5464,17 +5230,12 @@ Every builtin the compiler still reads is declared in `libs/std/src/primitives.b
 held to the declarations (decision 252): a unit test fails, naming the builtin,
 when the compiler implements one the files do not declare, the files declare one
 it does not implement, or the two signatures differ. The declarations, as
-written there (COMPTIME-ONLY: evaluated while the program is checked or while a
-decorator or template body runs, never at run time):
+written there:
 
 | Builtin | Declaration | Held at the call by |
 |---|---|---|
 | `print` (`io/terminal.bp`, imported) | `print(..values: unknown[])` — any number of arguments (§ A variadic parameter) | the declaration |
 | `panic` (`failure.bp`, imported) | `panic(message: string = "panic") -> noreturn` | the declaration |
-| `@embed` (until 607's box removes it) | `embed(comptime path: string) -> Asset` — a `Build` builtin, computed where it is written (§ `@embed` and `Asset`) | its own rule (`embed-arguments`, `comptime-arg-not-known`, `embed-path-absolute`, `embed-path-outside-package`, `embed-file-missing`) |
-| `@TypeInfo.all` (until B-137's `compiler.find` removes it) | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]` (`Declared<B>[]` when the decorators' `syntax decl: B` share the behavior `B`, decision 564), a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
-| `@emit` (until 605's box removes it) | `emit(source: string)` — COMPTIME-ONLY, a decorator body | the declaration |
-| `@code` (until 605's box removes it) | `code<T>(text: string)` — COMPTIME-ONLY, a template body, answering the code `text` parses | the declaration |
 
 A call the declaration refuses — more arguments than it declares, a parameter
 without a default left out, a label naming no parameter — is
@@ -5488,27 +5249,10 @@ Builtin names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]
 is only an operator (decision 322): `x is T` tests a type, and a hand-written
 `@is(…)` is `error[unknown-builtin]` naming the operator.
 
-`Decorator` (declared in `primitives.bp`, decision 268) is the type of a
-decorator's name: a name has it when it names a function whose first parameter
-is `syntax` and which has a body — further arguments included —, and
-an array literal of such names is a `Decorator[]`. Nothing else is assignable to
-it, and it cannot be constructed: `@TypeInfo.all(with: 42)` and
-`@TypeInfo.all(with: someOrdinaryFn)` are the ordinary type mismatch, at the
-argument.
-
-A decorator parameter typed `Decorator` (`comptime marker: Decorator`)
-takes a decorator's name, and one typed `Decorator[]` an array literal of
-names; the body reads each as the declaration's identity and compares it with
-`same` (decision 371):
-
-<!-- example: modules/decisions-taken/compiler_same_compares_declaration_handles-666/run/src/cases/decorator_argument_decorator_name -->
-
-The name is resolved where it is written: through the namespace of the module
-that declares the decorator (`markers.email`, a `mod` child's namespace read in
-an annotation as in a body) and under an import's alias, it is the same
-declaration's identity:
-
-<!-- example: modules/decisions-taken/compiler_same_compares_declaration_handles-666/run/src/cases/decorator_argument_decorator_alias -->
+There is no `Decorator` type (decision 666): a decorator's name at build is a
+declaration handle, and two handles are compared with `compiler.same(a, b)` — one
+declaration, an alias and a namespace resolved where the name is written, a
+same-named declaration of another module `false`; `==` on handles keeps no meaning.
 
 `panic` never returns: it is declared `-> noreturn`, the bottom type, so a call to
 it stands wherever a value of any type is expected — `val x: i32 = panic("not
@@ -5623,60 +5367,35 @@ messages and the `snap` library's paths are computed from the caller's `comptime
 
 <!-- example: modules/decisions-taken/compiler_src_is_a_call-718/cells/compiler_src_is_a_call -->
 
-### `@embed` and `Asset`
+### `Asset`
 
 <!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_text_file -->
 
-`@embed(path)` is the file `path` names, read while the program is built
-(decision 519), as an `Asset` — a builtin record like `SourceLocation`, with no
-import:
-
-| Field | Value |
-|---|---|
-| `path` | the path as written |
-| `bytes` | the file's bytes (`bytes`) |
-| `size` | the number of bytes (`i64`, as a file's size is) |
-| `hash` | the SHA-256 of the bytes, 64 lowercase hex digits |
-
-`size` is an `i64` (decision 538), as `stat`'s and a `File`'s are: it binds to an `i64` without a
-conversion and sums past the `i32` range.
-
-<!-- example: modules/decisions-taken/asset_size_hash_open-538/cells/embed_size_i64 -->
-
-`a.text()` is the bytes as UTF-8 text, computed at build: bytes that are not
-UTF-8 are `error[embed-text-not-utf8]` at the call, and an `Asset` whose bytes
-are not known where the call is checked — a parameter, a function's answer — is
-`error[embed-text-not-at-build]`.
-
-`a.open()` is the `File` of std's file system over the embedded copy (decision 538): the same
-`read`, `bytes`, `text`, `chunks`, `lines`, `hash` and `size` as a file on disk, a fallible one answering
-`Result<…, FsError>`, `close` a no-op, and no `Result` around the `File` itself — the build proved the
-file exists. Code that takes a `File` reads one on disk (`fs.open`) and an embedded one alike. The call
-hands the `Asset` to std's `io.fs`, so the module that writes it imports `io.fs`; without the import it is
-`error[embed-open-needs-fs]`, at the call.
+`compiler.embed(path)` makes the link and nothing else (decision 607): it resolves
+`path` relative to the `botopink.json` of the package that writes it, records the
+file as an input of the build (its hash in the cache key; watch and the language
+server rebuild on change) and answers `Link(path: string)`, declared in
+`compiler.bp`; it reads no byte. In a run-time body it is written under `comptime`.
+std's `asset.bp` declares `pub type Asset(link: Link)`, made by its constructor and
+nothing else — `val logo = comptime Asset(compiler.embed("assets/logo.png"));` —,
+and `logo.open()` answers `Result<File, FsError>`: reading is `File`'s — `read`,
+`bytes`, `text`, `lines`, `hash`, `size`, every one a `Result<…, FsError>` as on any
+file. A `Link` is made by `compiler.embed` alone, so an `Asset` always holds a path
+the build checked.
 
 <!-- example: modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file -->
 
-A module that does not declare `Asset` reads its fields all the same: `a.path` is the path, `a.bytes` the
-bytes, wherever the value reaches it.
-
-<!-- example: modules/embed/cells/embed_field_read_other_module -->
-
-<!-- example: modules/decisions-taken/asset_size_hash_open-538/cells/embed_open_without_fs_import -->
-
-`@embed` is a `Build` builtin (decision 376): a call whose path is known at
-build — a literal, a constant `val`, a `comptime`, an `Any` call of those — is
-computed where it is written, in a body or in a module-level `val`, with no
-`comptime` (decision 380 (1) extended to `Build` calls; a `comptime` written
-stays legal). The artifact carries the bytes on every target — an Erlang
-binary, a JS `Uint8Array`, a wasm data segment — and the program never reads
-the file when it runs, so a file that is not text embeds byte for byte:
+When the file is read is the `comptime` written at the read (decision 607 (3)): an
+`open()` and its reads inside a `comptime` block read at build, and the bytes are a
+constant of the artifact on every target — an Erlang binary, a JS `Uint8Array`, a
+wasm data segment —, so a file that is not text embeds byte for byte; an `open()`
+in a run-time body reads when the program runs, from the resolved path, so the file
+is deployed with the program. A failure at build is a located build error.
 
 <!-- example: modules/decisions-taken/unicode_case_tables_embedded-559/cells/embed_binary_file -->
 
 The path is relative to the `botopink.json` of the package that writes it; a
-path passed on through a `comptime` parameter is read in the caller's package —
-the function takes the caller's `Asset`, read where the call is written:
+path passed on through a `comptime` parameter is read in the caller's package:
 
 <!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_through_comptime_param -->
 
@@ -5685,13 +5404,12 @@ An absolute path is `error[embed-path-absolute]` and a path with a `..` segment
 of the package is `error[embed-file-missing]`, at the call; a path not known at
 build — a parameter, a local — is `error[comptime-arg-not-known]`, at the
 argument. The compiler that runs in a browser (`compiler-web`) is handed no
-reader: every `@embed` there is `error[embed-no-reader]`, at the call.
+reader: every `compiler.embed` there is `error[embed-no-reader]`, at the call.
 
 <!-- example: modules/decisions-taken/embed_returns_asset-519/refused/src/cases/embed_path_absolute -->
 <!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_path_outside_package -->
 <!-- example: modules/decisions-taken/embed_returns_asset-519/refused/src/cases/embed_file_missing -->
 <!-- example: modules/decisions-taken/embed_returns_asset-519/refused/src/cases/embed_path_not_known -->
-<!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_text_not_utf8 -->
 
 ## Tests
 
@@ -5738,15 +5456,19 @@ test "t: a propagated error fails the test" {
 matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
 `verify(mock, spec)` checks how many matching calls were recorded. It is the
 old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
-commonJS, erlang and beam — its cells are `pub declare fn` with a Node and an
+commonJS, erlang and beam — its cells are `pub declare fn` with a JavaScript and an
 Erlang template each (beam reads the Erlang one), so `import {testing.mocks} from "std"`
 is refused on wasm.
 
 <!-- example: test/mocks_handwritten_double -->
 
-`#[mocks.mock]` writes that double for you — it reflects the annotated
-`behavior`'s methods through `compiler.methods` and gives the behavior the associated
-type `<Name>.Mock` and the factory `<Name>.mock()` (§ Decorators). A std module's decorators come with its namespace
+`mock(T)` writes that double for you (decision 644): `testing/mocks.bp`'s `pub fn
+mock<T>(comptime t: type<T>) -> T` runs at build — `val g = mock(Greeter);` —, builds an
+anonymous inline type implementing the behavior (`compiler.buildTypeInline`), adds one
+method per member of the behavior with `compiler.addMember` on that type and answers a
+value of it typed `T`. Nothing is written on the behavior: `#[mockable]`, the associated
+`Mock` type and the `mock()` member are gone; whether a type can be mocked is the test's
+business. A std module's decorators come with its namespace
 import, under the handle it binds: `import {testing.mocks}` makes `mock`
 the annotation `#[mocks.mock]` (an alias `as m` makes it `#[m.mock]`), and the
 code it adds reaches the runtime through that same handle (`mocks.invoke(…)`).
@@ -5761,13 +5483,10 @@ annotation and naming what `name` is: nothing (`#[nope]`), a namespace (`#[check
 where `check` is a module), or a value (`#[limit]` where `limit` is a `val` or a
 function that is no decorator). It used to be dropped without a word and the
 program built (`modules/annotation_not_decorator_{unbound,namespace,value}`).
-A dotted path through a namespace (`#[local.mark]` for a `pub mod local;`, `#[jwt.stamped]` for
+A dotted path through a namespace (`#[local.mark]`, `#[jwt.stamped]` for
 an imported module) names the decorator its last segment declares in that module, and builds; through an
 imported module whose exports lack the segment it is the same error, naming the module
-(`modules/annotation_dotted_{through_mod,through_import,missing_in_import}`). A `pub mod` of the package
-publishes no export list to the checker, so a missing name there is not yet refused.
-
-<!-- example: test/mocks_decorator_double -->
+(`modules/annotation_dotted_{through_mod,through_import,missing_in_import}`).
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
 host throw, not an `Result`, so the caller catches it with `asserts.throws`
@@ -5806,8 +5525,7 @@ each dependency package's analysis from
 under `std/`) when it was written under the same closure key — the package's
 files, its manifest, its dependencies' keys, the target and the compiler — and
 write the ones they analysed once the build's compile returned. The package
-being built, run or tested is analysed every time and never stored, and so is a
-package whose module reads `@TypeInfo.all` or expands a template that reads it.
+being built, run or tested is analysed every time and never stored.
 `--cold` reads none of it.
 
 ## Project manifest
@@ -5820,14 +5538,15 @@ Every project carries a `botopink.json` at its root:
   "version": "0.1.0",
   "target": "commonJS",
   "dependencies": {
-    "erika": { "git": "https://github.com/botopink/erika.git", "branch": "feat" }
+    "query": { "git": "https://github.com/botopink/query.git", "branch": "feat" }
   }
 }
 ```
 
-Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
-else `root.bp`); every module under `src/` is in the program, imported or not
-(decision 677).
+Optional `entry` names an executable's entry module under `src/` (default:
+`main.bp`); it says only where execution starts, and a library has none — the key
+in a manifest with no `main` is refused, `manifest-entry-in-library` (decisions 677,
+733). Every module under `src/` is in the program, imported or not (decision 677).
 `dependencies` is an object — one entry per import name, each
 with exactly one source: `{ "path": "…" }`, `{ "git": "…", "branch"|"tag"|"rev":
 "…" }` or `{ "workspace": true }` (the sibling member of the enclosing
@@ -5862,7 +5581,7 @@ entry that is wrong, in the compiler's diagnostic shape:
 error: "dependencies" must be an object, not an array — …
  --> botopink.json:2:3
   |
-2 |   "dependencies": ["erika"] }
+2 |   "dependencies": ["query"] }
   |   ^^^^^^^^^^^^^^
 ```
 
@@ -5878,13 +5597,11 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
   "version": "0.0.1",
   "description": "Rakun-style web layer — commonJS and erlang",
   "src": "src/",
-  "entry": "root.bp",
   "target": "commonJS",
   "targets": ["commonJS", "erlang"],
-  "files": ["root.bp", "router.bp"],
   "dependencies": {
     "acme": { "workspace": true },
-    "jhonstart": { "git": "https://github.com/botopink/jhonstart.git", "branch": "feat" },
+    "rakun-bpp": { "git": "https://github.com/botopink/rakun.git", "branch": "feat", "subdir": "modules/rakun-bpp" },
     "local-tool": { "path": "../../tools/local-tool" }
   }
 }
@@ -5896,14 +5613,14 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `version` | string | `"0.1.0"`; a workspace member's: the workspace's | compiler, `bpmp` (`pack`, the auto-tag) | The package version. A member writes it only when it differs from its workspace's (decision 512). |
 | `description` | string | — | — (documentation) | One line. |
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
-| `entry` | string | detected; a workspace member's: `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp` — a workspace member without one is `main.bp` (decision 512), so a library member writes `"entry": "root.bp"`. `entry` is followed when **this** package is built or tested; a consumer never follows it. Every module under `src` is in the program whether a `mod` path reaches it or not (decision 677) — checked, compiled, linked, its executors run (§ Decorators) — so a file no module names or imports is no longer left out, and a type error in it refuses the build; `test/` is not `src` and keeps its own rule. |
+| `entry` | string | `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | An executable's entry module under `src` — `main.bp` when absent; it says only where execution starts and never narrows what the package holds (decision 677). A library has no entry: the key in a manifest with no `main` is refused, `manifest-entry-in-library`, located at the key (decisions 733, 592 (2)). Every module under `src` is in the program whether a module imports it or not (decision 677) — checked, compiled, linked, its executors run (§ Decorators) — so a type error in it refuses the build; `test/` is not `src` and keeps its own rule. |
 | `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
 | `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[compiler.external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). A declared dependency's `targets` hold every target of the package that declares it (decision 676): one that lacks a target is refused at the dependant's manifest, on the dependency's line, whatever target the build is for — `error[dependency-target-missing]: kit declares no erlang, beam, wasm targets` —, and each dependency's own dependencies answer to its targets, so the whole graph builds for every target of the root. |
-| `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
+| `files` | — | — | — | Gone (decision 703): what a consumer may import is the tree — every `pub` item outside `src/internal/`, which is private to its package (decision 592 (8)). Once B-69 / B-75 land a manifest still writing `files` is refused, located, naming `src/internal/`. |
 | `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
 | `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
 | `wasm` | object | `{ "host": "wasi" }` | `botopink build/run --target wasm` (`compiler-cli/src/cli/config.zig`) | The runtime a wasm build binds to (decision 334 of 1.0.12-beta), its one field `host`: `"wasi"` — wasmtime and the runtimes that follow WASI preview 2 (`wasi:http`, `wasi:clocks`, `wasi:io/poll`), the default — or `"browser"` — JS imports (`fetch`, `setTimeout`, `Promise` through JSPI), which node runs too. Absent means `"wasi"`; an object without `host`, another field, or a host that is neither is refused. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
-| `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "jhonstart"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "jhonstart"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
+| `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "rakun-bpp"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "rakun-bpp"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `typings` | bool | `false` | `botopink build` (`compiler-cli/src/cli/build.zig`) | `true`: a commonJS build writes a `.d.ts` beside each `.js` (decisions 619, 620), each typing derived from the botopink declaration — no source of `Implementation` is a typing. `botopink build --typescript` turns the same emission on for one build; either one turns it on, and neither turns it off (there is no `"typings": false` the flag overrides, and no `--no-typescript`). A value that is not `true` / `false` is refused at the key. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
 | `botopink`, `requires` | string · object | — | `bpmp` only | `botopink`: the compiler-version constraint. `requires`: the per-dependency version constraint `bpmp install <name>@<spec>` records. The compiler passes both through unread. |
 
@@ -5940,7 +5657,7 @@ dependency may name a package that is not at the repository's root:
 
 ```json
 "dependencies": {
-  "rakun-web": { "git": "https://github.com/botopink/rakun", "tag": "v1.0", "subdir": "modules/rakun-web" }
+  "rakun-service": { "git": "https://github.com/botopink/rakun", "tag": "v1.0", "subdir": "modules/rakun-service" }
 }
 ```
 
@@ -6114,7 +5831,7 @@ decision 509):
   "targets": ["commonJS", "erlang", "beam"],
   "workspaces": ["*"],
   "dependencies": {
-    "emilia": { "path": "../../modules/emilia" }
+    "rakun-stylesheet": { "path": "../../modules/rakun-stylesheet" }
   }
 }
 ```
@@ -6132,24 +5849,14 @@ and a cell that adds nothing is `{ "name": "alpha" }`.
 | `src`, `files`, `entry`, `wasm`, `bpp` | **Refused** — a workspace compiles nothing and ships nothing. |
 
 Each member is a package whose `name` — **required**, and unique in the workspace —
-is its import name (`from "rakun-web"`); `src`, `entry` and `version` default to
+is its import name (`from "rakun-service"`); `src`, `entry` and `version` default to
 `src/`, `main.bp` and the workspace's version, so a member writes them only when they
 differ.
 The runner runs every member — examples included — one row per member, and the
 umbrella has no row. A member depends on a sibling with `{ "workspace": true }`
 only. Workspaces do not nest.
 
-A member that is a **library** (its module tree is rooted at `root.bp`, not
-`main.bp`) and lists no `files` **ships nothing**: `botopink test` inside it
-fails, and the runner marks every cell `✗`, with
-
-```text
-error: ships nothing: manifest has no "files" — a workspace member that is a library lists every module a consumer may import
- --> modules/rakun-web/botopink.json:2:3
-```
-
-An example member (`entry: main.bp`, or `src/main.bp` present) is an
-application; nothing is shipped from it by design.
+An example member (`src/main.bp` present) is an application (decision 592 (2)).
 
 #### Examples and `-test` members (decisions 75, 390)
 
@@ -6162,8 +5869,8 @@ string>`, no more helpers than a consumer uses. `scripts/check-packaging.sh` che
 the four rules across the library repositories — a README per example, a helper
 per `-test` member, no `"git"` to an ecosystem library from an example, every
 member listed by `botopink-lib-test --list` — and names each path that breaks
-one. The `onze` repository is the orchestrator; the mocking library it held is
-kept as its tagged history, `mocking-lib-final` (decision 507).
+one. The mocking library `onze` held is kept as the archived repository's tag,
+`mocking-lib-final` (decision 507).
 
 #### Refusals
 
@@ -6303,9 +6010,8 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
-| A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
-| `@embed` in a decorator's or a template's body reads a path its `comptime` parameter passes — a decorator annotating the application's declarations reads the application's file (decisions 342, 519) | `error[comptime-arg-not-known]` at the argument: the body runs on the comptime runtime, which reads no file | 144 B-12 |
-| A file `@embed` reads in a dependency joins the dependency's closure key (decision 519, 144 B-60) | a file under the package's `src` tree is in the key; one beside it (`assets/`) is not, so an entry read back can carry a stale copy | 144 B-12 / B-60 |
+| `compiler.embed` in a decorator's or a template's body takes a path its `comptime` parameter passes — a decorator annotating the application's declarations reads the application's file (decisions 342, 519) | `error[comptime-arg-not-known]` at the argument: the body runs on the comptime runtime, which reads no file | 144 B-12 |
+| A file `compiler.embed` names in a dependency joins the dependency's closure key (decision 519, 144 B-60) | a file under the package's `src` tree is in the key; one beside it (`assets/`) is not, so an entry read back can carry a stale copy | 144 B-12 / B-60 |
 
 A row leaves this table when the compiler accepts the form, and the form is then
 taught in the section that owns it: union types, the `unknown` type and its

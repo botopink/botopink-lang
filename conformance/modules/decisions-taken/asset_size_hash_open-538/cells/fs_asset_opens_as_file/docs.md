@@ -1,6 +1,6 @@
 # fs_asset_opens_as_file
 
-The reference text this cell shows (from `conformance/docs.md`, § `@embed` and `Asset`):
+The reference text this cell shows (from `conformance/docs.md`, § `Asset`):
 
 > `a.open()` is the `File` of std's file system over the embedded copy (decision 538): the same
 > `read`, `bytes`, `text`, `chunks`, `lines`, `hash` and `size` as a file on disk, a fallible one answering

@@ -1,6 +1,6 @@
 # embed_text_file
 
-The reference text this cell shows (from `conformance/docs.md`, § `@embed` and `Asset`):
+The reference text this cell shows (from `conformance/docs.md`, § `Asset`):
 
 > `@embed(path)` is the file `path` names, read while the program is built
 > (decision 519), as an `Asset` — a builtin record like `SourceLocation`, with no

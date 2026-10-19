@@ -1,6 +1,6 @@
 # beam_memory_ets_keyed_read_modify_write
 
-The reference text this cell shows (from `conformance/docs.md`, § beamMemory — where a module var lives on the BEAM):
+The reference text this cell shows (from `conformance/docs.md`, § `compiler.beamMemory` — where a module var lives on the BEAM):
 
 > `bump` is atomic only on integer rows (decision 340): on a keyed `Dict` of `f64` it is refused at
 > the write, naming the rows' type. A `bump` whose key or amount reads the var, and the increment
