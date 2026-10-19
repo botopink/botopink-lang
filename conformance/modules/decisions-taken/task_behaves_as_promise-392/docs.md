@@ -1,4 +1,4 @@
-# Decision 392 — `@Async<T>` behaves as a Promise on every target; on wasm an asynchronous function is a resumable state machine driven by a scheduler.
+# Decision 392 — `@Task<T>` behaves as a Promise on every target; on wasm an asynchronous function is a resumable state machine driven by a scheduler.
 
 [cells/generic_thunk_result_binds/src/main.bp](cells/generic_thunk_result_binds/src/main.bp)
 [cells/task_await_after_call_refused_on_wasm/src/main.bp](cells/task_await_after_call_refused_on_wasm/src/main.bp)

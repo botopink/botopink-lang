@@ -1,4 +1,4 @@
-# Decision 393 — A host adapter may answer `@Async<T>` over a generic `T`; the compiler makes the pending task its pollable backs; `fetch`'s records cross in the compiler's layout.
+# Decision 393 — A host adapter may answer `@Task<T>` over a generic `T`; the compiler makes the pending task its pollable backs; `fetch`'s records cross in the compiler's layout.
 
 [cells/external_wasm_task_adapter_shape/src/main.bp](cells/external_wasm_task_adapter_shape/src/main.bp)
 
