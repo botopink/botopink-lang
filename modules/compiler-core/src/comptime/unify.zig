@@ -190,7 +190,7 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
             },
             else => {
                 // A value of `T` is a value of `?T` for every `T`, a function
-                // type included (decision 330): `scoper: ?fn(string) -> string`
+                // type included (decisions 330, 735): `scoper: ?fn(string) -> string`
                 // takes a named function, and `?unknown` takes one too
                 // (`body: ?unknown`, decision 575 (6)).
                 if (std.mem.eql(u8, na.name, "optional") and na.args.len == 1)

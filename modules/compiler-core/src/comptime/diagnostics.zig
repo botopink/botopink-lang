@@ -559,10 +559,6 @@ pub const decorator_param_not_comptime: []const u8 = "decorator-param-not-compti
 
 // ── decision 364 — every `comptime` parameter is `comptime x: @Expr<T>` ─────
 
-/// `x.value` of an `@Expr` of a function: its body is not called while the
-/// program compiles.
-pub const expr_value_of_function: []const u8 = "expr-value-of-function";
-
 /// `x.value` of an `@Expr` of a type: the type is not inspected while the
 /// program compiles.
 pub const expr_value_of_type: []const u8 = "expr-value-of-type";
@@ -967,7 +963,6 @@ pub const all_codes = [_][]const u8{
     inline_type_position,
     behavior_member_redeclared,
     decorator_param_not_comptime,
-    expr_value_of_function,
     expr_value_of_type,
     decorator_value_not_comptime,
     expr_param_method,

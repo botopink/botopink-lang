@@ -5641,13 +5641,6 @@ fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: 
         },
         else => |x| return x,
     };
-    // Decision 364 (3) — a type parameter the annotation binds to a function
-    // type: the body's `.value` would call it at build.
-    if (use.value and isFunctionValueType(w)) {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s `{s}` is a function here, and the decorator reads `{s}.value`", .{ diagnostics.expr_value_of_function, a.name, p.name, p.name });
-        env.lastError = TypeError.custom(msg, "A function's body is not called while the program compiles (decision 364 (3)).").withLoc(loc);
-        return error.TypeError;
-    }
     return unknownAt == null;
 }
 
@@ -16725,7 +16718,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                         env.lastError = TypeError.unknownField(ast.expr_type_name, ia.member).withLoc(loc);
                         return error.TypeError;
                     }
-                    try refuseExprValueRead(env, ia.receiver.*, recvNamed.args[0], loc);
+                    try refuseExprValueRead(env, ia.receiver.*, loc);
                     outType = recvNamed.args[0];
                 } else if (env.lookupTypeDef(recvNamed.name)) |td| {
                     switch (td) {
@@ -16790,10 +16783,11 @@ fn typedIdentName(e: ast.TypedExpr) ?[]const u8 {
     };
 }
 
-/// Decision 364 (3) — an `@Expr` of a function or a type has no `.value`:
-/// the function's body is not called and the type not inspected while the
-/// program compiles. Refused at the read.
-fn refuseExprValueRead(env: *Env, receiver: ast.Expr, inner: *T.Type, loc: ast.Loc) InferError!void {
+/// Decision 364 (3) — an `@Expr` of a type has no `.value`: the type is not
+/// inspected while the program compiles. Refused at the read. A function's
+/// (or an optional one's) is an ordinary build value, tested against `null`
+/// as any `?T` is (decision 735).
+fn refuseExprValueRead(env: *Env, receiver: ast.Expr, loc: ast.Loc) InferError!void {
     // Decision 757 — a type token handed on to another call's token.
     if (env.typeTokenHandOns.contains(loc)) return;
     const name: []const u8 = if (receiver == .identifier and receiver.identifier.kind == .ident) receiver.identifier.kind.ident else "the expression";
@@ -16802,19 +16796,6 @@ fn refuseExprValueRead(env: *Env, receiver: ast.Expr, inner: *T.Type, loc: ast.L
         env.lastError = TypeError.custom(msg, "A type is not inspected while the program compiles (decision 364 (3)): hand it on to the program.").withLoc(loc);
         return error.TypeError;
     };
-    if (isFunctionValueType(inner)) {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr` of a function, which has no `.value`", .{ diagnostics.expr_value_of_function, name });
-        env.lastError = TypeError.custom(msg, "A function's body is not called while the program compiles (decision 364 (3)): hand it on to the program, which calls it at run time.").withLoc(loc);
-        return error.TypeError;
-    }
-}
-
-/// A function type, or an optional one.
-fn isFunctionValueType(t: *T.Type) bool {
-    const d = t.deref();
-    if (d.* == .func) return true;
-    if (d.* == .named and std.mem.eql(u8, d.named.name, "optional") and d.named.args.len == 1) return d.named.args[0].deref().* == .func;
-    return false;
 }
 
 /// Infer type for binary operation expressions
@@ -19598,7 +19579,7 @@ fn inferTemplateMethod(
         // `rule.value(x)` calls the function at build: refused as its read.
         if (std.mem.eql(u8, callee, "value") and named.args.len == 1) {
             const recvExpr: ast.Expr = .{ .identifier = .{ .loc = recvPtr.getLoc(), .kind = .{ .ident = p.name } } };
-            try refuseExprValueRead(env, recvExpr, named.args[0], loc);
+            try refuseExprValueRead(env, recvExpr, loc);
         }
         // Decision 576 (2) — in a decorator, `compiler.text(x)` reads the
         // argument as the annotation wrote it.

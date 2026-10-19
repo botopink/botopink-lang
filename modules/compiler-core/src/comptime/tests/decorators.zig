@@ -431,33 +431,35 @@ test "decision 364: `x.value` is the argument's value, typed `T`" {
     );
 }
 
-test "decision 364: an `@Expr` of a function or a type has no `.value`" {
-    try expectDecoratorError(
-        \\fn rule(syntax decl: unknown, comptime r: fn(x: i32) -> bool) {
-        \\    val f = r;
-        \\}
-    , "expr-value-of-function: `r` is an `@Expr` of a function, which has no `.value`");
-    try expectDecoratorError(
-        \\fn rule(syntax decl: unknown, comptime r: ?fn(x: i32) -> bool = null) {
-        \\    if (r == null) compiler.fail("none", at: decl);
-        \\}
-        \\
-        \\import {compiler} from "std";
-    , "expr-value-of-function");
+test "decision 364: an `@Expr` of a type has no `.value`" {
     try expectDecoratorError(
         \\fn bean(syntax decl: unknown, comptime t: anytype) {
         \\    val v = t;
         \\}
     , "expr-value-of-type: `t` is an `@Expr` of a type, which has no `.value`");
-    // A type parameter the annotation binds to a function, read `.value`.
-    try expectDecoratorError(
+}
+
+test "decision 735: an optional function-typed `comptime` argument is tested against `null`" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn rule(syntax decl: unknown, comptime r: ?fn(x: i32) -> bool = null) {
+        \\    if (r == null) compiler.fail("none", at: decl);
+        \\}
+        \\fn positive(x: i32) -> bool { return x > 0; }
+        \\#[rule(positive)]
+        \\type A(x: i32)
+        \\
+        \\import {compiler} from "std";
+    );
+    // A type parameter the annotation binds to a function is read as any
+    // build value.
+    try h.assertInfersOk(std.testing.allocator,
         \\fn pass<T>(syntax decl: unknown, comptime v: T) {
         \\    val x = v;
         \\}
         \\fn f(n: i32) -> i32 { return n; }
         \\#[pass(f)]
         \\type A(x: i32)
-    , "expr-value-of-function: `#[pass]`'s `v` is a function here");
+    );
 }
 
 test "decision 364: a `comptime` parameter's `@Expr` answers `.value`, and `.fail` and `.text` in a decorator (576 (2))" {

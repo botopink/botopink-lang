@@ -717,9 +717,11 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `decorator-value-not-comptime` at it only when the body reads the parameter
   (`syntax_param.useOf(dfn, name).reads` — any use but as `.fail`'s receiver);
   one the body never reads is accepted and reaches it as `undefined`
-  (`DecoratorArgValue.absent`, `PlainArg.absent`), nothing built. A body that
-  reads `x.value` of a parameter the annotation binds to a function type is
-  `expr-value-of-function` at the argument. What each parameter hands the
+  (`DecoratorArgValue.absent`, `PlainArg.absent`), nothing built. A
+  parameter the annotation binds to a function type, or an optional one
+  (`comptime rule: ?fn(v: T) -> bool = null`), is a build value as any other:
+  `rule == null` is the ordinary test of a `?T` (decision 735; 411's
+  `expr-value-of-function` is gone). What each parameter hands the
   body is recorded in `Env.decoratorArgValues` under the annotation's
   location (`decoratorArgValue`), with the argument's location
   (`DecoratorArgValue.loc`) a `x.fail` reports at.
@@ -1039,9 +1041,9 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   parameter as `__Expr<T>` (the signature keeps `T`, so a call checks the
   argument against `T`) and set `Env.currentParams`. `x.value` (the
   `identAccess` arm on an `__Expr<T>` receiver) is `T`; `refuseExprValueRead`
-  refuses it for a type-kind parameter (`expr-value-of-type`) and a function
-  or optional function `T` (`expr-value-of-function`), at the read — also
-  `x.value(…)` (`inferTemplateMethod`). Any other member of an `__Expr` is the
+  refuses it for a type-kind parameter (`expr-value-of-type`), at the read —
+  also `x.value(…)` (`inferTemplateMethod`); a function or optional function
+  `T` is read as any build value (decision 735). Any other member of an `__Expr` is the
   unknown field; a method of a parameter's tree is `expr-param-method`
   but a decorator's `x.fail(…)` (template captures keep every template
   method).

@@ -4029,7 +4029,15 @@ its own.
 <!-- example: modules/annotation_argument_enum_identity -->
 
 A function or a type argument is checked at the argument and never run at
-build (decision 364 (3)). The body hands a `syntax` on to the program through a
+build (decision 364 (3)). An optional function-typed `comptime` argument is
+tested against `null` as any `?T` is — `if (rule == null) { … }`, the function
+type no exception (decision 735): `#[check("…")]` on a rule function and
+`#[check("…", rule)]` on a type are one decorator, and an ordinary function's
+`comptime rule: ?fn(v: T) -> bool` takes `null` or a function the same way:
+
+<!-- example: modules/comptime_optional_fn_tested_against_null -->
+
+The body hands a `syntax` on to the program through a
 typed member (decision 370 (2)) — `compiler.addMember(name, fn…)` with the
 member written as a function expression at the call, its parameters and its
 return typed:

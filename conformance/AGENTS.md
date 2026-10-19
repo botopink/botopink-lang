@@ -1148,7 +1148,7 @@ key and an array in a decorator; an ordinary function's `n.value`, specialised; 
 at build whose parameter the body never reads is accepted), and the refusals
 `modules/decorator_value_not_comptime` (`message.value` of
 `env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `modules/decorator_call_expr_fn`
-(`rule.value(…)`, `expr-value-of-function`), `modules/decorator_inspect_expr_type` (`t.value`,
+(`rule.value(…)`, `expr-value-of-function` — the cell and the code went with decision 735), `modules/decorator_inspect_expr_type` (`t.value`,
 `expr-value-of-type`), `modules/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
 `modules/expr_param_method` (`message.text()` on a `syntax` parameter, decision 576 (2)), each red
 on the parent binary; `template_value_not_known` went with the holes (decision 577 (5)). Decision 577 (5) also deletes the cells that read a hole's
