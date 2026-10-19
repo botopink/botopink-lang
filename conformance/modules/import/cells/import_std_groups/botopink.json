@@ -1,1 +1,1 @@
-{ "name": "import_std_groups", "targets": ["commonJS", "erlang", "beam"] }
+{ "name": "import_std_groups" }

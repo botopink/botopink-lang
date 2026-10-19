@@ -6,4 +6,5 @@ counts. `val f = clock.nowMillis; f()` inside a `comptime` passes the checker â€
 that runs only when the program runs, the build refuses it: `run-in-build` at the call `f()`,
 naming the function reached, with the `comptime` that ran it as the `from` line. The first
 `comptime`, which passes `double` along as a value and reaches only `Any` functions, computes `20`.
-wasm is left out until std's `io/clock` links there (its host has no wasm cell).
+The same on every target: std's `io/clock` links on wasm though its host has no wasm cell (decision
+531).

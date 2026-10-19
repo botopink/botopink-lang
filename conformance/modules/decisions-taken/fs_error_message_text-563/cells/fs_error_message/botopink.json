@@ -1,1 +1,1 @@
-{ "name": "fs_error_message", "targets": ["commonJS", "erlang", "beam"] }
+{ "name": "fs_error_message" }
