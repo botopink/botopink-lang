@@ -1,10 +1,13 @@
-//// A misspelled family is refused, naming the one it is an edit away from:
-//// `@BeamMemroy.Ets` would otherwise leave the `var` in the default mode with
-//// nothing said.
+//// A misspelled memory annotation is refused at the annotation:
+//// `compiler.beamMemroy` names no member of `compiler` (decisions 663, 774 —
+//// `#[compiler.beamMemory(…)]` is the one spelling), so the `var` is never
+//// left in the default mode with nothing said.
 
-import {io.terminal.print} from "std";
+import {io.terminal.print, compiler} from "std";
 
-#[@BeamMemroy.Ets]
+#[compiler.beamMemroy(.Ets)]
 var hits: i32 = 0;
 
-pub fn main() { print(hits); }
+pub fn main() {
+    print(hits);
+}

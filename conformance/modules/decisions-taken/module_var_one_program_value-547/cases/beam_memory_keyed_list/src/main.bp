@@ -4,7 +4,9 @@
 
 import {io.terminal.print} from "std";
 
-#[@BeamMemory.Ets(keyed: true)]
+#[compiler.beamMemory(.Ets(keyed: true))]
 var names: string[] = [];
 
-pub fn main() { print(names.length); }
+pub fn main() {
+    print(names.length);
+}

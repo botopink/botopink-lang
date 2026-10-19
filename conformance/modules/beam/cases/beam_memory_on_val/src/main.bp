@@ -1,10 +1,12 @@
-//// Front 17 step 3 — `@BeamMemory` names where a MUTABLE binding lives on the
+//// Front 17 step 3 — `beamMemory` names where a MUTABLE binding lives on the
 //// BEAM; on a `val` there is nothing to place, so the annotation is refused
 //// and the hint spells the `var` form.
 
 import {io.terminal.print} from "std";
 
-#[@BeamMemory.Ets]
+#[compiler.beamMemory(.Ets)]
 val hits: i32 = 0;
 
-pub fn main() { print(hits); }
+pub fn main() {
+    print(hits);
+}

@@ -1,10 +1,10 @@
-//// Front 17 step 4 — `#[@BeamMemory.PersistentTerm]` is put once, when the
+//// Front 17 step 4 — `#[compiler.beamMemory(.PersistentTerm)]` is put once, when the
 //// module loads (`-on_load`), and read from anywhere on the node: a process
 //// spawned afterwards reads `101`.
 
 import {async, io.terminal.print} from "std";
 
-#[@BeamMemory.PersistentTerm]
+#[compiler.beamMemory(.PersistentTerm)]
 var version: i32 = 101;
 
 fn read() -> Task<i32> {

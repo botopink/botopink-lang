@@ -11,7 +11,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 `backtick.zig` prints decision 561's backtick names back in every name position, and writes a
 backtick name that is a plain identifier (`` `double` ``) plain.
 `declarations.zig` ends with front 17's rows: a module-level `var` keeps its
-keyword and its `#[@BeamMemory.…]` annotation, and a labelled annotation
+keyword and its `#[compiler.beamMemory(…)]` annotation, and a labelled annotation
 argument keeps its label (`assertFormat` + `assertIdempotent`). The last row is the type
 alias (decision 118 rule 1): plain, generic, `pub` and a function-type target, `assertFormatLossless`.
 `expressions.zig` carries front 24's new forms through `assertFormatLossless` (step E2): the

@@ -77,7 +77,7 @@ pub type Dict<K, V>(
     }
 
     // Decision 340 — `insert(key, (at(key) ?? 0) + by)`: an integer `V`, an
-    // absent key counting from 0. On a `#[@BeamMemory.Ets(keyed: true)]` var,
+    // absent key counting from 0. On a `#[compiler.beamMemory(.Ets(keyed: true))]` var,
     // `counts = counts.bump(k, n)` is one atomic `ets:update_counter`.
     pub fn bump(self: Self<K, V>, key: K, by: V) -> Dict<K, V> {
         return self.insert(key, (self.at(key) ?? 0) + by);

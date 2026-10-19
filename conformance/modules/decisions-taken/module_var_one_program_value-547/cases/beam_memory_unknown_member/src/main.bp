@@ -1,11 +1,13 @@
-//// Decision 41 — `#[@BeamMemory.<member>]` is validated in the commit the
+//// Decision 41 — `#[compiler.beamMemory(.<member>)]` is validated in the commit the
 //// annotation was born in: a misread memory annotation does not fail, it moves
 //// where the state lives. The member is `ProcessDict`, `Ets` or
 //// `PersistentTerm`; anything else is a located error naming the three.
 
 import {io.terminal.print} from "std";
 
-#[@BeamMemory.Etz]
+#[compiler.beamMemory(.Etz)]
 var hits: i32 = 0;
 
-pub fn main() { print(hits); }
+pub fn main() {
+    print(hits);
+}

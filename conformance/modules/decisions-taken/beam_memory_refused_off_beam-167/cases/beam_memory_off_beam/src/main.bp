@@ -1,4 +1,4 @@
-//// Decision 167 (amends 43) — `#[@BeamMemory]` names BEAM storage, and a
+//// Decision 167 (amends 43) — `#[compiler.beamMemory(…)]` names BEAM storage, and a
 //// target whose execution context is the whole program has none: commonJS
 //// and wasm refuse the annotation where it is written
 //// (`.commonJS.expect`, `.wasm.expect`). It used to be a silent no-op there,
@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-#[@BeamMemory.ProcessDict]
+#[compiler.beamMemory(.ProcessDict)]
 var hits: i32 = 0;
 
 fn bump() {

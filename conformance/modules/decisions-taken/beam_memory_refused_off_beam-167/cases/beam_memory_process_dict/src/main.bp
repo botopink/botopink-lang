@@ -1,4 +1,4 @@
-//// Front 17 step 4 — `#[@BeamMemory.ProcessDict]`, the default said out loud:
+//// Front 17 step 4 — `#[compiler.beamMemory(.ProcessDict)]`, the default said out loud:
 //// the `var` is one value per BEAM process. `main` writes `5`; a process
 //// `async.runAll` spawns afterwards reads the declaration's `0`, and its own
 //// write never reaches `main`. On commonJS and wasm the execution context is
@@ -7,7 +7,7 @@
 
 import {async, io.terminal.print} from "std";
 
-#[@BeamMemory.ProcessDict]
+#[compiler.beamMemory(.ProcessDict)]
 var scratch: i32 = 0;
 
 fn elsewhere() -> Task<i32> {

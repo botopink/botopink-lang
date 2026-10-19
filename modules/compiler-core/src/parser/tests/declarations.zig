@@ -1008,11 +1008,11 @@ test "parser: `var` parses at module level, and `val` does not become mutable" {
     try std.testing.expect(!program.decls[2].val.mutable);
 }
 
-test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
+test "parser: `#[compiler.beamMemory(.Ets)] var` carries the annotation on the binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("#[@BeamMemory.Ets(keyed: true)]\nvar cache: i32 = 0;");
+    var lx = Lexer.init("#[compiler.beamMemory(.Ets(keyed: true))]\nvar cache: i32 = 0;");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
@@ -1020,17 +1020,25 @@ test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
     const v = program.decls[0].val;
     try std.testing.expect(v.mutable);
     try std.testing.expectEqual(@as(usize, 1), v.annotations.len);
-    try std.testing.expectEqualStrings("BeamMemory.Ets", v.annotations[0].name);
-    try std.testing.expect(v.annotations[0].is_builtin);
-    // The label survives beside the positional value (front 17 step 3).
-    try std.testing.expectEqualStrings("true", v.annotations[0].args[0]);
-    try std.testing.expectEqualStrings("keyed", v.annotations[0].labelOf(0).?);
+    try std.testing.expectEqualStrings("compiler.beamMemory", v.annotations[0].name);
+    try std.testing.expect(!v.annotations[0].is_builtin);
+    // Decision 663 — one argument, the mode as written; its label survives
+    // inside it (front 17 step 3).
+    try std.testing.expectEqualStrings(".Ets(keyed: true)", v.annotations[0].args[0]);
+    const arg = v.annotations[0].beamMemoryOf().?;
+    try std.testing.expectEqualStrings("Ets", arg.case);
+    var items = arg.items();
+    const keyed = items.next().?;
+    try std.testing.expectEqualStrings("keyed", keyed.label.?);
+    try std.testing.expectEqualStrings("true", keyed.value);
 }
 
 test "parser: `label = value` in an annotation is refused at the label (decision 305)" {
     // A builtin's argument and a decorator's alike: the label is written
     // `label: value`, as a call's is.
-    try h.expectErrorAt("#[@BeamMemory.Ets(keyed = true)]\nvar cache: i32 = 0;", .annotationLabelEquals, 1, 19);
+    try h.expectErrorAt("#[mark(keyed = true)]\nvar cache: i32 = 0;", .annotationLabelEquals, 1, 8);
+    // Inside an argument too: an enum case's own arguments (decision 663).
+    try h.expectErrorAt("#[compiler.beamMemory(.Ets(keyed = true))]\nvar cache: i32 = 0;", .annotationLabelEquals, 1, 28);
     try h.expectErrorAt("#[mark([1, 2], level = .High)]\nfn f() {}", .annotationLabelEquals, 1, 16);
 }
 

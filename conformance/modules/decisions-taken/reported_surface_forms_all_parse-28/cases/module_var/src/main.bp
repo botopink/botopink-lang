@@ -2,7 +2,7 @@
 //// per execution context: the program on commonJS and wasm, the process on
 //// the BEAM. Two writes through a `fn`, one read: `2`.
 ////
-//// erlang and beam are C-10's (`@BeamMemory` steps 4–5): today erlang emits
+//// erlang and beam are C-10's (`beamMemory` steps 4–5): today erlang emits
 //// `hits() -> 0.` and `Hits = (Hits + 1).` (unbound, the module does not
 //// compile) and beam drops the write (`%% assign to unknown variable: hits`)
 //// and prints `0` at exit 0.

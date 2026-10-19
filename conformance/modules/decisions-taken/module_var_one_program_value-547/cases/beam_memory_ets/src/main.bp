@@ -1,5 +1,5 @@
 //// Decision 39's fixture — five requests, each its own process, three
-//// increments each, on one `#[@BeamMemory.Ets]` var: `15`. Without the
+//// increments each, on one `#[compiler.beamMemory(.Ets)]` var: `15`. Without the
 //// registered owner the table died with the request that created it, every
 //// request read `3` and the counter ended at `0`. `hits = hits + 1` and
 //// `hits += 1` are both the increment, lowered to the host's atomic counter
@@ -8,7 +8,7 @@
 
 import {async, io.terminal.print} from "std";
 
-#[@BeamMemory.Ets]
+#[compiler.beamMemory(.Ets)]
 var hits: i32 = 0;
 
 fn request() -> Task<i32> {

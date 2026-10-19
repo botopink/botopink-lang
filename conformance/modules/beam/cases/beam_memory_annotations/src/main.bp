@@ -1,24 +1,24 @@
 import {collections.Dict, io.terminal.print} from "std";
 
-#[@BeamMemory.ProcessDict]
+#[compiler.beamMemory(.ProcessDict)]
 var explicit: i32 = 0; // the default, said out loud
-#[@BeamMemory.Ets]
+#[compiler.beamMemory(.Ets)]
 var hits: i32 = 0;
 
-#[@BeamMemory.PersistentTerm]
+#[compiler.beamMemory(.PersistentTerm)]
 var buildVersion: i32 = 101;
 
-#[@BeamMemory.Ets(keyed: true)]
+#[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.empty();
 
-// #[@BeamMemory.Etz] var x: i32 = 0;
-//   error: unknown member `Etz` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`
-// #[@BeamMemory.Ets(keyd: true)] var x: i32 = 0;
+// #[compiler.beamMemory(.Etz)] var x: i32 = 0;
+//   error: unknown member `Etz` in `BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`
+// #[compiler.beamMemory(.Ets(keyd: true))] var x: i32 = 0;
 //   error: unknown argument `keyd` — expected `keyed`
-// #[@BeamMemory.Ets(keyed: true)] var n: i32 = 0;
+// #[compiler.beamMemory(.Ets(keyed: true))] var n: i32 = 0;
 //   error: `keyed` needs a keyed container — an `i32` has no key
-// #[@BeamMemory.Ets] val x: i32 = 0;
-//   error: `#[@BeamMemory.Ets]` needs a `var` — `x` is a `val`
+// #[compiler.beamMemory(.Ets)] val x: i32 = 0;
+//   error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `x` is a `val`
 
 pub fn main() {
     hits = hits + 1;

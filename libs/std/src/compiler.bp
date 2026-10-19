@@ -141,6 +141,32 @@ pub behavior Compiler {
 #[builtin]
 pub default declare val compiler: Compiler;
 
+// ── The annotations the compiler reads itself (decisions 606 (4), 663, 774) ──
+// Members of `compiler`, as `external` is: written `#[compiler.<name>(…)]`, and
+// read by the compiler where they stand, so their bodies run over nothing.
+// The bare `#[stage(…)]` / `#[beamMemory(…)]` and the old `#[@Stage.Any]` /
+// `#[@BeamMemory.<Mode>]` are refused.
+
+// A function's stage (decision 681), written only `#[compiler.stage(.Any)]`: a
+// host function is `Run` unless it says `Any`, and may then be called inside
+// a `comptime`. `Build` and `Run` follow from what a body reads and are never
+// written — `#[compiler.stage(.Build)]` / `#[compiler.stage(.Run)]` are
+// refused at the argument (`infer.zig` `hostStage`).
+pub fn stage(syntax decl: unknown, comptime s: Stage) {}
+
+// Where a module `var` lives on the BEAM (decisions 41, 43, 51):
+// `#[compiler.beamMemory(.Ets(keyed: true))] var hits: Dict<string, i32> = …;`.
+// `ProcessDict` is what a `var` with no annotation means; `keyed` is `Ets`'s
+// alone and needs a `Dict`; off the BEAM the annotation is refused (decision
+// 167; `ast.zig` `ValDecl.memory`, `infer.zig` `validateMemoryAnnotations`).
+pub type BeamMemory {
+    ProcessDict,
+    Ets(keyed: bool = false),
+    PersistentTerm,
+}
+
+pub fn beamMemory(syntax decl: unknown, comptime m: BeamMemory) {}
+
 // ── The typed AST `compiler.ast` builds code from (decision 625 (2)) ──────
 // One record per kind of expression a template answers, each with a field
 // set of its own: a body that runs at build reads a record by its fields.

@@ -100,7 +100,7 @@ pub const Call = struct {
 /// only while the program compiles (a `comptime` `@Decl` / `@Expr<T>` /
 /// `type` parameter's reflection), `run` when it reaches what exists only
 /// when the program runs (a host function std or its library does not
-/// declare `#[@Stage.Any]`), `any` otherwise. Propagated through calls.
+/// declare `#[compiler.stage(.Any)]`), `any` otherwise. Propagated through calls.
 pub const Stage = enum {
     any,
     build,
@@ -186,7 +186,7 @@ pub const FnInfo = struct {
     annotations: []const Annotation,
     /// Null for a host function.
     node: ?Node,
-    /// Decision 376 — the function's stage: a host's by its `#[@Stage.Any]`
+    /// Decision 376 — the function's stage: a host's by its `#[compiler.stage(.Any)]`
     /// (else `run`), any other's its node's.
     stage: Stage = .any,
     why: []const u8 = "",

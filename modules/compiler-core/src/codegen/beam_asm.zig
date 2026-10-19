@@ -4982,7 +4982,7 @@ const Emitter = struct {
         if (self.num_y > 0) try beamEmitter.writeInitYregs(self.out, self.num_y);
     }
 
-    // ── module `var` storage (front 17, `@BeamMemory`) ────────────────────────
+    // ── module `var` storage (front 17, `beamMemory`) ────────────────────────
     //
     // The erlang backend's lowering in assembly (`erlang.zig` § module `var`
     // storage): the reader `name/0` and every write that no local shadows go
@@ -5272,7 +5272,7 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(v.name, 0);
         self.resetFnState(0);
         try beamEmitter.writeBlankLine(self.out);
-        try beamEmitter.writeComment(self.out, "var {s} — @BeamMemory.{s}", .{ v.name, mem.mode.spelling() });
+        try beamEmitter.writeComment(self.out, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() });
         try beamEmitter.writeFunctionHeader(self.out, v.name, 0, labels.entry);
         try beamEmitter.writeLabel(self.out, labels.func_info);
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);

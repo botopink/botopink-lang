@@ -1,7 +1,7 @@
 //! codegen: module-level `var` storage on the BEAM — front 17 steps 4–5
-//! (`@BeamMemory`, decisions 39, 40 and 43). A module `var` is one value per
-//! execution context, which on the BEAM is the PROCESS; `#[@BeamMemory.Ets]`
-//! and `#[@BeamMemory.PersistentTerm]` widen it to the node. Every fixture
+//! (`beamMemory`, decisions 39, 40 and 43). A module `var` is one value per
+//! execution context, which on the BEAM is the PROCESS; `#[compiler.beamMemory(.Ets)]`
+//! and `#[compiler.beamMemory(.PersistentTerm)]` widen it to the node. Every fixture
 //! here runs its program and asserts what it PRINTED, because the property is
 //! behaviour across processes: the three modes are indistinguishable in one
 //! process, and a mode that silently fell back to another would still print
@@ -20,7 +20,7 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
         \\
-        \\#[@BeamMemory.ProcessDict]
+        \\#[compiler.beamMemory(.ProcessDict)]
         \\var hits: i32 = 0;
         \\
         \\fn request() -> Task<i32> {
@@ -52,7 +52,7 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
         \\
-        \\#[@BeamMemory.Ets]
+        \\#[compiler.beamMemory(.Ets)]
         \\var hits: i32 = 0;
         \\
         \\fn request() -> Task<i32> {
@@ -81,7 +81,7 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
         \\
-        \\#[@BeamMemory.Ets]
+        \\#[compiler.beamMemory(.Ets)]
         \\var hits: i32 = 0;
         \\
         \\fn read() -> Task<i32> {
@@ -108,7 +108,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
         \\
-        \\#[@BeamMemory.PersistentTerm]
+        \\#[compiler.beamMemory(.PersistentTerm)]
         \\var version: i32 = 101;
         \\
         \\fn read() -> Task<i32> {
@@ -136,7 +136,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
 const keyed_program =
     \\import {async, collections.Dict} from "std";
     \\
-    \\#[@BeamMemory.Ets(keyed: true)]
+    \\#[compiler.beamMemory(.Ets(keyed: true))]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
     \\
     \\fn writer(key: string) -> Task<i32> {
@@ -181,7 +181,7 @@ test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
 const bump_program =
     \\import {async, collections.Dict} from "std";
     \\
-    \\#[@BeamMemory.Ets(keyed: true)]
+    \\#[compiler.beamMemory(.Ets(keyed: true))]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
     \\
     \\fn worker(n: i32) -> Task<i32> {

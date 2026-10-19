@@ -641,7 +641,7 @@ fn stdUnsupportedReach(env: *Env, mod_name: []const u8, name: []const u8, tgt: [
     return null;
 }
 
-/// Decision 167 — the first `#[@BeamMemory]` of a module built for a target
+/// Decision 167 — the first `#[compiler.beamMemory(…)]` of a module built for a target
 /// that is not the BEAM, refused at the annotation (`validateMemoryAnnotations`
 /// recorded it). The target is named as `--target` spells it (`node` is
 /// commonJS's lookup name).
@@ -652,8 +652,8 @@ fn reportOffBeamMemory(env: *Env) InferError!void {
     return failAt(
         env,
         loc,
-        try std.fmt.allocPrint(env.arena, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t}),
-        try std.fmt.allocPrint(env.arena, "`@BeamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
+        try std.fmt.allocPrint(env.arena, "`#[compiler.beamMemory(…)]` has no meaning on the {s} backend", .{t}),
+        try std.fmt.allocPrint(env.arena, "`compiler.beamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
     );
 }
 
@@ -4988,12 +4988,6 @@ fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
     };
 }
 
-/// The builtin annotation families: what a `#[@<Family>…]` may name.
-/// `BeamMemory` (`validateMemoryAnnotations`) and `Stage`; `@external` is
-/// std's decorator (`external.bp`, decision 575 (6)). The removed effect
-/// annotations never reach here — the parser refuses them.
-const builtin_annotation_families = [_][]const u8{ "BeamMemory", "Stage" };
-
 /// Decision 15 gives the annotation grammar to the checker, and front 17 step
 /// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever: 42)]` parsed,
 /// checked and was dropped — on a `fn`, a `var`, a type, a field, a method. A
@@ -5072,6 +5066,22 @@ fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const as
     for (anns) |a| {
         // Decision 606 (4) — `#[compiler.external(…)]` is the source annotation.
         if (implementationsParse.isSourceAnnotation(a)) continue;
+        // Decisions 663, 681, 774 — `compiler.stage` and
+        // `compiler.beamMemory`, read by the compiler (`hostStage`,
+        // `validateMemoryAnnotations`) as `compiler.external` is.
+        if (a.stageOf() != null) {
+            try refuseStageAnnotation(env, a);
+            continue;
+        }
+        if (a.beamMemoryOf() != null) continue;
+        // Decision 774 — the bare spelling names no decorator of its own.
+        if (!a.is_builtin and (std.mem.eql(u8, a.name, "stage") or std.mem.eql(u8, a.name, "beamMemory")) and !env.decorators.contains(a.name)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}(…)]` is a member of `compiler` — write `#[compiler.{s}({s})]` (decision 774)", .{ diagnostics.unknown_annotation, a.name, a.name, try joinAnnotationArgs(env, a) });
+            var e = TypeError.custom(msg, "`stage` and `beamMemory` are read by the compiler, as `external` is: one home, `compiler`.");
+            if (a.loc) |l| e = e.withLoc(l);
+            env.lastError = e;
+            return error.TypeError;
+        }
         if (!a.is_builtin) {
             // `#[mocks.mokc]` through a std module handle names a decorator
             // of that module or nothing: it used to do nothing, silently.
@@ -5103,33 +5113,46 @@ fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const as
             env.lastError = e;
             return error.TypeError;
         }
-        var known = false;
-        for (builtin_annotation_families) |k| {
-            if (std.mem.eql(u8, family, k)) known = true;
-        }
-        // Decision 376 (4) — a host function is `Run` unless declared
-        // `#[@Stage.Any]`; no other stage is declared.
-        if (known and std.mem.eql(u8, family, "Stage") and !std.mem.eql(u8, a.name, "Stage.Any")) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` — a host function declares only `#[@Stage.Any]`", .{ diagnostics.unknown_annotation, a.name });
-            var e = TypeError.custom(msg, "A host function is `Run` unless it is declared `#[@Stage.Any]` (decision 376 (4)); a function with a body has the stage its body gives.");
-            if (a.loc) |l| e = e.withLoc(l);
-            env.lastError = e;
-            return error.TypeError;
-        }
-        if (known or env.decorators.contains(a.name)) continue;
-        var near: ?[]const u8 = null;
-        for (builtin_annotation_families) |k| {
-            if (editDistanceIsOne(family, k)) near = k;
-        }
-        const msg = if (near) |n|
-            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family — did you mean `@{s}`?", .{ diagnostics.unknown_annotation, a.name, n })
-        else
-            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family", .{ diagnostics.unknown_annotation, a.name });
-        var e = TypeError.custom(msg, "The builtin annotations are `@external(…)`, `@BeamMemory.<Mode>` and `@Stage.Any`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
+        // Decisions 663, 774 — `@Stage` and `@BeamMemory` are members of
+        // `compiler` now: `#[compiler.stage(.Any)]`, `#[compiler.beamMemory(.Ets)]`.
+        const msg = if (std.mem.eql(u8, family, "Stage") or std.mem.eql(u8, family, "BeamMemory")) msg: {
+            const case = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[i + 1 ..] else "<Case>";
+            const args = a.writtenArgs();
+            const inner = if (args.len == 0) "" else try std.fmt.allocPrint(env.arena, "({s})", .{try joinAnnotationArgs(env, a)});
+            break :msg try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` is gone — write `#[{s}(.{s}{s})]` (decisions 663, 774)", .{ diagnostics.unknown_annotation, a.name, if (std.mem.eql(u8, family, "Stage")) ast.stage_annotation else ast.beam_memory_annotation, case, inner });
+        } else try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation", .{ diagnostics.unknown_annotation, a.name });
+        var e = TypeError.custom(msg, "An annotation is a decorator written without the `@`: `#[compiler.external(…)]`, `#[compiler.stage(.Any)]`, `#[compiler.beamMemory(.<Mode>)]`, or a decorator of your own.");
         if (a.loc) |l| e = e.withLoc(l);
         env.lastError = e;
         return error.TypeError;
     }
+}
+
+/// An annotation's arguments as written, `label: value` where labelled.
+fn joinAnnotationArgs(env: *Env, a: ast.Annotation) InferError![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (a.writtenArgs(), 0..) |arg, i| {
+        if (i > 0) try out.appendSlice(env.arena, ", ");
+        if (a.labelOf(i)) |l| {
+            try out.appendSlice(env.arena, l);
+            try out.appendSlice(env.arena, ": ");
+        }
+        try out.appendSlice(env.arena, arg);
+    }
+    return out.items;
+}
+
+/// Decision 663 — `#[compiler.stage(…)]` takes `.Any` alone: a host function is `Run`
+/// unless declared `Any` (376 (4)); `#[compiler.beamMemory(…)]` is read by
+/// `validateMemoryAnnotations`.
+fn refuseStageAnnotation(env: *Env, a: ast.Annotation) InferError!void {
+    const arg = a.stageOf() orelse return;
+    if (std.mem.eql(u8, arg.case, "Any") and arg.inner.len == 0) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[compiler.stage({s})]` — a host function declares only `#[compiler.stage(.Any)]`", .{ diagnostics.unknown_annotation, try joinAnnotationArgs(env, a) });
+    var e = TypeError.custom(msg, "A host function is `Run` unless it is declared `#[compiler.stage(.Any)]` (decision 376 (4)); a function with a body has the stage its body gives.");
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
 }
 
 /// The declaration a decorator application annotates, as decision 280 (2)
@@ -5229,7 +5252,7 @@ fn refuseComptimeDefaults(env: *Env, params: []const ast.Param, catalogue: bool)
 /// Check one declaration's annotation list.
 fn checkDecoratorAnnotations(env: *Env, program: ast.Program, anns: []const ast.Annotation, target: DecoratedDecl) InferError!void {
     for (anns) |a| {
-        if (a.is_builtin) continue; // `@BeamMemory`, … validated by their own pass.
+        if (a.is_builtin) continue; // refused by `refuseUnknownAnnotations`.
         // Decision 575 (6) — `external`'s sources: `checkImplementations`.
         if (implementationsParse.isSourceAnnotation(a)) continue;
         const sig = env.decorators.get(a.name) orelse continue;
@@ -6018,6 +6041,10 @@ fn runDeclDecorators(
         // with: the parser read its sources (`parser/implementations.zig`),
         // and its body is that reading.
         if (implementationsParse.isSourceAnnotation(a)) continue;
+        // Decisions 681, 774 — `compiler.stage` and `compiler.beamMemory`
+        // are read where the stage and the storage are; their bodies run
+        // over nothing.
+        if (a.stageOf() != null or a.beamMemoryOf() != null) continue;
         // Decision 311 — `#[f "…"]` runs the template function `f` over the
         // declaration: the literal its `q`, the handle its `decl`
         // (`checkTemplateAnnotations` refused any other shape first).
@@ -8191,13 +8218,13 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// statement position is refused at the write, on every target: on the BEAM
 /// a closure gets a COPY of what it captures, so the write is lost, while
 /// commonJS writes the shared cell. A counter shared across calls is a
-/// module-level `var` with its `#[@BeamMemory]` mode.
+/// module-level `var` with its `#[compiler.beamMemory(…)]` mode.
 fn refuseCapturedVarWrite(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
     if (env.lambdaDepth == 0 or env.captureWriteOk) return;
     const d = env.localBindDepth(name) orelse return;
     if (d >= env.lambdaDepth) return;
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `{s}`", .{ diagnostics.captured_var_write, name, name });
-    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[@BeamMemory]` mode.").withLoc(loc);
+    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[compiler.beamMemory(…)]` mode.").withLoc(loc);
     return error.TypeError;
 }
 
@@ -8344,47 +8371,50 @@ fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
     return error.TypeError;
 }
 
-/// `#[@BeamMemory.<member>(…)]` on a module binding — front 17 step 3,
-/// decisions 41 and 51. A misread memory annotation does not fail, it moves
-/// where the state lives, so every part is checked in the commit the carrier
-/// was born in: the binding is a `var`; the member is one of `ProcessDict`
-/// (the default, said out loud), `Ets` or `PersistentTerm`; every argument is
-/// the one the annotation takes, `keyed`, with a `true`/`false` value; and
-/// `keyed: true` names a `Dict` — an `i32` has no key, and neither has a
-/// list (51).
+/// `#[compiler.beamMemory(.<Mode>(…))]` on a module binding — front 17 step 3,
+/// decisions 41, 51 and 663. A misread memory annotation does not fail, it
+/// moves where the state lives, so every part is checked in the commit the
+/// carrier was born in: the binding is a `var`; the mode is one of
+/// `ProcessDict` (the default, said out loud), `Ets` or `PersistentTerm`;
+/// every argument of the mode is the one it takes, `keyed`, with a
+/// `true`/`false` value; and `keyed: true` names a `Dict` — an `i32` has no
+/// key, and neither has a list (51).
 fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
     const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
     for (v.annotations) |a| {
-        if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
+        const arg = a.beamMemoryOf() orelse continue;
         const loc = a.loc orelse v.value.getLoc();
         if (!v.mutable) return failAt(
             env,
             loc,
-            try std.fmt.allocPrint(env.arena, "`#[@{s}]` needs a `var` — `{s}` is a `val`", .{ a.name, v.name }),
-            try std.fmt.allocPrint(env.arena, "Write `#[@{s}] var {s}: T = …;`.", .{ a.name, v.name }),
+            try std.fmt.allocPrint(env.arena, "`#[{s}({s})]` needs a `var` — `{s}` is a `val`", .{ a.name, try joinAnnotationArgs(env, a), v.name }),
+            try std.fmt.allocPrint(env.arena, "Write `#[{s}({s})] var {s}: T = …;`.", .{ a.name, try joinAnnotationArgs(env, a), v.name }),
         );
-        const member = a.name["BeamMemory.".len..];
         var known = false;
-        for (members) |m| known = known or std.mem.eql(u8, m, member);
+        for (members) |m| known = known or std.mem.eql(u8, m, arg.case);
         if (!known) return failAt(
             env,
             loc,
-            try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{member}),
+            if (arg.case.len == 0)
+                "`#[compiler.beamMemory(…)]` takes one argument, the mode — expected `.ProcessDict`, `.Ets` or `.PersistentTerm`"
+            else
+                try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{arg.case}),
             "The member names where the `var` lives on the BEAM; `ProcessDict` is what a `var` with no annotation means.",
         );
-        for (a.writtenArgs(), 0..) |arg, i| {
-            const label = a.labelOf(i) orelse arg;
+        var items = arg.items();
+        while (items.next()) |item| {
+            const label = item.label orelse item.value;
             if (!std.mem.eql(u8, label, "keyed")) return failAt(
                 env,
                 loc,
                 try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
-                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed: true)]`.", .{a.name}),
+                try std.fmt.allocPrint(env.arena, "Write `#[compiler.beamMemory(.{s}(keyed: true))]`.", .{arg.case}),
             );
-            const is_true = std.mem.eql(u8, arg, "true");
-            if (!is_true and !std.mem.eql(u8, arg, "false")) return failAt(
+            const is_true = std.mem.eql(u8, item.value, "true");
+            if (!is_true and !std.mem.eql(u8, item.value, "false")) return failAt(
                 env,
                 loc,
-                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{arg}),
+                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{item.value}),
                 null,
             );
             if (is_true and !typeIsDict(bindTy)) return failAt(
@@ -8415,8 +8445,8 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         if (mem.mode != .ets) return failAt(
             env,
             mem.loc orelse v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "`keyed: true` stores one row per key in an ETS table — it is an argument of `@BeamMemory.Ets`, not of `@BeamMemory.{s}`", .{mem.mode.spelling()}),
-            "Write `#[@BeamMemory.Ets(keyed: true)]`, or drop `keyed`.",
+            try std.fmt.allocPrint(env.arena, "`keyed: true` stores one row per key in an ETS table — it is an argument of `.Ets`, not of `.{s}`", .{mem.mode.spelling()}),
+            "Write `#[compiler.beamMemory(.Ets(keyed: true))]`, or drop `keyed`.",
         );
         // Its rows are read and written in THIS module, one at a time; an
         // importer would read the binding whole, and there is no whole value.
@@ -8442,13 +8472,13 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         // judgement, which the compiler cannot make.
         env,
         v.value.getLoc(),
-        try std.fmt.allocPrint(env.arena, "an `@BeamMemory.Ets` var is re-seeded from its initialiser whenever its table is re-created — `{s}`'s initialiser must be a literal or a `comptime` expression", .{v.name}),
+        try std.fmt.allocPrint(env.arena, "a `compiler.beamMemory(.Ets)` var is re-seeded from its initialiser whenever its table is re-created — `{s}`'s initialiser must be a literal or a `comptime` expression", .{v.name}),
         try std.fmt.allocPrint(env.arena, "Write the value (`var {s} = 0;`), fold it with `comptime`, or keep the var in `ProcessDict` / `PersistentTerm`, whose initialiser runs once.", .{v.name}),
     );
     try env.memoryVars.put(env.arena, v.name, .{ .memory = mem, .ty = bindTy });
 }
 
-/// Front 17 step 4 — the writes `@BeamMemory` cannot honour, refused at the
+/// Front 17 step 4 — the writes `beamMemory` cannot honour, refused at the
 /// assignment on every target (the annotation's contract does not depend on
 /// where the program runs, only its lowering does):
 ///
@@ -8471,9 +8501,9 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
             loc,
             try std.fmt.allocPrint(env.arena, "a `PersistentTerm` var is written once, at load — `{s}` cannot be assigned", .{name}),
             if (typeIsDict(mv.ty))
-                "Initialise it in the declaration, or use `#[@BeamMemory.Ets(keyed: true)]` if it changes."
+                "Initialise it in the declaration, or use `#[compiler.beamMemory(.Ets(keyed: true))]` if it changes."
             else
-                "Initialise it in the declaration, or use `#[@BeamMemory.Ets]` if it changes.",
+                "Initialise it in the declaration, or use `#[compiler.beamMemory(.Ets)]` if it changes.",
         ),
         .ets => switch (ast.classifyMemoryWrite(name, plus, value)) {
             .whole => {},
@@ -8486,13 +8516,13 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
             .recompose => if (!typeIsDict(mv.ty)) return failAt(
                 env,
                 loc,
-                try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
+                try std.fmt.allocPrint(env.arena, "`{s}` is a `compiler.beamMemory(.Ets)` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
                 try std.fmt.allocPrint(env.arena, "An increment — `{s} += n` or `{s} = {s} + n` — is atomic on an integer; any other write must not read `{s}`.", .{ name, name, name, name }),
             ) else {},
             .bump => if (!isIntType(mv.ty.deref())) return failAt(
                 env,
                 loc,
-                try std.fmt.allocPrint(env.arena, "an increment of an `@BeamMemory.Ets` var is atomic only on an integer — `{s}` is {s}", .{ name, try describeForKeyed(env, mv.ty) }),
+                try std.fmt.allocPrint(env.arena, "an increment of a `compiler.beamMemory(.Ets)` var is atomic only on an integer — `{s}` is {s}", .{ name, try describeForKeyed(env, mv.ty) }),
                 try std.fmt.allocPrint(env.arena, "Declare `{s}` an integer, or write the whole value without reading `{s}`.", .{ name, name }),
             ),
         },
@@ -8586,7 +8616,7 @@ fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Ex
     if (ast.exprMentions(cc.args[0].value.*, name) or ast.exprMentions(cc.args[1].value.*, name)) return failAt(
         env,
         loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `compiler.beamMemory(.Ets)` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
         try std.fmt.allocPrint(env.arena, "Under `keyed: true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
     );
     try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
@@ -21285,9 +21315,10 @@ fn hookTargetAsync(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
 // ── decision 376 — every function's stage ───────────────────────────────────
 
 /// A host function's stage: `any` when std (or its library) declares it so
-/// with `#[@Stage.Any]` — a pure primitive —, else `run` (376 (4)).
+/// with `#[compiler.stage(.Any)]` (decision 663) — a pure primitive —, else `run`
+/// (376 (4)).
 fn hostStage(f: ast.FnDecl) hooksMod.Stage {
-    for (f.annotations) |a| if (a.is_builtin and std.mem.eql(u8, a.name, "Stage.Any")) return .any;
+    for (f.annotations) |a| if (a.stageOf()) |s| if (std.mem.eql(u8, s.case, "Any")) return .any;
     return .run;
 }
 
@@ -21349,7 +21380,7 @@ fn stageCallText(env: *Env, c: ast.CallExprOf(.untyped)) InferError![]const u8 {
 }
 
 /// Decision 376 — what a call written in the body being recorded says of
-/// its stage: a host function `run` unless declared `#[@Stage.Any]`, a std
+/// its stage: a host function `run` unless declared `#[compiler.stage(.Any)]`, a std
 /// function by its declaration, a declaration of the program by its node
 /// (read once every body is inferred, `markStages`); std's `provide` /
 /// `context` are `any` (388: a scope push and a lookup); a method or a

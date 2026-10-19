@@ -2248,6 +2248,91 @@ pub const BehaviorMethod = struct {
     }
 };
 
+/// Decisions 663, 774 — the two members of `compiler` over an enum the
+/// compiler reads itself, as it reads `compiler.external`:
+/// `#[compiler.stage(.Any)]` (`hostStage`, decision 681) and
+/// `#[compiler.beamMemory(.Ets(keyed: true))]` (`ValDecl.memory`). They
+/// replace `#[@Stage.Any]` and `#[@BeamMemory.<Mode>(…)]`; those and the bare
+/// `#[stage(…)]` / `#[beamMemory(…)]` are refused.
+pub const stage_annotation = "compiler.stage";
+pub const beam_memory_annotation = "compiler.beamMemory";
+
+/// The one argument of `#[compiler.stage(…)]` / `#[compiler.beamMemory(…)]`, an enum case as
+/// written: `.Ets(keyed: true)` is the case `Ets` and the text `keyed: true`
+/// between its parentheses (`""` when it has none). `Stage.Any` reads as
+/// `.Any`. A case that is not a plain name answers `case = ""`.
+pub const EnumAnnotationArg = struct {
+    case: []const u8,
+    /// The text between the case's parentheses.
+    inner: []const u8 = "",
+
+    pub fn parse(raw: []const u8) EnumAnnotationArg {
+        const text = std.mem.trim(u8, raw, " \t\r\n");
+        const open = std.mem.indexOfScalar(u8, text, '(');
+        const head = std.mem.trimEnd(u8, if (open) |o| text[0..o] else text, " \t");
+        const dot = std.mem.lastIndexOfScalar(u8, head, '.') orelse return .{ .case = "" };
+        const case = head[dot + 1 ..];
+        if (case.len == 0) return .{ .case = "" };
+        for (case) |c| if (!std.ascii.isAlphanumeric(c) and c != '_') return .{ .case = "" };
+        const inner: []const u8 = if (open) |o| blk: {
+            if (text[text.len - 1] != ')') return .{ .case = "" };
+            break :blk std.mem.trim(u8, text[o + 1 .. text.len - 1], " \t\r\n");
+        } else "";
+        return .{ .case = case, .inner = inner };
+    }
+
+    /// One `label: value` (or bare `value`) of `inner`, in order.
+    pub const Item = struct { label: ?[]const u8, value: []const u8 };
+
+    pub fn items(this: EnumAnnotationArg) ItemIterator {
+        return .{ .rest = this.inner };
+    }
+
+    pub const ItemIterator = struct {
+        rest: []const u8,
+
+        pub fn next(it: *ItemIterator) ?Item {
+            if (it.rest.len == 0) return null;
+            var depth: usize = 0;
+            var end: usize = it.rest.len;
+            for (it.rest, 0..) |c, i| switch (c) {
+                '(', '[', '{' => depth += 1,
+                ')', ']', '}' => depth -|= 1,
+                ',' => if (depth == 0) {
+                    end = i;
+                    break;
+                },
+                else => {},
+            };
+            const part = std.mem.trim(u8, it.rest[0..end], " \t\r\n");
+            it.rest = if (end < it.rest.len) std.mem.trim(u8, it.rest[end + 1 ..], " \t\r\n") else "";
+            if (part.len == 0) return it.next();
+            if (std.mem.indexOfScalar(u8, part, ':')) |c| {
+                const label = std.mem.trim(u8, part[0..c], " \t");
+                var plain = label.len > 0;
+                for (label) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') {
+                    plain = false;
+                };
+                if (plain) return .{ .label = label, .value = std.mem.trim(u8, part[c + 1 ..], " \t") };
+            }
+            return .{ .label = null, .value = part };
+        }
+    };
+};
+
+test "EnumAnnotationArg reads `.Ets(keyed: true)`, `Stage.Any` and refuses a call" {
+    const ets = EnumAnnotationArg.parse(".Ets(keyed: true)");
+    try std.testing.expectEqualStrings("Ets", ets.case);
+    var it = ets.items();
+    const first = it.next().?;
+    try std.testing.expectEqualStrings("keyed", first.label.?);
+    try std.testing.expectEqualStrings("true", first.value);
+    try std.testing.expect(it.next() == null);
+    try std.testing.expectEqualStrings("Any", EnumAnnotationArg.parse("Stage.Any").case);
+    try std.testing.expectEqualStrings("", EnumAnnotationArg.parse("any()").case);
+    try std.testing.expectEqualStrings("", EnumAnnotationArg.parse(".Ets(").case);
+}
+
 /// A single annotation applied to a declaration: `#[name]` or `#[name(arg1, arg2)]`,
 /// or one builtin call of an `@[call, call]` annotation block.
 pub const Annotation = struct {
@@ -2266,7 +2351,7 @@ pub const Annotation = struct {
     /// `args` and its strings are then owned; `source_args` borrows the source.
     source_args: ?[]const []const u8 = null,
     /// The label written before each argument — `keyed` in
-    /// `#[@BeamMemory.Ets(keyed: true)]`, `inline` in `inline: true`, `fn` in
+    /// `#[compiler.beamMemory(.Ets(keyed: true))]`, `inline` in `inline: true`, `fn` in
     /// `fn: tanBody` — parallel to `args`, `""` where the argument had none.
     /// Empty when no argument was labelled, so an unlabelled annotation dumps
     /// and frees as before. The value still lands positionally in `args`; the
@@ -2356,6 +2441,26 @@ pub const Annotation = struct {
     /// The arguments as the author wrote them (see `source_args`).
     pub fn writtenArgs(this: Annotation) []const []const u8 {
         return this.source_args orelse this.args;
+    }
+
+    /// Decisions 663, 681, 774 — `#[compiler.stage(.X)]`: the case it names,
+    /// or null for any other annotation. A malformed argument list answers
+    /// `.{ .case = "" }`, which no rule accepts.
+    pub fn stageOf(this: Annotation) ?EnumAnnotationArg {
+        return this.enumAnnotationArg(stage_annotation);
+    }
+
+    /// Decisions 663, 774 — `#[compiler.beamMemory(.<Mode>(…))]`: the mode and
+    /// the arguments its case carries, or null for any other annotation.
+    pub fn beamMemoryOf(this: Annotation) ?EnumAnnotationArg {
+        return this.enumAnnotationArg(beam_memory_annotation);
+    }
+
+    fn enumAnnotationArg(this: Annotation, name: []const u8) ?EnumAnnotationArg {
+        if (this.is_builtin or this.template != null or !std.mem.eql(u8, this.name, name)) return null;
+        const args = this.writtenArgs();
+        if (args.len != 1 or this.labelOf(0) != null) return .{ .case = "" };
+        return EnumAnnotationArg.parse(args[0]);
     }
 
     /// The location is diagnostic metadata, not part of the serialized AST.
@@ -3258,7 +3363,7 @@ pub const TypeRef = union(enum) {
 
 /// Top-level binding: `val name = expr`, `val name: Type = expr` — or, since
 /// decision 38 / front 17, `var name: Type = expr`, the module-level `var`
-/// that a `#[@BeamMemory.<mode>]` annotation gives storage on the BEAM.
+/// that a `#[compiler.beamMemory(.<mode>)]` annotation gives storage on the BEAM.
 pub const ValDecl = struct {
     name: []const u8,
     /// Where the name is written — the location a refusal of the name points
@@ -3268,7 +3373,7 @@ pub const ValDecl = struct {
     /// `var` rather than `val`: the binding may be assigned. The local form
     /// keeps the same bit on `localBind.mutable`; this is it one level up.
     mutable: bool = false,
-    /// `#[…]` written above the declaration — `#[@BeamMemory.Ets]`. Empty for
+    /// `#[…]` written above the declaration — `#[compiler.beamMemory(.Ets)]`. Empty for
     /// the plain form; only a `var` may carry one (checked by inference).
     annotations: []Annotation = &.{},
     docComment: ?[]const u8 = null,
@@ -3311,24 +3416,25 @@ pub const ValDecl = struct {
     }
 
     /// Where a module `var` lives on the BEAM (front 17, decision 43's layer
-    /// 2): the `#[@BeamMemory.<Mode>]` it carries, `ProcessDict` when it
-    /// carries none. Null for a `val`. An unknown member reads as the default
-    /// here because inference has already refused it (decision 41).
+    /// 2): the `#[compiler.beamMemory(.<Mode>)]` it carries (decision 663),
+    /// `ProcessDict` when it carries none. Null for a `val`. An unknown member
+    /// reads as the default here because inference has already refused it
+    /// (decision 41).
     pub fn memory(this: ValDecl) ?Memory {
         if (!this.mutable) return null;
         for (this.annotations) |a| {
-            if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
-            const member = a.name["BeamMemory.".len..];
-            const mode: MemoryMode = if (std.mem.eql(u8, member, "Ets"))
+            const arg = a.beamMemoryOf() orelse continue;
+            const mode: MemoryMode = if (std.mem.eql(u8, arg.case, "Ets"))
                 .ets
-            else if (std.mem.eql(u8, member, "PersistentTerm"))
+            else if (std.mem.eql(u8, arg.case, "PersistentTerm"))
                 .persistentTerm
             else
                 .processDict;
             var keyed = false;
-            for (a.writtenArgs(), 0..) |arg, i| {
-                const label = a.labelOf(i) orelse continue;
-                if (std.mem.eql(u8, label, "keyed")) keyed = std.mem.eql(u8, arg, "true");
+            var it = arg.items();
+            while (it.next()) |item| {
+                const label = item.label orelse continue;
+                if (std.mem.eql(u8, label, "keyed")) keyed = std.mem.eql(u8, item.value, "true");
             }
             return .{ .mode = mode, .keyed = keyed, .loc = a.loc };
         }
@@ -3336,7 +3442,7 @@ pub const ValDecl = struct {
     }
 };
 
-/// The three members of `@BeamMemory` (decision 41). `processDict` is also
+/// The three members of `BeamMemory` (decision 41). `processDict` is also
 /// what a module `var` with no annotation means.
 pub const MemoryMode = enum {
     processDict,
@@ -3362,7 +3468,7 @@ pub const Memory = struct {
 };
 
 /// What an assignment to the module `var` `name` does with the value it
-/// replaces — the shape `@BeamMemory.Ets` lowers and the checker refuses
+/// replaces — the shape `beamMemory(.Ets)` lowers and the checker refuses
 /// (design §5(b), decision 40). One reading, shared by `infer.zig` (which
 /// refuses `recompose`) and the BEAM emitters (which lower `bump` to the
 /// host's atomic increment), so the two can never disagree about which
@@ -3489,7 +3595,7 @@ fn stmtsMention(stmts: []const Stmt, name: []const u8) bool {
     return false;
 }
 
-/// The initialiser rule of `@BeamMemory.Ets` (design §5(d), step 4): the
+/// The initialiser rule of `beamMemory(.Ets)` (design §5(d), step 4): the
 /// value a missing table is re-seeded from must be one that can be computed
 /// again at any moment nobody chose, so it is a literal or a `comptime`
 /// expression — `isComptimeExpr()` plus the literal path — and **not** a

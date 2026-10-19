@@ -1,4 +1,4 @@
-//// std/beam — the BEAM memory host primitives, layer 1 of `@BeamMemory`.
+//// std/beam — the BEAM memory host primitives, layer 1 of `beamMemory`.
 ////
 //// Eleven `declare fn`s over three BEAM storage families: the process
 //// dictionary (`erlang:get/put/erase`), ETS (`ets:whereis/new/lookup/
@@ -6,7 +6,7 @@
 //// (`persistent_term:get/put`). Nothing else. Each one is a single host
 //// call with the host's own arity — no composition, no policy.
 ////
-//// Why a module and not `.zig` (decision 43): `@BeamMemory` lives in two
+//// Why a module and not `.zig` (decision 43): `beamMemory` lives in two
 //// layers. **Layer 1 is this file** — the host vocabulary, as template
 //// text, editable without recompiling the compiler, exactly the property
 //// `codegen/erlang.zig:184-206` claims for the auto-imported BIF table it

@@ -3333,7 +3333,7 @@ pub const Formatter = struct {
     fn fmtValDecl(this: *Formatter, v: ast.ValDecl) !*const Doc {
         var parts: std.ArrayList(*const Doc) = .empty;
         defer parts.deinit(this.arena);
-        // `#[@BeamMemory.Ets]` above the binding, as a `fn`'s annotations print.
+        // `#[compiler.beamMemory(.Ets)]` above the binding, as a `fn`'s annotations print.
         try parts.append(this.arena, try this.fmtAnnotations(v.annotations));
         if (v.isPub) try parts.append(this.arena, try this.text("pub "));
         // The keyword — decision 48's arm: `var` when the binding is mutable.

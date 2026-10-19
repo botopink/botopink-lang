@@ -5918,10 +5918,10 @@ const Emitter = struct {
         });
     }
 
-    // ── module `var` storage (front 17, `@BeamMemory`) ────────────────────────
+    // ── module `var` storage (front 17, `beamMemory`) ────────────────────────
     //
     // A module-level `var` is one value per execution context — on the BEAM,
-    // per PROCESS — and `#[@BeamMemory.<Mode>]` widens it. Every read is still
+    // per PROCESS — and `#[compiler.beamMemory(.<Mode>)]` widens it. Every read is still
     // the 0-arity reader `name()`; the reader and every write lower onto the
     // host primitives of `std/beam` (decision 43's layer 1), reached as remote
     // calls into `std@beam`, so no line here names the process dictionary, ETS
@@ -5948,7 +5948,7 @@ const Emitter = struct {
     /// - `Ets` — `lookup_element` on the table the guard answers (`etsOwnerForms`).
     /// - `PersistentTerm` — the term `'__bp_load'/0` put when the module loaded.
     fn memoryVarForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl, mem: ast.Memory) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "var {s} — @BeamMemory.{s}", .{ v.name, mem.mode.spelling() })) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() })) });
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;

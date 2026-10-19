@@ -3,7 +3,9 @@
 
 import {io.terminal.print} from "std";
 
-#[@BeamMemory.Ets(keyed: true)]
+#[compiler.beamMemory(.Ets(keyed: true))]
 var hits: i32 = 0;
 
-pub fn main() { print(hits); }
+pub fn main() {
+    print(hits);
+}

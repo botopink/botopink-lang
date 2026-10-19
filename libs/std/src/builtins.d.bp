@@ -648,7 +648,7 @@ pub type HookCall(
 // `HookNode.stage` (decision 376) is when the function can run: `Build` when
 // it reads what exists only while the program compiles (a `comptime`
 // `@Decl` / `@Expr<T>` parameter) or calls a `Build` function; `Run` when it calls a host function std or its
-// library does not declare `#[@Stage.Any]`, or a `Run` function; `Any`
+// library does not declare `#[compiler.stage(.Any)]`, or a `Run` function; `Any`
 // otherwise. A `comptime` in the body is computed at build and gives none.
 pub type Stage { Build, Run, Any }
 

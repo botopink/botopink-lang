@@ -804,7 +804,7 @@ that module's functions:
 
 <!-- example: modules/module/cases/module_var_in_dependency -->
 
-On the BEAM the annotation `#[beamMemory(.<member>)]` widens where a module `var`
+On the BEAM the annotation `#[compiler.beamMemory(.<member>)]` widens where a module `var`
 lives beyond the process (§ `beamMemory`). Off the BEAM the annotation is
 refused where it is written — ``error: `#[beamMemory]` has no meaning on the
 commonJS backend`` — because a target with one execution context has no BEAM
@@ -814,7 +814,7 @@ hand-written `import { beam } from "std"` — the host primitives themselves —
 
 ### beamMemory — where a module var lives on the BEAM
 
-`#[beamMemory(.<member>)]` above a module `var` names its memory on erlang and
+`#[compiler.beamMemory(.<member>)]` above a module `var` names its memory on erlang and
 beam. The member is one of `ProcessDict` (the default, which a bare `var`
 already means — writing it out loud records the choice where it is read), `Ets`
 or `PersistentTerm`. The only argument is `keyed: true | false`, default
@@ -876,7 +876,7 @@ type the call is refused, located at the call:
 
 **`PersistentTerm`** — one value per node, written **once, at load**, read
 everywhere for the cost of a function call. A write after load is a
-compile-time error whose hint points to `#[beamMemory(.Ets)]`: at run time
+compile-time error whose hint points to `#[compiler.beamMemory(.Ets)]`: at run time
 a `persistent_term:put` scans every process heap (measured, 810 ns against
 17 ns for a read), and the module's load hook **re-runs on every hot code
 reload**, so a run-time write would be erased by the next reload anyway. It is
@@ -4500,7 +4500,7 @@ the program compiles — a `syntax` parameter, or a `comptime` parameter
 read at build, of a function that also takes a run-time parameter (one whose
 every parameter is `comptime` is expanded at its call site instead, below) —
 and `Run` when it calls a host function, std's included,
-that is not declared `#[stage(.Any)]` (std's `math` is: a pure primitive);
+that is not declared `#[compiler.stage(.Any)]` (std's `math` is: a pure primitive);
 anything else — arithmetic, strings, records, arrays, `case`, loops, a method,
 std's `provide` / `context` — is `Any`. A call gives the caller the callee's
 stage (`Any` with `Build` is `Build`, `Any` with `Run` is `Run`), across

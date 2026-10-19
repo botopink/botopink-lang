@@ -348,7 +348,7 @@ pub const ParseErrorType = enum {
     /// blaming the value for a missing `val` (front 15 step 3). Located at the
     /// label.
     tupleLiteralLabel,
-    /// `#[@BeamMemory.Ets(keyed: true)]`, `#[mark(level = .High)]` — an
+    /// `#[compiler.beamMemory(.Ets(keyed: true))]`, `#[mark(level = .High)]` — an
     /// annotation's labelled argument is `label: value`, as a call's is
     /// (decision 305). Located at the label, naming `label:`.
     annotationLabelEquals,
@@ -740,7 +740,7 @@ pub const Parser = struct {
                         break :blk2 DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) };
                     },
                     .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
-                    // `#[@BeamMemory.Ets] var hits: i32 = 0;` (front 17): the
+                    // `#[compiler.beamMemory(.Ets)] var hits: i32 = 0;` (front 17): the
                     // annotations land on the binding. Only the plain form takes
                     // them — `val Name = fn …` and the other `val` shorthands do
                     // not, and are refused where the annotation is.
@@ -1745,8 +1745,25 @@ pub const Parser = struct {
                     // located, which the checker parses again and types
                     // against the parameter (`infer.zig` `checkDecoratorArgs`).
                     const first = this.peek();
+                    const first_index = this.current;
                     var e = try this.parseExpr(alloc);
                     e.deinit(alloc);
+                    // Decision 305 — inside the argument too (an enum case's
+                    // own arguments, `#[compiler.beamMemory(.Ets(keyed = true))]`,
+                    // decision 663), a label is written `label: value`: a name
+                    // and `=` opening an argument list's item is refused at the
+                    // label, as at the annotation's own arguments.
+                    var k = first_index + 1;
+                    while (k + 1 < this.current) : (k += 1) {
+                        const t = this.tokens[k];
+                        const before = this.tokens[k - 1].kind;
+                        if (t.kind != .identifier or this.tokens[k + 1].kind != .equal) continue;
+                        if (before != .leftParenthesis and before != .comma) continue;
+                        var info = ParseErrorInfo.fromToken(.annotationLabelEquals, t);
+                        info.end = this.tokens[k + 1].offset + this.tokens[k + 1].lexeme.len;
+                        this.parseError = info;
+                        return ParseError.UnexpectedToken;
+                    }
                     try args.append(alloc, spanLexemes(first, this.tokens[this.current - 1]));
                     if (!this.match(.comma)) break;
                     if (this.check(.rightParenthesis)) args_trailing = true;

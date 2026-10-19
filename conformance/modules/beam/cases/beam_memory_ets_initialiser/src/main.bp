@@ -10,7 +10,9 @@ fn registry() -> i32 {
     return 7;
 }
 
-#[@BeamMemory.Ets]
+#[compiler.beamMemory(.Ets)]
 var seeded: i32 = registry();
 
-pub fn main() { print(seeded); }
+pub fn main() {
+    print(seeded);
+}

@@ -914,13 +914,13 @@ test "format: module-level `var` keeps its keyword and its annotation" {
     try h.assertFormat(std.testing.allocator,
         \\var hits: i32 = 0;
         \\
-        \\#[@BeamMemory.Ets]
+        \\#[compiler.beamMemory(.Ets)]
         \\pub var cache: i32 = 0;
         \\
         \\val fixed = 2;
     );
     try h.assertIdempotent(std.testing.allocator,
-        \\#[@BeamMemory.Ets]
+        \\#[compiler.beamMemory(.Ets)]
         \\var cache: i32 = 0;
     );
 }
@@ -930,7 +930,7 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
     // `erlang.zig` and `beam_asm.zig` each have a `hasExternalInline`; no JS
     // path ever consulted the one `External.Node` used to declare).
     try h.assertFormat(std.testing.allocator,
-        \\#[@BeamMemory.Ets(keyed: true)]
+        \\#[compiler.beamMemory(.Ets(keyed: true))]
         \\var cache: i32 = 0;
         \\
         \\#[compiler.external(.Erlang("string:slice($0, 0, 1)", inline: true))]
@@ -939,7 +939,7 @@ test "format: an annotation argument prints `label: value` (decision 305)" {
         \\import {compiler} from "std";
     );
     try h.assertIdempotent(std.testing.allocator,
-        \\#[@BeamMemory.Ets(keyed: true)]
+        \\#[compiler.beamMemory(.Ets(keyed: true))]
         \\var cache: i32 = 0;
         \\
         \\#[compiler.external(.JavaScript(body: fBody), .Erlang(body: fBody))]
@@ -1199,7 +1199,7 @@ test "format: annotations ---- builtin and custom mixed, on a declare fn" {
     try h.assertFormat(std.testing.allocator,
         \\#[check("m", rule, at: .confirm)]
         \\#[compiler.external(.JavaScript("a"))]
-        \\#[@BeamMemory.Ets(keyed: true)]
+        \\#[compiler.beamMemory(.Ets(keyed: true))]
         \\var cache: i32 = 0;
         \\
         \\import {compiler} from "std";

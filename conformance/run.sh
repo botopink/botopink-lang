@@ -148,7 +148,7 @@ pool_check_jobs "$jobs" run.sh
 #
 #     `f` has no implementation for the <t> backend   (commonJS: `node`)
 #     std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t>'
-#     `#[@BeamMemory]` has no meaning on the <t> backend
+#     `#[compiler.beamMemory(…)]` has no meaning on the <t> backend
 #
 # — the one reason a program structurally has no row on a target. A target the
 # build accepts, or refuses for any other reason, fails the run naming the
@@ -507,7 +507,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the suite — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
-    elif grep -qF -e 'has no implementation for the '"$t"' backend' -e 'has no implementation for the node backend' -e 'std-unsupported-on-target:' -e '`#[@BeamMemory]` has no meaning on the '"$t"' backend' "$dir/all.txt"; then
+    elif grep -qF -e 'has no implementation for the '"$t"' backend' -e 'has no implementation for the node backend' -e 'std-unsupported-on-target:' -e '`#[compiler.beamMemory(…)]` has no meaning on the '"$t"' backend' "$dir/all.txt"; then
         printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
     else
         local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"

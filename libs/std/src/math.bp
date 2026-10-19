@@ -9,7 +9,7 @@
 //// floating-point on the host, and staying in `f64` keeps mixed arithmetic
 //// from running into i32/i64 unification issues in pure-botopink
 //// derivations). Constants live as `pub val`; every host-bound fn carries
-//// `#[compiler.external(.<Target>(…))]` per backend, and `#[@Stage.Any]`: a pure
+//// `#[compiler.external(.<Target>(…))]` per backend, and `#[compiler.stage(.Any)]`: a pure
 //// primitive runs at build as when the program runs (decision 376 (4)).
 
 import {failure.panic, compiler};
@@ -38,19 +38,19 @@ pub val log10e: f64 = 0.4342944819032518;
 // generic ones live on `Number`.
 
 #[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(op: "f64.abs"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn abs(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn floor(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.round($0)"), .Erlang("erlang:round($0)"), .Wasm(body: roundHalfUp))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn round(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.trunc($0)"), .Erlang("erlang:trunc($0)"), .Wasm(op: "f64.trunc"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn trunc(x: f64) -> f64;
 
 // `ceil(x) = -floor(-x)` — a pure-botopink derivation that avoids the
@@ -66,11 +66,11 @@ pub fn sign(x: f64) -> f64 {
 }
 
 #[compiler.external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"), .Wasm(op: "f64.min"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"), .Wasm(op: "f64.max"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
 pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
@@ -80,7 +80,7 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 // ── powers + roots + exp/log ─────────────────────────────────────────────────
 
 #[compiler.external(.JavaScript("Math.sqrt($0)"), .Erlang("math:sqrt($0)"), .Wasm(op: "f64.sqrt"))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn sqrt(x: f64) -> f64;
 
 // Every target runs std's body (decision 610: a function whose every target
@@ -99,19 +99,19 @@ pub fn cbrt(x: f64) -> f64 {
 }
 
 #[compiler.external(.JavaScript("Math.exp($0)"), .Erlang(body: expBody), .Wasm(body: expBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn exp(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.log($0)"), .Erlang(body: lnBody), .Wasm(body: lnBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn ln(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.log2($0)"), .Erlang(body: log2Body), .Wasm(body: log2Body))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn log2(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.log10($0)"), .Erlang(body: log10Body), .Wasm(body: log10Body))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn log10(x: f64) -> f64;
 
 // `hypot(x, y) = sqrt(x*x + y*y)` — pure-botopink composition.
@@ -122,43 +122,43 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 // ── trigonometry ─────────────────────────────────────────────────────────────
 
 #[compiler.external(.JavaScript("Math.sin($0)"), .Erlang(body: sinBody), .Wasm(body: sinBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn sin(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.cos($0)"), .Erlang(body: cosBody), .Wasm(body: cosBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn cos(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.tan($0)"), .Erlang(body: tanBody), .Wasm(body: tanBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn tan(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.asin($0)"), .Erlang(body: asinBody), .Wasm(body: asinBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn asin(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.acos($0)"), .Erlang(body: acosBody), .Wasm(body: acosBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn acos(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.atan($0)"), .Erlang(body: atanBody), .Wasm(body: atanBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn atan(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.atan2($0, $1)"), .Erlang(body: atan2Body), .Wasm(body: atan2Body))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.sinh($0)"), .Erlang(body: sinhBody), .Wasm(body: sinhBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn sinh(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.cosh($0)"), .Erlang(body: coshBody), .Wasm(body: coshBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn cosh(x: f64) -> f64;
 
 #[compiler.external(.JavaScript("Math.tanh($0)"), .Erlang(body: tanhBody), .Wasm(body: tanhBody))]
-#[@Stage.Any]
+#[compiler.stage(.Any)]
 pub declare fn tanh(x: f64) -> f64;
 
 // ── the bodies (decisions 238, 263) ────────────────────────────────────────

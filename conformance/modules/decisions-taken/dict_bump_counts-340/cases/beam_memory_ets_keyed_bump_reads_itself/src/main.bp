@@ -5,7 +5,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-#[@BeamMemory.Ets(keyed: true)]
+#[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.empty();
 
 pub fn main() {

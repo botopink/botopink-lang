@@ -783,7 +783,7 @@ annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
 
 `parseValDecl` reads `var name[: T] = v;` as a `ValDecl` with `mutable = true`;
 `parseValForm` sends `var` straight there (no `val Name = fn …`-style shorthand
-reads it). An annotated binding — `#[@BeamMemory.Ets(keyed: true)] var hits:
+reads it). An annotated binding — `#[compiler.beamMemory(.Ets(keyed: true))] var hits:
 i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
 the annotations land on `ValDecl.annotations`; only the plain form takes them
 (an annotated shorthand is `UnexpectedToken`, located at the annotation's first

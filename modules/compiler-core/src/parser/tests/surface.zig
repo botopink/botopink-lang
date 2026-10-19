@@ -544,14 +544,14 @@ test "surface: throw new Error(…) is removed-keyword-new at `new`" {
 test "surface: an annotated `val` shorthand is refused at the annotation" {
     // `val add = fn …` is a `fn` declaration in a `val` coat; the annotation
     // would have nowhere to land, so the form is refused where it starts.
-    try expectError("#[@BeamMemory.Ets]\nval add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
-    try expectError("#[@BeamMemory.Ets] pub val add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+    try expectError("#[compiler.beamMemory(.Ets)]\nval add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+    try expectError("#[compiler.beamMemory(.Ets)] pub val add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
 }
 
 test "surface: `var` takes no shorthand — `var add = fn …` is not a fn declaration" {
     var parsed = try parse(
         \\var hits: i32 = 0;
-        \\#[@BeamMemory.PersistentTerm]
+        \\#[compiler.beamMemory(.PersistentTerm)]
         \\pub var version = 101;
     );
     defer parsed.deinit();

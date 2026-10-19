@@ -9,7 +9,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Typed meta, T
 > (`names.value`) of a function that also takes a run-time parameter (one whose
 > every parameter is `comptime` is expanded at its call site instead, below) —
 > and `Run` when it calls a host function, std's included,
-> that is not declared `#[stage(.Any)]` (std's `math` is: a pure primitive);
+> that is not declared `#[compiler.stage(.Any)]` (std's `math` is: a pure primitive);
 > anything else — arithmetic, strings, records, arrays, `case`, loops, a method,
 > std's `provide` / `context` — is `Any`. A call gives the caller the callee's
 > stage (`Any` with `Build` is `Build`, `Any` with `Run` is `Run`), across

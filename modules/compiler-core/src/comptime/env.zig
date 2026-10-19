@@ -895,7 +895,7 @@ pub const Env = struct {
     /// takes its declared type back for the rest of the scope.
     narrowedDecl: std.StringHashMapUnmanaged(*T.Type) = .empty,
     /// Front 17 — every module `var` of this module, by name → its
-    /// `@BeamMemory` storage and the type it was bound with. The type pointer
+    /// `beamMemory` storage and the type it was bound with. The type pointer
     /// is how an assignment tells the module binding from a local that
     /// shadows it (`lookup(name)` answers the local's type then). Read by
     /// `infer.zig`'s `refuseMemoryWrite`.
@@ -905,7 +905,7 @@ pub const Env = struct {
     /// `name = name.insert(key, value)`, by the identifier's loc. Any other
     /// read of the binding is refused (`infer.zig` `refuseKeyedWholeRead`).
     keyedRowAccess: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
-    /// Decision 167 — the first `#[@BeamMemory]` annotation of a module whose
+    /// Decision 167 — the first `#[compiler.beamMemory(…)]` annotation of a module whose
     /// `target` is not the BEAM; `infer.zig` `reportOffBeamMemory` refuses it
     /// once the module is inferred.
     offBeamMemory: ?ast.Loc = null,

@@ -1758,7 +1758,7 @@ codegen/
   body as an applied `fun`. Each val function starts a fresh variable scope.
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
   `undefined`, bare `throw;` → `erlang:throw(undefined)`.
-- **Module-level `var`s — `@BeamMemory`** (front 17 step 4, decisions 39, 40,
+- **Module-level `var`s — `beamMemory`** (front 17 step 4, decisions 39, 40,
   43; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `loadForms`): a `var` is
   one value per PROCESS (`ProcessDict`, the default) unless its annotation widens
   it to the node (`Ets`, `PersistentTerm`). A read is still the call `name()`;
@@ -2151,7 +2151,7 @@ codegen/
   rule — and to the value when a second type of the PROGRAM declares the
   method (`lowerDynamicMethodCall`). `modules/external/cases/external_method_on_host_record`.
 
-- **Module-level `var`s — `@BeamMemory`** (front 17 step 5): the erlang
+- **Module-level `var`s — `beamMemory`** (front 17 step 5): the erlang
   lowering in assembly. The reader `name/0` (`emitMemoryReader`) and every
   write no register shadows (`emitAssign` → `emitMemoryWrite`) reach
   `std/beam`'s primitives as `call_ext`s into `std@beam`, under
@@ -3471,7 +3471,7 @@ erlang 2065 → 2613 ms (+27 %; +160 % before the helper was inlined), beam
 hybrid against the ±(2^53 − 1) `__bp_int` build it replaced (values below 2^53,
 best of three): 995 → 687 ms — the number fast path is cheaper than the
 range check it replaced. No flag turns it off (decision 67). Not checked: a
-module `var` under `#[@BeamMemory.Ets]` whose `+=` is the host's atomic
+module `var` under `#[compiler.beamMemory(.Ets)]` whose `+=` is the host's atomic
 counter (`ets:update_counter`). Division by zero keeps erlang's and beam's
 `badarith`. Cells: `conformance/AGENTS.md` § The sidecars of a `run/` cell.
 

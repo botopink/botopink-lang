@@ -42,7 +42,7 @@ test` runner's own preamble — whether `'__bp_load_siblings'/0` is emitted at
 all, and what it does with a sibling `compile:file/2` refuses — which no
 `test { }` block can observe from the inside and no snapshot of a green program
 shows. Both live in `std_package.zig`.
-`beam_memory.zig` holds front 17's module-`var` fixtures (`@BeamMemory`, steps
+`beam_memory.zig` holds front 17's module-`var` fixtures (`beamMemory`, steps
 4–5): each runs its program with `assertErlangRunLog` and asserts what it
 printed across processes — `std/async`'s `allOf` spawns one process per task —
 because the three modes read alike inside one process: `ProcessDict` answers
