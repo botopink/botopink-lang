@@ -3,7 +3,7 @@
 fn render(words: Array<string>) -> string {
     var out = "";
     var count = 0;
-    val emit = { w ->
+    val emit: fn(string) -> void = { w ->
         out = out + "<" + w + ">";
         count = count + 1;
     };

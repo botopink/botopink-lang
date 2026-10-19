@@ -3,7 +3,7 @@
 type Ops(step: fn(n: i32) -> i32)
 fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val value = 1;
-    val set = { n -> return n * 2; };
+    val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
 fn main() {
@@ -30,7 +30,7 @@ import {io.terminal.print} from "std";
 mk() ->
     Value = 1,
     Set = fun(N) ->
-        '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:31">>)
+        '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:47">>)
     end,
     {Value, Set}.
 

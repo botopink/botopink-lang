@@ -2500,7 +2500,11 @@ method sets, before `returnTarget`, which only a fn sets), through `inferFunctio
 its instance lowering (a backend without native method dispatch refused the call otherwise);
 conformance cell `task_lambda_method_to_string`.
 
-A lambda written where no type is expected (an unannotated `val`; `inferFunctionExpr` sets
+Decision 583 — every function is typed where it is written: a lambda bound to a `val` / `var` with
+no annotation is refused `lambda-untyped` at the lambda (`inferExprTyped`'s `localBind` arm), so a
+later call no longer types it (328 amended); cell `modules/lambda_typed_by_position`. The machinery
+below is what 328 built; the cells that tested inference from later calls are 583's migration.
+A lambda written where no type is expected (`inferFunctionExpr` sets
 `Env.lambdaWithoutExpected`) records each parameter's fresh variable in `Env.freeLambdaParams`; a
 lambda a parameter receives is typed by it, a free type parameter of the callee included. A method call whose receiver is still a free variable when checked
 (`val f = { n -> n.toString() }; f(2)`: `n` is `i32` only once `f(2)` is) is typed by a fresh

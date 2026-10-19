@@ -774,7 +774,7 @@ test "context: use tuple destructure binds element types" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type() implement Renderable
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
-        \\    val push = { action -> f(base, action) };
+        \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
         \\fn LikeWidget() -> Component<Element> {
@@ -789,7 +789,7 @@ test "context error: use tuple destructure element is R's, not a fresh var" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
-        \\    val push = { action -> f(base, action) };
+        \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
         \\fn LikeWidget() -> Component<Element> {
@@ -804,7 +804,7 @@ test "context error: use tuple destructure arity mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
-        \\    val push = { action -> f(base, action) };
+        \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
         \\fn LikeWidget() -> Component<Element> {

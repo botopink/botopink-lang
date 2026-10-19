@@ -1,0 +1,19 @@
+//// Decisions 541 (1), 583 — a lambda whose body ends in an assignment answers
+//// nothing: `{ w -> …; count = count + 1; }` is a `fn(string) -> void`.
+
+import {io.terminal.print} from "std";
+
+fn render(words: Array<string>) -> string {
+    var out = "";
+    var count = 0;
+    val emit: fn(string) = { w ->
+        out = out + "<" + w + ">";
+        count = count + 1;
+    };
+    emit("start");
+    return out + " " + count.toString();
+}
+
+pub fn main() -> void {
+    print(render(["a"]));
+}

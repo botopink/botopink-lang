@@ -1,0 +1,29 @@
+//// Decision 583 — Every function is typed where it is written.
+
+import {io.terminal} from "std";
+
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    return f(x);
+}
+
+// A typed return fixes the lambda's type.
+fn adder(k: i32) -> fn(i32) -> i32 {
+    return { n -> n + k };
+}
+
+pub fn main() -> void {
+    // The parameter it is passed to fixes the lambda's type.
+    terminal.print(apply({ n -> n * 2 }, 21));
+    // An annotated `val` fixes it.
+    val inc: fn(i32) -> i32 = { n -> n + 1 };
+    terminal.print(inc(1));
+    terminal.print(adder(10)(5));
+    // Where nothing fixes it, the typed form is written.
+    val half = fn(n: f64) -> f64 {
+        return n / 2.0;
+    };
+    terminal.print(half(3.0));
+    // Nothing types this lambda, and a later call does not: refused.
+    val later = { n -> n * 3 };
+    terminal.print(later(2));
+}

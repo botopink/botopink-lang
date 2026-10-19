@@ -3,7 +3,7 @@
 type Ops(step: fn(n: i32) -> i32)
 fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val value = 1;
-    val set = { n -> return n * 2; };
+    val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
 fn main() {
@@ -26,7 +26,7 @@ import {io.terminal.print} from "std";
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
   (data (i32.const 256) "\0c\00\00\00R\03Ops\01\04stepi")
-  (data (i32.const 272) "\2a\00\00\00integer overflow: * on i32 at main.bp:4:31")
+  (data (i32.const 272) "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
   (data (i32.const 320) "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
   (data (i32.const 368) "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
   (global $__heap_ptr (mut i32) (i32.const 416))

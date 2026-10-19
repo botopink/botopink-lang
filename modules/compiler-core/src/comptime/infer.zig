@@ -18554,6 +18554,18 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 resolveAnnotationAt(env, ann, loc, lb.typeLoc) catch |err| return locateTypeRefError(env, err, loc)
             else
                 null;
+            // Decision 583 — every function is typed where it is written: a
+            // lambda bound to a `val` / `var` with no annotation is typed by
+            // nothing (a later call no longer types it, 328 amended), and is
+            // refused at the lambda.
+            if (annType == null and lb.value.* == .function) {
+                const fk = lb.value.function.kind;
+                if (fk.syntax != .asyncBlock and fk.marker == null and !(fk.syntax == .fnExpr and fk.isTyped())) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: nothing types this lambda — write fn(n: T) -> R {{ … }} or type the val", .{diagnostics.lambda_untyped});
+                    env.lastError = TypeError.custom(msg, "A lambda `{ x -> … }` is written where its position fixes its type: the parameter it is passed to, an annotated `val`, a typed return (decision 583).").withLoc(lb.value.function.loc);
+                    return error.TypeError;
+                }
+            }
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             // Decision 148 — a local closure called only at statement
@@ -25899,6 +25911,10 @@ fn inferFunctionExprExpectedInner(
         if (tail == .jump and tail.jump.kind == .@"return") {
             break :blk if (tail.jump.kind.@"return") |rv| rv.getType() else try env.namedType("void");
         }
+        // A `val` or an assignment is a statement: a body ending in one
+        // answers nothing (`{ w -> count = count + 1; }` is a `fn(…) -> void`,
+        // decision 541 (1)), never the assigned value's type.
+        if (tail == .binding and fk.syntax == .lambda) break :blk try env.namedType("void");
         break :blk tail.getType();
     } else try env.namedType("void");
     if (componentLambda) {

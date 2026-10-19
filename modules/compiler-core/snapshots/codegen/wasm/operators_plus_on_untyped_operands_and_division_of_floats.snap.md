@@ -10,7 +10,7 @@ fn average(xs: Array<f64>) -> f64 {
     return total / n;
 }
 fn main() {
-    val cat = { x, y -> x + y };
+    val cat: fn(string, string) -> string = { x, y -> x + y };
     print(cat("ab", "cd"));
     print(average([2.0, 4.0, 9.0]));
 }

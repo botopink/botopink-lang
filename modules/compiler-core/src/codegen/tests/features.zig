@@ -265,7 +265,7 @@ test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
-        \\    val push = { action -> f(base, action) };
+        \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
         \\fn LikeWidget() -> Component<Element> {
@@ -919,7 +919,7 @@ test "js: lambda ---- multi param with type annotation" {
 test "js: lambda ---- simple standalone" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> string {
-        \\    val func = {s ->
+        \\    val func: fn(string) -> string = {s ->
         \\        return s;
         \\    };
         \\    return func("hello");

@@ -1468,7 +1468,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
         \\type Ops(step: fn(n: i32) -> i32)
         \\fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
         \\    val value = 1;
-        \\    val set = { n -> return n * 2; };
+        \\    val set: fn(i32) -> i32 = { n -> return n * 2; };
         \\    return #(value, set);
         \\}
         \\fn main() {

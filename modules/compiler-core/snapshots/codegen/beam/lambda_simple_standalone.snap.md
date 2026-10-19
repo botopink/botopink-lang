@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> string {
-    val func = {s ->
+    val func: fn(string) -> string = {s ->
         return s;
     };
     return func("hello");

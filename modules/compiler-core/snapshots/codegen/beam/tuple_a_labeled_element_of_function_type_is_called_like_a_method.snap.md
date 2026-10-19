@@ -2,7 +2,7 @@
 ```botopink
 fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val value = 1;
-    val set = { n -> return n * 2; };
+    val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
 fn main() {
@@ -105,7 +105,7 @@ import {io.terminal.print} from "std";
     {test, is_ge, {f, 12}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 13}}.
   {label, 12}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:3:31">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:3:47">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 13}.
     {deallocate, 1}.

@@ -3,7 +3,7 @@
 type Ops(step: fn(n: i32) -> i32)
 fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val value = 1;
-    val set = { n -> return n * 2; };
+    val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
 fn main() {
@@ -90,7 +90,7 @@ Ops.prototype.__bp = "Ops";
 function mk() {
     const value = 1;
     const set = (n) => {
-    return __bp_int((n * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:31");
+    return __bp_int((n * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:47");
 };
     return [value, set];
 }

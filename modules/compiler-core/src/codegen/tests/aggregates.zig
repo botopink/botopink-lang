@@ -147,7 +147,7 @@ test "js: tuple ---- a labeled element of function type is called like a method"
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
         \\    val value = 1;
-        \\    val set = { n -> return n * 2; };
+        \\    val set: fn(i32) -> i32 = { n -> return n * 2; };
         \\    return #(value, set);
         \\}
         \\fn main() {

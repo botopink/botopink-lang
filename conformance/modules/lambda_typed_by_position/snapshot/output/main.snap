@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: lambda-untyped: nothing types this lambda — write fn(n: T) -> R { … } or type the val
+at src/main.bp:27:17

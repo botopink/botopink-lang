@@ -2,7 +2,7 @@
 ```botopink
 fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val value = 1;
-    val set = { n -> return n * 2; };
+    val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
 fn main() {
@@ -19,7 +19,7 @@ import {io.terminal.print} from "std";
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0))
-  (data (i32.const 256) "\2a\00\00\00integer overflow: * on i32 at main.bp:3:31")
+  (data (i32.const 256) "\2a\00\00\00integer overflow: * on i32 at main.bp:3:47")
   (global $__heap_ptr (mut i32) (i32.const 304))
   (func $mk (result i32)
     (local $__mem0 i32)

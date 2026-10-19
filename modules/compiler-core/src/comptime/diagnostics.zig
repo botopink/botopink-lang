@@ -259,6 +259,9 @@ pub const primitive_type_name_taken: []const u8 = "primitive-type-name-taken";
 /// (`type i32(…)`): a literal is typed by the checker, not by a name lookup,
 /// so 606 (1)'s shadowing does not reach those names. Refused at the name.
 pub const primitive_type_redeclared: []const u8 = "primitive-type-redeclared";
+/// Decision 583 — a lambda `{ x -> … }` where nothing fixes its type (an
+/// unannotated `val`, a list element): refused at the lambda.
+pub const lambda_untyped: []const u8 = "lambda-untyped";
 /// Decisions 280 (0), 297 — the argument of a `comptime` parameter reads a
 /// run-time value (a local, a parameter that is not `comptime`).
 pub const comptime_arg_not_known: []const u8 = "comptime-arg-not-known";
@@ -932,6 +935,7 @@ pub const all_codes = [_][]const u8{
     case_arm_no_value,
     primitive_type_name_taken,
     primitive_type_redeclared,
+    lambda_untyped,
     comptime_arg_not_known,
     comptime_value_not_liftable,
     comptime_bigint,
