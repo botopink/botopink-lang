@@ -1,0 +1,22 @@
+//// A member that asks: it keeps each response with its tags' epochs.
+
+import {core.tagEpoch};
+
+var fetches = 0;
+
+var stored: #(string, string, i32[])[] = [];
+
+fn epochsOf(tags: string[]) -> i32[] {
+    return tags.map({ t -> tagEpoch(t) });
+}
+
+pub fn get(url: string, tags: string[]) -> string {
+    val now = epochsOf(tags);
+    for (stored) { s ->
+        if (s._0 == url && s._2 == now) return "hit " + s._1;
+    }
+    fetches = fetches + 1;
+    val body = fetches.toString();
+    stored = stored.filter({ s -> s._0 != url }).append(#(url, body, now));
+    return "fetch " + body;
+}

@@ -1,0 +1,19 @@
+//// A marker and a page decorator that reads the hooks list.
+
+import {compiler} from "std";
+
+pub type Stage(kind: string)
+
+pub fn serverOnly(syntax decl: unknown) -> void {}
+
+pub fn page(syntax decl: unknown) -> void {
+    var dynamic = false;
+    for (compiler.hooks(decl)) { n ->
+        for (n.uses) { u ->
+            for (u.annotations) { a ->
+                if (compiler.same(a.decorator, serverOnly)) dynamic = true;
+            }
+        }
+    }
+    compiler.setMeta(Stage(kind: if (dynamic) "D" else "S"));
+}

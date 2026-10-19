@@ -1,0 +1,12 @@
+//// Decision 404 — Two annotations never add one member name: a decorator adds and never merges or replaces (216); several annotations reach one member through typed meta.
+
+import {io.terminal.print} from "std";
+import {comptime.validation.validated, comptime.validation.check};
+
+#[validated, check("passwords match", { a -> a.password == a.confirm }), check("handle free", { a -> a.handle != "admin" })]
+pub type Account(handle: string, password: string, confirm: string)
+
+pub fn main() -> void {
+    print(Account(handle: "ana", password: "x", confirm: "x").validate().length);
+    print(Account(handle: "admin", password: "x", confirm: "y").validate().join("; "));
+}

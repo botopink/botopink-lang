@@ -1,0 +1,47 @@
+//// The two server hooks and two pages, one that reaches them and one that does not.
+
+import {comptime.stages.serverOnly, comptime.stages.page};
+
+pub type View(text: string) implement Renderable
+
+pub type Request(url: string)
+
+var log: string[] = [];
+
+pub fn written() -> string[] {
+    return log;
+}
+
+pub type Response(id: i32) {
+    pub fn status(self: Self, code: i32) -> void {
+        log.push("status " + code.toString());
+    }
+
+    pub fn header(self: Self, name: string, value: string) -> void {
+        log.push(name + ": " + value);
+    }
+}
+
+#[serverOnly]
+component fn request() -> Component<Request> {
+    return Request(url: "/missing");
+}
+
+#[serverOnly]
+component fn response() -> Component<Response> {
+    return Response(id: 1);
+}
+
+#[page]
+pub component fn NotFound() -> Component<View> {
+    val req = use request();
+    val res = use response();
+    res.status(404);
+    res.header("Cache-Control", "no-store");
+    return View(text: "no page at " + req.url);
+}
+
+#[page]
+pub component fn About() -> Component<View> {
+    return View(text: "about");
+}

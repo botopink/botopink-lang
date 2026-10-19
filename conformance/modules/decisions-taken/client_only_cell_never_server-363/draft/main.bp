@@ -1,0 +1,8 @@
+//// Decision 363 — A browser-only cell is `#[clientOnly]`: called only where the client runs, never given a server twin.
+
+import {io.terminal.print} from "std";
+import {pages.Nav};
+
+pub fn main() -> void {
+    print("built");
+}

@@ -1,0 +1,13 @@
+//// A template that takes only `string` holes, saying so through `compiler.note`.
+
+import {compiler, code} from "std";
+
+pub fn text(v: string) -> string {
+    return v;
+}
+
+pub fn card(syntax q: string) -> string {
+    val holes = compiler.holes(q);
+    compiler.note("a hole of type ?T — write {subtitle ?? \"\"}");
+    return code @`"<h1>" + text(${holes[0]!}) + "</h1><p>" + text(${holes[1]!}) + "</p>"`;
+}

@@ -1,0 +1,12 @@
+//// Decision 418 — One meta type is set once or added, never both, and `meta(T)` over several values is refused.
+
+import {compiler, io.terminal.print} from "std";
+import {comptime.entity.entity, comptime.entity.alias, comptime.entity.Entity};
+
+#[entity("cities"), alias("towns")]
+type City(name: string)
+
+pub fn main() -> void {
+    val all = comptime compiler.typeInfo(City).metaAll(Entity);
+    print(all.map({ e -> e.table }).join(","));
+}
