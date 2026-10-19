@@ -2838,7 +2838,7 @@ pub const Formatter = struct {
             // except on a namespace type, which has none (decision 329).
             if (t.recordFields().len > 0)
                 try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma))
-            else if (!t.isNamespace)
+            else if (!t.isNamespace and !t.isPrimitive)
                 try parts.append(this.arena, try this.text("()"));
             try this.appendImplement(&parts, t.implement);
             if (methodDocs.len > 0 or t.bodyComments.len > 0) {

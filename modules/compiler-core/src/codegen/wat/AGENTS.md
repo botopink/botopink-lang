@@ -2116,8 +2116,9 @@ answered, and each was a red wasm cell of `conformance`:
 - **A program's own `default fn` of a primitive behavior is called**
   (`prim_defaults`, `primBehaviorKinds`, `lowerPrimDefault`): a `default fn`
   with a `self` in the program's `behavior String` / `Bool` / `Number` /
-  `Integer` / `Float` (… `I32`, `F64`) is registered per primitive kind it
-  covers, and a call on such a receiver whose method the table does not list
+  `Integer` / `Signed` / `Float` is registered per primitive kind it
+  covers (the kinds of the widths whose `implement` clause reaches it,
+  `prelude_cache.kindsReaching`, decision 617 (1)), and a call on such a receiver whose method the table does not list
   is a copy of the default with `Self` written as the receiver's primitive
   (`String_tailShout__string`, `Number_clampTo__i32`), emitted once through
   the member path (`emitMemberFn` marks a primitive-typed `self`), the

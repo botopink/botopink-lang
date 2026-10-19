@@ -734,8 +734,10 @@ fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
 /// sits in `own` or `linked` with the same members, name for name — the
 /// prelude materialised twice.
 fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: []const ast.DeclKind) bool {
-    const prelude_names = [_][]const u8{ "String", "Array", "Bool", "Number", "Integer", "Signed", "Float", "I32", "I64", "U32", "U64", "F32", "F64", "Function", "Pair" };
-    const is_prelude = for (prelude_names) |pn| {
+    // The numeric contracts are the ones the widths' `implement` clauses
+    // reach (decision 617 (1)).
+    const prelude_names = [_][]const u8{ "String", "Array", "Bool" };
+    const is_prelude = preludeCache.kindsReaching(b.name).len > 0 or for (prelude_names) |pn| {
         if (std.mem.eql(u8, pn, b.name)) break true;
     } else false;
     if (!is_prelude) return false;
@@ -15946,9 +15948,10 @@ const Emitter = struct {
         const eq = std.mem.eql;
         if (eq(u8, name, "String")) return &.{.string};
         if (eq(u8, name, "Bool")) return &.{.bool};
-        if (eq(u8, name, "Number")) return &.{ .int, .float };
-        for ([_][]const u8{ "Integer", "Signed", "I32", "I64", "U32", "U64" }) |n| if (eq(u8, name, n)) return &.{.int};
-        for ([_][]const u8{ "Float", "F32", "F64" }) |n| if (eq(u8, name, n)) return &.{.float};
+        // A numeric contract covers the kinds of the widths that implement
+        // it (decision 617 (1), read from their `implement` clauses).
+        const numeric = preludeCache.kindsReaching(name);
+        if (numeric.len > 0) return numeric;
         if (eq(u8, name, "Array")) return &.{.array};
         return &.{};
     }

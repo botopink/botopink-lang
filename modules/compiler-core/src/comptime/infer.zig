@@ -38,6 +38,7 @@ const stdWasm = @import("std_wasm");
 const wasmHostBinding = @import("../codegen/wat/host_binding.zig");
 const stdLeaves = @import("../codegen/wat/std_leaves.zig");
 const hostFnBinding = @import("../codegen/hostFnBinding.zig");
+const preludeCache = @import("../codegen/prelude_cache.zig");
 const implementationsParse = @import("../parser/implementations.zig");
 const Token = @import("../lexer/token.zig").Token;
 const erlang = @import("../codegen/erlang.zig");
@@ -751,7 +752,7 @@ fn refuseDeclsNamedLikePrimitives(env: *Env, program: ast.Program) InferError!vo
 /// The types the checker gives to literals (decision 639 (a)): `1` is an
 /// `i32`, `"a"` a `string` — a module cannot declare a type of one of these
 /// names, where every other prelude name shadows (606 (1)).
-pub const literal_type_names = [_][]const u8{ "i32", "i64", "u32", "u64", "f32", "f64", "bool", "string", "bigint" };
+pub const literal_type_names = ast.literal_type_names;
 
 /// Decision 639 (a) — `type i32(value: i64)` refused at the name,
 /// `primitive-type-redeclared`: a shadowing `i32` would make `val x: i32 = 1`
@@ -1602,7 +1603,6 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `panic` is std's `failure.panic`, imported where it is used", .{name});
         return TypeError.custom(msg, "Import it: `import {failure.panic} from \"std\";` (decision 606 (2)).").withLoc(loc);
     }
-    return TypeError.unboundVariable(name).withLoc(loc);
     // Decision 738 — neither `Pair` nor `Function` exists.
     if (std.mem.eql(u8, name, "Pair")) {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — a pair is the tuple `#(A, B)`", .{name});
@@ -1612,6 +1612,7 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — the function combinators are std's `functions` module", .{name});
         return TypeError.custom(msg, "Import one by path: `import {functions.compose} from \"std\";` (decision 738).").withLoc(loc);
     }
+    return TypeError.unboundVariable(name).withLoc(loc);
 }
 
 /// Decision 8 §2.4 — a `pub` declaration whose **inferred** type contains
@@ -2652,7 +2653,7 @@ fn extendStdBehavior(env: *Env, d: ast.BehaviorDecl) InferError!ast.BehaviorDecl
 fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!void {
     // Record EVERY interface decl so codegen can emit its namespace/prototype
     // when used, and the dispatch can follow the `extends` chain (markers like
-    // `I32 extends Signed` carry no methods but link the tower).
+    // `Integer extends Number` link the tower).
     try env.assocInterfaceDecls.put(d.name, try extendStdBehavior(env, d));
     for (d.methods) |im| {
         const has_self = im.params.len > 0 and std.mem.eql(u8, im.params[0].name, "self");
@@ -4479,7 +4480,7 @@ fn isIdentText(s: []const u8) bool {
 /// is no type a std-wasm function takes.
 fn selfSpelling(behavior: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, behavior, "String")) return "string";
-    if (std.mem.eql(u8, behavior, "Float") or std.mem.eql(u8, behavior, "F64")) return "f64";
+    if (std.mem.eql(u8, behavior, "Float")) return "f64";
     return null;
 }
 
@@ -20346,26 +20347,7 @@ fn resolveStdArrayMethod(
     } } } };
 }
 
-/// Map a builtin-primitive type name to its `PrimKind` family, or null when the
-/// name is not a primitive (a record/struct/enum/type variable). Used to record
-/// how a value-receiver instance call lowers on the non-JS backends.
-fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
-    const map = [_]struct { t: []const u8, k: envMod.PrimKind }{
-        .{ .t = "array", .k = .array },
-        .{ .t = "string", .k = .string },
-        .{ .t = "bool", .k = .bool },
-        .{ .t = "i32", .k = .int },
-        .{ .t = "i64", .k = .int },
-        .{ .t = "u32", .k = .int },
-        .{ .t = "u64", .k = .int },
-        .{ .t = "f32", .k = .float },
-        .{ .t = "f64", .k = .float },
-        .{ .t = "bigint", .k = .bigint },
-        .{ .t = "Bytes", .k = .bytes },
-    };
-    for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
-    return null;
-}
+const primKindOfName = envMod.primKindOfName;
 
 /// The return type of a builtin-primitive method call derived from its declared
 /// signature in `primitives.bp` (`Self` substitutes to the receiver, `T` to its
@@ -20666,20 +20648,18 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     }
 }
 
-/// Map a primitive type name to its controller interface in `primitives.bp`.
-/// Numeric widths are intentionally excluded for now (their `default fn`s call
-/// host-backed `@[external]` methods that codegen doesn't materialize yet).
+/// The behavior of `primitives.bp` a primitive type's methods are found in
+/// first. A width is a type (decision 617 (1)): its contract is the
+/// `implement` clause of its `pub type i32 implement Signed { … }`, read from
+/// the text (`prelude_cache.primitiveContract`). `string`, `bool`, `array`,
+/// `bigint` and `Bytes` keep their own behaviors until decision 641 dissolves
+/// them into their types.
 fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
+    if (preludeCache.primitiveContract(typeName)) |c| return c;
     const map = [_]struct { t: []const u8, i: []const u8 }{
         .{ .t = "array", .i = "Array" },
         .{ .t = "bool", .i = "Bool" },
         .{ .t = "string", .i = "String" },
-        .{ .t = "i32", .i = "I32" },
-        .{ .t = "i64", .i = "I64" },
-        .{ .t = "u32", .i = "U32" },
-        .{ .t = "u64", .i = "U64" },
-        .{ .t = "f32", .i = "F32" },
-        .{ .t = "f64", .i = "F64" },
         .{ .t = "bigint", .i = "BigInt" },
         .{ .t = "Bytes", .i = "Bytes" },
     };
@@ -20688,9 +20668,11 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
 }
 
 /// The primitive a controller interface of `primitives.bp` is the behavior
-/// of (`String` → `string`), the inverse of `primitiveInterfaceName`.
+/// of (`String` → `string`), the inverse of `primitiveInterfaceName` for the
+/// primitives that keep a behavior of their own. A contract the widths share
+/// (`Signed`, `Float`) is no one type's: null.
 fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
-    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64", "bigint", "Bytes" };
+    const prims = [_][]const u8{ "array", "bool", "string", "bigint", "Bytes" };
     for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
     return null;
 }

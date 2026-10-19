@@ -3142,22 +3142,22 @@ const PrimErlangCall = struct {
 
 /// Map a primitive `PrimKind` to its controller interface name in
 /// `primitives.bp`. Mirrors `comptime/infer.zig`'s `primitiveInterfaceName`.
-/// `.int` maps to `Signed` (its chain reaches `Integer` and `Number`) and
-/// `.float` to `Float` — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
-/// interfaces are empty markers that extend their parent, so a method
-/// declared on `Integer` (e.g. `toString → erlang:integer_to_binary`)
-/// reaches any concrete-width receiver through `walkPrimIfaceChain`.
+/// A width is a type (decision 617 (1)): `.int` and `.float` start at the most
+/// specific contract their widths' `implement` clauses name, read from the
+/// text (`prelude_cache.contractChainOfKind`: `Signed` for an integer, whose
+/// chain reaches `Integer` and `Number`; `Float` for a float), so a method
+/// declared on `Integer` (e.g. `toString → erlang:integer_to_binary`) reaches
+/// any width through `walkPrimIfaceChain`. The checker already refused `abs`
+/// on an unsigned receiver, so starting from the signed contract is safe.
 fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
     return switch (k) {
         .array => "Array",
         .string => "String",
         .bool => "Bool",
-        // `Signed` extends `Integer`, so a walk from it reaches both: `abs`,
-        // declared on `Signed`, was never found from `Integer` and fell through
-        // to the auto-imported `abs/1`. The checker already rejected `abs` on an
-        // unsigned receiver, so starting from the signed interface is safe.
-        .int => "Signed",
-        .float => "Float",
+        .int, .float => blk: {
+            const chain = prelude_cache.contractChainOfKind(k);
+            break :blk if (chain.len > 0) chain[0] else null;
+        },
         // Decision 332 — `bigint`'s own interface, outside the tower.
         .bigint => "BigInt",
         // Decision 346 — `Bytes`' own interface (a binary, as a `string` is).
@@ -3169,7 +3169,7 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
 /// successive parent name, starting with `iface` itself. Mirrors the
 /// `primMethodReturnTypeFromIface` chain walk on the infer side — used
 /// by `primAnnotationNode` so a method declared on a parent
-/// (`Integer.toString` for an `I32` receiver) lights up via dispatch
+/// (`Integer.toString` for an `i32` receiver) lights up via dispatch
 /// without flattening the map at collection time.
 const PrimIfaceWalker = struct {
     current: ?[]const u8,
@@ -3641,9 +3641,9 @@ const Emitter = struct {
     /// switches in `if (cc.is_builtin)`.
     builtin_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// Parent-interface edges parsed from `primitives.bp`:
-    /// `prim_iface_chain.get("I32")` → `"Signed"`, etc. Used by
+    /// `prim_iface_chain.get("Signed")` → `"Integer"`, etc. Used by
     /// `primAnnotationNode`'s `PrimIfaceWalker` so a method declared on
-    /// `Integer` lights up via an `I32` receiver. Populated by
+    /// `Integer` lights up via an `i32` receiver. Populated by
     /// `collectPrimErlangDispatch` alongside the dispatch map.
     prim_iface_chain: std.StringHashMap([]const u8),
     /// Policy 3 (`13-module-identity` half 2): every `type` declared in this
@@ -4022,7 +4022,7 @@ const Emitter = struct {
 
     /// Record `iface.extends[0]` as the parent for `iface` in
     /// `prim_iface_chain` so `primAnnotationNode`'s walker can climb
-    /// `I32 → Signed → Integer → Number`. First-write-wins (the parse of
+    /// `Signed → Integer → Number`. First-write-wins (the parse of
     /// `program.decls` lands before the embedded `primitives.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
     /// not used by `primitives.bp` at v1.
@@ -4083,7 +4083,7 @@ const Emitter = struct {
     /// (callers fall through to the inline lowerings for irreducible cases).
     /// `primIfaceForKind` maps a `PrimKind` to its interface (`.array` →
     /// `"Array"`), and the `extends` chain is walked so a method declared on a
-    /// parent interface (`Integer.toString` from an `I32` receiver) resolves.
+    /// parent interface (`Integer.toString` from an `i32` receiver) resolves.
     fn primAnnotationNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
         const head_iface = primIfaceForKind(k) orelse return null;
         var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);

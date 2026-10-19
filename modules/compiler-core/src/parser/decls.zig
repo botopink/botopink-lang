@@ -1738,12 +1738,16 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
         for (variants.items) |v| if (std.mem.eql(u8, v.name, a.name)) return failAt(this, .assocTypeDuplicate, tok);
         for (assocTypes.items[0..i]) |b| if (std.mem.eql(u8, b.name, a.name)) return failAt(this, .assocTypeDuplicate, tok);
     }
-    const isNamespace = !isEnum and !hasFieldList and (methods.items.len > 0 or assocTypes.items.len > 0) and implementList.len == 0;
+    // Decision 617 (1) — a primitive type, `pub type i32 implement Signed { … }`,
+    // has no field list: the language gives its values. A module's is refused
+    // by the checker at the name (`primitive-type-redeclared`, decision 639).
+    const isPrimitive = !isEnum and !hasFieldList and ast.isLiteralTypeName(name);
+    const isNamespace = !isPrimitive and !isEnum and !hasFieldList and (methods.items.len > 0 or assocTypes.items.len > 0) and implementList.len == 0;
     if (isNamespace) if (selfTok) |t| return failAt(this, .namespaceTypeSelf, t);
     // Decision 138: a record writes its field list, even when empty —
     // `type X()` / `type X() { … }`. `type X {}` and a bare `type X` are one
     // type spelled a second way (decision 67), refused where the `()` belongs.
-    if (!isEnum and !hasFieldList and !isNamespace) return failAt(this, .typeWithoutFieldList, fieldListTok);
+    if (!isEnum and !hasFieldList and !isNamespace and !isPrimitive) return failAt(this, .typeWithoutFieldList, fieldListTok);
     const shape: ast.TypeShape = if (isEnum)
         .{ .enum_ = .{
             .variants = try variants.toOwnedSlice(alloc),
@@ -1770,6 +1774,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
         .methods = methodSlice,
         .bodyComments = bodyComments,
         .isNamespace = isNamespace,
+        .isPrimitive = isPrimitive,
         .assocTypes = try assocTypes.toOwnedSlice(alloc),
     };
 }
@@ -1905,12 +1910,12 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
         {
             const memberAnnotations = try this.parseAnnotations(alloc);
+            const default_tok = this.peek();
             const is_default = this.match(.default);
             const is_declare = this.match(.declare);
             var method = parseBehaviorMethod(this, alloc, is_default, default_tok) catch |err| {
                 freeAnnotations(alloc, memberAnnotations);
                 return err;
-            const default_tok = this.peek();
             };
             method.annotations = memberAnnotations;
             method.is_declare = is_declare;
@@ -1971,14 +1976,14 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, written_default: b
     var returnType = sig.returnType;
     const returnTypeLoc = sig.returnTypeLoc;
     errdefer if (returnType) |*rt| rt.deinit(alloc);
+    const is_static = params.len == 0 or !std.mem.eql(u8, params[0].name, "self");
+    if (written_default and is_static) return failAt(this, .defaultOnStatic, default_tok);
+    const is_default = written_default or (is_static and this.check(.leftBrace));
     try checkFnMarker(this, marker, returnType, !is_default);
 
     if (!is_default) {
         try expectMemberSemicolon(this);
         return BehaviorMethod{
-    const is_static = params.len == 0 or !std.mem.eql(u8, params[0].name, "self");
-    if (written_default and is_static) return failAt(this, .defaultOnStatic, default_tok);
-    const is_default = written_default or (is_static and this.check(.leftBrace));
             .name = methodName,
             .nameLoc = nameLoc,
             .genericParams = genericParams,

@@ -154,7 +154,7 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   `signatureHelp` falls back to `recordCtorSignature`, which reads the field
   list from the declaration in the document: `Point(x: i32, y: i32) -> Point`.
 - The hover footer of a builtin method names the **declaring** behavior and the
-  receiver's when they differ (`*from \`behavior Signed\` (via I32)*`):
+  receiver's type when they differ (`*from \`behavior Signed\` (via i32)*`):
   `InterfaceMember.owner` records which link of the `extends` chain declared the
   member.
 - `semanticTokens` is a single token walk with a little state: `fn_params` /

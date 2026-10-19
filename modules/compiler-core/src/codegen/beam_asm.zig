@@ -81,15 +81,16 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
 }
 
 /// The primitive interfaces a receiver of kind `k` answers methods from, most
-/// specific first — the `extends` chain of `libs/std/src/primitives.bp`
-/// (`I32 extends Signed extends Integer extends Number`).
+/// specific first. A width is a type of `libs/std/src/primitives.bp` (decision
+/// 617 (1)): its contracts are its `implement` clause and their `extends`,
+/// read from the text (`prelude_cache.contractChainOfKind` — `Signed`,
+/// `Integer`, `Number` for an integer).
 fn primIfaceChain(k: envMod.PrimKind) []const []const u8 {
     return switch (k) {
         .array => &.{"Array"},
         .string => &.{"String"},
         .bool => &.{"Bool"},
-        .int => &.{ "I32", "I64", "Signed", "U32", "U64", "Integer", "Number" },
-        .float => &.{ "F64", "F32", "Float", "Number" },
+        .int, .float => prelude_cache.contractChainOfKind(k),
         // Decision 332 — `bigint`'s own interface, outside the tower.
         .bigint => &.{"BigInt"},
         // Decision 346 — `Bytes`' own interface.

@@ -340,9 +340,10 @@ test "hover: interface method on integer receiver shows signature" {
 
     try std.testing.expect(result != null);
     try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn abs") != null);
-    // `abs` is written in `Signed`; `I32 extends Signed` only inherits it. The
-    // footer names the declaring behavior and the receiver's (front 14).
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "behavior Signed` (via I32)") != null);
+    // `abs` is written in `Signed`; `type i32 implement Signed` reaches it
+    // (decision 617 (1)). The footer names the declaring behavior and the
+    // receiver's type (front 14).
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "behavior Signed` (via i32)") != null);
     try snap.assertHover(gpa, "hover_interface_method", source, h.pos(0, 12), result);
 }
 

@@ -145,18 +145,21 @@ behavior Float extends Number {
     fn squareRoot(self: Self) -> Self;
 }
 
-// Concrete primitive widths — thin markers binding each type to its capabilities.
-behavior I32 extends Signed {}
+// The primitive widths are types (decision 617 (1)): each names the contract
+// it implements, and a method on a width is found through that `implement`
+// clause and the contracts' `extends` — the checker and every backend read it
+// here. A width has no field list: the language gives its values.
+pub type i32 implement Signed
 
-behavior I64 extends Signed {}
+pub type i64 implement Signed
 
-behavior U32 extends Integer {}
+pub type u32 implement Integer
 
-behavior U64 extends Integer {}
+pub type u64 implement Integer
 
-behavior F32 extends Float {}
+pub type f32 implement Float
 
-behavior F64 extends Float {}
+pub type f64 implement Float
 
 // ── bigint (decision 332) ─────────────────────────────────────────────────────
 // An integer of any size, its literal suffixed `n` (`123…890n`): `+ - * / %`,

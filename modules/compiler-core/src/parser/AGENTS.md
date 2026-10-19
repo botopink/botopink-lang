@@ -832,9 +832,14 @@ first `self`), and the checker refuses `X()` (`namespace-type-construction`).
 `parseTypeDeclRest` refuses a `type` that ends up with none of the three
 (`type X {}`, a bare `type X`) as `typeWithoutFieldList`
 (`type-without-field-list`), located at the token after the name and generics —
-where the `()` belongs. The empty field list itself is legal (`parseFieldList`
-no longer refuses `()`), and the formatter prints `()` for every record with no
-fields except a namespace type. A `type` (or `pub type`) inside a type's body is
+where the `()` belongs — except a type named like a literal's type
+(`ast.isLiteralTypeName`: `i32` … `bigint`), which is a primitive type
+(`TypeDecl.isPrimitive`, decision 617 (1)): `pub type i32 implement Signed { … }`
+in std's prelude, no field list since the language gives its values; the checker
+refuses one in a module at the name (`primitive-type-redeclared`, decision 639).
+The empty field list itself is legal (`parseFieldList` no longer refuses `()`),
+and the formatter prints `()` for every record with no fields except a namespace
+type and a primitive type. A `type` (or `pub type`) inside a type's body is
 that type's associated type (decision 330 (7)): kept on its owner
 (`TypeDecl.assocTypes`, its leading comments on `TypeDecl.comments`), printed first
 in the body by the formatter, refused `assocTypeDuplicate` (`assoc-type-duplicate`)

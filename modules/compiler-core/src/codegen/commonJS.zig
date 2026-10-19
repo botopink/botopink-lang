@@ -277,9 +277,10 @@ pub fn jsPrototypeOwner(name: []const u8) []const u8 {
     if (std.mem.eql(u8, name, "Bool")) return "Boolean";
     // Decision 346 — `Bytes` is a `Uint8Array`.
     if (std.mem.eql(u8, name, "Bytes")) return "Uint8Array";
-    // The numeric tower (controllers + concrete widths) maps to `Number`.
-    const numeric = [_][]const u8{ "Number", "Integer", "Signed", "Float", "I32", "I64", "U32", "U64", "F32", "F64" };
-    for (numeric) |nm| if (std.mem.eql(u8, name, nm)) return "Number";
+    // A contract the numeric widths implement (decision 617 (1): `Number`,
+    // `Integer`, `Signed`, `Float`, read from their `implement` clauses) maps
+    // to `Number`.
+    for (prelude_cache.kindsReaching(name)) |k| if (k == .int or k == .float) return "Number";
     return name;
 }
 
@@ -3556,8 +3557,8 @@ const Emitter = struct {
         for (i.fields) |f| try stmts.append(self.arena(), .{ .comment = .{
             .text = try std.fmt.allocPrint(self.arena(), "  {s}: {f}", .{ f.name, f.typeRef }),
         } });
-        for (i.methods) |m| try stmts.append(self.arena(), .{ .comment = .{
         // Decision 628 — a static (no `self`) is written `fn`.
+        for (i.methods) |m| try stmts.append(self.arena(), .{ .comment = .{
             .text = try std.fmt.allocPrint(
                 self.arena(),
                 "  {s}fn {s}(...)",

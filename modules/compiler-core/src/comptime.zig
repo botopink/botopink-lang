@@ -2215,6 +2215,9 @@ const yield_step_src =
 /// server — scans these sources to resolve receiver methods such as `42.abs()`,
 /// `true.to_string()`, `xs.map(…)` and `"s".len()`.
 pub const primitive_interfaces_src = @import("std_prelude").primitives;
+/// Decision 617 (1) — the contract a primitive type implements (`i32` →
+/// `Signed`), read from `primitives.bp`.
+pub const primitiveContract = @import("codegen/prelude_cache.zig").primitiveContract;
 // Array<T> and String behaviors live inside primitives.bp (the controller)
 // in the interface model — there are no standalone array/string modules.
 pub const array_interface_src = @import("std_prelude").primitives;
@@ -3806,6 +3809,23 @@ fn registerExports(
 /// blocks are for the test runner, not registration (inferring them here would
 /// require full method-dispatch support at registration time). Allocates the
 /// filtered decl slice in `alloc`.
+/// The prelude as the checker infers it: its tests out, and its primitive
+/// types (`pub type i32 implement Signed { … }`, decision 617 (1)) out — a
+/// primitive is the checker's own type, never a type of the environment; its
+/// contract is read from the text where a method is resolved
+/// (`prelude_cache.primitiveContract`).
+fn preludeForInference(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
+    var kept: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    for (program.decls) |decl| {
+        if (decl == .@"test") continue;
+        if (decl == .type_ and decl.type_.isPrimitive) continue;
+        try kept.append(alloc, decl);
+    }
+    var out = program;
+    out.decls = try kept.toOwnedSlice(alloc);
+    return out;
+}
+
 fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
     var kept: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     for (program.decls) |decl| {
@@ -4002,7 +4022,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // this call.
         const alloc = env.arena;
 
-        const program = try stripTestDecls(try parseEmbeddedStd(alloc, "primitives", src), alloc);
+        const program = try preludeForInference(try parseEmbeddedStd(alloc, "primitives", src), alloc);
         // A prelude behavior's members keep `primitives.bp`'s locations
         // wherever a backend copies them (`ast.BehaviorMethod.from_prelude`).
         for (program.decls) |d| if (d == .behavior) for (d.behavior.methods) |*m| {
@@ -4119,7 +4139,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             var lx = Lexer.init(src);
             const tokens = try lx.scanAll(token_scratch.allocator());
             var p = Parser.init(tokens);
-            const program = try stripTestDecls(try p.parse(env.arena), env.arena);
+            const program = try preludeForInference(try p.parse(env.arena), env.arena);
             _ = try infer.inferProgram(&env2, program);
         }
         // Decision 330 (7): a std type's associated types are top-level types

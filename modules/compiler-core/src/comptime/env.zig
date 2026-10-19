@@ -547,6 +547,27 @@ pub const StdArrayLowering = struct {
 /// `Bytes`, never `String`'s (an Erlang binary holds both).
 pub const PrimKind = enum { array, string, bool, int, float, bigint, bytes };
 
+/// Map a builtin-primitive type name to its `PrimKind` family, or null when the
+/// name is not a primitive (a record/struct/enum/type variable). Used to record
+/// how a value-receiver instance call lowers on the non-JS backends.
+pub fn primKindOfName(typeName: []const u8) ?PrimKind {
+    const map = [_]struct { t: []const u8, k: PrimKind }{
+        .{ .t = "array", .k = .array },
+        .{ .t = "string", .k = .string },
+        .{ .t = "bool", .k = .bool },
+        .{ .t = "i32", .k = .int },
+        .{ .t = "i64", .k = .int },
+        .{ .t = "u32", .k = .int },
+        .{ .t = "u64", .k = .int },
+        .{ .t = "f32", .k = .float },
+        .{ .t = "f64", .k = .float },
+        .{ .t = "bigint", .k = .bigint },
+        .{ .t = "Bytes", .k = .bytes },
+    };
+    for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
+    return null;
+}
+
 /// How a value-receiver instance call `recv.method(args)` lowers on backends
 /// without native method dispatch. Recorded by inference keyed by call loc.
 ///   - `prim`   — the receiver is a builtin primitive; the backend maps

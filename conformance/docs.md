@@ -901,6 +901,25 @@ are called as written, also where the program imports `io.process` (which declar
 `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `bytes`, `bool`,
 `void`. Their methods are declared in `libs/std/src/primitives.bp`.
 
+The widths are types (decision 617 (1)): std's prelude declares `pub type i32
+implement Signed`, `i64` likewise, `u32` and `u64` `implement Integer`, `f32`
+and `f64` `implement Float`. A capitalised name there is a contract several
+types share — `Signed extends Integer extends Number`, `Float extends Number`
+— and a width's methods are found through its `implement` clause and the
+contracts' `extends`: `abs` answers on `i32` and `i64`, `isEven` on every
+integer, `floor` on every float, `min` on every width. A module declaring a
+width is refused at the name, `primitive-type-redeclared` (decision 639):
+
+<!-- example: modules/primitive_width_is_a_type -->
+
+<!-- example: modules/primitive_width_redeclared_refused -->
+
+Neither `Pair` nor `Function` is a name of the prelude (decision 738): a pair is
+the tuple `#(A, B)`, and the combinators `identity`, `compose`, `flip` and
+`constant` are std's `functions` module:
+
+<!-- example: modules/prelude_has_no_pair_or_function -->
+
 A `string` is indexed by codepoint on every target (decision 320): `length`,
 `at`, `slice`, `indexOf` and `lastIndexOf` count codepoints — `"e\u{301}".length`
 is 2 and its `.at(1)` is `"\u{301}"`, `"👍".length` is 1 — never UTF-16 units,

@@ -616,7 +616,7 @@ test "completion: std module member after import from std" {
 
 // ── F4 — interface-method dispatch on builtin receivers ───────────────────────
 
-test "completion: integer literal receiver offers I32 methods" {
+test "completion: integer literal receiver offers i32 methods" {
     const gpa = std.testing.allocator;
     // Bindings come from a valid compile; completion runs on the mid-edit buffer.
     const valid_source =

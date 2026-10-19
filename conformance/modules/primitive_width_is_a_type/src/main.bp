@@ -1,0 +1,23 @@
+//// Decision 617 (1) — the primitive widths are types: `pub type i32 implement Signed { … }` and its siblings in std's prelude. A width's methods are found through its `implement` clause and the contracts' `extends`.
+
+import {io.terminal} from "std";
+
+// Widths in type positions: a parameter, an array's element, a return.
+fn sizeOf(xs: i64[], extra: u32) -> i32 {
+    return xs.length;
+}
+
+pub fn main() -> void {
+    val n: i32 = -5;
+    val ratio: f64 = 2.5;
+    val bound: f64 = 1.0;
+    // `abs` is `Signed`'s, which `i32` implements.
+    terminal.print(n.abs());
+    // `isEven`, `isOdd` and `toString` are `Integer`'s, which `i32` reaches
+    // through `Signed extends Integer`.
+    terminal.print(n.isEven(), n.isOdd(), n.toString());
+    // `floor` is `Float`'s, which `f64` implements; `min` and `clamp` are
+    // `Number`'s, which every width reaches.
+    terminal.print(ratio.floor(), n.min(3), ratio.min(bound), n.clamp(-2, 2));
+    terminal.print(sizeOf([3, 9, 4], 1));
+}

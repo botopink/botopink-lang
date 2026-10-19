@@ -2685,7 +2685,9 @@ codegen/
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
-  interface chain (`primIfaceChain`: `I32 → Signed → Integer → Number`, …):
+  interface chain (`primIfaceChain`: `Signed → Integer → Number`, …, the
+  widths' `implement` clauses read by `prelude_cache.contractChainOfKind`,
+  decision 617 (1)):
   an `.Erlang("mod", "sym")` host
   call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an
   `.Erlang` template compiled into a `'__bp_tpl_<k>'` helper (BR5),

@@ -4595,6 +4595,18 @@ pub const TypeShape = union(enum) {
     }
 };
 
+/// The types the checker gives to literals (decision 639 (a)): `1` is an
+/// `i32`, `"a"` a `string`. A module cannot declare a type of one of these
+/// names; std's prelude declares the widths among them as primitive types
+/// (`TypeDecl.isPrimitive`, decision 617 (1)).
+pub const literal_type_names = [_][]const u8{ "i32", "i64", "u32", "u64", "f32", "f64", "bool", "string", "bigint" };
+
+/// True when `name` is one of `literal_type_names`.
+pub fn isLiteralTypeName(name: []const u8) bool {
+    for (literal_type_names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
 /// A named type: a record (`val Name = record(val f: T) { fn ... }`) or an
 /// enum (`val Color = enum { Red, Rgb(r: Int) }`). The shape tells them apart.
 pub const TypeDecl = struct {
@@ -4655,6 +4667,13 @@ pub const TypeDecl = struct {
     /// Decision 359 — the type is `Type.partial(…)`'s answer: a value of it is
     /// never spread. Left out of the dump when false.
     derivedPartial: bool = false,
+    /// Decision 617 (1) — a primitive type of the prelude, `pub type i32
+    /// implement Signed { … }`: named like a literal's type
+    /// (`literal_type_names`), written with no field list (it has no fields:
+    /// the language gives its values). Only std's prelude declares one; a
+    /// module's is `primitive-type-redeclared` (decision 639). Left out of the
+    /// dump when false.
+    isPrimitive: bool = false,
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -4707,7 +4726,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial" });
+        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive" });
     }
 };
 

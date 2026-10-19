@@ -5260,24 +5260,20 @@ fn stdModuleCompletion(
 const BuiltinInterface = struct {
     name: []const u8,
     source: []const u8,
+    /// The primitive type the interface was reached through, when it is a
+    /// contract several types implement (`i32` → `Signed`, decision 617 (1)).
+    via: ?[]const u8 = null,
 };
 
 /// Maps a botopink type name (as it appears in an inferred `Type.named`) to its
 /// builtin interface, or null when the type has no method surface.
 fn builtinInterfaceForType(type_name: []const u8) ?BuiltinInterface {
     const prim = comptime_pipeline.primitive_interfaces_src;
-    const pairs = [_]struct { ty: []const u8, iface: []const u8 }{
-        .{ .ty = "i32", .iface = "I32" },
-        .{ .ty = "u32", .iface = "U32" },
-        .{ .ty = "i64", .iface = "I64" },
-        .{ .ty = "u64", .iface = "U64" },
-        .{ .ty = "f32", .iface = "F32" },
-        .{ .ty = "f64", .iface = "F64" },
-        .{ .ty = "bool", .iface = "Bool" },
-    };
-    for (pairs) |p| {
-        if (std.mem.eql(u8, type_name, p.ty)) return .{ .name = p.iface, .source = prim };
-    }
+    // A width is a type (decision 617 (1)): its methods start at the contract
+    // its `implement` clause names in `primitives.bp`.
+    if (comptime_pipeline.primitiveContract(type_name)) |contract|
+        return .{ .name = contract, .source = prim, .via = type_name };
+    if (std.mem.eql(u8, type_name, "bool")) return .{ .name = "Bool", .source = prim };
     if (std.mem.eql(u8, type_name, "array"))
         return .{ .name = "Array", .source = comptime_pipeline.array_interface_src };
     if (std.mem.eql(u8, type_name, "string"))
@@ -5286,7 +5282,7 @@ fn builtinInterfaceForType(type_name: []const u8) ?BuiltinInterface {
 }
 
 /// Resolves a dot-receiver to its builtin interface. Numeric literals default
-/// to `I32`, `true`/`false` to `Bool`; any other receiver is looked up as a
+/// to `i32`, `true`/`false` to `Bool`; any other receiver is looked up as a
 /// value binding and mapped from its inferred type.
 fn receiverBuiltinInterface(
     receiver: []const u8,
@@ -5389,7 +5385,7 @@ fn collectInterfaceMembers(
     var seen = std.StringHashMap(void).init(arena);
     var found_any = false;
 
-    // Follow the `extends` chain (e.g. `I32 → Signed → Integer → Number`),
+    // Follow the `extends` chain (e.g. `Signed → Integer → Number`),
     // collecting each interface's members. The most-derived interface is visited
     // first, so a member redeclared in a base (e.g. `toString`) doesn't shadow
     // the derived one — duplicates by name are skipped.
@@ -5661,12 +5657,13 @@ fn hoverBuiltinInterfaceMethod(
         try buf.appendSlice(gpa, "\n```");
         // Name the behavior that declares the member, and the receiver's own
         // when they differ: `abs` is written in `Signed`, reached through
-        // `I32 extends Signed` (decided 2026-09-17). Naming only the receiver
-        // sent the reader to a behavior whose body has no such member.
-        if (std.mem.eql(u8, m.owner, iface.name))
+        // `type i32 implement Signed` (decided 2026-09-17, decision 617 (1)).
+        // Naming only the receiver sent the reader to a declaration whose body
+        // has no such member.
+        if (std.mem.eql(u8, m.owner, iface.name) and iface.via == null)
             try buf.print(gpa, "\n\n*from `behavior {s}`*", .{iface.name})
         else
-            try buf.print(gpa, "\n\n*from `behavior {s}` (via {s})*", .{ m.owner, iface.name });
+            try buf.print(gpa, "\n\n*from `behavior {s}` (via {s})*", .{ m.owner, iface.via orelse iface.name });
         return .{ .contents = .{ .kind = proto.MarkupKind.Markdown, .value = try buf.toOwnedSlice(gpa) } };
     }
     return null;

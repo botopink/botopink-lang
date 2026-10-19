@@ -241,8 +241,10 @@ primitive/array/string receiver (`n.abs()`, `true.toString()`, `xs.map(…)`,
 `"s".length()`) resolve against the embedded interface declarations exposed by
 `comptime_pipeline.{primitive_interfaces_src,array_interface_src,string_interface_src}`
 (all three are `libs/std/src/primitives.bp`). The receiver's inferred type name
-(`i32`→`I32`, `bool`→`Bool`, `array`→`Array`, `string`→`String`) selects the
-interface; integer literals default to `I32`, `true`/`false` to `Bool`.
+(a width → the contract its `pub type … implement` names in `primitives.bp`,
+`comptime_pipeline.primitiveContract` — `i32`→`Signed`, decision 617 (1);
+`bool`→`Bool`, `array`→`Array`, `string`→`String`) selects the interface;
+integer literals default to `i32`, `true`/`false` to `Bool`.
 `signatureHelp` drops the leading `self`. Gotcha: an integer *literal* receiver
 (`42.`) only surfaces through the text-based engine path — the lexer reads `42.`
 as a float, so the editor reaches this via a variable (`val n = 42; n.`).
