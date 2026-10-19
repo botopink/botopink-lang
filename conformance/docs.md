@@ -1302,7 +1302,7 @@ at build: handed on to another `comptime` parameter it is a known argument, a
 type method's (`fn times(self: Self, comptime n: i32)`, `scaled(n, …)`) as a
 function's.
 
-<!-- example: modules/comptime_type_param_of_method -->
+<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/run/src/cases/comptime_type_param_of_method -->
 
 <!-- example: modules/comptime/cells/comptime_value_or_type_param -->
 
@@ -1535,7 +1535,7 @@ its body writes resolve as they do in its own module.
 
 <!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cells/comptime_type_token_handed_on -->
 
-<!-- example: modules/comptime_type_token_cross_module -->
+<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cells/comptime_type_token_cross_module -->
 
 A type also travels as a run-time value (decision 758): `t: type<T>` without
 `comptime` is the type's identity, crossing to run time as a `Field(Book,
@@ -1553,9 +1553,9 @@ imported function's given an imported type alike, annotated or not.
 
 <!-- example: modules/decisions-taken/type_token_run_time_value-758/run/src/cases/type_token_handed_on_run_time -->
 
-<!-- example: modules/type_token_method_call -->
+<!-- example: modules/decisions-taken/type_token_run_time_value-758/run/src/cases/type_token_method_call -->
 
-<!-- example: modules/type_token_imported_type -->
+<!-- example: modules/decisions-taken/type_token_run_time_value-758/run/src/cases/type_token_imported_type -->
 
 The elements of an array literal that disagree make the union of their types
 (`[3, "abcd"]` is `(i32 | string)[]`), and each element read back — printed,
@@ -2700,7 +2700,7 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cells/context_enum_default -->
 
-<!-- example: modules/context_provide_made_at_run_time -->
+<!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cells/context_provide_made_at_run_time -->
 
 **Memo** (decisions 755, 771, 774). `val v = use memo({ -> make });` is std's
 hook `hooks.memo<T>(make: fn() -> T) -> Component<T>`, imported as any std
@@ -2713,7 +2713,7 @@ later render of the same value reads it. Another `Page(…)` call is another
 instance, with slots of its own. The slot is a process-dictionary entry on
 erlang and beam, a closure cell on commonJS and a heap cell on wasm.
 
-<!-- example: modules/memo_computed_once_per_instance -->
+<!-- example: modules/decisions-taken/memo_computed_once_per_instance-771/cells/memo_computed_once_per_instance -->
 
 **Dependency injection** rides the context tree (decision 416). `val deps = use
 inject(Deps);` builds the record `Deps`, each field the nearest context of its
@@ -4242,7 +4242,7 @@ the program's own.
 
 <!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cells/init_order_packages -->
 
-<!-- example: modules/init_order_depth_not_count -->
+<!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cells/init_order_depth_not_count -->
 
 The root package is a package like any other (decision 677): every module
 under its `src/` is in the program, imported or not, and its executors run
@@ -4250,9 +4250,9 @@ in the order above, after every dependency's. A module no `mod` names and
 no module imports
 is checked, compiled and linked, so a type error in it refuses the build.
 
-<!-- example: modules/root_module_unimported_in_program -->
+<!-- example: modules/decisions-taken/root_package_unimported_modules_in_program-677/cells/root_module_unimported_in_program -->
 
-<!-- example: modules/root_module_unimported_type_error -->
+<!-- example: modules/decisions-taken/root_package_unimported_modules_in_program-677/cells/root_module_unimported_type_error -->
 
 An executor is a statement of its module's body at the annotated
 declaration's position (decision 580): a module's `val`s, `var`s, `_`
@@ -5909,9 +5909,9 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 
 A dependency that lacks one of its dependant's targets (decision 676):
 
-<!-- example: modules/dependency_target_missing -->
+<!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cells/dependency_target_missing -->
 
-<!-- example: modules/dependency_target_missing_transitive -->
+<!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cells/dependency_target_missing_transitive -->
 
 Unknown fields are preserved by `bpmp` (it rewrites the file) and not read by
 anyone else.

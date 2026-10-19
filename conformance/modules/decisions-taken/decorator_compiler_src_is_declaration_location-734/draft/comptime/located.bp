@@ -1,8 +1,0 @@
-import {compiler} from "std";
-
-pub type Declared(file: string, line: i32, column: i32)
-
-pub fn located(syntax decl: unknown) -> void {
-    val at = compiler.src();
-    compiler.setMeta(Declared(file: at.file, line: at.line, column: at.column));
-}

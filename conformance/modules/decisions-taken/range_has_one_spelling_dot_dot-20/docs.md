@@ -9,4 +9,4 @@ then `0 1 2`, then `0 1 2 3`, then `[10, 20]` and `[20, 30]`.
 Cells that also bear on it: `modules/case/cells/case_range_value`, `modules/case/cells/case_range_and_guard`, `modules/loop/run/src/cases/loop_forms`,
 `modules/index/run/src/cases/index_and_slice_sugar`, `modules/array/run/src/cases/array_range_and_repeat`.
 
-[draft/main.bp](draft/main.bp)
+[cells/range_has_one_spelling_dot_dot/src/main.bp](cells/range_has_one_spelling_dot_dot/src/main.bp)

@@ -16,7 +16,9 @@ refused/: each case's old `.snap` with its `at`/`from` path moved under
 `src/cases/<case>/`). A candidate that fails is split in halves until each failing case
 is alone, and that case goes to `cells/` unchanged.
 
-    pack-cells.py apply [--botopink <bin>] <module>...   pack these modules in place
+    pack-cells.py apply [--botopink <bin>] <module>...   pack these modules in place; a run/ or
+                                                          refused/ already there is kept and the new
+                                                          cases are merged into it
     pack-cells.py list                                    the modules still holding cases/
 """
 
@@ -165,26 +167,56 @@ def moved_snap(text, name):
     return re.sub(r"^((?:at|from) )src/([^:]+)", mv, text, flags=re.M)
 
 
-def build(pkg_dir, pkg_name, kind, cases):
-    """Write the package for `cases` (paths of old cells) into `pkg_dir`."""
+def build(pkg_dir, pkg_name, kind, cases, base=None):
+    """Write the package for `cases` (paths of old cells) into `pkg_dir`. With `base`, the
+    package already there (its directory) is kept whole and `cases` are added to it: their
+    modules and calls after its own, their answers after its answers."""
+    keep = None
+    if base:
+        keep = tempfile.mkdtemp(prefix="pack-cells-base-")
+        shutil.rmtree(keep)
+        shutil.copytree(base, keep)
     shutil.rmtree(pkg_dir, ignore_errors=True)
     names = [os.path.basename(c) for c in cases]
-    write(os.path.join(pkg_dir, "botopink.json"), json.dumps({"name": pkg_name}) .replace('{"', '{ "').replace('"}', '" }') + "\n")
-    write(os.path.join(pkg_dir, "src", "cases", "mod.bp"), "".join("pub mod %s;\n" % spell(n) for n in names))
-    if kind == "run":
-        calls = "".join("    cases.%s.%s();\n" % (spell(n), ENTRY) for n in names)
-        write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {\n" + calls + "}\n")
-        lines = [HEADER]
-        for c in cases:
-            lines += snaps(c)["main"].splitlines()[1:]
-        write(os.path.join(pkg_dir, "snapshot", "output", "main.snap"), "\n".join(lines) + "\n")
+    if keep:
+        shutil.copytree(keep, pkg_dir)
+        shutil.rmtree(keep)
+        with open(os.path.join(pkg_dir, "src", "cases", "mod.bp"), "a", encoding="utf-8") as f:
+            f.write("".join("pub mod %s;\n" % spell(n) for n in names))
+        if kind == "run":
+            mp = os.path.join(pkg_dir, "src", "main.bp")
+            main = read(mp)
+            calls = "".join("    cases.%s.%s();\n" % (spell(n), ENTRY) for n in names)
+            i = main.rindex("}")
+            write(mp, main[:i] + calls + main[i:])
+            sp = os.path.join(pkg_dir, "snapshot", "output", "main.snap")
+            lines = read(sp).splitlines()
+            for c in cases:
+                lines += snaps(c)["main"].splitlines()[1:]
+            write(sp, "\n".join(lines) + "\n")
+        else:
+            for c in cases:
+                n = os.path.basename(c)
+                for mod, text in snaps(c).items():
+                    rel = "mod" if mod == "main" else mod
+                    write(os.path.join(pkg_dir, "snapshot", "output", "cases", n, rel + ".snap"), moved_snap(text, n))
     else:
-        write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {}\n")
-        for c in cases:
-            n = os.path.basename(c)
-            for mod, text in snaps(c).items():
-                rel = "mod" if mod == "main" else mod
-                write(os.path.join(pkg_dir, "snapshot", "output", "cases", n, rel + ".snap"), moved_snap(text, n))
+        write(os.path.join(pkg_dir, "botopink.json"), json.dumps({"name": pkg_name}) .replace('{"', '{ "').replace('"}', '" }') + "\n")
+        write(os.path.join(pkg_dir, "src", "cases", "mod.bp"), "".join("pub mod %s;\n" % spell(n) for n in names))
+        if kind == "run":
+            calls = "".join("    cases.%s.%s();\n" % (spell(n), ENTRY) for n in names)
+            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {\n" + calls + "}\n")
+            lines = [HEADER]
+            for c in cases:
+                lines += snaps(c)["main"].splitlines()[1:]
+            write(os.path.join(pkg_dir, "snapshot", "output", "main.snap"), "\n".join(lines) + "\n")
+        else:
+            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {}\n")
+            for c in cases:
+                n = os.path.basename(c)
+                for mod, text in snaps(c).items():
+                    rel = "mod" if mod == "main" else mod
+                    write(os.path.join(pkg_dir, "snapshot", "output", "cases", n, rel + ".snap"), moved_snap(text, n))
     for c in cases:
         lay_case(c, os.path.join(pkg_dir, "src", "cases", os.path.basename(c)), kind)
 
@@ -203,22 +235,22 @@ def check(botopink, pkg_dir):
         return False
 
 
-def fit(botopink, scratch, pkg_name, kind, cases):
+def fit(botopink, scratch, pkg_name, kind, cases, base=None):
     """The cases that pack together, and the ones that must stay full cells."""
     if not cases:
         return [], []
     d = os.path.join(scratch, kind)
-    build(d, pkg_name, kind, cases)
+    build(d, pkg_name, kind, cases, base)
     if check(botopink, d):
         return cases, []
     if len(cases) == 1:
         return [], cases
     half = len(cases) // 2
-    a_ok, a_bad = fit(botopink, scratch, pkg_name, kind, cases[:half])
-    b_ok, b_bad = fit(botopink, scratch, pkg_name, kind, cases[half:])
+    a_ok, a_bad = fit(botopink, scratch, pkg_name, kind, cases[:half], base)
+    b_ok, b_bad = fit(botopink, scratch, pkg_name, kind, cases[half:], base)
     ok, bad = a_ok + b_ok, a_bad + b_bad
     if ok:
-        build(d, pkg_name, kind, ok)
+        build(d, pkg_name, kind, ok, base)
         if not check(botopink, d):  # two halves that check alone but not together: keep the larger
             keep = a_ok if len(a_ok) >= len(b_ok) else b_ok
             return keep, bad + [c for c in ok if c not in keep]
@@ -238,13 +270,21 @@ def apply(botopink, module):
     placed = {}
     with tempfile.TemporaryDirectory(prefix="pack-cells-") as scratch:
         for kind, members in kinds.items():
-            ok, bad = fit(botopink, scratch, base + "-" + kind, kind, members)
-            if len(ok) == 1:  # a package of one case gains nothing over its cell
+            # a package already there (it holds earlier cases) is kept: the new cases are merged into it
+            have = os.path.join(module, kind)
+            have = have if os.path.isfile(os.path.join(have, "botopink.json")) else None
+            if have:  # the scratch candidate starts from a copy, so a failed one leaves the package alone
+                keep = os.path.join(scratch, kind + "-have")
+                shutil.copytree(have, keep)
+                have = keep
+            name = json.loads(read(os.path.join(have, "botopink.json")))["name"] if have else base + "-" + kind
+            ok, bad = fit(botopink, scratch, name, kind, members, have)
+            if len(ok) == 1 and not have:  # a package of one case gains nothing over its cell
                 bad, ok = bad + ok, []
             alone += bad
             placed[kind] = ok
             if ok:
-                build(os.path.join(module, kind), base + "-" + kind, kind, ok)
+                build(os.path.join(module, kind), name, kind, ok, have)
     # Moves: the packed cases' old cells go, the rest move whole to cells/.
     # Moves (plain file operations; `git add -A` records them): the packed cases' old
     # cells go, the rest move whole to cells/.

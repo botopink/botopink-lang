@@ -6,3 +6,7 @@ Cells in this repository that also bear on it: `modules/manifest/cells/manifest_
 
 
 [cells/init_order_packages/src/main.bp](cells/init_order_packages/src/main.bp)
+[cells/dependency_target_missing/src/main.bp](cells/dependency_target_missing/src/main.bp)
+[cells/dependency_target_missing_transitive/src/main.bp](cells/dependency_target_missing_transitive/src/main.bp)
+[cells/init_order_depth_not_count/src/main.bp](cells/init_order_depth_not_count/src/main.bp)
+[cells/narrowing_on_dependency_target_missing/src/main.bp](cells/narrowing_on_dependency_target_missing/src/main.bp)

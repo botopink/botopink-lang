@@ -12,4 +12,4 @@ is refused by the checker at the call instead.
 Cells that also bear on it: `modules/decisions-taken/function_stage_propagated-376/cells/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions`,
 `modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run`.
 
-[draft/main.bp](draft/main.bp)
+[cells/run_in_build_through_value/src/main.bp](cells/run_in_build_through_value/src/main.bp)

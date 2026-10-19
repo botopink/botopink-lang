@@ -4,5 +4,5 @@ The example is refused. `loud.shout` takes one `comptime` parameter, so each cal
 
 Cells in this repository that also bear on it: `modules/decisions-taken/comptime_parameter_call_expanded-562/cells/comptime_expand_library_type_error` (the fault in the library's own code, located there).
 
-[draft/main.bp](draft/main.bp)
-[draft/loud.bp](draft/loud.bp)
+[cells/expanded_generic_error_at_caller_argument/src/main.bp](cells/expanded_generic_error_at_caller_argument/src/main.bp)
+[cells/expanded_generic_error_at_caller_argument/src/loud.bp](cells/expanded_generic_error_at_caller_argument/src/loud.bp)

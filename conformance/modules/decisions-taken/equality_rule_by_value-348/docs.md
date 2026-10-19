@@ -11,4 +11,4 @@ lines print `true`. The last line is `false`: inside a list too, `f64` under `==
 Cells that also bear on it: `modules/decisions-taken/equality_is_structural-210/run/src/cases/record_structural_equality`, `modules/decisions-taken/wasm_unknown_equality_structural-569/cells/generic_record_equality_unwritten`,
 `modules/decisions-taken/f64_equality_total_order-214/run/src/cases/f64_equality_total_order`, `modules/decisions-taken/comptime_equality_iterative-471/cells/comptime_deep_structure_equality`, `modules/decisions-taken/equality_is_structural-210/run/src/cases/type_identity_equality`.
 
-[draft/main.bp](draft/main.bp)
+[cells/equality_rule_by_value/src/main.bp](cells/equality_rule_by_value/src/main.bp)

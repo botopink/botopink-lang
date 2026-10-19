@@ -12,3 +12,5 @@ Cells in this repository that bear on it: `modules/decisions-taken/comptime_para
 [cells/is_type_parameter_refused/src/main.bp](cells/is_type_parameter_refused/src/main.bp)
 [run/src/cases/type_token_handed_on_run_time/mod.bp](run/src/cases/type_token_handed_on_run_time/mod.bp)
 [run/src/cases/type_token_run_time_value/mod.bp](run/src/cases/type_token_run_time_value/mod.bp)
+[run/src/cases/type_token_imported_type/mod.bp](run/src/cases/type_token_imported_type/mod.bp)
+[run/src/cases/type_token_method_call/mod.bp](run/src/cases/type_token_method_call/mod.bp)

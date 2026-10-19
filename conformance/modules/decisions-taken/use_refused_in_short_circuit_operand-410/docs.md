@@ -4,4 +4,4 @@
 
 Cells in this repository that also bear on it: `modules/decisions-taken/use_at_component_top_level-357/refused/src/cases/use_in_if`, `modules/decisions-taken/use_at_component_top_level-357/refused/src/cases/use_in_lambda`, `modules/decisions-taken/use_at_component_top_level-357/refused/src/cases/use_in_loop`, `modules/decisions-taken/use_at_component_top_level-357/refused/src/cases/use_after_early_return`.
 
-[draft/main.bp](draft/main.bp)
+[cells/use_refused_in_short_circuit_operand/src/main.bp](cells/use_refused_in_short_circuit_operand/src/main.bp)

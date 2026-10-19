@@ -8,3 +8,5 @@ Cells in this repository that also bear on it: `modules/is/run/src/cases/is_func
 [cells/comptime_type_token_handed_on/src/main.bp](cells/comptime_type_token_handed_on/src/main.bp)
 [run/src/cases/is_comptime_type_parameter/mod.bp](run/src/cases/is_comptime_type_parameter/mod.bp)
 [run/src/cases/type_parameter_bound_by_token/mod.bp](run/src/cases/type_parameter_bound_by_token/mod.bp)
+[run/src/cases/comptime_type_param_of_method/mod.bp](run/src/cases/comptime_type_param_of_method/mod.bp)
+[cells/comptime_type_token_cross_module/src/main.bp](cells/comptime_type_token_cross_module/src/main.bp)

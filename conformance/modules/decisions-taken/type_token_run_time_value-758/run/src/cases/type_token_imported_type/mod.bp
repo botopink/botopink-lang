@@ -1,0 +1,30 @@
+//// Decision 758 — a run-time type token `t: type<T>` of an imported
+//// function, given a type this module imports from a third one: the type
+//// binds `T` (`findAs(Session, rows)` is a `?Session`, `allAs(Session,
+//// rows)` a `Session[]`), never its constructor, annotated or not.
+
+pub mod rows;
+pub mod host;
+
+import {cases.type_token_imported_type.rows.Session, cases.type_token_imported_type.rows.Config};
+import {cases.type_token_imported_type.host.findAs, cases.type_token_imported_type.host.allAs};
+import {io.terminal.print} from "std";
+
+fn sessionOf(rows: unknown[]) -> ?Session {
+    return findAs(Session, rows);
+}
+
+pub fn runCase() {
+    val s: unknown = Session(id: 3, user: "ana");
+    val c: unknown = Config(dynamic: true);
+    val rows = [c, s, s];
+    print(sessionOf(rows) != null);
+    val cfg: ?Config = findAs(Config, rows);
+    print(cfg != null);
+    print(sessionOf([c]) == null);
+    val all = allAs(Session, rows);
+    val typed: Session[] = all;
+    print(typed.length);
+    val cfgs: Config[] = allAs(Config, rows);
+    print(cfgs.length);
+}

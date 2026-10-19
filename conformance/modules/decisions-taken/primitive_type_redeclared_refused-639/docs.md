@@ -4,4 +4,4 @@ The example declares two types named after prelude types. `type Result(ok: bool)
 
 Cells in this repository that also bear on it: `modules/primitive/refused/src/cases/primitive_type_name_taken`, `modules/primitive/refused/src/cases/primitive_type_name_taken_val`.
 
-[draft/main.bp](draft/main.bp)
+[cells/primitive_type_redeclared_refused/src/main.bp](cells/primitive_type_redeclared_refused/src/main.bp)
