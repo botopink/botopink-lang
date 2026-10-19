@@ -17840,6 +17840,8 @@ const Emitter = struct {
                             elemCode(self.elemKindOf(cc.args[0].value.*)),
                         });
                     }
+                    // `mapAll(xs, { x -> x > 1 })` over `-> R[]`: a bool array.
+                    if (cc.receiver == null) if (self.genericFnArgElem(cc)) |g| if (g == .bool_) return "[b";
                     // `rows[1]` keeps the shape of one element of `rows`.
                     if (try self.indexElemShape(cc)) |inner| return inner;
                     if (try self.newArrShape(cc, c.loc)) |sh| return sh;
@@ -18236,6 +18238,9 @@ const Emitter = struct {
                     if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice) self.elemKindOf(ix.recv) else .i32;
                     if (cc.is_builtin) break :blk .i32;
                     if (cc.receiver != null) if (self.typeRefOf(e)) |t| if (arrayElemOfTypeRef(t)) |k| if (k != .i32) break :blk k;
+                    // `mapAll(xs, { x -> x.toString() })` over `-> R[]`: the
+                    // element is what the function argument answers.
+                    if (cc.receiver == null) if (self.genericFnArgElem(cc)) |k| break :blk k.kind();
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.get(sym) orelse .i32;
                     if (self.valueCallTypeRef(cc)) |t| if (arrayElemOfTypeRef(t)) |k| break :blk k;
                     break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
@@ -18245,6 +18250,74 @@ const Emitter = struct {
             else => .i32,
         };
     }
+
+    /// `fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[]`: the element kind
+    /// of the array a call answers, read off the function argument's tail
+    /// with its parameter bound to an element of the `T[]` argument. Null
+    /// when the callee is not such a function or the tail says nothing.
+    fn genericFnArgElem(self: *Emitter, cc: anytype) ?GenericElem {
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const f = (self.generic_fns.get(callee) orelse return null).decl;
+        const rt = f.returnType orelse return null;
+        const r = switch (rt) {
+            .array => |inner| switch (inner.*) {
+                .named => |n| n,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (!isGenericParamName(r, f.genericParams, &.{})) return null;
+        for (f.params, 0..) |p, j| {
+            if (p.typeRef != .function) continue;
+            const ret = p.typeRef.function.returnType.*;
+            if (ret != .named or !std.mem.eql(u8, ret.named, r)) continue;
+            if (p.typeRef.function.params.len != 1) continue;
+            const lam = lambdaAt(cc, j) orelse continue;
+            if (lam.body.len == 0) continue;
+            // The array argument whose element is the function's parameter.
+            const pt = p.typeRef.function.params[0];
+            if (pt != .named) continue;
+            var recv: ?ast.Expr = null;
+            for (f.params, 0..) |q, i| {
+                if (q.typeRef != .array or q.typeRef.array.* != .named) continue;
+                if (!std.mem.eql(u8, q.typeRef.array.named, pt.named)) continue;
+                if (i < cc.args.len) recv = cc.args[i].value.*;
+                break;
+            }
+            const rv = recv orelse continue;
+            const last = lam.body[ast.lastRealIndex(lam.body)].expr;
+            const v = switch (last) {
+                .jump => |jp| switch (jp.kind) {
+                    .@"return" => |x| if (x) |y| y.* else continue,
+                    else => continue,
+                },
+                else => last,
+            };
+            const held = self.holdElemParam(lam, rv);
+            defer self.releaseElemParam(held);
+            if (self.isStringExpr(v)) return .str;
+            if (self.isBoolExpr(v)) return .bool_;
+            if (self.wasmTypeOf(v).isFloat()) return .f64;
+            return .i32;
+        }
+        return null;
+    }
+
+    const GenericElem = enum {
+        i32,
+        f64,
+        str,
+        bool_,
+
+        fn kind(g: GenericElem) ElemKind {
+            return switch (g) {
+                .i32, .bool_ => .i32,
+                .f64 => .f64,
+                .str => .str,
+            };
+        }
+    };
 
     /// What `holdElemParam` displaced, so `releaseElemParam` can put it back.
     const HeldElemParam = struct {
@@ -21430,7 +21503,7 @@ const Emitter = struct {
             // A thunk parameter, `fn() -> T` or `fn() -> @Task<T>` (std's
             // `failure.attempt` / `attemptTask`, decision 518): `T` is what
             // the argument answers — a `@Result` or any other type included.
-            if (p.typeRef == .function and p.typeRef.function.params.len == 0) {
+            if (p.typeRef == .function) {
                 const want = p.typeRef.function.returnType.*;
                 const got = self.fnArgReturn(cc.args[pi].value.*) orelse continue;
                 const w = if (isTaskTypeRef(want)) (taskValueTypeRef(want) orelse continue) else want;
