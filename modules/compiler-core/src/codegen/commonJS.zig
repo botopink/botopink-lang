@@ -2560,8 +2560,92 @@ const Emitter = struct {
         return .{ .decl = .{
             .kw = if (v.mutable) .let_ else .const_,
             .pattern = .{ .ident = v.name },
-            .value = try self.buildExpr(v.value.*),
+            .value = (try self.shapedFnValue(v.typeAnnotation, v.value.*)) orelse try self.buildExpr(v.value.*),
         } };
+    }
+
+    /// 144 B-115 (decision 673) — a generic fn that writes a `T` as text
+    /// (`shape_fns`) bound as a function value under a written function type,
+    /// `val shown: fn(v: f64) -> string = show`: a call through the value cannot
+    /// hand the body its hidden print shapes, so the binding is an arrow that
+    /// does, `(a0) => show(a0, "f")`, each shape read off the written type's
+    /// parameters. Null for any other binding.
+    fn shapedFnValue(self: *Emitter, annotation: ?ast.TypeRef, value: ast.Expr) !?js.Expr {
+        const ann = annotation orelse return null;
+        if (ann != .function or ann.function.anyParams) return null;
+        if (value != .identifier or value.identifier.kind != .ident) return null;
+        const name = value.identifier.kind.ident;
+        if (self.local_vars.contains(name)) return null;
+        const f = self.shape_fns.get(name) orelse return null;
+        if (f.params.len != ann.function.params.len) return null;
+        const shapes = try self.arena().alloc(js.Expr, f.genericParams.len);
+        var last: usize = 0;
+        for (f.genericParams, 0..) |gp, gi| {
+            shapes[gi] = .null_;
+            for (f.params, ann.function.params) |p, given| {
+                const sh = (try self.typeShape(given)) orelse continue;
+                if (shapeAtParam(p.typeRef, sh, gp.name)) |at| {
+                    shapes[gi] = at;
+                    last = gi + 1;
+                    break;
+                }
+            }
+        }
+        if (last == 0) return null;
+        const params = try self.arena().alloc(js.Param, f.params.len);
+        const args = try self.arena().alloc(js.Expr, f.params.len + last);
+        for (0..f.params.len) |i| {
+            const pname = try std.fmt.allocPrint(self.arena(), "__a{d}", .{i});
+            params[i] = js.Param.id(pname);
+            args[i] = .{ .name = pname };
+        }
+        @memcpy(args[f.params.len..], shapes[0..last]);
+        return try self.b.arrowExpr(params, try self.b.call(.{ .ident = name }, args));
+    }
+
+    /// 144 B-115 (decision 673) — whether `t` names one of the type
+    /// parameters `gps`, or holds one.
+    fn mentionsTypeParam(t: ast.TypeRef, gps: []const ast.GenericParam) bool {
+        return switch (t) {
+            .named => |n| for (gps) |gp| {
+                if (std.mem.eql(u8, gp.name, n)) break true;
+            } else false,
+            .array, .optional => |inner| mentionsTypeParam(inner.*, gps),
+            .tuple_ => |elems| for (elems) |el| {
+                if (mentionsTypeParam(el, gps)) break true;
+            } else false,
+            .generic => |g| for (g.args) |el| {
+                if (mentionsTypeParam(el, gps)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
+    /// 144 B-115 (decision 673) — the print shapes of a generic record built at
+    /// `cc`: `Box(value: 2.0)` is `new Box(2.0)` and JavaScript holds `2.0` as
+    /// `2`, so the value carries its own `__bp_s` — the fixed float fields'
+    /// shapes and, for a field typed by a type parameter, the shape of the
+    /// argument written there. Null when the record is not generic or no field
+    /// holds a float.
+    fn genericInstanceShapes(self: *Emitter, cc: anytype) !?js.Expr {
+        const decl = self.eq_decls.get(cc.callee) orelse return null;
+        if (decl.genericParams.len == 0 or !decl.isRecord()) return null;
+        const fields = decl.recordFields();
+        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
+        for (fields, 0..) |f, fi| {
+            var sh: ?js.Expr = null;
+            if (mentionsTypeParam(f.typeRef, decl.genericParams)) {
+                for (cc.args, 0..) |arg, i| {
+                    const at = if (arg.label) |l| slotIndexOf(self.record_fields.get(cc.callee) orelse &.{}, l) orelse continue else i;
+                    if (at == fi) sh = try self.argShape(arg.value.*);
+                }
+            } else sh = try self.typeShape(f.typeRef);
+            const got = sh orelse continue;
+            if (!shapeHoldsFloat(got)) continue;
+            try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = got } });
+        }
+        if (props.items.len == 0) return null;
+        return try self.b.object(props.items);
     }
 
     /// The two JS modifiers a botopink effect asks of the function that
@@ -4224,7 +4308,7 @@ const Emitter = struct {
                     }
                     // `val d = use memo(…)` → `const d = memo(…)`: the `use`
                     // prefix is transparent (decision 88), `buildExpr` drops it.
-                    const value = try self.buildExpr(lb.value.*);
+                    const value = (try self.shapedFnValue(lb.typeAnnotation, lb.value.*)) orelse try self.buildExpr(lb.value.*);
                     const decl: js.Stmt = .{ .decl = .{ .kw = kw, .pattern = .{ .ident = lb.name }, .value = value } };
                     // Decision 320 — the binding's surrogate slot, when a read
                     // of it skips the per-read test (`js/str_slots.zig`).
@@ -7161,6 +7245,13 @@ const Emitter = struct {
 
         const arg_slice = try args.toOwnedSlice(self.arena());
         if (opt_recv) |r| return self.optEnumCall(r, try self.b.call(callee, arg_slice));
+        if (is_new) if (try self.genericInstanceShapes(cc)) |shapes| {
+            return self.b.call(try self.b.member(.{ .name = "Object" }, "defineProperty"), &.{
+                try self.b.new_(callee, arg_slice),
+                .{ .quoted = "__bp_s" },
+                try self.b.object(&.{.{ .kv = .{ .key = "value", .value = shapes } }}),
+            });
+        };
         return if (is_new) self.b.new_(callee, arg_slice) else self.b.call(callee, arg_slice);
     }
 

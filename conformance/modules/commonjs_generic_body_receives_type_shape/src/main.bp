@@ -1,0 +1,22 @@
+//// Decision 673 — (a), as B-114 and B-115 build it: on commonJS a generic body that writes a `T` as text receives the print shape of each type parameter at the call, one JS body per function.
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+fn show<T>(v: T) -> string {
+    return "${v}";
+}
+
+fn both<A, B>(a: A, b: B) -> string {
+    return "${a} and ${b}";
+}
+
+pub fn main() -> void {
+    print(show(3.0));
+    print(show(3));
+    print(both(1.5, 2.0));
+    print(Box(value: 2.0));
+    val shown: fn(v: f64) -> string = show;
+    print(shown(4.0));
+}
