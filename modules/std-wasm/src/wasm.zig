@@ -378,9 +378,16 @@ fn toFloat(t: u32, w: u32, f: u32, x: u32) callconv(.c) u32 {
     return resultPair(1, joinText("parseFloat: \"", text, "\" overflows f64"));
 }
 
-/// `stringNumeralRefused(before, text, after)` — `Error(<before><text><after>)`.
-fn numeralRefused(before: u32, t: u32, after: u32) callconv(.c) u32 {
-    return resultPair(1, joinText(arg(before), arg(t), arg(after)));
+/// `stringIntegerRefused(text)` — the `Error` naming a text that is no integer.
+/// Its message differs from `floatRefused`'s on purpose: identical functions
+/// are folded into one, and the program calls each export by its own name.
+fn integerRefused(t: u32) callconv(.c) u32 {
+    return resultPair(1, joinText("parseInt: \"", arg(t), "\" is not an integer"));
+}
+
+/// `stringFloatRefused(text)` — the `Error` naming a text that is no number.
+fn floatRefused(t: u32) callconv(.c) u32 {
+    return resultPair(1, joinText("parseFloat: \"", arg(t), "\" is not a number"));
 }
 
 /// `a`, `b` and `c` one after the other, as a fresh program string. Three
@@ -901,7 +908,8 @@ const faces = .{
     .{ "number.isDigits", isDigits },
     .{ "number.toInteger", toInteger },
     .{ "number.toFloat", toFloat },
-    .{ "number.numeralRefused", numeralRefused },
+    .{ "number.integerRefused", integerRefused },
+    .{ "number.floatRefused", floatRefused },
 };
 
 const program_faces = .{

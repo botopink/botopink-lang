@@ -176,7 +176,8 @@ pub const exports = [_]Export{
     .{ .name = "number.isDigits", .params = &.{.string}, .result = .bool, .api = "String.parseInt" },
     .{ .name = "number.toInteger", .params = &.{.string}, .result = .result_i64, .api = "String.parseInt" },
     .{ .name = "number.toFloat", .params = &.{ .string, .string, .string, .string }, .result = .result_f64, .api = "String.parseFloat" },
-    .{ .name = "number.numeralRefused", .params = &.{ .string, .string, .string }, .result = .result_t, .api = "String.parseFloat" },
+    .{ .name = "number.integerRefused", .params = &.{.string}, .result = .result_i64, .api = "String.parseInt" },
+    .{ .name = "number.floatRefused", .params = &.{.string}, .result = .result_f64, .api = "String.parseFloat" },
 };
 
 /// A wasm value type a program function takes or answers.

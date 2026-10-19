@@ -574,7 +574,7 @@ behavior String {
         return if (stringIsDigits(digits))
             stringToInteger(self)
         else
-            Error("parseInt: \"" + self + "\" is not an integer");
+            stringIntegerRefused(self);
     }
 
     // The `f64` nearest to a decimal numeral: an optional `+` or `-`, digits,
@@ -625,7 +625,7 @@ behavior String {
         return if (wellFormed)
             stringToFloat(self, whole, fraction, exponent)
         else
-            Error("parseFloat: \"" + self + "\" is not a number");
+            stringFloatRefused(self);
     }
 }
 
@@ -711,6 +711,22 @@ declare fn stringToFloat(
     fraction: string,
     exponent: string,
 ) -> Result<f64, string>;
+
+// The `Error` of a text that is no numeral, one per `Result` the numerals
+// answer: `Error(…)` is no constructor (decision 208), so the host builds it.
+#[compiler.external(
+    .Erlang("""{error, <<"parseInt: ", 34, ($0)/binary, 34, " is not an integer">>}"""),
+    .JavaScript("""({ error: 'parseInt: "' + $0 + '" is not an integer' })"""),
+    .Wasm(std: "number.integerRefused"),
+)]
+declare fn stringIntegerRefused(text: string) -> Result<i64, string>;
+
+#[compiler.external(
+    .Erlang("""{error, <<"parseFloat: ", 34, ($0)/binary, 34, " is not a number">>}"""),
+    .JavaScript("""({ error: 'parseFloat: "' + $0 + '" is not a number' })"""),
+    .Wasm(std: "number.floatRefused"),
+)]
+declare fn stringFloatRefused(text: string) -> Result<f64, string>;
 
 // ── array (eager collection) ──────────────────────────────────────
 // The eager indexed collection — implements the lazy `Iterator<T>` (`next`)

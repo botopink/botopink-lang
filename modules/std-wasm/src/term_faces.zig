@@ -334,11 +334,14 @@ pub fn rt_std_number__toFloat(t: T, w: T, f: T, x: T) callconv(.c) term.T {
     return term.tuple(&.{ term.a_error, joinBin("parseFloat: \"", text, "\" overflows f64") });
 }
 
-pub fn rt_std_number__numeralRefused(b: T, t: T, a: T) callconv(.c) term.T {
-    const before = string.strArg(b) orelse return &term.nil_cell;
+pub fn rt_std_number__integerRefused(t: T) callconv(.c) term.T {
     const text = string.strArg(t) orelse return &term.nil_cell;
-    const after = string.strArg(a) orelse return &term.nil_cell;
-    return term.tuple(&.{ term.a_error, joinBin(before, text, after) });
+    return term.tuple(&.{ term.a_error, joinBin("parseInt: \"", text, "\" is not an integer") });
+}
+
+pub fn rt_std_number__floatRefused(t: T) callconv(.c) term.T {
+    const text = string.strArg(t) orelse return &term.nil_cell;
+    return term.tuple(&.{ term.a_error, joinBin("parseFloat: \"", text, "\" is not a number") });
 }
 
 comptime {

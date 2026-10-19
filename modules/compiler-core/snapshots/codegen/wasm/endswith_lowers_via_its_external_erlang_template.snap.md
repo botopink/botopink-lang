@@ -378,8 +378,8 @@ import {io.terminal.print} from "std";
     local.get $sp
   )
   ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f311 — from std_wasm.wasm (sha256 fba83af40177)
-  ;; std:text.endsWith — from std_wasm.wasm (sha256 3630b2cefc6b)
+  ;; __std_f312 — from std_wasm.wasm (sha256 fba83af40177)
+  ;; std:text.endsWith — from std_wasm.wasm (sha256 5bd7ccb223bc)
   (data $__d0 "foobar")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "bar")
