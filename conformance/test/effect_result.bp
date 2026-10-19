@@ -13,11 +13,11 @@ fn half(n: i32) -> Result<i32, string> {
 }
 
 test "§9 a bare return is the success value" {
-    assert (parse(7) catch -1) == 7;
+    assert (try parse(7) catch -1) == 7;
 }
 
 test "§9 throw makes the error" {
-    assert (parse(-1) catch -1) == -1;
+    assert (try parse(-1) catch -1) == -1;
 }
 
 test "§9 catch after a try unwraps" {

@@ -783,7 +783,7 @@ test "js: try ---- catch tail on method call" {
         \\    }
         \\}
         \\fn run(p: Parser) -> i32 {
-        \\    val result = p.parse() catch 0;
+        \\    val result = try p.parse() catch 0;
         \\    return result;
         \\}
     );
@@ -863,7 +863,7 @@ test "js: catch ---- tail on binary expression" {
         \\    throw CalcError(msg: "overflow");
         \\}
         \\fn compute() -> i32 {
-        \\    val r = getA() catch 0;
+        \\    val r = try getA() catch 0;
         \\    return r;
         \\}
     );
@@ -960,7 +960,9 @@ test "js: try ---- multiple catch with different fallbacks" {
 }
 
 test "js: catch ---- tail on function call no try" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    // Decisions 595 (7), 783 — a `catch` with no `try` in its region handles
+    // nothing: `try-region-cannot-fail` at the `catch`, on every backend.
+    try h.assertJsCompileError(std.testing.allocator, @src(),
         \\type RiskError(level: i32)
         \\fn risky() -> Result<i32, RiskError> {
         \\    throw RiskError(level: 5);

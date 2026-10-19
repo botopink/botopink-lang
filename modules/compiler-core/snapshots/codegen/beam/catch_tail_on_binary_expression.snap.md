@@ -5,7 +5,7 @@ fn getA() -> Result<i32, CalcError> {
     throw CalcError(msg: "overflow");
 }
 fn compute() -> i32 {
-    val r = getA() catch 0;
+    val r = try getA() catch 0;
     return r;
 }
 ```

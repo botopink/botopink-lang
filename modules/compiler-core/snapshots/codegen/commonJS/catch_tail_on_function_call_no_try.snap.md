@@ -9,36 +9,14 @@ fn safe() -> i32 {
 }
 ```
 
------ JAVASCRIPT -- main.js
-```javascript
-class RiskError {
-    constructor(level) {
-        this.level = level;
-    }
-}
-RiskError.prototype.__bp = "RiskError";
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: try-region-cannot-fail: this `catch` closes a region that holds no `try`, so it handles nothing — write `try` before the call that can fail (`try f() catch …`), or drop the `catch`
+  ┌─ main.bp:6:20
+  │
+6 │     return risky() catch -1;
+  │                    ^
 
-function risky() {
-    return ({ error: new RiskError(5) });
-}
-
-function safe() {
-    const _try0 = risky();
-    return "error" in _try0 ? ((-1)) : _try0.ok;
-}
-
-Object.defineProperty(exports, "__bp_priv__", { value: { RiskError, risky, safe } });
+  hint: A `catch` handles the failures of the `try`s written on its left.
 ```
 
------ TYPESCRIPT TYPEDEF -- main.d.ts
-```typescript
-
-
-
-
-
-```
-
------ RUN LOG -----
-```logs
-```

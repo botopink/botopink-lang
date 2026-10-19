@@ -38,9 +38,9 @@ pub fn main() {
     fs.removeTree("closing");
     fs.mkdirRecursive("closing");
     fs.writeText("closing/file.txt", "hello world");
-    print(firstLine("closing/file.txt") catch "failed");
-    print(failsAfterOpen("closing/file.txt") catch "failed");
-    val f = fs.open("closing/file.txt") catch fs.openAsset(@embed("assets/empty.txt"));
+    print(try firstLine("closing/file.txt") catch "failed");
+    print(try failsAfterOpen("closing/file.txt") catch "failed");
+    val f = try fs.open("closing/file.txt") catch fs.openAsset(@embed("assets/empty.txt"));
     f.close();
     f.close();
     print(f.read(1).isError());

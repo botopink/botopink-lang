@@ -1,0 +1,14 @@
+//// Decision 595 (7) — `catch` closes the region a `try` opens: `parse(raw) catch 0l` holds no
+//// `try`, so its region cannot fail and its `catch` handles nothing — refused
+//// `try-region-cannot-fail` at the `catch`, even though `parse` answers a `Result`. The
+//// handled form is `try parse(raw) catch 0l`.
+
+import {io.terminal.print} from "std";
+
+fn parse(raw: string) -> Result<i64, string> {
+    return try raw.parseInt() catch throw "not a number";
+}
+
+pub fn main() {
+    print(parse("4") catch 0l);
+}

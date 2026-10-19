@@ -18452,8 +18452,9 @@ fn handlerBlockLeaves(body: []const ast.Stmt) bool {
 
 /// `try … catch` (decisions 431, 537, 595). Two shapes share the node:
 ///
-///   - the operand form, `try e catch h` / `e catch h` with no `try` inside
-///     `e`: `e` is a `Result` and the handler answers its `Error`;
+///   - the operand form, `try e catch h` with no `try` inside `e`: `e` is a
+///     `Result` and the handler answers its `Error`; `e catch h` with no `try`
+///     at all is `try-region-cannot-fail` (595 (7), 783);
 ///   - a region (`tc.region`), the block `try { … }` or a left side holding a
 ///     `try`: every `try` written in it hands its failure here (595 (1)), all
 ///     with one error type (595 (5)), and the region answers the success
@@ -18487,13 +18488,14 @@ fn inferTryCatch(env: *Env, tc: anytype, loc: ast.Loc) InferError!TypedExpr {
         errTy = region.err orelse try env.freshVar();
         break :blk rawTy;
     } else blk: {
-        // Decision 595 (7) — `e catch h` whose `e` is no `Result` and holds no
-        // `try` is a region that cannot fail.
+        // Decision 595 (7), 783 — `e catch h` whose `e` holds no `try` is a
+        // region that cannot fail, whatever `e` answers: a `Result`'s failure
+        // reaches a `catch` only through a `try` (`try f() catch h`).
         const d = rawTy.deref();
-        if (!tc.tryKeyword and unwrapResultType(rawTy) == null and d.* != .typeVar) {
+        if (!tc.tryKeyword) {
             env.lastError = TypeError.custom(
-                "try-region-cannot-fail: this region holds no `try`, so its `catch` handles nothing — write `try` before each call that can fail, or drop the `try { … } catch`",
-                "A `catch` handles the failure of a `Result`, or of the `try`s written on its left.",
+                "try-region-cannot-fail: this `catch` closes a region that holds no `try`, so it handles nothing — write `try` before the call that can fail (`try f() catch …`), or drop the `catch`",
+                "A `catch` handles the failures of the `try`s written on its left.",
             ).withLoc(loc);
             return error.TypeError;
         }

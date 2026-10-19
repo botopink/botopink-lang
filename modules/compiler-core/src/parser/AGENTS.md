@@ -705,7 +705,9 @@ before it, its right side (`parseExpr`) the fallback. `try await t catch 0 * 2` 
 `(try await t catch 0) * 2` doubles the result. `parseExprAtStart` — the `if` / `while` condition,
 the `case` subjects, the right side of `x.f =` / `x.f +=` — hands a leading `try` / `await` to
 `parseBinaryExpr` (with `noTrailingLambda` set, so `case try g() { … }` leaves the `{` to the
-`case`) and then to `wrapCatch`. Pinned by `tests/effect_rejections.zig` ("decision 537: …") and
+`case`) and then to `wrapCatch`. A `comptime` read ends an expression too: `comptime e catch h` is
+`(comptime e) catch h` (the checker's `try-region-cannot-fail`, 783), except as the operand of a `try` /
+`await`, whose expression takes the `catch` (`try comptime compiler.load(p) catch { ds -> … }`). Pinned by `tests/effect_rejections.zig` ("decision 537: …") and
 the cells `try_await_prefix_operators`, `await_postfix_binds_tighter`, `catch_lowest_precedence`.
 
 `try e catch h` and the tail form `e catch h` (`wrapCatch`) build the same `tryCatch` node: a left

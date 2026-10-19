@@ -1,6 +1,6 @@
 //// `a ?? b` — decision 28, landed in the parser as front 15's R8. It gives an
 //// optional a default, which nothing else in the language does: `catch` is
-//// `Result`-only (`val b = a catch 0;` on an `a: ?i32` reds with "`try`
+//// `Result`-only (`val b = try a catch 0;` on an `a: ?i32` reds with "`try`
 //// requires a Result<D, E> value, found 'optional'"), `?.` chains and
 //// `if (x) { n -> … }` is a statement.
 ////

@@ -361,6 +361,9 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     // comptime expr  /  comptime { expr; ... }
     if (this.check(.@"comptime")) {
+        // The operand of a `try` / `await` (`try comptime compiler.load(p)
+        // catch …`, 783) leaves its `catch` to the prefix's expression.
+        const prefixed = this.current > 0 and (this.tokens[this.current - 1].kind == .@"try" or this.tokens[this.current - 1].kind == .await);
         const comptimeTok = this.advance();
         if (this.check(.leftBrace)) {
             // Decision 525 — `comptime { … }` is a block: its value is its
@@ -373,11 +376,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .bracedTail = true,
             });
             try This.jumpTail(alloc, body, .@"break");
-            return Expr{ .comptime_ = .{ .loc = locFromToken(comptimeTok), .kind = .{ .comptimeBlock = .{ .body = body } } } };
+            const block = Expr{ .comptime_ = .{ .loc = locFromToken(comptimeTok), .kind = .{ .comptimeBlock = .{ .body = body } } } };
+            return if (prefixed) block else this.wrapCatch(alloc, block);
         } else {
+            // `catch` is the lowest infix (537): `comptime e catch h` is
+            // `(comptime e) catch h`, refused by the checker when no `try`
+            // stands in the region (595 (7), 783).
             const inner = try this.parseBinaryExpr(alloc, prec.equality);
             const innerPtr = try this.boxExpr(alloc, inner);
-            return Expr{ .comptime_ = .{ .loc = locFromToken(comptimeTok), .kind = .{ .comptimeExpr = innerPtr } } };
+            const read = Expr{ .comptime_ = .{ .loc = locFromToken(comptimeTok), .kind = .{ .comptimeExpr = innerPtr } } };
+            return if (prefixed) read else this.wrapCatch(alloc, read);
         }
     }
 

@@ -3181,6 +3181,12 @@ or convert it (`catch throw …`). A region that holds no `try` cannot fail, and
 <!-- example: modules/try_region_errors_differ -->
 <!-- example: modules/try_region_cannot_fail -->
 
+A `catch` written after a call with no `try` before it (`parse(raw) catch 0l`) closes a region that
+holds no `try`, even when the call answers a `Result`, and is refused the same way: write
+`try parse(raw) catch 0l`:
+
+<!-- example: modules/catch_without_try -->
+
 On every target a region is one early-exit block: a failing `try` leaves it for the handler — a
 sentinel on commonJS, a `try … catch` over a term of its own on erlang and beam, a `block … br` on
 wasm, with no exception of its own there. A `defer` runs when its block ends, a caught failure
@@ -3874,6 +3880,11 @@ the refusals, `try comptime compiler.load(path);` propagates them to the enclosi
 reads its answer, and the file is no failed module of the package under test.
 
 <!-- example: test/compiler_load_in_a_test_suite -->
+
+A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `compiler.load`'s included:
+`comptime compiler.load(path) catch { ds -> … }` handles nothing — write `try comptime compiler.load(path) catch { ds -> … }`:
+
+<!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_catch_without_try -->
 
 The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`

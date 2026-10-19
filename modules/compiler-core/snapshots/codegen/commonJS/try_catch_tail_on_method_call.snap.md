@@ -7,7 +7,7 @@ val Parser = type() {
     }
 }
 fn run(p: Parser) -> i32 {
-    val result = p.parse() catch 0;
+    val result = try p.parse() catch 0;
     return result;
 }
 ```
