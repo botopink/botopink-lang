@@ -122,6 +122,16 @@ and that nothing reaches (`reach.zig`, no export) is a stub that traps (`finishG
 the module's own, or a reached one, sends the module to linear memory (P2b). The
 linear pass links everything, as it always did, unless the whole lowering refused the module: its retry
 lowers what is reached (`Plan.reached_only`, decision 531, below).
+Shapes that sent a module to linear memory and are lowered in GC form (164 s2): an `if` one of whose arms is
+an empty array literal takes the other arm's type (`ifValueType`; `emptyArrayArmOther` notes the local's array,
+in both lowerings); a `case` whose arms are literals of one type answers that type where the enclosing
+function answers the other kind (`gcCaseArmsType`); `try r` answers the `Ok` type of `r`'s `Result`
+(`gcReprOfExpr`, `typeRefOf`); a primitive's method is never the module's free function of its name
+(`resultShapeOf`: `actual.contains(needle)` beside `fn contains(…) -> Result<…>`); `xs.fill(v)` is an array of
+`v`'s class (`gcArrayOp`, `array.new`); `recv?.m(args)` over an optional record or enum
+(`gcOptionalTypedMethod`); `Self` in an enum's method is its `$enum_<owner>` (`emitMemberFn` sets
+`sig_owner`). Measured by building every conformance unit for wasm with `gc_debug` on; the test
+`wat: gc ---- an empty array arm, a case of its own type, …` pins them.
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
 linear memory, so `emitStdCall` marshals a GC module's call — each string or `Bytes` argument copied into the

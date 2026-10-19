@@ -2487,6 +2487,9 @@ const Emitter = struct {
     /// The type `lowerCoerced` is asking its expression for: what an empty
     /// array literal takes its element class from.
     gc_want: ?Repr = null,
+    /// What a `case` lowered right now is asked for, when that is another kind
+    /// than the enclosing function's answer (`lowerCoerced`, `lowerCase`).
+    pending_case_want: ?Repr = null,
     /// The owner of the methods whose signatures are being registered: what
     /// a `Self` written in them names before `self_type` is set.
     sig_owner: ?[]const u8 = null,
@@ -5774,6 +5777,11 @@ const Emitter = struct {
                     };
                     // `xs.reverse()` and the like answer an array of the receiver's class.
                     if (cc.receiver) |recv| if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
+                        // `xs.fill(v)`: an array of `v`'s class.
+                        if (std.mem.eql(u8, cc.callee, "fill") and cc.args.len == 1 and self.wasmTypeOf(recv.*).isArrRef()) {
+                            const vr = self.wasmTypeOf(cc.args[0].value.*);
+                            return .{ .ref = .{ .arr = gcElemClassOf(vr) } };
+                        }
                         for ([_][]const u8{ "reverse", "rest", "take", "drop", "slice", "append", "prepend", "fill", "toList", "filter", "unique" }) |m| {
                             if (std.mem.eql(u8, cc.callee, m)) {
                                 const rr = self.wasmTypeOf(recv.*);
@@ -5786,6 +5794,18 @@ const Emitter = struct {
                         if (ix.is_slice) return null;
                         if (self.wasmTypeOf(ix.recv).isArrRef()) return self.gcElemRepr(ix.recv);
                         return null;
+                    }
+                },
+                else => {},
+            },
+            // `try r` answers what `r`'s `Result` holds when it is `Ok`: a
+            // tuple, a record, an array (`val pair = try decodeField(…)`).
+            .jump => |j| switch (j.kind) {
+                .try_ => |v| if (v) |inner| if (self.typeRefOf(inner.*)) |rt| if (eagerTypeRef(rt) == .generic) {
+                    const g = eagerTypeRef(rt).generic;
+                    if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) {
+                        const r = self.reprOf(g.args[0]);
+                        if (r.isRef()) return r;
                     }
                 },
                 else => {},
@@ -7670,6 +7690,26 @@ const Emitter = struct {
             try self.lowerCoerced(recv, ar);
             try self.lowerCoerced(callArg(cc, 0).?, ar);
             try self.emit(.{ .call = try self.gcArrOp("concat", cls) });
+            return true;
+        }
+        // `xs.fill(v)` answers one `v` per element, whatever `xs` holds: an
+        // array of `v`'s class (`[1, 2].fill("z")` is `["z", "z"]`).
+        if (eq(u8, name, "fill") and cc.args.len == 1) fill: {
+            const arg = callArg(cc, 0).?;
+            const vr0 = self.wasmTypeOf(arg);
+            const vr: Repr = if (vr0 == .bool) .i32 else vr0;
+            const vcls = gcElemClassOf(vr);
+            if (vcls == cls) break :fill;
+            const tmp = try std.fmt.allocPrint(self.arena(), "__fill{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(tmp, ar);
+            try self.lowerCoerced(recv, ar);
+            try self.emit(.{ .local_set = tmp });
+            try self.lowerCoerced(arg, vr);
+            if (vcls == .any) try self.gcBox(vr);
+            try self.emit(.{ .local_get = tmp });
+            try self.emit(.array_len);
+            try self.emit(.{ .array_new = self.gcTyIndex(.{ .arr = vcls }) });
             return true;
         }
         if ((eq(u8, name, "prepend") or eq(u8, name, "fill")) and cc.args.len == 1) {
@@ -10072,6 +10112,12 @@ const Emitter = struct {
 
     fn emitMemberFn(self: *Emitter, owner: []const u8, m: ast.BehaviorMethod) !void {
         const body = m.body orelse return;
+        // `Self` in a GC module is the owner, an enum with payloads included
+        // (`self` a `$enum_<owner>` reference), as `registerSymbols` typed
+        // the method's signature.
+        const prev_sig_owner = self.sig_owner;
+        if (self.mode == .gc) self.sig_owner = owner;
+        defer self.sig_owner = prev_sig_owner;
         self.fn_tparams = m.genericParams;
         defer self.fn_tparams = &.{};
         const outer_template = self.cur_template;
@@ -13858,6 +13904,8 @@ const Emitter = struct {
         self.case_arm_types = if (self.case_box) self.pending_case_arms else null;
         self.pending_case_arms = null;
         defer self.case_arm_types = prev_arm_types;
+        const case_want = self.pending_case_want;
+        self.pending_case_want = null;
         if (c.subjects.len == 0 or c.arms.len == 0) {
             try self.emit(zero);
             return;
@@ -13895,7 +13943,11 @@ const Emitter = struct {
             const all_str = for (c.arms) |arm| {
                 if (!self.armIsString(arm.body)) break false;
             } else true;
-            if (all_str) self.cur_result = Repr.string;
+            if (all_str) {
+                self.cur_result = Repr.string;
+            } else if (case_want) |w| {
+                self.cur_result = w;
+            } else if (self.gcCaseArmsType(c)) |t| self.cur_result = t;
         }
         if (!self.case_box) self.cur_result = self.caseResultRepr(c);
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
@@ -16184,6 +16236,7 @@ const Emitter = struct {
         const cc = c.kind.call;
         const res = self.optionalTypedMethodOpt(cc, c.loc) orelse return false;
         const m = self.optionalTypedMethod(cc, c.loc).?;
+        if (self.mode == .gc) return self.gcOptionalTypedMethod(c, m, res);
         const recv = cc.receiver.?.*;
         const recv_boxed = if (self.optInfoOf(recv)) |oi| oi.boxed else false;
         const mem = try self.memName(self.nextMem());
@@ -16238,6 +16291,53 @@ const Emitter = struct {
             .then = .{ .seq = then_seq },
             .@"else" = .{ .seq = else_seq },
         } });
+        return true;
+    }
+
+    /// `recv?.m(args)` over a GC optional record or enum: null when `recv`
+    /// is, else the method's answer as the optional the call is (a scalar in
+    /// its box; an answer that is an optional already, as it is).
+    fn gcOptionalTypedMethod(self: *Emitter, c: anytype, m: OptTypedMethod, res: OptInfo) anyerror!bool {
+        const cc = c.kind.call;
+        const pr = self.reprOf(m.payload);
+        if (!pr.isRef()) return self.gcFail("a ?. method over an optional of no reference payload");
+        const out_pr = self.gcOptPayload(res) orelse return self.gcFail("a ?. method of no known answer");
+        const cr = gcOptRepr(out_pr);
+        const cvt = self.vtOf(cr);
+        const tmp = try self.gcTemp(pr);
+        try self.lowerCoerced(cc.receiver.?.*, pr);
+        try self.emit(.{ .local_tee = tmp });
+        try self.emit(.ref_is_null);
+        var absent: Capture = .{};
+        self.open(&absent);
+        try self.emit(self.zeroOf(cr));
+        const absent_seq = self.seal(&absent, .{ .value = cvt });
+        var present: Capture = .{};
+        self.open(&present);
+        try self.local_typerefs.put(tmp, m.payload);
+        if (m.payload == .named) if (self.resolveRecordName(m.payload.named)) |r| try self.local_types.put(tmp, r);
+        if (m.direct) |sym| {
+            try self.emit(.{ .local_get = tmp });
+            try self.lowerCallArgs(cc.args, self.fn_sigs.get(sym).?, 1);
+            try self.emit(.{ .call = sym });
+        } else {
+            const payload = try self.arena().create(ast.Expr);
+            payload.* = .{ .identifier = .{ .loc = c.loc, .kind = .{ .ident = tmp } } };
+            var link = cc;
+            link.receiver = payload;
+            link.optional = false;
+            var call = c;
+            call.kind = .{ .call = link };
+            try self.lowerValue(.{ .call = call });
+        }
+        if (m.ret == .optional) {
+            try self.emitConvert(m.word, cr);
+        } else {
+            try self.emitConvert(m.word, out_pr);
+            if (!out_pr.isRef()) try self.gcBox(out_pr);
+        }
+        const present_seq = self.seal(&present, .{ .value = cvt });
+        try self.emit(.{ .@"if" = .{ .result = cvt, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
         return true;
     }
 
@@ -18059,6 +18159,8 @@ const Emitter = struct {
     /// A local bound to something `isArrayExpr` recognises is an array too,
     /// with the element shape of its initialiser.
     fn noteArrayLocal(self: *Emitter, name: []const u8, value: ast.Expr) !void {
+        // `if (c) [] else xs`: the local holds what the other arm does.
+        if (emptyArrayArmOther(value)) |other| return self.noteArrayLocal(name, other);
         if (try self.printShapeOf(value)) |shape| try self.print_shape_locals.put(name, shape);
         if (!self.isArrayExpr(value)) return;
         try self.arr_locals.put(name, {});
@@ -22489,6 +22591,9 @@ const Emitter = struct {
         }
         // `o!` over a `?T` answers the `T`.
         if (optOperatorParts(e)) |op| if (op.bang) if (self.typeRefOf(op.cond.*)) |ot| if (ot == .optional) return ot.optional.*;
+        // `try r` in a GC module answers the `Ok` type of `r`'s `Result`: a
+        // tuple's elements are read by it (`val p = try pair(s); p._0`).
+        if (self.mode == .gc and e == .jump and e.jump.kind == .try_) if (self.tryPayloadTypeRef(e)) |t| return t;
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| blk: {
@@ -22963,6 +23068,21 @@ const Emitter = struct {
             },
             else => null,
         };
+    }
+
+    /// The tail of the other arm of a value-form `if` one of whose arms is an
+    /// empty array literal (`if (abs) [] else state.parts`), or null.
+    fn emptyArrayArmOther(e: ast.Expr) ?ast.Expr {
+        if (e != .branch or e.branch.kind != .if_) return null;
+        const i = e.branch.kind.if_;
+        if (i.binding != null) return null;
+        const els = i.else_ orelse return null;
+        if (i.then_.len == 0 or els.len == 0) return null;
+        const a = i.then_[ast.lastRealIndex(i.then_)].expr;
+        const b = els[ast.lastRealIndex(els)].expr;
+        if (isEmptyArrayLit(a) and !isEmptyArrayLit(b)) return b;
+        if (isEmptyArrayLit(b) and !isEmptyArrayLit(a)) return a;
+        return null;
     }
 
     fn isEmptyArrayLit(e: ast.Expr) bool {
@@ -24649,7 +24769,13 @@ const Emitter = struct {
                     if (cc.receiver == null or self.isNamespaceReceiver(cc)) if (self.genericRetByFnArg(cc) catch null) |t| {
                         if (resultShapeOfTypeRef(taskValueTypeRef(t) orelse t)) |sh| break :blk sh;
                     };
-                    if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.result_shape_fns.get(sym);
+                    // A primitive's method is not the module's free function
+                    // of its name (`actual.contains(needle)` in a module that
+                    // declares `contains(…) -> Result<…>`).
+                    if (self.calleeSymbol(cc, c.loc)) |sym| {
+                        const prim_method = cc.receiver != null and !self.isNamespaceReceiver(cc) and std.mem.eql(u8, sym, cc.callee) and self.primKindAt(cc, c.loc) != null;
+                        if (!prim_method) break :blk self.result_shape_fns.get(sym);
+                    }
                     // A primitive's `default fn` (`"1.5".parseFloat()`): its
                     // copy's declared return.
                     // Only one declared `-> @Result<…>`: asking materialises
@@ -24740,6 +24866,29 @@ const Emitter = struct {
         if (i >= elems.len) return;
         if (self.isStringExpr(elems[i])) try self.str_locals.put(name, {});
         if (self.isBoolExpr(elems[i])) try self.bool_locals.put(name, {});
+    }
+
+    /// Front 164 s2 — the type a GC module's `case` answers when it is not the
+    /// enclosing function's: every arm a literal of one type, which a
+    /// reference result could not hold (`val compat = case form { NFKC -> true;
+    /// _ -> false; }` in a function answering a string), or the other way
+    /// round. Null keeps the function's result type.
+    fn gcCaseArmsType(self: *Emitter, c: anytype) ?Repr {
+        var t: ?Repr = null;
+        for (c.arms) |arm| {
+            // A literal alone: an arm's binder (`Ok(v) -> v`) is typed only
+            // once the arm is lowered, which a guess here would contradict.
+            const body = arm.body;
+            const bool_lit = if (plainIdentName(body)) |n| isBoolLitName(n) else false;
+            if (!bool_lit and (body != .literal or isNullLit(body))) return null;
+            const at: Repr = if (bool_lit) .i32 else self.wasmTypeOf(body);
+            if (t) |have| {
+                if (!self.sameVal(have, at)) return null;
+            } else t = at;
+        }
+        const have = t orelse return null;
+        if (have.isRef() == self.cur_result.isRef()) return null;
+        return have;
     }
 
     /// Whether a `case` ARM answers a string. A BRACE arm — `case x { 5 {
@@ -27077,7 +27226,7 @@ const Emitter = struct {
                 // every arm to it, so that — not `i32` — is what a `case` leaves
                 // on the stack. Saying `i32` made `return case …` in an `f64` fn
                 // append a second, bogus `f64.convert_i32_s`.
-                .case => |c| self.caseResultRepr(c),
+                .case => |c| if (self.mode == .gc) (self.gcCaseArmsType(c) orelse self.caseResultRepr(c)) else self.caseResultRepr(c),
                 else => .i32,
             },
             .branch => |b| switch (b.kind) {
@@ -27244,6 +27393,14 @@ const Emitter = struct {
             else => {},
         };
         const from = self.wasmTypeOf(e);
+        // Front 164 s2 — a GC module's `case` asked for as another kind than
+        // the enclosing function's answer (`val kids: i32[] = case c { … }` in
+        // a function answering a word): its arms are coerced to what is asked.
+        if (self.mode == .gc and isCaseExpr(e) and !self.sameVal(from, want) and (from.isRef() or want.isRef())) {
+            self.pending_case_want = want;
+            defer self.pending_case_want = null;
+            return self.lowerValue(e);
+        }
         // A float or an `i64` asked for as a narrower word would be truncated
         // or wrapped (`i32.trunc_f64_s`, `i32.wrap_i64`) — a different number
         // at exit 0. The language converts by a call it names (`toInt`), never
@@ -28872,6 +29029,10 @@ const Emitter = struct {
             // answers the payload's width, which a local of the binder's name
             // an earlier `if` declared at another width does not tell.
             const binder_read = arm == 0 and if (i.binding) |bn| if (plainIdentName(last)) |ln| std.mem.eql(u8, ln, bn) else false else false;
+            // An empty array literal answers the type the other arm gives
+            // (`if (abs) [] else state.parts`): in a GC module it has no
+            // representation of its own (front 164 s2).
+            if (self.mode == .gc and isEmptyArrayLit(last)) continue;
             const lt = if (binder_read)
                 (if (self.optInfoOf(i.cond.*)) |oi| (if (self.mode == .gc) (self.gcOptPayload(oi) orelse self.wasmTypeOf(last)) else oi.cell.ty()) else self.wasmTypeOf(last))
             else

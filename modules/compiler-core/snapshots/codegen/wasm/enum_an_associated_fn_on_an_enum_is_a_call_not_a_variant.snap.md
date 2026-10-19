@@ -27,68 +27,62 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $var_Shape_Square (struct (field $f0 (mut i32))))
+    (type $var_Shape_Circle (struct (field $f0 (mut i32))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\15\00\00\00V\0cShape.Square\01\04sidei")
-  (data (i32.const 284) "\2b\00\00\00integer overflow: * on i32 at main.bp:11:28")
-  (data (i32.const 332) "\2b\00\00\00integer overflow: * on i32 at main.bp:11:32")
-  (data (i32.const 380) "\2b\00\00\00integer overflow: * on i32 at main.bp:12:28")
-  (global $__heap_ptr (mut i32) (i32.const 428))
-  (func $Shape_unit (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Shape_unit (result anyref)
     (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
     i32.const 1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 1
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $var_Shape_Square
     return
   )
-  (func $Shape_area (param $self i32) (result i32)
+  (func $Shape_area (param $self anyref) (result i32)
     (local $r i32)
     (local $s i32)
-    (local $__case_0 i32)
+    (local $__case_0 anyref)
     local.get $self
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Circle
-    i32.eq
+    ref.test (ref null $var_Shape_Circle)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_Shape_Circle)
+    struct.get $var_Shape_Circle $f0
     local.set $r
     local.get $r
     local.get $r
-    i32.const 284
+    global.get $__s0
     call $__i32_mul_chk
     i32.const 3
-    i32.const 332
+    global.get $__s1
     call $__i32_mul_chk
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 1 ;; Square
-    i32.eq
+    ref.test (ref null $var_Shape_Square)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result i32)
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_Shape_Square)
+    struct.get $var_Shape_Square $f0
     local.set $s
     local.get $s
     local.get $s
-    i32.const 380
+    global.get $__s2
     call $__i32_mul_chk
       )
       (else
@@ -101,7 +95,7 @@ import {io.terminal.print} from "std";
   )
   (func $main
     (local $__mem0 i32)
-    (local $s i32)
+    (local $s anyref)
     call $Shape_unit
     local.set $s
     local.get $s
@@ -399,7 +393,8 @@ import {io.terminal.print} from "std";
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -407,10 +402,35 @@ import {io.terminal.print} from "std";
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -418,8 +438,10 @@ import {io.terminal.print} from "std";
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -442,7 +464,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -465,7 +487,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -488,7 +510,7 @@ import {io.terminal.print} from "std";
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -512,7 +534,7 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -536,7 +558,7 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -577,11 +599,33 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
+  (data $__d0 "integer overflow: * on i32 at main.bp:11:28")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "integer overflow: * on i32 at main.bp:11:32")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "integer overflow: * on i32 at main.bp:12:28")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 43
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 43
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 43
+    array.new_data $str $__d2
+    global.set $__s2
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

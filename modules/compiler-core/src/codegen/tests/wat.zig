@@ -4008,6 +4008,85 @@ test "wat: gc ---- a linked module no function of the program names does not kee
     );
 }
 
+// Shapes that sent a module to linear memory, each now in GC form: an `if`
+// with an empty array arm, a `case` answering apart from its function, `try`
+// over a `Result` of a tuple, a string method named like a free function of
+// the module, `fill` with a value of another class, `?.` over an enum's method.
+test "wat: gc ---- an empty array arm, a case of its own type, try over a tuple, fill and ?. over an enum method" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Val {
+        \\    Num(n: i32),
+        \\    Text(s: string),
+        \\
+        \\    fn str(self: Self) -> string {
+        \\        return case self {
+        \\            Text(s: t) -> t;
+        \\            _ -> "";
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\fn find(kind: i32) -> ?Val {
+        \\    if (kind == 1) return Val.Text(s: "a");
+        \\    if (kind == 2) return Val.Num(n: 40);
+        \\    return null;
+        \\}
+        \\
+        \\fn contains(xs: string[], x: string) -> Result<void, string> {
+        \\    if (xs.indexOf(x) < 0) throw "missing";
+        \\    return;
+        \\}
+        \\
+        \\fn pair(s: string) -> Result<#(string, string), string> {
+        \\    if (s == "") throw "empty";
+        \\    return #(s, s.toUpper());
+        \\}
+        \\
+        \\fn label(s: string, loud: bool) -> string {
+        \\    val mark = case loud {
+        \\        true -> 1;
+        \\        false -> 0;
+        \\    };
+        \\    val parts = if (s == "") [] else [s, s];
+        \\    return parts.join("-") + mark.toString();
+        \\}
+        \\
+        \\fn verdict(r: Result<void, string>) -> string {
+        \\    return case r {
+        \\        Ok(_) -> "ok";
+        \\        Error(e) -> e;
+        \\    };
+        \\}
+        \\
+        \\fn both(s: string) -> Result<string, string> {
+        \\    val p = try pair(s);
+        \\    return p._0 + p._1;
+        \\}
+        \\
+        \\fn text(r: Result<string, string>) -> string {
+        \\    return case r {
+        \\        Ok(v) -> v;
+        \\        Error(e) -> e;
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    print(label("ab", true));
+        \\    print(label("", false));
+        \\    print("abc".contains("b"));
+        \\    print(verdict(contains(["a"], "b")));
+        \\    print(text(both("a")));
+        \\    print(text(both("")));
+        \\    print([1, 2, 3].fill("z"));
+        \\    print(find(1)?.str() ?? "none");
+        \\    print(find(3)?.str() ?? "none");
+        \\    print(Val.Num(n: 2).str().length);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
 // ── front 164 s2 P2b: unknown, generic declarations, the array operations, generators ──
 //
 // Each program is lowered as a WasmGC module (`(rec`), its RUN LOG the language's own answer.

@@ -32,17 +32,20 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $rec_Money (struct (field $f0 (mut i32))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0f\00\00\00R\05Money\01\05centsi")
-  (global $__heap_ptr (mut i32) (i32.const 276))
-  (func $Money_min (param $self i32) (param $other i32) (result i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $Money_min (param $self (ref null $rec_Money)) (param $other (ref null $rec_Money)) (result (ref null $rec_Money))
     local.get $self
-    i32.load ;; .cents
+    struct.get $rec_Money $f0
     local.get $other
-    i32.load ;; .cents
+    struct.get $rec_Money $f0
     i32.lt_s
-    (if (result i32)
+    (if (result (ref null $rec_Money))
       (then
     local.get $self
       )
@@ -52,13 +55,13 @@ import {io.terminal.print} from "std";
     )
     return
   )
-  (func $Money_max (param $self i32) (param $other i32) (result i32)
+  (func $Money_max (param $self (ref null $rec_Money)) (param $other (ref null $rec_Money)) (result (ref null $rec_Money))
     local.get $self
-    i32.load ;; .cents
+    struct.get $rec_Money $f0
     local.get $other
-    i32.load ;; .cents
+    struct.get $rec_Money $f0
     i32.gt_s
-    (if (result i32)
+    (if (result (ref null $rec_Money))
       (then
     local.get $self
       )
@@ -68,7 +71,7 @@ import {io.terminal.print} from "std";
     )
     return
   )
-  (func $Money_clamp (param $self i32) (param $lo i32) (param $hi i32) (result i32)
+  (func $Money_clamp (param $self (ref null $rec_Money)) (param $lo (ref null $rec_Money)) (param $hi (ref null $rec_Money)) (result (ref null $rec_Money))
     local.get $self
     local.get $lo
     call $Money_max
@@ -80,47 +83,17 @@ import {io.terminal.print} from "std";
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
-    (local $m i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 260
-    i32.store
-    local.get $__mem0
+    (local $m (ref null $rec_Money))
     i32.const 500
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 260
-    i32.store
-    local.get $__mem1
+    struct.new $rec_Money
     i32.const 0
-    i32.store offset=4
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    i32.const 8
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 260
-    i32.store
-    local.get $__mem2
+    struct.new $rec_Money
     i32.const 120
-    i32.store offset=4
-    local.get $__mem2
-    i32.const 4
-    i32.add
+    struct.new $rec_Money
     call $Money_clamp
     local.set $m
     local.get $m
-    i32.load ;; .cents
+    struct.get $rec_Money $f0
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -306,54 +279,7 @@ import {io.terminal.print} from "std";
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

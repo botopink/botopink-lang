@@ -323,25 +323,15 @@ test "path.isInside treats a name starting with two dots as a name" {
 ----- WASM TEXT -- std/path.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_any (array (mut anyref)))
+    (type $rec_PathAccum (struct (field $f0 (mut i32)) (field $f1 (mut (ref null $arr_any)))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00/")
-  (data (i32.const 264) "\01\00\00\00:")
-  (data (i32.const 272) "\00\00\00\00")
-  (data (i32.const 276) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:40:23")
-  (data (i32.const 328) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:50:33")
-  (data (i32.const 380) "\01\00\00\00.")
-  (data (i32.const 388) "\2f\00\00\00integer overflow: - on i32 at src/path.bp:68:28")
-  (data (i32.const 440) "\30\00\00\00integer overflow: + on i32 at src/path.bp:114:52")
-  (data (i32.const 492) "\30\00\00\00integer overflow: - on i32 at src/path.bp:120:42")
-  (data (i32.const 544) "\02\00\00\00..")
-  (data (i32.const 552) "\30\00\00\00integer overflow: - on i32 at src/path.bp:135:39")
-  (data (i32.const 604) "\30\00\00\00integer overflow: - on i32 at src/path.bp:159:63")
-  (data (i32.const 656) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
-  (data (i32.const 688) "\30\00\00\00integer overflow: + on i32 at src/path.bp:175:35")
-  (data (i32.const 740) "\30\00\00\00integer overflow: - on i32 at src/path.bp:205:51")
-  (data (i32.const 792) "\03\00\00\00../")
-  (global $__heap_ptr (mut i32) (i32.const 1952))
+  (start $__init_strs)
+  (global $__heap_ptr (mut i32) (i32.const 1408))
   ;; std/path — pure-botopink path manipulation (posix forward-slash).
   ;; 
   ;; Reference:
@@ -353,8 +343,8 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; including wat. Forward-slash separator only — Windows backslash paths
   ;; are not normalised here (the spec keeps `path` posix-shaped; a
   ;; `path_win32` sibling can land later if a target needs it).
-  (global $separator (mut i32) (i32.const 256))
-  (global $delimiter (mut i32) (i32.const 264))
+  (global $separator (mut (ref null $str)) (ref.null $str))
+  (global $delimiter (mut (ref null $str)) (ref.null $str))
   ;; Split a path into its non-empty components. Leading-`/` paths drop the
   ;; empty head; trailing-`/` paths drop the empty tail. A path made of pure
   ;; separators yields the empty array. Uses `filter` rather than
@@ -362,27 +352,41 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; (`out ++ [p]` discarded) on Erlang because the immutable runtime never
   ;; rebinds `Out`; `filter` round-trips through `lists:filter/2` and
   ;; `Array.prototype.filter` directly.
-  (func $split (export "split") (param $path i32) (result i32)
-    (local $raw i32)
-    (local $__iter0 i32)
+  (func $split (export "split") (param $path (ref null $str)) (result (ref null $arr_any))
+    (local $raw (ref null $arr_any))
+    (local $__gc0 (ref null $str))
+    (local $__gc1 (ref null $str))
+    (local $__gc2 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $str))
+    (local $__out0 (ref null $arr_any))
     local.get $path
     global.get $separator
+    local.set $__gc0
+    local.set $__gc1
+    global.get $__heap_ptr
+    local.set $__gc2
+    local.get $__gc1
+    call $__gc_to_lin_str
+    local.get $__gc0
+    call $__gc_to_lin_str
     call $__std_text_split
+    call $__lin_to_gc_strs
+    local.get $__gc2
+    global.set $__heap_ptr
     local.set $raw
     local.get $raw
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -394,29 +398,21 @@ test "path.isInside treats a name starting with two dots as a name" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $p
-    i32.const 272
+    global.get $__s0
     call $__str_eq
     i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -431,59 +427,76 @@ test "path.isInside treats a name starting with two dots as a name" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
+    call $__arr_slice_any
     return
   )
   ;; True when `path` starts with `/` — the posix absolute-path marker.
-  (func $isAbsolute (export "isAbsolute") (param $path i32) (result i32)
+  (func $isAbsolute (export "isAbsolute") (param $path (ref null $str)) (result i32)
+    (local $__gc3 (ref null $str))
+    (local $__gc4 (ref null $str))
+    (local $__gc5 i32)
     local.get $path
     global.get $separator
+    local.set $__gc3
+    local.set $__gc4
+    global.get $__heap_ptr
+    local.set $__gc5
+    local.get $__gc4
+    call $__gc_to_lin_str
+    local.get $__gc3
+    call $__gc_to_lin_str
     call $__std_text_startsWith
+    local.get $__gc5
+    global.set $__heap_ptr
     return
   )
   ;; The last non-empty component of `path` (the file name, in the common
   ;; case). Returns "" for the empty path and for pure-separator paths.
-  (func $basename (export "basename") (param $path i32) (result i32)
-    (local $parts i32)
+  (func $basename (export "basename") (param $path (ref null $str)) (result (ref null $str))
+    (local $parts (ref null $arr_any))
     (local $n i32)
     (local $__bp_nullish i32)
-    (local $__opt0 i32)
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__0 (ref null $str))
     local.get $path
     call $split
     local.set $parts
     local.get $parts
-    i32.load ;; .length
+    array.len
     local.set $n
     local.get $n
     i32.const 0
     i32.eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 272
+    global.get $__s0
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
     local.get $parts
     local.get $n
     i32.const 1
-    i32.const 276
+    global.get $__s1
     call $__i32_sub_chk
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__0
+    local.get $__bp_nullish__0
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     return
@@ -491,37 +504,37 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; Everything except the basename — the parent directory portion. For an
   ;; absolute path this preserves the leading `/`. For a path with no
   ;; separator (`"foo"`), returns `""`.
-  (func $dirname (export "dirname") (param $path i32) (result i32)
+  (func $dirname (export "dirname") (param $path (ref null $str)) (result (ref null $str))
     (local $__mem0 i32)
-    (local $parts i32)
+    (local $parts (ref null $arr_any))
     (local $n i32)
-    (local $head i32)
-    (local $joined i32)
+    (local $head (ref null $arr_any))
+    (local $joined (ref null $str))
     local.get $path
     call $split
     local.set $parts
     local.get $parts
-    i32.load ;; .length
+    array.len
     local.set $n
     local.get $n
     i32.const 1
     i32.le_s
-    (if (result i32)
+    (if (result (ref null $str))
       (then
     local.get $path
     call $isAbsolute
-    (if (result i32)
+    (if (result (ref null $str))
       (then
     global.get $separator
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
@@ -529,33 +542,23 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     local.get $n
     i32.const 1
-    i32.const 328
+    global.get $__s2
     call $__i32_sub_chk
-    call $__std_array_slice
+    call $__arr_slice_any
     local.set $head
     local.get $head
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $path
     call $isAbsolute
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
     global.get $separator
-    i32.store offset=4
-    local.get $__mem0
     local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
       (else
     local.get $joined
@@ -566,102 +569,120 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; The trailing extension on the basename — the substring from the LAST
   ;; `.` to the end, including the dot. Returns `""` when the basename has
   ;; no extension (or is a dotfile with no further `.`s, e.g. `.bashrc`).
-  (func $extname (export "extname") (param $path i32) (result i32)
+  (func $extname (export "extname") (param $path (ref null $str)) (result (ref null $str))
     (local $__mem0 i32)
-    (local $base i32)
-    (local $pieces i32)
+    (local $base (ref null $str))
+    (local $pieces (ref null $arr_any))
     (local $n i32)
-    (local $head i32)
+    (local $head (ref null $str))
     (local $__bp_nullish i32)
-    (local $tail i32)
+    (local $tail (ref null $str))
     (local $isDotfile i32)
-    (local $__opt0 i32)
-    (local $__opt1 i32)
+    (local $__gc6 (ref null $str))
+    (local $__gc7 (ref null $str))
+    (local $__gc8 i32)
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__1 (ref null $str))
+    (local $__opt1 (ref null $str))
+    (local $__bp_nullish__2 (ref null $str))
     local.get $path
     call $basename
     local.set $base
     local.get $base
-    i32.const 380
+    global.get $__s3
+    local.set $__gc6
+    local.set $__gc7
+    global.get $__heap_ptr
+    local.set $__gc8
+    local.get $__gc7
+    call $__gc_to_lin_str
+    local.get $__gc6
+    call $__gc_to_lin_str
     call $__std_text_split
+    call $__lin_to_gc_strs
+    local.get $__gc8
+    global.set $__heap_ptr
     local.set $pieces
     local.get $pieces
-    i32.load ;; .length
+    array.len
     local.set $n
     local.get $n
     i32.const 1
     i32.le_s
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 272
+    global.get $__s0
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
     local.get $pieces
     i32.const 0
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__1
+    local.get $__bp_nullish__1
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $head
     local.get $pieces
     local.get $n
     i32.const 1
-    i32.const 388
+    global.get $__s4
     call $__i32_sub_chk
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt1
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt1
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__2
+    local.get $__bp_nullish__2
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $tail
     local.get $head
-    i32.const 272
+    global.get $__s0
     call $__str_eq
+    (if (result i32)
+      (then
     local.get $n
     i32.const 2
     i32.eq
-    i32.and
-    local.set $isDotfile
-    local.get $isDotfile
-    (if (result i32)
-      (then
-    i32.const 272
       )
       (else
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    i32.const 380
-    i32.store offset=4
-    local.get $__mem0
+    i32.const 0
+      )
+    )
+    local.set $isDotfile
+    local.get $isDotfile
+    (if (result (ref null $str))
+      (then
+    global.get $__s0
+      )
+      (else
+    global.get $__s3
     local.get $tail
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
     )
     return
@@ -673,26 +694,27 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; on `Array<T>` default-fn bodies that lower to a `var` + `push` shape,
   ;; which lowers to a dead store on Erlang's immutable runtime (the same
   ;; trap `split` sidesteps).
-  (func $join (export "join") (param $parts i32) (result i32)
+  (func $join (export "join") (param $parts (ref null $arr_any)) (result (ref null $str))
     (local $__mem0 i32)
     (local $isAbs i32)
     (local $__bp_nullish i32)
-    (local $collapsed i32)
-    (local $joined i32)
-    (local $__opt0 i32)
-    (local $__iter1 i32)
+    (local $collapsed (ref null $arr_any))
+    (local $joined (ref null $str))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__3 (ref null $str))
+    (local $__iter1 (ref null $arr_any))
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
-    (local $__out1 i32)
-    (local $p i32)
-    (local $__iter2 i32)
+    (local $p (ref null $str))
+    (local $__out1 (ref null $arr_any))
+    (local $__iter2 (ref null $arr_any))
     (local $__idx2 i32)
     (local $__len2 i32)
     (local $__acc2 i32)
-    (local $__out2 i32)
+    (local $__out2 (ref null $arr_any))
     local.get $parts
-    i32.load ;; .length
+    array.len
     i32.const 0
     i32.eq
     (if (result i32)
@@ -702,16 +724,19 @@ test "path.isInside treats a name starting with two dots as a name" {
       (else
     local.get $parts
     i32.const 0
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__3
+    local.get $__bp_nullish__3
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     call $isAbsolute
@@ -721,12 +746,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $parts
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
     local.get $__len1
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out1
     i32.const 0
     local.set $__acc1
@@ -738,21 +763,16 @@ test "path.isInside treats a name starting with two dots as a name" {
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $__out1
     local.get $__idx1
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $p
     call $split
     global.get $separator
-    call $__std_array_joinStrings
-    i32.store offset=4
+    call $__arr_join_any
+    array.set $arr_any
         local.get $__idx1
         i32.const 1
         i32.add
@@ -765,12 +785,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $collapsed
     local.set $__iter2
     local.get $__iter2
-    i32.load ;; element count
+    array.len
     local.set $__len2
     i32.const 0
     local.set $__idx2
     local.get $__len2
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out2
     i32.const 0
     local.set $__acc2
@@ -782,29 +802,21 @@ test "path.isInside treats a name starting with two dots as a name" {
         br_if $__break
         local.get $__iter2
         local.get $__idx2
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $p
-    i32.const 272
+    global.get $__s0
     call $__str_eq
     i32.eqz
     (if
       (then
     local.get $__out2
     local.get $__acc2
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter2
     local.get $__idx2
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc2
     i32.const 1
     i32.add
@@ -819,30 +831,20 @@ test "path.isInside treats a name starting with two dots as a name" {
       )
     )
     local.get $__out2
+    i32.const 0
     local.get $__acc2
-    i32.store ;; kept count
-    local.get $__out2
+    call $__arr_slice_any
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $isAbs
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
     global.get $separator
-    i32.store offset=4
-    local.get $__mem0
     local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
       (else
     local.get $joined
@@ -855,27 +857,27 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; accumulator and `var` reassignment, which lowers to a dead store on
   ;; Erlang's immutable runtime (the same trap `split`/`join` sidestep with
   ;; `filter`/`flatMap`).
-  (func $normalize (export "normalize") (param $path i32) (result i32)
+  (func $normalize (export "normalize") (param $path (ref null $str)) (result (ref null $str))
     (local $__mem0 i32)
     (local $isAbs i32)
-    (local $pieces i32)
-    (local $joined i32)
-    (local $__iter0 i32)
+    (local $pieces (ref null $arr_any))
+    (local $joined (ref null $str))
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $str))
+    (local $__out0 (ref null $arr_any))
     local.get $path
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 380
+    global.get $__s3
     return
       )
       (else
-        i32.const 0
+        ref.null $str
       )
     )
     drop
@@ -886,12 +888,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $split
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -903,29 +905,21 @@ test "path.isInside treats a name starting with two dots as a name" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $p
-    i32.const 380
+    global.get $__s3
     call $__str_eq
     i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -940,40 +934,30 @@ test "path.isInside treats a name starting with two dots as a name" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
+    call $__arr_slice_any
     local.set $pieces
     local.get $pieces
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $isAbs
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
     global.get $separator
-    i32.store offset=4
-    local.get $__mem0
     local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
       (else
     local.get $joined
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 380
+    global.get $__s3
       )
       (else
     local.get $joined
@@ -986,15 +970,17 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; Internal: count how many leading components two split paths share. Tail-
   ;; recursive on `i` so the accumulator never needs a `var` rebind (which
   ;; lowers to a dead store on Erlang's immutable runtime).
-  (func $commonPrefixCount (param $a i32) (param $b i32) (param $i i32) (result i32)
-    (local $ai i32)
+  (func $commonPrefixCount (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (param $i i32) (result i32)
+    (local $ai (ref null $str))
     (local $__bp_nullish i32)
-    (local $bi i32)
-    (local $__opt0 i32)
-    (local $__opt1 i32)
+    (local $bi (ref null $str))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__4 (ref null $str))
+    (local $__opt1 (ref null $str))
+    (local $__bp_nullish__5 (ref null $str))
     local.get $i
     local.get $a
-    i32.load ;; .length
+    array.len
     i32.ge_s
     (if (result i32)
       (then
@@ -1008,7 +994,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     drop
     local.get $i
     local.get $b
-    i32.load ;; .length
+    array.len
     i32.ge_s
     (if (result i32)
       (then
@@ -1022,31 +1008,37 @@ test "path.isInside treats a name starting with two dots as a name" {
     drop
     local.get $a
     local.get $i
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__4
+    local.get $__bp_nullish__4
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $ai
     local.get $b
     local.get $i
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt1
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt1
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__5
+    local.get $__bp_nullish__5
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $bi
@@ -1059,7 +1051,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $b
     local.get $i
     i32.const 1
-    i32.const 440
+    global.get $__s5
     call $__i32_add_chk
     call $commonPrefixCount
       )
@@ -1071,29 +1063,23 @@ test "path.isInside treats a name starting with two dots as a name" {
   )
   ;; Internal: build an array of `n` ".." strings via head/tail recursion.
   ;; Avoids a `var` + `push` accumulator (the Erlang dead-store trap).
-  (func $makeUps (param $n i32) (result i32)
+  (func $makeUps (param $n i32) (result (ref null $arr_any))
     (local $__mem0 i32)
     local.get $n
     i32.const 0
     i32.le_s
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    array.new_fixed $arr_any 0
       )
       (else
     local.get $n
     i32.const 1
-    i32.const 492
+    global.get $__s6
     call $__i32_sub_chk
     call $makeUps
-    i32.const 544
-    call $__std_array_prepend
+    global.get $__s7
+    call $__arr_prepend_any
       )
     )
     return
@@ -1106,14 +1092,14 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; `src` is named `src` rather than `from` because `from` is a reserved
   ;; keyword (the `import { … } from "<lib>"` syntax) — it does not parse
   ;; as a parameter name.
-  (func $relative (export "relative") (param $src i32) (param $dst i32) (result i32)
-    (local $srcParts i32)
-    (local $dstParts i32)
+  (func $relative (export "relative") (param $src (ref null $str)) (param $dst (ref null $str)) (result (ref null $str))
+    (local $srcParts (ref null $arr_any))
+    (local $dstParts (ref null $arr_any))
     (local $common i32)
-    (local $ups i32)
-    (local $downs i32)
-    (local $combined i32)
-    (local $joined i32)
+    (local $ups (ref null $arr_any))
+    (local $downs (ref null $arr_any))
+    (local $combined (ref null $arr_any))
+    (local $joined (ref null $str))
     local.get $src
     call $split
     local.set $srcParts
@@ -1126,32 +1112,32 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $commonPrefixCount
     local.set $common
     local.get $srcParts
-    i32.load ;; .length
+    array.len
     local.get $common
-    i32.const 552
+    global.get $__s8
     call $__i32_sub_chk
     call $makeUps
     local.set $ups
     local.get $dstParts
     local.get $common
     local.get $dstParts
-    i32.load ;; .length
-    call $__std_array_slice
+    array.len
+    call $__arr_slice_any
     local.set $downs
     local.get $ups
     local.get $downs
-    call $__std_array_concat
+    call $__arr_concat_any
     local.set $combined
     local.get $combined
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $joined
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 380
+    global.get $__s3
       )
       (else
     local.get $joined
@@ -1166,59 +1152,63 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; Internal: apply each component of one segment (post-split) to the
   ;; accumulator, popping for `..` and appending the rest. Head/tail
   ;; recursive — no `var` rebinds.
-  (func $applyPieces (param $acc i32) (param $pieces i32) (result i32)
+  (func $applyPieces (param $acc (ref null $arr_any)) (param $pieces (ref null $arr_any)) (result (ref null $arr_any))
     (local $__mem0 i32)
-    (local $p i32)
+    (local $p (ref null $str))
     (local $__bp_nullish i32)
-    (local $rest i32)
-    (local $nextAcc i32)
-    (local $__opt0 i32)
-    (loop $__tail (result i32)
+    (local $rest (ref null $arr_any))
+    (local $nextAcc (ref null $arr_any))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__6 (ref null $str))
+    (loop $__tail (result (ref null $arr_any))
     local.get $pieces
-    i32.load ;; .length
+    array.len
     i32.const 0
     i32.eq
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
     local.get $acc
     return
       )
       (else
-        i32.const 0
+        ref.null $arr_any
       )
     )
     drop
     local.get $pieces
     i32.const 0
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__6
+    local.get $__bp_nullish__6
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $p
     local.get $pieces
     i32.const 1
     local.get $pieces
-    i32.load ;; .length
-    call $__std_array_slice
+    array.len
+    call $__arr_slice_any
     local.set $rest
     local.get $p
-    i32.const 544
+    global.get $__s7
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
     local.get $acc
-    i32.load ;; .length
+    array.len
     i32.const 0
     i32.eq
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
     local.get $acc
       )
@@ -1226,27 +1216,19 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $acc
     i32.const 0
     local.get $acc
-    i32.load ;; .length
+    array.len
     i32.const 1
-    i32.const 604
+    global.get $__s9
     call $__i32_sub_chk
-    call $__std_array_slice
+    call $__arr_slice_any
       )
     )
       )
       (else
     local.get $acc
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 1
-    i32.store
-    local.get $__mem0
     local.get $p
-    i32.store offset=4
-    local.get $__mem0
-    call $__std_array_concat
+    array.new_fixed $arr_any 1
+    call $__arr_concat_any
       )
     )
     local.set $nextAcc
@@ -1257,90 +1239,82 @@ test "path.isInside treats a name starting with two dots as a name" {
     br $__tail ;; tail call
     )
   )
-  (func $resolveStep (param $state i32) (param $seg i32) (result i32)
+  (func $resolveStep (param $state (ref null $rec_PathAccum)) (param $seg (ref null $str)) (result (ref null $rec_PathAccum))
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $pieces i32)
+    (local $pieces (ref null $arr_any))
     (local $nextIsAbs i32)
-    (local $baseParts i32)
+    (local $baseParts (ref null $arr_any))
     local.get $seg
     call $split
     local.set $pieces
     local.get $seg
     call $isAbsolute
+    (if (result i32)
+      (then
+    i32.const 1
+      )
+      (else
     local.get $state
-    i32.load ;; .isAbs
-    i32.or
+    struct.get $rec_PathAccum $f0
+      )
+    )
     local.set $nextIsAbs
     local.get $seg
     call $isAbsolute
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    array.new_fixed $arr_any 0
       )
       (else
     local.get $state
-    i32.load offset=4 ;; .parts
+    struct.get $rec_PathAccum $f1
       )
     )
     local.set $baseParts
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 660
-    i32.store
-    local.get $__mem1
     local.get $nextIsAbs
-    i32.store offset=4
-    local.get $__mem1
     local.get $baseParts
     local.get $pieces
     call $applyPieces
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    struct.new $rec_PathAccum
     return
   )
-  (func $resolveAll (param $segments i32) (param $i i32) (param $state i32) (result i32)
-    (local $seg i32)
+  (func $resolveAll (param $segments (ref null $arr_any)) (param $i i32) (param $state (ref null $rec_PathAccum)) (result (ref null $rec_PathAccum))
+    (local $seg (ref null $str))
     (local $__bp_nullish i32)
-    (local $next i32)
-    (local $__opt0 i32)
-    (loop $__tail (result i32)
+    (local $next (ref null $rec_PathAccum))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__7 (ref null $str))
+    (loop $__tail (result (ref null $rec_PathAccum))
     local.get $i
     local.get $segments
-    i32.load ;; .length
+    array.len
     i32.ge_s
-    (if (result i32)
+    (if (result (ref null $rec_PathAccum))
       (then
     local.get $state
     return
       )
       (else
-        i32.const 0
+        ref.null $rec_PathAccum
       )
     )
     drop
     local.get $segments
     local.get $i
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__7
+    local.get $__bp_nullish__7
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $seg
@@ -1351,7 +1325,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $segments
     local.get $i
     i32.const 1
-    i32.const 688
+    global.get $__s10
     call $__i32_add_chk
     local.get $next
     local.set $state
@@ -1364,69 +1338,41 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; Absolute segments restart the accumulator (matches Node's
   ;; `path.resolve`); `..` pops one component; `.` drops out (already
   ;; filtered by `split`). The empty input resolves to ".".
-  (func $resolve (export "resolve") (param $segments i32) (result i32)
+  (func $resolve (export "resolve") (param $segments (ref null $arr_any)) (result (ref null $str))
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
-    (local $finalState i32)
-    (local $joined i32)
+    (local $finalState (ref null $rec_PathAccum))
+    (local $joined (ref null $str))
     local.get $segments
     i32.const 0
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 660
-    i32.store
-    local.get $__mem0
     i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    array.new_fixed $arr_any 0
+    struct.new $rec_PathAccum
     call $resolveAll
     local.set $finalState
     local.get $finalState
-    i32.load offset=4 ;; .parts
+    struct.get $rec_PathAccum $f1
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $finalState
-    i32.load ;; .isAbs
-    (if (result i32)
+    struct.get $rec_PathAccum $f0
+    (if (result (ref null $str))
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 2
-    i32.store
-    local.get $__mem2
     global.get $separator
-    i32.store offset=4
-    local.get $__mem2
     local.get $joined
-    i32.store offset=8
-    local.get $__mem2
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
       (else
     local.get $joined
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 380
+    global.get $__s3
       )
       (else
     local.get $joined
@@ -1440,10 +1386,14 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; `p` without its trailing extension: `page.bp` → `page`, `archive.tar.gz`
   ;; → `archive.tar`, `noext` → `noext`. The extension is what `extname`
   ;; answers, so a dotfile keeps its name.
-  (func $withoutExtension (export "withoutExtension") (param $p i32) (result i32)
-    (local $ext i32)
+  (func $withoutExtension (export "withoutExtension") (param $p (ref null $str)) (result (ref null $str))
+    (local $ext (ref null $str))
     (local $n i32)
-    (local $stem i32)
+    (local $stem (ref null $str))
+    (local $__gc9 i32)
+    (local $__gc10 i32)
+    (local $__gc11 (ref null $str))
+    (local $__gc12 i32)
     local.get $p
     call $extname
     local.set $ext
@@ -1451,9 +1401,9 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__std_text_length
     local.set $n
     local.get $ext
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
     local.get $p
       )
@@ -1463,9 +1413,21 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $n
     local.get $ext
     call $__std_text_length
-    i32.const 740
+    global.get $__s11
     call $__i32_sub_chk
+    local.set $__gc9
+    local.set $__gc10
+    local.set $__gc11
+    global.get $__heap_ptr
+    local.set $__gc12
+    local.get $__gc11
+    call $__gc_to_lin_str
+    local.get $__gc10
+    local.get $__gc9
     call $__std_text_slice
+    call $__lin_to_gc_str
+    local.get $__gc12
+    global.set $__heap_ptr
       )
     )
     local.set $stem
@@ -1480,38 +1442,23 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; itself. The check reads the first component of the relative path: `..`
   ;; exactly, or `../…` — a component that merely starts with two dots
   ;; (`..foo`) is a name, not an escape.
-  (func $isInside (export "isInside") (param $parent i32) (param $child i32) (result i32)
+  (func $isInside (export "isInside") (param $parent (ref null $str)) (param $child (ref null $str)) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    (local $up i32)
-    (local $down i32)
-    (local $rel i32)
+    (local $up (ref null $str))
+    (local $down (ref null $str))
+    (local $rel (ref null $str))
     (local $escapes i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 1
-    i32.store
-    local.get $__mem0
+    (local $__gc13 (ref null $str))
+    (local $__gc14 (ref null $str))
+    (local $__gc15 i32)
     local.get $parent
-    i32.store offset=4
-    local.get $__mem0
+    array.new_fixed $arr_any 1
     call $resolve
     local.set $up
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 2
-    i32.store
-    local.get $__mem1
     local.get $parent
-    i32.store offset=4
-    local.get $__mem1
     local.get $child
-    i32.store offset=8
-    local.get $__mem1
+    array.new_fixed $arr_any 2
     call $resolve
     local.set $down
     local.get $up
@@ -1519,12 +1466,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $relative
     local.set $rel
     local.get $rel
-    i32.const 544
+    global.get $__s7
     call $__str_eq
+    (if (result i32)
+      (then
+    i32.const 1
+      )
+      (else
     local.get $rel
-    i32.const 792
+    global.get $__s12
+    local.set $__gc13
+    local.set $__gc14
+    global.get $__heap_ptr
+    local.set $__gc15
+    local.get $__gc14
+    call $__gc_to_lin_str
+    local.get $__gc13
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    i32.or
+    local.get $__gc15
+    global.set $__heap_ptr
+      )
+    )
     local.set $escapes
     local.get $escapes
     i32.const 0
@@ -1532,6 +1495,271 @@ test "path.isInside treats a name starting with two dots as a name" {
     return
   )
   ;; ── tests ────────────────────────────────────────────────────────────────────
+  (func $__init_globals
+    global.get $__s13
+    global.set $separator
+    global.get $__s14
+    global.set $delimiter
+  )
+  (func $__arr_slice_any (param $xs (ref null $arr_any)) (param $a i32) (param $b i32) (result (ref null $arr_any))
+    (local $len i32)
+    (local $from i32)
+    (local $to i32)
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $len
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $a
+    i32.add
+    local.set $from
+    local.get $from
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $from
+      )
+    )
+      )
+      (else
+    local.get $a
+    local.set $from
+    local.get $from
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $from
+      )
+    )
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $b
+    i32.add
+    local.set $to
+    local.get $to
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $to
+      )
+    )
+      )
+      (else
+    local.get $b
+    local.set $to
+    local.get $to
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $to
+      )
+    )
+      )
+    )
+    local.get $to
+    local.get $from
+    i32.sub
+    local.set $n
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $n
+      )
+    )
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    local.get $from
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_at_opt_any (param $xs (ref null $arr_any)) (param $i i32) (result anyref)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $i
+    local.get $xs
+    array.len
+    i32.add
+    local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    array.len
+    i32.ge_s
+    i32.or
+    (if (result anyref)
+      (then
+    ref.null any
+      )
+      (else
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+      )
+    )
+  )
+  (func $__arr_join_any (param $xs (ref null $arr_any)) (param $sep (ref null $str)) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $acc (ref null $str))
+    local.get $xs
+    array.len
+    local.set $n
+    i32.const 0
+    array.new_default $str
+    local.set $acc
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    local.get $acc
+    local.get $sep
+    call $__str_concat
+    local.set $acc
+      )
+    )
+    local.get $acc
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+    ref.cast (ref null $str)
+    call $__str_concat
+    local.set $acc
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $acc
+  )
+  (func $__arr_prepend_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $x
+    array.set $arr_any
+    local.get $r
+    i32.const 1
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_concat_any (param $xs (ref null $arr_any)) (param $ys (ref null $arr_any)) (result (ref null $arr_any))
+    (local $la i32)
+    (local $lb i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $la
+    local.get $ys
+    array.len
+    local.set $lb
+    local.get $la
+    local.get $lb
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $la
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $la
+    local.get $ys
+    i32.const 0
+    local.get $lb
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__lin_to_gc_strs (param $p i32) (result (ref null $arr_any))
+    (local $n i32)
+    (local $i i32)
+    (local $r (ref null $arr_any))
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $r
+    local.get $i
+    local.get $p
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    call $__lin_to_gc_str
+    array.set $arr_any
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $r
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
@@ -1712,76 +1940,89 @@ test "path.isInside treats a name starting with two dots as a name" {
       )
     )
   )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $i
-        local.get $xs
-        i32.load
-        i32.add
-        local.set $i
-      )
-    )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-      )
-    )
-  )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
+    array.len
     local.set $alen
+    local.get $b
+    array.len
+    local.set $blen
+    local.get $alen
+    local.get $blen
+    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $a
+    i32.const 0
+    local.get $alen
+    array.copy $str $str
+    local.get $r
     local.get $alen
     local.get $b
-    i32.load
+    i32.const 0
+    local.get $blen
+    array.copy $str $str
+    local.get $r
+  )
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -1832,20 +2073,6 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $e
     global.set $__heap_ptr
-    local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
     local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
@@ -1908,7 +2135,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -1916,10 +2144,35 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -1927,8 +2180,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1951,7 +2206,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1974,7 +2229,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -1997,7 +2252,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -2021,7 +2276,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -2045,7 +2300,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -2086,16 +2341,81 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
-  (func $__chk_fail (param $site i32)
+  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
+    (local $n i32) (local $p i32) (local $i i32)
+    local.get $s
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8 offset=4
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
+    (local $r (ref null $str)) (local $n i32) (local $i i32)
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $str
+    local.set $r
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $r
+        local.get $i
+        local.get $p
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        array.set $str
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $r
+  )
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 1952))
+  (global $__std_sp (mut i32) (i32.const 1408))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 800
+    i32.const 256
     i32.lt_s
     (if
       (then unreachable)
@@ -2111,20 +2431,138 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; __std_f265 — from std_wasm.wasm (sha256 8097395f0640)
   ;; __std_f267 — from std_wasm.wasm (sha256 5ac39cdc3016)
   ;; __std_f268 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; __std_f434 — from std_wasm.wasm (sha256 91fc3314249d)
   ;; __std_f446 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f447 — from std_wasm.wasm (sha256 9aa1fbb1f68e)
-  ;; __std_f448 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f449 — from std_wasm.wasm (sha256 5e496927e163)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 9d930c8a70f6)
-  ;; std:array.concat — from std_wasm.wasm (sha256 a9a2bb510b96)
-  ;; std:array.prepend — from std_wasm.wasm (sha256 772865736b90)
-  ;; std:array.slice — from std_wasm.wasm (sha256 369982af2669)
   ;; std:text.slice — from std_wasm.wasm (sha256 051c966cf248)
   ;; std:text.startsWith — from std_wasm.wasm (sha256 322b10039271)
   ;; __std_f523 — from std_wasm.wasm (sha256 2904f8c0427d)
   ;; std:text.split — from std_wasm.wasm (sha256 d23f0fc25558)
-  ;; std:text.length — from std_wasm.wasm (sha256 7fe6a16a7d05)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_text_length (param $s (ref null $str)) (result i32)
+    (local $i i32)
+    (local $len i32)
+    (local $n i32)
+    local.get $s
+    array.len
+    local.set $len
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $len
+        i32.ge_u
+        br_if $done
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.const 0xC0
+        i32.and
+        i32.const 0x80
+        i32.ne
+        local.get $n
+        i32.add
+        local.set $n
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $n
+  )
+  (data $__d0 "")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "integer overflow: - on i32 at src/path.bp:40:23")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "integer overflow: - on i32 at src/path.bp:50:33")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 ".")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "integer overflow: - on i32 at src/path.bp:68:28")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "integer overflow: + on i32 at src/path.bp:114:52")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "integer overflow: - on i32 at src/path.bp:120:42")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "..")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 "integer overflow: - on i32 at src/path.bp:135:39")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "integer overflow: - on i32 at src/path.bp:159:63")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "integer overflow: + on i32 at src/path.bp:175:35")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "integer overflow: - on i32 at src/path.bp:205:51")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
+  (data $__d12 "../")
+  (global $__s12 (mut (ref null $str)) (ref.null $str))
+  (data $__d13 "/")
+  (global $__s13 (mut (ref null $str)) (ref.null $str))
+  (data $__d14 ":")
+  (global $__s14 (mut (ref null $str)) (ref.null $str))
+  (func $__init_strs
+    i32.const 0
+    i32.const 0
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 47
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 47
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 47
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d7
+    global.set $__s7
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d10
+    global.set $__s10
+    i32.const 0
+    i32.const 48
+    array.new_data $str $__d11
+    global.set $__s11
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d12
+    global.set $__s12
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d13
+    global.set $__s13
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d14
+    global.set $__s14
+    call $__init_globals
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
@@ -3975,79 +4413,61 @@ test "fs answers PermissionDenied for an OS permission error" {
 ----- WASM TEXT -- std/io/fs.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_any (array (mut anyref)))
+    (type $var_FsError_NotFound (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_PermissionDenied (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_IsDirectory (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_NotDirectory (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_AlreadyExists (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_InvalidUtf8 (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i64))))
+    (type $var_FsError_Other (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str)))))
+    (type $rec_HostError (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $rec_File (struct (field $f0 (mut (ref null $str))) (field $f1 (mut anyref))))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00/")
-  (data (i32.const 264) "\01\00\00\00:")
-  (data (i32.const 272) "\00\00\00\00")
-  (data (i32.const 276) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:40:23")
-  (data (i32.const 328) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:50:33")
-  (data (i32.const 380) "\01\00\00\00.")
-  (data (i32.const 388) "\30\00\00\00integer overflow: - on i32 at src/io/fs.bp:68:28")
-  (data (i32.const 440) "\31\00\00\00integer overflow: + on i32 at src/io/fs.bp:114:52")
-  (data (i32.const 496) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:120:42")
-  (data (i32.const 552) "\02\00\00\00..")
-  (data (i32.const 560) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:135:39")
-  (data (i32.const 616) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:159:63")
-  (data (i32.const 672) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
-  (data (i32.const 704) "\31\00\00\00integer overflow: + on i32 at src/io/fs.bp:175:35")
-  (data (i32.const 760) "\31\00\00\00integer overflow: - on i32 at src/io/fs.bp:205:51")
-  (data (i32.const 816) "\03\00\00\00../")
-  (data (i32.const 824) "\19\00\00\00R\07Failure\02\07messages\04kinds")
-  (data (i32.const 856) "\05\00\00\00panic")
-  (data (i32.const 868) "\0b\00\00\00not found: ")
-  (data (i32.const 884) "\13\00\00\00permission denied: ")
-  (data (i32.const 908) "\10\00\00\00is a directory: ")
-  (data (i32.const 928) "\11\00\00\00not a directory: ")
-  (data (i32.const 952) "\10\00\00\00already exists: ")
-  (data (i32.const 972) "\0b\00\00\00not UTF-8: ")
-  (data (i32.const 988) "\09\00\00\00 at byte ")
-  (data (i32.const 1004) "\02\00\00\00: ")
-  (data (i32.const 1012) "\06\00\00\00ENOENT")
-  (data (i32.const 1024) "\19\00\00\00V\10FsError.NotFound\01\04paths")
-  (data (i32.const 1056) "\06\00\00\00EACCES")
-  (data (i32.const 1068) "\05\00\00\00EPERM")
-  (data (i32.const 1080) "\21\00\00\00V\18FsError.PermissionDenied\01\04paths")
-  (data (i32.const 1120) "\06\00\00\00EISDIR")
-  (data (i32.const 1132) "\13\00\00\00PATH IS A DIRECTORY")
-  (data (i32.const 1156) "\1c\00\00\00V\13FsError.IsDirectory\01\04paths")
-  (data (i32.const 1188) "\07\00\00\00ENOTDIR")
-  (data (i32.const 1200) "\1d\00\00\00V\14FsError.NotDirectory\01\04paths")
-  (data (i32.const 1236) "\06\00\00\00EEXIST")
-  (data (i32.const 1248) "\1e\00\00\00V\15FsError.AlreadyExists\01\04paths")
-  (data (i32.const 1284) "\1f\00\00\00V\rFsError.Other\02\04paths\07messages")
-  (data (i32.const 1320) "\09\00\00\00NotFound ")
-  (data (i32.const 1336) "\11\00\00\00PermissionDenied ")
-  (data (i32.const 1360) "\0c\00\00\00IsDirectory ")
-  (data (i32.const 1376) "\0d\00\00\00NotDirectory ")
-  (data (i32.const 1396) "\0e\00\00\00AlreadyExists ")
-  (data (i32.const 1416) "\0c\00\00\00InvalidUtf8 ")
-  (data (i32.const 1432) "\01\00\00\00 ")
-  (data (i32.const 1440) "\02\00\00\00ok")
-  (global $__heap_ptr (mut i32) (i32.const 2608))
-  (global $separator (mut i32) (i32.const 256))
-  (global $delimiter (mut i32) (i32.const 264))
-  (func $split (param $path i32) (result i32)
-    (local $raw i32)
-    (local $__iter0 i32)
+  (start $__init_strs)
+  (global $__heap_ptr (mut i32) (i32.const 1408))
+  (global $separator (mut (ref null $str)) (ref.null $str))
+  (global $delimiter (mut (ref null $str)) (ref.null $str))
+  (func $split (param $path (ref null $str)) (result (ref null $arr_any))
+    (local $raw (ref null $arr_any))
+    (local $__gc0 (ref null $str))
+    (local $__gc1 (ref null $str))
+    (local $__gc2 i32)
+    (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
     (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $p (ref null $str))
+    (local $__out0 (ref null $arr_any))
     local.get $path
     global.get $separator
+    local.set $__gc0
+    local.set $__gc1
+    global.get $__heap_ptr
+    local.set $__gc2
+    local.get $__gc1
+    call $__gc_to_lin_str
+    local.get $__gc0
+    call $__gc_to_lin_str
     call $__std_text_split
+    call $__lin_to_gc_strs
+    local.get $__gc2
+    global.set $__heap_ptr
     local.set $raw
     local.get $raw
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
     local.get $__len0
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out0
     i32.const 0
     local.set $__acc0
@@ -4059,29 +4479,21 @@ test "fs answers PermissionDenied for an OS permission error" {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $p
-    i32.const 272
+    global.get $__s0
     call $__str_eq
     i32.eqz
     (if
       (then
     local.get $__out0
     local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter0
     local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc0
     i32.const 1
     i32.add
@@ -4096,252 +4508,51 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
     )
     local.get $__out0
+    i32.const 0
     local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
+    call $__arr_slice_any
     return
   )
-  (func $isAbsolute (param $path i32) (result i32)
+  (func $isAbsolute (param $path (ref null $str)) (result i32)
+    (local $__gc3 (ref null $str))
+    (local $__gc4 (ref null $str))
+    (local $__gc5 i32)
     local.get $path
     global.get $separator
+    local.set $__gc3
+    local.set $__gc4
+    global.get $__heap_ptr
+    local.set $__gc5
+    local.get $__gc4
+    call $__gc_to_lin_str
+    local.get $__gc3
+    call $__gc_to_lin_str
     call $__std_text_startsWith
+    local.get $__gc5
+    global.set $__heap_ptr
     return
   )
-  (func $basename (param $path i32) (result i32)
-    (local $parts i32)
-    (local $n i32)
-    (local $__bp_nullish i32)
-    (local $__opt0 i32)
-    local.get $path
-    call $split
-    local.set $parts
-    local.get $parts
-    i32.load ;; .length
-    local.set $n
-    local.get $n
-    i32.const 0
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 272
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $parts
-    local.get $n
-    i32.const 1
-    i32.const 276
-    call $__i32_sub_chk
-    call $__arr_at
-    local.tee $__opt0
-    (if (result i32)
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    i32.const 272
-      )
-    )
-    return
-  )
-  (func $dirname (param $path i32) (result i32)
-    (local $__mem0 i32)
-    (local $parts i32)
-    (local $n i32)
-    (local $head i32)
-    (local $joined i32)
-    local.get $path
-    call $split
-    local.set $parts
-    local.get $parts
-    i32.load ;; .length
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.le_s
-    (if (result i32)
-      (then
-    local.get $path
-    call $isAbsolute
-    (if (result i32)
-      (then
-    global.get $separator
-      )
-      (else
-    i32.const 272
-      )
-    )
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $parts
-    i32.const 0
-    local.get $n
-    i32.const 1
-    i32.const 328
-    call $__i32_sub_chk
-    call $__std_array_slice
-    local.set $head
-    local.get $head
-    global.get $separator
-    call $__std_array_joinStrings
-    local.set $joined
-    local.get $path
-    call $isAbsolute
-    (if (result i32)
-      (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    global.get $separator
-    i32.store offset=4
-    local.get $__mem0
-    local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
-      )
-      (else
-    local.get $joined
-      )
-    )
-    return
-  )
-  (func $extname (param $path i32) (result i32)
-    (local $__mem0 i32)
-    (local $base i32)
-    (local $pieces i32)
-    (local $n i32)
-    (local $head i32)
-    (local $__bp_nullish i32)
-    (local $tail i32)
-    (local $isDotfile i32)
-    (local $__opt0 i32)
-    (local $__opt1 i32)
-    local.get $path
-    call $basename
-    local.set $base
-    local.get $base
-    i32.const 380
-    call $__std_text_split
-    local.set $pieces
-    local.get $pieces
-    i32.load ;; .length
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.le_s
-    (if (result i32)
-      (then
-    i32.const 272
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $pieces
-    i32.const 0
-    call $__arr_at
-    local.tee $__opt0
-    (if (result i32)
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    i32.const 272
-      )
-    )
-    local.set $head
-    local.get $pieces
-    local.get $n
-    i32.const 1
-    i32.const 388
-    call $__i32_sub_chk
-    call $__arr_at
-    local.tee $__opt1
-    (if (result i32)
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    i32.const 272
-      )
-    )
-    local.set $tail
-    local.get $head
-    i32.const 272
-    call $__str_eq
-    local.get $n
-    i32.const 2
-    i32.eq
-    i32.and
-    local.set $isDotfile
-    local.get $isDotfile
-    (if (result i32)
-      (then
-    i32.const 272
-      )
-      (else
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    i32.const 380
-    i32.store offset=4
-    local.get $__mem0
-    local.get $tail
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
-      )
-    )
-    return
-  )
-  (func $join (param $parts i32) (result i32)
+  (func $join (param $parts (ref null $arr_any)) (result (ref null $str))
     (local $__mem0 i32)
     (local $isAbs i32)
     (local $__bp_nullish i32)
-    (local $collapsed i32)
-    (local $joined i32)
-    (local $__opt0 i32)
-    (local $__iter1 i32)
+    (local $collapsed (ref null $arr_any))
+    (local $joined (ref null $str))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__0 (ref null $str))
+    (local $__iter1 (ref null $arr_any))
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
-    (local $__out1 i32)
-    (local $p i32)
-    (local $__iter2 i32)
+    (local $p (ref null $str))
+    (local $__out1 (ref null $arr_any))
+    (local $__iter2 (ref null $arr_any))
     (local $__idx2 i32)
     (local $__len2 i32)
     (local $__acc2 i32)
-    (local $__out2 i32)
+    (local $__out2 (ref null $arr_any))
     local.get $parts
-    i32.load ;; .length
+    array.len
     i32.const 0
     i32.eq
     (if (result i32)
@@ -4351,16 +4562,19 @@ test "fs answers PermissionDenied for an OS permission error" {
       (else
     local.get $parts
     i32.const 0
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__0
+    local.get $__bp_nullish__0
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     call $isAbsolute
@@ -4370,12 +4584,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $parts
     local.set $__iter1
     local.get $__iter1
-    i32.load ;; element count
+    array.len
     local.set $__len1
     i32.const 0
     local.set $__idx1
     local.get $__len1
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out1
     i32.const 0
     local.set $__acc1
@@ -4387,21 +4601,16 @@ test "fs answers PermissionDenied for an OS permission error" {
         br_if $__break
         local.get $__iter1
         local.get $__idx1
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $__out1
     local.get $__idx1
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $p
     call $split
     global.get $separator
-    call $__std_array_joinStrings
-    i32.store offset=4
+    call $__arr_join_any
+    array.set $arr_any
         local.get $__idx1
         i32.const 1
         i32.add
@@ -4414,12 +4623,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $collapsed
     local.set $__iter2
     local.get $__iter2
-    i32.load ;; element count
+    array.len
     local.set $__len2
     i32.const 0
     local.set $__idx2
     local.get $__len2
-    call $__arr_new
+    array.new_default $arr_any
     local.set $__out2
     i32.const 0
     local.set $__acc2
@@ -4431,29 +4640,21 @@ test "fs answers PermissionDenied for an OS permission error" {
         br_if $__break
         local.get $__iter2
         local.get $__idx2
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_any
+    ref.cast (ref null $str)
         local.set $p
     local.get $p
-    i32.const 272
+    global.get $__s0
     call $__str_eq
     i32.eqz
     (if
       (then
     local.get $__out2
     local.get $__acc2
-    i32.const 4
-    i32.mul
-    i32.add
     local.get $__iter2
     local.get $__idx2
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
+    array.get $arr_any
+    array.set $arr_any
     local.get $__acc2
     i32.const 1
     i32.add
@@ -4468,30 +4669,20 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
     )
     local.get $__out2
+    i32.const 0
     local.get $__acc2
-    i32.store ;; kept count
-    local.get $__out2
+    call $__arr_slice_any
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $isAbs
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
     global.get $separator
-    i32.store offset=4
-    local.get $__mem0
     local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
+    array.new_fixed $arr_any 2
+    global.get $__s0
+    call $__arr_join_any
       )
       (else
     local.get $joined
@@ -4499,143 +4690,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     return
   )
-  (func $normalize (param $path i32) (result i32)
-    (local $__mem0 i32)
-    (local $isAbs i32)
-    (local $pieces i32)
-    (local $joined i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
-    local.get $path
-    i32.const 272
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 380
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $path
-    call $isAbsolute
-    local.set $isAbs
-    local.get $path
-    call $split
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    local.get $__len0
-    call $__arr_new
-    local.set $__out0
-    i32.const 0
-    local.set $__acc0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $p
-    local.get $p
-    i32.const 380
-    call $__str_eq
-    i32.eqz
-    (if
-      (then
-    local.get $__out0
-    local.get $__acc0
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $__iter0
-    local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    i32.load offset=4
-    i32.store offset=4
-    local.get $__acc0
-    i32.const 1
-    i32.add
-    local.set $__acc0
-      )
-    )
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    local.get $__out0
-    local.get $__acc0
-    i32.store ;; kept count
-    local.get $__out0
-    local.set $pieces
-    local.get $pieces
-    global.get $separator
-    call $__std_array_joinStrings
-    local.set $joined
-    local.get $isAbs
-    (if (result i32)
-      (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    global.get $separator
-    i32.store offset=4
-    local.get $__mem0
-    local.get $joined
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 272
-    call $__std_array_joinStrings
-      )
-      (else
-    local.get $joined
-    i32.const 272
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 380
-      )
-      (else
-    local.get $joined
-      )
-    )
-      )
-    )
-    return
-  )
-  (func $commonPrefixCount (param $a i32) (param $b i32) (param $i i32) (result i32)
-    (local $ai i32)
+  (func $commonPrefixCount (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (param $i i32) (result i32)
+    (local $ai (ref null $str))
     (local $__bp_nullish i32)
-    (local $bi i32)
-    (local $__opt0 i32)
-    (local $__opt1 i32)
+    (local $bi (ref null $str))
+    (local $__opt0 (ref null $str))
+    (local $__bp_nullish__1 (ref null $str))
+    (local $__opt1 (ref null $str))
+    (local $__bp_nullish__2 (ref null $str))
     local.get $i
     local.get $a
-    i32.load ;; .length
+    array.len
     i32.ge_s
     (if (result i32)
       (then
@@ -4649,7 +4714,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     drop
     local.get $i
     local.get $b
-    i32.load ;; .length
+    array.len
     i32.ge_s
     (if (result i32)
       (then
@@ -4663,31 +4728,37 @@ test "fs answers PermissionDenied for an OS permission error" {
     drop
     local.get $a
     local.get $i
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt0
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__1
+    local.get $__bp_nullish__1
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $ai
     local.get $b
     local.get $i
-    call $__arr_at
+    call $__arr_at_opt_any
+    ref.cast (ref null $str)
     local.tee $__opt1
-    (if (result i32)
+    ref.is_null
+    i32.eqz
+    (if (result (ref null $str))
       (then
     local.get $__opt1
-    local.set $__bp_nullish
-    local.get $__bp_nullish
+    local.set $__bp_nullish__2
+    local.get $__bp_nullish__2
       )
       (else
-    i32.const 272
+    global.get $__s0
       )
     )
     local.set $bi
@@ -4700,7 +4771,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $b
     local.get $i
     i32.const 1
-    i32.const 440
+    global.get $__s1
     call $__i32_add_chk
     call $commonPrefixCount
       )
@@ -4710,41 +4781,35 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     return
   )
-  (func $makeUps (param $n i32) (result i32)
+  (func $makeUps (param $n i32) (result (ref null $arr_any))
     (local $__mem0 i32)
     local.get $n
     i32.const 0
     i32.le_s
-    (if (result i32)
+    (if (result (ref null $arr_any))
       (then
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    array.new_fixed $arr_any 0
       )
       (else
     local.get $n
     i32.const 1
-    i32.const 496
+    global.get $__s2
     call $__i32_sub_chk
     call $makeUps
-    i32.const 552
-    call $__std_array_prepend
+    global.get $__s3
+    call $__arr_prepend_any
       )
     )
     return
   )
-  (func $relative (param $src i32) (param $dst i32) (result i32)
-    (local $srcParts i32)
-    (local $dstParts i32)
+  (func $relative (param $src (ref null $str)) (param $dst (ref null $str)) (result (ref null $str))
+    (local $srcParts (ref null $arr_any))
+    (local $dstParts (ref null $arr_any))
     (local $common i32)
-    (local $ups i32)
-    (local $downs i32)
-    (local $combined i32)
-    (local $joined i32)
+    (local $ups (ref null $arr_any))
+    (local $downs (ref null $arr_any))
+    (local $combined (ref null $arr_any))
+    (local $joined (ref null $str))
     local.get $src
     call $split
     local.set $srcParts
@@ -4757,407 +4822,38 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $commonPrefixCount
     local.set $common
     local.get $srcParts
-    i32.load ;; .length
+    array.len
     local.get $common
-    i32.const 560
+    global.get $__s4
     call $__i32_sub_chk
     call $makeUps
     local.set $ups
     local.get $dstParts
     local.get $common
     local.get $dstParts
-    i32.load ;; .length
-    call $__std_array_slice
+    array.len
+    call $__arr_slice_any
     local.set $downs
     local.get $ups
     local.get $downs
-    call $__std_array_concat
+    call $__arr_concat_any
     local.set $combined
     local.get $combined
     global.get $separator
-    call $__std_array_joinStrings
+    call $__arr_join_any
     local.set $joined
     local.get $joined
-    i32.const 272
+    global.get $__s0
     call $__str_eq
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 380
+    global.get $__s5
       )
       (else
     local.get $joined
       )
     )
     return
-  )
-  (func $applyPieces (param $acc i32) (param $pieces i32) (result i32)
-    (local $__mem0 i32)
-    (local $p i32)
-    (local $__bp_nullish i32)
-    (local $rest i32)
-    (local $nextAcc i32)
-    (local $__opt0 i32)
-    (loop $__tail (result i32)
-    local.get $pieces
-    i32.load ;; .length
-    i32.const 0
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $acc
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $pieces
-    i32.const 0
-    call $__arr_at
-    local.tee $__opt0
-    (if (result i32)
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    i32.const 272
-      )
-    )
-    local.set $p
-    local.get $pieces
-    i32.const 1
-    local.get $pieces
-    i32.load ;; .length
-    call $__std_array_slice
-    local.set $rest
-    local.get $p
-    i32.const 552
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $acc
-    i32.load ;; .length
-    i32.const 0
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $acc
-      )
-      (else
-    local.get $acc
-    i32.const 0
-    local.get $acc
-    i32.load ;; .length
-    i32.const 1
-    i32.const 616
-    call $__i32_sub_chk
-    call $__std_array_slice
-      )
-    )
-      )
-      (else
-    local.get $acc
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 1
-    i32.store
-    local.get $__mem0
-    local.get $p
-    i32.store offset=4
-    local.get $__mem0
-    call $__std_array_concat
-      )
-    )
-    local.set $nextAcc
-    local.get $nextAcc
-    local.get $rest
-    local.set $pieces
-    local.set $acc
-    br $__tail ;; tail call
-    )
-  )
-  (func $resolveStep (param $state i32) (param $seg i32) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $pieces i32)
-    (local $nextIsAbs i32)
-    (local $baseParts i32)
-    local.get $seg
-    call $split
-    local.set $pieces
-    local.get $seg
-    call $isAbsolute
-    local.get $state
-    i32.load ;; .isAbs
-    i32.or
-    local.set $nextIsAbs
-    local.get $seg
-    call $isAbsolute
-    (if (result i32)
-      (then
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
-      )
-      (else
-    local.get $state
-    i32.load offset=4 ;; .parts
-      )
-    )
-    local.set $baseParts
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 676
-    i32.store
-    local.get $__mem1
-    local.get $nextIsAbs
-    i32.store offset=4
-    local.get $__mem1
-    local.get $baseParts
-    local.get $pieces
-    call $applyPieces
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $resolveAll (param $segments i32) (param $i i32) (param $state i32) (result i32)
-    (local $seg i32)
-    (local $__bp_nullish i32)
-    (local $next i32)
-    (local $__opt0 i32)
-    (loop $__tail (result i32)
-    local.get $i
-    local.get $segments
-    i32.load ;; .length
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $state
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $segments
-    local.get $i
-    call $__arr_at
-    local.tee $__opt0
-    (if (result i32)
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    i32.const 272
-      )
-    )
-    local.set $seg
-    local.get $state
-    local.get $seg
-    call $resolveStep
-    local.set $next
-    local.get $segments
-    local.get $i
-    i32.const 1
-    i32.const 704
-    call $__i32_add_chk
-    local.get $next
-    local.set $state
-    local.set $i
-    local.set $segments
-    br $__tail ;; tail call
-    )
-  )
-  (func $resolve (param $segments i32) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $finalState i32)
-    (local $joined i32)
-    local.get $segments
-    i32.const 0
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 676
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 0
-    i32.store
-    local.get $__mem1
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    call $resolveAll
-    local.set $finalState
-    local.get $finalState
-    i32.load offset=4 ;; .parts
-    global.get $separator
-    call $__std_array_joinStrings
-    local.set $joined
-    local.get $finalState
-    i32.load ;; .isAbs
-    (if (result i32)
-      (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 2
-    i32.store
-    local.get $__mem2
-    global.get $separator
-    i32.store offset=4
-    local.get $__mem2
-    local.get $joined
-    i32.store offset=8
-    local.get $__mem2
-    i32.const 272
-    call $__std_array_joinStrings
-      )
-      (else
-    local.get $joined
-    i32.const 272
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 380
-      )
-      (else
-    local.get $joined
-      )
-    )
-      )
-    )
-    return
-  )
-  (func $withoutExtension (param $p i32) (result i32)
-    (local $ext i32)
-    (local $n i32)
-    (local $stem i32)
-    local.get $p
-    call $extname
-    local.set $ext
-    local.get $p
-    call $__std_text_length
-    local.set $n
-    local.get $ext
-    i32.const 272
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $p
-      )
-      (else
-    local.get $p
-    i32.const 0
-    local.get $n
-    local.get $ext
-    call $__std_text_length
-    i32.const 760
-    call $__i32_sub_chk
-    call $__std_text_slice
-      )
-    )
-    local.set $stem
-    local.get $stem
-    return
-  )
-  (func $isInside (param $parent i32) (param $child i32) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $up i32)
-    (local $down i32)
-    (local $rel i32)
-    (local $escapes i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 1
-    i32.store
-    local.get $__mem0
-    local.get $parent
-    i32.store offset=4
-    local.get $__mem0
-    call $resolve
-    local.set $up
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 2
-    i32.store
-    local.get $__mem1
-    local.get $parent
-    i32.store offset=4
-    local.get $__mem1
-    local.get $child
-    i32.store offset=8
-    local.get $__mem1
-    call $resolve
-    local.set $down
-    local.get $up
-    local.get $down
-    call $relative
-    local.set $rel
-    local.get $rel
-    i32.const 552
-    call $__str_eq
-    local.get $rel
-    i32.const 816
-    call $__std_text_startsWith
-    i32.or
-    local.set $escapes
-    local.get $escapes
-    i32.const 0
-    i32.eq
-    return
-  )
-  ;; declare fn panic — no wasm implementation (host-backed)
-  ;; attempt — .Wasm(body: attemptOnWasm)
-  ;; attemptTask — .Wasm(body: attemptTaskOnWasm)
-  (func $attemptTask (param $f i32) (result i32)
-    local.get $f
-    call $attemptTaskOnWasm
-  )
-  ;; @Task — a state machine (decision 392)
-  (func $attemptTaskOnWasm (param $f i32) (result i32)
-    (local $__fr i32)
-    i32.const 72 ;; the frame: the resume index, then every local
-    call $__alloc
-    local.set $__fr
-    local.get $__fr
-    local.get $f
-    i32.store offset=8
-    i32.const 0 ;; attemptTaskOnWasm__step
-    local.get $__fr
-    call $__task_start ;; runs to its first await
   )
   ;; std/io/fs — the file system, cross-backend (decision 540).
   ;; 
@@ -5184,100 +4880,118 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
   ;; The error of every `io.fs` function (decision 540). `path` is the path the
   ;; caller wrote (for `copy`, the source; for `walk`, the root).
-  (func $FsError_message (param $self i32) (result i32)
-    (local $path i32)
+  (func $FsError_message (param $self anyref) (result (ref null $str))
+    (local $path (ref null $str))
     (local $offset i64)
-    (local $message i32)
-    (local $__case_0 i32)
+    (local $message (ref null $str))
+    (local $__case_0 anyref)
     local.get $self
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; NotFound
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_NotFound)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_NotFound)
+    struct.get $var_FsError_NotFound $f0
     local.set $path
-    i32.const 868
+    global.get $__s6
     local.get $path
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 1 ;; PermissionDenied
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_PermissionDenied)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_PermissionDenied)
+    struct.get $var_FsError_PermissionDenied $f0
     local.set $path
-    i32.const 884
+    global.get $__s7
     local.get $path
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 2 ;; IsDirectory
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_IsDirectory)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_IsDirectory)
+    struct.get $var_FsError_IsDirectory $f0
     local.set $path
-    i32.const 908
+    global.get $__s8
     local.get $path
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 3 ;; NotDirectory
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_NotDirectory)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_NotDirectory)
+    struct.get $var_FsError_NotDirectory $f0
     local.set $path
-    i32.const 928
+    global.get $__s9
     local.get $path
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 4 ;; AlreadyExists
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_AlreadyExists)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_AlreadyExists)
+    struct.get $var_FsError_AlreadyExists $f0
     local.set $path
-    i32.const 952
+    global.get $__s10
     local.get $path
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 5 ;; InvalidUtf8
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_InvalidUtf8)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_InvalidUtf8)
+    struct.get $var_FsError_InvalidUtf8 $f0
     local.set $path
     local.get $__case_0
-    i32.load offset=8
-    i64.extend_i32_s
+    ref.cast (ref null $var_FsError_InvalidUtf8)
+    struct.get $var_FsError_InvalidUtf8 $f1
     local.set $offset
-    i32.const 972
+    global.get $__s11
     local.get $path
     call $__str_concat
-    i32.const 988
+    global.get $__s12
     call $__str_concat
     local.get $offset
     call $__std_number_i64ToString
@@ -5285,25 +4999,29 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 6 ;; Other
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_Other)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_Other)
+    struct.get $var_FsError_Other $f0
     local.set $path
     local.get $__case_0
-    i32.load offset=8
+    ref.cast (ref null $var_FsError_Other)
+    struct.get $var_FsError_Other $f1
     local.set $message
     local.get $path
-    i32.const 1004
+    global.get $__s13
     call $__str_concat
     local.get $message
     call $__str_concat
       )
       (else
-    i32.const 0
+    ref.null $str
       )
     )
       )
@@ -5477,235 +5195,255 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; declare fn linkTo — no wasm implementation (host-backed)
   ;; ── the typed error ──────────────────────────────────────────────────────────
   ;; The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
-  (func $fsError (param $path i32) (param $e i32) (result i32)
+  (func $fsError (param $path (ref null $str)) (param $e (ref null $rec_HostError)) (result anyref)
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
     (local $__mem3 i32)
     (local $__mem4 i32)
     (local $__mem5 i32)
-    (local $u i32)
+    (local $u (ref null $str))
+    (local $__gc6 (ref null $str))
+    (local $__gc7 i32)
+    (local $__gc8 (ref null $str))
+    (local $__gc9 (ref null $str))
+    (local $__gc10 i32)
+    (local $__gc11 (ref null $str))
+    (local $__gc12 (ref null $str))
+    (local $__gc13 i32)
+    (local $__gc14 (ref null $str))
+    (local $__gc15 (ref null $str))
+    (local $__gc16 i32)
+    (local $__gc17 (ref null $str))
+    (local $__gc18 (ref null $str))
+    (local $__gc19 i32)
+    (local $__gc20 (ref null $str))
+    (local $__gc21 (ref null $str))
+    (local $__gc22 i32)
+    (local $__gc23 (ref null $str))
+    (local $__gc24 (ref null $str))
+    (local $__gc25 i32)
+    (local $__gc26 (ref null $str))
+    (local $__gc27 (ref null $str))
+    (local $__gc28 i32)
     local.get $e
-    i32.load ;; .message
+    struct.get $rec_HostError $f0
+    local.set $__gc6
+    global.get $__heap_ptr
+    local.set $__gc7
+    local.get $__gc6
+    call $__gc_to_lin_str
     call $__std_text_toUpper
+    call $__lin_to_gc_str
+    local.get $__gc7
+    global.set $__heap_ptr
     local.set $u
     local.get $u
-    i32.const 1012
+    global.get $__s14
+    local.set $__gc8
+    local.set $__gc9
+    global.get $__heap_ptr
+    local.set $__gc10
+    local.get $__gc9
+    call $__gc_to_lin_str
+    local.get $__gc8
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    (if (result i32)
+    local.get $__gc10
+    global.set $__heap_ptr
+    (if (result anyref)
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 1028
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
     local.get $path
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
+    struct.new $var_FsError_NotFound
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
     local.get $u
-    i32.const 1056
+    global.get $__s15
+    local.set $__gc11
+    local.set $__gc12
+    global.get $__heap_ptr
+    local.set $__gc13
+    local.get $__gc12
+    call $__gc_to_lin_str
+    local.get $__gc11
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    local.get $u
-    i32.const 1068
-    call $__std_text_startsWith
-    i32.or
+    local.get $__gc13
+    global.set $__heap_ptr
     (if (result i32)
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 1084
-    i32.store
-    local.get $__mem1
     i32.const 1
-    i32.store offset=4
-    local.get $__mem1
+      )
+      (else
+    local.get $u
+    global.get $__s16
+    local.set $__gc14
+    local.set $__gc15
+    global.get $__heap_ptr
+    local.set $__gc16
+    local.get $__gc15
+    call $__gc_to_lin_str
+    local.get $__gc14
+    call $__gc_to_lin_str
+    call $__std_text_startsWith
+    local.get $__gc16
+    global.set $__heap_ptr
+      )
+    )
+    (if (result anyref)
+      (then
     local.get $path
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 4
-    i32.add
+    struct.new $var_FsError_PermissionDenied
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
     local.get $u
-    i32.const 1120
+    global.get $__s17
+    local.set $__gc17
+    local.set $__gc18
+    global.get $__heap_ptr
+    local.set $__gc19
+    local.get $__gc18
+    call $__gc_to_lin_str
+    local.get $__gc17
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    local.get $u
-    i32.const 1132
-    call $__std_text_startsWith
-    i32.or
+    local.get $__gc19
+    global.set $__heap_ptr
     (if (result i32)
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 1160
-    i32.store
-    local.get $__mem2
-    i32.const 2
-    i32.store offset=4
-    local.get $__mem2
+    i32.const 1
+      )
+      (else
+    local.get $u
+    global.get $__s18
+    local.set $__gc20
+    local.set $__gc21
+    global.get $__heap_ptr
+    local.set $__gc22
+    local.get $__gc21
+    call $__gc_to_lin_str
+    local.get $__gc20
+    call $__gc_to_lin_str
+    call $__std_text_startsWith
+    local.get $__gc22
+    global.set $__heap_ptr
+      )
+    )
+    (if (result anyref)
+      (then
     local.get $path
-    i32.store offset=8
-    local.get $__mem2
-    i32.const 4
-    i32.add
+    struct.new $var_FsError_IsDirectory
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
     local.get $u
-    i32.const 1188
+    global.get $__s19
+    local.set $__gc23
+    local.set $__gc24
+    global.get $__heap_ptr
+    local.set $__gc25
+    local.get $__gc24
+    call $__gc_to_lin_str
+    local.get $__gc23
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    (if (result i32)
+    local.get $__gc25
+    global.set $__heap_ptr
+    (if (result anyref)
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem3
-    local.get $__mem3
-    i32.const 1204
-    i32.store
-    local.get $__mem3
-    i32.const 3
-    i32.store offset=4
-    local.get $__mem3
     local.get $path
-    i32.store offset=8
-    local.get $__mem3
-    i32.const 4
-    i32.add
+    struct.new $var_FsError_NotDirectory
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
     local.get $u
-    i32.const 1236
+    global.get $__s20
+    local.set $__gc26
+    local.set $__gc27
+    global.get $__heap_ptr
+    local.set $__gc28
+    local.get $__gc27
+    call $__gc_to_lin_str
+    local.get $__gc26
+    call $__gc_to_lin_str
     call $__std_text_startsWith
-    (if (result i32)
+    local.get $__gc28
+    global.set $__heap_ptr
+    (if (result anyref)
       (then
-    i32.const 12
-    call $__alloc
-    local.set $__mem4
-    local.get $__mem4
-    i32.const 1252
-    i32.store
-    local.get $__mem4
-    i32.const 4
-    i32.store offset=4
-    local.get $__mem4
     local.get $path
-    i32.store offset=8
-    local.get $__mem4
-    i32.const 4
-    i32.add
+    struct.new $var_FsError_AlreadyExists
     return
       )
       (else
-        i32.const 0
+        ref.null any
       )
     )
     drop
-    i32.const 16
-    call $__alloc
-    local.set $__mem5
-    local.get $__mem5
-    i32.const 1288
-    i32.store
-    local.get $__mem5
-    i32.const 6
-    i32.store offset=4
-    local.get $__mem5
     local.get $path
-    i32.store offset=8
-    local.get $__mem5
     local.get $e
-    i32.load ;; .message
-    i32.store offset=12
-    local.get $__mem5
-    i32.const 4
-    i32.add
+    struct.get $rec_HostError $f0
+    struct.new $var_FsError_Other
     return
   )
   ;; A host cell's answer, its failure read as an `FsError` of `path`.
-  (func $lift (param $path i32) (param $r i32) (result i32)
+  (func $lift (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
     (local $v i32)
     (local $e i32)
-    (local $__case_0 i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
+    (local $__case_0 (ref null $result))
+    (local $v__3 anyref)
+    (local $e__4 (ref null $rec_HostError))
     local.get $r
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    struct.get $result $tag
     i32.eqz
-    (if (result i32)
+    (if (result (ref null $result))
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $v
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
+    struct.get $result $payload
+    local.set $v__3
     i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res0
-    local.get $v
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    local.get $v__3
+    struct.new $result
     return
       )
       (else
     local.get $__case_0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
+    struct.get $result $tag
+    (if (result (ref null $result))
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $e
-    i32.const 8
-    call $__alloc
-    local.set $_res1
-    local.get $_res1
+    struct.get $result $payload
+    ref.cast (ref null $rec_HostError)
+    local.set $e__4
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res1
     local.get $path
-    local.get $e
+    local.get $e__4
     call $fsError
-    i32.store offset=4 ;; payload
-    local.get $_res1
+    struct.new $result
     return
       )
       (else
-    i32.const 0
+    ref.null $result
       )
     )
       )
@@ -5729,9 +5467,9 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; An open file (decision 540 (3)). `location` is the path it was opened with and
   ;; `handle` the host's — opaque, never read by a program. Closed by the writer:
   ;; `val f = try fs.open(p); defer f.close();`.
-  (func $File_path (param $self i32) (result i32)
+  (func $File_path (param $self (ref null $rec_File)) (result (ref null $str))
     local.get $self
-    i32.load ;; .location
+    struct.get $rec_File $f0
     return
   )
   ;; Open the file at `path` for reading. A directory is `IsDirectory` on every target.
@@ -5755,100 +5493,118 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
   ;; Internal, test scaffolding: an `FsError` as one line — the variant, the path
   ;; and the message where it holds one (a dangling link is `Other`, decision 178).
-  (func $describe (param $e i32) (result i32)
-    (local $p i32)
+  (func $describe (param $e anyref) (result (ref null $str))
+    (local $p (ref null $str))
     (local $offset i64)
-    (local $message i32)
-    (local $__case_0 i32)
+    (local $message (ref null $str))
+    (local $__case_0 anyref)
     local.get $e
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; NotFound
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_NotFound)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_NotFound)
+    struct.get $var_FsError_NotFound $f0
     local.set $p
-    i32.const 1320
+    global.get $__s21
     local.get $p
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 1 ;; PermissionDenied
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_PermissionDenied)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_PermissionDenied)
+    struct.get $var_FsError_PermissionDenied $f0
     local.set $p
-    i32.const 1336
+    global.get $__s22
     local.get $p
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 2 ;; IsDirectory
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_IsDirectory)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_IsDirectory)
+    struct.get $var_FsError_IsDirectory $f0
     local.set $p
-    i32.const 1360
+    global.get $__s23
     local.get $p
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 3 ;; NotDirectory
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_NotDirectory)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_NotDirectory)
+    struct.get $var_FsError_NotDirectory $f0
     local.set $p
-    i32.const 1376
+    global.get $__s24
     local.get $p
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 4 ;; AlreadyExists
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_AlreadyExists)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_AlreadyExists)
+    struct.get $var_FsError_AlreadyExists $f0
     local.set $p
-    i32.const 1396
+    global.get $__s25
     local.get $p
     call $__str_concat
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 5 ;; InvalidUtf8
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_InvalidUtf8)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_InvalidUtf8)
+    struct.get $var_FsError_InvalidUtf8 $f0
     local.set $p
     local.get $__case_0
-    i32.load offset=8
-    i64.extend_i32_s
+    ref.cast (ref null $var_FsError_InvalidUtf8)
+    struct.get $var_FsError_InvalidUtf8 $f1
     local.set $offset
-    i32.const 1416
+    global.get $__s26
     local.get $p
     call $__str_concat
-    i32.const 1432
+    global.get $__s27
     call $__str_concat
     local.get $offset
     call $__std_number_i64ToString
@@ -5856,21 +5612,25 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 6 ;; Other
-    i32.eq
-    (if (result i32)
+    ref.test (ref null $var_FsError_Other)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
+    ref.cast (ref null $var_FsError_Other)
+    struct.get $var_FsError_Other $f0
     local.set $p
     local.get $__case_0
-    i32.load offset=8
+    ref.cast (ref null $var_FsError_Other)
+    struct.get $var_FsError_Other $f1
     local.set $message
     local.get $message
       )
       (else
-    i32.const 0
+    ref.null $str
       )
     )
       )
@@ -5894,31 +5654,32 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; `makeGlobTree`, joined by `,`.
   ;; ── FsError, readText and the handle ─────────────────────────────────────────
   ;; Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
-  (func $variantOf (param $r i32) (result i32)
+  (func $variantOf (param $r (ref null $result)) (result (ref null $str))
     (local $e i32)
-    (local $__case_0 i32)
+    (local $__case_0 (ref null $result))
+    (local $e__5 anyref)
     local.get $r
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    struct.get $result $tag
     i32.eqz
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 1440
+    global.get $__s28
       )
       (else
     local.get $__case_0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
+    struct.get $result $tag
+    (if (result (ref null $str))
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $e
-    local.get $e
+    struct.get $result $payload
+    local.set $e__5
+    local.get $e__5
     call $describe
       )
       (else
-    i32.const 0
+    ref.null $str
       )
     )
       )
@@ -5930,6 +5691,271 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; denies this user anything (root is denied nothing), and give them back.
   ;; declare fn denyAll — no wasm implementation (host-backed)
   ;; declare fn allowAll — no wasm implementation (host-backed)
+  (func $__init_globals
+    global.get $__s29
+    global.set $separator
+    global.get $__s30
+    global.set $delimiter
+  )
+  (func $__arr_slice_any (param $xs (ref null $arr_any)) (param $a i32) (param $b i32) (result (ref null $arr_any))
+    (local $len i32)
+    (local $from i32)
+    (local $to i32)
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $len
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $a
+    i32.add
+    local.set $from
+    local.get $from
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $from
+      )
+    )
+      )
+      (else
+    local.get $a
+    local.set $from
+    local.get $from
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $from
+      )
+    )
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $len
+    local.get $b
+    i32.add
+    local.set $to
+    local.get $to
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $to
+      )
+    )
+      )
+      (else
+    local.get $b
+    local.set $to
+    local.get $to
+    local.get $len
+    i32.gt_s
+    (if
+      (then
+    local.get $len
+    local.set $to
+      )
+    )
+      )
+    )
+    local.get $to
+    local.get $from
+    i32.sub
+    local.set $n
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    i32.const 0
+    local.set $n
+      )
+    )
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    local.get $from
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_at_opt_any (param $xs (ref null $arr_any)) (param $i i32) (result anyref)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+    local.get $i
+    local.get $xs
+    array.len
+    i32.add
+    local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    array.len
+    i32.ge_s
+    i32.or
+    (if (result anyref)
+      (then
+    ref.null any
+      )
+      (else
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+      )
+    )
+  )
+  (func $__arr_join_any (param $xs (ref null $arr_any)) (param $sep (ref null $str)) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $acc (ref null $str))
+    local.get $xs
+    array.len
+    local.set $n
+    i32.const 0
+    array.new_default $str
+    local.set $acc
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    local.get $acc
+    local.get $sep
+    call $__str_concat
+    local.set $acc
+      )
+    )
+    local.get $acc
+    local.get $xs
+    local.get $i
+    array.get $arr_any
+    ref.cast (ref null $str)
+    call $__str_concat
+    local.set $acc
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $acc
+  )
+  (func $__arr_prepend_any (param $xs (ref null $arr_any)) (param $x anyref) (result (ref null $arr_any))
+    (local $n i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $x
+    array.set $arr_any
+    local.get $r
+    i32.const 1
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__arr_concat_any (param $xs (ref null $arr_any)) (param $ys (ref null $arr_any)) (result (ref null $arr_any))
+    (local $la i32)
+    (local $lb i32)
+    (local $r (ref null $arr_any))
+    local.get $xs
+    array.len
+    local.set $la
+    local.get $ys
+    array.len
+    local.set $lb
+    local.get $la
+    local.get $lb
+    i32.add
+    array.new_default $arr_any
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $la
+    array.copy $arr_any $arr_any
+    local.get $r
+    local.get $la
+    local.get $ys
+    i32.const 0
+    local.get $lb
+    array.copy $arr_any $arr_any
+    local.get $r
+  )
+  (func $__lin_to_gc_strs (param $p i32) (result (ref null $arr_any))
+    (local $n i32)
+    (local $i i32)
+    (local $r (ref null $arr_any))
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $arr_any
+    local.set $r
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $r
+    local.get $i
+    local.get $p
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    call $__lin_to_gc_str
+    array.set $arr_any
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    local.get $r
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
@@ -6110,120 +6136,89 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
     )
   )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
+  (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
+    (local $r (ref null $str)) (local $alen i32) (local $blen i32)
+    local.get $a
+    array.len
+    local.set $alen
+    local.get $b
+    array.len
+    local.set $blen
+    local.get $alen
+    local.get $blen
+    i32.add
+    array.new_default $str
+    local.set $r
+    local.get $r
     i32.const 0
-    i32.lt_s
+    local.get $a
+    i32.const 0
+    local.get $alen
+    array.copy $str $str
+    local.get $r
+    local.get $alen
+    local.get $b
+    i32.const 0
+    local.get $blen
+    array.copy $str $str
+    local.get $r
+  )
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
     (if
       (then
-        local.get $i
-        local.get $xs
-        i32.load
-        i32.add
-        local.set $i
+        local.get $an
+        local.get $bn
+        i32.and
+        return
       )
     )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-      )
-    )
-  )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
-    i32.load
-    local.set $alen
+    array.len
+    local.set $n
+    local.get $n
     local.get $b
-    i32.load
-    local.set $blen
-    ;; allocate 4 (length prefix) + alen + blen
-    i32.const 4
-    local.get $alen
-    i32.add
-    local.get $blen
-    i32.add
-    call $__alloc
-    local.set $base
-    ;; store combined length prefix
-    local.get $base
-    local.get $alen
-    local.get $blen
-    i32.add
-    i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $alen
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $blen
-    memory.copy
-    local.get $base
-  )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
-    local.get $b
-    i32.load
+    array.len
     i32.ne
     (if
-      (then i32.const 0 return)
+      (then
+        i32.const 0
+        return
+      )
     )
-    (block $done
-      (loop $cmp
+    (block $brk
+      (loop $cont
         local.get $i
-        local.get $alen
+        local.get $n
         i32.ge_u
-        br_if $done
+        br_if $brk
         local.get $a
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         local.get $b
         local.get $i
-        i32.add
-        i32.load8_u offset=4
+        array.get_u $str
         i32.ne
         (if
-          (then i32.const 0 return)
+          (then
+            i32.const 0
+            return
+          )
         )
         local.get $i
         i32.const 1
         i32.add
         local.set $i
-        br $cmp
+        br $cont
       )
     )
     i32.const 1
@@ -6274,20 +6269,6 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     local.get $e
     global.set $__heap_ptr
-    local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
     local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
@@ -6350,7 +6331,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -6358,10 +6340,35 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -6369,8 +6376,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -6393,7 +6402,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -6416,7 +6425,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
     i64.extend_i32_s
@@ -6439,7 +6448,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $r
     i32.wrap_i64
   )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -6463,7 +6472,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     local.get $r
   )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     local.get $b
@@ -6487,7 +6496,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     local.get $r
   )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site (ref null $str)) (result i64)
     (local $r i64)
     local.get $a
     i64.const -1
@@ -6528,324 +6537,81 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     local.get $r
   )
-  (global $__task_head (mut i32) (i32.const 0))
-  (global $__task_tail (mut i32) (i32.const 0))
-  (global $__task_suspended (mut i32) (i32.const 0))
-  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    i32.const 40
-    call $__alloc
-    local.set $t
-    local.get $t
-    local.get $kind
-    i32.store offset=20
-    local.get $t
-    local.get $frame
-    i32.store offset=16
-    local.get $t
-  )
-  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    local.get $kind
-    local.get $frame
-    call $__task_new
-    local.tee $t
-    call $__task_resume
-    local.get $t
-  )
-  (func $__task_pending (param $t i32) (result i32)
-    local.get $t
-    i32.load
-    i32.eqz
-  )
-  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
-    (local $n i32)
-    i32.const 16
-    call $__alloc
+  (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
+    (local $n i32) (local $p i32) (local $i i32)
+    local.get $s
+    array.len
     local.set $n
     local.get $n
-    local.get $t
-    i32.load offset=4
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
     i32.store
-    local.get $n
-    local.get $kind
-    i32.store offset=4
-    local.get $n
-    local.get $target
-    i32.store offset=8
-    local.get $n
-    local.get $index
-    i32.store offset=12
-    local.get $t
-    local.get $n
-    i32.store offset=4
-  )
-  (func $__task_wait (param $t i32) (param $w i32)
-    local.get $t
-    i32.const 0
-    local.get $w
-    i32.const 0
-    call $__task_listen
-  )
-  (func $__task_settle_i32 (param $t i32) (param $v i32)
-    local.get $t
-    local.get $v
-    i32.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_i64 (param $t i32) (param $v i64)
-    local.get $t
-    local.get $v
-    i64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_f64 (param $t i32) (param $v f64)
-    local.get $t
-    local.get $v
-    f64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_wake (param $t i32)
-    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
-    local.get $t
-    i32.load
-    (if
-      (then
-        return
-      )
-    )
-    local.get $t
-    i32.const 1
-    i32.store
-    local.get $t
-    i32.load offset=4
-    local.set $n
-    local.get $t
-    i32.const 0
-    i32.store offset=4
     (block $brk
       (loop $cont
+        local.get $i
         local.get $n
-        i32.eqz
+        i32.ge_u
         br_if $brk
-        local.get $n
-        i32.load
-        local.set $m
-        local.get $n
-        local.get $r
-        i32.store
-        local.get $n
-        local.set $r
-        local.get $m
-        local.set $n
-        br $cont
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $r
-        i32.eqz
-        br_if $brk
-        local.get $r
-        i32.load offset=4
-        local.set $k
-        local.get $r
-        i32.load offset=8
-        local.set $w
-        local.get $k
-        i32.eqz
-        (if
-          (then
-            local.get $w
-            call $__task_enqueue
-          )
-        )
-        local.get $k
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8 offset=4
+        local.get $i
         i32.const 1
-        i32.eq
-        (if
-          (then
-            local.get $w
-            i32.load
-            i32.eqz
-            (if
-              (then
-                local.get $w
-                local.get $t
-                i64.load offset=8
-                i64.store offset=8
-                local.get $w
-                call $__task_wake
-              )
-            )
-          )
-        )
-        local.get $k
-        i32.const 2
-        i32.eq
-        (if
-          (then
-            local.get $w
-            i32.load offset=28
-            i32.const 4
-            i32.add
-            local.get $r
-            i32.load offset=12
-            i32.const 4
-            i32.mul
-            i32.add
-            local.get $t
-            i32.load offset=8
-            i32.store
-            local.get $w
-            local.get $w
-            i32.load offset=32
-            i32.const 1
-            i32.sub
-            i32.store offset=32
-            local.get $w
-            i32.load offset=32
-            i32.eqz
-            (if
-              (then
-                local.get $w
-                local.get $w
-                i32.load offset=28
-                i32.store offset=8
-                local.get $w
-                call $__task_wake
-              )
-            )
-          )
-        )
-        local.get $r
-        i32.load
-        local.set $r
+        i32.add
+        local.set $i
         br $cont
       )
     )
+    local.get $p
   )
-  (func $__task_enqueue (param $t i32)
-    local.get $t
-    i32.const 0
-    i32.store offset=24
-    global.get $__task_tail
-    (if
-      (then
-        global.get $__task_tail
-        local.get $t
-        i32.store offset=24
-      )
-      (else
-        local.get $t
-        global.set $__task_head
-      )
-    )
-    local.get $t
-    global.set $__task_tail
-  )
-  (func $__task_drain
-    (local $t i32)
+  (func $__lin_to_gc_str (param $p i32) (result (ref null $str))
+    (local $r (ref null $str)) (local $n i32) (local $i i32)
+    local.get $p
+    i32.load
+    local.set $n
+    local.get $n
+    array.new_default $str
+    local.set $r
     (block $brk
       (loop $cont
-        global.get $__task_head
-        local.tee $t
-        i32.eqz
+        local.get $i
+        local.get $n
+        i32.ge_u
         br_if $brk
-        local.get $t
-        i32.load offset=24
-        global.set $__task_head
-        global.get $__task_head
-        i32.eqz
-        (if
-          (then
-            i32.const 0
-            global.set $__task_tail
-          )
-        )
-        local.get $t
-        call $__task_resume
-        br $cont
-      )
-    )
-  )
-  (func $__task_block_on (param $t i32) (result i32)
-    (local $r i32)
-    (block $brk
-      (loop $cont
-        local.get $t
-        i32.load
-        br_if $brk
-        global.get $__task_head
-        local.tee $r
-        i32.eqz
-        (if
-          (then
-            unreachable
-          )
-        )
         local.get $r
-        i32.load offset=24
-        global.set $__task_head
-        global.get $__task_head
-        i32.eqz
-        (if
-          (then
-            i32.const 0
-            global.set $__task_tail
-          )
-        )
-        local.get $r
-        call $__task_resume
+        local.get $i
+        local.get $p
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        array.set $str
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
         br $cont
       )
     )
-    local.get $t
+    local.get $r
   )
-  (func $__task_finish
-    (block $brk
-      (loop $cont
-        call $__task_drain
-        call $__task_host_poll
-        i32.eqz
-        br_if $brk
-        br $cont
-      )
-    )
-  )
-  (func $__task_resume (param $t i32)
-    (local $k i32)
-    local.get $t
-    i32.load offset=20 ;; kind
-    local.set $k
-    local.get $k
-    i32.const 0
-    i32.eq
-    (if
-      (then
-    local.get $t
-    drop
-    return
-      )
-    )
-    unreachable
-  )
-  (func $__task_host_poll (result i32)
-    i32.const 0
-  )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 2608))
+  (global $__std_sp (mut i32) (i32.const 1408))
   (func $__std_sp_check (param $sp i32) (result i32)
     local.get $sp
-    i32.const 1448
+    i32.const 256
     i32.lt_s
     (if
       (then unreachable)
@@ -6855,8 +6621,6 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
   ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
   ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
-  ;; __std_f58 — from std_wasm.wasm (sha256 3fe867e565e7)
-  ;; __std_f59 — from std_wasm.wasm (sha256 432c7dfb021a)
   ;; __std_f88 — from std_wasm.wasm (sha256 59c161f4ae70)
   ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
   ;; __std_f120 — from std_wasm.wasm (sha256 bd4cb38df48b)
@@ -6866,27 +6630,288 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; __std_f132 — from std_wasm.wasm (sha256 38e98c1edeed)
   ;; __std_f133 — from std_wasm.wasm (sha256 16c99e1a095a)
   ;; __std_f134 — from std_wasm.wasm (sha256 30c514d3cfe8)
-  ;; __std_f264 — from std_wasm.wasm (sha256 fb869a9b574e)
-  ;; __std_f266 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f267 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; __std_f433 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f445 — from std_wasm.wasm (sha256 d13a98c08300)
-  ;; __std_f446 — from std_wasm.wasm (sha256 659eed3cf104)
-  ;; __std_f447 — from std_wasm.wasm (sha256 0314fe5f477f)
-  ;; __std_f448 — from std_wasm.wasm (sha256 7b6ca0e01ee7)
-  ;; std:array.joinStrings — from std_wasm.wasm (sha256 065d1c70efea)
-  ;; __std_f466 — from std_wasm.wasm (sha256 fbcbd5636368)
-  ;; std:array.concat — from std_wasm.wasm (sha256 3a3e9bf0ab95)
-  ;; std:array.prepend — from std_wasm.wasm (sha256 0d4bcf217c15)
-  ;; std:array.slice — from std_wasm.wasm (sha256 1e19bfacbc48)
-  ;; std:number.i64ToString — from std_wasm.wasm (sha256 01574c331d7e)
-  ;; std:text.slice — from std_wasm.wasm (sha256 2274e2b5ad65)
-  ;; __std_f498 — from std_wasm.wasm (sha256 60a80b3c5e19)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 a2fe58c08ea4)
+  ;; __std_f434 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f446 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f500 — from std_wasm.wasm (sha256 6eed520bf8fe)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 72dc7de6cc0d)
   ;; std:text.startsWith — from std_wasm.wasm (sha256 322b10039271)
-  ;; __std_f521 — from std_wasm.wasm (sha256 09eb0c4eb5a6)
-  ;; std:text.split — from std_wasm.wasm (sha256 2125a667c07e)
-  ;; std:text.length — from std_wasm.wasm (sha256 c0e18ad79cad)
+  ;; __std_f523 — from std_wasm.wasm (sha256 2904f8c0427d)
+  ;; std:text.split — from std_wasm.wasm (sha256 d23f0fc25558)
+  ;; std-wasm's .wat leaves (front 164 s3)
+  (func $__std_number_i64ToString (param $v i64) (result (ref null $str))
+    local.get $v
+    i64.const 0
+    i64.lt_s
+    (if (result (ref null $str))
+      (then
+        i64.const 0
+        local.get $v
+        i64.sub
+        i32.const 1
+        call $__std_number_decimal
+      )
+      (else
+        local.get $v
+        i32.const 0
+        call $__std_number_decimal
+      )
+    )
+  )
+  (func $__std_number_decimal (param $mag i64) (param $neg i32) (result (ref null $str))
+    (local $n i32)
+    (local $i i32)
+    (local $t i64)
+    (local $out (ref null $str))
+    local.get $mag
+    local.set $t
+    (block $counted
+      (loop $count
+        local.get $n
+        i32.const 1
+        i32.add
+        local.set $n
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $counted
+        br $count
+      )
+    )
+    local.get $n
+    local.get $neg
+    i32.add
+    local.tee $i
+    array.new_default $str
+    local.set $out
+    local.get $mag
+    local.set $t
+    (block $filled
+      (loop $fill
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        local.get $out
+        local.get $i
+        local.get $t
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        array.set $str
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.tee $t
+        i64.eqz
+        br_if $filled
+        br $fill
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $out
+        i32.const 0
+        i32.const 45
+        array.set $str
+      )
+    )
+    local.get $out
+  )
+  (data $__d0 "")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "integer overflow: + on i32 at src/io/fs.bp:114:52")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "integer overflow: - on i32 at src/io/fs.bp:120:42")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "..")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "integer overflow: - on i32 at src/io/fs.bp:135:39")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 ".")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "not found: ")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "permission denied: ")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 "is a directory: ")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "not a directory: ")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "already exists: ")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "not UTF-8: ")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
+  (data $__d12 " at byte ")
+  (global $__s12 (mut (ref null $str)) (ref.null $str))
+  (data $__d13 ": ")
+  (global $__s13 (mut (ref null $str)) (ref.null $str))
+  (data $__d14 "ENOENT")
+  (global $__s14 (mut (ref null $str)) (ref.null $str))
+  (data $__d15 "EACCES")
+  (global $__s15 (mut (ref null $str)) (ref.null $str))
+  (data $__d16 "EPERM")
+  (global $__s16 (mut (ref null $str)) (ref.null $str))
+  (data $__d17 "EISDIR")
+  (global $__s17 (mut (ref null $str)) (ref.null $str))
+  (data $__d18 "PATH IS A DIRECTORY")
+  (global $__s18 (mut (ref null $str)) (ref.null $str))
+  (data $__d19 "ENOTDIR")
+  (global $__s19 (mut (ref null $str)) (ref.null $str))
+  (data $__d20 "EEXIST")
+  (global $__s20 (mut (ref null $str)) (ref.null $str))
+  (data $__d21 "NotFound ")
+  (global $__s21 (mut (ref null $str)) (ref.null $str))
+  (data $__d22 "PermissionDenied ")
+  (global $__s22 (mut (ref null $str)) (ref.null $str))
+  (data $__d23 "IsDirectory ")
+  (global $__s23 (mut (ref null $str)) (ref.null $str))
+  (data $__d24 "NotDirectory ")
+  (global $__s24 (mut (ref null $str)) (ref.null $str))
+  (data $__d25 "AlreadyExists ")
+  (global $__s25 (mut (ref null $str)) (ref.null $str))
+  (data $__d26 "InvalidUtf8 ")
+  (global $__s26 (mut (ref null $str)) (ref.null $str))
+  (data $__d27 " ")
+  (global $__s27 (mut (ref null $str)) (ref.null $str))
+  (data $__d28 "ok")
+  (global $__s28 (mut (ref null $str)) (ref.null $str))
+  (data $__d29 "/")
+  (global $__s29 (mut (ref null $str)) (ref.null $str))
+  (data $__d30 ":")
+  (global $__s30 (mut (ref null $str)) (ref.null $str))
+  (func $__init_strs
+    i32.const 0
+    i32.const 0
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 49
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 49
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 49
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 11
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d7
+    global.set $__s7
+    i32.const 0
+    i32.const 16
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 17
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 16
+    array.new_data $str $__d10
+    global.set $__s10
+    i32.const 0
+    i32.const 11
+    array.new_data $str $__d11
+    global.set $__s11
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d12
+    global.set $__s12
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d13
+    global.set $__s13
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d14
+    global.set $__s14
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d15
+    global.set $__s15
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d16
+    global.set $__s16
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d17
+    global.set $__s17
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d18
+    global.set $__s18
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d19
+    global.set $__s19
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d20
+    global.set $__s20
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d21
+    global.set $__s21
+    i32.const 0
+    i32.const 17
+    array.new_data $str $__d22
+    global.set $__s22
+    i32.const 0
+    i32.const 12
+    array.new_data $str $__d23
+    global.set $__s23
+    i32.const 0
+    i32.const 13
+    array.new_data $str $__d24
+    global.set $__s24
+    i32.const 0
+    i32.const 14
+    array.new_data $str $__d25
+    global.set $__s25
+    i32.const 0
+    i32.const 12
+    array.new_data $str $__d26
+    global.set $__s26
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d27
+    global.set $__s27
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d28
+    global.set $__s28
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d29
+    global.set $__s29
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d30
+    global.set $__s30
+    call $__init_globals
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

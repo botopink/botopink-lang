@@ -18,25 +18,33 @@ val Shape = type {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $var_Shape_Circle (struct (field $f0 (mut f64))))
+    (type $var_Shape_Square (struct (field $f0 (mut f64))))
+    (type $var_Shape_Triangle (struct (field $f0 (mut f64)) (field $f1 (mut f64))))
+  )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $Shape_area (param $shape i32) (result f64)
+  (func $Shape_area (param $shape anyref) (result f64)
     (local $radius f64)
     (local $side f64)
     (local $base f64)
     (local $height f64)
-    (local $__case_0 i32)
+    (local $__case_0 anyref)
     local.get $shape
     local.set $__case_0
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 0 ;; Circle
-    i32.eq
+    ref.test (ref null $var_Shape_Circle)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result f64)
       (then
     local.get $__case_0
-    i32.load offset=4
-    f64.load
+    ref.cast (ref null $var_Shape_Circle)
+    struct.get $var_Shape_Circle $f0
     local.set $radius
     local.get $radius
     local.get $radius
@@ -46,14 +54,16 @@ val Shape = type {
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 1 ;; Square
-    i32.eq
+    ref.test (ref null $var_Shape_Square)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result f64)
       (then
     local.get $__case_0
-    i32.load offset=4
-    f64.load
+    ref.cast (ref null $var_Shape_Square)
+    struct.get $var_Shape_Square $f0
     local.set $side
     local.get $side
     local.get $side
@@ -61,18 +71,20 @@ val Shape = type {
       )
       (else
     local.get $__case_0
-    i32.load ;; variant tag
-    i32.const 2 ;; Triangle
-    i32.eq
+    ref.test (ref null $var_Shape_Triangle)
+    local.get $__case_0
+    ref.is_null
+    i32.eqz
+    i32.and
     (if (result f64)
       (then
     local.get $__case_0
-    i32.load offset=4
-    f64.load
+    ref.cast (ref null $var_Shape_Triangle)
+    struct.get $var_Shape_Triangle $f0
     local.set $base
     local.get $__case_0
-    i32.load offset=8
-    f64.load
+    ref.cast (ref null $var_Shape_Triangle)
+    struct.get $var_Shape_Triangle $f1
     local.set $height
     local.get $base
     local.get $height
@@ -90,6 +102,7 @@ val Shape = type {
     )
     return
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
