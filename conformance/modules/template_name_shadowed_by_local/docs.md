@@ -1,6 +1,6 @@
 # template_name_shadowed_by_local
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A template function's name follows the scope rule: the nearest binding wins,
 > so a parameter or a local of the name is the value a call there calls

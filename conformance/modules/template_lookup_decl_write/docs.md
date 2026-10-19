@@ -1,6 +1,6 @@
 # template_lookup_decl_write
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > **A declaration looked up** (decision 415). In a template body a name of the
 > literal is text, not a name of the template's module: `q.lookup(name)` — `name`

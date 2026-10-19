@@ -9285,6 +9285,27 @@ fn captureExprArg(
         pDeref.named.args[0]
     else
         try env.freshVar();
+    // Decision 719 — a `syntax` parameter of a type other than `string`
+    // takes the expression written between the call's parentheses: checked
+    // once against the parameter's declared type (716), as an argument is,
+    // and captured as code, never executed at the call (720). Its text is
+    // the expression as written (`compiler.text`), its location the
+    // argument's (`compiler.source`).
+    const expression = if (env.templateFns.get(callee)) |tfn| ast.syntaxExprIndex(tfn.params) != null else false;
+    if (expression) {
+        try unifyArgument(env, inner, typedArg.value.getType(), typedArg.value.getLoc());
+        return template.CapturedExpr{
+            .callee = callee,
+            .paramIndex = param.paramIndex,
+            .paramName = param.paramName,
+            .node = rawArg,
+            .text = try defaultLexeme(env.arena, rawArg.*),
+            .multiline = false,
+            .loc = rawArg.getLoc(),
+            .modulePath = env.modulePath,
+            .scope = env.scopeSnapshot,
+        };
+    }
     try unifyAt(env, inner, typedArg.value.getType(), typedArg.value.getLoc());
 
     // V1 literal rule. `text` stays null for `${…}` templates — the parts
@@ -23350,7 +23371,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         const maybeTfn: ?ast.FnDecl = if (localCallee) null else env.templateFns.get(call.callee);
                         // Decisions 577 (3), 578 (1) — a template is called one
                         // way: its name before a template text, `` f @`…` ``.
-                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and (call.templateText == null or (env.inDecoratorFn and loc.expansion == 0))) {
+                        // Decision 719 — a function with a `syntax` expression
+                        // parameter is called with ordinary parentheses, never
+                        // with a template text.
+                        if (maybeTfn) |tf| if (ast.syntaxExprIndex(tf.params)) |si| if (call.templateText != null) {
+                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the expression `{s}` between parentheses, `{s}(…)`, and is called here with a template text", .{ diagnostics.syntax_call_outside_syntax, call.callee, tf.params[si].name, call.callee });
+                            env.lastError = TypeError.custom(msg, "A `syntax` parameter of a type other than `string` takes the expression written between the call's parentheses; only `syntax q: string` takes a template text `` f @`…` `` (decisions 578 (1), 719).").withLoc(loc);
+                            return error.TypeError;
+                        };
+                        if (maybeTfn) |tf| if (tf.returnType) |rt| if (ast.isExprKeywordReturn(rt) and ast.syntaxExprIndex(tf.params) == null and (call.templateText == null or (env.inDecoratorFn and loc.expansion == 0))) {
                             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a template, called only with a template text, and is called here another way", .{ diagnostics.syntax_call_outside_syntax, call.callee });
                             env.lastError = TypeError.custom(msg, "Write its text after its name: `f @`select …``, `value.f @`…``, or `#[f @`…`]` (decision 577 (3)).").withLoc(loc);
                             return error.TypeError;

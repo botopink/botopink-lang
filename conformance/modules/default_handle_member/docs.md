@@ -1,6 +1,6 @@
 # default_handle_member
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A library's default handle is also its namespace: after `import {shapes} from
 > "shapes"`, where the package's default module declares the template `shapes`,

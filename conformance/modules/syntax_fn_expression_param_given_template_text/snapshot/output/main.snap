@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: syntax-call-outside-syntax: `shown` takes the expression `value` between parentheses, `shown(…)`, and is called here with a template text
+at src/main.bp:14:11

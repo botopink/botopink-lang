@@ -1,0 +1,15 @@
+//// Decision 719 — a `syntax` parameter of a type other than `string` takes
+//// the expression written between the parentheses of an ordinary call: a
+//// template text given to it is refused at the call
+//// (`syntax-call-outside-syntax`), the message naming the form it takes.
+
+import {compiler} from "std";
+import {io.terminal.print} from "std";
+
+pub fn shown(syntax value: unknown) -> anyvalue {
+    return compiler.build("\"" + compiler.text(value) + "\"");
+}
+
+pub fn main() {
+    print(shown @`1 + 2`);
+}

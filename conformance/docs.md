@@ -1243,7 +1243,7 @@ holds a `T` and reads `x` directly, never `.value` — in a decorator, a templat
 function, any function, a method, a `declare fn`; the argument is checked
 against `T` where it is written. `syntax x: T` is the **expression** written,
 checked against `T` where it is written and captured as a tree: opaque in the
-body, handed only to `compiler.*` or into another tree (§ Template functions);
+body, handed only to `compiler.*` or into another tree (§ Functions expanded at their call);
 a `syntax` argument to a `syntax` parameter hands its tree on. A function or a
 type given to a `comptime` parameter is checked at the argument and never run
 or inspected while the program compiles. A method or a field read on a `syntax`
@@ -3378,9 +3378,50 @@ expression, which the hint names as the frame that ran it:
 
 <!-- example: modules/comptime_random_float_unseeded -->
 
-### Template functions
+### Functions expanded at their call
 
-A template is a function whose first parameter (after a `syntax self: R`
+A function whose parameter is `syntax` is expanded where it is called
+(decision 719): the parameter's type says how the argument arrives. A
+`syntax q: string` parameter takes a **template text** `` @`…` `` — the
+function is a template, below —, a `syntax` parameter of any other type takes
+the **expression** written between the parentheses of an ordinary call. Either
+way the body is a build body: the `syntax` value is opaque in it (575 (4)),
+spliced into the answer as written or read through `compiler.*`, and the body
+returns the code that stands at the call — a type `R`, `anyvalue` or `anytype`
+(578 (2)).
+
+**A `syntax` expression.** `fn matches(syntax value: unknown) -> anyvalue`
+is called `matches(render(page))`: the argument is checked once, against the
+parameter's declared type (716), and is never executed at the call (720) — the
+compiler holds the code and evaluates it only where the answer splices it.
+`compiler.text(value)` is the expression as written, `compiler.source(value)`
+the call's `Source(file, line, col)`, so the body can write the caller's
+location into the run-time call it answers while the caller writes nothing but
+the expression. The answer's code is spliced where the call stands and typed
+there (638):
+
+<!-- example: modules/syntax_fn_expanded_at_call -->
+
+<!-- example: modules/syntax_fn_text_of_expression -->
+
+Such a function answers `anyvalue` (the built code, typed at the call) or
+`anytype` (a built type); a run-time return (`-> i32`, none) is refused at the
+declaration (`template-signature`) — a build body returns code, never a
+value. A template text given to a `syntax` expression parameter is
+`syntax-call-outside-syntax` at the call, the message naming the form the
+parameter takes, as `markup("…")` is for a `syntax q: string` one:
+
+<!-- example: modules/syntax_fn_run_time_return -->
+
+<!-- example: modules/syntax_fn_expression_param_given_template_text -->
+
+<!-- example: modules/syntax_fn_string_param_needs_template_text -->
+
+A decorator's `syntax decl` is the annotated declaration (576, 716) and a
+template method's `syntax self: R` its receiver (578 (1)): neither is this
+form.
+
+**A template** is a function whose first parameter (after a `syntax self: R`
 receiver) is `syntax q: string` — its **template text** — and nothing else
 (decisions 577, 578); a template declared with other parameters is refused at
 its declaration (`template-signature`). It answers a type `R`, `anyvalue` (the

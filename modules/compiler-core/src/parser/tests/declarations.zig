@@ -576,7 +576,7 @@ test "parser: template ---- anyvalue answer (decision 578)" {
 
 test "parser: expr parameter ---- composed type position" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn collect(syntax first: ?Element) -> i32 {
+        \\fn collect(syntax first: ?Element) -> anyvalue {
         \\    panic("not implemented");
         \\}
         \\

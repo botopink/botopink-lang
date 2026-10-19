@@ -13,13 +13,18 @@
         "comment": null,
         "moduleComment": null,
         "annotations": [],
-        "genericParams": [],
+        "genericParams": [
+          {
+            "name": "__anyvalue",
+            "default": null
+          }
+        ],
         "params": [
           {
             "name": "first",
             "typeRef": {
               "generic": {
-                "name": "__Decl",
+                "name": "__Expr",
                 "args": [
                   {
                     "optional": {
@@ -38,7 +43,15 @@
           }
         ],
         "returnType": {
-          "named": "i32"
+          "generic": {
+            "name": "__Expr",
+            "args": [
+              {
+                "named": "__anyvalue"
+              }
+            ],
+            "is_builtin": true
+          }
         },
         "typeGuardParam": null,
         "body": [

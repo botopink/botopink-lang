@@ -414,6 +414,18 @@ caller and captured **unevaluated**:
   `@code(text)` (parse generated source) are typed in
   `inferBuiltinCallReturnType` and only valid inside a template function.
 
+- **Decision 719 — a `syntax` expression parameter.** A function whose `syntax` parameter is of a type other
+  than `string` (`ast.syntaxExprIndex`; the parser reads it onto the template form, `parser/AGENTS.md`) is
+  a template fn called with ordinary parentheses: `inferCallExpr` refuses a template text given to it
+  (`syntax-call-outside-syntax`, naming `name(…)`) and keeps the text-only rule for a `syntax q: string`
+  template; `captureExprArg` checks the argument once against the parameter's declared type
+  (`unifyArgument`, 716) and captures it unevaluated (720) — `text` the expression as the formatter prints
+  it (`defaultLexeme`, as a template method's receiver), `loc` the argument's, so `compiler.text(v)` /
+  `compiler.source(v)` read it through `captureToTerm` as a template text's. The call expands as any
+  template call. Cells `syntax_fn_expanded_at_call`, `syntax_fn_text_of_expression`,
+  `syntax_fn_string_param_needs_template_text`, `syntax_fn_expression_param_given_template_text`,
+  `syntax_fn_run_time_return`.
+
 Call-site expansion (`expandTemplateCall`, from `inferCallExpr`):
 `classifyTemplateBody` reduces `return <tree param>`, `return @expr(E)` (E must
 not reference the template's own params) and `return @code("…")` by inspection.

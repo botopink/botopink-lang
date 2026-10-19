@@ -1,6 +1,6 @@
 # template_fail_at_column_on_open_line
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A template refuses its call with `q.fail(message)`, located at the literal,
 > or with `q.failAt(Span(start, end, line), message)`, located at that span of

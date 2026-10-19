@@ -42,7 +42,7 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
-├── syntax_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `syntax` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `syntax` is the declaration handle (`declHandle`); decision 370 (1): a record field's `syntax x: T` likewise (`Field.exprWrapped`)
+├── syntax_params.zig    ← decisions 364, 575 (4): after the parse, a non-template function's `comptime` / `syntax` parameter keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`), and a decorator's first `syntax` is the declaration handle (`declHandle`) — a function with a `syntax` expression parameter keeps its trees (decision 719, `ast.isSyntaxExprFn`); decision 370 (1): a record field's `syntax x: T` likewise (`Field.exprWrapped`)
 ├── compiler_surface.zig ← decisions 575, 576: `compiler.*`, a `comptime x: T`'s bare reads and a template's returns read onto the machinery (`expandProgram`, run by `Parser.parse` unless `keep_surface`); `comptime compiler.typeInfo(T)…` in any body — a run-time one included — is the read the checker answers at build, the `comptime` it is written under dropped (decision 606 (3)); `members` — the `Compiler` table
 ├── implementations.zig ← decision 575 (6): each declaration's `#[compiler.external(…)]` sources (decision 606 (4); `#[external(…)]` / `#[@external(…)]` read alike until the codemod) read into its `implementations` (`ast.Implementation`) after the parse — a source is `.<Variant>(…)`, its positional arguments filling `variant_fields` (held to `external.bp` by a test), its templates' markers translated (`template_markers.rewrite`), a host `${` written `\${`; lenient (the checker refuses a source's shape as the enum's constructor, `comptime/infer.zig` `checkImplementations`)
 ├── template_markers.zig ← decision 5: an implementation's template markers are positional over the declared parameters
@@ -946,6 +946,13 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   another parameter `template-signature` (`compiler_surface.zig`), and `anyvalue` elsewhere
   `anyvalue-outside-template` (the checker; std's `compiler.bp` declares `build`'s answer with it).
   `anytype` is the bare `type` (`types.zig`, a `typeparam` with no member; the printer writes it).
+- Decision 719 — a top-level function with a **`syntax` expression parameter** (`ast.syntaxExprIndex`: a
+  `syntax p: T` whose `T` is no `string`, no `self` receiver, no template text) that is no decorator
+  (`ast.isSyntaxExprFn`: it writes a return, or its first `syntax` parameter is not its first) is expanded
+  at its ordinary call: `unwrapProgram` keeps its trees (no `declHandle`), and `compiler_surface.zig`
+  reads its return as a template's — only `anyvalue` or `anytype` (`ast.isBuildAnswer`); any other return,
+  none included, is `template-signature` at the declaration (`refuseSyntaxFnReturn`, located at the
+  return, else the name). A `declare fn` and a type's methods are untouched.
   `compiler.addType(name, compiler.buildType("(…)"))` hands the built type's text to `addType`;
   `buildType` elsewhere waits for B-140. `-> syntax T` is `removed-expr-type` (`decls.zig`
   `parseReturnTypeRef`), and the bare `type` is `removed-bare-type` (`types.zig`; `x is type` keeps it).

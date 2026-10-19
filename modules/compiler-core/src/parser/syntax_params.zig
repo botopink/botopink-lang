@@ -21,6 +21,9 @@ const ast = @import("../ast.zig");
 pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
     for (program.decls) |*d| switch (d.*) {
         .@"fn" => |*f| {
+            // Decision 719 — a function with a `syntax` expression parameter
+            // is expanded at its call: its trees stay, as a template's.
+            if (!f.isDeclare and ast.isSyntaxExprFn(f.params, f.returnType)) continue;
             declHandle(alloc, f.params, f.returnType);
             unwrap(alloc, f.params, f.returnType);
         },

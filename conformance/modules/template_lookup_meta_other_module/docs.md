@@ -1,6 +1,6 @@
 # template_lookup_meta_other_module
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > The looked-up declaration's decorators run before the template body. A
 > declaration of another module carries what its module's decorators recorded;

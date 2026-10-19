@@ -1,6 +1,6 @@
 # template_call_in_built_code
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A template call expands wherever an expression may stand (decision 425): …
 > and the code another template builds — a template call in built code expands

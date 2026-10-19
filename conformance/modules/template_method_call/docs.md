@@ -1,6 +1,6 @@
 # template_method_call
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > **A template method** (decisions 311 (3), 397 (3), 415 (1)). A template whose
 > first parameter is `comptime self: @Expr<R>` and whose second is

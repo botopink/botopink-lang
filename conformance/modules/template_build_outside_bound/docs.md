@@ -1,6 +1,6 @@
 # template_build_outside_bound
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > **A call is typed by the code it built** (decision 426). The type of a
 > template call is the type of the code the template built for that call,

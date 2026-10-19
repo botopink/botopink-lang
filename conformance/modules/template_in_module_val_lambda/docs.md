@@ -1,6 +1,6 @@
 # template_in_module_val_lambda
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A template call expands wherever an expression may stand (decision 425): a
 > function's or a type's method body, a destructuring initializer

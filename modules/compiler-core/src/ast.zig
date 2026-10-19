@@ -1894,6 +1894,46 @@ pub fn templateTextIndex(params: []const Param) ?usize {
     return q;
 }
 
+/// Decision 719 — the position of a function's first `syntax` expression
+/// parameter: a `syntax p: T` whose `T` is no `string` (a `syntax q: string`
+/// is a template text, 578), on a function that takes no template text.
+/// Null for any other function. A `syntax self: R` receiver is a template
+/// method's (578 (1)) and counts for nothing here; whether the function is a
+/// decorator (its first `syntax` the annotated declaration, 576) is the
+/// caller's question — `isSyntaxExprFn`.
+pub fn syntaxExprIndex(params: []const Param) ?usize {
+    if (templateTextIndex(params) != null) return null;
+    for (params, 0..) |p, i| {
+        if (p.arrival != .syntax or p.variadic) continue;
+        if (i == 0 and std.mem.eql(u8, p.name, "self")) continue;
+        if (p.typeRef.isDeclType()) continue;
+        return i;
+    }
+    return null;
+}
+
+/// Decision 719 — a top-level function expanded at its ordinary call: it
+/// takes a `syntax` expression parameter (`syntaxExprIndex`) and is no
+/// decorator — a decorator returns nothing and its first parameter is the
+/// annotated declaration (576), so a function that writes a return, or whose
+/// first parameter is no `syntax` one, is this form.
+pub fn isSyntaxExprFn(params: []const Param, returnType: ?TypeRef) bool {
+    const i = syntaxExprIndex(params) orelse return false;
+    if (returnType != null) return true;
+    return i > 0 and params[0].arrival != .syntax;
+}
+
+/// Decision 719, 578 (2) — whether `rt` is a build body's answer for a
+/// function with a `syntax` expression parameter: `anyvalue` (the built
+/// code, typed where the call stands) or `anytype` (a built type).
+pub fn isBuildAnswer(rt: TypeRef) bool {
+    return switch (rt) {
+        .named => |n| std.mem.eql(u8, n, anyvalue_type_name),
+        .typeparam => |cs| cs.len == 0,
+        else => false,
+    };
+}
+
 /// Decision 578 (2) — a value whose type is known once its code is built: a
 /// template's return, `compiler.build`'s answer.
 pub const anyvalue_type_name = "anyvalue";

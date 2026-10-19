@@ -1,6 +1,6 @@
 # template_known_at_build
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > **A hole is the template's** (decision 577 (1), (5)). `${…}` and `{…}` in a
 > template text are the sub-language's own syntax: the template finds them in

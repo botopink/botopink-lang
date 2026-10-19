@@ -1,6 +1,6 @@
 # expr_param_value_receiver
 
-The reference text this cell shows (from `conformance/docs.md`, § Template functions):
+The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > A `comptime x: @Expr<T>` parameter of a function that is no template is read
 > as `x.value` whatever reads it — an operand, or a method's receiver
