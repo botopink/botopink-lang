@@ -667,6 +667,23 @@ const Preparer = struct {
             }
         }
         if (self.expansions_only) return null;
+        // 144 B-155 — `ns.f(…)` through a namespace import of a module of the
+        // program or a dependency is the call of `f` the module carries under
+        // its template alias (`importTemplateAliasClosures`), as `f(…)`
+        // imported by name is.
+        if (e == .call and e.call.kind == .call) if (self.env.namespaces.calls.get(e.call.loc)) |nc| {
+            if (self.env.namespaces.paths.get(nc.namespace)) |path| {
+                const alias = try envMod.templateAlias(self.arena, path, nc.callee);
+                if (self.env.importedFnSupport.contains(alias)) {
+                    var out = e;
+                    var cc = e.call.kind.call;
+                    cc.receiver = null;
+                    cc.callee = alias;
+                    out.call.kind = .{ .call = cc };
+                    return try self.copyNode(ast.Expr, out);
+                }
+            }
+        };
         switch (e) {
             .call => |c| if (c.kind == .call and c.kind.call.is_builtin) {
                 if (self.env.srcRewrites.get(c.loc)) |rewrite| {

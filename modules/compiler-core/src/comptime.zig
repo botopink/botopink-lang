@@ -3028,6 +3028,9 @@ fn resolveImports(
                         .module, .key => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
                             try env.namespaces.paths.put(env.arena, local, path);
+                            // 144 B-155 — a `comptime` that calls `ns.f(…)` carries `f`
+                            // with its closure, as it carries an imported one.
+                            try importTemplateAliasClosures(env, decoratorRegistry, path);
                             var eit = exports.keyIterator();
                             while (eit.next()) |fname| {
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {

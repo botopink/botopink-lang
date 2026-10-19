@@ -258,6 +258,11 @@ binds the item `render`, and `import {components.card: {Props, render}}` the ite
 as any path does. No item of a module ever stands in for a namespace of the same
 name: the namespace is what `import {a.b}` binds.
 
+A namespace's function is called through it inside a `comptime` block too: `comptime jwt.sign(x)` runs
+`sign` of the module, with the functions it reaches, as `sign(x)` imported by name does.
+
+<!-- example: modules/comptime_module_qualified_call -->
+
 <!-- example: modules/import_namespace_callable_default -->
 
 The namespace of a module that declares no default is not a value: called, passed
