@@ -1083,6 +1083,13 @@ pub const Env = struct {
     /// binds, by the declaration each one names: the type `Context<T>` and
     /// the two hooks `provide` / `context`, which the compiler lowers.
     stdContextNames: std.StringHashMapUnmanaged(StdContextName) = .empty,
+    /// Decisions 771, 774 — the local names a leaf import of std's `hooks`
+    /// module binds to its `memo` hook (`import {hooks.memo} from "std"`).
+    stdMemoNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decisions 755, 771 — each `use memo(make)`, by the `use`'s location:
+    /// the `T` it answers. The scope lowering gives each one a slot made with
+    /// the component's value (`context_lower.zig`).
+    memoUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 354 — where the body of the `@Component<R>` fn being inferred
     /// first renders a component (a call `inferComponentCall` answers with its
     /// `R`): a `use provide(…)` after it is refused, since the child rendered

@@ -21,7 +21,7 @@ const scopeCarry = @import("wat/scope_carry.zig");
 /// that answers a value of the scope (`find`, `valueOf`), or takes one
 /// (`push`, `rendered`): called only from `wat/scope_carry.zig`'s wrappers.
 fn isScopeReadFn(name: []const u8) bool {
-    for ([_][]const u8{ context_lower.find_fn, context_lower.value_fn, context_lower.push_fn, context_lower.rendered_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
+    for ([_][]const u8{ context_lower.find_fn, context_lower.value_fn, context_lower.push_fn, context_lower.rendered_fn, context_lower.memo_read_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
     return false;
 }
 
@@ -9561,6 +9561,10 @@ const Emitter = struct {
                 if (std.mem.eql(u8, ad.name, "gate_new")) break :blk self.builder().helper(.task_gate_new);
                 if (std.mem.eql(u8, ad.name, "gate_open")) break :blk self.builder().helper(.task_gate_open);
                 if (std.mem.eql(u8, ad.name, "gate_await")) break :blk self.builder().helper(.task_gate_await);
+                if (std.mem.eql(u8, ad.name, "cell_new")) break :blk self.builder().helper(.memo_cell_new);
+                if (std.mem.eql(u8, ad.name, "cell_filled")) break :blk self.builder().helper(.memo_cell_filled);
+                if (std.mem.eql(u8, ad.name, "cell_get")) break :blk self.builder().helper(.memo_cell_get);
+                if (std.mem.eql(u8, ad.name, "cell_set")) break :blk self.builder().helper(.memo_cell_set);
                 if (std.mem.eql(u8, ad.name, "attempt")) {
                     self.uses_table = true;
                     break :blk self.builder().helper(.wasi_attempt);

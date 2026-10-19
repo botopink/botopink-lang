@@ -75,6 +75,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .task_poll => &.{.{ .func = task_host_poll }},
         .task_host => &.{ .{ .global = task_hosts_global }, .{ .func = task_host_add }, .{ .func = task_host_settle } },
         .task_gate => &.{ .{ .func = task_host_cancel }, .{ .func = task_gate_new }, .{ .func = task_gate_open }, .{ .func = task_gate_await } },
+        .memo_cell => &.{ .{ .func = memo_cell_new }, .{ .func = memo_cell_filled }, .{ .func = memo_cell_get }, .{ .func = memo_cell_set } },
         // Decision 442 (2): `bigint`'s arithmetic is std-wasm's; the group
         // only marks a module that prints one in a container (`stdCalls`).
         .bigint => &.{},
@@ -2107,6 +2108,28 @@ const task_gate_open = func("__task_gate_open", &.{"g"}, null, i32s(&.{ "n", "r"
         again,
     }),
     get("g"), c32(1),  call("__task_settle_i32"),
+});
+
+/// `wasi:cell_new` — a `use memo` slot (decision 771, std's `hooks`): a heap
+/// cell `[filled, value]`, empty. No GC form: a module that holds one is
+/// lowered in linear memory (`gcItems`).
+const memo_cell_new = func("__memo_cell_new", &.{}, .i32, i32s(&.{"p"}), &.{
+    c32(8),   call("__alloc"), set("p"),
+    get("p"), c32(0),          store(0),
+    get("p"), c32(0),          store(4),
+    get("p"),
+});
+
+/// `wasi:cell_filled` — whether cell `c` holds a value.
+const memo_cell_filled = func("__memo_cell_filled", &.{"c"}, .i32, &.{}, &.{ get("c"), load(0) });
+
+/// `wasi:cell_get` — the word cell `c` holds.
+const memo_cell_get = func("__memo_cell_get", &.{"c"}, .i32, &.{}, &.{ get("c"), load(4) });
+
+/// `wasi:cell_set` — cell `c` holds `v`.
+const memo_cell_set = func("__memo_cell_set", &.{ "c", "v" }, null, &.{}, &.{
+    get("c"), get("v"), store(4),
+    get("c"), c32(1),   store(0),
 });
 
 /// `wasi:gate_await` — a task answering `1` when gate `g` opens (at once

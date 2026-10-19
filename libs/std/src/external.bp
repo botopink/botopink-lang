@@ -60,6 +60,10 @@ pub type WasiAdapter {
     GateNew,
     GateOpen,
     GateAwait,
+    CellNew,
+    CellFilled,
+    CellGet,
+    CellSet,
     Attempt,
 }
 

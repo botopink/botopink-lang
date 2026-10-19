@@ -2633,8 +2633,10 @@ hooks of std's `context` module work it, `use`d and nothing else
   context alone: a body that provides another value makes a context of the
   same type in its body — `use provide(createContext(Theme(mode: "dark")));`,
   or `val c = comptime createContext(Theme(mode: "dark"));` then `use
-  provide(c);` — and `use provide(themeContext)` gives the declared default
-  again. In a body whose `R` is not `Renderable` it is
+  provide(c);`, or, for a value known only at run time, `val c = use memo({ ->
+  createContext(Theme(mode: mode)) });` then `use provide(c);` (made on the
+  component instance's first render and kept for it) — and `use
+  provide(themeContext)` gives the declared default again. In a body whose `R` is not `Renderable` it is
   `context-provide-outside-component`, and after the body rendered a component
   it is `context-provide-after-render` (that child would not see it).
 - `val t = use context(themeContext);` reads through a context value the module
@@ -2665,6 +2667,21 @@ hooks of std's `context` module work it, `use`d and nothing else
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice_across_modules -->
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_enum_default -->
+
+<!-- example: modules/context_provide_made_at_run_time -->
+
+**Memo** (decisions 755, 771, 774). `val v = use memo({ -> make });` is std's
+hook `hooks.memo<T>(make: fn() -> T) -> Component<T>`, imported as any std
+function (`import {hooks.memo} from "std"`): it answers the value `make`
+computed on the component instance's first render, kept for that instance and
+never recomputed — there is no dependency list. A component instance is the
+value one `Page(…)` call makes: when that value is made, one slot is allocated
+per `use memo` position in the body; the first render fills the slot, and a
+later render of the same value reads it. Another `Page(…)` call is another
+instance, with slots of its own. The slot is a process-dictionary entry on
+erlang and beam, a closure cell on commonJS and a heap cell on wasm.
+
+<!-- example: modules/memo_computed_once_per_instance -->
 
 **Dependency injection** rides the context tree (decision 416). `val deps = use
 inject(Deps);` builds the record `Deps`, each field the nearest context of its
@@ -5197,6 +5214,10 @@ record's field.
 | `.GateNew` | `() -> unknown` | a closed gate (std's `async` gates): a pending task no host answers |
 | `.GateOpen` | `(unknown) -> void` | the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped first, so an open gate leaves no timer behind; opening an open gate changes nothing |
 | `.GateAwait` | `(unknown, i32) -> Async<bool>` | a task answering `true` once the gate is open (at once when it already is), `false` when the milliseconds pass first on the host's monotonic clock (`.Delay`'s pollable) |
+| `.CellNew` | `() -> unknown` | an empty heap cell — a `use memo` slot (std's `hooks`) |
+| `.CellFilled` | `(unknown) -> bool` | whether the cell holds a value |
+| `.CellGet` | `(unknown) -> unknown` | the value the cell holds |
+| `.CellSet` | `(unknown, unknown) -> void` | the cell holds the value |
 | `.Attempt` | `(fn() -> T) -> Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the

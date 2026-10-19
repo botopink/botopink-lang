@@ -940,6 +940,10 @@ pub const HelperGroup = enum {
     /// `v` is of the run-time type token `t`, a static blob `wat.zig`
     /// `typeTokenAddr` lays out.
     is_type_token,
+    /// Decision 771 — a `use memo` slot as a heap cell (std's `hooks`):
+    /// `$__memo_cell_new`, `$__memo_cell_filled`, `$__memo_cell_get` and
+    /// `$__memo_cell_set` over an 8-byte cell `[filled, value]`.
+    memo_cell,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -979,6 +983,7 @@ pub const HelperGroup = enum {
             .text_capture => &.{ .print, .alloc },
             .panic_raise => &.{.alloc},
             .wasi_attempt => &.{.alloc},
+            .memo_cell => &.{.alloc},
             .std_marshal => &.{.alloc},
             .int_chk, .u64_chk, .i32_range_chk, .i64_range_chk, .nz_chk => &.{.chk_fail},
             .chk_fail => &.{.panic_fail},
@@ -1116,6 +1121,10 @@ pub const Helper = enum {
     i32_divs,
     i64_divs,
     is_type_token,
+    memo_cell_new,
+    memo_cell_filled,
+    memo_cell_get,
+    memo_cell_set,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -1153,6 +1162,7 @@ pub const Helper = enum {
             .cap_begin, .cap_end => .text_capture,
             .gc_to_lin_str, .lin_to_gc_str => .std_marshal,
             .i32_nz, .i64_nz, .i32_divs, .i64_divs => .nz_chk,
+            .memo_cell_new, .memo_cell_filled, .memo_cell_get, .memo_cell_set => .memo_cell,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

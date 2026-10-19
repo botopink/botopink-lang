@@ -19,6 +19,13 @@
 //!   return v             →  return bpScopeRendered__(v, <kids>)
 //!
 //! and a body that ends without a `return` answers `rendered(null, <kids>)`.
+//! Decisions 755, 771 — each `use memo(make)` position of the body is a slot
+//! made with the component's value, before its lambda, and read in the body:
+//!
+//!   fn Page(…) -> … { val bpMemoSlot__N = bpMemoNew__(); return { bpScope__ -> … bpMemoRead__(bpMemoSlot__N, make) … }; }
+//!
+//! so one `Page(…)` call is one instance: its first render fills the slot
+//! (`read` runs `make`), a later render of the same value reads it.
 //! A `component { x -> body }` lambda (decision 574, `Env.componentLambdas`)
 //! is lowered the same way, its tail made its `return`:
 //! `{ x -> return { bpScope__ -> body' }; }` — its parameters and what it
@@ -64,14 +71,19 @@ pub const find_fn = "bpScopeFind__";
 pub const rendered_fn = "bpScopeRendered__";
 pub const value_fn = "bpScopeValue__";
 pub const root_fn = "bpScopeRoot__";
+/// std's `hooks.slot` / `hooks.read` (decision 771), imported under these.
+pub const memo_new_fn = "bpMemoNew__";
+pub const memo_read_fn = "bpMemoRead__";
 
 /// The children's scope a `use provide` binds (`bpScopeKids__<n>`).
 const kids_prefix = "bpScopeKids__";
+/// A `use memo` position's slot (`bpMemoSlot__<n>`).
+const memo_slot_prefix = "bpMemoSlot__";
 /// The inner closure's answer, in a body that keeps a bare `try`.
 const result_local = "bpScopeResult__";
 
 /// The lowering's functions, as `wat.zig` refuses them.
-pub const lowered_fns = [_][]const u8{ push_fn, find_fn, rendered_fn, value_fn, root_fn };
+pub const lowered_fns = [_][]const u8{ push_fn, find_fn, rendered_fn, value_fn, root_fn, memo_new_fn, memo_read_fn };
 
 const Frame = struct {
     /// The scope this body received (its lambda's parameter).
@@ -94,6 +106,11 @@ const Lowering = struct {
     frames: std.ArrayListUnmanaged(?Frame) = .empty,
     kids_count: usize = 0,
     uses_std: bool = false,
+    /// Decision 771 — the slots of the `use memo` positions of the bodies
+    /// being walked; a component body takes the ones its walk added.
+    memo_slots: std.ArrayListUnmanaged([]const u8) = .empty,
+    memo_count: usize = 0,
+    uses_hooks: bool = false,
 
     fn current(self: *const Lowering) ?Frame {
         if (self.frames.items.len == 0) return null;
@@ -308,6 +325,22 @@ const Lowering = struct {
         }
         switch (e.*) {
             .useHook => |uh| {
+                // Decisions 755, 771 — `use memo(make)` reads the slot of its
+                // position, made with the component's value.
+                if (self.env.memoUses.get(uh.loc)) |t| {
+                    const inner = uh.kind.inner;
+                    if (inner.* != .call or inner.call.kind != .call) return error.ContextLowering;
+                    const args = inner.call.kind.call.args;
+                    if (args.len != 1) return error.ContextLowering;
+                    const make = args[0].value;
+                    try self.walk(ast.Expr, make);
+                    const name = try std.fmt.allocPrint(self.arena, memo_slot_prefix ++ "{d}", .{self.memo_count});
+                    self.memo_count += 1;
+                    try self.memo_slots.append(self.arena, name);
+                    self.uses_hooks = true;
+                    e.* = (try self.callCarrying(memo_read_fn, &.{ try self.ident(name, uh.loc), make }, try self.typeRefOfType(t), uh.loc)).*;
+                    return true;
+                }
                 if (self.env.contextUses.get(uh.loc)) |use| {
                     if (use.kind == .provide) return error.ContextLowering; // a statement of its own
                     if (use.kind == .inject) {
@@ -431,7 +464,11 @@ const Lowering = struct {
         const inner_closure = hasBareTry(body);
         try self.frames.append(self.arena, Frame{ .received = scope_param, .kids = scope_param, .wraps_returns = !inner_closure, .renders = renders });
         defer _ = self.frames.pop();
+        const memo_start = self.memo_slots.items.len;
         for (body) |*s| try self.walk(ast.Stmt, s);
+        // Decision 771 — this body's `use memo` slots, made with the value.
+        const slots = try self.arena.dupe([]const u8, self.memo_slots.items[memo_start..]);
+        self.memo_slots.shrinkRetainingCapacity(memo_start);
         const kids = self.current().?.kids;
         const inner: []ast.Stmt = if (inner_closure) blk: {
             var split: usize = 0;
@@ -467,8 +504,12 @@ const Lowering = struct {
         params[0] = scope_param;
         const lambda = try self.arena.create(ast.Expr);
         lambda.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = inner } } };
-        const out = try self.arena.alloc(ast.Stmt, 1);
-        out[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = lambda } } } };
+        const out = try self.arena.alloc(ast.Stmt, slots.len + 1);
+        for (slots, 0..) |name, i| {
+            const made = try self.call(memo_new_fn, &.{}, loc);
+            out[i] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = made, .mutable = false } } } } };
+        }
+        out[slots.len] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = lambda } } } };
         return out;
     }
 
@@ -647,7 +688,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
         env.componentAwaits.count() > 0 or env.componentRuns.count() > 0 or
-        env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
+        env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,
@@ -663,6 +704,9 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
     // std's `context` module declares the hooks the lowering replaces where
     // they are `use`d (their bodies panic) and the functions it calls.
     if (std.mem.eql(u8, env.modulePath, "std/context")) return program;
+    // std's `hooks` module declares `memo`, lowered where it is `use`d (its
+    // body panics), and the slot functions the lowering calls.
+    if (std.mem.eql(u8, env.modulePath, "std/hooks")) return program;
     if (!needed(env, program)) return program;
     var low: Lowering = .{ .arena = arena, .env = env };
     // The transformed module shares its nodes with the parsed one, which a
@@ -716,15 +760,18 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
     };
     if (!low.uses_std) return .{ .decls = decls };
     // std's lowering functions, under names no source can collide with.
-    const names = [_][2][]const u8{
-        .{ "push", push_fn },
-        .{ "find", find_fn },
-        .{ "rendered", rendered_fn },
-        .{ "valueOf", value_fn },
-        .{ "root", root_fn },
+    const names = [_][3][]const u8{
+        .{ "context", "push", push_fn },
+        .{ "context", "find", find_fn },
+        .{ "context", "rendered", rendered_fn },
+        .{ "context", "valueOf", value_fn },
+        .{ "context", "root", root_fn },
+        .{ "hooks", "slot", memo_new_fn },
+        .{ "hooks", "read", memo_read_fn },
     };
-    const items = try arena.alloc(ast.ImportPath, names.len);
-    for (names, 0..) |n, i| items[i] = .{ .segments = try arena.dupe([]const u8, &.{ "context", n[0] }), .alias = n[1] };
+    const count = if (low.uses_hooks) names.len else names.len - 2;
+    const items = try arena.alloc(ast.ImportPath, count);
+    for (names[0..count], 0..) |n, i| items[i] = .{ .segments = try arena.dupe([]const u8, &.{ n[0], n[1] }), .alias = n[2] };
     const grown = try arena.alloc(ast.DeclKind, decls.len + 1);
     grown[0] = .{ .use = .{ .imports = items, .source = .{ .module = "std" } } };
     @memcpy(grown[1..], decls);

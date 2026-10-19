@@ -121,6 +121,10 @@ pub const adapters = [_]Adapter{
     .{ .name = "gate_new", .result = .unknown, .what = "a closed gate: a pending task no host answers, opened by `gate_open`" },
     .{ .name = "gate_open", .params = &.{.unknown}, .what = "the gate opened: every task waiting on it answers `true`, and each wait's own timer is dropped; opening an open gate changes nothing" },
     .{ .name = "gate_await", .params = &.{ .unknown, .i32 }, .result = .bool, .answers_task = true, .what = "a task answering `true` once the gate is open (at once when it is), `false` when the milliseconds pass first on the host's monotonic clock (the `delay` adapter's pollable)" },
+    .{ .name = "cell_new", .result = .unknown, .what = "an empty heap cell — a `use memo` slot (std's `hooks`, decision 771)" },
+    .{ .name = "cell_filled", .params = &.{.unknown}, .result = .bool, .what = "whether the cell holds a value" },
+    .{ .name = "cell_get", .params = &.{.unknown}, .result = .unknown, .what = "the value the cell holds" },
+    .{ .name = "cell_set", .params = &.{ .unknown, .unknown }, .what = "the cell holds the value" },
     .{ .name = "attempt", .task = .{ .params = &.{.thunk_t}, .result = .result_t }, .what = "the thunk called inside a `try_table` catching the program's aborts (wasm exception handling, decision 518 — the binding declares `needs: [.Exceptions]`): `Ok` of its value, or `Error` of the abort's message" },
 };
 

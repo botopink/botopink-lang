@@ -20,6 +20,9 @@
 //!   reader of the call's answer — a field read, a string concatenation, a
 //!   printer — asks a declared return, as of any function; the wrapper's
 //!   `return` passes the word as it is (`Emitter.raw_return`);
+//! - a `use memo` slot's value (decision 771) is read the same way, through
+//!   a wrapper of its own (`bpScopeRaw__memo<n>`) declared to answer the `T`
+//!   the slot's `read` carries;
 //! - a written `@Component<R>` is the lambda a component is at run time
 //!   (388): `fn(unknown) -> unknown`, wherever it is written but a host
 //!   declaration (a bodyless `declare fn` answers the host's own value).
@@ -156,6 +159,17 @@ const Carry = struct {
             // default, moved through `find`'s `unknown` slot as `push`'s value is.
             try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("f", unknown_ref) }, ta[0], context_lower.find_fn, c.loc);
             cc.callee = name;
+        } else if (std.mem.eql(u8, cc.callee, context_lower.memo_read_fn)) {
+            // Decision 771 — a `use memo` slot's value, typed by the `T` the
+            // call carries: `make`'s answer crosses the slot as its own word.
+            const ta = cc.typeArgs orelse return;
+            if (ta.len != 1) return;
+            const name = try self.fresh("memo");
+            const ret = try self.arena.create(ast.TypeRef);
+            ret.* = unknown_ref;
+            try self.declare(name, &.{ param("s", unknown_ref), param("m", .{ .function = .{ .params = &.{}, .returnType = ret } }) }, ta[0], context_lower.memo_read_fn, c.loc);
+            cc.callee = name;
+            cc.typeArgs = null;
         } else if (std.mem.eql(u8, cc.callee, context_lower.value_fn)) {
             const ta = cc.typeArgs orelse return;
             if (ta.len != 1) return;
