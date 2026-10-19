@@ -13594,6 +13594,24 @@ const Emitter = struct {
         return if (idx < arms.len) arms[idx] else null;
     }
 
+    /// What a `case` leaves on the stack: the enclosing result's word, widened
+    /// to the `i64` / `f64` a plain arm answers — a suffixed literal's operator
+    /// is an `i64` once inference says so (decision 319), and coerced to the
+    /// function's `i32` it was refused. A boxed or reference result stays.
+    fn caseResultRepr(self: *Emitter, c: anytype) Repr {
+        const base = self.cur_result;
+        if (self.case_box or base.isRef()) return base;
+        var t = base;
+        for (c.arms) |arm| {
+            if (arm.body == .function) continue;
+            if (self.exprTail(arm.body) == .terminated) continue;
+            const a = self.wasmTypeOf(arm.body);
+            if (a.isRef()) continue;
+            if (a.isFloat() or a.isI64()) t = self.unifyNum(t, a);
+        }
+        return t;
+    }
+
     fn lowerCase(self: *Emitter, c: anytype) anyerror!void {
         const prev_case_box = self.case_box;
         self.case_box = self.pending_case_box;
@@ -13642,6 +13660,7 @@ const Emitter = struct {
             } else true;
             if (all_str) self.cur_result = Repr.string;
         }
+        if (!self.case_box) self.cur_result = self.caseResultRepr(c);
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
         // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
         // tested against and binds from. Only the first was lowered, and the
@@ -26797,8 +26816,8 @@ const Emitter = struct {
                 // A `+` with a string operand is a concatenation — a string
                 // address — whatever the other operand holds: a template is
                 // `"" + hole`, and a lone float hole made it an `f64` (B-31).
-                .add => if (self.isStringExpr(e)) .i32 else self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc),
-                else => self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc),
+                .add => if (self.isStringExpr(e)) .i32 else self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc, bin.lhs.*, bin.rhs.*),
+                else => self.unifyNumAt(self.wasmTypeOf(bin.lhs.*), self.wasmTypeOf(bin.rhs.*), bin.loc, bin.lhs.*, bin.rhs.*),
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.wasmTypeOf(inner.*),
@@ -26806,7 +26825,7 @@ const Emitter = struct {
                 // every arm to it, so that — not `i32` — is what a `case` leaves
                 // on the stack. Saying `i32` made `return case …` in an `f64` fn
                 // append a second, bogus `f64.convert_i32_s`.
-                .case => self.cur_result,
+                .case => |c| self.caseResultRepr(c),
                 else => .i32,
             },
             .branch => |b| switch (b.kind) {
@@ -26870,14 +26889,32 @@ const Emitter = struct {
     /// when inference typed that operator a 64-bit integer: a suffixed literal
     /// (`1l`) is spelled with no suffix by now and reads as `i32` when it fits,
     /// so `1l + 2147483647l` added in an `i32` and aborted (decisions 319, 442).
-    fn unifyNumAt(self: *Emitter, a: Repr, b: Repr, loc: ast.Loc) Repr {
+    fn unifyNumAt(self: *Emitter, a: Repr, b: Repr, loc: ast.Loc, lhs: ast.Expr, rhs: ast.Expr) Repr {
         const t = self.unifyNum(a, b);
         if (t != .i32) return t;
+        // Only an operator of two literals widens: a literal beside a value the
+        // backend holds as a word (a lambda's parameter, an element) stays a
+        // word operation, as that value's slot is one.
+        if (!(isIntLiteralExpr(lhs) and isIntLiteralExpr(rhs))) return t;
         const il = self.instance_lowerings.get(loc) orelse return t;
         if (il != .division) return t;
         return switch (il.division) {
             .i64, .u64, .isize, .usize => .i64,
             else => t,
+        };
+    }
+
+    fn isIntLiteralExpr(e: ast.Expr) bool {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| isNumericLiteral(n),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| isIntLiteralExpr(inner.*),
+                else => false,
+            },
+            else => false,
         };
     }
 
@@ -28054,7 +28091,7 @@ const Emitter = struct {
                 try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = short_seq }, .@"else" = .{ .seq = rhs_seq } } });
             return;
         }
-        const t0 = self.unifyNumAt(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs), loc);
+        const t0 = self.unifyNumAt(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs), loc, lhs, rhs);
         // Every float is compared as the `f64` the language gives it.
         const t = t0;
         try self.lowerCoerced(lhs, t);
