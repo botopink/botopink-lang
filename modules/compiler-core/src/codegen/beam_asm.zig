@@ -473,6 +473,10 @@ const DeferEntry = struct {
     locals_base: u32,
     catch_label: u32,
     regs: std.StringHashMap(Reg),
+    /// Decision 595 — a `try … catch` region's catch section (`lowerRegion`):
+    /// a way out of the region only ends it (`try_end`); there is no
+    /// deferred code to run.
+    region: bool = false,
 };
 
 /// The throw a bare `break` in a loop's fun ends the loop with
@@ -886,6 +890,9 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
 /// into an unallocated slot — `{invalid_store, {y, k}}`).
 /// The throw of a propagating `try` inside a loop's fun (`emitTryError`).
 const try_throw_signal = "__bp_try";
+/// Decision 595 — `throw({'__bp_region', E})`, what a `try` in a region
+/// throws; the region's own catch section answers it (`lowerRegion`).
+const region_throw_signal = "__bp_region";
 
 /// The throw of a `return` inside a loop's fun (`emitLoopReturn`). Apart from
 /// `try_throw_signal` because the two are answered apart: a failing `try`
@@ -915,7 +922,9 @@ fn exprPropagates(e: ast.Expr) bool {
         },
         .branch => |b| switch (b.kind) {
             .if_ => |i| exprPropagates(i.cond.*) or bodyPropagates(i.then_) or (if (i.else_) |els| bodyPropagates(els) else false),
-            .tryCatch => false,
+            // Decision 595 — a region's `try`s are its `catch`'s; its
+            // `return`s and its handler's `try`s leave the function.
+            .tryCatch => |tc| tc.region and (exprPropagates(tc.handler.*) or ast.exprReturns(tc.expr.*)),
         },
         .loop => |lp| lp.generator == null and bodyPropagates(lp.body),
         .binding => |b| switch (b.kind) {
@@ -1125,6 +1134,9 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 if (i.else_) |els| countLocalsRec(em, els, count);
             },
             .tryCatch => |tc| {
+                // Decision 595 — a region's catch tag; a binder's slot.
+                if (tc.region) count.* += 1;
+                if (tc.binder != null) count.* += 1;
                 countLocalsInExpr(em, tc.expr.*, count);
                 countLocalsInExpr(em, tc.handler.*, count);
             },
@@ -1591,6 +1603,9 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
             },
             .tryCatch => |tc| {
                 try walk(ctx, tc.expr.*);
+                const mark = scopeMark(ctx);
+                defer scopeRestore(ctx, mark);
+                if (tc.binder) |b| try scopeBind(ctx, b);
                 try walk(ctx, tc.handler.*);
             },
         },
@@ -2431,6 +2446,11 @@ const Emitter = struct {
     deferred_lambdas: std.ArrayListUnmanaged([]u8) = .empty,
     /// True when emitting a loop body lambda — makes break emit return.
     in_loop_lambda: bool = false,
+    /// Decision 595 — how many `try … catch` regions enclose the code being
+    /// lowered (`lowerRegion`), in this frame or across the loop funs inside
+    /// one: a failing `try` there throws `{'__bp_region', E}`. Reset by every
+    /// closure.
+    region_depth: u32 = 0,
     /// The innermost in-frame loop (`while`, `loop`, `lowerInFrameFor`) being emitted in this
     /// frame: its `break` jumps to `exit`, its `continue` to `top`. A lambda
     /// writes to another buffer (`out`), so its jumps never match.
@@ -4893,6 +4913,10 @@ const Emitter = struct {
             k -= 1;
             const e = self.defer_stack.items[k];
             if (e.out != self.out) break;
+            if (e.region) {
+                try beamEmitter.writeTryEnd(self.out, e.tag);
+                continue;
+            }
             if (x0_live) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(e.stash));
             try beamEmitter.writeTryEnd(self.out, e.tag);
             try self.writeDeferBody(k);
@@ -11779,6 +11803,10 @@ const Emitter = struct {
     fn lowerLambda(self: *Emitter, lam: anytype, live: u32) anyerror!void {
         const idx = self.lambda_count;
         self.lambda_count += 1;
+        // Decision 595 — a closure's `try`s are its own.
+        const saved_region = self.region_depth;
+        self.region_depth = 0;
+        defer self.region_depth = saved_region;
 
         // Free variables of the body travel in the fun's environment and arrive
         // as extra parameters after the lambda's own.
@@ -11855,6 +11883,7 @@ const Emitter = struct {
     /// with `is_tagged_tuple` (never BEAM try/catch). Ok unwraps element 1; Error
     /// runs the handler.
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
+        if (tc.region) return self.lowerRegion(tc);
         // The subject is matched as it answers: `{ok, V}` unwraps, `{error, E}`
         // takes the handler. A raise from it (host, panic, crash) is not the
         // operand's `Error` and propagates — `attempt` alone contains it
@@ -11870,8 +11899,74 @@ const Emitter = struct {
         try beamEmitter.writeJump(self.out, end_label);
 
         try beamEmitter.writeLabel(self.out, err_label);
+        // Decision 595 (3) — `catch { e -> … }` binds the error to `e`.
+        if (tc.binder) |bn| {
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
+            try self.bindX0(bn);
+        }
         try self.lowerExprIntoX0(tc.handler.*);
         try beamEmitter.writeLabel(self.out, end_label);
+    }
+
+    /// `name` bound to the value in `x0`, in a fresh y-slot of this frame.
+    fn bindX0(self: *Emitter, name: []const u8) anyerror!void {
+        const y_idx = self.next_y;
+        self.next_y += 1;
+        try self.reg_map.put(name, .{ .y = y_idx });
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
+    }
+
+    /// Decision 595 — a `try … catch` region, one early-exit block: a catch
+    /// section over a term of its own.
+    ///
+    ///     {'try', Tag, Catch}  <region>  {try_end, Tag}  {jump, End}
+    ///     {label, Catch}  {try_case, Tag}
+    ///     <x0 =:= throw, x1 = {'__bp_region', E}, else raise>  E → x0  <handler>
+    ///     {label, End}
+    ///
+    /// Every `try` written in the region throws `{'__bp_region', E}`
+    /// (`emitTryError`). The region's entry on the defer stack makes every
+    /// other way out of it (`return`, a loop jump) end it first
+    /// (`runDefersForExit`), and its tag is one of the frame's top slots, so
+    /// nested catch sections descend as defers' do (`pushDefer`). The
+    /// handler runs after the section is closed: its own `try`s belong to
+    /// the region around this one (595 (6)).
+    fn lowerRegion(self: *Emitter, tc: anytype) anyerror!void {
+        const depth: u32 = @intCast(self.defer_stack.items.len - self.frameDeferFloor());
+        const tag = self.num_y - 1 - depth;
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try self.defer_stack.append(self.alloc, .{
+            .out = self.out,
+            .stmt = .{ .expr = tc.expr.* },
+            .tag = tag,
+            .stash = 0,
+            .locals_base = 0,
+            .catch_label = caught,
+            .regs = try self.reg_map.clone(),
+            .region = true,
+        });
+        try beamEmitter.writeTry(self.out, tag, caught);
+        self.region_depth += 1;
+        const lowered = self.lowerExprIntoX0(tc.expr.*);
+        self.region_depth -= 1;
+        var popped = self.defer_stack.pop().?;
+        popped.regs.deinit();
+        try lowered;
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(region_throw_signal) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+        if (tc.binder) |bn| try self.bindX0(bn);
+        try self.lowerExprIntoX0(tc.handler.*);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// Lower `start..end` → `lists:seq(Start, End)`. An open-ended range
@@ -12423,6 +12518,17 @@ const Emitter = struct {
     /// call site (`guardLoopCall`), since a return there only leaves the fun;
     /// anywhere else it is this function's return value.
     fn emitTryError(self: *Emitter) anyerror!void {
+        // Decision 595 — in a region, the region's catch takes the failure:
+        // `throw({'__bp_region', E})`, E the `{error, E}`'s payload.
+        if (self.region_depth > 0) {
+            // `element/2`, not `get_tuple_element`: the failed `{ok, _}`
+            // test leaves the subject untyped for the loader.
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(2), Op.xr(0) }, Dst.xr(0));
+            try beamEmitter.writeTestHeap(self.out, 3, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(region_throw_signal), Op.xr(0) });
+            try self.writeThrowCall();
+            return;
+        }
         if (self.inGenLoop()) |gl| {
             try self.genYieldX0(gl);
             {
@@ -12601,6 +12707,10 @@ const Emitter = struct {
     fn liftGenScope(self: *Emitter, body: []const ast.Stmt, loop: ?*const ast.Expr) anyerror!void {
         const idx = self.lambda_count;
         self.lambda_count += 1;
+        // Decision 595 — a generator scope's `try`s end its iteration.
+        const saved_region = self.region_depth;
+        self.region_depth = 0;
+        defer self.region_depth = saved_region;
 
         var env_names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer env_names.deinit(self.alloc);

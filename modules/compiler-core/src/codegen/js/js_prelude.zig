@@ -64,6 +64,10 @@ pub const Helper = enum {
     /// `{ __bp_try: r }` that the enclosing function's guard
     /// (`commonJS.zig` `guardExprTry`) turns back into the propagated Result.
     try_unwrap,
+    /// Decision 595 — a `try` inside a `try … catch` region: the Ok value, or
+    /// — on an Error — a throw of `{ __bp_region: e }` that the region's own
+    /// `catch` (`commonJS.zig` `buildRegion`) hands to its handler.
+    region_try,
     /// A `result: true` binding's failure (decisions 431, 489): what the host
     /// threw as `{ error: HostError(message, "host", name, detail) }` —
     /// `__bp_host_fail(F, e)`, `F` std's `failure` module. An `Error` is
@@ -216,7 +220,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .str_trim, .str_trim_start, .str_trim_end, .case_map, .case_apply, .str_upper, .str_lower, .show, .text, .print, .print_as, .try_unwrap, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_mark, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .f64_text, .str_trim, .str_trim_start, .str_trim_end, .case_map, .case_apply, .str_upper, .str_lower, .show, .text, .print, .print_as, .try_unwrap, .region_try, .host_fail, .task, .await_task, .host_result, .host_result_task, .host_mark, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
@@ -279,6 +283,7 @@ pub fn name(h: Helper) []const u8 {
         .print_as => "__bp_print_as",
         .structural_eq => "__bp_eq",
         .try_unwrap => "__bp_try",
+        .region_try => "__bp_region_try",
         .host_fail => "__bp_host_fail",
         .host_result => "__bp_host_result",
         .host_result_task => "__bp_host_result_task",
@@ -326,6 +331,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .print_as => print_as,
         .structural_eq => structural_eq,
         .try_unwrap => try_unwrap,
+        .region_try => region_try,
         .host_fail => host_fail,
         .host_result => host_result,
         .host_result_task => host_result_task,
@@ -696,6 +702,19 @@ const try_unwrap: ast.Stmt = .{ .function = .{
         .{ .if_ = .{
             .cond = .{ .binary = .{ .op = "in", .lhs = &.{ .quoted = "error" }, .rhs = &r_, .parens = false } },
             .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .object = .{ .props = &.{.{ .kv = .{ .key = "__bp_try", .value = r_ } }} } } }}, .layout = .spaced } },
+        } },
+        .{ .return_ = .{ .member = .{ .object = &r_, .name = "ok" } } },
+    }, .layout = .spaced },
+} };
+
+/// `function __bp_region_try(r) { if ("error" in r) { throw { __bp_region: r.error }; } return r.ok; }`
+const region_try: ast.Stmt = .{ .function = .{
+    .name = "__bp_region_try",
+    .params = &.{.{ .pattern = .{ .name = "r" } }},
+    .body = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = .{ .binary = .{ .op = "in", .lhs = &.{ .quoted = "error" }, .rhs = &r_, .parens = false } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .object = .{ .props = &.{.{ .kv = .{ .key = "__bp_region", .value = .{ .member = .{ .object = &r_, .name = "error" } } } }} } } }}, .layout = .spaced } },
         } },
         .{ .return_ = .{ .member = .{ .object = &r_, .name = "ok" } } },
     }, .layout = .spaced },

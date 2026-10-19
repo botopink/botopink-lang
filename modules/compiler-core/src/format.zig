@@ -620,7 +620,8 @@ pub const Formatter = struct {
     }
 
     /// A statement and what ends it: nothing for a comment and for a **braced
-    /// block statement** — an `if` (not `a ?? b`), a loop or a `case` whose
+    /// block statement** — an `if` (not `a ?? b`), a loop, a `case` or a
+    /// `try … catch` with a handler block (595) whose
     /// printed text ends in `}` (decision 29 (c), C-13) — and `;` for every
     /// other statement. The test is the printed closing brace, exactly as the
     /// parser's `isBracedBlockStmt` tests the last token: `if (c) return x;`
@@ -628,7 +629,13 @@ pub const Formatter = struct {
     fn terminated(this: *Formatter, expr: ast.Expr, doc: *const Doc) !*const Doc {
         const bare = switch (expr) {
             .literal => |lit| lit.kind == .comment,
-            .branch => |b| b.kind == .if_ and nullishDefaultFallback(b.kind.if_) == null and lastChar(doc) == .closeBrace,
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| nullishDefaultFallback(i) == null and lastChar(doc) == .closeBrace,
+                // Decision 595 (4) — a `try … catch { … }` statement ends at
+                // its handler block's `}` (the parser's `isBracedBlockStmt`).
+                .tryCatch => |tc| tc.handler.* == .collection and tc.handler.collection.kind == .case and
+                    tc.handler.collection.kind.case.isBlock and lastChar(doc) == .closeBrace,
+            },
             .loop => lastChar(doc) == .closeBrace,
             .collection => |c| c.kind == .case and lastChar(doc) == .closeBrace,
             else => false,
@@ -801,10 +808,16 @@ pub const Formatter = struct {
                 // `(parse(7) catch -1) == 7` printed with a `try` did not
                 // re-parse.
                 .tryCatch => |tc| blk: {
+                    // Decision 595 (3) — `catch { e -> … }`: the binder is
+                    // printed at the head of the handler block.
+                    const handler = if (tc.binder) |b|
+                        try this.fmtLambda(&.{b}, tc.handler.collection.kind.case.arms[0].body.function.kind.body, false)
+                    else
+                        try this.fmtExpr(tc.handler.*);
                     const tail = try this.concatAll(&.{
                         try this.fmtExpr(tc.expr.*),
                         try this.text(" catch "),
-                        try this.fmtExpr(tc.handler.*),
+                        handler,
                     });
                     break :blk if (tc.tryKeyword) this.concat(try this.text("try "), tail) else tail;
                 },

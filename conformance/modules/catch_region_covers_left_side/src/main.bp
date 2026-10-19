@@ -1,0 +1,27 @@
+//// Decision 595 (2) — without a block the region is the whole expression left
+//// of the `catch` (537 (2)): `(try a) + (try b) catch 0` sends both failures to
+//// the one `catch`, and `try half(n) + 1 catch 0` is
+//// `((try half(n)) + 1) catch 0`.
+
+import {io.terminal.print} from "std";
+
+fn half(n: i32) -> Result<i32, string> {
+    if (n % 2 != 0) throw "odd";
+    return n / 2;
+}
+
+fn both(a: i32, b: i32) -> i32 {
+    return (try half(a)) + (try half(b)) catch 0;
+}
+
+fn next(n: i32) -> i32 {
+    return try half(n) + 1 catch 0;
+}
+
+pub fn main() {
+    print(both(4, 6));
+    print(both(3, 6));
+    print(both(4, 7));
+    print(next(10));
+    print(next(9));
+}

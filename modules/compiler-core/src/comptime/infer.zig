@@ -3991,6 +3991,10 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     defer env.closeBodyScope(&bodyLog, outerScope, t.name orelse "test");
     const savedThrowCtx = env.throwContext;
     env.throwContext = .unchecked;
+    // Decision 595 — a region's `try`s stop at a function's border.
+    const prevTryRegion = env.tryRegion;
+    env.tryRegion = null;
+    defer env.tryRegion = prevTryRegion;
     defer env.throwContext = savedThrowCtx;
 
     // `@src().fnName` inside a test body is the test name, verbatim (decision
@@ -8911,6 +8915,10 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     }
     const savedThrowCtx = env.throwContext;
     env.throwContext = throwCtx;
+    // Decision 595 — a region's `try`s stop at a function's border.
+    const prevTryRegion = env.tryRegion;
+    env.tryRegion = null;
+    defer env.tryRegion = prevTryRegion;
     defer env.throwContext = savedThrowCtx;
 
     // Decision 118 rule 1 — an alias to an effect wrapper types the function
@@ -9179,6 +9187,9 @@ fn inferTypeMethods(
         const savedFnEffect = env.fnEffect;
         const savedThrowCtx = env.throwContext;
         const savedLoopDepth = env.loopDepth;
+        const prevTryRegion = env.tryRegion;
+        env.tryRegion = null;
+        defer env.tryRegion = prevTryRegion;
         const savedBreakScope = env.breakScope;
         const savedLabelsLen = env.labelStack.items.len;
         defer {
@@ -17632,7 +17643,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // have dedicated statement-level lowerings in each backend.
             if (env.throwContext == .result) {
                 if (r) |rv| {
-                    const isCatchForm = rv.* == .branch and rv.branch.kind == .tryCatch;
+                    // Decision 595 — a region answers its success value: it is
+                    // returned as any value is (`wrap_ok`).
+                    const isCatchForm = rv.* == .branch and rv.branch.kind == .tryCatch and !rv.branch.kind.tryCatch.region;
                     const isTryJump = rv.* == .jump and rv.jump.kind == .try_;
                     const passes = valuePassesThrough(env, valPtr.?.getType());
                     // Decision 119 — a nested wrapper (`-> @Result<@Result<U, E>, E>`)
@@ -17674,7 +17687,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 if (valPtr) |vp| {
                     const rv = r.?.*;
                     const passthrough = blk: {
-                        if (rv == .branch and rv.branch.kind == .tryCatch) break :blk true;
+                        if (rv == .branch and rv.branch.kind == .tryCatch and !rv.branch.kind.tryCatch.region) break :blk true;
                         if (rv == .jump and rv.jump.kind == .try_) break :blk true;
                         const vt = vp.getType().deref();
                         if (vt.* == .named and env.throwContext == .result and std.mem.eql(u8, vt.named.name, "Result")) break :blk true;
@@ -17760,6 +17773,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
+            // Decision 595 (1), (5) — a `try` in a region hands its failure to
+            // the region's `catch`: it needs no channel of the function's, and
+            // it fails with the region's one error type.
+            if (env.tryRegion) |region| {
+                try joinTryRegion(env, region, rawTy, loc);
+                return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
+            }
             // Decisions 124 / 125 — in a block or prefixed loop whose `E` is
             // inferred, every propagating `try` joins it.
             if (env.inferredErrorScope and env.throwContext == .result) {
@@ -18129,47 +18149,172 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             } } } };
         },
 
-        .tryCatch => |tc| {
-            const exprTyped = try inferExprTyped(env, tc.expr.*);
-            const exprPtr = try makeTypedPtr(env, exprTyped);
-            const prevUseConstruct = enterUseConstruct(env, "a `try` / `catch` handler");
-            const handlerTyped = inferExprTyped(env, tc.handler.*) catch |err| {
-                env.useConstruct = prevUseConstruct;
-                return err;
-            };
-            env.useConstruct = prevUseConstruct;
-            const handlerPtr = try makeTypedPtr(env, handlerTyped);
-            const rawTy = exprTyped.getType();
-            const resultTy = try tryUnwrapOrError(env, rawTy, loc);
-            const handlerTy = handlerTyped.getType().deref();
-            const effectiveTy = switch (handlerTy.*) {
-                .func => |f| f.ret,
-                else => handlerTyped.getType(),
-            };
-            // The handler's value is the other way the expression ends. A
-            // `null` (or any `?U`) handler makes the whole an optional of the
-            // success value — `try await loadPost(id) catch null` is a `?Post`
-            // (maintainer, 24-box-1): the success value is a present `Post`,
-            // the handler the absent one. Any other handler must be the
-            // success type, and a mismatch is located at the handler.
-            var outTy = resultTy;
-            if (!effectiveTy.isNamed("void")) {
-                const eff = effectiveTy.deref();
-                const isOpt = eff.* == .named and std.mem.eql(u8, eff.named.name, "optional") and eff.named.args.len == 1;
-                const resIsOpt = resultTy.deref().* == .named and std.mem.eql(u8, resultTy.deref().named.name, "optional");
-                if (isOpt and !resIsOpt) {
-                    try unifyAt(env, eff.named.args[0], resultTy, tc.handler.getLoc());
-                    outTy = effectiveTy;
-                } else {
-                    try unifyAt(env, resultTy, effectiveTy, tc.handler.getLoc());
-                }
-            }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = outTy, .kind = .{ .tryCatch = .{
-                .expr = exprPtr,
-                .handler = handlerPtr,
-            } } } };
-        },
+        .tryCatch => |tc| return inferTryCatch(env, tc, loc),
     };
+}
+
+/// Decision 595 (5) — a `try` of the region `region` failing with the
+/// `Result` `rawTy`: the first fixes the region's one error type, every other
+/// must fail with it — a second type is `try-region-errors-differ`, at that
+/// `try`, naming both.
+fn joinTryRegion(env: *Env, region: *envMod.TryRegion, rawTy: *T.Type, loc: ast.Loc) InferError!void {
+    region.tries += 1;
+    const rt = rawTy.deref();
+    const errTy: *T.Type = if (rt.* == .named and std.mem.eql(u8, rt.named.name, "Result") and rt.named.args.len >= 2)
+        rt.named.args[1]
+    else
+        try env.freshVar();
+    const first = region.err orelse {
+        region.err = errTy;
+        region.errLoc = loc;
+        return;
+    };
+    unifyUnlocated(env, first, errTy) catch {
+        const want = try errorMod.typeLabelAlloc(env.arena, first);
+        const got = try errorMod.typeLabelAlloc(env.arena, errTy);
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "try-region-errors-differ: every `try` in a region fails with one error type — this region fails with {s}, and this `try` with {s}; handle this failure on the spot (`try … catch …`) or convert it (`catch throw …`)", .{ want, got }),
+            "A region's `catch` handles one error type: the first `try` written in it fixes it.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+}
+
+/// Decision 525 — the statements of a block `{ … }` (`case true { _ { … } }`),
+/// or null when `e` is no block.
+fn blockStmtsOf(e: ast.Expr) ?[]const ast.Stmt {
+    if (e != .collection or e.collection.kind != .case) return null;
+    const c = e.collection.kind.case;
+    if (!c.isBlock or c.arms.len != 1 or c.arms[0].body != .function) return null;
+    return c.arms[0].body.function.kind.body;
+}
+
+/// Decision 595 (3), (4) — whether a handler block leaves on every path it
+/// ends on: its last statement is a `throw`, a `return`, a `break` or a
+/// `continue`, so it answers no fallback of its own.
+fn handlerBlockLeaves(body: []const ast.Stmt) bool {
+    var i = body.len;
+    while (i > 0) {
+        i -= 1;
+        const e = body[i].expr;
+        if (e == .literal and e.literal.kind == .comment) continue;
+        return e == .jump and switch (e.jump.kind) {
+            .throw_, .@"return", .@"break", .@"continue" => true,
+            else => false,
+        };
+    }
+    return false;
+}
+
+/// `try … catch` (decisions 431, 537, 595). Two shapes share the node:
+///
+///   - the operand form, `try e catch h` / `e catch h` with no `try` inside
+///     `e`: `e` is a `Result` and the handler answers its `Error`;
+///   - a region (`tc.region`), the block `try { … }` or a left side holding a
+///     `try`: every `try` written in it hands its failure here (595 (1)), all
+///     with one error type (595 (5)), and the region answers the success
+///     value itself. A region with no `try` is `try-region-cannot-fail`.
+///
+/// The handler is a fallback expression, a `throw`, a block whose value is
+/// the fallback, or a block with a binder `{ e -> … }` — the binder bound to
+/// the error like a `case` arm's (595 (3)). An empty block is `catch-empty`
+/// (595 (4)). The handler's own `try`s belong to the region around this one,
+/// or the function (595 (6)).
+fn inferTryCatch(env: *Env, tc: anytype, loc: ast.Loc) InferError!TypedExpr {
+    var region: envMod.TryRegion = .{};
+    const exprTyped = blk: {
+        if (!tc.region) break :blk try inferExprTyped(env, tc.expr.*);
+        const saved = env.tryRegion;
+        env.tryRegion = &region;
+        defer env.tryRegion = saved;
+        break :blk try inferExprTyped(env, tc.expr.*);
+    };
+    const exprPtr = try makeTypedPtr(env, exprTyped);
+    const rawTy = exprTyped.getType();
+    var errTy: *T.Type = undefined;
+    const resultTy: *T.Type = if (tc.region) blk: {
+        if (region.tries == 0) {
+            env.lastError = TypeError.custom(
+                "try-region-cannot-fail: this region holds no `try`, so its `catch` handles nothing — write `try` before each call that can fail, or drop the `try { … } catch`",
+                "A `try { … } catch …` handles the failures of the `try`s written in its block.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
+        errTy = region.err orelse try env.freshVar();
+        break :blk rawTy;
+    } else blk: {
+        // Decision 595 (7) — `e catch h` whose `e` is no `Result` and holds no
+        // `try` is a region that cannot fail.
+        const d = rawTy.deref();
+        if (!tc.tryKeyword and unwrapResultType(rawTy) == null and d.* != .typeVar) {
+            env.lastError = TypeError.custom(
+                "try-region-cannot-fail: this region holds no `try`, so its `catch` handles nothing — write `try` before each call that can fail, or drop the `try { … } catch`",
+                "A `catch` handles the failure of a `Result`, or of the `try`s written on its left.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
+        const ok = try tryUnwrapOrError(env, rawTy, loc);
+        errTy = if (d.* == .named and std.mem.eql(u8, d.named.name, "Result") and d.named.args.len >= 2) d.named.args[1] else try env.freshVar();
+        break :blk ok;
+    };
+
+    // Decision 595 (4) — `catch { }` swallows the failure in silence.
+    const handlerBlock = blockStmtsOf(tc.handler.*);
+    if (handlerBlock) |body| {
+        var any = false;
+        for (body) |st| {
+            if (st.expr == .literal and st.expr.literal.kind == .comment) continue;
+            any = true;
+        }
+        if (!any) {
+            env.lastError = TypeError.custom(
+                "catch-empty: an empty `catch { }` swallows the failure in silence — handle it with a value, a statement or a `throw`, or leave it to propagate",
+                "Write the fallback value, the statement that handles the failure, or `throw` to make it the function's; or drop the `catch` and let the `try` propagate.",
+            ).withLoc(tc.handler.getLoc());
+            return error.TypeError;
+        }
+    }
+
+    const prevUseConstruct = enterUseConstruct(env, "a `try` / `catch` handler");
+    defer env.useConstruct = prevUseConstruct;
+    var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    if (tc.binder) |b| try saveAndBindPatternName(env, &snapshots, b, errTy);
+    const handlerTyped = try inferExprTyped(env, tc.handler.*);
+    try restorePatternBindings(env, snapshots.items);
+    const handlerPtr = try makeTypedPtr(env, handlerTyped);
+    const handlerTy = handlerTyped.getType().deref();
+    const effectiveTy = switch (handlerTy.*) {
+        .func => |f| f.ret,
+        else => handlerTyped.getType(),
+    };
+    // The handler's value is the other way the expression ends. A
+    // `null` (or any `?U`) handler makes the whole an optional of the
+    // success value — `try await loadPost(id) catch null` is a `?Post`
+    // (maintainer, 24-box-1): the success value is a present `Post`,
+    // the handler the absent one. Any other handler must be the
+    // success type, and a mismatch is located at the handler. A block
+    // that leaves (`throw`, `return`) answers no value.
+    var outTy = resultTy;
+    const leaves = if (handlerBlock) |body| handlerBlockLeaves(body) else false;
+    const voidHandler = effectiveTy.isNamed("void");
+    if (!leaves and !(voidHandler and handlerBlock == null) and !(voidHandler and resultTy.isNamed("void"))) {
+        const eff = effectiveTy.deref();
+        const isOpt = eff.* == .named and std.mem.eql(u8, eff.named.name, "optional") and eff.named.args.len == 1;
+        const resIsOpt = resultTy.deref().* == .named and std.mem.eql(u8, resultTy.deref().named.name, "optional");
+        if (isOpt and !resIsOpt) {
+            try unifyAt(env, eff.named.args[0], resultTy, tc.handler.getLoc());
+            outTy = effectiveTy;
+        } else {
+            try unifyAt(env, resultTy, effectiveTy, tc.handler.getLoc());
+        }
+    }
+    return TypedExpr{ .branch = .{ .loc = loc, .type_ = outTy, .kind = .{ .tryCatch = .{
+        .expr = exprPtr,
+        .handler = handlerPtr,
+        .tryKeyword = tc.tryKeyword,
+        .region = tc.region,
+        .binder = tc.binder,
+    } } } };
 }
 
 /// Decision 105 — the three loop keywords are statements typed `void`; the
@@ -18319,6 +18464,10 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     const prevStarFn = env.starFn;
     const prevFnEffect = env.fnEffect;
     const prevThrowCtx = env.throwContext;
+    // Decision 595 — a region's `try`s stop at a function's border.
+    const prevTryRegion = env.tryRegion;
+    env.tryRegion = null;
+    defer env.tryRegion = prevTryRegion;
     const prevInContextFn = env.inContextFn;
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
@@ -25316,6 +25465,10 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
     const prevStarFn = env.starFn;
     const prevFnEffect = env.fnEffect;
     const prevThrowCtx = env.throwContext;
+    // Decision 595 — a region's `try`s stop at a function's border.
+    const prevTryRegion = env.tryRegion;
+    env.tryRegion = null;
+    defer env.tryRegion = prevTryRegion;
     const prevInContextFn = env.inContextFn;
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
@@ -25528,9 +25681,14 @@ fn inferFunctionExprExpectedInner(
         if (r.* != .named or !std.mem.eql(u8, r.named.name, "Result") or r.named.args.len < 2) break :blk null;
         break :blk r.named.args[1];
     };
+    // Decision 595 — a lambda's `try`s are its own, never an enclosing
+    // region's; a `case` arm's block is the enclosing function's.
+    const prevTryRegion = env.tryRegion;
+    defer env.tryRegion = prevTryRegion;
     if (!armBlock) {
         env.throwContext = if (lambdaErr) |et| .{ .result = et } else .plain;
         env.inLambdaBody = true;
+        env.tryRegion = null;
     }
     // Decision 148 — one lambda deeper; its writes to captured `var`s are
     // legal only in the two exempt shapes the site that infers it named.

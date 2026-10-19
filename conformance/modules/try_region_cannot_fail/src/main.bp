@@ -1,0 +1,12 @@
+//// Decision 595 (7) — a region holding no `try` cannot fail, so its `catch`
+//// handles nothing: refused `try-region-cannot-fail` at the region.
+
+import {io.terminal.print} from "std";
+
+fn next(n: i32) -> i32 {
+    return try { n + 1 } catch 0;
+}
+
+pub fn main() {
+    print(next(1));
+}

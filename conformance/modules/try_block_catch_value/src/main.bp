@@ -1,0 +1,34 @@
+//// Decision 595 (2), (3), (4) — `try { … } catch …` is a region: every `try`
+//// written in the block hands its failure to the one `catch`, so a function
+//// with no `Result` in its return runs fallible calls. The block's value is its
+//// last expression written without `;`; the handler is the fallback — an
+//// expression, or a block whose value is its last expression.
+
+import {io.terminal.print} from "std";
+
+fn half(n: i32) -> Result<i32, string> {
+    if (n % 2 != 0) throw "odd";
+    return n / 2;
+}
+
+fn quarter(n: i32) -> i32 {
+    return try {
+        val h = try half(n);
+        try half(h)
+    } catch 0;
+}
+
+fn halves(a: i32, b: i32) -> i32 {
+    val total = try { try half(a) + try half(b) } catch {
+        print("not even");
+        -1
+    };
+    return total;
+}
+
+pub fn main() {
+    print(quarter(8));
+    print(quarter(6));
+    print(halves(4, 6));
+    print(halves(4, 5));
+}

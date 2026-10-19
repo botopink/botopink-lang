@@ -956,9 +956,23 @@ pub fn BranchExprOf(comptime phase: Phase) type {
             /// printing a `try` nobody wrote does not re-parse. Left out of
             /// the AST dump.
             tryKeyword: bool = false,
+            /// Decision 595 — `expr` is a region: the block `try { … }`, or
+            /// the left side of the `catch` when it holds a `try` (`(try a) +
+            /// (try b) catch 0`). Every `try` written in it (outside a nested
+            /// function, a nested region's own region and its handler's
+            /// `try`s excepted — those are this region's) hands its failure
+            /// to this `catch`, and `expr` answers the success value itself.
+            /// False for the operand form (`try e catch h`, `e catch h`): `expr`
+            /// is the `Result` the handler unwraps. Dumped only when set.
+            region: bool = false,
+            /// Decision 595 (3) — `catch { e -> … }`: the binder the region's
+            /// error is bound to, a `case` arm's binder in the enclosing
+            /// function — `handler` is then the block (`case true { _ { … } }`,
+            /// `isBlock`). Null for every other handler. Dumped only when set.
+            binder: ?[]const u8 = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{"tryKeyword"}, &.{});
+                return stringifyOmitting(this, jws, &.{"tryKeyword"}, &.{ "region", "binder" });
             }
         },
 
@@ -4070,6 +4084,102 @@ fn isYieldJump(j: JumpExpr) bool {
     };
 }
 
+/// Decision 595 (2), (7) — the first `try` in `e` that hands its failure to a
+/// region written around `e`: one in `e`'s own scope (a closure, an `async { }`
+/// block and a prefixed loop are scopes of their own), outside a nested
+/// region (whose `try`s are its own `catch`'s) but in a nested handler (595
+/// (6)). Null when `e` holds none — a region around it cannot fail.
+pub fn exprFindRegionTry(e: Expr) ?Loc {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringTemplate => |st| blk: {
+                for (st.parts) |p| switch (p) {
+                    .expr => |x| if (exprFindRegionTry(x.*)) |loc| break :blk loc,
+                    else => {},
+                };
+                break :blk null;
+            },
+            else => null,
+        },
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |ia| exprFindRegionTry(ia.receiver.*),
+            else => null,
+        },
+        .binaryOp => |op| exprFindRegionTry(op.lhs.*) orelse exprFindRegionTry(op.rhs.*),
+        .unaryOp => |op| exprFindRegionTry(op.expr.*),
+        .jump => |j| switch (j.kind) {
+            .try_ => j.loc,
+            .@"return", .throw_ => |v| if (v) |x| exprFindRegionTry(x.*) else null,
+            .await_ => |x| exprFindRegionTry(x.*),
+            .@"break" => |b| if (b.value) |x| exprFindRegionTry(x.*) else null,
+            .yield => |y| if (y.value) |x| exprFindRegionTry(x.*) else null,
+            .@"continue" => null,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| exprFindRegionTry(i.cond.*) orelse bodyFindRegionTry(i.then_) orelse (if (i.else_) |els| bodyFindRegionTry(els) else null),
+            // A nested region's `try`s are its own `catch`'s; its handler's
+            // are the region around it (595 (6)).
+            .tryCatch => |tc| (if (tc.region) null else exprFindRegionTry(tc.expr.*)) orelse exprFindRegionTry(tc.handler.*),
+        },
+        // A prefixed loop is a scope of its own (decision 125).
+        .loop => |lp| if (lp.generator == null) (exprFindRegionTry(lp.iter.*) orelse bodyFindRegionTry(lp.body)) else null,
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprFindRegionTry(lb.value.*),
+            .assign => |a| exprFindRegionTry(a.value.*),
+            .localBindDestruct => |lb| exprFindRegionTry(lb.value.*),
+        },
+        .useHook => |u| exprFindRegionTry(u.kind.inner.*),
+        .call => |c| switch (c.kind) {
+            // A trailing lambda is a closure: its `try`s are its own.
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (exprFindRegionTry(r.*)) |l| break :blk l;
+                if (cc.calleeExpr) |ce| if (exprFindRegionTry(ce.*)) |l| break :blk l;
+                for (cc.args) |a| if (exprFindRegionTry(a.value.*)) |l| break :blk l;
+                break :blk null;
+            },
+            .pipeline => |pl| exprFindRegionTry(pl.lhs.*) orelse exprFindRegionTry(pl.rhs.*),
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| exprFindRegionTry(inner.*),
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (exprFindRegionTry(x)) |l| break :blk l;
+                if (al.spreadExpr) |se| if (exprFindRegionTry(se.*)) |l| break :blk l;
+                break :blk null;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (exprFindRegionTry(x)) |l| break :blk l;
+                break :blk null;
+            },
+            .range => |r| exprFindRegionTry(r.start.*) orelse (if (r.end) |x| exprFindRegionTry(x.*) else null),
+            .behaviorLit => |bl| blk: {
+                for (bl.fields) |f| if (exprFindRegionTry(f.value.*)) |l| break :blk l;
+                break :blk null;
+            },
+            // A `case` arm's block (and so a block `{ … }`) is a scope of the
+            // enclosing function.
+            .case => |c| blk: {
+                for (c.subjects) |x| if (exprFindRegionTry(x)) |l| break :blk l;
+                for (c.arms) |arm| {
+                    if (arm.guard) |g| if (exprFindRegionTry(g)) |l| break :blk l;
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        if (bodyFindRegionTry(arm.body.function.kind.body)) |l| break :blk l;
+                        continue;
+                    }
+                    if (exprFindRegionTry(arm.body)) |l| break :blk l;
+                }
+                break :blk null;
+            },
+        },
+        // A closure (and an `async { }` block) is a scope of its own.
+        .function, .comptime_ => null,
+    };
+}
+
+fn bodyFindRegionTry(body: []const Stmt) ?Loc {
+    for (body) |s| if (exprFindRegionTry(s.expr)) |l| return l;
+    return null;
+}
+
 fn isFailJump(j: JumpExpr) bool {
     return switch (j) {
         .throw_ => true,
@@ -4103,7 +4213,12 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
         .branch => |b| switch (b.kind) {
             .if_ => |i| exprFindJump(i.cond.*, pred) orelse bodyFindJump(i.then_, pred) orelse (if (i.else_) |els| bodyFindJump(els, pred) else null),
             // `try x catch h` handles its own failure; only its operands count.
-            .tryCatch => |tc| exprFindJump(tc.expr.*, pred) orelse exprFindJump(tc.handler.*, pred),
+            // Decision 595 — a region's `try`s are its `catch`'s: looking for
+            // a failing jump, the region's `throw`s and its handler's count.
+            .tryCatch => |tc| if (tc.region and pred == isFailJump)
+                exprFindJump(tc.expr.*, isThrowJump) orelse exprFindJump(tc.handler.*, pred)
+            else
+                exprFindJump(tc.expr.*, pred) orelse exprFindJump(tc.handler.*, pred),
         },
         // A prefixed loop is a scope of its own; an unprefixed one feeds the
         // nearest generator scope (decision 125).

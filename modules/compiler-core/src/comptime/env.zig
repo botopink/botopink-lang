@@ -282,6 +282,15 @@ pub const InjectField = struct {
 /// Set by `inferFnDecl` when entering a named function body and reset to
 /// `.unchecked` inside nested function expressions (lambdas have no declared
 /// return type). `inferJumpExpr` reads it to validate `throw` statements.
+/// Decision 595 (5), (7) — what a region's `try`s told the checker: the
+/// error type of its first `try` (every other one must fail with it), and
+/// how many it holds.
+pub const TryRegion = struct {
+    err: ?*T.Type = null,
+    errLoc: ast.Loc = .{ .line = 0, .col = 0 },
+    tries: usize = 0,
+};
+
 pub const ThrowContext = union(enum) {
     /// No declared return type (top-level or lambda) — `throw` is left unchecked.
     unchecked,
@@ -1356,6 +1365,12 @@ pub const Env = struct {
     typeArgTwins: std.StringHashMapUnmanaged(void) = .empty,
     /// How `throw` is checked in the function body currently being inferred.
     throwContext: ThrowContext = .unchecked,
+    /// Decision 595 — the `try … catch` region whose `try`s are being
+    /// inferred, or null: a `try` there hands its failure to the region's
+    /// `catch` instead of the function's channel. Cleared by every nested
+    /// function (a lambda, an `async { }` block, a prefixed loop) and while
+    /// the region's own handler is inferred (595 (6)).
+    tryRegion: ?*TryRegion = null,
     /// Active effect-fn context while inferring its body (for `await`/`yield`
     /// rules). The field name is historical — see `StarFnCtx` above.
     starFn: ?StarFnCtx = null,

@@ -1576,6 +1576,25 @@ test "format: catch ---- a written `try` is kept" {
     try h.assertIdempotent(std.testing.allocator, src);
 }
 
+test "format: catch ---- a region and its handler block print back (595)" {
+    // Decision 595 — `try { … } catch …`, a handler block with a binder, and a
+    // statement that ends at the handler's `}` with no `;`.
+    const src =
+        \\fn f() -> i32 {
+        \\    try {
+        \\        try save(a);
+        \\        try save(b)
+        \\    } catch { log("not saved") }
+        \\    val p = try { try lookup(key) } catch { e ->
+        \\        throw Missing(key: e);
+        \\    };
+        \\    return (try half(a)) + (try half(b)) catch 0;
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
 test "format: a label on continue prints as on break" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) {
