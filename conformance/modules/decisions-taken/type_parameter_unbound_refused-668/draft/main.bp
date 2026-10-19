@@ -1,0 +1,26 @@
+//// Decision 668 — A function's type parameter is always bound by a parameter, never by the return type alone.
+
+import {io.terminal.print} from "std";
+
+fn first<T>(items: T[]) -> ?T {
+    return items[0];
+}
+
+fn apply<T, R>(value: T, f: fn(x: T) -> R) -> R {
+    return f(value);
+}
+
+fn absent<T>(comptime t: type<T>) -> ?T {
+    return null;
+}
+
+fn nothing<T>() -> ?T {
+    return null;
+}
+
+pub fn main() -> void {
+    print(first([3, 4]));
+    print(apply(2, { x -> x * 10 }));
+    print(absent(string));
+    print(nothing());
+}

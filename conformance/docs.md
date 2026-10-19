@@ -1294,11 +1294,11 @@ the token (`fn failed<T>(comptime t: type<T>, message: string)`, called
 `self`'s type (`flatten<E>(self: Self<Array<E>>)`); where no type is meant the
 answer is `unknown`.
 
-<!-- example: modules/decisions-taken/type_parameter_unbound_refused-668/cases/type_parameter_unbound -->
+<!-- example: modules/type_parameter_unbound -->
 
-<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/type_parameter_bound_by_token -->
+<!-- example: modules/type_parameter_bound_by_token -->
 
-<!-- example: modules/decisions-taken/type_parameter_unbound_refused-668/cases/type_parameter_bound_in_lambda_type -->
+<!-- example: modules/type_parameter_bound_in_lambda_type -->
 
 A function's name follows the scope rule whatever its parameters: a
 parameter or a local named like a function with `comptime` parameters is
@@ -1492,7 +1492,7 @@ of the enclosing function (or of its type) can be decided by no target: it is
 refused at the test, `is-type-parameter`, naming the parameter and the two forms
 that work, `comptime t: type<T>` and `t: type<T>` (decisions 667, 758):
 
-<!-- example: modules/decisions-taken/is_test_on_type_parameter_refused-667/cases/is_type_parameter_refused -->
+<!-- example: modules/is_type_parameter_refused -->
 
 A type to test against travels as a `comptime t: type<T>` parameter — `fn
 count<T>(self: Registry, comptime t: type<T>) -> i32 { … if (e is t) … }`, called
@@ -1504,9 +1504,9 @@ handed on to another call (`self.count(t)`) is a `comptime` argument known at
 build, the call of the copy for the same type. The type itself never reaches run
 time. Never a comparison by name.
 
-<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/is_comptime_type_parameter -->
+<!-- example: modules/is_comptime_type_parameter -->
 
-<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/comptime_type_token_handed_on -->
+<!-- example: modules/comptime_type_token_handed_on -->
 
 A type also travels as a run-time value (decision 758): `t: type<T>` without
 `comptime` is the type's identity, crossing to run time as a `Field(Book,
@@ -1518,9 +1518,9 @@ run-time `t` handed to a `comptime t: type<T>` parameter is
 `comptime-arg-not-known`; `comptime t: type<T>` stays the form of every read at
 build.
 
-<!-- example: modules/decisions-taken/type_token_run_time_value-758/cases/type_token_run_time_value -->
+<!-- example: modules/type_token_run_time_value -->
 
-<!-- example: modules/decisions-taken/type_token_run_time_value-758/cases/type_token_handed_on_run_time -->
+<!-- example: modules/type_token_handed_on_run_time -->
 
 The elements of an array literal that disagree make the union of their types
 (`[3, "abcd"]` is `(i32 | string)[]`), and each element read back — printed,

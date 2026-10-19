@@ -1834,7 +1834,7 @@ or in an inline parameter type's fields — is `type-parameter-unbound` at the d
 naming it and the ways out. The return type never binds one. A template's `anyvalue` answer
 (`ast.anyvalue_param_name`) is bound by the built code and skipped, and so is a value-or-type
 function's type form (`<name>__type`, whose removed type argument binds it). A type's own parameters are
-bound by its fields, outside this rule. Cells: `modules/decisions-taken/type_parameter_unbound_refused-668/cases/type_parameter_unbound`,
+bound by its fields, outside this rule. Cells: `modules/type_parameter_unbound`,
 `type_parameter_bound_by_token`, `type_parameter_bound_in_lambda_type`.
 
 ## `unknown` (decision 8 §2, 1.0.4's 06 N19)
