@@ -1,0 +1,14 @@
+//// Decision 237 — A template capture carries only the bindings whose name appears as a word in the captured text (`<Card title="x"><Badge/
+
+import {io.terminal.print} from "std";
+import {comptime.capture.deps};
+
+type Card(title: string)
+
+type Badge(text: string)
+
+pub fn main() -> void {
+    print(deps @`<Card title="x"><Badge/></Card>`);
+    print(deps @`"cfg-0"`);
+    print(deps @`<Card title="x"><Badge/></Card>`);
+}

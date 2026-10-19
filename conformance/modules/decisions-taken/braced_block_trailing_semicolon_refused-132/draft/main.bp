@@ -1,0 +1,25 @@
+//// Decision 132 — The `;` after a braced block becomes an error once every source is migrated
+
+import {io.terminal.print} from "std";
+
+fn describe(n: i32) -> void {
+    if (n > 2) print("big");
+    if (n == 3) print("three") else print("small");
+    for ([1, 2]) { i ->
+        print(i);
+    }
+    var left = n;
+    while (left > 0) {
+        left = left - 1;
+    }
+    print("left " + left.toString());
+    case n % 2 {
+        0 -> print("even");
+        _ -> print("odd");
+    }
+}
+
+pub fn main() -> void {
+    describe(3);
+    describe(2);
+}

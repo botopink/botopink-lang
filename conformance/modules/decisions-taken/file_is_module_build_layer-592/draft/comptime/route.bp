@@ -1,0 +1,9 @@
+//// The build layer: analysed first, importing only std.
+
+import {compiler} from "std";
+
+pub type Route(path: string)
+
+pub fn route(syntax decl: unknown, comptime path: string) -> void {
+    compiler.setMeta(Route(path: path));
+}

@@ -1,0 +1,22 @@
+//// Decision 495 — Every std binding is audited: one whose host call can fail gains `result: true` and its module's error enum; one that cannot is listed as promising no failure.
+
+import {io.fs, io.process, io.terminal.print} from "std";
+
+fn reason(e: fs.FsError) -> string {
+    return case e {
+        fs.FsError.NotFound(path) -> "not found " + path;
+        _ -> "other";
+    };
+}
+
+fn show(r: Result<string, fs.FsError>) -> string {
+    return case r {
+        Ok(text) -> "read " + text;
+        Error(e) -> reason(e);
+    };
+}
+
+pub fn main() -> void {
+    print(show(fs.readText("no-such-file.txt")));
+    print(process.pid() > 0);
+}

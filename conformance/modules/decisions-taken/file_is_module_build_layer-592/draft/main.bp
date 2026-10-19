@@ -1,0 +1,10 @@
+//// Decision 592 — (e), a counter-proposal: a file is a module, and the build has a layer of its own.
+
+import {io.terminal.print} from "std";
+import {pages.home, pages.about};
+
+pub fn main() -> void {
+    print(home.render());
+    print(about.render());
+    print(home.visits);
+}

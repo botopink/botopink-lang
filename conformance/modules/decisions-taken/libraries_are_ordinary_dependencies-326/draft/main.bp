@@ -1,0 +1,8 @@
+//// Decision 326 — The shared libraries leave the compiler: one repository each, ordinary dependencies.
+
+import {io.terminal.print} from "std";
+import {cookie} from "http";
+
+pub fn main() -> void {
+    print(cookie.parse("session=abc; theme=dark").length);
+}

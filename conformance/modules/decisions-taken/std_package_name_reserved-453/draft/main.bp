@@ -1,0 +1,7 @@
+//// Decision 453 — The package name `std` is the bundled standard library's alone.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("a package named std");
+}

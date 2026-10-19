@@ -1,0 +1,16 @@
+//// `pages.home`: a module named by its path, in one block with `pages.about`.
+
+import {pages.about};
+import {internal.text.shout};
+import {comptime.route.route};
+
+pub val visits = about.base + 1;
+
+#[route("/")]
+pub fn render() -> string {
+    return shout("home") + " links " + about.path();
+}
+
+pub fn path() -> string {
+    return "/";
+}

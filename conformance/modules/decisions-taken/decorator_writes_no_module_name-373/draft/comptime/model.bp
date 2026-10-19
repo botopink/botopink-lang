@@ -1,0 +1,25 @@
+//// A decorator that writes only under its type's path, and the registry its executor fills.
+
+import {compiler} from "std";
+
+pub type Entity(table: string)
+
+var seen: string[] = [];
+
+pub fn record(name: string) -> void {
+    seen.push(name);
+}
+
+pub fn recorded() -> string[] {
+    return seen;
+}
+
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.setMeta(Entity(table: table));
+    compiler.addMember("table", fn() -> string {
+        return table;
+    });
+    compiler.addType("Columns", type(id: string, name: string));
+    val name = compiler.name(decl)!;
+    compiler.init({ -> record(name) });
+}

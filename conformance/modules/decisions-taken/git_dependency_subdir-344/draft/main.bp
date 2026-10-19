@@ -1,0 +1,7 @@
+//// Decision 344 — A git dependency may name a package inside its repository: `"subdir"`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("rakun-web resolved");
+}

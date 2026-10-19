@@ -1,0 +1,7 @@
+//// Decision 531 — A dependency function wasm cannot lower, which the program never calls: does it stop the build?
+
+import {io.process, path, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(path.join(["a", "b.txt"]));
+}

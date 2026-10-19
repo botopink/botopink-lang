@@ -1,0 +1,6 @@
+{
+  "name": "git_dependency_subdir-344",
+  "dependencies": {
+    "rakun-web": { "path": "deps/rakun", "subdir": "modules/rakun-web" }
+  }
+}
