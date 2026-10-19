@@ -2339,7 +2339,7 @@ fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
 
 // The task the thunk started — or the `Failure` it raised before its first
 // `await` — and then its value.
-fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
+async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
     case caught(f) {
         Ok(t) -> return await t;
         Error(m) -> throw Failure(message: m, kind: "panic");
@@ -3491,7 +3491,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // The rest of the file in pieces of at most `size` bytes. An error ends the stream.
-    pub fn chunks(self: Self, size: i32 = 65536) -> AsyncIter<Result<Bytes, FsError>> {
+    pub async iter fn chunks(self: Self, size: i32 = 65536) -> AsyncIter<Result<Bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
             if (b.length == 0) break;
@@ -3502,7 +3502,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     // The rest of the file line by line, `\n` and `\r\n` stripped. A line that is not
     // UTF-8 ends the stream with `InvalidUtf8`, its offset counted from the first
     // line this call read.
-    pub fn lines(self: Self) -> AsyncIter<Result<string, FsError>> {
+    pub async iter fn lines(self: Self) -> AsyncIter<Result<string, FsError>> {
         var consumed = 0l;
         while (true) {
             val raw = try lift(self.location, rawReadLine(self.handle));
