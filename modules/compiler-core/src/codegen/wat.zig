@@ -4617,6 +4617,16 @@ const Emitter = struct {
         };
     }
 
+    /// 144 B-122 — `t.toString()` on a tuple: a string, the text `@print` writes.
+    fn isTupleToString(self: *Emitter, cc: anytype) bool {
+        const recv = cc.receiver orelse return false;
+        if (cc.is_builtin or cc.args.len != 0 or cc.trailing.len != 0) return false;
+        if (!std.mem.eql(u8, cc.callee, "toString")) return false;
+        if (isTupleLit(recv.*) or self.typeRefIsTuple(recv.*)) return true;
+        const sh = (self.printShapeOf(recv.*) catch null) orelse return false;
+        return sh[0] == '(';
+    }
+
     fn isTupleLit(e: ast.Expr) bool {
         return switch (e) {
             .collection => |col| switch (col.kind) {
@@ -15244,6 +15254,9 @@ const Emitter = struct {
         if (cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(loc)) {
             if (try self.lowerBehaviorDispatch(cc)) return;
         }
+        // 144 B-122 — `t.toString()` on a tuple is the text `@print` writes for
+        // it (`#(1, 2)`), captured into a string, as a tuple joins a `+`.
+        if (self.isTupleToString(cc)) return self.lowerCapturedPrint(cc.receiver.?.*);
         if (try self.lowerCollectionMethod(cc)) return;
         if (try self.lowerValueCall(cc)) return;
         if (cc.receiver == null and self.external_missing.contains(cc.callee)) {
@@ -23704,6 +23717,7 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primAssocHelper(cc) != null) break :blk true;
+                    if (self.isTupleToString(cc)) break :blk true;
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .str;
                     if (isStrSlice(cc) and !self.answeredByValue(cc, c.loc)) break :blk true;
                     // `s[i]` / `s[a..b]` (decision 30) answer a string; an

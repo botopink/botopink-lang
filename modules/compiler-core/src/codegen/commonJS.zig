@@ -5868,6 +5868,18 @@ const Emitter = struct {
         return self.b.call(self.helper(.text), &.{value});
     }
 
+    /// 144 B-122 — `t.toString()` on a tuple: the text `@print` writes for it
+    /// (`#(1, 2)`), through `__bp_text` with the tuple's print shape, where
+    /// JavaScript's `Array.prototype.toString` answers `1,2`. Null for any other call.
+    fn tupleToString(self: *Emitter, cc: anytype) anyerror!?js.Expr {
+        if (cc.args.len != 0 or cc.trailing.len != 0) return null;
+        if (!std.mem.eql(u8, cc.callee, "toString")) return null;
+        const recv = cc.receiver orelse return null;
+        const ty = (try self.staticTypeOf(recv.*)) orelse return null;
+        if (ty.tupleElems() == null) return null;
+        return try self.holeText(try self.buildExpr(recv.*), ty);
+    }
+
     /// 144 B-114 — `x.toString()` on a local `x` of a type parameter whose
     /// print shape is read at run time (`shape_fns`): `__bp_f64(x)` when the
     /// call bound an `f64` (`"f"`), else the method as it is.
@@ -6888,6 +6900,7 @@ const Emitter = struct {
     fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         if (try self.paramShapeToString(cc)) |text| return text;
+        if (try self.tupleToString(cc)) |text| return text;
         // builtin_node_dispatch: a prelude `declare fn` with a `.JavaScript`
         // implementation (`primitives.bp`, `builtins.d.bp`). Those are free functions: their templates have
         // no receiver hole, so a method call `recv.print()` is never one — it

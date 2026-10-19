@@ -136,7 +136,9 @@ codegen/
   record, an enum, an array, a tuple, an optional of one — under
   `ast.text_hole_col` (`infer.noteTextHole`, `textValueLowerings`), and
   `holeConcat` writes it `__bp_text(v, shape)`, `shape` the static print shape
-  `typeShape` reads off the recorded type (a tuple, a float). A type variable
+  `typeShape` reads off the recorded type (a tuple, a float). A tuple's own
+  `toString()` is the same text (`tupleToString`, 144 B-122; JavaScript's would
+  be `1,2`). A type variable
   keeps JavaScript's coercion, except in a generic fn whose body writes one of
   its type parameters' values as text — a `@print`, a `+`, a `toString()`, a
   call of another such fn (`ShapeSiteScan`, `Emitter.shape_fns`, 144 B-114,
