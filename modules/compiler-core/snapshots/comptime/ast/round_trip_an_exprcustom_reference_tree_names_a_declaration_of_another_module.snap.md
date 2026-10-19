@@ -117,8 +117,8 @@ pub behavior Compiler {
     // ── A declaration handle's reads (decision 576 (3)) ───────────────────
     fn kind(self: Self, syntax d: unknown) -> DeclKind;
     fn moduleOf(self: Self, syntax d: unknown) -> string;
-    fn meta<M>(self: Self, syntax d: unknown) -> ?M;
-    fn metaAll<M>(self: Self, syntax d: unknown) -> M[];
+    fn meta<M>(self: Self, syntax d: unknown, comptime m: type<M>) -> ?M;
+    fn metaAll<M>(self: Self, syntax d: unknown, comptime m: type<M>) -> M[];
     fn attr(self: Self, syntax d: unknown, name: string) -> ?string;
     fn component(self: Self, syntax d: unknown) -> unknown;
     fn hooks(self: Self, syntax d: unknown) -> HookNode[];
@@ -636,6 +636,11 @@ pub type HookNode = __HookNode;
               "name": "d",
               "type": "unknown",
               "is_comptime": true
+            },
+            {
+              "name": "m",
+              "type": "typeparam M",
+              "is_comptime": true
             }
           ],
           "return_type": "?M"
@@ -653,6 +658,11 @@ pub type HookNode = __HookNode;
             {
               "name": "d",
               "type": "unknown",
+              "is_comptime": true
+            },
+            {
+              "name": "m",
+              "type": "typeparam M",
               "is_comptime": true
             }
           ],

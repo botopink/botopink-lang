@@ -590,8 +590,9 @@ gone, not aliased (decision 127).
   3. A `$N` marker called as a function in a Node template — `… => $0()` — emits
      `() => {…}()` when the argument is a closure literal, which is a JS
      `SyntaxError` (an arrow IIFE needs parentheses). Write `($0)()`.
-- A `val` bound to a generic call is not generalised: `val f = Function.constant(42)`
-  accepts one argument type only.
+- A `val` bound to a generic call is not generalised: the function it holds takes the argument
+  types its first use fixed (`Function.constant`'s answer is `fn(unknown) -> A`, decision 668, so
+  it takes any).
 - Test an optional parameter with `!= null`, not truthiness: on commonJS
   `if (end)` is false for `0`.
 - Pick a host call by semantics, not by name — `string:suffix/2` and
@@ -640,13 +641,16 @@ method has accepted.
   boundary list (`5e-324`, `1.7976931348623157e308`, the halfway points, `9007199254740993`, …).
   `"-0".parseFloat()` is `-0.0`, which `==` tells from `0.0` on erlang (`=:=`) and not on commonJS.
 - **The cells** are free `declare fn`s beside the slice helpers: `stringIsDigits(s)`,
-  `stringToInteger(numeral)`, `stringToFloat(text, whole, fraction, exponent)` and
-  `stringNumeralRefused<T>(before, text, after)` — the last three build the `@Result` and its text.
+  `stringToInteger(numeral)` and `stringToFloat(text, whole, fraction, exponent)` — the last two
+  build the `@Result`. A refused numeral is `Error(…)` written in the body (decision 668 took away
+  the cell that built it, `stringNumeralRefused<T>`, whose `T` no parameter bound).
 - **The bodies call a method on `self` only** — `self.startsWith`, `self.indexOf` — and reach
   everything else through those cells and the slice helpers. Three emitter gaps met writing them,
   each worked around here, none std's:
-  1. commonJS emits `Ok(x)` / `Error(e)` of a `default fn` of this file as written
-     (`ReferenceError: Ok is not defined` at the first call) — the `@Result` is built by a cell.
+  1. commonJS emitted `Ok(x)` / `Error(e)` of a `default fn` of this file as written
+     (`ReferenceError: Ok is not defined` at the first call) — the `Ok` side is still built by a
+     cell. `Error(…)` written in `parseInt` / `parseFloat` answers on every target
+     (`conformance` `modules/string_parse_int_i64_range`, `modules/string_parse_float_every_target`).
      Reproduction: `return Ok(1);` in a new `default fn` of `behavior String`, called from a
      scratch project.
   2. commonJS emits `self.length()` of such a body as written (`self.length is not a function`),

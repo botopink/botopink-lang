@@ -45,7 +45,7 @@ fn run() -> Task<void> {
     val all = await async.all([async.delay(20, "a"), async.delay(1, "b")]);
     print("all " + all.join(","));
     show("allOf", await async.allOf([slow(20, "x"), slow(1, "y")]));
-    show("allOf", await async.allOf([slow(1, "x"), async.failed("down"), async.failed("later")]));
+    show("allOf", await async.allOf([slow(1, "x"), async.failed(string, "down"), async.failed(string, "later")]));
     val first = await async.race([async.delay(1, "first"), async.delay(60, "second")]);
     print("race " + first);
     val ran = await async.runAll(

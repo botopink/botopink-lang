@@ -557,7 +557,7 @@ behavior String {
         return if (stringIsDigits(digits))
             stringToInteger(self)
         else
-            stringNumeralRefused("parseInt: \"", self, "\" is not an integer");
+            Error("parseInt: \"" + self + "\" is not an integer");
     }
 
     // The `f64` nearest to a decimal numeral: an optional `+` or `-`, digits,
@@ -608,7 +608,7 @@ behavior String {
         return if (wellFormed)
             stringToFloat(self, whole, fraction, exponent)
         else
-            stringNumeralRefused("parseFloat: \"", self, "\" is not a number");
+            Error("parseFloat: \"" + self + "\" is not a number");
     }
 }
 
@@ -695,18 +695,6 @@ declare fn stringToFloat(
     exponent: string,
 ) -> Result<f64, string>;
 
-// `Error(<before><text><after>)`.
-#[compiler.external(
-    .Erlang("""{error, <<($0)/binary, ($1)/binary, ($2)/binary>>}"""),
-    .JavaScript("""({ error: $0 + $1 + $2 })"""),
-    .Wasm(std: "number.numeralRefused"),
-)]
-declare fn stringNumeralRefused<T>(
-    before: string,
-    text: string,
-    after: string,
-) -> Result<T, string>;
-
 // ── function combinators ──────────────────────────────────────────────────────
 
 // Pure higher-order combinators for function values. Associated functions
@@ -728,7 +716,7 @@ behavior Function {
         return { b, a -> f(a, b) };
     }
 
-    default fn constant<A, B>(x: A) -> fn(B) -> A {
+    default fn constant<A>(x: A) -> fn(unknown) -> A {
         return { ignored -> x };
     }
 }
@@ -978,7 +966,7 @@ behavior Array<T> {
 
     // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
     // copy goes through `append` rather than a nested `forEach`.
-    default fn flatten<E>(self: Self<T>) -> Array<E> {
+    default fn flatten<E>(self: Self<Array<E>>) -> Array<E> {
         var out: E[] = [];
         self.forEach({ inner ->
             out = out.append(inner);
@@ -1011,7 +999,7 @@ behavior Array<T> {
         return self.all(pred);
     }
 
-    default fn flat<E>(self: Self<T>) -> Array<E> {
+    default fn flat<E>(self: Self<Array<E>>) -> Array<E> {
         return self.flatten();
     }
 

@@ -241,14 +241,12 @@ test "function flip reverses arg order" {
     assert rsub(3, 10) == 7;
 }
 
-// One binding per argument type: a `val` bound to a generic call is not
-// generalised, so a single `always42` offered a `string` and then an `i32`
-// fails to check (let-generalisation gap, owned by the checker front F7).
+// `constant`'s answer ignores its argument, typed `unknown` (decision 668:
+// no parameter would bind a type for it), so one binding takes any argument.
 test "function constant ignores arg" {
     val always42 = Function.constant(42);
-    val alsoAlways42 = Function.constant(42);
     assert always42("anything") == 42;
-    assert alsoAlways42(0) == 42;
+    assert always42(0) == 42;
 }
 
 // ── option ────────────────────────────────────────────────────────────────────

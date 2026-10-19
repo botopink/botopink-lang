@@ -87,7 +87,7 @@ pub declare fn delay<T>(millis: i32, value: T) -> Task<T>;
 // A Task whose value is `Error(message)` — the failing instrument `allOf` and
 // `timeout` are tested with. On commonJS it rejects with `message` (decision
 // 432); `await` reads it as `Error(message)`.
-pub fn failed<T>(message: string) -> Task<Result<T, string>> {
+pub fn failed<T>(comptime t: type<T>, message: string) -> Task<Result<T, string>> {
     throw message;
 }
 
@@ -249,8 +249,9 @@ fn answered<T>(task: fn() -> Task<T>) -> Task<Result<T, string>> {
     return await task();
 }
 
-// `Error("timeout")` after `millis` — the clock `timeout` races.
-fn expireAfter<T>(millis: i32) -> Task<Result<T, string>> {
+// `Error("timeout")` after `millis` — the clock `timeout` races against
+// `task`, whose type it answers in (decision 668: `task` binds `T`).
+fn expireAfter<T>(task: fn() -> Task<T>, millis: i32) -> Task<Result<T, string>> {
     await delay(millis, 0);
     throw "timeout";
 }
@@ -267,7 +268,7 @@ pub fn timeout<T>(
     return await raceOf(
         [
             { -> answered(task) },
-            { -> expireAfter(millis) },
+            { -> expireAfter(task, millis) },
         ],
     );
 }
@@ -460,7 +461,7 @@ test "async: delay ---- binds T to a record as well as to a string" {
 }
 
 test "async: failed ---- await answers its Error value" {
-    val r = await failed("down");
+    val r = await failed(string, "down");
     assert r.isError();
     assert errorText(r) == "down";
 }
@@ -500,7 +501,7 @@ test "async: allOf ---- answers input order, not completion order" {
 }
 
 test "async: allOf ---- stops at the first error in input order" {
-    val r = await allOf([slowOk(5, "a"), failed("down"), failed("later")]);
+    val r = await allOf([slowOk(5, "a"), failed(string, "down"), failed(string, "later")]);
     assert r.isError();
     val msg = case r {
         Ok(_v) -> "";
@@ -572,7 +573,7 @@ test "async: runAll ---- a fallible task answers its Result in its slot" {
     val settled = await runAll(
         [
             { -> slowOk(40, "slow") },
-            { -> failed("broken") },
+            { -> failed(string, "broken") },
             { -> slowOk(5, "fast") },
         ],
     );
@@ -611,7 +612,7 @@ test "async: raceOf ---- a loser's answer is dropped, on purpose" {
     // its value goes nowhere. Asserted rather than only written down.
     val first = await raceOf(
         [
-            { -> failed("slow failure") },
+            { -> failed(string, "slow failure") },
             { -> slowOk(10, "winner") },
         ],
     );

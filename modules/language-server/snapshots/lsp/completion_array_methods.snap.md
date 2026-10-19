@@ -36,7 +36,7 @@ all  [Method]  detail: fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 any  [Method]  detail: fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 append  [Method]  detail: fn append(self: Self<T>, other: Self<T>) -> Self<T>
 prepend  [Method]  detail: fn prepend(self: Self<T>, item: T) -> Self<T>
-flatten  [Method]  detail: fn flatten<E>(self: Self<T>) -> Array<E>
+flatten  [Method]  detail: fn flatten<E>(self: Self<Array<E>>) -> Array<E>
 flatMap  [Method]  detail: fn flatMap<U>(
         self: Self<T>,
         transform: fn(item: T) -> U,
@@ -44,7 +44,7 @@ flatMap  [Method]  detail: fn flatMap<U>(
 toList  [Method]  detail: fn toList(self: Self<T>) -> Self<T>
 some  [Method]  detail: fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 every  [Method]  detail: fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool
-flat  [Method]  detail: fn flat<E>(self: Self<T>) -> Array<E>
+flat  [Method]  detail: fn flat<E>(self: Self<Array<E>>) -> Array<E>
 findIndex  [Method]  detail: fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32
 fill  [Method]  detail: fn fill<E>(self: Self<T>, value: E) -> Array<E>
 chunked  [Method]  detail: fn chunked(self: Self<T>, n: i32) -> Array<Self<T>>
