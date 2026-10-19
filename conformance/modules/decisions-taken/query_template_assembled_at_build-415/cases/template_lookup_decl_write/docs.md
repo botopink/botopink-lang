@@ -9,5 +9,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Functions exp
 > declaration it names), `kind`, `module`, `fields`, `variants`, `methods`,
 > `params`; `null` when nothing of that name is in scope. `q.bindings()` lists
 > every declaration a word of the literal names. `setMeta`, `addMeta`,
-> `addMember`, `addType` and `wrapWith` on the handle are refused at the call
+> `addMember` and `addType` on the handle are refused at the call
 > (`template-lookup-decl-write`).

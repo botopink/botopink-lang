@@ -24,7 +24,7 @@
 ////
 //// - The point: `src()`, `module`, `package`, `isStd`.
 //// - The outputs, a decorator's only (`compiler-output-outside-decorator`):
-////   `setMeta`, `addMeta`, `addMember`, `addType`, `wrapWith`, `init`,
+////   `setMeta`, `addMeta`, `addMember`, `addType`, `init`,
 ////   `implement`.
 //// - The reads of a `syntax` (decision 576 (2)): `text`, `name`, `source`,
 ////   `context`, `lookup`, `bindings`, `fail`.
@@ -71,9 +71,6 @@ pub behavior Compiler {
     fn addMember<F>(self: Self, name: string, syntax member: F);
     // An associated type of the annotated type (decision 216 (3)).
     fn addType(self: Self, name: string, comptime source: string);
-    // A wrapper of the annotated function, a lambda written at the call
-    // (decision 316).
-    fn wrapWith<F>(self: Self, syntax wrapper: F);
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
     // declarations in source order, calls in order (decisions 575 (3), 615).
@@ -370,24 +367,6 @@ pub type HookNode = __HookNode;
             {
               "name": "source",
               "type": "string",
-              "is_comptime": true
-            }
-          ],
-          "return_type": "void"
-        },
-        {
-          "name": "wrapWith",
-          "generic_params": [
-            "F"
-          ],
-          "params": [
-            {
-              "name": "self",
-              "type": "Self"
-            },
-            {
-              "name": "wrapper",
-              "type": "F",
               "is_comptime": true
             }
           ],

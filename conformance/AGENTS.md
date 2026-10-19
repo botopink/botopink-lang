@@ -200,13 +200,8 @@ and imported; a key stored in a `var` and an array, passed, compared, matched by
 `field_key_case_missing` (a `case` without a field's arm, at the `case`), `field_key_unknown_field` (`.titel`,
 at the `.name`) and `type_keys_outside_val` (`Type.keys` in a body, `derived-type-outside-val`); every one red
 on the parent binary, where `Type.keys` was not answered.
-Decision 316 (`decl.wrapWith`, 144 B-11) adds `modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wraps_function`, `decorator_wrap_wrong_return`,
-`decorator_wrap_outside_function` and `decorator_any_params_outside_decl`; its Conformance step adds
-`modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wraps_function_value` (a same-module call, the function as a value and its recursive call each
-run the wrapper, four targets), `decorator_wrap_captures` (a wrapper reading a local of the decorator's body,
-`decorator-member-captures`), `decorator_wrap_not_lambda` (a named function as the wrapper, question B-11-a as
-built) and `decorator_wrap_generic` (a generic function wrapped, question B-11-b as built) — each red on B-11's
-parent, where `wrapWith` was no member of the declaration handle.
+Decision 316 (`decl.wrapWith`, 144 B-11) added `modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_any_params_outside_decl`; its wrapper cells went with
+`wrapWith` (decision 714).
 Decision 302 (a tag is a declaration handle, 144 B-15) adds `modules/decisions-taken/tag_annotation_is_decorator-302/cases/tag_decl_meta`, `tag_annotation_add_member`,
 `tag_annotation_meta_twice` and `type_named_like_decl_kind`; its Conformance step adds `modules/decisions-taken/tag_annotation_is_decorator-302/cases/tag_decl_meta_read`
 (`compiler.meta<T>(d)` read back, `compiler.attr(d, name)` absent and `compiler.component(d)` on an element `null`, four targets),
@@ -216,14 +211,12 @@ and `tag_annotation_not_decorator` (no decorator named, at the annotation) and `
 Decisions 311 (3), 415 and 426 (templates, 144 B-18) add `modules/decisions-taken/query_template_assembled_at_build-415/cases/template_method_call`, the `template_lookup_*`
 cells and the `template_call_*` / `template_build_outside_bound` / `template_note_on_mismatch` cells; its
 Conformance step adds `modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_decl_members` (`variants`, `methods`, `params` of a looked-up
-declaration), `template_lookup_decl_wrap_with` (`wrapWith` on it, `template-lookup-decl-write`),
+declaration),
 `template_bindings_decls` and `decorator_decl_module` (`compiler.bindings(q)` as declaration handles, `compiler.moduleOf(decl)` on a decorator's own
 handle, question B-18-b as built), `template_method_own_method` (the receiver type's own method of the name wins —
 red on `feat` too, `template-call-unexpanded`, until the fix beside it), `template_method_receiver_mismatch` and
 `template_method_not_in_scope` (question B-18-a as built) — each red on B-18's parent.
-The cells those three Conformance steps proposed: `modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_declare_fn` (a `declare fn` wrapped,
-`decorator-wrap-without-function`), `decorator_wrap_generic_owner` (a method of a generic type wrapped,
-`decorator-wrap-generic`), `tag_annotation_emit` (`@emit` in a tag's annotation, `tag-annotation-output`) and
+The cells those three Conformance steps proposed: `tag_annotation_emit` (`@emit` in a tag's annotation, `tag-annotation-output`) and
 `template_method_behavior_method` (a method the receiver's type adopts from a behavior, its `default fn` included,
 and a behavior-typed receiver's method, win over a template method of the name — red on `feat` too, until the fix
 beside it).
@@ -1201,7 +1194,7 @@ Decisions 610 and 621 (144 B-138, a source's fields) add the refusals `modules/d
 template on one target beside their `body:` cells, so neither is all bodies. Decision 618 renamed `.JavaScript` to
 `.JavaScript` in every cell (`scripts/codemod/implementation_javascript.py`).
 Decision 642 (144 B-137) extends 614's fold to every tree a decorator hands the compiler: `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/member_reads_compiler_name`
-(`out Users`), `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/wrapper_reads_compiler_name` (`out home:here`), `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/member_names_its_parameter` (`compiler.name(x)`
+(`out Users`), `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/member_names_its_parameter` (`compiler.name(x)`
 over the member's own parameter, `out x`) and `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/member_reads_compiler_text` (`out always`; it was
 `expr_captures_build`, a `syntax-captures-build` refusal that decision 642 removed); `modules/decisions-taken/compiler_call_in_tree_evaluated_at_build-642/cases/init_executor_compiler_arg_at_run_time`
 refuses a `comptime` position (`compiler.typeInfo(s)`), where `compiler.text(s)` is accepted, and

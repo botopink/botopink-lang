@@ -1,5 +1,5 @@
 //// Decision 415 (2) — the declaration `q.lookup` answers is read-only:
-//// `setMeta`, `addMeta`, `addMember`, `addType` and `wrapWith` on it are
+//// `setMeta`, `addMeta`, `addMember` and `addType` on it are
 //// refused at the call (`template-lookup-decl-write`). A decorator on that
 //// declaration records what it carries.
 

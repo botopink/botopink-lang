@@ -1428,204 +1428,6 @@ fn mergeAssocTypes(
     return .{ .ok = .{ .decls = try decls.toOwnedSlice(arena) } };
 }
 
-/// Decision 316 — every `decl.wrapWith(f)` of pass 1, applied to the function
-/// or method it wraps. For a wrapped `f(a: A, b: B) -> R` with wrappers
-/// `w1 … wn` (annotation order) the module receives
-///
-///     type BpWrapCall__f(args: #(A, B), run: fn() -> R)
-///     fn __bp_wrapper_f_<k>(__bp_c: BpWrapCall__f) -> R {
-///         val __bp_w: fn(call: BpWrapCall__f) -> R = <wk>;
-///         return __bp_w(__bp_c);
-///     }
-///
-/// `f` keeps its name, signature, annotations and visibility, its body now
-/// `return __bp_wrapper_f_1(BpWrapCall__f(args: #(a, b), run: { -> … }))` —
-/// each `run` the next wrapper's call, the last one's the original body, kept
-/// as the private `__bp_wrapped_f`; a method's is a private method of its type
-/// (`self.__bp_wrapped_m(…)`, `Owner.__bp_wrapped_m(…)` without `self`). The
-/// call type is `Owner__m`'s for a method. The generated text is placed after
-/// every line the module and its other contributions occupy (`first_line`,
-/// `first_offset`). Refused at the annotation: a function or a type with type
-/// parameters (`decorator-wrap-generic`), a method of anything but a `type`
-/// and a function without a body (`decorator-wrap-without-function`).
-fn mergeWrappers(
-    arena: std.mem.Allocator,
-    original: ast.Program,
-    wraps: []const envMod.WrapContribution,
-    first_line: usize,
-    first_offset: usize,
-    /// Set to the lines the generated text occupies after `first_line`.
-    lines: *usize,
-) !MemberMerge {
-    const refuse = struct {
-        fn at(a: std.mem.Allocator, w: envMod.WrapContribution, comptime fmt: []const u8, args: anytype, hint: []const u8) !MemberMerge {
-            var e = validation.TypeError.custom(try std.fmt.allocPrint(a, fmt, args), hint);
-            if (w.loc) |l| e = e.withLoc(l);
-            return .{ .refused = e };
-        }
-    }.at;
-    const decls = try arena.dupe(ast.DeclKind, original.decls);
-    var text: std.ArrayListUnmanaged(u8) = .empty;
-    const Plan = struct { decl: usize, method: ?usize, bodyFn: []const u8, inner: []const u8 };
-    var plans: std.ArrayListUnmanaged(Plan) = .empty;
-    var seen: std.ArrayListUnmanaged(usize) = .empty;
-    for (wraps, 0..) |w, i| {
-        const same = struct {
-            fn key(a: envMod.WrapContribution, b: envMod.WrapContribution) bool {
-                if (!std.mem.eql(u8, a.target, b.target)) return false;
-                if (a.owner == null or b.owner == null) return a.owner == null and b.owner == null;
-                return std.mem.eql(u8, a.owner.?, b.owner.?);
-            }
-        }.key;
-        const already = for (seen.items) |j| {
-            if (same(wraps[j], w)) break true;
-        } else false;
-        if (already) continue;
-        try seen.append(arena, i);
-        var group: std.ArrayListUnmanaged(envMod.WrapContribution) = .empty;
-        for (wraps[i..]) |x| if (same(x, w)) try group.append(arena, x);
-
-        // The wrapped declaration's signature.
-        var params: []const ast.Param = &.{};
-        var ret: ?ast.TypeRef = null;
-        var declIndex: usize = 0;
-        var methodIndex: ?usize = null;
-        var hasSelf = false;
-        if (w.owner) |owner| {
-            declIndex = for (decls, 0..) |d, k| {
-                if (d == .type_ and std.mem.eql(u8, d.type_.name, owner)) break k;
-            } else return refuse(arena, w, "{s}: `#[{s}]` wraps the method `{s}` of `{s}`, and only a method written in a `type`'s body is wrapped", .{ diagnostics.decorator_wrap_without_function, w.decorator, w.target, owner }, "`decl.wrapWith(f)` wraps a function or a method of a `type` (decision 316).");
-            const t = decls[declIndex].type_;
-            if (t.genericParams.len > 0) return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}.{s}`, and `{s}` has type parameters", .{ diagnostics.decorator_wrap_generic, w.decorator, owner, w.target, owner }, "The call value is typed by the wrapped method's own signature; a generic owner is not wrapped yet (decision 316).");
-            methodIndex = for (t.methods, 0..) |m, k| {
-                if (std.mem.eql(u8, m.name, w.target)) break k;
-            } else return refuse(arena, w, "{s}: `#[{s}]` wraps the method `{s}` of `{s}`, and only a method written in a `type`'s body is wrapped", .{ diagnostics.decorator_wrap_without_function, w.decorator, w.target, owner }, "`decl.wrapWith(f)` wraps a function or a method of a `type` (decision 316).");
-            const m = t.methods[methodIndex.?];
-            if (m.body == null or m.is_declare) return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}.{s}`, which has no body", .{ diagnostics.decorator_wrap_without_function, w.decorator, owner, w.target }, "`decl.wrapWith(f)` wraps a function's body; a `declare fn` has none (decision 316).");
-            if (m.genericParams.len > 0) return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}.{s}`, which has type parameters", .{ diagnostics.decorator_wrap_generic, w.decorator, owner, w.target }, "The call value is typed by the wrapped method's own signature; a generic method is not wrapped yet (decision 316).");
-            params = m.params;
-            ret = m.returnType;
-            hasSelf = params.len > 0 and std.mem.eql(u8, params[0].name, "self");
-        } else {
-            declIndex = for (decls, 0..) |d, k| {
-                if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, w.target)) break k;
-            } else return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}`, which is no function of this module", .{ diagnostics.decorator_wrap_without_function, w.decorator, w.target }, "`decl.wrapWith(f)` wraps the annotated function (decision 316).");
-            const f = decls[declIndex].@"fn";
-            if (f.isDeclare or f.isExternal()) return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}`, which has no body", .{ diagnostics.decorator_wrap_without_function, w.decorator, w.target }, "`decl.wrapWith(f)` wraps a function's body; a `declare fn` has none (decision 316).");
-            if (f.genericParams.len > 0) return refuse(arena, w, "{s}: `#[{s}]` wraps `{s}`, which has type parameters", .{ diagnostics.decorator_wrap_generic, w.decorator, w.target }, "The call value is typed by the wrapped function's own signature; a generic function is not wrapped yet (decision 316).");
-            params = f.params;
-            ret = f.returnType;
-        }
-        const selfName: []const u8 = w.owner orelse "";
-        const n = if (w.owner) |o| try std.fmt.allocPrint(arena, "{s}__{s}", .{ o, w.target }) else w.target;
-        const callType = try std.fmt.allocPrint(arena, "BpWrapCall__{s}", .{n});
-        const retText: []const u8 = if (ret) |r| try selfSpelled(arena, r, selfName) else "void";
-        const isVoid = std.mem.eql(u8, retText, "void");
-        const passed = if (hasSelf) params[1..] else params;
-
-        var argTypes: std.ArrayListUnmanaged(u8) = .empty;
-        var argNames: std.ArrayListUnmanaged(u8) = .empty;
-        for (passed, 0..) |p, k| {
-            if (k > 0) {
-                try argTypes.appendSlice(arena, ", ");
-                try argNames.appendSlice(arena, ", ");
-            }
-            try argTypes.appendSlice(arena, try selfSpelled(arena, p.typeRef, selfName));
-            try argNames.appendSlice(arena, p.name);
-        }
-        try text.print(arena, "type {s}(args: #({s}), run: fn() -> {s})\n", .{ callType, argTypes.items, retText });
-        for (group.items, 1..) |g, k| {
-            try text.print(arena, "fn __bp_wrapper_{s}_{d}(__bp_c: {s}) -> {s} {{\nval __bp_w: fn(call: {s}) -> {s} = {s};\n{s}__bp_w(__bp_c);\n}}\n", .{ n, k, callType, retText, callType, retText, g.source, if (isVoid) "" else "return " });
-        }
-        const inner = try std.fmt.allocPrint(arena, "__bp_wrapped_{s}", .{w.target});
-        var call: []const u8 = if (w.owner == null)
-            try std.fmt.allocPrint(arena, "{s}({s})", .{ inner, argNames.items })
-        else if (hasSelf)
-            try std.fmt.allocPrint(arena, "self.{s}({s})", .{ inner, argNames.items })
-        else
-            try std.fmt.allocPrint(arena, "{s}.{s}({s})", .{ selfName, inner, argNames.items });
-        var k = group.items.len;
-        while (k > 0) : (k -= 1) {
-            call = try std.fmt.allocPrint(arena, "__bp_wrapper_{s}_{d}({s}(args: #({s}), run: {{ -> {s} }}))", .{ n, k, callType, argNames.items, call });
-        }
-        const bodyFn = try std.fmt.allocPrint(arena, "__bp_wrap_body_{s}", .{n});
-        try text.print(arena, "fn {s}() {{\n{s}{s};\n}}\n", .{ bodyFn, if (isVoid) "" else "return ", call });
-        try plans.append(arena, .{ .decl = declIndex, .method = methodIndex, .bodyFn = bodyFn, .inner = inner });
-    }
-
-    lines.* = std.mem.count(u8, text.items, "\n");
-    var lexer = Lexer.init(text.items);
-    const tokens = try arena.dupe(Token, try lexer.scanAll(arena));
-    for (tokens) |*tok| {
-        tok.line += first_line - 1;
-        tok.offset += first_offset;
-    }
-    var parser = Parser.init(tokens);
-    const generated = try parser.parse(arena);
-
-    var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
-    try out.appendSlice(arena, decls);
-    for (plans.items) |plan| {
-        const body = for (generated.decls) |g| {
-            if (g == .@"fn" and std.mem.eql(u8, g.@"fn".name, plan.bodyFn)) break g.@"fn".body;
-        } else return error.WrapBodyMissing;
-        if (plan.method) |mi| {
-            var t = out.items[plan.decl].type_;
-            const methods = try arena.alloc(ast.BehaviorMethod, t.methods.len + 1);
-            @memcpy(methods[0..t.methods.len], t.methods);
-            var kept = t.methods[mi];
-            kept.name = plan.inner;
-            kept.isPub = false;
-            kept.annotations = &.{};
-            methods[t.methods.len] = kept;
-            methods[mi].body = body;
-            t.methods = methods;
-            out.items[plan.decl] = .{ .type_ = t };
-        } else {
-            const f = out.items[plan.decl].@"fn";
-            var outer = f;
-            outer.body = body;
-            out.items[plan.decl] = .{ .@"fn" = outer };
-            var kept = f;
-            kept.name = plan.inner;
-            kept.isPub = false;
-            kept.isDefault = false;
-            kept.anonymousDefault = false;
-            kept.defaultBy = null;
-            kept.pubByDefault = false;
-            kept.docComment = null;
-            kept.comment = null;
-            kept.moduleComment = null;
-            kept.annotations = &.{};
-            try out.append(arena, .{ .@"fn" = kept });
-        }
-    }
-    for (generated.decls) |g| {
-        if (g == .@"fn" and std.mem.startsWith(u8, g.@"fn".name, "__bp_wrap_body_")) continue;
-        try out.append(arena, g);
-    }
-    return .{ .ok = .{ .decls = try out.toOwnedSlice(arena) } };
-}
-
-/// `t` as the source spells it, `Self` written as `owner` (a wrapped method's
-/// type, named from the module's top level).
-fn selfSpelled(arena: std.mem.Allocator, t: ast.TypeRef, owner: []const u8) ![]const u8 {
-    const written = try std.fmt.allocPrint(arena, "{f}", .{t});
-    if (owner.len == 0) return written;
-    var out: std.ArrayListUnmanaged(u8) = .empty;
-    var i: usize = 0;
-    while (i < written.len) {
-        if (std.mem.startsWith(u8, written[i..], "Self") and (i == 0 or !isIdentChar(written[i - 1])) and (i + 4 == written.len or !isIdentChar(written[i + 4]))) {
-            try out.appendSlice(arena, owner);
-            i += 4;
-            continue;
-        }
-        try out.append(arena, written[i]);
-        i += 1;
-    }
-    return out.items;
-}
-
 /// Decision 216 (3) — the names `program` binds to owners of associated types
 /// (`assoc_types.zig`): its own types and behaviors with entries in the
 /// session's reflection, and every imported one — the module that declares
@@ -2074,7 +1876,7 @@ fn analyzeSource(
     // to the pass-1 program — skipping the re-lex/re-parse of the original
     // module bytes that the legacy text-splice path forced. Fallback to text
     // splicing only when a contribution fails to parse standalone.
-    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or typeinfo_queries.len > 0)) {
+    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or typeinfo_queries.len > 0)) {
         // Decision 216 (1): the members join their types' bodies first, after
         // every line the module and its `@emit` contributions occupy.
         var with_members = program;
@@ -2114,32 +1916,6 @@ fn analyzeSource(
                 },
             }
         }
-        // Decision 316: each wrapped function and method rewritten, after
-        // every line the members and the associated types occupy.
-        var wrap_lines: usize = 0;
-        if (env.wrapContributions.items.len > 0) {
-            var first_line: usize = std.mem.count(u8, source, "\n") + 1;
-            var first_offset: usize = source.len + 1;
-            for (env.contributions.items) |c| {
-                first_line += std.mem.count(u8, c, "\n") + 1;
-                first_offset += c.len + 1;
-            }
-            for (env.memberContributions.items) |m| {
-                first_line += std.mem.count(u8, m.source, "\n") + 1;
-                first_offset += m.source.len + 1;
-            }
-            for (env.typeContributions.items) |t| {
-                first_line += std.mem.count(u8, t.source, "\n") + 1;
-                first_offset += t.source.len + 1;
-            }
-            switch (try mergeWrappers(arena, with_members, env.wrapContributions.items, first_line, first_offset, &wrap_lines)) {
-                .ok => |p| with_members = p,
-                .refused => |te| {
-                    env.deinit();
-                    return .{ .typeError = te };
-                },
-            }
-        }
         // Decision 216 (4): every query answered, now that this module's
         // decorators ran too; the answers' imports join the program.
         var typeinfo_plan: ?typeinfoAll.Plan = null;
@@ -2151,7 +1927,6 @@ fn analyzeSource(
             for (env.contributions.items) |c| first_line += std.mem.count(u8, c, "\n") + 1;
             for (env.memberContributions.items) |m| first_line += std.mem.count(u8, m.source, "\n") + 1;
             for (env.typeContributions.items) |t| first_line += std.mem.count(u8, t.source, "\n") + 1;
-            first_line += wrap_lines;
             switch (try typeinfoAll.plan(arena, &env, with_members, mod.path, reflection, typeinfo_queries, first_line)) {
                 .ok => |pl| {
                     typeinfo_plan = pl;
@@ -2352,7 +2127,6 @@ pub const decl_reflection_src =
     \\    typeArgs: TypeInfo<unknown>[],
     \\    context: ?Declared<unknown>,
     \\)
-    \\pub type __Decl__Call<A, R>(args: A, run: fn() -> R)
     \\pub type HookCall(callee: ?Declared<unknown>, at: string)
     \\pub type Stage { Build, Run, Any }
     \\pub type __HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool, stage: Stage)
@@ -2377,7 +2151,6 @@ pub const decl_reflection_src =
     \\    declare fn setMeta(self: Self, key: string, value: string);
     \\    declare fn addMeta<T>(self: Self, value: T);
     \\    declare fn addType(self: Self, name: string, source: string);
-    \\    declare fn wrapWith<A, R>(self: Self, wrapper: fn(call: __Decl__Call<A, R>) -> R);
     \\    declare fn compile(self: Self, executor: fn());
     \\    declare fn implement(self: Self, source: Implementation);
     \\}

@@ -3899,8 +3899,8 @@ pub fn isExecutorCall(e: Expr) bool {
 }
 
 /// `collectNames` for what runs with the program (144 B-128): an `assert`'s
-/// operands, a typed function expression and a `wrapWith` wrapper's body are
-/// read too.
+/// operands, a typed function expression and an executor's body are read
+/// too.
 pub fn collectRunNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
     return collectNamesIn(gpa, body, out, true);
 }
@@ -4003,9 +4003,6 @@ fn collectExprNamesMode(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnma
         .call => |c| switch (c.kind) {
             .call => |cc| {
                 if (cc.receiver) |r| try collectExprNamesMode(gpa, r.*, out, run, mode) else if (!cc.is_builtin and mode == .reads) try out.append(gpa, cc.callee);
-                // Decision 316 — `<handle>.wrapWith({ call -> … })`: the
-                // wrapper runs with the program, as a typed member does.
-                if (!run and cc.receiver != null and !cc.is_builtin and std.mem.eql(u8, cc.callee, "wrapWith") and cc.args.len == 1 and cc.args[0].value.* == .function) return;
                 if (!run and isExecutorCall(e)) return;
                 for (cc.args) |a| try collectExprNamesMode(gpa, a.value.*, out, run, mode);
                 for (cc.trailing) |tl| {

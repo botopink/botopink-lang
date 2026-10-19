@@ -1942,13 +1942,6 @@ pub type __Decl__Method(
     annotations: __Decl__Annotation[],
 )
 
-// Decision 316 — the call value a `decl.wrapWith` wrapper receives. No program
-// names it; it is the wrapper's parameter alone.
-pub type __Decl__Call<A, R>(
-    args: A,
-    run: fn() -> R,
-)
-
 // Decision 216 (4) — what `@TypeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);

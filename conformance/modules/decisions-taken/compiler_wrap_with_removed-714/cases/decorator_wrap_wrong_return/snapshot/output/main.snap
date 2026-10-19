@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-wrap-type: the wrapper answers `i32`, and the function it wraps returns `string`
-at src/main.bp:9:23

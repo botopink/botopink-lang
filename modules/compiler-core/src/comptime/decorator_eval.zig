@@ -150,14 +150,12 @@ pub const Contribution = struct {
     /// untagged map: its type is the call's, `typed_meta.render`).
     data: ?std.json.Value = null,
 
-    /// `wrap` — decision 316, `decl.wrapWith(f)`: `index` is the wrapper's
-    /// (`member_fn.collectWrappers`'s order).
     /// `compile` — decision 575 (3), `compiler.init(f)`: `index` is the
     /// executor's (`member_fn.collectExecutors`'s order), `data` the values
     /// of the body's locals it reads.
     /// `implement` — decision 575 (6), `compiler.implement(source)`: `data`
     /// is the `Implementation` the body built.
-    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, wrap, compile, implement };
+    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta, compile, implement };
 };
 
 pub const Outcome = union(enum) {
@@ -1157,7 +1155,7 @@ const WriteWalk = struct {
 
     fn walk(self: *WriteWalk, comptime U: type, ptr: *const U) std.mem.Allocator.Error!void {
         if (U == ast.Expr) if (self.declName) |dn| {
-            if (memberFnMod.asWrapCall(ptr.*, dn) != null or memberFnMod.asCall(ptr.*, dn) != null or memberFnMod.asCompileCall(ptr.*, dn) != null) return;
+            if (memberFnMod.asCall(ptr.*, dn) != null or memberFnMod.asCompileCall(ptr.*, dn) != null) return;
         };
         if (U == ast.Expr) switch (ptr.*) {
             .binding => |b| switch (b.kind) {

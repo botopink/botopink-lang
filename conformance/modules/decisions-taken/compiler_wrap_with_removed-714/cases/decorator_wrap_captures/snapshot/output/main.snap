@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-member-captures: the member reads `label`, a local of the decorator's body, which exists only while the program compiles
-at src/main.bp:11:33

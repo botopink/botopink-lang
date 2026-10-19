@@ -90,8 +90,6 @@ pub fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, ref
         if (try hooks.isExpandedFn(arena, f)) return true;
         if (member_fn.declParamName(f)) |handle| {
             if ((try member_fn.collect(arena, f, handle)).len > 0) return true;
-            // Decision 316 — a wrapper is written where the function it wraps is.
-            if ((try member_fn.collectWrappers(arena, f, handle)).len > 0) return true;
             // Decision 575 (3) — so is an executor, beside the annotated declaration.
             if ((try member_fn.collectExecutors(arena, f, handle)).len > 0) return true;
             // Decision 669 — so is a member handed on as text.

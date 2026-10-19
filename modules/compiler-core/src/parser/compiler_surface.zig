@@ -71,7 +71,6 @@ pub const members = [_]Member{
     .{ .name = "addMeta", .kind = .output, .params = &.{S} },
     .{ .name = "addMember", .kind = .output, .params = &.{ W, S } },
     .{ .name = "addType", .kind = .output, .params = &.{ W, V } },
-    .{ .name = "wrapWith", .kind = .output, .params = &.{S} },
     .{ .name = "init", .kind = .output, .params = &.{S} },
     .{ .name = "implement", .kind = .output, .params = &.{V} },
     .{ .name = "find", .kind = .site, .params = &.{ W, W } },
@@ -837,9 +836,9 @@ fn walkExpr(ctx: *Ctx, p: *ast.Expr) error{OutOfMemory}!void {
         // Decision 614 — a `compiler.*` read inside the executor is
         // evaluated at build: hoisted into a `val` of the body before the
         // call, the executor reading it as a literal (575 (4)'s tree rule).
-        // The arguments first: a member, a wrapper and an executor are trees,
-        // each hoisted alike (decision 642).
-        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "wrapWith") or std.mem.eql(u8, c.callee, "init");
+        // The arguments first: a member and an executor are trees, each
+        // hoisted alike (decision 642).
+        const tree = std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "init");
         if (tree) for (c.args) |a| if (a.value.* == .function) try hoistBuildReads(ctx, a.value);
         const reads = if (memberOf(c.callee)) |m| m.kind == .read else false;
         for (c.args, 0..) |*a, i| {

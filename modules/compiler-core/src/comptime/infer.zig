@@ -793,7 +793,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
     // Decision 668 — every type parameter bound by a parameter, checked once
@@ -967,7 +967,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try noteTemplateQueries(env, program);
     try noteDefaultQueries(env, program);
     env.assocTypesPending = false;
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
@@ -4603,9 +4603,9 @@ fn refuseUnimplemented(env: *Env, name: []const u8, loc: ?ast.Loc) InferError {
 }
 
 /// Whether this pass's decorators contributed text the module is re-analysed
-/// with (`@emit`, `addMember`, `addType`, `wrapWith`, `@TypeInfo.all`).
+/// with (`@emit`, `addMember`, `addType`, `@TypeInfo.all`).
 pub fn hasSplicedContributions(env: *Env) bool {
-    return env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending;
+    return env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending;
 }
 
 /// Decision 575 (6) — each implementation a library's source annotation gave
@@ -6153,7 +6153,6 @@ fn runDeclDecorators(
                         .emit => "@emit",
                         .member => "addMember",
                         .memberFn => "addMember",
-                        .wrap => "wrapWith",
                         .compile => "compiler.init",
                         else => "addType",
                     } });
@@ -6192,19 +6191,6 @@ fn runDeclDecorators(
                         };
                         const source = try memberFnSource(env, a, dfn, sig, values, c, target, local);
                         try env.memberContributions.append(env.arena, .{ .target = target, .source = source, .loc = a.loc, .decorator = a.name, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
-                    },
-                    // `decl.wrapWith(f)` (decision 316) — the wrapper the body
-                    // wrote, rendered with each parameter's argument spliced;
-                    // `comptime.zig` `mergeWrappers` wraps the declaration.
-                    .wrap => {
-                        const isFn = std.mem.eql(u8, handle.kind, "Fn");
-                        const isMethod = std.mem.eql(u8, handle.kind, "Method");
-                        if (!isFn and !(isMethod and memberOwner != null)) {
-                            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.wrapWith`, and only a function or a method is wrapped", .{ diagnostics.decorator_wrap_without_function, a.name, wrapKindWord(handle.kind), handle.name });
-                            return decoratorError(env, a, msg, "`decl.wrapWith(f)` wraps the call of the annotated `fn` or method (decision 316); a type, a field or a `val` has no call to wrap.");
-                        }
-                        const source = try wrapperSource(env, a, dfn, sig, values, c, local);
-                        try env.wrapContributions.append(env.arena, .{ .target = handle.name, .owner = if (isMethod) memberOwner else null, .source = source, .loc = a.loc, .decorator = a.name });
                     },
                     // `compiler.init(f)` (decision 575 (3)) — the executor
                     // the body wrote, rendered with each parameter's argument
@@ -6508,47 +6494,6 @@ fn sourceMemberStdCalls(env: *Env, owner: []const u8, func: ast.FunctionExpr) In
     return out.items;
 }
 
-/// Decision 316 — the source of the wrapper `decl.wrapWith(f)` gives the
-/// annotated declaration: the body's `c.index`-th wrapper
-/// (`member_fn.collectWrappers`), each decorator parameter it reads replaced
-/// by the argument as the annotation wrote it, each type parameter by what the
-/// annotation bound it to, and — for a decorator declared in another module —
-/// every other name it writes renamed to resolve in the decorator's module
-/// (decision 384, `memberRenames`).
-fn wrapperSource(
-    env: *Env,
-    a: ast.Annotation,
-    dfn: ast.FnDecl,
-    sig: envMod.DecoratorSig,
-    values: []const envMod.DecoratorArgValue,
-    c: decoratorEval.Contribution,
-    local: bool,
-) InferError![]const u8 {
-    const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
-    const fns = try memberFn.collectWrappers(env.arena, dfn, declName);
-    if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back a wrapper the body does not write", "Report it: `decl.wrapWith(f)` numbers the body's wrappers in source order.");
-    const func = fns[c.index];
-    // A decorator of this module runs before its body is checked.
-    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, false, false);
-    const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
-    // Decisions 575 (4), 642 — the body's locals the wrapper reads, as the
-    // literals of the values the body handed — the hoisted `compiler.*` reads.
-    const captured = try memberFn.capturedBuildReads(env.arena, dfn, func);
-    const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
-    const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len);
-    for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
-    for (captured, 0..) |n, k| {
-        const v: std.json.Value = if (k < handed.len) handed[k] else .null;
-        const lit = (try memberFn.literalSource(env.arena, v)) orelse {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s wrapper reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_captures, a.name, n });
-            return decoratorError(env, a, msg, "A wrapper holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decision 575 (4), the tree rule).");
-        };
-        splices[values.len + k] = .{ .param = n, .lexeme = lit };
-    }
-    const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
-    return memberFn.renderWrapper(env.arena, func, splices, typeArgs, "", renames) catch return error.OutOfMemory;
-}
-
 /// Decision 575 (3) — the source `compiler.init(f)` gives the annotated
 /// declaration's module: the body's `c.index`-th executor
 /// (`member_fn.collectExecutors`) as a function, each decorator parameter it
@@ -6630,16 +6575,6 @@ fn splicedArgLexeme(env: *Env, dfn: ast.FnDecl, p: ast.Param, lexeme: []const u8
     const alias = try writtenNames.typeAliasOf(env.arena, w.module, w.name);
     try env.hygieneImports.append(env.arena, .{ .alias = alias, .module = w.module, .name = w.name, .isType = true });
     return std.mem.concat(env.arena, u8, &.{ alias, written }) catch error.OutOfMemory;
-}
-
-/// What a declaration a decorator cannot wrap is called in a refusal.
-fn wrapKindWord(kind: []const u8) []const u8 {
-    if (std.mem.eql(u8, kind, "Type")) return "type";
-    if (std.mem.eql(u8, kind, "Behavior")) return "behavior";
-    if (std.mem.eql(u8, kind, "Field")) return "field";
-    if (std.mem.eql(u8, kind, "Val")) return "val";
-    if (std.mem.eql(u8, kind, "Method")) return "method";
-    return "declaration";
 }
 
 /// Decision 384 — the names a member of a decorator declared in another
@@ -7391,9 +7326,9 @@ fn inferTagMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc
 }
 
 /// The `@Decl` methods that write the declaration (decision 216; 316's
-/// `wrapWith`).
+/// `implement`).
 fn isDeclWrite(callee: []const u8) bool {
-    const writes = [_][]const u8{ "setMeta", "addMeta", "addMember", "addType", "wrapWith", "implement" };
+    const writes = [_][]const u8{ "setMeta", "addMeta", "addMember", "addType", "implement" };
     for (writes) |w| if (std.mem.eql(u8, callee, w)) return true;
     return false;
 }
@@ -22692,11 +22627,6 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (currentDeclParam(env)) |declName| if (call.args.len == 2 and memberFn.isAddMemberOn(call, declName)) {
                 return inferMemberFnCall(env, call, loc);
             };
-            // Decision 316 — `decl.wrapWith(f)` in a decorator's body: the
-            // wrapper is the program's code.
-            if (currentDeclParam(env)) |declName| if (memberFn.isWrapWithOn(call, declName)) {
-                return inferWrapWithCall(env, call, loc);
-            };
             // Decision 575 (3) — `compiler.init(f)` in a decorator's body:
             // the executor is the program's code.
             if (currentDeclParam(env)) |declName| if (memberFn.isCompileOn(call, declName)) {
@@ -24783,100 +24713,10 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     } } } };
 }
 
-/// Decision 316 — `decl.wrapWith(f)` in a decorator's body. `f` is a lambda
-/// written at the call; it is the program's code, typed here as a member
-/// function is (`inferMemberFnCall`): each `comptime x: @Expr<T>` parameter
-/// read as its `T`, nothing of the decorator's body (`decorator-member-captures`).
-/// Its parameter is the call value, `__Decl__Call<A, R>` — `args` the
-/// arguments as a tuple of the `@Decl<fn(…) -> R>` pattern's parameters
-/// (`unknown` under `fn(..) -> R` or a pattern that is no function), `run`
-/// the original body — and it answers `R`, the pattern's return: a wrapper of
-/// another type is refused here, at the decorator.
-fn inferWrapWithCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
-    const fnArg: ?ast.Expr = if (call.args.len == 1 and call.trailing.len == 0) call.args[0].value.* else null;
-    if (fnArg == null or fnArg.? != .function or fnArg.?.function.kind.syntax == .fnExpr) {
-        env.lastError = TypeError.custom(
-            diagnostics.decorator_wrap_not_lambda ++ ": `decl.wrapWith(f)` takes the wrapper as a lambda written at the call",
-            "Write the wrapper there — `decl.wrapWith({ call -> … call.run() … })` —: it is the program's code, where the decorator's parameters are spliced (decision 316).",
-        ).withLoc(if (fnArg) |f| f.getLoc() else loc);
-        return error.TypeError;
-    }
-    const func = fnArg.?.function;
-    try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, false, false);
-
-    // The call value and the return, from the `@Decl<…>` pattern.
-    const declParam = env.currentParams[0];
-    const anyParams = declPatternAnyParams(declParam.typeRef);
-    const handleTy: ?*T.Type = env.lookup(declParam.name);
-    const pattern: ?*T.Type = if (handleTy) |h| blk: {
-        const d = h.deref();
-        break :blk if (d.* == .named and d.named.args.len == 1) d.named.args[0].deref() else null;
-    } else null;
-    const unknownTy = try env.namedType("unknown");
-    var argsTy: *T.Type = unknownTy;
-    var ret: *T.Type = try env.freshVar();
-    if (pattern) |p| if (p.* == .func) {
-        ret = p.func.ret;
-        if (!anyParams) argsTy = try env.namedTypeArgs("tuple", p.func.params);
-    };
-    const callTy = try env.namedTypeArgs("__Decl__Call", &.{ argsTy, ret });
-    const params = try env.arena.alloc(*T.Type, 1);
-    params[0] = callTy;
-    // The wrapper's own answer, met with `R` after it is typed.
-    const answer = try env.freshVar();
-    const expected = try env.funcType(params, answer);
-
-    // Each `@Expr<T>` parameter is its `T` in the wrapper.
-    const Rebound = struct { name: []const u8, was: *T.Type };
-    var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
-    for (env.currentParams) |p| if (p.exprWrapped) {
-        const was = env.lookup(p.name) orelse continue;
-        const d = was.deref();
-        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
-        try rebound.append(env.arena, .{ .name = p.name, .was = was });
-        try env.bind(p.name, inner);
-    };
-    const savedParams = env.currentParams;
-    const savedInDecorator = env.inDecoratorFn;
-    const savedBody = env.decoratorBody;
-    env.currentParams = &.{};
-    env.inDecoratorFn = false;
-    env.decoratorBody = null;
-    const fnTyped = try env.arena.create(TypedExpr);
-    fnTyped.* = blk: {
-        defer {
-            env.currentParams = savedParams;
-            env.inDecoratorFn = savedInDecorator;
-            env.decoratorBody = savedBody;
-        }
-        break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
-    };
-    for (rebound.items) |r| try env.bind(r.name, r.was);
-    const savedError = env.lastError;
-    unifyUnlocated(env, ret, answer) catch {
-        env.lastError = savedError;
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: the wrapper answers `{s}`, and the function it wraps returns `{s}`", .{ diagnostics.decorator_wrap_type, try decoratorSpelling(env, answer, 0), try decoratorSpelling(env, ret, 0) });
-        env.lastError = TypeError.custom(msg, "A wrapper answers the wrapped function's return type — the `R` of the decorator's `@Decl<fn(…) -> R>` — usually through `call.run()` (decision 316).").withLoc(func.loc);
-        return error.TypeError;
-    };
-
-    const recv = try env.arena.create(TypedExpr);
-    recv.* = try inferExprTyped(env, call.receiver.?.*);
-    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), 1);
-    typedArgs[0] = .{ .label = call.args[0].label, .value = fnTyped };
-    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .call = .{
-        .receiver = recv,
-        .callee = memberFn.wrap_with,
-        .is_builtin = false,
-        .args = typedArgs,
-        .trailing = &.{},
-    } } } };
-}
-
 /// Decision 575 (3) — `compiler.init(f)` in a decorator's body (read onto
 /// the handle, `decl.compile(f)`). `f` is the executor, a function written at
 /// the call that takes nothing; it is the program's code, typed here as a
-/// wrapper is (`inferWrapWithCall`): each `comptime x: T` parameter read as
+/// member function is (`inferMemberFnCall`): each `comptime x: T` parameter read as
 /// its `T`, the body's locals read as the literals of their values (the tree
 /// rule, 575 (4); a local that is no literal is `decorator-member-local-not-literal`, 759). The
 /// executor is checked against `fn()` (decision 409): a tail that answers a

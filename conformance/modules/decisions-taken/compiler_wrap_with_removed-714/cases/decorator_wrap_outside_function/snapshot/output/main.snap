@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-wrap-without-function: `#[traced]` on the type `City` calls `decl.wrapWith`, and only a function or a method is wrapped
-at src/main.bp:11:3

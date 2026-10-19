@@ -3667,14 +3667,13 @@ answers the declaration it names), `compiler.kind(d)`, `compiler.moduleOf(d)`,
 `compiler.fields(d)`, `compiler.variants(d)`, `compiler.methods(d)`,
 `compiler.params(d)`; `null` when nothing of that name is in scope.
 `compiler.bindings(q)` lists every declaration a word of the literal names. The
-outputs — `compiler.setMeta`, `compiler.addMeta`, `compiler.addMember`,
-`compiler.addType` and `compiler.wrapWith` — are a decorator's only, and in a
-template body are `compiler-output-outside-decorator`, at the call.
+outputs — `compiler.setMeta`, `compiler.addMeta`, `compiler.addMember` and
+`compiler.addType` — are a decorator's only, and in a template body are
+`compiler-output-outside-decorator`, at the call.
 
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_decl -->
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_decl_members -->
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/cases/template_lookup_decl_write -->
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/template_lookup_decl_wrap_with -->
 
 `compiler.bindings(q)` answers those handles (question B-18-b) — one per
 declaration, each under its own name and module, an alias's included —, and
@@ -4104,53 +4103,13 @@ read on a `syntax` parameter (`rule.text()`) is `expr-param-method` (370 (3)).
 The other channel is typed meta whose record holds a tree filled from a `syntax`
 parameter (§ Typed meta below).
 
-A decorator on a function or a method may wrap it (decision 316):
-`compiler.wrapWith({ call -> … })`, the wrapper a lambda written at the call. It
-receives the call value — `call.args`, the arguments as a tuple, and
-`call.run()`, which runs the original body with them — and answers the
-function's return type. `syntax decl: fn(..) -> R` names a function of any
-parameters (`call.args` is then `unknown`; a pattern that lists them types it,
-`syntax decl: fn(id: i32) -> string` gives `#(i32)`); `fn(..)` is written nowhere
-else (`any-params-outside-decl`, at the `..`). Several wrappers compose in
-annotation order, the first written outermost. The function keeps its name,
-signature and annotations: every call of it, an importer's included, runs the
-wrapper, and its original body is reachable only through `call.run()`. The
-wrapper is a tree, as a member function is: it reads the decorator's `syntax`
-parameters, spliced, its `comptime` parameters as literals, and the names of
-the decorator's module, never the handle or a local that is no literal
-(`decorator-member-captures`); a `compiler.*` call in it is evaluated at build
-and spliced as its answer (decision 642; cell `wrapper_reads_compiler_name`).
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wraps_function -->
-
-A call written in the wrapped function's own module, the function taken as a
-value and called later, and its own recursive call each run the wrapper.
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wraps_function_value -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_captures -->
-
-A wrapper answering another type than the pattern's `R` is
-`decorator-wrap-type` at the wrapper, in the decorator; `compiler.wrapWith` from a
-decorator on anything but a function or a method of a `type`, or on a
-`declare fn` (it has no body to wrap), is
-`decorator-wrap-without-function` at the annotation; a wrapper that is no
-lambda written at the call is `decorator-wrap-not-lambda`, at the argument
-(question B-11-a), and a wrapped function (or the type owning a wrapped
-method) with type parameters `decorator-wrap-generic`, at the annotation
-(question B-11-b).
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_wrong_return -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_outside_function -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_not_lambda -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_generic -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_declare_fn -->
-
-<!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_wrap_generic_owner -->
+A decorator never changes what a call does without the caller seeing it
+(decision 714): there is no wrapper of the annotated function. Behaviour around
+a type's methods is a proxy type the decorator builds (`compiler.addType`) and
+the caller names; around one function, the program writes the function around
+the call (`retry(policy, { -> issue() })`). `syntax decl: fn(..) -> R` names a
+function of any parameters; `fn(..)` is written nowhere else
+(`any-params-outside-decl`, at the `..`).
 
 <!-- example: modules/decisions-taken/compiler_wrap_with_removed-714/cases/decorator_any_params_outside_decl -->
 
@@ -4802,10 +4761,6 @@ decorator that hands `compiler.implement` an `Implementation`:
 A library's `compiler.implement` survives the module's re-analysis: a decorator of the same module that adds a member (`compiler.addMember`) does not lose it.
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cases/external_library_source_beside_member -->
-
-A decorator of the same module that wraps a function (`compiler.wrapWith`) does not lose a library's `compiler.implement` either.
-
-<!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cases/external_library_source_beside_wrap -->
 
 Nor does a decorator of the same module that emits a declaration.
 

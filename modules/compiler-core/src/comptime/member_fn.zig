@@ -54,27 +54,6 @@ pub fn isAddMemberOn(c: anytype, declName: []const u8) bool {
     return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, add_member) and !c.is_builtin;
 }
 
-/// Decision 316 — the name a decorator body's `wrapWith` is written with.
-pub const wrap_with = "wrapWith";
-
-/// `e` as `<declName>.wrapWith(<function>)` — the wrapper written at the call
-/// (a lambda); null for any other node.
-pub fn asWrapCall(e: ast.Expr, declName: []const u8) ?ast.FunctionExpr {
-    if (e != .call or e.call.kind != .call) return null;
-    const c = e.call.kind.call;
-    if (!isWrapWithOn(c, declName) or c.args.len != 1) return null;
-    const f = c.args[0].value.*;
-    if (f != .function) return null;
-    return f.function;
-}
-
-/// Whether `c` is `<declName>.wrapWith(…)`.
-pub fn isWrapWithOn(c: anytype, declName: []const u8) bool {
-    const r = c.receiver orelse return false;
-    if (r.* != .identifier or r.identifier.kind != .ident) return false;
-    return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, wrap_with) and !c.is_builtin;
-}
-
 /// Decision 575 (3) — the name a decorator body's `compile` is written with
 /// (`compiler.init(f)`, read onto the handle).
 pub const compile_name = "compile";
@@ -149,15 +128,6 @@ pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![
     return out.items;
 }
 
-/// Decision 316 — every wrapper `f`'s body hands to `decl.wrapWith`, in the
-/// order `syntax_param.eraseFn` numbers them (a pre-order walk).
-pub fn collectWrappers(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
-    var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
-    var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .wrappers = true };
-    try c.walk([]ast.Stmt, f.body);
-    return out.items;
-}
-
 /// Decision 575 (3) — every executor `f`'s body hands to `decl.compile`, in
 /// the order `syntax_param.eraseFn` numbers them (a pre-order walk).
 pub fn collectExecutors(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
@@ -171,19 +141,12 @@ const Collector = struct {
     arena: std.mem.Allocator,
     declName: []const u8,
     out: *std.ArrayListUnmanaged(ast.FunctionExpr),
-    /// Collect `decl.wrapWith(f)`'s functions in place of `addMember`'s.
-    wrappers: bool = false,
     /// Collect `decl.compile(f)`'s functions in place of `addMember`'s.
     executors: bool = false,
 
     fn walk(self: *Collector, comptime T: type, v: T) std.mem.Allocator.Error!void {
         if (T == ast.Expr) if (self.executors) {
             if (asCompileCall(v, self.declName)) |func| {
-                try self.out.append(self.arena, func);
-                return;
-            }
-        } else if (self.wrappers) {
-            if (asWrapCall(v, self.declName)) |func| {
                 try self.out.append(self.arena, func);
                 return;
             }
@@ -515,27 +478,6 @@ pub fn render(
     return std.fmt.allocPrint(arena, "pub fn {s}{s}", .{ name, try spliceLexemes(arena, text[2..], splices) });
 }
 
-/// Decision 316 — the wrapper `func` (a lambda written at `decl.wrapWith`)
-/// as source, each read of a spliced parameter replaced by its argument as
-/// `render` replaces it, each type parameter by its spelling and each name of
-/// `renames` by its alias.
-pub fn renderWrapper(
-    arena: std.mem.Allocator,
-    func: ast.FunctionExpr,
-    splices: []const Splice,
-    typeArgs: []const TypeArg,
-    owner: []const u8,
-    renames: []const Rename,
-) ![]const u8 {
-    const bound = try boundNames(arena, func.kind.params, func.kind.body);
-    var sub: Substitution = .{ .arena = arena, .splices = splices, .typeArgs = typeArgs, .owner = owner, .bound = &bound, .renames = renames };
-    var f = func;
-    f.kind.body = try sub.clone([]ast.Stmt, func.kind.body);
-    var fm = format.Formatter.init(arena);
-    const text = try format.render(arena, try fm.fmtExpr(.{ .function = f }), std.math.maxInt(u16));
-    return spliceLexemes(arena, text, splices);
-}
-
 // ── decision 669 — a member written as text ────────────────────────────────
 
 /// Decision 669 — the member a decorator hands `decl.addMember(source)` as
@@ -823,29 +765,6 @@ test "a member function: collected in order, its free names, rendered with each 
     try std.testing.expect(std.mem.indexOf(u8, text, "return [__bp_tpl_rules__Violation(field: \"confirm\", message: m)];") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "if (passwordsMatch(self))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "val m = (t(\"signup.mismatch\"));") != null);
-}
-
-test "decision 316 — a wrapper: collected in order apart from the members, rendered with each argument spliced" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    const lexer = @import("../lexer.zig");
-    const parser = @import("../parser.zig");
-    var lx = lexer.Lexer.init(
-        \\fn tagged(syntax decl: fn(..) -> string, syntax mark: string) {
-        \\    compiler.addMember("m", fn(self: T) -> string { return mark; });
-        \\    compiler.wrapWith({ call -> mark + call.run() });
-        \\    compiler.wrapWith({ call -> call.run() });
-        \\}
-        \\import {compiler} from "std";
-    );
-    var p = parser.Parser.init(try lx.scanAll(arena));
-    const f = (try p.parse(arena)).decls[0].@"fn";
-    try std.testing.expectEqual(@as(usize, 2), (try collectWrappers(arena, f, "decl")).len);
-    try std.testing.expectEqual(@as(usize, 1), (try collect(arena, f, "decl")).len);
-    const wrapper = (try collectWrappers(arena, f, "decl"))[0];
-    const text = try renderWrapper(arena, wrapper, &.{.{ .param = "mark", .lexeme = "\"*\" + suffix" }}, &.{}, "", &.{});
-    try std.testing.expect(std.mem.indexOf(u8, text, "(\"*\" + suffix) + call.run()") != null);
 }
 
 test "decision 669 — a member written as text: its free names renamed, its own bindings left alone" {

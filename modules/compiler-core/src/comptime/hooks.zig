@@ -596,7 +596,7 @@ const BlockWalk = struct {
 // ── what a `.hooks` reader may write ─────────────────────────────────────────
 
 /// Decision 372 — a call that gives the program code: `@emit(…)`, or
-/// `addMember(…)` / `addType(…)` / `wrapWith(…)` (316) on a receiver
+/// `addMember(…)` / `addType(…)` on a receiver
 /// (`decl.addMember(…)`). A
 /// decorator that reads `.hooks` runs after the module's bodies and may only
 /// record meta or refuse, so such a call in it is refused where it is written.
@@ -614,7 +614,7 @@ fn findOutput(comptime X: type, ptr: *const X) ?OutputCall {
             const c = ptr.call.kind.call;
             if (c.is_builtin and std.mem.eql(u8, c.callee, "emit")) return .{ .name = "@emit", .at = ptr.call.loc };
             if (!c.is_builtin and c.receiver != null and
-                (std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "addType") or std.mem.eql(u8, c.callee, "wrapWith")))
+                (std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "addType")))
                 return .{ .name = c.callee, .at = ptr.call.loc };
         }
     }

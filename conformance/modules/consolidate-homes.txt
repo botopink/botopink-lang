@@ -114,9 +114,6 @@ typeinfo_all_behavior_none_shared outside
 typeinfo_all_behavior_shared 235
 typeinfo_all_behavior_typed outside
 typeinfo_all_list 235 also 254,256
-decorator_wrap_generic 714
-decorator_wrap_generic_owner 714
-decorator_wrap_not_lambda 714
 
 # print: the local shadowing the imported `print` is 606's prelude rule, not the prefix's.
 print_local_shadows_import 606

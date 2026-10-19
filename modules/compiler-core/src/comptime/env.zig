@@ -713,26 +713,13 @@ pub const MemberContribution = struct {
 /// `decl.addType` call whose output the module's analysis refused.
 pub const CallSite = struct { file: []const u8, loc: ast.Loc };
 
-/// Decision 316 — one wrapper a decorator body gave the function or method it
-/// annotates (`decl.wrapWith(f)`).
+/// Decision 575 (6) — what a library's source annotation implemented
+/// (`compiler.implement(source)`) for the declaration it annotates.
 pub const ImplementContribution = struct {
     /// The declaration's name — a method's, with `owner` its type.
     target: []const u8,
     owner: ?[]const u8,
     impl: ast.Implementation,
-};
-
-pub const WrapContribution = struct {
-    /// The wrapped function's name — a method's, with `owner` its type.
-    target: []const u8,
-    owner: ?[]const u8,
-    /// The wrapper, a lambda's source: each `@Expr` parameter's argument
-    /// spliced, each name of another module's decorator renamed (384).
-    source: []const u8,
-    /// The annotation that ran the decorator: every refusal about the
-    /// wrapper is located here.
-    loc: ?ast.Loc,
-    decorator: []const u8,
 };
 
 /// One associated type a decorator body declared (`decl.addType`, decision 216).
@@ -1648,11 +1635,6 @@ pub const Env = struct {
     /// (`decl.addType(name, source)`), in call order; merged as top-level
     /// types named `__<Owner>__<Name>` before the re-analysis.
     typeContributions: std.ArrayListUnmanaged(TypeContribution) = .empty,
-    /// Decision 316 — the wrappers decorator bodies gave the functions and
-    /// methods of this module (`decl.wrapWith(f)`), in call order — so in
-    /// annotation order for one declaration; `comptime.zig` `mergeWrappers`
-    /// rewrites each wrapped declaration before the re-analysis.
-    wrapContributions: std.ArrayListUnmanaged(WrapContribution) = .empty,
     /// Decision 575 (6) — what a library's source annotation implemented
     /// (`compiler.implement(source)`), by the declaration it annotates;
     /// `infer.zig` `applyImplementContributions` adds each to the

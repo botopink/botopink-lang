@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-wrap-without-function: `#[counted]` wraps `Clock.now`, which has no body
-at src/main.bp:11:7

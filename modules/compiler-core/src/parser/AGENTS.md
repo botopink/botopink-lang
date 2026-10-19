@@ -977,7 +977,7 @@ each parameter's arrival — `syntax`, `comptime`, plain — for each, decision 
 template keeps the tree in a local, makes the template the custom carrier (the internal `__ExprCustom<T>`) and each
 return `q.custom(tree, e)` (decision 576 (4)). A refusal is written at its place
 as the builtin `compiler_surface.refusal_builtin` (`compiler-at-run-time` in `main` or a `test`,
-`compiler-output-outside-decorator`, `compiler-member-unknown`). A tree (an `init` executor, an `addMember` member, a `wrapWith` wrapper; `compiler.init(f)` with `f`
+`compiler-output-outside-decorator`, `compiler-member-unknown`). A tree (an `init` executor, an `addMember` member; `compiler.init(f)` with `f`
 no function written there is the tree `{ -> f() }`, the call its tail, decision 409) reads `compiler` at build
 (decisions 614, 642, `hoistBuildReads`, run on every function argument of those calls): each `compiler.*` read in it
 becomes a `val __bp_build_<k>` of the body put right before the statement (`walkStmts`), which the tree reads as a
