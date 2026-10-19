@@ -32,7 +32,7 @@ component fn Root() -> Component<View> {
     val big: i64 = 9000000000;
     use provide(createContext(1.25));
     use provide(createContext(big));
-    val l = Label();
+    val l = await Label();
     return View(text: l.text);
 }
 

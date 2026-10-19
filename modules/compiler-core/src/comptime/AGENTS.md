@@ -469,7 +469,7 @@ like `code`, tree via `template.parseCustomNodeFromTree` into
 caller's env — the call's type is the built code's, decision 426 (1) —, unifies
 the template's `T` (`__Expr<T>` / `CustomExpr<T>` internally) bound with it (a free `T` takes the built
 type; `unknown` holds anything), and records it in `env.templateExpansions`;
-transform substitutes it and drops the template fns. Built code that is a component call in a component body renders implicitly (`inferComponentCall`, typed by its `R`); the bound compares the `@Component<R>` as written (`Env.renderedCallType`), so `-> @Component<X>` holds it. A built type outside the
+transform substitutes it and drops the template fns. Built code that is a component call answers its `@Component<R>`, as any call (decision 791 (1)), so `-> @Component<X>` holds it. A built type outside the
 bound is `template-build-outside-bound` at the template's `build`: the run
 replies which build it answered (`template_eval.numberBuilds` numbers each `compiler.build(q, src)` as the prelude's `q.build(src,
 i)`, the prelude's `build/3` records `i`, `Extras.build`), located there for a
@@ -1311,8 +1311,8 @@ base (`componentBaseParamRemoved`), `@Renderable` (`contextMarkerRemoved`) and
   (a component is called) and anything that is no `@Component` at all
   (`useNotContext`). The prefix is typed as `R` (`bindingSourceType`).
 - `await` accepts `@Component<R>` too (`unwrapTaskType` → `R`): every caller
-  awaits a component (decision 104); a component called inside a `@Component`
-  body is awaited by the transform (`inferComponentCall`).
+  awaits a component (decision 104); a component call answers its lambda
+  wherever it is written, a component body included (decision 791 (1)).
 
 **Contexts** (decisions 354, 378, 379, 722, 723). std's `context` module declares
 `Context<T>(contextValue)`, `createContext`, `provide` and `context`;
@@ -1333,7 +1333,7 @@ Context<T>) -> Component<T>` types `use context(themeContext)` as any call;
 argument that is no module-level name — a parameter, a local, an expression
 (`context-not-declared`). `noteContextUse` holds `use provide(ctx)` (one
 argument, std's signature) to a component's body (`FnContext.renderable`)
-before its first render (`Env.firstRenderAt`, set by `inferComponentCall`) and
+before its first render (`Env.firstRenderAt`, set where the body runs a component) and
 records each use in `Env.contextUses` with its key — a read keyed by the type
 of the `Context<T>` it names, its fallback (`default_ref`) the named value
 itself (723: nothing searched); `noteHookUse` publishes that value as the
@@ -1470,15 +1470,10 @@ variant is read — its type carries the arguments instead of fresh variables �
   whose last statement calls a builtin `@panic`/`@todo`/`@trap`/`@compilerError` or any function
   declared `-> noreturn` (`callNeverReturns`), so `if (post == null) { notFound(); }` narrows
   `post` below; `refuseFallingOffTheEnd` reads the same predicate.
-- **A component called inside a component body renders there** (decisions 104, 118, 128):
-  `inferComponentCall` types a call answering `@Component<R>` whose `R` implements `@Renderable`,
-  made inside a `@Component` body, as `R`, and splices `await`
-  around it through the index channel (`transform.zig` wraps the call and leaves the copy it wraps
-  alone) — on commonJS a component is an `async function`. As `use`'s operand (`Env.inUseOperand`)
-  the call keeps its wrapper, so `use Counter()` is still refused by name; as `await`'s own operand
-  (`Env.awaitOperandLoc`, the call's location — a component call in its arguments still renders) it
-  keeps it so a written `await view(props)` answers `T` (`modules/decisions-taken/body_marker_whole_return_type-553/cells/component_call_awaited`); outside a
-  component body or under another base it keeps it too. An array literal's elements unify located at the element
+- **A component call makes its lambda** (decision 791 (1)): a call answering `@Component<R>` is
+  typed `@Component<R>` wherever it is written, a component body included, so `val x:
+  Component<Prop> = mk(2);` in a body written `-> Component<string>` holds
+  (`modules/component_call_lambda_in_body`). An array literal's elements unify located at the element
   that disagrees.
 
 ## A label names the parameter it fills, in a complete call too

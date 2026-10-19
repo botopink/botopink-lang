@@ -27,7 +27,7 @@ component fn Label() -> Component<View> {
 
 component fn Dark() -> Component<View> {
     use provide(createContext(Mode.Dark));
-    val l = Label();
+    val l = await Label();
     return View(text: l.text);
 }
 

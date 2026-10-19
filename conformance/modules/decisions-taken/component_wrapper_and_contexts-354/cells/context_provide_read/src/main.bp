@@ -25,20 +25,20 @@ component fn Label(prefix: string) -> Component<Element> {
 }
 
 component fn Page() -> Component<Element> {
-    val l = Label("label:");
+    val l = await Label("label:");
     return Element(text: "page[" + l.text + "]");
 }
 
 component fn App() -> Component<Element> {
     val outer = use context(themeContext);
     use provide(createContext(Theme(mode: "dark")));
-    val p = Page();
+    val p = await Page();
     return Element(text: outer.mode + " " + p.text);
 }
 
 component fn Root() -> Component<Element> {
     use provide(createContext(Theme(mode: "light")));
-    val a = App();
+    val a = await App();
     return Element(text: a.text);
 }
 

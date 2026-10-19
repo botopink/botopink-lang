@@ -25,21 +25,21 @@ component fn Leaf(name: string) -> Component<Element> {
 
 component fn Inner() -> Component<Element> {
     use provide(createContext(Depth(n: 2)));
-    val l = Leaf("inner");
+    val l = await Leaf("inner");
     return Element(text: l.text);
 }
 
 component fn Sibling() -> Component<Element> {
-    val l = Leaf("sibling");
+    val l = await Leaf("sibling");
     return Element(text: l.text);
 }
 
 component fn Outer() -> Component<Element> {
     use provide(createContext(Depth(n: 1)));
     use provide(createContext(Step(n: 10)));
-    val a = Leaf("outer");
-    val b = Inner();
-    val c = Sibling();
+    val a = await Leaf("outer");
+    val b = await Inner();
+    val c = await Sibling();
     return Element(text: a.text + " " + b.text + " " + c.text);
 }
 

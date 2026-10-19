@@ -28,7 +28,7 @@ component fn Label() -> Component<View> {
 component fn Root(rate: ?f64, total: ?i64) -> Component<View> {
     use provide(createContext(Rate(value: rate)));
     use provide(createContext(Total(value: total)));
-    val l = Label();
+    val l = await Label();
     return View(text: l.text);
 }
 

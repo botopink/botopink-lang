@@ -30,8 +30,9 @@
 //! is lowered the same way, its tail made its `return`:
 //! `{ x -> return { bpScope__ -> body' }; }` — its parameters and what it
 //! captures closed over by the inner lambda.
-//! A component call the checker renders in a body (`inferComponentCall`, 128)
-//! is an `await` of it, so it runs with the children's scope. Outside every
+//! A component call makes its lambda wherever it is written, a component body
+//! included (decision 791 (1)): it is run by the tree that holds it as a child,
+//! or by an `await` of it in a body, with the children's scope. Outside every
 //! body — `main`, a test, a plain function, a lambda — an `await c` runs `c`
 //! with `bpScopeRoot__()` (388 (4)), and `c.run(scope)` is the call of the
 //! lambda `c` is (`Env.componentRuns`): the render library holds the scopes

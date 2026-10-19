@@ -16,7 +16,7 @@ component fn Label() -> Component<Element> {
 
 component fn Dark() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
-    val l = Label();
+    val l = await Label();
     return Element(text: l.text);
 }
 

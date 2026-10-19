@@ -1128,8 +1128,8 @@ pub const Env = struct {
     /// the component's value (`context_lower.zig`).
     memoUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 354 — where the body of the `@Component<R>` fn being inferred
-    /// first renders a component (a call `inferComponentCall` answers with its
-    /// `R`): a `use provide(…)` after it is refused, since the child rendered
+    /// first renders a component (decision 791: a `use c` of it, or an `await`
+    /// of it while 388 (4) stands): a `use provide(…)` after it is refused, since the child rendered
     /// before it would not see the value. Null until one renders; saved and
     /// restored around each fn body.
     firstRenderAt: ?ast.Loc = null,
@@ -1258,8 +1258,7 @@ pub const Env = struct {
     typedMetaLines: usize = 0,
     /// Decision 388 — every call whose value is, or may resolve to, a
     /// `@Component<R>`, by location, with that type: a call makes the
-    /// component's lambda, and a call `inferComponentCall` renders in a body
-    /// runs it with the body's children scope (`context_lower.zig`).
+    /// component's lambda and runs nothing (decision 791 (1)).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 388 — every written `await` whose operand is, or may resolve
     /// to, a `@Component<R>`, by the `await`'s location, with the operand's
@@ -1750,20 +1749,11 @@ pub const Env = struct {
     warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
     /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
     bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
-    /// True while the operand of a `use` is inferred: a component call there
-    /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
+    /// True while the operand of a `use` is inferred.
     inUseOperand: bool = false,
     /// The location of the call written as `use`'s operand: std's `provide`
     /// / `context` are hooks, legal only there (decision 354).
     useOperandLoc: ?ast.Loc = null,
-    /// The location of the call written as `await`'s operand: a component call
-    /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
-    awaitOperandLoc: ?ast.Loc = null,
-    /// The last call `inferComponentCall` rendered implicitly, with the
-    /// `@Component<R>` type it was written with: a template's built code that
-    /// is such a call meets its answer's bound as written (`finishExpansionBuilt`).
-    renderedCallAt: ?ast.Loc = null,
-    renderedCallType: ?*T.Type = null,
     /// Decision 110 — an imported type's `as` name → the declared name
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.

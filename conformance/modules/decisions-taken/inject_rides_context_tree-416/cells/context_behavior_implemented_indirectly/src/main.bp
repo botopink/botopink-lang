@@ -42,7 +42,7 @@ component fn Lookup() -> Component<View> {
 
 component fn Root() -> Component<View> {
     use provide(createContext(Memory(tag: "mem"), Repository));
-    val l = Lookup();
+    val l = await Lookup();
     return View(text: l.text);
 }
 

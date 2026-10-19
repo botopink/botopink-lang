@@ -1,14 +1,16 @@
-//// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
-//// component body with the same base it renders within that render: the call
-//// answers its `T` (the context owner), not the `Component<T>` wrapper.
-//// `div([title(), Counter()])` used to red "expected Element, got Component"
-//// with no location. A hook is still `use`d.
+//// Decision 791 (1), (2), (6) — a call of a component only makes its lambda,
+//// in a component body too: `div([text("title"), Counter()])` holds a node
+//// already made and `Counter()`'s lambda, the children typed as a node or a
+//// component (`Kid`). Nothing runs `Counter` (`counter ran` never prints):
+//// the tree holds it, and the renderer runs it from its place.
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
 
-pub type Element(tag: string, kids: Element[]) implement Renderable
+pub type Element(tag: string, kids: Kid[]) implement Renderable
 
-fn div(children: Element[]) -> Element {
+pub type Kid = Element | Component<Element>;
+
+fn div(children: Kid[]) -> Element {
     return Element(tag: "div", kids: children);
 }
 
@@ -17,6 +19,7 @@ fn text(s: string) -> Element {
 }
 
 pub component fn Counter() -> Component<Element> {
+    print("counter ran");
     return text("counter");
 }
 
@@ -24,15 +27,11 @@ pub component fn Page() -> Component<Element> {
     return div([text("title"), Counter()]);
 }
 
-fn render(e: Element) -> string {
-    var out = e.tag;
-    for (e.kids) { k ->
-        out = out + "," + render(k);
-    }
-    return out;
-}
-
 pub async fn main() -> Async<void> {
-    val page = await Page();
-    print(render(page));
+    val r = await Page().run(RenderScope.root());
+    val page = r.value;
+    print(page.tag);
+    for (page.kids) { k ->
+        if (k is Element) print("node") else print("component");
+    }
 }

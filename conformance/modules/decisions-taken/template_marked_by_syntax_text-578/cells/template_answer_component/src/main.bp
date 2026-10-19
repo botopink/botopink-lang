@@ -8,7 +8,8 @@ mod shown;
 import {shown.view, shown.Styled};
 
 pub component fn Page() -> Component<Styled> {
-    return view @`a`;
+    val s = await view @`a`;
+    return s;
 }
 
 pub async fn main() -> Async<void> {

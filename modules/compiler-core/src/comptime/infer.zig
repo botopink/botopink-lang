@@ -2465,38 +2465,6 @@ fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
     return typed;
 }
 
-/// Decisions 104, 118, 128 and 354 — a component is CALLED, and called inside
-/// a body whose return is `@Component<_>` it renders within that render: the
-/// call's value is its `R` (the `@Renderable` value), as `await` would answer,
-/// and the transform splices the `await` in so the backends lower it as they
-/// lower `await c()` (on commonJS a component is an `async function`).
-/// Everywhere else — outside a component body, as `use`'s operand (refused
-/// there by name), as `await`'s own operand (the `await` is written) — the call
-/// keeps its `@Component<R>` type. A hook is not a component and is `use`d.
-fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
-    if (env.inUseOperand) return typed;
-    if (env.awaitOperandLoc) |at| if (std.meta.eql(at, c.loc)) return typed;
-    if (typed != .call) return typed;
-    const fc = env.fnContext orelse return typed;
-    if (!fc.annotated or env.starFn == null) return typed;
-    const ty = typed.getType().deref();
-    if (!isComponentType(env, ty)) return typed;
-    if (env.firstRenderAt == null) env.firstRenderAt = c.loc;
-    // Splice `await <call>` for the backends; the operand is a copy of the
-    // call at the same location, which the transform recognises and does
-    // not wrap again.
-    const inner = try env.arena.create(ast.Expr);
-    inner.* = .{ .call = c };
-    const wrapped = try env.arena.create(ast.Expr);
-    wrapped.* = .{ .jump = .{ .loc = c.loc, .kind = .{ .await_ = inner } } };
-    try env.indexRewrites.put(c.loc, wrapped);
-    var out = typed;
-    env.renderedCallAt = c.loc;
-    env.renderedCallType = ty;
-    out.call.type_ = ty.named.args[0];
-    return out;
-}
-
 /// True when `ty` is a component: `@Component<R>` whose `R` implements
 /// `@Renderable` (decision 354). A hook's `R` does not.
 fn isComponentType(env: *Env, ty: *T.Type) bool {
@@ -10240,16 +10208,8 @@ fn finishExpansionTyped(env: *Env, expansion_in: *const ast.Expr, retType: *T.Ty
     // module's functions build their inline parameter types, as the written
     // ones do (`inline_types.zig` ran before the code existed).
     const expansion = try inlineTypes.rewriteBuilt(env.arena, expansion_in, &env.fnDecls);
-    env.renderedCallAt = null;
     const typed = try inferExprTyped(env, expansion.*);
-    // Built code that is a component call, inside a component body, renders
-    // implicitly and is typed by its `R` (`inferComponentCall`); the bound
-    // compares the type as written, `@Component<R>`, with the answer.
-    const builtType: *T.Type = if (expansion.* == .call and typed == .call and env.renderedCallAt != null and
-        std.meta.eql(env.renderedCallAt.?, expansion.call.loc) and env.renderedCallType != null)
-        env.renderedCallType.?
-    else
-        typed.getType();
+    const builtType = typed.getType();
 
     // The expansion carries only the executable `code` half (the `ast` tree is
     // stored separately for tooling). Verify it against the declared bound for
@@ -16681,7 +16641,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try noteTypeTokenArgs(env, c, typedCall);
             try noteAsyncCall(env, c, typedCall);
             try noteStageCall(env, c, typedCall);
-            break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
+            // Decision 791 (1) — a call of a component makes its lambda wherever it
+            // is written, a component body included: it answers `Component<R>`.
+            break :blk applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall));
         },
 
         // ── function definition expressions ────────────────────────────────────
@@ -18164,18 +18126,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            // A component call written as `await`'s own operand keeps its
-            // `@Component<T>` — the `await` is written, not spliced
-            // (`inferComponentCall`); a call nested in its arguments still renders.
             // Decision 375 — a body that writes `await` is asynchronous.
             if (env.hookBuilder) |b| b.is_async = true;
-            const prevAwaitOperand = env.awaitOperandLoc;
-            env.awaitOperandLoc = if (e.* == .call) e.call.loc else null;
-            const valTyped = inferExprTyped(env, e.*) catch |err| {
-                env.awaitOperandLoc = prevAwaitOperand;
-                return err;
-            };
-            env.awaitOperandLoc = prevAwaitOperand;
+            const valTyped = try inferExprTyped(env, e.*);
             const valPtr = try makeTypedPtr(env, valTyped);
             const rawTy = valPtr.getType();
             // `await @Async<T>` answers `T` and propagates nothing (decision
@@ -18194,7 +18147,11 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // with `RenderScope.root()` (`context_lower.zig` reads the type
             // once it is resolved).
             switch (deref.*) {
-                .named => |n| if (std.mem.eql(u8, n.name, "Component")) try env.componentAwaits.put(env.arena, loc, rawTy),
+                .named => |n| if (std.mem.eql(u8, n.name, "Component")) {
+                    try env.componentAwaits.put(env.arena, loc, rawTy);
+                    // Decision 354 (2) — the body renders a child here.
+                    if (env.firstRenderAt == null and isComponentType(env, rawTy)) env.firstRenderAt = loc;
+                },
                 .typeVar => try env.componentAwaits.put(env.arena, loc, rawTy),
                 else => {},
             }

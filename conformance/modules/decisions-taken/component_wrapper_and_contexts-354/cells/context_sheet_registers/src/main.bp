@@ -45,8 +45,10 @@ component fn constant(name: string) -> Component<Rule> {
 
 component fn Root() -> Component<Rule> {
     use provide(createContext(SheetWriter(layer: "components", add: printed)));
-    val a = await computed("badge", [quiet({ -> computed("pad", []) })]);
-    val b = await computed("badge", [quiet({ -> computed("pad", []) })]);
+    val qa = await quiet({ -> computed("pad", []) });
+    val a = await computed("badge", [qa]);
+    val qb = await quiet({ -> computed("pad", []) });
+    val b = await computed("badge", [qb]);
     val c = await constant("tab");
     val d = await computed("alone", []);
     print(a.text + " " + b.text + " " + c.text + " " + d.text);

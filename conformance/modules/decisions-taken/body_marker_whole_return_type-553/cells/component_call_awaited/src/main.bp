@@ -1,9 +1,7 @@
-//// Decisions 104, 118 and 128 — inside a component body a component call
-//// renders as its `T`, and a written `await` of the same call still answers
-//// that `T`: `await`'s own operand keeps the `Component<T>` wrapper, so
-//// `val tree = await view(props)` (jhonstart's layout chain) is not refused as
-//// "`await` expects a `Async<_>`". A component call nested in the awaited
-//// call's arguments still renders.
+//// Decision 791 (1) — a call of a component only makes its lambda, in a
+//// component body too: `view(child: Element)` takes the `Element` a resolved
+//// `Title()` answers, never the call itself, and `slot.view` is a component
+//// lambda called through a record field.
 
 import {io.terminal.print} from "std";
 
@@ -26,7 +24,8 @@ pub type Slot(view: fn(child: Element) -> Component<Element>)
 pub component fn Page(slot: Slot) -> Component<Element> {
     val direct = await Title();
     val view = slot.view;
-    val wrapped = await view(Title());
+    val title = await Title();
+    val wrapped = await view(title);
     return Element(tag: "page", kids: [direct, wrapped]);
 }
 

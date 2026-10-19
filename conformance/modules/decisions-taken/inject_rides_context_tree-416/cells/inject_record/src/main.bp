@@ -28,7 +28,7 @@ component fn Page() -> Component<View> {
 
 component fn Root() -> Component<View> {
     use provide(createContext(Clock(now: "noon")));
-    val p = Page();
+    val p = await Page();
     return View(text: p.text);
 }
 

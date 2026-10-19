@@ -24,7 +24,7 @@ component fn App(dark: bool) -> Component<Element> {
         Theme(mode: "dark")
     else
         Theme(mode: "light")));
-    val l = Label();
+    val l = await Label();
     return Element(text: l.text + note);
 }
 

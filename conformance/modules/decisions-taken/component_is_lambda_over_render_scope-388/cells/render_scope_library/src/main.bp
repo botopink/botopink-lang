@@ -2,7 +2,7 @@
 //// is a lambda over a `RenderScope`, and the library runs the root with
 //// `RenderScope.root()`, then each child of the tree with the scope its
 //// parent's `run` answered. `Root` provides `light`; the `Label` it renders
-//// in its own body (a call the checker renders, an `await` of it) runs with
+//// in its own body (an `await` of it) runs with
 //// `Root`'s children scope. `Root` places `Page` in the tree as a value
 //// (`map(Page)`), `Page` provides `dark` and places two `Label`s: `render`
 //// runs each with the scope its parent answered, so `Page` reads `light`
@@ -51,7 +51,7 @@ component fn Page(title: string) -> Component<View> {
 
 component fn Root() -> Component<View> {
     use provide(createContext(Theme(mode: "light")));
-    val own = Label("root:");
+    val own = await Label("root:");
     return View(text: own.text, kids: ["page"].map(Page));
 }
 

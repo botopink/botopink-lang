@@ -32,7 +32,7 @@ component fn Page(s: string) -> Component<View> {
 
 component fn Root(s: string) -> Component<View> {
     use provide(createContext("kg"));
-    val p = Page(s);
+    val p = await Page(s);
     return View(text: p.text);
 }
 

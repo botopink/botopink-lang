@@ -5,8 +5,8 @@
 //// `use` of a synchronous one is not awaited. `Card` `use`s the synchronous
 //// hook `label` and awaits nothing, so `Card("direct").run(scope)` answers the
 //// `Rendered` itself, not a `Promise`. `Comments` awaits and `Post` renders
-//// it: `Post`'s run answers a `Promise`. `Post` renders `Card` with and
-//// without a written `await` (a no-op on a synchronous one) and reads both.
+//// it: `Post`'s run answers a `Promise`. `Post` renders `Card` twice (a call
+//// only makes the lambda, 791 (1)) and reads both.
 ////
 //// commonJS only: `pending` asks the host whether a value is a `Promise`, and
 //// only Node has one (`await` is the identity on erlang, beam and wasm).
@@ -42,9 +42,9 @@ component fn Comments() -> Component<Element> {
 }
 
 component fn Post() -> Component<Element> {
-    val a = Card("a");
+    val a = await Card("a");
     val b = await Card("b");
-    val m = Comments();
+    val m = await Comments();
     return Element(text: a.text + " " + b.text + " " + m.text);
 }
 

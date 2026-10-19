@@ -2722,7 +2722,12 @@ context per dependency, so a test's root swaps one.
 A component is a lambda over a render scope (decision 388): `fn C(…) ->
 Component<R>` answers a function of std's opaque `RenderScope`, and calling
 `C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
-the scope of the body that places them). In the body, `use provide(ctx)` makes
+the scope of the body that places them) — in a component body too, where the
+call answers `Component<R>` as anywhere else (decision 791 (1)):
+
+<!-- example: modules/component_call_lambda_in_body -->
+
+In the body, `use provide(ctx)` makes
 the scope its children receive, `use context(ctx)` finds the identity of
 `ctx`'s type in the scope the body received, else `ctx`'s own default, and `await c` runs `c`
 with the children's scope. Outside every body — `main`, a test, a plain

@@ -33,7 +33,7 @@ component fn Signup(email: string) -> Component<View> {
 
 component fn FakeRoot() -> Component<View> {
     use provide(createContext(FakeMailer(log: "fake:"), Mailer));
-    val v = Signup("a@b.c");
+    val v = await Signup("a@b.c");
     return View(text: v.text);
 }
 
