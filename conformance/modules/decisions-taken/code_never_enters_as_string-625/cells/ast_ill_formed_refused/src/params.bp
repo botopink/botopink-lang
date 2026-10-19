@@ -1,0 +1,9 @@
+import {compiler, compiler.FnParam, compiler.List, compiler.NamedType} from "std";
+
+fn looseParam(syntax q: string) -> anyvalue {
+    return compiler.ast(List([FnParam(name: compiler.text(q), annotation: NamedType("i32"))]));
+}
+
+pub fn param() -> i32[] {
+    return looseParam @`n`;
+}

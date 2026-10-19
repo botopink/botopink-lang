@@ -30,7 +30,10 @@
 ////   `annotate`, `custom` (decisions 578 (3), 625 (2)).
 //// - The typed AST `ast` builds code from (decision 625 (2)): `Node` and its
 ////   kinds `Name`, `Lit`, `Member`, `Call`, `Arg`, `List`, `Tuple`,
-////   `Binary`, `Unary`, `If`, `Lambda` and `Syntax` (decision 638).
+////   `Binary`, `Unary`, `If`, `Lambda`, `Syntax` (decision 638), `Fn`,
+////   `FnParam`, `Return` and the type nodes `NamedType`, `ArrayType`,
+////   `TupleType`, `LabeledTupleType`, `OptionalType`, `FnType`,
+////   `GenericType`, `UnionType` (decision 753).
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
@@ -167,7 +170,7 @@ pub fn beamMemory(syntax decl: unknown, comptime m: BeamMemory) {}
 // ── The typed AST `compiler.ast` builds code from (decision 625 (2)) ──────
 // One record per kind of expression a template answers, each with a field
 // set of its own: a body that runs at build reads a record by its fields.
-pub type Node = Name | Lit | Member | Call | Arg | List | Tuple | Binary | Unary | If | Lambda | Syntax;
+pub type Node = Name | Lit | Member | Call | Arg | List | Tuple | Binary | Unary | If | Lambda | Syntax | Fn | FnParam | Return | NamedType | ArrayType | TupleType | LabeledTupleType | OptionalType | FnType | GenericType | UnionType;
 
 // A name, resolved in the module that wrote the tree: `Name("double")`.
 pub type Name(name: string)
@@ -207,6 +210,45 @@ pub type Lambda(params: string[], body: Node)
 // The code a `syntax` value holds, spliced as it was written and typed where
 // the splice stands (decision 638).
 pub type Syntax(e: unknown)
+
+// A typed function, `fn(a: A, b: B) -> R { … }` (decision 753): each
+// parameter an `FnParam`, `ret` a type node, `body` its statements in order.
+// `Lambda` stays the untyped one.
+pub type Fn(params: FnParam[], ret: Node, body: Node[])
+
+// A typed parameter, `name: annotation` — only an element of `Fn.params`.
+pub type FnParam(name: string, annotation: Node)
+
+// `return result`.
+pub type Return(result: Node)
+
+// The type nodes (decision 753), one per kind of the parser's type grammar;
+// a type node stands only where a type is written — an `FnParam`'s
+// annotation, a `Fn`'s `ret`, inside another type node.
+
+// A type by its name: `string`, `Self`, `Greeter`.
+pub type NamedType(named: string)
+
+// `T[]`.
+pub type ArrayType(elem: Node)
+
+// `#(A, B)`.
+pub type TupleType(types: Node[])
+
+// `#(a: A, b: B)`.
+pub type LabeledTupleType(types: Node[], labels: string[])
+
+// `?T`.
+pub type OptionalType(inner: Node)
+
+// `fn(A, B) -> R`.
+pub type FnType(params: Node[], returns: Node)
+
+// `Name<A, B>`: `Result<T, E>`, `Dict<K, V>`.
+pub type GenericType(name: string, args: Node[])
+
+// `A | B`.
+pub type UnionType(members: Node[])
 
 // ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 // No prelude name: a file naming one imports it, `import {compiler.Span} from

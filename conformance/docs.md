@@ -3856,19 +3856,40 @@ Unary(op: string, operand: Node)            `-x`, `!x`
 If(cond: Node, then: Node, otherwise: Node) `if (cond) then else otherwise`
 Lambda(params: string[], body: Node)        `{ a, b -> body }`
 Syntax(e: unknown)                          the code a `syntax` value holds, as written (decision 638)
+Fn(params: FnParam[], ret: Node, body: Node[])  `fn(a: A) -> R { … }`, a typed function (decision 753)
+FnParam(name: string, annotation: Node)     a parameter of a `Fn`, `name: A` — an element of `Fn.params` only
+Return(result: Node)                        `return result`
 ```
 
-A kind of the parser's no template answers — a statement, a `case`, a loop, a
-`comptime` — is not a node. The names a library's tree writes resolve in the
+The type nodes, one per kind of the parser's type grammar (decision 753),
+stand only where a type is written — an `FnParam`'s annotation, a `Fn`'s
+`ret`, inside another type node:
+
+```text
+NamedType(named: string)                    `string`, `Self`, `Greeter`
+ArrayType(elem: Node)                       `T[]`
+TupleType(types: Node[])                    `#(A, B)`
+LabeledTupleType(types: Node[], labels: string[])  `#(a: A, b: B)`
+OptionalType(inner: Node)                   `?T`
+FnType(params: Node[], returns: Node)       `fn(A, B) -> R`
+GenericType(name: string, args: Node[])     `Result<T, E>`, `Dict<K, V>`
+UnionType(members: Node[])                  `A | B`
+```
+
+`Lambda` stays the untyped function. A kind of the parser's no template
+answers — a `case`, a loop, a `comptime` — is not a node. The names a library's tree writes resolve in the
 library's module (decision 112), its private functions included, wherever the
 template is expanded; a `Syntax` splice keeps the caller's scope.
 
 <!-- example: modules/decisions-taken/code_never_enters_as_string-625/cells/template_answers_ast -->
 
+<!-- example: modules/ast_fn_node_builds_mock_member -->
+
 A tree that is no code is refused at the `ast` call, naming the node
 (`ast-ill-formed`): a record that is no `Node`, an `Arg` outside a `Call`, a
 `Lit` holding a `syntax` value, a name that is no identifier, an operator the
-language has not, and a `Name` nothing binds where the tree is spliced.
+language has not, a `Name` nothing binds where the tree is spliced, a type
+node where an expression stands, and an `FnParam` outside a `Fn`.
 
 <!-- example: modules/decisions-taken/code_never_enters_as_string-625/cells/ast_ill_formed_refused -->
 

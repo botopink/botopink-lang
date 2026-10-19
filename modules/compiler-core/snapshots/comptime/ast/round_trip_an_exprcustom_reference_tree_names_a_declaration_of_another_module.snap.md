@@ -32,7 +32,10 @@
 ////   `annotate`, `custom` (decisions 578 (3), 625 (2)).
 //// - The typed AST `ast` builds code from (decision 625 (2)): `Node` and its
 ////   kinds `Name`, `Lit`, `Member`, `Call`, `Arg`, `List`, `Tuple`,
-////   `Binary`, `Unary`, `If`, `Lambda` and `Syntax` (decision 638).
+////   `Binary`, `Unary`, `If`, `Lambda`, `Syntax` (decision 638), `Fn`,
+////   `FnParam`, `Return` and the type nodes `NamedType`, `ArrayType`,
+////   `TupleType`, `LabeledTupleType`, `OptionalType`, `FnType`,
+////   `GenericType`, `UnionType` (decision 753).
 //// - A declaration handle's reads (decision 576 (3)): `name`, `kind`,
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
@@ -169,7 +172,7 @@ pub fn beamMemory(syntax decl: unknown, comptime m: BeamMemory) {}
 // ── The typed AST `compiler.ast` builds code from (decision 625 (2)) ──────
 // One record per kind of expression a template answers, each with a field
 // set of its own: a body that runs at build reads a record by its fields.
-pub type Node = Name | Lit | Member | Call | Arg | List | Tuple | Binary | Unary | If | Lambda | Syntax;
+pub type Node = Name | Lit | Member | Call | Arg | List | Tuple | Binary | Unary | If | Lambda | Syntax | Fn | FnParam | Return | NamedType | ArrayType | TupleType | LabeledTupleType | OptionalType | FnType | GenericType | UnionType;
 
 // A name, resolved in the module that wrote the tree: `Name("double")`.
 pub type Name(name: string)
@@ -209,6 +212,45 @@ pub type Lambda(params: string[], body: Node)
 // The code a `syntax` value holds, spliced as it was written and typed where
 // the splice stands (decision 638).
 pub type Syntax(e: unknown)
+
+// A typed function, `fn(a: A, b: B) -> R { … }` (decision 753): each
+// parameter an `FnParam`, `ret` a type node, `body` its statements in order.
+// `Lambda` stays the untyped one.
+pub type Fn(params: FnParam[], ret: Node, body: Node[])
+
+// A typed parameter, `name: annotation` — only an element of `Fn.params`.
+pub type FnParam(name: string, annotation: Node)
+
+// `return result`.
+pub type Return(result: Node)
+
+// The type nodes (decision 753), one per kind of the parser's type grammar;
+// a type node stands only where a type is written — an `FnParam`'s
+// annotation, a `Fn`'s `ret`, inside another type node.
+
+// A type by its name: `string`, `Self`, `Greeter`.
+pub type NamedType(named: string)
+
+// `T[]`.
+pub type ArrayType(elem: Node)
+
+// `#(A, B)`.
+pub type TupleType(types: Node[])
+
+// `#(a: A, b: B)`.
+pub type LabeledTupleType(types: Node[], labels: string[])
+
+// `?T`.
+pub type OptionalType(inner: Node)
+
+// `fn(A, B) -> R`.
+pub type FnType(params: Node[], returns: Node)
+
+// `Name<A, B>`: `Result<T, E>`, `Dict<K, V>`.
+pub type GenericType(name: string, args: Node[])
+
+// `A | B`.
+pub type UnionType(members: Node[])
 
 // ── The types `compiler` answers (decision 576 (13)) ──────────────────────
 // No prelude name: a file naming one imports it, `import {compiler.Span} from
@@ -520,7 +562,7 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "node",
-              "type": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+              "type": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
               "is_comptime": true
             }
           ],
@@ -942,7 +984,7 @@ pub type HookNode = __HookNode;
       "ast": "record_def",
       "name": "Member",
       "fields": {
-        "target": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
+        "target": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
         "member": "string"
       }
     },
@@ -950,8 +992,8 @@ pub type HookNode = __HookNode;
       "ast": "record_def",
       "name": "Call",
       "fields": {
-        "callee": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
-        "args": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+        "callee": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
+        "args": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
       }
     },
     {
@@ -959,21 +1001,21 @@ pub type HookNode = __HookNode;
       "name": "Arg",
       "fields": {
         "name": "string",
-        "value": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+        "value": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
       }
     },
     {
       "ast": "record_def",
       "name": "List",
       "fields": {
-        "items": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+        "items": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
       }
     },
     {
       "ast": "record_def",
       "name": "Tuple",
       "fields": {
-        "elems": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>[]"
+        "elems": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
       }
     },
     {
@@ -981,8 +1023,8 @@ pub type HookNode = __HookNode;
       "name": "Binary",
       "fields": {
         "op": "string",
-        "lhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
-        "rhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+        "lhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
+        "rhs": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
       }
     },
     {
@@ -990,16 +1032,16 @@ pub type HookNode = __HookNode;
       "name": "Unary",
       "fields": {
         "op": "string",
-        "operand": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+        "operand": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
       }
     },
     {
       "ast": "record_def",
       "name": "If",
       "fields": {
-        "cond": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
-        "then": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>",
-        "otherwise": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+        "cond": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
+        "then": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
+        "otherwise": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
       }
     },
     {
@@ -1007,7 +1049,7 @@ pub type HookNode = __HookNode;
       "name": "Lambda",
       "fields": {
         "params": "string[]",
-        "body": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax>"
+        "body": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
       }
     },
     {
@@ -1015,6 +1057,89 @@ pub type HookNode = __HookNode;
       "name": "Syntax",
       "fields": {
         "e": "unknown"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Fn",
+      "fields": {
+        "params": "FnParam[]",
+        "ret": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>",
+        "body": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "FnParam",
+      "fields": {
+        "name": "string",
+        "annotation": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Return",
+      "fields": {
+        "result": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "NamedType",
+      "fields": {
+        "named": "string"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "ArrayType",
+      "fields": {
+        "elem": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "TupleType",
+      "fields": {
+        "types": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "LabeledTupleType",
+      "fields": {
+        "types": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]",
+        "labels": "string[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "OptionalType",
+      "fields": {
+        "inner": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "FnType",
+      "fields": {
+        "params": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]",
+        "returns": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "GenericType",
+      "fields": {
+        "name": "string",
+        "args": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "UnionType",
+      "fields": {
+        "members": "|<Name, Lit, Member, Call, Arg, List, Tuple, Binary, Unary, If, Lambda, Syntax, Fn, FnParam, Return, NamedType, ArrayType, TupleType, LabeledTupleType, OptionalType, FnType, GenericType, UnionType>[]"
       }
     },
     {
