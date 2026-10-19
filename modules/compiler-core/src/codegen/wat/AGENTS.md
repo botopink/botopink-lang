@@ -1181,7 +1181,7 @@ reference is `(ref null …)`. A `(type …)` or `(rec …)` form is refused at 
 anything the model has no node for (a memory instruction, a numeric local or label, a flat
 `block … end`): a located error, `modules/std-wasm/wat/<file>:<line>:<col>: <message>`. Today's
 leaves: `text.length`, `text.charCodeAt`, `text.byteLength`, `text.byteAt`, `text.byteSlice` and `text.fromCodepoint` (`text.wat`), `number.i32ToString`, `number.i64ToString` and `number.u64ToString` (`number.wat`, with their internal body `number.decimal`; a GC module's `print_i64` / `print_u64` groups register the two 64-bit leaves and write their `$str` through `$__print_str_raw`, so the groups need `print_str`, `gcDeps`, and link no `number.i64Text`); the unit test `std_leaves: every leaf
-reads` reads each against the codegen's type names. Front 164 s3 P2-d (decision 585 (k)): `bytes.length`, `bytes.at` and `bytes.ofWords` (`bytes.wat`).
+reads` reads each against the codegen's type names. Front 164 s3 P2-d / P2-e (decision 585): `bytes.length`, `bytes.at` and `bytes.ofWords` (`bytes.wat`), `random.float`, `random.seed` and `random.seededFloat` (`random.wat`). A leaf may also name the prelude's own functions and globals, never declare them (`std_leaves.prelude_funcs` / `prelude_globals`: `$__wasi_random_f64`, `$__random_state`): the reader's `Names.global` and `callee` answer only those, `Emitter.noteLeaf` requires the helper group each stands for (`wasi_random_f64`, `random_state` — the `i64` global holding Mulberry32's word, `-1` before a seed) when the leaf is called, and `wat_prelude.gcItems` has their GC forms.
 
 ## What stays in `wat_prelude` (decision 442, front 144 B-00g)
 

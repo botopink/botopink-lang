@@ -11,6 +11,11 @@
 //! unreached leaf is never in the module. A leaf names the codegen's GC types
 //! and never declares one (decision 549). A name still in `std_wasm.exports`
 //! keeps std-wasm's function in a module lowered in linear memory.
+//!
+//! What a leaf may name besides a type and another leaf is the prelude's own,
+//! by name and never declared (decision 585 (i), (j)): the function
+//! `$__wasi_random_f64` and the global `$__random_state` (`prelude_names`).
+//! Each stands for a `HelperGroup` the module then holds.
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
@@ -83,6 +88,27 @@ pub fn isSymbol(sym: []const u8) bool {
     return false;
 }
 
+/// A function or a global of `wat_prelude` that a leaf names without declaring
+/// it, and the helper group that declares it in the module.
+pub const PreludeName = struct { name: []const u8, group: ast.HelperGroup };
+
+/// Every prelude function (`call`) and global (`global.get`, `global.set`) a
+/// leaf may name (decision 585 (i), (j)).
+pub const prelude_funcs = [_]PreludeName{
+    .{ .name = "__wasi_random_f64", .group = .wasi_random_f64 },
+};
+pub const prelude_globals = [_]PreludeName{
+    .{ .name = "__random_state", .group = .random_state },
+};
+
+/// The helper group that declares the prelude function or global `name`, or
+/// null when `name` is neither.
+pub fn preludeGroup(name: []const u8) ?ast.HelperGroup {
+    for (prelude_funcs) |f| if (std.mem.eql(u8, f.name, name)) return f.group;
+    for (prelude_globals) |g| if (std.mem.eql(u8, g.name, name)) return g.group;
+    return null;
+}
+
 /// What a leaf's types resolve against: the module's type table (decision
 /// 549), as the codegen answers it.
 pub const Types = struct {
@@ -91,7 +117,8 @@ pub const Types = struct {
 };
 
 /// The leaf `name` read against `types`, renamed to its symbol, and the
-/// leaves it calls (`calls`, by name, appended). A leaf that does not read is
+/// leaves it calls and the prelude functions and globals it names (`calls`,
+/// by name, appended; `preludeGroup` tells the second kind). A leaf that does not read is
 /// `error.Unreadable`, `diag` locating it in its file.
 pub fn read(ar: std.mem.Allocator, leaf: Leaf, types: Types, calls: *std.ArrayListUnmanaged([]const u8), diag: *reader.Diag) reader.Error!ast.Func {
     const Ctx = struct {
@@ -105,9 +132,26 @@ pub fn read(ar: std.mem.Allocator, leaf: Leaf, types: Types, calls: *std.ArrayLi
             return c.types.index(c.types.ctx, n);
         }
 
+        fn note(c: *@This(), n: []const u8) ?[]const u8 {
+            c.calls.append(c.ar, n) catch {
+                c.oom = true;
+                return null;
+            };
+            return n;
+        }
+
+        fn global(p: *anyopaque, n: []const u8) ?[]const u8 {
+            const c: *@This() = @ptrCast(@alignCast(p));
+            for (prelude_globals) |g| if (std.mem.eql(u8, g.name, n)) return c.note(n);
+            return null;
+        }
+
         fn callee(p: *anyopaque, n: []const u8) ?[]const u8 {
             const c: *@This() = @ptrCast(@alignCast(p));
-            if (find(n) == null) return null;
+            if (find(n) == null) {
+                for (prelude_funcs) |f| if (std.mem.eql(u8, f.name, n)) return c.note(n);
+                return null;
+            }
             c.calls.append(c.ar, n) catch {
                 c.oom = true;
                 return null;
@@ -120,7 +164,7 @@ pub fn read(ar: std.mem.Allocator, leaf: Leaf, types: Types, calls: *std.ArrayLi
     };
     var ctx: Ctx = .{ .ar = ar, .types = types, .calls = calls };
     const f = files[leaf.file];
-    const funcs = reader.read(ar, f.text, f.path, .{ .ctx = &ctx, .typeIndex = Ctx.typeIndex, .callee = Ctx.callee }, diag) catch |err| {
+    const funcs = reader.read(ar, f.text, f.path, .{ .ctx = &ctx, .typeIndex = Ctx.typeIndex, .callee = Ctx.callee, .global = Ctx.global }, diag) catch |err| {
         if (ctx.oom) return error.OutOfMemory;
         return err;
     };
@@ -130,6 +174,20 @@ pub fn read(ar: std.mem.Allocator, leaf: Leaf, types: Types, calls: *std.ArrayLi
         return out;
     };
     unreachable; // `find` answered the leaf from this file's function names
+}
+
+/// The leaves `leaf` calls and the prelude names it uses, without its types
+/// resolved (every type is index 0): what the module must hold before the leaf
+/// is read for real. Appended to `calls`, as `read` does.
+pub fn refs(ar: std.mem.Allocator, leaf: Leaf, calls: *std.ArrayListUnmanaged([]const u8)) reader.Error!void {
+    const Any = struct {
+        var dummy: u8 = 0;
+        fn index(_: *anyopaque, _: []const u8) ?u16 {
+            return 0;
+        }
+    };
+    var diag: reader.Diag = .{};
+    _ = try read(ar, leaf, .{ .ctx = &Any.dummy, .index = Any.index }, calls, &diag);
 }
 
 test "std_leaves: every leaf reads against the codegen's GC types" {
@@ -162,8 +220,14 @@ test "std_leaves: every leaf reads against the codegen's GC types" {
     try std.testing.expect(find("text.length") != null);
     for ([_][]const u8{ "text.length", "text.charCodeAt", "text.byteLength", "text.byteAt", "text.byteSlice", "text.fromCodepoint", "number.i32ToString", "number.i64ToString", "number.u64ToString" }) |n|
         try std.testing.expect(find(n) != null);
-    for ([_][]const u8{ "bytes.length", "bytes.at", "bytes.ofWords" }) |n|
+    for ([_][]const u8{ "bytes.length", "bytes.at", "bytes.ofWords", "random.float", "random.seed", "random.seededFloat" }) |n|
         try std.testing.expect(find(n) != null);
+    {
+        var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+        try refs(ar, find("random.seededFloat").?, &calls);
+        try std.testing.expect(calls.items.len > 0);
+        for (calls.items) |n| try std.testing.expect(preludeGroup(n) != null);
+    }
     try std.testing.expect(find("text.sha256") == null);
     try std.testing.expectEqualStrings("__std_text_charCodeAt", try symbol(ar, "text.charCodeAt"));
     try std.testing.expect(!isSymbol("__std_text_split"));

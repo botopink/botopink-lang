@@ -931,6 +931,11 @@ pub const HelperGroup = enum {
     /// when it is not zero and `$__chk_fail(site)` when it is; `$__i32_divs(a, b,
     /// site, osite)` / `$__i64_divs` a signed quotient, `osite` the abort of `MIN / -1`.
     nz_chk,
+    /// Front 164 s3 P2-e (decision 585 (i)) — `$__random_state`, the mutable
+    /// `i64` global the seeded stream of std-wasm's `random.*` leaves keeps its
+    /// word in. It holds no function: a leaf names the global as it names a
+    /// type, and a module that calls such a leaf gets it declared.
+    random_state,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {

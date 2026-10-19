@@ -54,6 +54,10 @@ pub const Names = struct {
     /// The symbol a `call $name` calls, or null when nothing of that name
     /// can be called from the file.
     callee: *const fn (ctx: *anyopaque, name: []const u8) ?[]const u8,
+    /// The symbol a `global.get` / `global.set` names, or null when the
+    /// codegen declares no global of that name (decision 585 (i): a leaf
+    /// names a global the prelude declares, as it names a type).
+    global: *const fn (ctx: *anyopaque, name: []const u8) ?[]const u8,
 };
 
 // ── tokens ───────────────────────────────────────────────────────────────────
@@ -550,8 +554,6 @@ const Reader = struct {
                 .{ "local.get", "local_get", "a local" },
                 .{ "local.set", "local_set", "a local" },
                 .{ "local.tee", "local_tee", "a local" },
-                .{ "global.get", "global_get", "a global" },
-                .{ "global.set", "global_set", "a global" },
                 .{ "br", "br", "a label" },
                 .{ "br_if", "br_if", "a label" },
                 .{ "throw", "throw", "a tag" },
@@ -559,10 +561,16 @@ const Reader = struct {
                 used = 1;
                 break :blk @unionInit(ast.Instr, x[1], try r.expectSym(op, imm, 0, x[2]));
             };
+            inline for (.{ .{ "global.get", "global_get" }, .{ "global.set", "global_set" } }) |x| if (std.mem.eql(u8, s, x[0])) {
+                const name = try r.expectSym(op, imm, 0, "a global");
+                used = 1;
+                const sym = r.names.global(r.names.ctx, name) orelse return r.fail(imm[0].pos(), "`{s} ${s}`: the codegen declares no global named `{s}` (a leaf names a global of the prelude's)", .{ s, name, name });
+                break :blk @unionInit(ast.Instr, x[1], sym);
+            };
             if (std.mem.eql(u8, s, "call")) {
                 const name = try r.expectSym(op, imm, 0, "a function");
                 used = 1;
-                const sym = r.names.callee(r.names.ctx, name) orelse return r.fail(imm[0].pos(), "`call ${s}`: no leaf is named `{s}` (a leaf calls another by its `$<module>.<function>`)", .{ name, name });
+                const sym = r.names.callee(r.names.ctx, name) orelse return r.fail(imm[0].pos(), "`call ${s}`: no leaf is named `{s}` and the prelude has no such function (a leaf calls another by its `$<module>.<function>`)", .{ name, name });
                 break :blk .{ .call = sym };
             }
             if (std.mem.eql(u8, s, "br_table")) {
@@ -658,8 +666,13 @@ const TestNames = struct {
         return null;
     }
 
+    fn global(_: *anyopaque, name: []const u8) ?[]const u8 {
+        if (std.mem.eql(u8, name, "__state")) return "__state";
+        return null;
+    }
+
     var dummy: u8 = 0;
-    const names: Names = .{ .ctx = &dummy, .typeIndex = typeIndex, .callee = callee };
+    const names: Names = .{ .ctx = &dummy, .typeIndex = typeIndex, .callee = callee, .global = global };
 };
 
 fn testRead(ar: std.mem.Allocator, src: []const u8, diag: *Diag) Error![]const ast.Func {
@@ -739,6 +752,22 @@ test "wat_reader: type names resolve against the codegen's table (decision 549)"
     try std.testing.expectEqual(@as(u32, 1), diag.line);
     try std.testing.expectEqual(@as(u32, 32), diag.col);
     try std.testing.expect(std.mem.indexOf(u8, diag.message, "`$rec_Point` names no type of the codegen's") != null);
+}
+
+test "wat_reader: a global is read only where the codegen declares it (decision 585 (i))" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var diag: Diag = .{};
+    const fs = try testRead(arena.allocator(),
+        \\(func $random.peek (result i64)
+        \\  global.get $__state)
+    , &diag);
+    try std.testing.expectEqualStrings("__state", fs[0].body.lines[0].instr.global_get);
+    try std.testing.expectError(error.Unreadable, testRead(arena.allocator(),
+        \\(func $random.peek (result i64)
+        \\  global.get $__other)
+    , &diag));
+    try std.testing.expect(std.mem.indexOf(u8, diag.message, "declares no global named `__other`") != null);
 }
 
 test "wat_reader: a type declaration is refused at the declaration (decision 549)" {

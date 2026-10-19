@@ -81,6 +81,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         // Decision 150: a marker, as `bigint` is (`print_shaped_items_unknown`).
         .print_shaped_unknown => &.{},
         .text_capture => &.{ .{ .global = cap_global }, .{ .func = cap_begin }, .{ .func = cap_end } },
+        .random_state => &.{.{ .global = random_state_global }},
         .std_marshal => &.{ .{ .func = gc_to_lin_str }, .{ .func = lin_to_gc_str } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
@@ -189,6 +190,11 @@ pub const random_get_import = ast.Import{
     .func = "random_get",
     .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 },
 };
+
+/// The seeded stream's word (front 164 s3 P2-e, decision 585 (i)): Mulberry32's
+/// state in the low 32 bits of an `i64`, `-1` before any `seed` — the one
+/// state `random.wat`'s leaves name as `$__random_state`.
+pub const random_state_global = ast.Global{ .name = "__random_state", .ty = .i64, .mutable = true, .init = "-1" };
 
 /// `wasi:random_f64` — 8 bytes of `random_get` into scratch `208..216`, the
 /// top 53 bits of them as an integer, scaled by 2^-53: a uniform `f64` in
@@ -2803,6 +2809,9 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .str_eq => &.{.{ .func = gc_str_eq }},
         .text_capture => &.{ .{ .global = gc_cap_global }, .{ .func = gc_cap_begin }, .{ .func = gc_cap_end } },
         .std_marshal => items(.std_marshal),
+        // The host's entropy and the seeded stream's word (front 164 s3 P2-e):
+        // the `.wat` leaves of `random.wat` name both.
+        .wasi_random_f64, .random_state => items(g),
         // The shape walker and the tagged printer are generated per module
         // (`wat.zig`'s `gcPrinter`); the quoted string is the one shared piece.
         .print_shaped => &.{.{ .func = gc_print_quoted_raw }},

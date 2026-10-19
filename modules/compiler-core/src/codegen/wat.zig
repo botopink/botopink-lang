@@ -9207,8 +9207,8 @@ const Emitter = struct {
     fn emitStdCall(self: *Emitter, name: []const u8) !void {
         // Front 164 s3: a GC module calls a `.wat` leaf with its own values —
         // no marshal, nothing in linear memory.
-        if (self.mode == .gc) if (stdLeaves.find(name)) |leaf| {
-            try self.std_leaves.put(self.alloc, name, leaf);
+        if (self.mode == .gc) if (stdLeaves.find(name)) |_| {
+            try self.noteLeaf(name);
             return self.emit(.{ .call = try stdLeaves.symbol(self.arena(), name) });
         };
         const call = try self.stdCallLinked(name);
@@ -9296,6 +9296,29 @@ const Emitter = struct {
         return null;
     }
 
+    /// A leaf the module calls: held once (the leaves it calls are added, in
+    /// order, by `leafFuncs`), and the helper groups of the prelude's functions
+    /// and globals it and those leaves name required now (decision 585 (i),
+    /// (j)), before the module's items are laid out.
+    fn noteLeaf(self: *Emitter, name: []const u8) anyerror!void {
+        if (self.std_leaves.contains(name)) return;
+        try self.std_leaves.put(self.alloc, name, stdLeaves.find(name).?);
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        try self.requireLeafPrelude(name, &seen);
+    }
+
+    fn requireLeafPrelude(self: *Emitter, name: []const u8, seen: *std.StringHashMapUnmanaged(void)) anyerror!void {
+        if ((try seen.fetchPut(self.arena(), name, {})) != null) return;
+        var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+        stdLeaves.refs(self.arena(), stdLeaves.find(name).?, &calls) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Unreadable => return,
+        };
+        for (calls.items) |n| {
+            if (stdLeaves.preludeGroup(n)) |g| self.b.helpers.require(g) else try self.requireLeafPrelude(n, seen);
+        }
+    }
+
     /// The leaf `leaf` read into this module (front 164 s3), and the names of
     /// the leaves it calls appended to `calls`. A leaf that does not read is
     /// refused with its located message (`path:line:col`).
@@ -9316,7 +9339,7 @@ const Emitter = struct {
         while (i < self.std_leaves.count()) : (i += 1) {
             var calls: std.ArrayListUnmanaged([]const u8) = .empty;
             try out.append(ar, try self.readLeaf(self.std_leaves.values()[i], &calls));
-            for (calls.items) |n| if (!self.std_leaves.contains(n))
+            for (calls.items) |n| if (stdLeaves.preludeGroup(n) == null and !self.std_leaves.contains(n))
                 try self.std_leaves.put(self.alloc, n, stdLeaves.find(n).?);
         }
         return out.items;

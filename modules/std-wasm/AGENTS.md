@@ -23,7 +23,7 @@ is `(func $<module>.<function> …)` over the codegen's GC types, named and neve
 (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
 `std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
 WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
-Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`):
+Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`, `wat/random.wat`):
 
 | Leaf | Signature over the codegen's types | Answers |
 |---|---|---|
@@ -39,8 +39,11 @@ Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`):
 | `bytes.length` | `($str) -> i32` | the number of bytes of a `Bytes` (a string's layout) |
 | `bytes.at` | `($str, i32) -> i32` | the byte at an index as a word `0..255`, `-1` for a negative index or one past the end |
 | `bytes.ofWords` | `($arr_i32) -> $str` | a new `Bytes`, one byte (the word's low eight bits) per word (decision 585 (k)) |
+| `random.float` | `() -> f64` | the host's entropy: the prelude's `$__wasi_random_f64`, named and not declared (585 (j)) |
+| `random.seed` | `(i32) -> ()` | the stream restarts from the word's bits: `$__random_state` set |
+| `random.seededFloat` | `() -> f64` | the next Mulberry32 draw in `[0.0, 1.0)`, the host's entropy before any `seed` (451) |
 
-The `bytes.*` leaves have no `std:` cell yet: the `.bp` half (`encoding`'s codecs over them, 585 (k)) waits for B-139 and s2 P5 (decision 566: no twin export — once P5 has deleted the linear lowering no module falls back).
+`random.wat` keeps the stream's word in `$__random_state`, a mutable `i64` global the codegen declares in `wat_prelude` (helper group `random_state`, `-1` before any `seed`; 585 (i)) — a leaf names it as it names a type, and the `.wat` reader admits only the globals and prelude functions `std_leaves.zig` lists. The `bytes.*` leaves have no `std:` cell yet: the `.bp` half (`encoding`'s codecs over them, 585 (k)) waits for B-139 and s2 P5 (decision 566: no twin export — once P5 has deleted the linear lowering no module falls back).
 
 `text.byteLength`, `text.byteAt` and `text.byteSlice` are bound by `declare fn`s of `primitives.bp`'s trailing
 section `the wasm bodies (front 164 s3)` (`stringByteLength`, `stringByteAt`, `stringByteSlice`), which the private

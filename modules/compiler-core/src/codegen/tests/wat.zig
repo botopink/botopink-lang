@@ -387,6 +387,57 @@ test "wat: front 164 s3 ---- the Bytes leaves answer in a GC module" {
     try std.testing.expectEqualStrings("3\n104\n33\n-1\n-1\n0\n", o.result.run_output orelse "");
 }
 
+// Front 164 s3 P2-e — `random.*` as leaves: the stream's word is the prelude's
+// `$__random_state` global, the host's entropy the prelude's
+// `$__wasi_random_f64`, both named by the leaf and declared by the module
+// (decision 585 (i), (j)). The draws are the commonJS sidecar's Mulberry32,
+// bit for bit (`std-wasm/src/random.zig`'s test).
+test "wat: front 164 s3 ---- random.* leaves name the prelude's state and entropy" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
+        \\#[compiler.external(.Wasm(std: "random.float"))]
+        \\declare fn randomFloat() -> f64;
+        \\#[compiler.external(.Wasm(std: "random.seed"))]
+        \\declare fn randomSeed(s: i32) -> void;
+        \\#[compiler.external(.Wasm(std: "random.seededFloat"))]
+        \\declare fn randomSeededFloat() -> f64;
+        \\fn main() {
+        \\    val f = randomFloat();
+        \\    print(f >= 0.0 && f < 1.0);
+        \\    val u = randomSeededFloat();
+        \\    print(u >= 0.0 && u < 1.0);
+        \\    randomSeed(42);
+        \\    print(randomSeededFloat());
+        \\    print(randomSeededFloat());
+        \\    print(randomSeededFloat());
+        \\    randomSeed(-7);
+        \\    print(randomSeededFloat());
+        \\}
+        \\
+        \\import {io.terminal.print, compiler} from "std";
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (o.result.diagnostic) |d| switch (d) {
+        .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
+        .syntax => {},
+    };
+    const wat_text = o.result.js;
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(global $__random_state (mut i64)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__wasi_random_f64 ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_random_seededFloat ") != null);
+    try std.testing.expectEqualStrings(
+        "true\ntrue\n0.6011037519201636\n0.44829055899754167\n0.8524657934904099\n0.43306733411736786\n",
+        o.result.run_output orelse "",
+    );
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
