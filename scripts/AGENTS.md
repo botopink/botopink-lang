@@ -33,7 +33,7 @@ scripts/
 ├── codemod/bodyless-decorators.py ← decision 604's migration: a bodyless decorator `[pub] declare fn name(comptime decl: @Decl, …);` → `[pub] fn name(…) {}`, a marker with an empty body, visibility, generics and the comments above kept; `.bp` files in place, `--check` lists every site as `path:line: name`
 ├── codemod-wasm-cells.py ← decision 481's migration: `.Wasm`'s prefixed strings → labelled cells (`"fn:x"` → `fn: x`, `"op:o"` → `op: "o"`, `"wasi:a_b"` → `wasi: .AB`, `"std:m.f"` → `std: "m.f"`) (§ below)
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
-├── consolidate-cells.py ← 144 B-157 (decision 765): `plan` homes every `conformance/modules/<cell>/` (INDEX.md, INDEX.ambiguous, generated, not committed), `verify --base <ref>` is the oracle; its test is `consolidate-cells-test.py`
+├── consolidate-cells.py ← 144 B-157 (decision 765): `plan` homes every `conformance/modules/<cell>/` (INDEX.md, INDEX.ambiguous, generated, not committed; `conformance/modules/consolidate-homes.txt` overrides), `verify --base <ref>` is the oracle; its test is `consolidate-cells-test.py`
 ├── codemod/
 │   ├── compiler_keyword.py      ← 144 B-136's migration (decisions 575 (4), (5), 576, 577, 578): `@Expr<T>` parameters → `comptime` / `expr`, `@Decl` → `expr d: unknown`, `x.text()` / `.fail` / the template model / a handle's reads and outputs → `compiler.*`, `@expr(v)` → `v`, `-> @Expr<T>` / `-> @ExprCustom<T>` → `-> T`, `type T` → `type<T>`, a bare `type` → `anytype`, a template's calls → `` name @`…` `` (§ below)
 │   ├── test_compiler_keyword.py ← its unit tests (`python3 scripts/codemod/test_compiler_keyword.py`)
@@ -908,7 +908,11 @@ python3 scripts/consolidate-cells-test.py
 `plan` homes each cell: (a) a ledger row whose text names it (`modules/<cell>` or `` `<cell>` ``), else (b) the
 decisions its `////` header cites (a number or step spelling counts only when that row is a code-bearing row of
 `decisions-taken.md`; a one-liner is followed to the row in force), else (c) outside, under the first `_` segment
-of its name. Several rows: the highest-numbered code-bearing one is the home, the others "proved also by". It writes
+of its name. Several rows: the highest-numbered code-bearing one is the home, the others "proved also by". (t)
+`conformance/modules/consolidate-homes.txt` overrides all of it for the cells it lists — `<cell> <row> [also
+<row>,<row>]` per line, `outside` as the row for a cell that proves none it cites; the one pass over the ambiguity
+list writes it (765 (2)), a line only where the default is wrong; a row that is no slugged code-bearing row, or an
+unknown cell, is refused, every line listed; `plan` and `apply` read it alike. It writes
 `conformance/modules/INDEX.md` and `INDEX.ambiguous` (git-ignored scratch, never committed) and refuses, listing
 them, while a code-bearing row has no `Cell` slug, unless `--allow-unslugged` (those rows' cells go outside).
 `verify` compares the tree with a base commit: cell count, `.snap` files per output and target, record counts per

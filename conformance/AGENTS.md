@@ -30,6 +30,8 @@ conformance/
 │                              what every cell shares — here the version alone; a library's declares its cells'
 │                              dependencies and targets — so a cell writes only what is its own, and every cell's
 │                              dependencies share one code cache, `modules/.botopinkbuild/cache/` (decision 509)
+├── modules/consolidate-homes.txt ← the homes `scripts/consolidate-cells.py` reads before its own rule (decision 765 (2)):
+│                              `<cell> <row> [also <row>,<row>]` per line, `outside` for a cell that proves no row it cites
 ├── modules/<cell>/          ← one cell (decisions 457, 475)
 │   ├── botopink.json           its own manifest: `name` (the directory's name), `"targets"` when narrowed, path dependencies, a wasm host — no `version`, `src` or `entry` unless they differ from the workspace's defaults (the cells whose answer is located in their manifest keep it as written)
 │   ├── src/main.bp             the program (`pub fn main`); more modules beside it (`mod` tree, `src/sidecars/*.erl`)

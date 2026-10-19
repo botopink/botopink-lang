@@ -85,6 +85,31 @@ class Tests(unittest.TestCase):
         self.assertEqual(cc.cmd_plan(a), 0)
         self.assertTrue((self.m / "INDEX.md").exists() and (self.m / "INDEX.ambiguous").exists())
 
+    def test_homes_table_overrides(self):
+        (self.m / cc.HOMES).write_text("# a comment\nvia_oneliner 30 also 10\nnamed_cell outside\n\nno_header 40\n")
+        _, p = self.plan()
+        c = p["via_oneliner"]
+        self.assertEqual((c["reason"], c["home"], c["also"]), ("t", 30, [10]))
+        self.assertEqual(c["new"], "modules/decisions-taken/slug_thirty-30/cases/via_oneliner")
+        self.assertEqual((p["named_cell"]["home"], p["named_cell"]["also"], p["named_cell"]["new"]),
+                         (None, [], "modules/named/cases/named_cell"))
+        self.assertEqual((p["no_header"]["reason"], p["no_header"]["home"], p["no_header"]["also"]), ("t", 40, []))
+        self.assertEqual(p["step_form"]["reason"], "b")  # a cell not listed keeps the plan's home
+        a = type("A", (), {"root": str(self.root), "allow_unslugged": True})
+        self.assertEqual(cc.cmd_plan(a), 0)
+        amb = (self.m / "INDEX.ambiguous").read_text()
+        self.assertNotIn("via_oneliner:", amb)  # a table line settles the cell's ambiguity
+
+    def test_homes_table_refuses_bad_lines(self):
+        rows = cc.load_ledger(self.root / "decisions-taken.md")
+        for text in ("via_oneliner 20\n", "via_oneliner 41\n", "via_oneliner 5\n", "missing_cell 40\n",
+                     "via_oneliner 40\nvia_oneliner 30\n", "via_oneliner outside also 40\n", "via_oneliner\n"):
+            (self.m / cc.HOMES).write_text(text)
+            with self.assertRaises(cc.HomesError, msg=text):
+                cc.plan(rows, self.m)
+        a = type("A", (), {"root": str(self.root), "allow_unslugged": True})
+        self.assertEqual(cc.cmd_plan(a), 1)
+
     def test_verify_identity_and_difference(self):
         run = lambda *c: subprocess.run(["git", "-C", str(self.root), *c], check=True, capture_output=True)
         run("init", "-q")
@@ -150,6 +175,18 @@ class ApplyTests(unittest.TestCase):
         # the moves are staged and verify is the identity against the base
         self.assertEqual(cc.cmd_verify(type("A", (), {"root": str(self.root), "base": "HEAD"})), 0)
         self.assertEqual(self.apply(all=True), 0)  # idempotent
+
+    def test_apply_honours_homes(self):
+        (self.m / cc.HOMES).write_text("both 10 also 40\nnamed_cell 40\nother_cell outside\n")
+        self.run("add", "-A")
+        self.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "homes")
+        self.assertEqual(self.apply(all=True), 0)
+        self.assertTrue((self.m / "decisions-taken/slug_ten-10/cases/both/botopink.json").is_file())
+        self.assertTrue((self.m / "other/cases/other_cell/botopink.json").is_file())
+        self.assertTrue((self.m / "decisions-taken/slug_forty-40/cases/named_cell/botopink.json").is_file())
+        self.assertIn("Proved also by [both](../slug_ten-10/cases/both/src/main.bp)",
+                      (self.m / "decisions-taken/slug_forty-40/docs.md").read_text())
+        self.assertTrue((self.m / cc.HOMES).is_file())
 
     def test_group_and_dry_run(self):
         self.assertEqual(self.apply(group="stray", dry_run=True), 0)
