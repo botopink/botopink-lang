@@ -7,7 +7,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Typed meta (d
 > it is a component. A function is `Build` when it reads what exists only while
 > the program compiles — a `comptime` `@Decl` or `@Expr<T>` parameter
 > (`names.value`) — and `Run` when it calls a host function, std's included,
-> that is not declared `#[@Stage.Any]` (std's `math` is: a pure primitive);
+> that is not declared `#[stage(.Any)]` (std's `math` is: a pure primitive);
 > anything else — arithmetic, strings, records, arrays, `case`, loops, a method,
 > std's `provide` / `context` — is `Any`. A call gives the caller the callee's
 > stage (`Any` with `Build` is `Build`, `Any` with `Run` is `Run`), across

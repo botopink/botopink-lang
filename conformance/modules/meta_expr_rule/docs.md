@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § Typed meta (decision 298)):
 
 > A meta record may hold `@Expr<T>` fields (decision 370 (1)): the decorator
-> hands one of its `comptime x: @Expr<T>` parameters on as it is, and the value
+> hands one of its `syntax x: T` parameters on as it is, and the value
 > is built in the reading program with the expression spliced where the
 > annotation wrote it — a rule is called, a message evaluated, at run time, never
 > while the program compiles. Such a field takes a parameter and nothing else,

@@ -1,6 +1,6 @@
 # beam_memory_ets_keyed_bump
 
-The reference text this cell shows (from `conformance/docs.md`, § @BeamMemory — where a module var lives on the BEAM):
+The reference text this cell shows (from `conformance/docs.md`, § beamMemory — where a module var lives on the BEAM):
 
 > **`Ets`** — one value per node, in a named public ETS table the module owns
 > through a registered owner process, so the table survives the process that

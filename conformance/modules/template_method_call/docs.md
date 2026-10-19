@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § Functions expanded at their call):
 
 > **A template method** (decisions 311 (3), 397 (3), 415 (1)). A template whose
-> first parameter is `comptime self: @Expr<R>` and whose second is
+> first parameter is `syntax self: R` and whose second is
 > `comptime q: @Expr<…>` is called on a value, `value.method "…"` or
 > `value.method """…"""`, as `f "…"` is. The receiver is the call site's code,
 > its type checked against `R` as an argument's is (a behavior accepts a type

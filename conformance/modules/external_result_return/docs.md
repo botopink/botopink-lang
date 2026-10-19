@@ -6,5 +6,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Host bindings
 > (decisions 487, 488, 490, 491):
 >
 > - `result: true` needs the return `Result<…, HostError>` or
->   `Task<Result<…, HostError>>` — a plain value, or a `Task<T>` that has no
+>   `Async<Result<…, HostError>>` — a plain value, or an `Async<T>` that has no
 >   `Result` inside it, is refused:

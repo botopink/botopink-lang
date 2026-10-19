@@ -1,8 +1,8 @@
 # beam_memory_annotations
 
-The reference text this cell shows (from `conformance/docs.md`, § @BeamMemory — where a module var lives on the BEAM):
+The reference text this cell shows (from `conformance/docs.md`, § beamMemory — where a module var lives on the BEAM):
 
-> `#[@BeamMemory.<member>]` above a module `var` names its memory on erlang and
+> `#[beamMemory(.<member>)]` above a module `var` names its memory on erlang and
 > beam. The member is one of `ProcessDict` (the default, which a bare `var`
 > already means — writing it out loud records the choice where it is read), `Ets`
 > or `PersistentTerm`. The only argument is `keyed: true | false`, default

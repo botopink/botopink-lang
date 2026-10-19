@@ -3,12 +3,12 @@
 The reference text this cell shows (from `conformance/docs.md`, § use — imports, activation, and hooks):
 
 > - **Only a `Component<R>` return grants `use`** (decisions 104 and 118). A
->   `use` in any other body — a plain `fn`, a `Task` one whatever it wraps — is
+>   `use` in any other body — a plain `fn`, a `Async` one whatever it wraps — is
 >   refused at the `use`: `` use-without-component: `use` needs a
 >   `-> Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
 >   Nothing is unwrapped to find one: the server component that awaits and
 >   uses is `fn Page() -> Component<Element>`, which the chain lets `await`
->   (`Component ⊃ Task`). An `async { }` block is not the `Component` body
+>   (`Component ⊃ Async`). An `async { }` block is not the `Component` body
 >   either: `use` is not inherited by it, as `await` is not.
 > - **The wrapper takes one type argument.** `Component<C, R>` — decision
 >   128's base — is refused where it is written, at the base: `` `Component`

@@ -3,7 +3,7 @@
 The reference text this cell shows (from `conformance/docs.md`, § Host bindings):
 
 > A host call that can fail answers a `Result` only when its binding writes
-> `result: true`: the return is then `Result<T, HostError>` (or a `Task` of
+> `result: true`: the return is then `Result<T, HostError>` (or a `Async` of
 > one), and every way the host fails becomes `Error(HostError(…))`.
 >
 > `HostError(message, kind, name, detail)`: `kind` is always `"host"`; `name` is

@@ -2,7 +2,7 @@
 
 The reference text this cell shows (from `conformance/docs.md`, § Results):
 
-> **A crash is contained by `attempt`.** `panic`, `@todo`, `x!` over `null`, a
+> **A crash is contained by `attempt`.** `panic`, `x!` over `null`, a
 > failed `assert`, an integer overflow or division by zero, and a raise from a
 > host binding without `result: true` are defects, never in a signature. std's
 > `failure.attempt(f)` runs `f` and answers `Result<T, Failure>`: `Ok` of its
