@@ -1,0 +1,46 @@
+//// Decision 121 — Only `@Result` fails
+
+import {io.terminal.print} from "std";
+
+type PortError { Empty, NotANumber(text: string), TooBig(value: i64) }
+
+// The `Result` is the whole return: `throw` and `try` are legal.
+fn parsePort(s: string) -> Result<i32, PortError> {
+    if (s == "") throw PortError.Empty;
+    val n = try s.parseInt() catch throw PortError.NotANumber(text: s);
+    if (n > 65535l) throw PortError.TooBig(value: n);
+    return n.toI32();
+}
+
+// The `Result` is inside the `Async`: the task never fails, its value does.
+async fn fetchPort(s: string) -> Async<Result<i32, PortError>> {
+    val p = try parsePort(s);
+    return p + 1;
+}
+
+// No `Result` in the return: the failure is handled on the spot.
+fn portOrDefault(s: string) -> i32 {
+    return try parsePort(s) catch 8080;
+}
+
+fn describe(s: string) -> string {
+    return case parsePort(s) {
+        Ok(p) -> "port " + p.toString();
+        Error(Empty) -> "empty";
+        Error(NotANumber(text)) -> "not a number: " + text;
+        Error(TooBig(value)) -> "too big: " + value.toString();
+    };
+}
+
+pub async fn main() -> Async<void> {
+    print(describe("443"));
+    print(describe(""));
+    print(describe("http"));
+    print(describe("70000"));
+    print(portOrDefault("x"));
+    val task = await fetchPort("8000");
+    print(task.isOk());
+    val failed = await fetchPort("");
+    print(failed.isError());
+    print(try await fetchPort("y") catch -1);
+}

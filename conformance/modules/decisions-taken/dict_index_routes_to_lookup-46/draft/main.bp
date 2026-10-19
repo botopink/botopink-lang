@@ -1,0 +1,14 @@
+//// Decision 46 — `d["k"]` on a `Dict` routes to `lookup`
+
+import {collections.Dict, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val stock = Dict.empty().insert("apple", 3).insert("pear", 0);
+    print(stock["apple"]);
+    print(stock["pear"]);
+    print(stock["plum"]);
+    print(stock["plum"] ?? -1);
+    print(stock["apple"] == stock.at("apple"));
+    val key = "pe" + "ar";
+    print(stock[key]);
+}

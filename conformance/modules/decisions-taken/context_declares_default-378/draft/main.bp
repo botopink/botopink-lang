@@ -1,0 +1,40 @@
+//// Decision 378 — A context always declares its default; a read answers the nearest provider above or the default; `context-unbound` goes.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type Theme(primary: string, radius: i32)
+
+type View(text: string) implement Renderable
+
+// Every context declares its default where it is made, computed at build.
+pub val themeContext = comptime createContext(Theme(primary: "#e11d48", radius: 4));
+
+component fn Swatch() -> Component<View> {
+    val t = use context(themeContext);
+    return View(text: t.primary + "/" + t.radius.toString());
+}
+
+component fn Dark() -> Component<View> {
+    val dark = comptime createContext(Theme(primary: "#111827", radius: 0));
+    use provide(dark);
+    val s = await Swatch();
+    return View(text: "dark " + s.text);
+}
+
+component fn Outer() -> Component<View> {
+    val blue = comptime createContext(Theme(primary: "#2563eb", radius: 8));
+    use provide(blue);
+    val near = await Dark();
+    val own = await Swatch();
+    return View(text: near.text + " | outer " + own.text);
+}
+
+// A component called at build: its read answers the declared default.
+pub val swatchAtBuild = comptime Swatch().run(RenderScope.root()).value.text;
+
+pub async fn main() -> Async<void> {
+    print((await Swatch()).text);
+    print((await Dark()).text);
+    print((await Outer()).text);
+    print(swatchAtBuild);
+}

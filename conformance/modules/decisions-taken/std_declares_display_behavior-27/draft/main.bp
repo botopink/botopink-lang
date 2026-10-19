@@ -1,0 +1,21 @@
+//// Decision 27 — Who declares `behavior Display`?
+
+import {collections.Dict, io.terminal.print} from "std";
+
+// No `behavior Display` is declared here: the one `print` consults is std's,
+// ambient, so the type implements it without an import.
+type Money(cents: i32) implement Display {
+    pub fn display(self: Self) -> string {
+        return self.cents.toString() + " cents";
+    }
+}
+
+type Plain(cents: i32)
+
+pub fn main() -> void {
+    print(Money(cents: 1250));
+    print([Money(cents: 100), Money(cents: 275)]);
+    print(Plain(cents: 1250));
+    print(Dict.empty().insert("rent", 900).insert("food", 300));
+    print(Dict.empty().insert("wallet", Money(cents: 4210)));
+}
