@@ -1,8 +1,7 @@
-//// Decisions 104 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
-//// guide.md § 4.5 `Errado`) — a component is the `Component<T>` whose `T`
-//// implements `@Renderable`, and it is CALLED (`Counter()`); `use` is for hooks.
-//// The guide gives the refusal no code (README open point 2); line 1 is
-//// today's message, at the `use`.
+//// Decision 791 (3) — `use c` resolves a component only inside a component
+//// body: in `errado`, a plain function answering `Element`, `use Counter()`
+//// is refused at the `use` as a hook's `use` is outside a component body
+//// (553, 722).
 
 type Element(count: i32) implement Renderable
 
@@ -10,8 +9,10 @@ component fn Counter() -> Component<Element> {
     return Element(count: 1);
 }
 
-component fn Errado() -> Component<Element> {
+fn errado() -> Element {
     return use Counter();
 }
 
-pub fn main() { Errado(); }
+pub fn main() {
+    errado();
+}

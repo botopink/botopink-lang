@@ -1265,6 +1265,11 @@ pub const Env = struct {
     /// type: in a component body it runs the value with the children's scope,
     /// outside every body with `RenderScope.root()` (`context_lower.zig`).
     componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 791 (3) — every `use c` whose operand is a component, by the
+    /// `use`'s location: in a component body it runs `c` with the body's
+    /// children scope and answers its `R` (`context_lower.zig`), where a hook's
+    /// `use` runs it with the scope the body received.
+    componentUses: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 574 — every `{ component -> … }` lambda, by its location,
     /// with the `R` of the `@Component<R>` it answers: `context_lower.zig`
     /// lowers its body as a `component fn`'s, a lambda over the scope.

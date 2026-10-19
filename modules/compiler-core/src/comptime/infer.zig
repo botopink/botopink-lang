@@ -21166,6 +21166,12 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     env.useOperandLoc = prevUseOperand;
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseOperand(env, valTyped.getType(), loc);
+    // Decision 791 (3) — `use c` over a component resolves it: the body
+    // renders a child here (354 (2)), run with its children's scope.
+    if (isComponentType(env, valTyped.getType())) {
+        try env.componentUses.put(env.arena, loc, {});
+        if (env.firstRenderAt == null) env.firstRenderAt = loc;
+    }
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteMemoUse(env, uh.kind.inner.*, valTyped, loc);
     try noteHookUse(env, uh.kind.inner.*, loc);
@@ -21180,20 +21186,13 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` operand is a hook: `@Component<R>` whose `R` does not
-/// implement `@Renderable` (decisions 104, 354). A component is CALLED
-/// (`Card()`), never `use`d, and its refusal says so; anything else is not a
-/// hook at all.
+/// Verify a `use` operand is a `Component<R>`: a hook (`R` does not
+/// implement `@Renderable`, decisions 104, 354) or a component, which `use`
+/// resolves inside a component body (decision 791 (3)); anything else is not
+/// a hook at all.
 fn validateUseOperand(env: *Env, valTy: *T.Type, loc: ast.Loc) InferError!void {
     if (isHookType(env, valTy)) return;
-    if (isComponentType(env, valTy)) {
-        env.lastError = TypeError.custom(
-            diagnostics.use_of_non_context_fn ++
-                ": `use` takes a hook, and this is a component (its `R` implements `@Renderable`) — a component is called, not `use`d",
-            "Call it (`Card()`) where its value is needed; `use` activates hooks only.",
-        ).withLoc(loc);
-        return error.TypeError;
-    }
+    if (isComponentType(env, valTy)) return;
     const disp = baseNameOfType(valTy) orelse "value";
     env.lastError = TypeError.useNotContext(disp).withLoc(loc);
     return error.TypeError;

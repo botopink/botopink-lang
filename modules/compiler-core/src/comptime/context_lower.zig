@@ -15,6 +15,7 @@
 //!
 //! where a `Context<T>` is its value at run time: `createContext(v)` is `v`.
 //!   use h(…)             →  bpScopeValue__(await (h(…))(bpScope__))    — a hook is part of the body
+//!   use c                →  bpScopeValue__(await (c)(<kids>))          — a component resolved (791 (3))
 //!   await c              →  bpScopeValue__(await (c)(<kids>))          — a child placed in the tree
 //!   return v             →  return bpScopeRendered__(v, <kids>)
 //!
@@ -360,7 +361,11 @@ const Lowering = struct {
                 if (inner.* == .call and inner.call.kind == .call and self.env.hostCalls.contains(inner.call.loc)) return false;
                 const renders = self.hookRenders(inner);
                 try self.walk(ast.Expr, inner);
-                e.* = try self.run(inner, try self.scopeArg(false, uh.loc), !self.syncAt(inner, uh.loc), renders, uh.loc);
+                // Decision 791 (3) — a component `use`d runs with the
+                // children's scope; a hook, part of the body, with the
+                // received one.
+                const scope = try self.scopeArg(self.env.componentUses.contains(uh.loc), uh.loc);
+                e.* = try self.run(inner, scope, !self.syncAt(inner, uh.loc), renders, uh.loc);
                 return true;
             },
             .jump => |*j| switch (j.kind) {

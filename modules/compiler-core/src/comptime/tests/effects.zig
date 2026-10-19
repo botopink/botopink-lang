@@ -392,16 +392,31 @@ test "context: a fn returning a bare owner (`-> Element`) activates nothing and 
     );
 }
 
-// Decision 104, rule 3: a component is called, never `use`d.
-test "context error: use of a component is refused — a component is called" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+// Decision 791 (3): inside a component body `use c` resolves the component.
+test "context: use of a component in a component body resolves it" {
+    try h.assertInfersOk(std.testing.allocator,
         \\val Element = type() implement Renderable
         \\fn Card() -> Component<Element> {
         \\    return Element();
         \\}
         \\fn Page() -> Component<Element> {
         \\    val c = use Card();
+        \\    return c;
+        \\}
+    );
+}
+
+// Decision 791 (3): outside a component body a `use` of a component is
+// refused as a hook's `use` is.
+test "context error: use of a component outside a component body is refused" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type() implement Renderable
+        \\fn Card() -> Component<Element> {
         \\    return Element();
+        \\}
+        \\fn page() -> Element {
+        \\    val c = use Card();
+        \\    return c;
         \\}
     );
 }

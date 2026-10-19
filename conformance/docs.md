@@ -2512,7 +2512,9 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 **Expression role.** `Component<R>` is the one wrapper of `use` (decisions
 104, 118, 128, 354). A function returning it is a **component** when its `R`
 implements the marker `Renderable` (`type Element(…) implement Renderable`):
-a component is **called** (`Widget(1)`, or as a tag), never `use`d. Any other
+a component is **called** (`Widget(1)`, or as a tag), which only makes its
+lambda, and inside a component body `use Widget(1)` resolves it (decision 791
+(3)). Any other
 `Component<R>` is **read with `use`** — what React calls a hook: `val x = use
 <f>(…)` runs it and binds `R`, a bare `use <f>(…);` runs one whose `R` is
 `void`, and `val {a, b} = use …` binds `R`'s fields by name. Such a function is
@@ -2552,7 +2554,9 @@ The rules, each with its diagnostic:
 - **The operand is read with `use`.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `Component<R>` ``,
   and `use Card()` where `Card` is a component (its `R` implements
-  `Renderable`) is refused: a component is called, not `use`d.
+  `Renderable`) resolves it: it runs `Card` with the body's children scope
+  and answers its `R` (decision 791 (3)); a component is otherwise called,
+  `Card()`, which only makes its lambda.
 - **The rules of hooks** (decision 357). A `use` is written at the top level of
   its `Component` body and runs on every call, in the same order and the same
   number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /
@@ -2729,8 +2733,12 @@ call answers `Component<R>` as anywhere else (decision 791 (1)):
 
 In the body, `use provide(ctx)` makes
 the scope its children receive, `use context(ctx)` finds the identity of
-`ctx`'s type in the scope the body received, else `ctx`'s own default, and `await c` runs `c`
-with the children's scope. Outside every body — `main`, a test, a plain
+`ctx`'s type in the scope the body received, else `ctx`'s own default, and `use c`
+(decision 791 (3)) or `await c` runs `c` with the children's scope:
+
+<!-- example: modules/component_use_in_body -->
+
+Outside every body — `main`, a test, a plain
 function, a lambda — `await c` runs `c` with `RenderScope.root()`, and
 `c.run(scope)` answers the result and the children's scope, so a render
 library holds the scopes explicitly; `RenderScope(…)` is refused

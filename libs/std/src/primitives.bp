@@ -1874,7 +1874,9 @@ pub behavior Slice<V> {
 // the base parameter of 128 is gone). A component is the `Component<R>`
 // whose `R` implements the marker `Renderable` (`type Element(…) implement
 // @Renderable`); any other `R` makes the function a hook. A component is
-// called (`Card()`), never `use`d; `use f()` takes a hook, so hooks compose.
+// called (`Card()`), which only makes its lambda (decision 791 (1)), and
+// inside a component body `use Card()` resolves it (791 (3)); `use f()` takes
+// a hook too, so hooks compose.
 // `throw` / `try` in a `Component` body follow decision 121: legal only when
 // `R` is a `Result`.
 //

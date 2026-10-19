@@ -1307,9 +1307,13 @@ base (`componentBaseParamRemoved`), `@Renderable` (`contextMarkerRemoved`) and
   and its return type. Before it: `use-outside-render-tree` (354 (3)) in a
   decorator body (`Env.inDecoratorFn`), a template body (`Env.inTemplateFn`)
   or a `comptime` (`Env.comptimeDepth`), and `use-not-top-level` (357, above).
-- The operand is read with `use`: `validateUseOperand` refuses a component
-  (a component is called) and anything that is no `@Component` at all
-  (`useNotContext`). The prefix is typed as `R` (`bindingSourceType`).
+- The operand is read with `use`: `validateUseOperand` takes a hook or a
+  component and refuses anything that is no `@Component` at all
+  (`useNotContext`). The prefix is typed as `R` (`bindingSourceType`). A `use`
+  of a component resolves it (decision 791 (3)): `Env.componentUses` records it,
+  it marks the body's first render, and `context_lower.zig` runs it with the
+  children's scope; outside a component body it meets the same refusals as a
+  hook's `use`.
 - `await` accepts `@Component<R>` too (`unwrapTaskType` → `R`): every caller
   awaits a component (decision 104); a component call answers its lambda
   wherever it is written, a component body included (decision 791 (1)).

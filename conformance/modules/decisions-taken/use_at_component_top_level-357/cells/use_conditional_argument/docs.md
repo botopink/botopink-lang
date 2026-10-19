@@ -27,7 +27,9 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 > - **The operand is read with `use`.** `use plain()` where `plain : -> User` is
 >   `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `Component<R>` ``,
 >   and `use Card()` where `Card` is a component (its `R` implements
->   `Renderable`) is refused: a component is called, not `use`d.
+>   `Renderable`) resolves it: it runs `Card` with the body's children scope
+>   and answers its `R` (decision 791 (3)); a component is otherwise called,
+>   `Card()`, which only makes its lambda.
 > - **The rules of hooks** (decision 357). A `use` is written at the top level of
 >   its `Component` body and runs on every call, in the same order and the same
 >   number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /
