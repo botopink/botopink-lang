@@ -1,0 +1,15 @@
+//// Decision 496 — `abs` aborts past its integer type, as unary `-` does: the lowest `i64`
+//// has no positive counterpart in `i64`, so `lowest().abs()` aborts naming `abs` on `i64`.
+
+import {io.terminal.print} from "std";
+
+fn lowest() -> i64 {
+    return -9223372036854775807l - 1l;
+}
+
+pub fn main() -> void {
+    print((-5).abs());
+    print((-7l).abs());
+    print(lowest().abs());
+    print("unreachable");
+}

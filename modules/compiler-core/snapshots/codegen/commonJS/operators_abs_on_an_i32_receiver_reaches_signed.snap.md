@@ -71,7 +71,7 @@ function __bp_print() {
 
 // behavior Signed extends Integer
 //   fn abs(...)
-BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)(this.valueOf()); };
+BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => { if (__a === -9223372036854775808n) { throw Object.defineProperty(new Error("integer overflow: abs on i64"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })(this.valueOf()); };
 
 function mag(n) {
     return n.abs();

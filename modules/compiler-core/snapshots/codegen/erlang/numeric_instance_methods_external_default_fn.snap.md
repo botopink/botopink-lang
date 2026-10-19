@@ -27,7 +27,7 @@ import {io.terminal.print} from "std";
 
 main() ->
     N = (-5),
-    '__bp_print'([erlang:abs(N)]),
+    '__bp_print'([(fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)(N)]),
     '__bp_print'([erlang:min(N, 3)]),
     '__bp_print'([erlang:max(N, 10)]),
     '__bp_print'([number_clamp(N, 0, 5)]),

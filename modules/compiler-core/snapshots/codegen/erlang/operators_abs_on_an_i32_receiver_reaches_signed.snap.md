@@ -19,7 +19,7 @@ import {io.terminal.print} from "std";
 %% behavior Signed
 
 mag(N) ->
-    erlang:abs(N).
+    (fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)(N).
 
 main() ->
     '__bp_print'([mag((-7))]).
