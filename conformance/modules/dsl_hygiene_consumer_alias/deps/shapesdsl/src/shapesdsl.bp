@@ -12,7 +12,7 @@ fn double(x: i32) -> i32 {
     return x * 2;
 }
 
-pub default fn shapesdsl<T>(syntax e: string) -> T {
+pub default fn shapesdsl(syntax e: string) -> anyvalue {
     val code = compiler.build("double(" + compiler.text(e) + ")");
     val root = CustomNode(
         kind: "call",

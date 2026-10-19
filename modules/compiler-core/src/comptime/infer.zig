@@ -791,6 +791,9 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.wrapContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
+    // Decision 668 — every type parameter bound by a parameter, checked once
+    // the decorators' outputs are in.
+    try refuseUnboundTypeParams(env, program);
     // Decision 575 (6) — every declaration's implementations, checked once the
     // decorators' outputs are in (a wrapper, a member: the re-analysis).
     try checkProgramImplementations(env, program);
@@ -995,6 +998,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         };
         return list.toOwnedSlice(env.arena);
     }
+    // Decision 668 — every type parameter bound by a parameter, checked once
+    // the decorators' outputs are in.
+    try refuseUnboundTypeParams(env, program);
     // Decision 575 (6) — every declaration's implementations, checked once the
     // decorators' outputs are in (a wrapper, a member: the re-analysis).
     try checkProgramImplementations(env, program);
@@ -4501,6 +4507,85 @@ fn refuseUnimplementedDeclares(env: *Env, program: ast.Program) InferError!void 
             return refuseUnimplemented(env, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ t.name, m.name }), if (m.nameLoc.line > 0) m.nameLoc else null);
         },
         else => {},
+    };
+}
+
+/// Decision 668 — a function's or a method's type parameter is bound by a
+/// parameter: it occurs in a parameter's type, directly (`x: T`), inside one
+/// (`Array<T>`, `fn(T) -> R`, `Self<T>`), or as the type token
+/// `comptime t: type<T>`. The return type is never a binding site: a type
+/// parameter written only there is refused at the declaration.
+fn refuseUnboundTypeParams(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        // A value-or-type function's type form (`value_or_type.zig`'s twin):
+        // the type argument its call removed binds the parameter.
+        .@"fn" => |f| if (!std.mem.endsWith(u8, f.name, valueOrType.twin_suffix)) {
+            try refuseUnboundIn(env, f.name, f.genericParams, f.params, f.nameLoc);
+        },
+        .type_ => |t| for (t.methods) |m| {
+            try refuseUnboundIn(env, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ t.name, m.name }), m.genericParams, m.params, m.nameLoc);
+        },
+        .behavior => |b| for (b.methods) |m| {
+            try refuseUnboundIn(env, try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ b.name, m.name }), m.genericParams, m.params, m.nameLoc);
+        },
+        else => {},
+    };
+}
+
+fn refuseUnboundIn(env: *Env, name: []const u8, gps: []const ast.GenericParam, params: []const ast.Param, loc: ast.Loc) InferError!void {
+    for (gps) |gp| {
+        // A template's `anyvalue` answer: the built code's type binds it at
+        // each call (426 (1)); no source spells it.
+        if (std.mem.eql(u8, gp.name, ast.anyvalue_param_name)) continue;
+        const bound = for (params) |p| {
+            if (paramBindsTypeParam(p, gp.name)) break true;
+        } else false;
+        if (bound) continue;
+        return implError(env, if (loc.line > 0) loc else null, try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}`'s type parameter `{s}` occurs in no parameter's type — nothing at a call binds it, and the return type never does",
+            .{ diagnostics.type_parameter_unbound, name, gp.name },
+        ), try std.fmt.allocPrint(
+            env.arena,
+            "Bind `{s}` by a parameter: `comptime t: type<{s}>` when the caller names the type, a parameter whose type carries it (`items: Array<{s}>`, `self: Self<Array<{s}>>`, `f: fn({s}) -> R`); or write `unknown` where no type is meant (decision 668).",
+            .{ gp.name, gp.name, gp.name, gp.name, gp.name },
+        ));
+    }
+}
+
+/// Whether the parameter `p` binds the type parameter `name` (decision 668).
+fn paramBindsTypeParam(p: ast.Param, name: []const u8) bool {
+    if (p.typeArgOf) |t| if (std.mem.eql(u8, t, name)) return true;
+    if (p.inlineFields) |fields| for (fields) |f| {
+        if (typeRefHasTypeParam(f.typeRef, name)) return true;
+    };
+    return typeRefHasTypeParam(p.typeRef, name);
+}
+
+/// Whether the written type `t` is or holds the type parameter `name` — in
+/// any position: an array's element, an optional's payload, a tuple's
+/// element, a generic's argument, a function type's parameter or return, a
+/// `type<…>` token's constraint.
+fn typeRefHasTypeParam(t: ast.TypeRef, name: []const u8) bool {
+    return switch (t) {
+        .named => |n| std.mem.eql(u8, n, name),
+        .array => |inner| typeRefHasTypeParam(inner.*, name),
+        .optional => |inner| typeRefHasTypeParam(inner.*, name),
+        .tuple_ => |elems| for (elems) |e| {
+            if (typeRefHasTypeParam(e, name)) break true;
+        } else false,
+        .labeledTuple => |lt| for (lt.elems) |e| {
+            if (typeRefHasTypeParam(e, name)) break true;
+        } else false,
+        .function => |f| typeRefHasTypeParam(f.returnType.*, name) or for (f.params) |e| {
+            if (typeRefHasTypeParam(e, name)) break true;
+        } else false,
+        .generic => |g| std.mem.eql(u8, g.name, name) or for (g.args) |e| {
+            if (typeRefHasTypeParam(e, name)) break true;
+        } else false,
+        .typeparam => |cs| for (cs) |e| {
+            if (typeRefHasTypeParam(e, name)) break true;
+        } else false,
     };
 }
 

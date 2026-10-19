@@ -4,7 +4,7 @@ pub type Box(w: i32, h: i32)
 
 // The built code is the literal's own text: two expansions whose code sits
 // at the same offsets of their built strings.
-pub fn code<T>(syntax q: string) -> T {
+pub fn code(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q));
 }
 

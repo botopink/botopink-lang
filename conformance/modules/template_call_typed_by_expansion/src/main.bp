@@ -1,13 +1,13 @@
 //// Decision 426 (1), (3) — a template call's type is the type of the code it
-//// built for that call, computed at build: no free `T` of the signature is
-//// left, so one template answers `string[]` at one call and `i32` at
-//// another; a signature's answer with `unknown` in it is a bound the built
+//// built for that call, computed at build: `-> anyvalue` leaves no free
+//// type in the signature, so one template answers `string[]` at one call
+//// and `i32` at another; a signature's answer with `unknown` in it is a bound the built
 //// code fits, and the call keeps the built type (`string[]`, not
 //// `unknown[]`).
 
 import {compiler, io.terminal.print} from "std";
 
-fn data<T>(syntax q: string) -> T {
+fn data(syntax q: string) -> anyvalue {
     if (compiler.text(q) == "names")
         return compiler.build("[\"ana\", \"bia\"]");
     return compiler.build("41");

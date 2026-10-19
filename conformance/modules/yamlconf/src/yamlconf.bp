@@ -8,7 +8,7 @@
 
 import {compiler} from "std";
 
-pub fn conf<T>(syntax q: string) -> T {
+pub fn conf(syntax q: string) -> anyvalue {
     val t = compiler.text(q);
     // A real library would parse `t` as YAML here; the structure below is
     // computed from the input to show the comptime evaluation at work.

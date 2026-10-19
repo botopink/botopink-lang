@@ -4,3 +4,4 @@ Cells in this repository that also bear on it: `modules/is_function_type`, `modu
 
 [cases/comptime_type_token_handed_on/src/main.bp](cases/comptime_type_token_handed_on/src/main.bp)
 [cases/is_comptime_type_parameter/src/main.bp](cases/is_comptime_type_parameter/src/main.bp)
+[cases/type_parameter_bound_by_token/src/main.bp](cases/type_parameter_bound_by_token/src/main.bp)

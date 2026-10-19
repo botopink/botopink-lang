@@ -1038,6 +1038,7 @@ pub const all_codes = [_][]const u8{
     declare_in_behavior,
     implementation_twice,
     implement_with_body,
+    type_parameter_unbound,
 };
 
 test "every reserved code has a stable, non-empty spelling" {
@@ -1140,3 +1141,8 @@ pub const template_build_outside_bound: []const u8 = "template-build-outside-bou
 /// holding a `syntax` value, a `Name` nothing binds where the tree is
 /// spliced. Refused at the `ast` call, naming the node.
 pub const ast_ill_formed: []const u8 = "ast-ill-formed";
+
+/// Decision 668 — a function's or a method's type parameter that occurs in no
+/// parameter's type (directly, inside one, or as `comptime t: type<T>`): the
+/// return type alone never binds it. Refused at the declaration.
+pub const type_parameter_unbound: []const u8 = "type-parameter-unbound";

@@ -1823,6 +1823,20 @@ reds against `Mappable<i32>` while `Box(value: 1).map({ x -> "a" })` is a `Box<s
 writes `Self<…>` in all its generic declarations; the backends read either spelling through
 `ast.TypeRef.isSelf()`.
 
+## A type parameter is bound by a parameter (decision 668)
+
+`refuseUnboundTypeParams` (`infer.zig`, run beside `checkProgramImplementations`, once the
+decorators' outputs are in) walks every top-level function's, `type` method's and `behavior`
+member's own type parameters: one that occurs in no parameter's written type — directly, inside a
+type (`typeRefHasTypeParam`: arrays, optionals, tuples, generic arguments, a function type's
+parameters and return, a `type<…>` token's constraint), as a value-or-type parameter's `typeArgOf`
+or in an inline parameter type's fields — is `type-parameter-unbound` at the declaration's name,
+naming it and the ways out. The return type never binds one. A template's `anyvalue` answer
+(`ast.anyvalue_param_name`) is bound by the built code and skipped, and so is a value-or-type
+function's type form (`<name>__type`, whose removed type argument binds it). A type's own parameters are
+bound by its fields, outside this rule. Cells: `modules/decisions-taken/type_parameter_unbound_refused-668/cases/type_parameter_unbound`,
+`type_parameter_bound_by_token`, `type_parameter_bound_in_lambda_type`.
+
 ## `unknown` (decision 8 §2, 1.0.4's 06 N19)
 
 `unknown` reaches inference as `TypeRef.named` under the reserved spelling `ast.unknown_type_name`;

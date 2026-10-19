@@ -238,12 +238,14 @@ test "infer: net-new ---- recursion through a generic data type" {
 // A generic fn's return type is inferred SOLELY from the call's usage context:
 // `make()` has no value argument fixing `T`, so the `val: i32`/`val: string`
 // annotations are the only source — each call site instantiates fresh.
-test "infer: net-new ---- generic return inferred from usage context" {
+// Decision 668 — the return follows from the type token, never from the
+// binding's annotation alone.
+test "infer: net-new ---- generic return inferred from the type token" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn make<T>() -> T { panic("not implemented"); }
+        \\fn make<T>(comptime t: type<T>) -> T { panic("not implemented"); }
         \\fn main() {
-        \\    val n: i32 = make();
-        \\    val s: string = make();
+        \\    val n: i32 = make(i32);
+        \\    val s: string = make(string);
         \\}
         \\
         \\import {failure.panic} from "std";
@@ -326,19 +328,18 @@ test "infer: generic-inference-finalize ---- chained map().filter() propagates e
     );
 }
 
-// Shape 2: a generic fn called with zero value args (`empty<K, V>() -> Dict<K, V>`)
-// must use the caller's expected return type to constrain K and V. The
-// explicit `Dict<K, V>` annotation on the val binding is the only source of
-// information; without back-prop the unifier sees both type params unbound
-// and reports `.generic TypeError`.
-test "infer: generic-inference-finalize ---- empty<K,V>() infers from annotated binding" {
+// Shape 2: a generic fn whose type parameters only type tokens bind
+// (`empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V>`) —
+// the return type alone never binds one (decision 668) — answers the
+// `Dict<string, i32>` the binding's annotation asks for.
+test "infer: generic-inference-finalize ---- empty<K,V>(K, V) meets the annotated binding (decision 668)" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Dict<K, V>(pairs: Array<#(K, V)>)
-        \\fn empty<K, V>() -> Dict<K, V> {
+        \\fn empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V> {
         \\    return Dict(pairs: []);
         \\}
         \\fn main() {
-        \\    val d: Dict<string, i32> = empty();
+        \\    val d: Dict<string, i32> = empty(string, i32);
         \\}
     );
 }
@@ -446,4 +447,61 @@ test "infer error: a `?T` never narrows to its `T` at a return" {
     defer std.testing.allocator.free(desc);
     try std.testing.expect(std.mem.indexOf(u8, desc, "expected `T`, got `?T`") != null);
     try std.testing.expectEqual(@as(usize, 2), err.loc.?.line);
+}
+
+/// Decision 668 — the declaration whose `src` holds an unbound type parameter
+/// is refused at its name, naming the parameter.
+fn expectTypeParameterUnbound(comptime src: []const u8, want: []const u8, line: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    const desc = try h.renderTypeError(std.testing.allocator, src, err);
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "type-parameter-unbound") != null);
+    try std.testing.expect(std.mem.indexOf(u8, desc, want) != null);
+    try std.testing.expectEqual(line, err.loc.?.line);
+}
+
+test "infer error: a type parameter only the return type names is unbound (decision 668)" {
+    try expectTypeParameterUnbound(
+        \\fn none<T>() -> ?T {
+        \\    return null;
+        \\}
+    , "`none`'s type parameter `T`", 1);
+}
+
+test "infer error: a method's type parameter only the return type names is unbound (decision 668)" {
+    try expectTypeParameterUnbound(
+        \\type Registry(n: i32) {
+        \\    fn get<T>(self: Self) -> ?T {
+        \\        return null;
+        \\    }
+        \\}
+    , "`Registry.get`'s type parameter `T`", 2);
+}
+
+test "infer: a type parameter is bound inside a parameter's type or by the type token (decision 668)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn make<R>(build: fn() -> R) -> R {
+        \\    return build();
+        \\}
+        \\fn firstOf<T>(items: Array<T>) -> ?T {
+        \\    return items.at(0);
+        \\}
+        \\fn empty<T>(comptime t: type<T>) -> T[] {
+        \\    return [];
+        \\}
+        \\val a = make({ -> 1 });
+        \\val b = firstOf([1]);
+    );
 }

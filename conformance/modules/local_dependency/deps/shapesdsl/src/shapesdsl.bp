@@ -10,7 +10,7 @@ pub fn area(w: i32, h: i32) -> i32 {
     return w * h;
 }
 
-pub default fn shapesdsl<T>(syntax e: string) -> T {
+pub default fn shapesdsl(syntax e: string) -> anyvalue {
     val code = compiler.build(compiler.text(e));
     val root = CustomNode(
         kind: "call",

@@ -10,7 +10,7 @@ type Ctx(n: i32) {
         return x;
     }
 
-    fn none<T>(self: Self) -> ?T {
+    fn none(self: Self) -> ?unknown {
         return null;
     }
 }

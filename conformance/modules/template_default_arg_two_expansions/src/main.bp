@@ -16,7 +16,7 @@ pub fn footer(name: string) -> string {
 }
 
 // The built code is the literal's own text.
-pub fn code<T>(syntax q: string) -> T {
+pub fn code(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q));
 }
 

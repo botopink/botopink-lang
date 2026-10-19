@@ -1,0 +1,18 @@
+//// Decision 668 — a type parameter is bound by a parameter, never by the
+//// return type alone: `first`'s `T` occurs only in its return type, so
+//// nothing at a call would fix it but the caller's wish. Refused at the
+//// declaration, naming `T`.
+
+import {io.terminal.print} from "std";
+
+type Registry(names: string[])
+
+fn first<T>(r: Registry) -> ?T {
+    return null;
+}
+
+pub fn main() {
+    val r = Registry(names: []);
+    val found: ?i32 = first(r);
+    print(found == null);
+}
