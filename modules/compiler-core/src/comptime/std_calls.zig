@@ -165,8 +165,34 @@ const Ctx = struct {
         };
     }
 
+    /// A function or method whose parameters or body bind a name an import
+    /// item or namespace also has (`val print: Token[] = …`): inside it the
+    /// name is the local — a call or a read of it is not the import's, so the
+    /// import is neither rewritten nor kept alive by it. The shadowed entries
+    /// are lifted for the walk of the function and put back after.
+    fn walkShadowing(self: *Ctx, comptime T: type, ptr: *T) Error!void {
+        var bound: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (ptr.params) |p| try bound.append(self.arena, p.name);
+        const body: []const ast.Stmt = if (@typeInfo(@TypeOf(ptr.body)) == .optional) (ptr.body orelse &.{}) else ptr.body;
+        try ast.collectDeclaredNames(self.arena, body, &bound);
+        var lifted_items: std.ArrayListUnmanaged(struct { []const u8, Fn }) = .empty;
+        var lifted_namespaces: std.ArrayListUnmanaged(struct { []const u8, Fn }) = .empty;
+        for (bound.items) |n| {
+            if (self.items.fetchRemove(n)) |kv| try lifted_items.append(self.arena, .{ kv.key, kv.value });
+            if (self.namespaces.fetchRemove(n)) |kv| try lifted_namespaces.append(self.arena, .{ kv.key, kv.value });
+        }
+        try self.walkFields(T, ptr);
+        for (lifted_items.items) |e| try self.items.put(self.arena, e[0], e[1]);
+        for (lifted_namespaces.items) |e| try self.namespaces.put(self.arena, e[0], e[1]);
+    }
+
     fn walk(self: *Ctx, comptime T: type, ptr: *T) Error!void {
         if (T == ast.ImportDecl) return;
+        if (T == ast.FnDecl) return self.walkShadowing(T, ptr);
+        return self.walkFields(T, ptr);
+    }
+
+    fn walkFields(self: *Ctx, comptime T: type, ptr: *T) Error!void {
         if (T == ast.Expr) switch (ptr.*) {
             .call => |*c| switch (c.kind) {
                 .call => |*cc| self.rewriteCall(cc),
@@ -339,6 +365,29 @@ test "std calls: an imported print, a namespace's panic, an alias" {
         try std.testing.expect(cc.receiver == null);
         try std.testing.expectEqualStrings(w, cc.callee);
     }
+}
+
+test "std calls: a local named print shadows the import, which still goes once every call is rewritten" {
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const src =
+        \\import {io.terminal.print} from "std";
+        \\fn widths() -> i32[] {
+        \\    val print: i32[] = [1];
+        \\    return [print.length];
+        \\}
+        \\fn main() { print(1); }
+    ;
+    var lx = Lexer.init(src);
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try expand(arena, try p.parse(arena), null);
+    // The local's read does not keep the import alive: both fns are first.
+    try std.testing.expect(program.decls[0] == .@"fn");
+    try std.testing.expect(program.decls[1] == .@"fn");
+    try std.testing.expect(program.decls[1].@"fn".body[0].expr.call.kind.call.is_builtin);
 }
 
 test "std calls: the declarations are read from io/terminal.bp and failure.bp" {

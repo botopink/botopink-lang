@@ -2691,9 +2691,11 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
                     // its prefix names (`io.fs.readText`); a single segment is
                     // both spellings of `dict`. Whichever matches is needed.
                     const whole = try imp.fullPath(scratch);
-                    // Decision 606 (2) — `print` / `panic` is the call node
-                    // (`std_calls.zig`): its module is no dependency.
-                    if (std_calls.isDroppedItem(whole)) continue;
+                    // Decision 606 (2) — `print` / `panic` used only as calls
+                    // is the call node and `std_calls.expand` above dropped its
+                    // item: its module is no dependency. An item still here was
+                    // read as a value (a local named `print` is read too) and
+                    // the backends require its module, so it is needed.
                     const prefix = try imp.prefixPath(scratch);
                     for (std_pkg_modules, 0..) |spm, i| {
                         const key = spm.path["std/".len..];

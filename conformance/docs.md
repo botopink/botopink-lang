@@ -5265,10 +5265,13 @@ is used — `import {io.terminal.print} from "std";`, `import {failure.panic} fr
 alias included —, std's own modules by the same import. The namespace form reaches them too
 (`import {io.terminal}; terminal.print("x")`): a namespace the program uses for nothing else links
 none of the module's other members, so the hosts they bind (stdin's, which wasm has no cell for) are
-not linked, on wasm as on the other targets.
+not linked, on wasm as on the other targets. A local binding named `print` shadows the import
+inside its scope and reads as the local; the import still binds `print` outside it, so std's
+`io/terminal` module is part of the build on every target.
 
 <!-- example: modules/terminal_namespace_import_print -->
 <!-- example: modules/print_from_io_terminal -->
+<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/print_local_shadows_import -->
 <!-- example: modules/panic_from_failure -->
 
 There is no `@name`: `@print(…)`, `@panic(…)`, `@todo(…)`, `@typeInfo(…)`, `@src()` and
