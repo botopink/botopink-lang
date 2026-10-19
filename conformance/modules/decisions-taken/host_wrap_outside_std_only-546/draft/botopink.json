@@ -1,0 +1,4 @@
+{
+  "name": "host_wrap_outside_std_only-546",
+  "targets": ["commonJS", "erlang", "beam"]
+}

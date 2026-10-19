@@ -1,0 +1,27 @@
+//// The decorators: each executor splices `decl`, the annotated declaration itself.
+
+import {registry.add, registry.Entry};
+import {compiler} from "std";
+
+// What a service is: a type that makes its own entry.
+pub behavior Service {
+    fn make() -> string;
+}
+
+// On a type, `decl.make()` is `<Type>.make()`.
+pub fn service(syntax decl: Service) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> add(Entry(name: name, make: { -> decl.make() })) });
+}
+
+// On a function or a method, `decl` is its function value.
+pub fn registered(syntax decl: fn() -> string) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> add(Entry(name: name, make: decl)) });
+}
+
+// On a `val`, `decl` is its value.
+pub fn constant(syntax decl: string) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> add(Entry(name: name, make: { -> decl })) });
+}

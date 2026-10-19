@@ -1,0 +1,17 @@
+//// Decision 275 — The function a `.bpp` file unfolds to returns the `R` of the default function's declared `@ExprCustom<R>`, read by the t
+
+import {Badge};
+import {Spacer};
+import {io.terminal.print} from "std";
+
+fn total(parts: i32[]) -> i32 {
+    return parts.reduce(0, { acc, n -> acc + n });
+}
+
+pub fn main() -> void {
+    val badge: i32 = Badge(label: "new");
+    val spacer: i32 = Spacer();
+    print(badge);
+    print(spacer);
+    print(total([badge, spacer, Badge(label: "x")]));
+}

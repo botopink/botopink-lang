@@ -1,0 +1,10 @@
+//// The package the manifest's `"bpp"` names: its default function is the markup's unfold target, found by
+//// `#[bpp.html]`. It answers the markup's text as written.
+
+import {bpp, code, compiler} from "std";
+
+#[bpp.html]
+pub default fn markup(syntax t: string) -> string {
+    val text = compiler.text(t).trim();
+    return code @`${text}`;
+}

@@ -1,0 +1,39 @@
+//// Decision 613 — (d), the rule behind 581 (2): what flows from build into an executor is always admitted — a `comptime` value as a literal, an `syntax` as the code it is, a run-time value as itself — and only the reverse is impossible (611); so `decl` inside an executor is the annotated declaration itself, spliced as code and bound to that declaration, on every kind, and the checker applies its ordinary rules to it, typed by the `syntax decl` parameter's declared type (716).
+
+import {comptime.marks.service, comptime.marks.registered, comptime.marks.constant, comptime.marks.Service};
+import {registry.all};
+import {io.terminal.print} from "std";
+
+// A module function with the same name as the method below.
+pub fn make() -> string {
+    return "module make";
+}
+
+#[service]
+pub type Orders() implement Service {
+    fn make() -> string {
+        return "orders made";
+    }
+}
+
+pub type Users() {
+    #[registered]
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+#[registered]
+pub fn health() -> string {
+    return "healthy";
+}
+
+#[constant]
+pub val motto = "ship it";
+
+pub fn main() -> void {
+    for (all()) { e ->
+        print(e.name + ": " + e.make());
+    }
+    print(make());
+}

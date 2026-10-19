@@ -1,0 +1,5 @@
+{
+  "name": "toolchain_knows_bpp_roles_only-285",
+  "dependencies": { "markup": { "path": "deps/markup" } },
+  "bpp": "markup"
+}

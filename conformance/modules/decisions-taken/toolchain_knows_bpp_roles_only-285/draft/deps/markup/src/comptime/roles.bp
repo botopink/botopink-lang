@@ -1,0 +1,12 @@
+//// Decorators named like route files. The toolchain applies none of them by a file's name: only a framework's route
+//// table, or a decorator written in a header, would call them.
+
+import {compiler} from "std";
+
+pub fn page(syntax decl: unknown) -> void {
+    compiler.fail("page applied to " + compiler.name(decl)!, at: decl);
+}
+
+pub fn layout(syntax decl: unknown) -> void {
+    compiler.fail("layout applied to " + compiler.name(decl)!, at: decl);
+}

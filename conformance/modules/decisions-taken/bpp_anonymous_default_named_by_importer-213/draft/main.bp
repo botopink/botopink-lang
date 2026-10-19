@@ -1,0 +1,12 @@
+//// Decision 213 — A `.bpp` file becomes the module's anonymous `pub default fn` (289), named by its importer after the file: `components/P
+
+import {components.PostCard};
+import {components.site_footer as SiteFooter};
+import {components.`not-found` as NotFound};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(PostCard(title: "Hello"));
+    print(SiteFooter());
+    print(NotFound());
+}
