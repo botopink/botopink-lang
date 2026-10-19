@@ -22985,6 +22985,27 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     if (env.lookupTypeDef(tn)) |td| if (td.findField(call.callee)) |fd| {
                         if (fd.type_.deref().* == .func and env.instanceLowerings.get(loc) == null)
                             try env.instanceLowerings.put(loc, .{ .type_ = tn });
+                        // B-147 — the call answers what the field's function
+                        // type returns (`m.make()` with `make: fn() ->
+                        // Component<V>` is a `Component<V>`, so `.run(scope)`
+                        // and `await` read it as one). A record with type
+                        // parameters keeps the permissive answer below: its
+                        // field type is not instantiated here.
+                        const recvNamed = recvPtr.getType().deref();
+                        if (fd.type_.deref().* == .func and recvNamed.* == .named and recvNamed.named.args.len == 0 and
+                            fd.type_.deref().func.params.len == typedArgs.len and typedTrailing.len == 0)
+                        {
+                            const ft = fd.type_.deref().func;
+                            for (typedArgs, ft.params) |ta, p|
+                                try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
+                            return TypedExpr{ .call = .{ .loc = loc, .type_ = ft.ret, .kind = .{ .call = .{
+                                .receiver = recvPtr,
+                                .callee = call.callee,
+                                .is_builtin = false,
+                                .args = typedArgs,
+                                .trailing = typedTrailing,
+                            } } } };
+                        }
                     };
                 };
 
