@@ -14823,6 +14823,66 @@ fn typeTokenCalleeParams(env: *Env, call: anytype, typed: TypedExpr, owner: *?[]
     return f.params;
 }
 
+/// The parameters (after `self`) and the own type parameters of the function
+/// or type method a call names, for `typeTokenArgType`.
+const TokenCallee = struct { params: []const ast.Param, generics: []const ast.GenericParam };
+
+/// The callee of `call` as written — a function of this module or an imported
+/// one, one through a module namespace or std's, or a type method of the
+/// receiver's nominal type — or null.
+fn tokenCallee(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?TokenCallee {
+    if (call.is_builtin or call.calleeExpr != null or call.args.len == 0) return null;
+    if (call.receiver) |recv| {
+        if (recv.* == .identifier and recv.identifier.kind == .ident) {
+            const rn = recv.identifier.kind.ident;
+            if (env.namespaces.paths.contains(rn)) {
+                const key = std.fmt.allocPrint(env.arena, "{s}.{s}", .{ rn, call.callee }) catch return null;
+                const f = env.importedFnDecls.get(key) orelse return null;
+                return .{ .params = f.params, .generics = f.genericParams };
+            }
+            if (env.stdImports.get(rn)) |key| {
+                const fns = env.stdModuleFns.get(key) orelse return null;
+                for (fns) |f| if (f.isPub and std.mem.eql(u8, f.name, call.callee))
+                    return .{ .params = f.params, .generics = f.genericParams };
+                return null;
+            }
+        }
+        const tr = typedReceiver orelse return null;
+        const tn = nominalName(tr.getType()) orelse return null;
+        const m = env.getInherentMethodDecl(tn, call.callee) orelse return null;
+        const ps = if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) m.params[1..] else m.params;
+        return .{ .params = ps, .generics = m.genericParams };
+    }
+    if (env.localBindDepth(call.callee) != null) return null;
+    const f = env.fnDecls.get(call.callee) orelse env.importedFnDecls.get(call.callee) orelse return null;
+    return .{ .params = f.params, .generics = f.genericParams };
+}
+
+/// Decisions 668, 757, 758 — the type a call argument stands for when it
+/// writes a type (a primitive, a declared or an imported type) where a
+/// `type<T>` parameter, `T` the callee's own type parameter, takes it — with
+/// or without `comptime`. The argument is typed as that type, so unifying it
+/// with the parameter binds `T` to the type, never to the type's constructor
+/// function (`type mismatch: expected Row, got function`). Null for any other
+/// argument.
+fn typeTokenArgType(env: *Env, callee: TokenCallee, pi: usize, arg: ast.Expr) InferError!?*T.Type {
+    if (pi >= callee.params.len) return null;
+    const p = callee.params[pi];
+    if (p.typeRef != .typeparam or p.typeRef.typeparam.len != 1 or p.typeRef.typeparam[0] != .named) return null;
+    const tp = p.typeRef.typeparam[0].named;
+    const own = for (callee.generics) |g| {
+        if (std.mem.eql(u8, g.name, tp)) break true;
+    } else false;
+    if (!own) return null;
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    const n = arg.identifier.kind.ident;
+    if (env.localBindDepth(n) != null) return null;
+    if (isPrimitiveTypeName(n)) return try env.namedType(n);
+    const real = importedTypeAliasTarget(env, n) orelse n;
+    if (env.lookupTypeDef(real) == null) return null;
+    return try resolveTypeRef(env, .{ .named = real });
+}
+
 /// `t.value` — the parser's read of a `comptime` parameter — where `t` is a
 /// `comptime t: type<T>` parameter of the body being inferred: its name.
 fn typeTokenHandOn(env: *const Env, e: ast.Expr) ?[]const u8 {
@@ -23149,7 +23209,23 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             // Decision 297 — the argument a type was written for, if any.
             var typeArgAt: ?usize = null;
+            // Decisions 668, 757, 758 — the arguments that write a type where
+            // a `type<T>` parameter takes it, typed as the type.
+            const tokCallee = tokenCallee(env, call, typedReceiver);
+            var tokenTyped: []bool = &.{};
+            if (tokCallee != null) {
+                tokenTyped = try env.arena.alloc(bool, call.args.len);
+                @memset(tokenTyped, false);
+            }
             for (call.args, 0..) |arg, i| {
+                if (tokCallee) |tc| if (arg.label == null) {
+                    const pi = if (call.receiver == null) (if (argParamIndex) |slots| (if (i < slots.len) slots[i] else tc.params.len) else i) else i;
+                    if (try typeTokenArgType(env, tc, pi, arg.value.*)) |ty| {
+                        typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, TypedExpr{ .identifier = .{ .loc = arg.value.identifier.loc, .type_ = ty, .kind = .{ .ident = arg.value.identifier.kind.ident } } }) };
+                        tokenTyped[i] = true;
+                        continue;
+                    }
+                };
                 if (call.receiver == null and !call.is_builtin and call.calleeExpr == null) if (declParamsAst) |dps| {
                     const pi = if (argParamIndex) |slots| (if (i < slots.len) slots[i] else dps.len) else i;
                     if (pi < dps.len) {
@@ -24064,7 +24140,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         var captures: std.ArrayListUnmanaged(template.CapturedExpr) = .empty;
                         var plainArgs: std.ArrayListUnmanaged(template.PlainArg) = .empty;
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
-                            if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
+                            if (typeparams) |constraints| if (isTypeparamIndex(constraints, i) and !(i < tokenTyped.len and tokenTyped[i])) continue;
                             if (exprParams) |eps| if (exprParamAt(eps, i)) |ep| {
                                 try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType, call.templateText));
                                 continue;
@@ -24150,7 +24226,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             return error.TypeError;
                         }
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
-                            if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
+                            if (typeparams) |constraints| if (isTypeparamIndex(constraints, i) and !(i < tokenTyped.len and tokenTyped[i])) continue;
                             try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;

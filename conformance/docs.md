@@ -1519,11 +1519,17 @@ A type also travels as a run-time value (decision 758): `t: type<T>` without
 record and an enum by identity, a primitive by value as each target tests it. A
 run-time `t` handed to a `comptime t: type<T>` parameter is
 `comptime-arg-not-known`; `comptime t: type<T>` stays the form of every read at
-build.
+build. In either form the type written at the call binds `T` to the type, never
+to its constructor: a type method's (`c.get(Row, "x")` is a `?Row`) and an
+imported function's given an imported type alike, annotated or not.
 
 <!-- example: modules/decisions-taken/type_token_run_time_value-758/cases/type_token_run_time_value -->
 
 <!-- example: modules/decisions-taken/type_token_run_time_value-758/cases/type_token_handed_on_run_time -->
+
+<!-- example: modules/type_token_method_call -->
+
+<!-- example: modules/type_token_imported_type -->
 
 The elements of an array literal that disagree make the union of their types
 (`[3, "abcd"]` is `(i32 | string)[]`), and each element read back — printed,
