@@ -963,22 +963,24 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
         alloc.free(params);
     }
 
+    var returnType: ?ast.TypeRef = null;
+    errdefer if (returnType) |*rt| rt.deinit(alloc);
     if (this.match(.rightArrow)) {
-        var rt = try this.parseTypeRef(alloc);
-        defer rt.deinit(alloc); // ImplementMethod has no returnType field
-        try checkFnMarker(this, marker, rt, false);
+        returnType = try this.parseTypeRef(alloc);
+        try checkFnMarker(this, marker, returnType.?, false);
     }
 
     try refuseDiscardParam(this);
-    // Every statement keeps its `;`: the printer writes no `-> R` here, so a
-    // tail could not read back as the value it was (decision 409 covers a
-    // type's methods and a behavior's default bodies).
+    // Every statement keeps its `;`: a tail could not read back as the value
+    // it was (decision 409 covers a type's methods and a behavior's default
+    // bodies).
     const body = try this.parseBlock(alloc, .{});
     return ImplementMethod{
         .qualifier = qualifier,
         .name = methodName,
         .params = params,
         .body = body,
+        .returnType = returnType,
         .loc = parser.Parser.locFromToken(firstTok),
         .marker = if (marker) |m| m.kind else null,
         .markerLoc = if (marker) |m| parser.Parser.locFromToken(m.tok) else .{ .line = 0, .col = 0 },

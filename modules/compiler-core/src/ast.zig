@@ -4628,6 +4628,11 @@ pub const ImplementMethod = struct {
     name: []const u8,
     params: []Param,
     body: []Stmt,
+    /// The `-> R` written after the parameters, or null. Source layout: the
+    /// formatter prints it back (a method of an `extend` block lost it); the
+    /// return the checker reads is the behavior member's or the body's. Left
+    /// out of the dump.
+    returnType: ?TypeRef = null,
     /// Where the method's name is written (01 step 9). Left out of the dump.
     loc: Loc = .{ .line = 0, .col = 0 },
     /// Decision 553 (1) — the body marker written before `fn`, or null; the
@@ -4642,10 +4647,11 @@ pub const ImplementMethod = struct {
         allocator.free(this.params);
         for (this.body) |*s| s.deinit(allocator);
         allocator.free(this.body);
+        if (this.returnType) |*rt| rt.deinit(allocator);
     }
 
     pub fn jsonStringify(this: ImplementMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "loc", "markerLoc" }, &.{"marker"});
+        return stringifyOmitting(this, jws, &.{ "loc", "markerLoc", "returnType" }, &.{"marker"});
     }
 };
 

@@ -176,6 +176,24 @@ test "format: extend ---- explicit named" {
     );
 }
 
+test "format: extend and implement ---- a method keeps its written return type" {
+    // A method of an `extend` / `implement` block printed without its
+    // `-> f64`: the formatter rewrote the method into one answering nothing.
+    try h.assertFormat(std.testing.allocator,
+        \\Halves extend f64 {
+        \\    fn half(self: Self) -> f64 {
+        \\        return self / 2.0;
+        \\    }
+        \\};
+        \\
+        \\ShapeArea implement Shape for Square {
+        \\    fn area(self: Self) -> f64 {
+        \\        return self.side * self.side;
+        \\    }
+        \\};
+    );
+}
+
 test "format: pub fn ---- simple with return type" {
     try h.assertFormat(std.testing.allocator,
         \\pub fn greet(name: string) -> string {

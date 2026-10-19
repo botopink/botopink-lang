@@ -3086,7 +3086,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.text(try std.fmt.allocPrint(this.arena, "{s}fn ", .{markerKw})),
             nameDoc,
-            try this.fmtSignature(m.params, this.nil()),
+            try this.fmtSignature(m.params, try this.fmtReturnTypeRef(m.returnType, null)),
             try this.text(" "),
             try this.fmtBody(m.body),
         });
