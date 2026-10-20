@@ -867,6 +867,60 @@ test "level B: a package expanding a template that reads the catalogue is never 
     try testing.expectEqual(@as(usize, 0), mem.store.stats.entries_staged);
 }
 
+test "decision 793 (4): a dependency read back from its entry replays its top-level block's build output" {
+    const h = @import("tests/helpers.zig");
+    const io = testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const modules = [_]Module{
+        .{ .path = "lib/root", .package = "lib", .root = true, .source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    print("build lib");
+        \\    compiler.init({ -> print("init lib") });
+        \\}
+        \\
+        \\pub fn libName() -> string {
+        \\    return "lib";
+        \\}
+        \\
+        },
+        .{ .path = "main", .root = true, .source =
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    print("main");
+        \\}
+        \\
+        },
+    };
+    var mem: MemoryStore = undefined;
+    mem.init();
+    defer mem.deinit();
+
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer first.deinit(testing.allocator);
+    try testing.expectEqualStrings("build lib\n", buildOutputOf(first, "lib/root"));
+    try testing.expect(mem.staged.contains("lib"));
+    try mem.commit();
+
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    defer second.deinit(testing.allocator);
+    // `lib` read back, not analysed: its block did not run, its output did.
+    try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
+    try testing.expectEqualStrings("build lib\n", buildOutputOf(second, "lib/root"));
+}
+
+/// The build output of module `name` of a session, `""` when it did not
+/// compile.
+fn buildOutputOf(session: comptimeMod.ComptimeSession, name: []const u8) []const u8 {
+    for (session.outputs.items) |o| if (std.mem.eql(u8, o.name, name)) return switch (o.outcome) {
+        .ok => |ok| ok.build_output,
+        else => "",
+    };
+    return "";
+}
+
 test "level B: a package declaring a catalogue default is stored and read back with its query; the root that calls it is never stored (decision 551)" {
     const h = @import("tests/helpers.zig");
     const answerImports = @import("tests/catalogue_default.zig").answerImports;

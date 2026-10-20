@@ -8511,7 +8511,14 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .annotations = v.annotations,
                 .src = declSrc(env, v.nameLoc),
             };
-            try runDeclDecorators(env, ctx, program, phase, v.annotations, h, null, .{ .kind = .val, .isPub = v.isPub });
+            runDeclDecorators(env, ctx, program, phase, v.annotations, h, null, .{ .kind = .val, .isPub = v.isPub }) catch |err| {
+                // Decision 788 — a top-level `comptime { … }`'s refusal names
+                // the block, never the decorator it is read onto.
+                if (err == error.TypeError and ast.isComptimeBlockName(v.name)) if (env.lastError) |te| {
+                    env.lastError = try te.blockNamed(env.arena, true);
+                };
+                return err;
+            };
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
@@ -27373,7 +27380,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         env.lastError = TypeError.custom(msg, "A `use` reads its provider in a render tree; compute the value in the program, below the render's provider, or reach what the `comptime` needs through its arguments (01-compiler/14 question `14s8-e`).").withLoc(loc);
         return error.TypeError;
     }
-    const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
+    const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces, &env.buildOutput) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => {
             env.lastError = TypeError.custom(
@@ -27405,6 +27412,14 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
             return error.TypeError;
         },
     };
+    // Decision 793 (5) — a `comptime { … }` that answers `void` (a block of
+    // prints) leaves nothing in the program: its prints are the build's
+    // output, written above.
+    if (isVoidComptime(typed.getType())) {
+        const empty = try env.arena.create(ast.Expr);
+        empty.* = exprsMod.makeBlockExpr(env.arena, loc, &.{}) catch return error.OutOfMemory;
+        return env.srcRewrites.put(loc, empty);
+    }
     const lifted = switch (try blockEval.lift(env, prepared, support, value, typed.getType(), loc)) {
         .expr => |e| e,
         .refused => |msg| {
@@ -27416,6 +27431,12 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         },
     };
     try env.srcRewrites.put(loc, lifted);
+}
+
+/// Whether a `comptime`'s type is `void` (decision 793 (5)).
+fn isVoidComptime(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and std.mem.eql(u8, d.named.name, "void");
 }
 
 /// The expression a `comptime` answers, for naming it in a refusal: the

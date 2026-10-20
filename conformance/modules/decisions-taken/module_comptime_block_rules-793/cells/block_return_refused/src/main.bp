@@ -1,0 +1,14 @@
+//// Decision 793 (1) — a top-level `comptime { … }` runs to its end: a
+//// `return` (or a `throw`) inside it is refused `comptime-block-exit`,
+//// located where it is written, here under an `if`.
+
+import {io.terminal.print} from "std";
+
+comptime {
+    print("block");
+    if (1 > 0) return;
+}
+
+pub fn main() -> void {
+    print("main");
+}

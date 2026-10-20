@@ -3982,6 +3982,27 @@ computed at build.
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/type_info_comptime_run_time -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/external_compiler_member -->
 
+### A top-level `comptime { … }`
+
+A module may hold top-level `comptime { … }` blocks (decision 788): build bodies of the module, run once
+per build in the order written, after the module's declarations are known. A function whose every parameter
+is `comptime` is called there and expanded at the call, so the `compiler.init` it writes is the block's; each
+`compiler.init` registered runs at program start in the order the blocks registered it. What a block prints
+is the build's output, written on stdout by `botopink build` / `run`. A refusal inside a block names it as
+`comptime`.
+
+<!-- example: modules/decisions-taken/module_comptime_block-788/cells/module_comptime_block -->
+<!-- example: modules/decisions-taken/module_comptime_block-788/cells/block_refusal_names_comptime -->
+
+One rule holds for every block (decision 793): a `return` or a `throw` inside it is
+`comptime-block-exit`, at the jump; a block in a library package runs in the build of the package that
+uses the library, in decision 660's level order; a cached build replays the build output; and a
+`comptime { … }` inside a function body writes its `print` as build output too — one that answers `void`
+leaves nothing in the program.
+
+<!-- example: modules/decisions-taken/module_comptime_block_rules-793/cells/block_return_refused -->
+<!-- example: modules/decisions-taken/module_comptime_block_rules-793/cells/library_block_level_order -->
+
 ### `compiler.load`
 
 `comptime compiler.load(path)` compiles a file of the package at build, as the entry of a

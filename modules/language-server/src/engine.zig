@@ -205,12 +205,42 @@ pub fn hover(
         if (std.mem.eql(u8, b.name, name)) return try renderBindingHover(gpa, b);
     }
 
+    // Decision 788 — a function a top-level `comptime` block expanded at
+    // every call left the program, so no binding names it: its card is read
+    // from the source as written.
+    if (try hoverExpandedFn(gpa, source, name)) |h| return h;
+
     // Not a local binding — try a qualified std module member (`list.map`).
     if (try hoverStdModule(gpa, source, pos)) |h| return h;
 
     // …or an interface method on a builtin receiver (`42.abs`, `xs.map`).
     if (try hoverBuiltinInterfaceMethod(gpa, source, pos, bindings)) |h| return h;
 
+    return null;
+}
+
+/// The card of a top-level `fn name` whose every parameter is `comptime`,
+/// read from `source` parsed as written (`Parser.keep_surface`): a private
+/// one every call of which a top-level `comptime` block expanded is no binding
+/// of the compiled program (decision 788, `parser/comptime_blocks.zig`).
+fn hoverExpandedFn(gpa: std.mem.Allocator, source: []const u8, name: []const u8) !?proto.Hover {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = Lexer.init(source);
+    const tokens = lexer.scanAll(alloc) catch return null;
+    var parser = Parser.init(tokens);
+    parser.keep_surface = true;
+    const program = parser.parse(alloc) catch return null;
+    for (program.decls) |d| {
+        if (d != .@"fn" or !std.mem.eql(u8, d.@"fn".name, name)) continue;
+        const f = d.@"fn";
+        if (f.params.len == 0) return null;
+        for (f.params) |p| if (p.modifier != .@"comptime") return null;
+        // A function's card reads its declaration alone, never the type.
+        var unused: T.Type = .{ .named = .{ .name = "fn", .args = &.{} } };
+        return try renderBindingHover(gpa, .{ .name = name, .type_ = &unused, .typedExpr = null, .decl = d });
+    }
     return null;
 }
 

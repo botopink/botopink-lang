@@ -760,3 +760,30 @@ test "completion: after the namespace a `mod` binds, the module's pub declaratio
     try std.testing.expectEqualStrings("label", items[0].label);
     try std.testing.expectEqualStrings("Pair", items[1].label);
 }
+
+// ── Decision 788 — a function a top-level `comptime` block expanded ──
+
+test "definition: a call in a top-level `comptime` block jumps to the private function it expands" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn f(comptime n: string) -> void {
+        \\    compiler.init({ -> print("init " + n) });
+        \\}
+        \\
+        \\comptime {
+        \\    f("a");
+        \\}
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
+    const tokens = try h.tokenize(arena.allocator(), source);
+    const result = try engine.definition(gpa, h.TEST_URI, source, h.pos(7, 4), tokens);
+    defer if (result) |loc| gpa.free(loc.uri);
+    const loc = result orelse return error.NoDefinition;
+    try std.testing.expectEqual(@as(u32, 2), loc.range.start.line);
+    try std.testing.expectEqual(@as(u32, 3), loc.range.start.character);
+}

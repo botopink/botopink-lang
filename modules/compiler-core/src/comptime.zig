@@ -4563,7 +4563,8 @@ pub fn compileTypesOnly(
                     .name = name,
                     .src = mod.source,
                     .srcPath = mod.srcPath,
-                    .outcome = .{ .typeError = te },
+                    // Decision 788 — a block's decorator named `comptime`.
+                    .outcome = .{ .typeError = try te.blockNamed(arena_alloc, false) },
                 });
             },
             .success => |succ| {
@@ -4993,7 +4994,8 @@ fn compileOnce(
                     .name = name,
                     .src = mod.source,
                     .srcPath = mod.srcPath,
-                    .outcome = .{ .typeError = te },
+                    // Decision 788 — a block's decorator named `comptime`.
+                    .outcome = .{ .typeError = try te.blockNamed(arena_alloc, false) },
                 });
             },
             .success => |succ| {

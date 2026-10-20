@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: decorator-writes-module-var: the `comptime` block writes the module-level `var` `count` — each decorator invocation is independent: its answer depends on the declaration it annotates alone (decision 343)
+at src/main.bp:10:5

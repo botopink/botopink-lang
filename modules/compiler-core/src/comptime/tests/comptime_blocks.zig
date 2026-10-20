@@ -3,8 +3,10 @@
 //! written, a function whose every parameter is `comptime` is expanded at the
 //! call, and what they print is the module's build output
 //! (`OkData.build_output`, which `botopink build` / `run` write to stdout).
-//! `botopink cell check` records no build output until 789 (B-160), so the
-//! cell `module_comptime_block` holds the run and these tests the build.
+//! `botopink cell check` records no build output (796), so the cells
+//! `module_comptime_block` and `module_comptime_block_rules` hold the run and
+//! these tests the build — decision 793 (1)'s `throw`, (5)'s prints of a
+//! `comptime` in a function body; (4)'s replay is `level_b.zig`'s test.
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -106,4 +108,68 @@ test "decision 788: a block is read onto a decorator over an anchor, and a priva
     const want = [_][]const u8{ "g", "__bp_comptime_0", "__bp_comptime_0_at", "main" };
     try std.testing.expectEqual(want.len, names.items.len);
     for (want, names.items) |w, n| try std.testing.expectEqualStrings(w, n);
+}
+
+test "decision 793 (1): a `throw` inside a top-level block is refused `comptime-block-exit`" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    print("block");
+        \\    throw "stop";
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print("main");
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "error: comptime-block-exit: "));
+}
+
+test "decision 793 (1): a `return` inside a lambda of a block is the lambda's, not the block's" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    compiler.init({ ->
+        \\        print("init");
+        \\        return;
+        \\    });
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print("main");
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("", got);
+}
+
+test "decision 793 (5): a `comptime { … }` inside a function body writes its prints as build output, a `void` one and one that answers a value" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    comptime {
+        \\        print("first");
+        \\    };
+        \\    val n = comptime {
+        \\        print("second");
+        \\        1 + 1
+        \\    };
+        \\    print("main " + n.toString());
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("first\nsecond\n", got);
 }

@@ -1,0 +1,12 @@
+//// A fixture package whose module holds a top-level `comptime` block.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    print("build base");
+    compiler.init({ -> print("init base") });
+}
+
+pub fn baseName() -> string {
+    return "base";
+}

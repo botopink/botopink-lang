@@ -1,0 +1,15 @@
+//// Decision 788 — a refusal inside a top-level `comptime { … }` names the
+//// block as `comptime`, never the decorator the compiler reads it onto: here
+//// the block writes a module-level `var`, refused at the write.
+
+import {io.terminal.print} from "std";
+
+var count = 0;
+
+comptime {
+    count = count + 1;
+}
+
+pub fn main() -> void {
+    print("main " + count.toString());
+}

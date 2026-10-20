@@ -384,6 +384,23 @@ pub const TypeError = struct {
         return .{ .kind = .{ .redundantPattern = .{ .typeName = typeName, .description = description } } };
     }
 
+    /// Decision 788 — a refusal of a top-level `comptime { … }` names the
+    /// block, never the decorator it is read onto: each `__bp_comptime_<k>`
+    /// of a custom message or hint is `comptime`, and the decorator's words
+    /// are the block's. `inBlock` says the refusal came from a block's run
+    /// (its words are rewritten though no name appears); otherwise only a
+    /// text naming a block is rewritten.
+    pub fn blockNamed(this: TypeError, arena: std.mem.Allocator, inBlock: bool) std.mem.Allocator.Error!TypeError {
+        if (this.kind != .custom) return this;
+        const c = this.kind.custom;
+        const names = std.mem.indexOf(u8, c.message, ast.comptime_block_prefix) != null or
+            (c.hint != null and std.mem.indexOf(u8, c.hint.?, ast.comptime_block_prefix) != null);
+        if (!inBlock and !names) return this;
+        var t = this;
+        t.kind = .{ .custom = .{ .message = try blockWords(arena, c.message), .hint = if (c.hint) |h| try blockWords(arena, h) else null } };
+        return t;
+    }
+
     pub fn custom(msg: []const u8, hint: ?[]const u8) TypeError {
         return .{ .kind = .{ .custom = .{ .message = msg, .hint = hint } } };
     }
@@ -1065,4 +1082,75 @@ test "withRaise: located at the innermost call, in its own file; the rest are ca
     try std.testing.expectEqual(@as(usize, 1), own.frames.len);
     // No frame: the error is as it was.
     try std.testing.expect(TypeError.custom("boom", "h").withRaise("src/main.bp", &.{}).loc == null);
+}
+
+/// The words of a decorator's run read as a top-level `comptime` block's
+/// (`TypeError.blockNamed`).
+fn blockWords(arena: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]const u8 {
+    const phrases = [_][2][]const u8{
+        .{ "the decorator's body raised", "the `comptime` block raised" },
+        .{ "the decorator body raised", "the `comptime` block raised" },
+        .{ "the decorator module did not compile", "the `comptime` block's module did not compile" },
+        .{ "the decorator could not be evaluated", "the `comptime` block could not be evaluated" },
+        .{ "the decorator evaluator", "the comptime evaluator" },
+        .{ "down to the annotation", "down to the block" },
+    };
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    outer: while (i < text.len) {
+        for (phrases) |ph| if (std.mem.startsWith(u8, text[i..], ph[0])) {
+            try out.appendSlice(arena, ph[1]);
+            i += ph[0].len;
+            continue :outer;
+        };
+        // `the decorator `__bp_comptime_<k>`` → `the `comptime` block`.
+        const the_decorator = "the decorator `";
+        if (std.mem.startsWith(u8, text[i..], the_decorator)) {
+            const at = i + the_decorator.len;
+            const n = ast.comptimeBlockNameLen(text[at..]);
+            if (n > 0 and at + n < text.len and text[at + n] == '`') {
+                try out.appendSlice(arena, "the `comptime` block");
+                i = at + n + 1;
+                continue;
+            }
+        }
+        // `#[__bp_comptime_<k>]` → `comptime`.
+        if (std.mem.startsWith(u8, text[i..], "#[")) {
+            const n = ast.comptimeBlockNameLen(text[i + 2 ..]);
+            if (n > 0 and i + 2 + n < text.len and text[i + 2 + n] == ']') {
+                try out.appendSlice(arena, "comptime");
+                i += 2 + n + 1;
+                continue;
+            }
+        }
+        // A quoted name keeps the code quotes: `'__bp_comptime_0'` → `` `comptime` ``.
+        if (text[i] == '\'') {
+            const n = ast.comptimeBlockNameLen(text[i + 1 ..]);
+            if (n > 0 and i + 1 + n < text.len and text[i + 1 + n] == '\'') {
+                try out.appendSlice(arena, "`comptime`");
+                i += n + 2;
+                continue;
+            }
+        }
+        const n = ast.comptimeBlockNameLen(text[i..]);
+        if (n > 0 and (i == 0 or !(std.ascii.isAlphanumeric(text[i - 1]) or text[i - 1] == '_'))) {
+            try out.appendSlice(arena, "comptime");
+            i += n;
+            continue;
+        }
+        try out.append(arena, text[i]);
+        i += 1;
+    }
+    return out.items;
+}
+
+test "a block's decorator is named `comptime` in its refusals" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const te = try TypeError.custom("x: the decorator `__bp_comptime_0` writes `v`; `#[__bp_comptime_12]` on `__bp_comptime_12_at`, '__bp_comptime_3'", "the decorator's body raised; down to the annotation").blockNamed(arena, false);
+    try std.testing.expectEqualStrings("x: the `comptime` block writes `v`; `comptime` on `comptime`, `comptime`", te.kind.custom.message);
+    try std.testing.expectEqualStrings("the `comptime` block raised; down to the block", te.kind.custom.hint.?);
+    const plain = TypeError.custom("the decorator's body raised", null);
+    try std.testing.expectEqualStrings("the decorator's body raised", (try plain.blockNamed(arena, false)).kind.custom.message);
 }

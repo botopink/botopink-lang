@@ -398,10 +398,18 @@ fn stringLit(ctx: *Ctx, text: []const u8, loc: ast.Loc) error{OutOfMemory}!*ast.
 
 fn refusal(ctx: *Ctx, loc: ast.Loc, code: []const u8, message: []const u8, hint: []const u8) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
-    const args = try ctx.alloc.alloc(ast.CallArg, 3);
-    args[0] = .{ .label = null, .value = try stringLit(ctx, code, loc) };
-    args[1] = .{ .label = null, .value = try stringLit(ctx, message, loc) };
-    args[2] = .{ .label = null, .value = try stringLit(ctx, hint, loc) };
+    return refusalExpr(ctx.alloc, loc, code, message, hint);
+}
+
+/// A refusal written as `refusal_builtin` at `loc`, which the checker reports
+/// there — for another parser pass (`comptime_blocks.zig`).
+pub fn refusalExpr(alloc: std.mem.Allocator, loc: ast.Loc, code: []const u8, message: []const u8, hint: []const u8) error{OutOfMemory}!ast.Expr {
+    const args = try alloc.alloc(ast.CallArg, 3);
+    for ([_][]const u8{ code, message, hint }, 0..) |text, i| {
+        const lit = try alloc.create(ast.Expr);
+        lit.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = text } } };
+        args[i] = .{ .label = null, .value = lit };
+    }
     return .{ .call = .{ .loc = loc, .kind = .{ .call = .{
         .receiver = null,
         .callee = refusal_builtin,

@@ -8,7 +8,13 @@ blocks registered them, before `main`.
 
 In the cell two blocks, one before `main` and one after it, each call `f`. At build they print
 `first block`, `build a`, `build b` (the build's output, on stdout); the program prints `init a`,
-`init b`, then `main`. `cell check` records the run alone until decision 789's build records land; the
-build's lines are held by a compiler unit test.
+`init b`, then `main`. `cell check` records the run alone (decision 796); the build's lines are held by a
+compiler unit test.
 
 [cells/module_comptime_block/src/main.bp](cells/module_comptime_block/src/main.bp)
+
+A refusal inside a block names it as `comptime`: the block is a build body of its module, and no name the
+compiler gives it reaches a diagnostic. In the cell `block_refusal_names_comptime` a block writes a
+module-level `var`, refused at the write.
+
+[cells/block_refusal_names_comptime/src/main.bp](cells/block_refusal_names_comptime/src/main.bp)

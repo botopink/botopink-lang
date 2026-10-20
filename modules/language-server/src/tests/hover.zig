@@ -670,3 +670,38 @@ test "hover: a backtick name is hovered whole" {
     defer if (plain) |p| gpa.free(p.contents.value);
     try std.testing.expect(plain != null);
 }
+
+// ── Decision 788 — a function a top-level `comptime` block expanded ───────────
+
+test "hover: a private function every call of which a top-level `comptime` block expanded shows its signature" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn f(comptime n: string) -> void {
+        \\    compiler.init({ -> print("init " + n) });
+        \\}
+        \\
+        \\comptime {
+        \\    f("a");
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print("main");
+        \\}
+    ;
+
+    var c = try h.compileEval(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+    // The expanded function left the program: no binding names it.
+    for (bindings) |b| try std.testing.expect(!std.mem.eql(u8, b.name, "f"));
+
+    // On the declaration and on the call in the block.
+    for ([_]proto.Position{ h.pos(2, 3), h.pos(7, 4) }) |at| {
+        const result = try engine.hover(gpa, source, at, bindings);
+        defer if (result) |hov| gpa.free(hov.contents.value);
+        const hov = result orelse return error.NoHover;
+        try std.testing.expect(std.mem.indexOf(u8, hov.contents.value, "fn f(n: string) -> void") != null);
+    }
+}

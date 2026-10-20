@@ -43,7 +43,10 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   snapshots `diagnostics_import_module_with_from`,
   `diagnostics_import_own_package_with_from` and
   `diagnostics_import_unresolved_source`), `formatting`,
-  `hover` (full signature + doc comments, incl. qualified `std` members and
+  `hover` (full signature + doc comments, incl. qualified `std` members, a
+  private fn a top-level `comptime` block expanded at every call — no binding
+  of the compiled program, its card read from the source as written,
+  `hoverExpandedFn`, decision 788 — and
   builtin interface methods on primitives/arrays/strings; for a fn whose return
   is `@Async` / `@Component` / `@Iter` / `@AsyncIter`, a footer naming what the
   caller unwraps — the `await` value (`T` of `@Async<T>`, `T` of

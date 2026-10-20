@@ -1721,7 +1721,12 @@ fn hostForms(b: Ast.Builder, makers: usize) Error![]const Ast.Form {
 
     const main_body =
         \\try
-        \\        json:encode(#{kind => <<"value">>, value => '__bp_lift'('__bp_ct_value'(), '__bp_fns'())})
+        \\        Value = '__bp_lift'('__bp_ct_value'(), '__bp_fns'()),
+        \\        Reply = #{kind => <<"value">>, value => Value},
+        \\        json:encode(case erlang:get('__bp_printed') of
+        \\            undefined -> Reply;
+        \\            Printed -> maps:put(printed, unicode:characters_to_binary(lists:reverse(Printed)), Reply)
+        \\        end)
         \\    catch
         \\        Class:Reason -> json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason}), frames => '__bp_frames'(Reason)})
         \\    end
@@ -1824,6 +1829,9 @@ pub fn evaluate(
     prepared: Prepared,
     support: Support,
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
+    /// Decision 793 (5) — receives what the block printed, the build's
+    /// output, when it answers a value.
+    printed: ?*std.ArrayListUnmanaged(u8),
 ) (Error || error{EvalFailed})!Outcome {
     var unsupported: erlang.UnsupportedMethod = .{};
     var why: []const u8 = "";
@@ -1856,7 +1864,7 @@ pub fn evaluate(
         });
     }
     return switch (response) {
-        .ok => |stdout| parseReply(arena, stdout),
+        .ok => |stdout| parseReply(arena, stdout, printed),
         .compile_error => |detail| .{ .err = try std.fmt.allocPrint(arena, "the comptime block's module did not compile: {s}", .{clip(detail)}) },
         .runtime_error => |detail| .{ .err = try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{clip(detail)}) },
     };
@@ -1954,13 +1962,14 @@ fn clip(text: []const u8) []const u8 {
     return text[0..@min(text.len, 4096)];
 }
 
-fn parseReply(arena: std.mem.Allocator, stdout: []const u8) Error!Outcome {
+fn parseReply(arena: std.mem.Allocator, stdout: []const u8, printed: ?*std.ArrayListUnmanaged(u8)) Error!Outcome {
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, stdout, .{ .allocate = .alloc_always }) catch
         return .{ .err = try std.fmt.allocPrint(arena, "the comptime evaluator returned an unreadable result: {s}", .{clip(stdout)}) };
     if (parsed != .object) return .{ .err = "the comptime evaluator returned an unreadable result" };
     const kind = parsed.object.get("kind") orelse return .{ .err = "the comptime evaluator returned an unreadable result" };
     if (kind == .string and std.mem.eql(u8, kind.string, "value")) {
         const v = parsed.object.get("value") orelse return .{ .err = "the comptime evaluator returned no value" };
+        if (printed) |out| if (parsed.object.get("printed")) |p| if (p == .string) try out.appendSlice(arena, p.string);
         return .{ .value = try readValue(arena, v) };
     }
     const msg = parsed.object.get("message");
@@ -2497,7 +2506,7 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     if (try unexpandedTemplateCall(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
     if (try unresolvedSectionPath(env, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
     if (try useReached(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
-    const outcome = evaluate(env.arena, io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
+    const outcome = evaluate(env.arena, io, env.modulePath, prepared, support, &env.comptimeTraces, null) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => return .{ .refused = .{ .message = "the comptime evaluator failed to run", .loc = loc } },
     };
@@ -2698,7 +2707,7 @@ test "the reply reads back every value kind '__bp_lift'/2 writes" {
     const arena = arena_state.allocator();
     const out = try parseReply(arena,
         \\{"kind":"value","value":[1,{"float":2.5},"s",true,null,{"tuple":[1,"a"]},{"record":{"x":1}},{"atom":"ok"},{"fn":0},{"fn":null},{"resource":"<0.1.0>"}]}
-    );
+    , null);
     const items = out.value.list;
     try std.testing.expectEqual(@as(i64, 1), items[0].integer);
     try std.testing.expectEqual(@as(f64, 2.5), items[1].float);
@@ -2712,7 +2721,7 @@ test "the reply reads back every value kind '__bp_lift'/2 writes" {
     try std.testing.expectEqual(@as(?usize, null), items[9].function);
     try std.testing.expect(items[10] == .resource);
 
-    const failed = try parseReply(arena, "{\"kind\":\"error\",\"message\":\"error:badarith\"}");
+    const failed = try parseReply(arena, "{\"kind\":\"error\",\"message\":\"error:badarith\"}", null);
     try std.testing.expectEqualStrings("the comptime block raised: error:badarith", failed.err);
 }
 

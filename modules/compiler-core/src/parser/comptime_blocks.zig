@@ -31,6 +31,7 @@ const Parser = @import("../parser.zig").Parser;
 const Lexer = @import("../lexer.zig").Lexer;
 const exprs = @import("exprs.zig");
 const compiler_surface = @import("compiler_surface.zig");
+const diagnostics = @import("../comptime/diagnostics.zig");
 
 /// The name of the handle a block's decorator takes; no source writes it.
 pub const handle_name = "__bp_ct_decl";
@@ -118,6 +119,16 @@ const Expander = struct {
         }
         for (anchor.annotations) |*a| a.loc = block.loc;
         anchor.nameLoc = block.loc;
+        // Decision 793 (1) — a block answers nothing and leaves nothing early:
+        // its first `return` or `throw` is refused where it is written, the
+        // body read no further.
+        for (block.body) |s| if (ast.exprFindReturnOrThrow(s.expr)) |at| {
+            const one = try x.alloc.alloc(ast.Stmt, 1);
+            one[0] = s;
+            one[0].expr = try compiler_surface.refusalExpr(x.alloc, at, diagnostics.comptime_block_exit, "a top-level `comptime` block runs to its end: it answers nothing and leaves nothing early", "A top-level `comptime { … }` is a build body of its module (decisions 788, 793 (1)): drop the `return` or `throw`, or write the condition around what follows it.");
+            decorator.body = one;
+            return .{ .decorator = decorator, .anchor = anchor };
+        };
         decorator.body = try x.expandStmts(block.body, 0);
         return .{ .decorator = decorator, .anchor = anchor };
     }

@@ -2171,6 +2171,27 @@ pub fn isTemplateMethodSignature(params: []const Param, returnType: ?TypeRef) bo
 /// The name `comptime/inline_types.zig` declares an inline parameter type
 /// under: `BpInline__<fn>__<param>` (PascalCase: beam reads a constructor call by its first letter). No source should spell it; a diagnostic
 /// names it by its owner (`ownerOfInlineType`).
+/// Decision 788 — the prefix of the decorator a top-level `comptime { … }` is
+/// read onto (`__bp_comptime_<k>`, its anchor `__bp_comptime_<k>_at`;
+/// `parser/comptime_blocks.zig`). A diagnostic names it `comptime`.
+pub const comptime_block_prefix = "__bp_comptime_";
+
+/// Whether `name` is a block's decorator or anchor (`comptime_block_prefix`
+/// then digits, `_at` after them for the anchor).
+pub fn isComptimeBlockName(name: []const u8) bool {
+    return comptimeBlockNameLen(name) == name.len;
+}
+
+/// The length of the block name `text` starts with, 0 when it starts with none.
+pub fn comptimeBlockNameLen(text: []const u8) usize {
+    if (!std.mem.startsWith(u8, text, comptime_block_prefix)) return 0;
+    var j = comptime_block_prefix.len;
+    while (j < text.len and std.ascii.isDigit(text[j])) j += 1;
+    if (j == comptime_block_prefix.len) return 0;
+    if (std.mem.startsWith(u8, text[j..], "_at")) j += 3;
+    return j;
+}
+
 pub const inline_type_prefix = "BpInline__";
 
 /// `the props of `Link`` for `BpInline__Link__props`; null for any other
@@ -4141,6 +4162,16 @@ pub fn exprMayExitEarly(e: Expr) bool {
     return exprFindJump(e, isEarlyExitJump) != null;
 }
 
+/// Decision 793 (1) — the first `return` or `throw` of `e`'s own scope (a
+/// closure's are the closure's), null when it holds none.
+pub fn exprFindReturnOrThrow(e: Expr) ?Loc {
+    return exprFindJump(e, isReturnOrThrowJump);
+}
+
+fn isReturnOrThrowJump(j: JumpExpr) bool {
+    return j == .@"return" or j == .throw_;
+}
+
 fn isEarlyExitJump(j: JumpExpr) bool {
     return switch (j) {
         .@"return", .throw_, .try_ => true,
@@ -4314,7 +4345,7 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
                     // A braced arm is parsed as a lambda, but it is the
                     // arm's block, not a closure: its `return` is the
                     // enclosing function's.
-                    if ((pred == isReturnJump or pred == isEarlyExitJump) and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                    if ((pred == isReturnJump or pred == isEarlyExitJump or pred == isReturnOrThrowJump) and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
                         if (bodyFindJump(arm.body.function.kind.body, pred)) |l| break :blk l;
                         continue;
                     }

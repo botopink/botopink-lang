@@ -327,6 +327,9 @@ pub const load_no_main: []const u8 = "load-no-main";
 /// Decision 792 (3) — a `compiler.Module` written by hand: only
 /// `compiler.load` answers one.
 pub const module_construction: []const u8 = "module-construction";
+/// Decision 793 (1) — a `return` or a `throw` inside a top-level `comptime
+/// { … }` block: a block is a build body that answers nothing.
+pub const comptime_block_exit: []const u8 = "comptime-block-exit";
 /// Decision 346 — `Bytes` widened to `unknown`: erlang and beam hold `Bytes`
 /// and `string` alike (a binary), so no run-time test tells them apart.
 pub const bytes_widened: []const u8 = "bytes-widened";
@@ -1002,6 +1005,7 @@ pub const all_codes = [_][]const u8{
     run_module_refused,
     load_no_main,
     module_construction,
+    comptime_block_exit,
     bytes_widened,
     bytes_type_test,
     comptime_host_cell_unavailable,

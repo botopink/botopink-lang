@@ -1,0 +1,17 @@
+//// Decision 793 (2) — a top-level `comptime` block of a library package
+//// runs in the build of the package that uses it, in decision 660's level
+//// order: `upper` depends on `base`, so `base`'s block runs first though the
+//// manifest lists `upper` first, and the program's own block last; each
+//// `compiler.init` they register runs at program start in that order.
+//// Nothing here imports either package.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    print("build main");
+    compiler.init({ -> print("init main") });
+}
+
+pub fn main() -> void {
+    print("main");
+}
