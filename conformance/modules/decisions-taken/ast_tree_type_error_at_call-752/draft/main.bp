@@ -1,9 +1,0 @@
-//// Decision 752 — (a): a type error inside a tree `compiler.ast` builds is reported at the `ast` call
-
-import {io.terminal.print} from "std";
-import {comptime.build.labelled};
-
-pub fn main() -> void {
-    val n: i32 = labelled(1);
-    print(n);
-}

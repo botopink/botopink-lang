@@ -668,7 +668,7 @@ dependency — `crossModule.Packages.idOf(…).package_in_path`, read through
   dependency's `test` block that names one is dropped too. A call that still
   reaches one is refused where it is written: `` `viaHost` reaches `host`,
   which has no implementation for the wasm backend ``
-  (`conformance/modules/dependency_unbound_host_reached_refused`,
+  (`conformance/modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_reached_refused`,
   `dependency_unbound_host_method_refused`). For std the checker refuses the
   call first (STD-001, `std-unsupported-on-target`, decision 518 (4)).
 - `emitWat`'s retry: when both lowerings refuse a module that links a
@@ -679,7 +679,7 @@ dependency — `crossModule.Packages.idOf(…).package_in_path`, read through
   dependency function wasm cannot lower for another reason (an unresolved call
   in `std/io/clock`'s `durationCount`, a behavior no type implements in
   `testing.mocks`' fixtures) stops nothing while the program does not reach it
-  (`conformance/modules/std_unbound_host_module_imports`,
+  (`conformance/modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/std_unbound_host_module_imports`,
   `dependency_unbound_host_unreached`).
 
 **A refused module takes its consumers with it, each at its own import**

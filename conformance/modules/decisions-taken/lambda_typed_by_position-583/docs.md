@@ -4,4 +4,5 @@ Each lambda in the example gets its type from where it is written. `apply`'s par
 
 Cells in this repository that also bear on it: `modules/decisions-taken/lambda_types_from_context-328/cells/lambda_param_untyped_method_refused`.
 
-[draft/main.bp](draft/main.bp)
+[cells/lambda_assignment_tail_answers_nothing/src/main.bp](cells/lambda_assignment_tail_answers_nothing/src/main.bp)
+[cells/lambda_typed_by_position/src/main.bp](cells/lambda_typed_by_position/src/main.bp)

@@ -4,4 +4,4 @@
 
 Cells in this repository that also bear on it: `modules/decisions-taken/syntax_node_spliced_as_written-638/cells/ast_syntax_node_typed_at_splice`, `modules/decisions-taken/code_never_enters_as_string-625/cells/ast_ill_formed_refused`.
 
-[draft/main.bp](draft/main.bp) · [draft/comptime/build.bp](draft/comptime/build.bp)
+[cells/ast_node_closed_union/src/main.bp](cells/ast_node_closed_union/src/main.bp)

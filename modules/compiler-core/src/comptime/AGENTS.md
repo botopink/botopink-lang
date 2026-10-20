@@ -1481,7 +1481,7 @@ variant is read — its type carries the arguments instead of fresh variables �
 - **A component call makes its lambda** (decision 791 (1)): a call answering `@Component<R>` is
   typed `@Component<R>` wherever it is written, a component body included, so `val x:
   Component<Prop> = mk(2);` in a body written `-> Component<string>` holds
-  (`modules/component_call_lambda_in_body`). An array literal's elements unify located at the element
+  (`modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_call_lambda_in_body`). An array literal's elements unify located at the element
   that disagrees.
 
 ## A label names the parameter it fills, in a complete call too
@@ -2493,7 +2493,7 @@ Decision 583 — every function is typed where it is written: a lambda bound to 
 no annotation — a local one (`inferBindingExpr`'s `localBind` arm) or a module-level one
 (`inferDeclTyped`'s `.val` arm), with parameters or none (`{ -> 1 }`) — is refused `lambda-untyped`
 at the lambda (`refuseUntypedLambdaBinding`), so a later call no longer types it (328 amended);
-cell `modules/lambda_typed_by_position`; 328's `lambda_param_typed_by_later_call` and
+cell `modules/decisions-taken/lambda_typed_by_position-583/cells/lambda_typed_by_position`; 328's `lambda_param_typed_by_later_call` and
 `lambda_param_untyped_method_refused` are its refusal cases. A typed
 `fn` expression, a marked lambda and an `async { }` block are not refused there.
 The machinery below is what 328 built; no binding reaches it now, but a lambda in another untyped
@@ -2853,9 +2853,9 @@ members. A field read or a method call on a value a behavior types — `Componen
 behavior of the program's own — names a field or a method the behavior, or one it extends, declares, or an
 extension of it; anything else is refused at the name (`infer.zig` `refuseBehaviorUnknownMember`: `unknown
 field 'zzz' on 'Component<View>': the behavior `Component` declares `run``) — it used to be typed a fresh
-variable and reach the backends (`modules/behavior_value_unknown_field`, `modules/behavior_value_unknown_method`).
+variable and reach the backends (`modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/behavior_value_unknown_field`, `modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/behavior_value_unknown_method`).
 A `return` of a component (a `Component<…>` whose `R` is a `Renderable`) in a body written `-> Component<R>`
-(which answers `R`) is a type mismatch whose message names `use`; a hook handing over another hook whole is not (decision 791; `modules/component_return_needs_use`).
+(which answers `R`) is a type mismatch whose message names `use`; a hook handing over another hook whole is not (decision 791; `modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_return_needs_use`).
 
 ## A type-qualified call to a type's own method (decision 62)
 

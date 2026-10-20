@@ -4,4 +4,12 @@ Each marked lambda writes its marker inside the brace, before its parameters. `i
 
 Cells in this repository that also bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_iter`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_lambda_type_mismatch`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch`, `modules/lambda/run/src/cases/lambda_tail_iter_loop`.
 
-[draft/main.bp](draft/main.bp)
+[cells/marker_fn_without_return_type/src/main.bp](cells/marker_fn_without_return_type/src/main.bp)
+[cells/marker_lambda_brace_async/src/main.bp](cells/marker_lambda_brace_async/src/main.bp)
+[cells/marker_lambda_brace_async_iter/src/main.bp](cells/marker_lambda_brace_async_iter/src/main.bp)
+[cells/marker_lambda_brace_component/src/main.bp](cells/marker_lambda_brace_component/src/main.bp)
+[cells/marker_lambda_brace_iter/src/main.bp](cells/marker_lambda_brace_iter/src/main.bp)
+[cells/marker_lambda_break_value_refused/src/main.bp](cells/marker_lambda_break_value_refused/src/main.bp)
+[cells/marker_lambda_continue_refused/src/main.bp](cells/marker_lambda_continue_refused/src/main.bp)
+[cells/marker_lambda_function_body/src/main.bp](cells/marker_lambda_function_body/src/main.bp)
+[cells/marker_words_before_brace/src/main.bp](cells/marker_words_before_brace/src/main.bp)

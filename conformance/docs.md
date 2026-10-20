@@ -1100,7 +1100,7 @@ A value of a section prints as the leaf's whole path, as written —
 a list; no name of the backend's own (the section's wrapper record, `_inner`)
 reaches the output.
 
-<!-- example: modules/enum_section_prints_full_path -->
+<!-- example: modules/decisions-taken/enum_section_prints_full_path-601/cells/enum_section_prints_full_path -->
 
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
@@ -1158,9 +1158,9 @@ owner, called through the behavior's name, `Shape.unit()`; without one it is a
 static each implementor provides (`Square.make()`). `default` on it is refused at
 the modifier, `default-on-static`:
 
-<!-- example: modules/behavior_static_written_fn -->
+<!-- example: modules/decisions-taken/behavior_static_written_fn-628/cells/behavior_static_written_fn -->
 
-<!-- example: modules/default_on_static_refused -->
+<!-- example: modules/decisions-taken/behavior_static_written_fn-628/cells/default_on_static_refused -->
 
 A behavior's static `fn` is called through the behavior's name wherever the
 behavior is imported, under an alias too, as in its own module:
@@ -2738,24 +2738,24 @@ Component<R>` answers a function of std's opaque `RenderScope`, and calling
 the scope of the body that places them) — in a component body too, where the
 call answers `Component<R>` as anywhere else (decision 791 (1)):
 
-<!-- example: modules/component_call_lambda_in_body -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_call_lambda_in_body -->
 
 In the body, `use provide(ctx)` makes
 the scope its children receive, `use context(ctx)` finds the identity of
 `ctx`'s type in the scope the body received, else `ctx`'s own default, and `use c`
 (decision 791 (3)) runs `c` with the children's scope:
 
-<!-- example: modules/component_use_in_body -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_use_in_body -->
 
-<!-- example: modules/component_resolved_by_use_or_tree -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_resolved_by_use_or_tree -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
 alone, and the message names `use c` and `c` placed in the tree as a child.
 
-<!-- example: modules/await_component_in_body -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/await_component_in_body -->
 
-<!-- example: modules/await_component_at_root -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/await_component_at_root -->
 
 Outside every body — `main`, a test, a plain function, a lambda — the root is
 run by the render library: `c.run(scope)` answers the result and the children's
@@ -3075,7 +3075,7 @@ naming the return type to write — every function is typed (decisions 583, 584
 its return type alone says what it answers:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch -->
-<!-- example: modules/marker_fn_without_return_type -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_fn_without_return_type -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_on_declaration -->
 
 A lambda writes its marker inside the brace, before the parameters (decision
@@ -3087,26 +3087,26 @@ goes, the trailing form included — `apply(5) { async x -> … }`:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_async -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_lambda_iter -->
-<!-- example: modules/marker_lambda_brace_async -->
-<!-- example: modules/marker_lambda_brace_iter -->
-<!-- example: modules/marker_lambda_brace_async_iter -->
-<!-- example: modules/marker_lambda_brace_component -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_async -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_iter -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_async_iter -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_component -->
 
 `{ async`, `{ iter`, `{ component` always open a lambda, and before a brace
 the words are names: `async { … }` is always the block (decision 523) and
 `iter loop { … }` the loop (125), whatever the body starts with, and a function
 named `iter` or `component` takes a trailing lambda as any function does:
 
-<!-- example: modules/marker_words_before_brace -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_words_before_brace -->
 
 A marked lambda's body is a function body, as an `iter fn`'s: a `return`
 leaves it — `return;` ends an iteration, `return v` is the iterator's `R`
 (553 (2)) — a `continue` at its top level is `continue-outside-loop`, and
 `break <value>` is `marker-lambda-break-value`:
 
-<!-- example: modules/marker_lambda_function_body -->
-<!-- example: modules/marker_lambda_continue_refused -->
-<!-- example: modules/marker_lambda_break_value_refused -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_function_body -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_continue_refused -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_break_value_refused -->
 
 With no function type to agree with it is
 `marker-lambda-without-expected-type`, with another wrapper than its own
@@ -3132,30 +3132,30 @@ The marker, never the return type, admits the keyword (decisions 553 (4),
 `await-without-async`, `yield-without-iter` or `use-without-component`, at the
 keyword, the hint naming the marker to write:
 
-<!-- example: modules/await_without_marker_refused -->
-<!-- example: modules/yield_without_marker_refused -->
-<!-- example: modules/use_without_marker_refused -->
+<!-- example: modules/decisions-taken/keyword_without_marker_refused-573/cells/await_without_marker_refused -->
+<!-- example: modules/decisions-taken/keyword_without_marker_refused-573/cells/yield_without_marker_refused -->
+<!-- example: modules/decisions-taken/keyword_without_marker_refused-573/cells/use_without_marker_refused -->
 
 Without a marker a body is an ordinary function and returns the whole type
 (decision 570): an unmarked `-> Async<T>` body returns an `Async<T>` —
 `Async.resolve(v)`, std's settled task, or a call that answers one — and a
 caller awaits it as it awaits an `async fn`:
 
-<!-- example: modules/async_resolve_unmarked -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/async_resolve_unmarked -->
 
 An unmarked `-> Async<T>` / `-> Component<R>` body returning the bare value is
 a type mismatch at the value, its hint naming the marker (`async fn`,
 `component fn`) and `Async.resolve`:
 
-<!-- example: modules/unmarked_async_bare_value_refused -->
-<!-- example: modules/unmarked_component_bare_value_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_async_bare_value_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_component_bare_value_refused -->
 
 An unmarked `-> Async<Result<T, E>>` body has no failure channel of its own:
 the `Result` is inside the task it returns whole, so its `throw` or
 propagating `try` is `effect-try-without-fallible-channel`, naming the
 marker:
 
-<!-- example: modules/unmarked_async_throw_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_async_throw_refused -->
 
 ### Results
 
@@ -3220,36 +3220,36 @@ fallback (`catch { log.warn("…"); 0 }`), or a block with a binder, `catch { e 
 region's error, a `case` arm's binder typed by the region and never a lambda's parameter, so a
 `return` or a `throw` in the block is the enclosing function's:
 
-<!-- example: modules/try_block_catch_value -->
-<!-- example: modules/try_block_catch_binder -->
-<!-- example: modules/try_block_catch_rethrow -->
-<!-- example: modules/catch_region_covers_left_side -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_block_catch_value -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_block_catch_binder -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_block_catch_rethrow -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/catch_region_covers_left_side -->
 
 A region whose value is `void` is a statement, and its handler is a block with at least one
 statement. An empty handler `catch { }` is refused `catch-empty`: a failure is handled (a value, a
 statement, a `throw`) or left to propagate, never swallowed in silence:
 
-<!-- example: modules/try_block_catch_void_statement -->
-<!-- example: modules/try_block_catch_empty -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_block_catch_void_statement -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_block_catch_empty -->
 
 A `try` written in the handler belongs to the region around the `try … catch`, or to the function —
 never to its own `catch`:
 
-<!-- example: modules/try_in_catch_body_propagates -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_in_catch_body_propagates -->
 
 Every `try` in a region fails with one error type. A second type is refused at its `try`,
 `try-region-errors-differ`, naming both: handle that failure on the spot (`try parseInt(raw) catch …`)
 or convert it (`catch throw …`). A region that holds no `try` cannot fail, and is refused
 `try-region-cannot-fail`:
 
-<!-- example: modules/try_region_errors_differ -->
-<!-- example: modules/try_region_cannot_fail -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_region_errors_differ -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/try_region_cannot_fail -->
 
 A `catch` written after a call with no `try` before it (`parse(raw) catch 0l`) closes a region that
 holds no `try`, even when the call answers a `Result`, and is refused the same way: write
 `try parse(raw) catch 0l`:
 
-<!-- example: modules/catch_without_try -->
+<!-- example: modules/decisions-taken/try_region_closed_by_catch-595/cells/catch_without_try -->
 
 On every target a region is one early-exit block: a failing `try` leaves it for the handler — a
 sentinel on commonJS, a `try … catch` over a term of its own on erlang and beam, a `block … br` on
@@ -4052,7 +4052,7 @@ template is expanded; a `Syntax` splice keeps the caller's scope.
 
 <!-- example: modules/decisions-taken/code_never_enters_as_string-625/cells/template_answers_ast -->
 
-<!-- example: modules/ast_fn_node_builds_mock_member -->
+<!-- example: modules/decisions-taken/ast_fn_node_builds_mock_member-753/cells/ast_fn_node_builds_mock_member -->
 
 A tree that is no code is refused at the `ast` call, naming the node
 (`ast-ill-formed`): a record that is no `Node`, an `Arg` outside a `Call`, a
@@ -4068,14 +4068,14 @@ naming the `file:line:col` of the `ast` call and the node
 (`` — in `wrong`'s tree at src/trees.bp:13:21, at the node `Lit(value: "abc")` ``).
 The caller's code a `Syntax(e)` splices keeps its own location.
 
-<!-- example: modules/ast_tree_type_error_at_call -->
+<!-- example: modules/decisions-taken/ast_tree_type_error_at_call-752/cells/ast_tree_type_error_at_call -->
 
 `Node` is a closed union alias of its kinds (decision 751): a record that is
 none of them is no node. Where a node's field is typed `Node` the checker
 refuses it where it is written; handed whole to `compiler.ast`, whose argument
 is checked in the reply, it is `ast-ill-formed` at the `ast` call.
 
-<!-- example: modules/ast_node_closed_union -->
+<!-- example: modules/decisions-taken/ast_node_closed_union-751/cells/ast_node_closed_union -->
 
 ### `code`
 
@@ -4097,9 +4097,9 @@ vocabulary, a typed `fn(a: A) -> R { return …; }` and its types included; a
 text that is none — an index, a string literal with a hole inside it — is
 refused at the template's call, naming what was met.
 
-<!-- example: modules/code_template_builds_ast -->
-<!-- example: modules/template_method_receiver_code -->
-<!-- example: modules/code_text_not_code_refused -->
+<!-- example: modules/decisions-taken/ast_fn_node_builds_mock_member-753/cells/code_template_builds_ast -->
+<!-- example: modules/decisions-taken/template_lookup_answers_node-802/cells/template_method_receiver_code -->
+<!-- example: modules/decisions-taken/code_template_builds_ast-637/cells/code_text_not_code_refused -->
 
 ### Decorators
 
@@ -5139,7 +5139,7 @@ the declaration it reaches, when that is another):
 
 <!-- example: modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_unsupported_refused_at_the_call -->
 
-<!-- example: modules/std_unbound_host_module_imports -->
+<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/std_unbound_host_module_imports -->
 
 **A dependency's function the program never reaches stops nothing** (decision
 531). On wasm a function of a dependency — std or a `"dependencies"` package —
@@ -5149,11 +5149,11 @@ refused at that call, naming the function and the declaration it reaches. The
 root package keeps the rule above: its function is refused at the call it
 holds, called or not.
 
-<!-- example: modules/dependency_unbound_host_unreached -->
+<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_unreached -->
 
-<!-- example: modules/dependency_unbound_host_reached_refused -->
+<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_reached_refused -->
 
-<!-- example: modules/dependency_unbound_host_method_refused -->
+<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_method_refused -->
 
 wasm has no host of its own, so `.Wasm` does not name a host symbol
 or carry target text: it is **one cell from a closed vocabulary of four**

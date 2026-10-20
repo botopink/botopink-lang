@@ -4,4 +4,5 @@ The example's `Shape` behavior has members of three kinds. `make()` has no `self
 
 Cells in this repository that also bear on it: `modules/behavior/cells/behavior_associated_fn_imported`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cells/decl_behavior_member_typed`.
 
-[draft/main.bp](draft/main.bp)
+[cells/behavior_static_written_fn/src/main.bp](cells/behavior_static_written_fn/src/main.bp)
+[cells/default_on_static_refused/src/main.bp](cells/default_on_static_refused/src/main.bp)

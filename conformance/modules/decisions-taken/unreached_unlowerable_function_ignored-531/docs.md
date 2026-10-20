@@ -4,4 +4,7 @@ The example imports std's `io.process` and never calls it. On wasm none of `io.p
 
 Cells in this repository that bear on it: `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_unsupported_refused_at_the_call`, `modules/std/cells/std_unsupported_names_the_call`.
 
-[draft/main.bp](draft/main.bp)
+[cells/dependency_unbound_host_method_refused/src/main.bp](cells/dependency_unbound_host_method_refused/src/main.bp)
+[cells/dependency_unbound_host_reached_refused/src/main.bp](cells/dependency_unbound_host_reached_refused/src/main.bp)
+[cells/dependency_unbound_host_unreached/src/main.bp](cells/dependency_unbound_host_unreached/src/main.bp)
+[cells/std_unbound_host_module_imports/src/main.bp](cells/std_unbound_host_module_imports/src/main.bp)

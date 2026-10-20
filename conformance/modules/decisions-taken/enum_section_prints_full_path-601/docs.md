@@ -10,4 +10,4 @@ backend's own — a section's wrapper record, `_inner`, `__Token__Color` — rea
 Cells that also bear on it: `modules/decisions-taken/comptime_runs_at_build-331/run/src/cases/comptime_enum_section_value`, `modules/enum/run/src/cases/enum_section_expected_type`,
 `modules/enum/refused/src/cases/enum_section_ambiguous_path`, `modules/enum/run/src/cases/enum_section_leaf_beside_variant`.
 
-[draft/main.bp](draft/main.bp)
+[cells/enum_section_prints_full_path/src/main.bp](cells/enum_section_prints_full_path/src/main.bp)

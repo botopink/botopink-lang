@@ -4,4 +4,4 @@ In the example `main` registers `defer print("closed")`, prints `x` and then pan
 
 Cells in this repository that bear on it: `modules/defer/run/src/cases/defer_panic_attempt_catches`, `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/defer_inner_panic_runs_once`, `modules/defer/run/src/cases/defer_block_end_reverse_order`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_defer_close`.
 
-[draft/main.bp](draft/main.bp)
+[cells/defer_always_runs/src/main.bp](cells/defer_always_runs/src/main.bp)

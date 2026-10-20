@@ -1,7 +1,0 @@
-//// A function that answers a typed tree it builds with `compiler.ast`.
-
-import {compiler, compiler.Binary, compiler.Lit, compiler.Syntax} from "std";
-
-pub fn labelled(syntax e: i32) -> anyvalue {
-    return compiler.ast(Binary(op: "+", lhs: Syntax(e: e), rhs: Lit(value: "x")));
-}

@@ -6,4 +6,6 @@ The example writes `await` in `total`, a function with no `async` marker. The ke
 
 Cells in this repository that bear on it: `modules/use/refused/src/cases/use_without_component`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/marker_type_mismatch`.
 
-[draft/main.bp](draft/main.bp)
+[cells/await_without_marker_refused/src/main.bp](cells/await_without_marker_refused/src/main.bp)
+[cells/use_without_marker_refused/src/main.bp](cells/use_without_marker_refused/src/main.bp)
+[cells/yield_without_marker_refused/src/main.bp](cells/yield_without_marker_refused/src/main.bp)

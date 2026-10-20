@@ -1,5 +1,0 @@
-import {code, compiler} from "std";
-
-pub fn greeter(syntax decl: unknown, comptime word: string) -> void {
-    compiler.addMember("greet", code @`fn(self: Self, name: string) -> string { return ${word} + ", " + name; }`);
-}
