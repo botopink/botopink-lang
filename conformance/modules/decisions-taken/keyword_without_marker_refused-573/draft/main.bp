@@ -7,7 +7,7 @@ async fn fetchCount() -> Async<i32> {
 }
 
 // `await` without the `async` marker.
-async fn total() -> Async<i32> {
+fn total() -> Async<i32> {
     val n = await fetchCount();
     return Async.resolve(n + 1);
 }
