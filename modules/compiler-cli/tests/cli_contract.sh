@@ -1705,6 +1705,28 @@ expect_code 0 "check of a consumer building a type its dependency declares"
 run "$DBP" build --target erlang --out out
 expect_code 0 "build of the same consumer"
 
+echo "==> build keeps the program's build prints on stdout, the CLI's messages on stderr (decisions 788 (3), 789 (2))"
+P="$(project build-prints commonJS)"
+mkdir -p "$P/src"
+cat >"$P/src/main.bp" <<'BP'
+import {io.terminal.print} from "std";
+
+comptime {
+    print("printed at build");
+}
+
+pub fn main() {
+    print("run");
+}
+BP
+set +e
+(cd "$P" && "$BP" build --target commonJS --out out >"$WORK/build-prints.out" 2>"$WORK/build-prints.err")
+CODE=$?
+set -e
+expect_code 0 "build of a package whose comptime block prints"
+if [[ "$(cat "$WORK/build-prints.out")" == "printed at build" ]]; then ok "stdout holds the build print and nothing else"; else fail "stdout of build: '$(cat "$WORK/build-prints.out")'"; fi
+if grep -qF "Compiling" "$WORK/build-prints.err" && ! grep -qF "printed at build" "$WORK/build-prints.err"; then ok "stderr holds the CLI's messages, not the build print"; else fail "stderr of build: '$(cat "$WORK/build-prints.err")'"; fi
+
 # ── the gate's own rules (144 B-29 steps G and J) ────────────────────────────
 # What `scripts/gate.sh` decides before it builds anything, read off the
 # scripts it sources: which gate a branch runs and what a step's files reach
