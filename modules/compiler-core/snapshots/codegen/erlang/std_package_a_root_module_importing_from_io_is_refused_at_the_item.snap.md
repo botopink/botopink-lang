@@ -1341,10 +1341,11 @@ declare fn rawReadAll(handle: unknown) -> Result<Bytes, HostError>;
 declare fn rawReadLine(handle: unknown) -> Result<Bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
-// whatever the position, which it leaves where it was.
+// whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
+// position undefined (OTP moves it), so the position is read first and restored.
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
-    .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> {ok, __Cur} = file:position(__H, cur), __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, __Digest = __L(0, crypto:hash_init(sha256)), {ok, _} = file:position(__H, __Cur), {ok, string:lowercase(binary:encode_hex(__Digest))} end end)($0)""", result: true),
 )]
 declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 
@@ -2180,6 +2181,21 @@ test "fs.File writes, then reads bytes, text, a size and a hash" {
     removeTree(dir);
 }
 
+test "fs.File's hash leaves the position where it was" {
+    val dir = scratchDir();
+    val path = [dir, "/pos.txt"].join("");
+    val w = create(path).unwrapOr(noFile());
+    assert w.write(Bytes.fromUtf8("hello world")).unwrapOr(-1) == 11;
+    w.close();
+    val r = open(path).unwrapOr(w);
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("")).length == 5;
+    assert r.hash().unwrapOr("")
+        == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    assert r.text().unwrapOr("") == " world";
+    r.close();
+    removeTree(dir);
+}
+
 // Internal, test scaffolding: take every permission from `path`; whether that
 // denies this user anything (root is denied nothing), and give them back.
 #[compiler.external(
@@ -2359,7 +2375,9 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 % The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 
-% whatever the position, which it leaves where it was.
+% whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
+
+% position undefined (OTP moves it), so the position is read first and restored.
 
 %% external fn rawHash -> erlang template
 
@@ -2992,6 +3010,7 @@ noFile() ->
     {std@io@fs@@File, <<"">>, {mem, <<"">>, counters:new(1, [])}}.
 
 
+
 % Internal, test scaffolding: take every permission from `path`; whether that
 
 % denies this user anything (root is denied nothing), and give them back.
@@ -3225,11 +3244,11 @@ lines(Self) ->
                     Offset = (fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)(Line),
                     case (Offset >= 0) of
                         true ->
-                            erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:560:21">>)}}});
+                            erlang:throw({'__bp_gen_end', __BpGen2, ok, {error, {std@io@fs@@FsError__v__invalidutf8, erlang:element(2, Self), '__bp_int'((Consumed@1 + Offset), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:561:21">>)}}});
                         _ -> ok
                     end,
                     Width = erlang:byte_size(Raw),
-                    Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:562:33">>),
+                    Consumed@2 = '__bp_int'((Consumed@1 + (fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)(Width)), -9223372036854775808, 9223372036854775807, <<"integer overflow: + on i64 at src/io/fs.bp:563:33">>),
                     '__bp_gen_yield'({ok, (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (<<"">>) end end)((fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)(Line))}),
                     __BpLoop(Consumed@2)
                 end)(Consumed)
@@ -3242,7 +3261,7 @@ lines(Self) ->
     end).
 
 hash(Self) ->
-    case std@io@fs:lift(erlang:element(2, Self), (fun(__BpA0) -> try ((fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)(__BpA0)) of {ok, __BpV} -> {ok, __BpV}; {error, __BpR} -> {error, {'std@failure@@HostError', unicode:characters_to_binary(io_lib:format("~tp", [__BpR])), <<"host">>, 'std@failure@@HostErrorName__v__error', undefined}}; __BpV -> {ok, __BpV} catch __BpC:__BpE:__BpS -> {error, {'std@failure@@HostError', unicode:characters_to_binary(io_lib:format("~tp", [__BpE])), <<"host">>, case __BpC of error -> 'std@failure@@HostErrorName__v__error'; throw -> 'std@failure@@HostErrorName__v__throw'; exit -> 'std@failure@@HostErrorName__v__exit' end, unicode:characters_to_binary(io_lib:format("~tp", [__BpS]))}} end end)(erlang:element(3, Self))) of
+    case std@io@fs:lift(erlang:element(2, Self), (fun(__BpA0) -> try ((fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> {ok, __Cur} = file:position(__H, cur), __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, __Digest = __L(0, crypto:hash_init(sha256)), {ok, _} = file:position(__H, __Cur), {ok, string:lowercase(binary:encode_hex(__Digest))} end end)(__BpA0)) of {ok, __BpV} -> {ok, __BpV}; {error, __BpR} -> {error, {'std@failure@@HostError', unicode:characters_to_binary(io_lib:format("~tp", [__BpR])), <<"host">>, 'std@failure@@HostErrorName__v__error', undefined}}; __BpV -> {ok, __BpV} catch __BpC:__BpE:__BpS -> {error, {'std@failure@@HostError', unicode:characters_to_binary(io_lib:format("~tp", [__BpE])), <<"host">>, case __BpC of error -> 'std@failure@@HostErrorName__v__error'; throw -> 'std@failure@@HostErrorName__v__throw'; exit -> 'std@failure@@HostErrorName__v__exit' end, unicode:characters_to_binary(io_lib:format("~tp", [__BpS]))}} end end)(erlang:element(3, Self))) of
         {ok, H} ->
             {ok, H};
         {error, _TryE0} -> {error, _TryE0}

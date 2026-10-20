@@ -1593,10 +1593,11 @@ declare fn rawReadAll(handle: unknown) -> Result<Bytes, HostError>;
 declare fn rawReadLine(handle: unknown) -> Result<Bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
-// whatever the position, which it leaves where it was.
+// whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
+// position undefined (OTP moves it), so the position is read first and restored.
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
-    .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, {ok, string:lowercase(binary:encode_hex(__L(0, crypto:hash_init(sha256))))} end end)($0)""", result: true),
+    .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> {ok, __Cur} = file:position(__H, cur), __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, __Digest = __L(0, crypto:hash_init(sha256)), {ok, _} = file:position(__H, __Cur), {ok, string:lowercase(binary:encode_hex(__Digest))} end end)($0)""", result: true),
 )]
 declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 
@@ -2432,6 +2433,21 @@ test "fs.File writes, then reads bytes, text, a size and a hash" {
     removeTree(dir);
 }
 
+test "fs.File's hash leaves the position where it was" {
+    val dir = scratchDir();
+    val path = [dir, "/pos.txt"].join("");
+    val w = create(path).unwrapOr(noFile());
+    assert w.write(Bytes.fromUtf8("hello world")).unwrapOr(-1) == 11;
+    w.close();
+    val r = open(path).unwrapOr(w);
+    assert r.read(5).unwrapOr(Bytes.fromUtf8("")).length == 5;
+    assert r.hash().unwrapOr("")
+        == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    assert r.text().unwrapOr("") == " world";
+    r.close();
+    removeTree(dir);
+}
+
 // Internal, test scaffolding: take every permission from `path`; whether that
 // denies this user anything (root is denied nothing), and give them back.
 #[compiler.external(
@@ -2930,7 +2946,9 @@ function rawReadLine(handle) { return __bp_host_result(require("../../std/failur
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 
-// whatever the position, which it leaves where it was.
+// whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
+
+// position undefined (OTP moves it), so the position is read first and restored.
 
 function rawHash(handle) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()); }
 
@@ -3426,9 +3444,9 @@ class File {
     if ((raw.length === 0)) { break; }
     const line = ((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })(raw);
     const offset = ((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })(line);
-    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:560:21")) }); return; }
+    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:561:21")) }); return; }
     const width = raw.length;
-    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:562:33");
+    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:563:33");
     yield ({ ok: ((_r) => "error" in _r ? ("") : _r.ok)(line.toUtf8()) });
 }
     }
