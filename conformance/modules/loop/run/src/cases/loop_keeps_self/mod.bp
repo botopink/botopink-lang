@@ -17,7 +17,7 @@ type Counter(start: i32, step: i32) {
         };
     }
 
-    iter fn countdown(self: Self) -> Iter<i32> {
+    fn countdown(self: Self) -> Iter<i32> {
         var i = self.start;
         return iter while (i > 0) {
             yield i;
