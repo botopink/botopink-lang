@@ -769,11 +769,17 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
 
 /// A type's method or a behavior's: a body answering `@Component<R>` becomes
 /// its lambda, and the written return the lambda's type (a behavior's
-/// bodyless declaration too, so its implementations agree).
+/// bodyless declaration too, so its implementations agree). Its `component`
+/// marker goes with the written return, as a top-level fn's `effect` does:
+/// the method is then a plain function making the lambda (decision 791 (1)),
+/// and only the lambda runs asynchronously when its body awaits (375).
 fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
     const component = writesComponent(m.returnType);
     const renders = writtenRenders(m.returnType);
-    if (component) m.returnType = try low.lambdaType();
+    if (component) {
+        m.returnType = try low.lambdaType();
+        if (m.marker == .component) m.marker = null;
+    }
     const body = m.body orelse return;
     if (component) {
         m.body = try low.lowerComponentBody(body, renders, m.returnTypeLoc);
