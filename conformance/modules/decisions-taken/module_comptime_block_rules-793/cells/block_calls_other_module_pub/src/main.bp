@@ -1,0 +1,18 @@
+//// Decision 793 (3) — a `pub` function whose every parameter is `comptime`,
+//// called from another module's top-level `comptime` block, is expanded at
+//// the call: the `compiler.init` it writes is the block's, run at program
+//// start in the order the block registered it, before `main` — its names
+//// resolved in the module that wrote them.
+
+mod cases;
+
+import {cases.check};
+
+comptime {
+    check("first");
+    cases.check("second");
+}
+
+pub fn main() -> void {
+    cases.check("from main");
+}

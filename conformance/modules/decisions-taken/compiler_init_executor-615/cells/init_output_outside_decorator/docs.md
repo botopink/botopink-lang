@@ -12,4 +12,5 @@ The reference text this cell shows (from `conformance/docs.md`, § Decorators):
 > (`typeInfo(comptime t)`) that is a run-time value of the tree — a parameter of a
 > lambda in it, a value it binds — is `compiler-arg-at-run-time`, at the argument,
 > naming the parameter and the value. `compiler.init` in a function that is no
-> decorator is `compiler-output-outside-decorator`, at the member.
+> decorator is `compiler-output-outside-decorator`, at the member — unless every
+> parameter of the function is `comptime`, which expands it at each call (decision 808).

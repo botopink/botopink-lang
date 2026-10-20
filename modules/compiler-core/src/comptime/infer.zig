@@ -12396,6 +12396,11 @@ fn inferBuiltinCallReturnType(
     // Decisions 575, 576 — a refusal `parser/compiler_surface.zig` wrote at
     // the place: `(code, message, hint)`.
     if (std.mem.eql(u8, callee, compilerSurface.refusal_builtin)) return refuseSurface(env, typedArgs, loc);
+    // Decision 808 (1) — `compiler.init(f)` in a function whose every
+    // parameter is `comptime` is typed `void` in its own module; where the
+    // function is expanded, the executor's body is written at the call
+    // (`expand_call.zig`).
+    if (std.mem.eql(u8, callee, compilerSurface.init_here_builtin)) return env.namedType("void");
     try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
     // ── `@Expr` construction builtins (expr-templates) ───────────────────────
     // Construction is explicit: `@expr(value)` lifts a comptime value as code
@@ -27472,6 +27477,10 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .comptimeBlock => |cb| {
+            // Decision 808 (4) — a block that calls a function writing
+            // `compiler.init`: its lines run at build, each executor's body
+            // written where the block is.
+            if (try expandCall.expandComptimeBlock(env, cb.body, loc)) |expanded| return expanded;
             // Decision 525 — the block's value is its tail (the parser wrapped
             // it in the block's `break`); a written `break <value>` is refused.
             if (blockBreakValue(cb.body)) |at| try refuseBlockBreak(env, at);

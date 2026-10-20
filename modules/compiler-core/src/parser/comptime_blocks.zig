@@ -23,7 +23,11 @@
 //! propagating `try`) or declares a name one of its parameters has is not
 //! expanded. A private function every call of which was expanded leaves the
 //! program (562: an expanded function has no run-time body); any other keeps
-//! its body, where a `compiler.init` is refused as before.
+//! its body, where `compiler_surface.zig` reads `compiler.init` onto
+//! `init_here_builtin` (decision 808) and the checker drops the function
+//! (`hooks.isExpandedFn`). A call of another module's such function is
+//! expanded after the imports resolve (`expand_call.expandBlockCalls`,
+//! decision 793 (3)).
 //!
 //! **A handled read that returns (789 (4)).** A statement of the body
 //! `[val x =] try e catch { r -> …; return; }` — its handler ending with a

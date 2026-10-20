@@ -1,0 +1,15 @@
+//// Decision 808 (1) — a `pub` function whose every parameter is `comptime`
+//// and that writes `compiler.init` type-checks in its own module, with
+//// `compiler.init` typed `void`, and leaves the program: no refusal there.
+//// Its call here is expanded like any other.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn check(comptime name: string) -> void {
+    val label = "case " + name;
+    compiler.init({ -> print(label) });
+}
+
+pub fn runCase() -> void {
+    check("pub");
+}

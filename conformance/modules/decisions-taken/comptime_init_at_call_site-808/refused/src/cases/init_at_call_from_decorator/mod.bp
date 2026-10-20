@@ -1,0 +1,18 @@
+//// Decision 808 (3) — a decorator's body runs at build and registers its
+//// own executor: a call there of a function that writes `compiler.init` is
+//// refused `compiler-output-outside-decorator`, at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> void {
+    compiler.init({ -> print("case " + name) });
+}
+
+fn mark(syntax decl: unknown) -> void {
+    check("decorator");
+}
+
+#[mark]
+pub fn marked() -> void {
+    print("marked");
+}

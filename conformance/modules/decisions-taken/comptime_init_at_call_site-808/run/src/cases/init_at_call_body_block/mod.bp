@@ -1,0 +1,22 @@
+//// Decision 808 (4) — a `comptime { … }` written in a function body that
+//// calls a function writing `compiler.init`: the block runs at build, and
+//// the executor's body is written where the block is, inside the enclosing
+//// function — run each time that function runs.
+
+import {compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> void {
+    compiler.init({ -> print("case " + name) });
+}
+
+fn step(n: i32) -> void {
+    print("step " + n.toString());
+    comptime {
+        check("block");
+    }
+}
+
+pub fn runCase() -> void {
+    step(1);
+    step(2);
+}

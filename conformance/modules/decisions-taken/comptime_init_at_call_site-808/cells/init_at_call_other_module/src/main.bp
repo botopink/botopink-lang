@@ -1,0 +1,15 @@
+//// Decision 808 (2) — a run-time call of another module's function whose
+//// every parameter is `comptime` is expanded at the call: the executor's
+//// body is written here, its names resolved in the module that wrote them
+//// (`print`, which this module does not import), and run when the line
+//// runs; a run-time function of that module expands it at its own call.
+
+mod lib;
+
+import {lib.check};
+
+pub fn main() -> void {
+    check("from main");
+    lib.go();
+    lib.check("through the namespace");
+}

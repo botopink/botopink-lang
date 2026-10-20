@@ -1,11 +1,11 @@
-//// Decision 575 (3) — `compiler.init` is an output: it compiles code
-//// beside the annotated declaration, and only a decorator has one. A
-//// function whose first parameter is no `syntax` is refused at the output
-//// (`compiler-output-outside-decorator`).
+//// Decision 575 (3) — `compiler.init` is an output, and only a decorator
+//// has a declaration to compile it beside: a function with a run-time
+//// parameter is refused at the output (`compiler-output-outside-decorator`);
+//// one whose every parameter is `comptime` is expanded instead (808).
 
 import {compiler, io.terminal.print} from "std";
 
-fn setup(comptime text: string) -> void {
+fn setup(text: string) -> void {
     compiler.init({ -> print(text) });
 }
 

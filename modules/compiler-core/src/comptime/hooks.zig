@@ -43,6 +43,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const T = @import("./types.zig");
+const compilerSurface = @import("../parser/compiler_surface.zig");
 
 /// A declaration a node names: the module that declares it and its declared
 /// name — what `Declared<unknown>` carries (`returnTypeName` the declared
@@ -411,7 +412,8 @@ pub fn buildResource(arena: std.mem.Allocator, f: ast.FnDecl) !?Mark {
 }
 
 /// Decision 562 — a function whose every parameter is `comptime x: @Expr<T>`
-/// and whose body reads one's `.value`: it is expanded at its call site
+/// and whose body reads one's `.value` (or, decision 808, writes
+/// `compiler.init`): it is expanded at its call site
 /// (`expand_call.zig`) and has no run-time body. A decorator (`@Decl`), a
 /// template (`-> @Expr<…>`), a component, a host declaration and a function
 /// taking a type (`@Expr<type>`, 297's twins) are not.
@@ -466,6 +468,12 @@ const BuildWalk = struct {
                 .comptime_ => |c| switch (c.kind) {
                     .comptimeExpr, .comptimeBlock => return,
                     else => {},
+                },
+                // Decision 808 — a `compiler.init` it writes makes it
+                // expanded too (`compiler_surface.init_here_builtin`).
+                .call => |c| if (self.value_only and c.kind == .call and c.kind.call.is_builtin and std.mem.eql(u8, c.kind.call.callee, compilerSurface.init_here_builtin)) {
+                    self.found = .{ .at = c.loc, .what = "compiler.init" };
+                    return;
                 },
                 .identifier => |id| if (self.value_only) {
                     if (id.kind == .identAccess and std.mem.eql(u8, id.kind.identAccess.member, "value")) {

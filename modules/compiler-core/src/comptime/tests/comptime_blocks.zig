@@ -6,7 +6,10 @@
 //! `botopink cell check` records no build output (796), so the cells
 //! `module_comptime_block` and `module_comptime_block_rules` hold the run and
 //! these tests the build — decision 793 (1)'s `throw`, (5)'s prints of a
-//! `comptime` in a function body; (4)'s replay is `level_b.zig`'s test.
+//! `comptime` in a function body; (4)'s replay is `level_b.zig`'s test —
+//! and decision 808's: a function writing `compiler.init` expanded at a
+//! run-time call, in a `comptime { … }` of a function body, refused in a
+//! decorator's (`comptime_init_at_call_site` holds the run).
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -215,4 +218,74 @@ test "decision 793 (5): a `comptime { … }` inside a function body writes its p
     const got = try buildOutput(gpa, src);
     defer gpa.free(got);
     try std.testing.expectEqualStrings("first\nsecond\n", got);
+}
+
+test "decision 808 (4): a `comptime { … }` in a function body runs its lines and the expanded function's at build, in order; the executor is the run's" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn check(comptime name: string) -> void {
+        \\    print("build " + name);
+        \\    compiler.init({ -> print("case " + name) });
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    comptime {
+        \\        print("before");
+        \\        check("x");
+        \\        print("after");
+        \\    }
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("before\nbuild x\nafter\n", got);
+}
+
+test "decision 808 (1), (2): a `pub` function writing `compiler.init` type-checks in its own module; a run-time call runs its build-only lines at build and prints nothing there" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn check(comptime name: string) -> void {
+        \\    val label = "case " + name;
+        \\    compiler.init({ -> print(label) });
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print("antes");
+        \\    check("soma");
+        \\    print("depois");
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("", got);
+}
+
+test "decision 808 (3): a decorator's body calling a function that writes `compiler.init` is refused at the call" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn check(comptime name: string) -> void {
+        \\    compiler.init({ -> print(name) });
+        \\}
+        \\
+        \\fn mark(syntax decl: unknown) -> void {
+        \\    check("decorator");
+        \\}
+        \\
+        \\#[mark]
+        \\pub fn main() -> void {
+        \\    print("main");
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "error: compiler-output-outside-decorator: `check` writes `compiler.init`"));
 }

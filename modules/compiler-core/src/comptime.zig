@@ -1931,9 +1931,20 @@ fn analyzeSource(
         },
         else => return err,
     };
+    // Decision 793 (3) — a top-level `comptime` block's call of another
+    // module's function that writes `compiler.init`, expanded at the call
+    // before the block's decorator runs (`expand_call.expandBlockCalls`).
+    const with_block_calls = expand_call.expandBlockCalls(&env, with_expansions) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            return .{ .typeError = te };
+        },
+        else => return err,
+    };
     // 144 B-19 — a type adopts the instance defaults of a behavior it
     // implements from another module (`adopt_defaults.zig`).
-    const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const program = try adoptDefaults.expand(arena, with_block_calls, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
     // Decisions 341, 434 — a host function a decorator of this module reaches
     // has one of the comptime runtime's three sources; decided when the
     // package is compiled, never at a consumer's build.

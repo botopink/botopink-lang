@@ -4042,6 +4042,28 @@ leaves nothing in the program.
 <!-- example: modules/decisions-taken/module_comptime_block_rules-793/cells/block_return_refused -->
 <!-- example: modules/decisions-taken/module_comptime_block_rules-793/cells/library_block_level_order -->
 
+A function whose every parameter is `comptime` is expanded at the call also when it is `pub` and called from
+another module's block (decision 793 (3)): the `compiler.init` it writes is the block's.
+
+<!-- example: modules/decisions-taken/module_comptime_block_rules-793/cells/block_calls_other_module_pub -->
+
+Only a top-level block turns `compiler.init` into an init run at program start (decision 808). In its own
+module such a function, `pub` included, type-checks with `compiler.init` typed `void` and leaves the program.
+A run-time call of a function whose every parameter is `comptime` — in `main`, in any run-time body, of this
+module or another — is expanded at build as every call is (decision 808 (2)): its build-only lines run at
+build, and the `compiler.init({ -> … })` it reaches writes the executor's body at the call, run when that line
+runs; under an `if` it runs only when the branch does. A `comptime { … }` written in a function body that
+calls one runs at build and writes the executor's body where the block is, inside the enclosing function, run
+each time it runs. A call from a decorator's body is refused `compiler-output-outside-decorator`, at the call:
+a decorator registers its own executor.
+
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/run/src/cases/init_at_call_order -->
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/run/src/cases/init_at_call_if_not_taken -->
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/cells/init_at_call_other_module -->
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/run/src/cases/init_at_call_pub_own_module -->
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/run/src/cases/init_at_call_body_block -->
+<!-- example: modules/decisions-taken/comptime_init_at_call_site-808/refused/src/cases/init_at_call_from_decorator -->
+
 ### `compiler.load`
 
 `comptime compiler.load(path)` compiles a file of the package at build, as the entry of a
@@ -4612,7 +4634,8 @@ parameter `x` of a lambda in the tree is `"x"`; a `comptime` argument of the cal
 (`typeInfo(comptime t)`) that is a run-time value of the tree — a parameter of a
 lambda in it, a value it binds — is `compiler-arg-at-run-time`, at the argument,
 naming the parameter and the value. `compiler.init` in a function that is no
-decorator is `compiler-output-outside-decorator`, at the member.
+decorator is `compiler-output-outside-decorator`, at the member — unless every
+parameter of the function is `comptime`, which expands it at each call (decision 808).
 
 <!-- example: modules/decisions-taken/compiler_call_in_executor_literal-614/cells/init_executor_reads_compiler -->
 

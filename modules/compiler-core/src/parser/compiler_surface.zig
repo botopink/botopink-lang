@@ -37,6 +37,12 @@ pub const refusal_builtin = "__compilerRefusal";
 /// spell it.
 pub const load_builtin = "__compilerLoad";
 
+/// Decision 808 (1), (2) — `compiler.init(f)` in a function whose every
+/// parameter is `comptime` (no decorator, no template): typed `void` there,
+/// and where the function is expanded (`comptime/expand_call.zig`) the
+/// executor's body written at the call. No source can spell it.
+pub const init_here_builtin = "__compilerInitHere";
+
 /// What a member is, for the table test and the mapping below.
 pub const Kind = enum {
     /// A read of the point: `compiler.module`.
@@ -145,6 +151,10 @@ const Ctx = struct {
     exprs: []const []const u8 = &.{},
     /// `main` / a `test` body: no build-time body.
     runTime: bool = false,
+    /// Decision 808 — a function whose every parameter is `comptime`,
+    /// expanded wherever it is called: its `compiler.init` is
+    /// `init_here_builtin`.
+    expanded: bool = false,
     /// Inside a tree a decorator writes (a member, a wrapper).
     inTree: bool = false,
     /// Mapping the `compiler.name(d)` of a `compiler.name(d)!` (decision
@@ -328,6 +338,9 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
     }
     ctx.values = values.items;
     ctx.trees = trees.items;
+    ctx.expanded = ctx.decl == null and !template and params.len > 0 and for (params) |p| {
+        if (p.arrival != .value or p.variadic) break false;
+    } else true;
     ctx.exprs = exprs.items;
     // Decision 576 (4) — `compiler.custom(tree)` in a `-> expr T` template:
     // the tree is kept (`val <custom_tree_name> = tree`), the template is the
@@ -482,6 +495,8 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
     const args = c.args;
     if (member.kind == .output) {
+        if (ctx.decl == null and ctx.expanded and std.mem.eql(u8, name, "init"))
+            return builtinCall(loc, init_here_builtin, args, c.trailing);
         const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) -> void { compiler.setMeta(…); }` (decision 575 (3)).");
         // Decision 788 — a top-level `comptime { … }` has no annotated
         // declaration (its handle is the anchor `parser/comptime_blocks.zig`

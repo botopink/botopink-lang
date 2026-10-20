@@ -46,6 +46,9 @@ const Parser = @import("../parser.zig").Parser;
 const reflectionMod = @import("reflection.zig");
 const modTree = @import("mod_tree.zig");
 const Frame = @import("error.zig").Frame;
+const compilerSurface = @import("../parser/compiler_surface.zig");
+const comptime_blocks = @import("../parser/comptime_blocks.zig");
+const memberFn = @import("member_fn.zig");
 
 const InferError = infer.InferError;
 
@@ -82,10 +85,16 @@ const Target = struct { decl: ast.FnDecl, owner: []const u8 };
 /// build, or in a session that runs no comptime).
 pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*T.Type) InferError!?ast.TypedExpr {
     if (env.templateEval == null) return null;
-    if (env.comptimeDepth > 0 or env.inDecoratorFn or env.inTemplateFn) return null;
     if (c.kind != .call) return null;
     const call = c.kind.call;
     if (call.is_builtin or call.calleeExpr != null or call.trailing.len > 0) return null;
+    if (env.comptimeDepth > 0 or env.inDecoratorFn or env.inTemplateFn) {
+        // Decision 808 (3) — a function that writes `compiler.init`, called
+        // from a body that runs at build and is no top-level `comptime`
+        // block: its executor has no place there.
+        if (try targetOf(env, call)) |t| if (writesInit(env, t.decl, 0)) return refuseInitAtBuild(env, t.decl.name, loc);
+        return null;
+    }
     const target = (try targetOf(env, call)) orelse return null;
     const key = @intFromPtr(target.decl.body.ptr);
     if (env.expanding.contains(key)) return null;
@@ -110,6 +119,221 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
         if (err == error.TypeError) try x.locateInOwner();
         return err;
     };
+}
+
+/// Decision 808 (3) — the call of `name`, a function that writes
+/// `compiler.init`, from a decorator's or a template's body or a `comptime`
+/// that answers a value.
+fn refuseInitAtBuild(env: *Env, name: []const u8, loc: ast.Loc) InferError {
+    const where: []const u8 = if (env.inDecoratorFn) "a decorator's body" else if (env.inTemplateFn) "a template's body" else "this `comptime`, which answers a value,";
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` writes `compiler.init`, and {s} runs at build with no place for its executor", .{ diagnostics.compiler_output_outside_decorator, name, where });
+    env.lastError = TypeError.custom(msg, "A function whose every parameter is `comptime` is expanded wherever it is called (decision 808): call it from a run-time body, from a `comptime { … }` written as a statement, or from a top-level `comptime { … }`; a decorator registers its own executor with `compiler.init` (decision 575 (3)).").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 808 — whether `f`'s body writes `compiler.init`
+/// (`compiler_surface.init_here_builtin`), itself or through a call of
+/// another function expanded at its call site this module reaches.
+pub fn writesInit(env: *Env, f: ast.FnDecl, depth: usize) bool {
+    if (depth > 16) return false;
+    var w: InitWalk = .{ .arena = env.arena };
+    w.walk([]const ast.Stmt, f.body);
+    if (w.found) return true;
+    for (w.callees.items) |cc| {
+        const t = (targetOf(env, cc) catch null) orelse continue;
+        if (@intFromPtr(t.decl.body.ptr) == @intFromPtr(f.body.ptr)) continue;
+        if (writesInit(env, t.decl, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// Finds `init_here_builtin` in a body and keeps the calls by name it holds.
+const CallData = @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call");
+
+const InitWalk = struct {
+    arena: std.mem.Allocator,
+    found: bool = false,
+    callees: std.ArrayListUnmanaged(CallData) = .empty,
+
+    fn walk(self: *InitWalk, comptime N: type, v: N) void {
+        if (self.found) return;
+        if (N == ast.Expr) if (v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            if (c.is_builtin and std.mem.eql(u8, c.callee, compilerSurface.init_here_builtin)) {
+                self.found = true;
+                return;
+            }
+            if (!c.is_builtin and c.calleeExpr == null) self.callees.append(self.arena, c) catch {};
+        };
+        if (N == ast.ImportDecl or N == ast.TypeRef or N == ast.Pattern or N == ast.Loc) return;
+        switch (@typeInfo(N)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (!f.is_comptime) self.walk(f.type, @field(v, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (v) {
+                inline else => |payload| self.walk(@TypeOf(payload), payload),
+            },
+            .optional => |o| if (v) |inner| self.walk(o.child, inner),
+            .pointer => |pi| switch (pi.size) {
+                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") self.walk(pi.child, v.*),
+                .slice => if (pi.child != u8) for (v) |e| self.walk(pi.child, e),
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Decision 808 (4) — a `comptime { … }` written as a statement of a
+/// run-time body that calls a function writing `compiler.init`: its lines
+/// run at build, each one as a `comptime` of it, the functions it calls
+/// expanded at build alike, and the body of each executor they reach is
+/// written where the block is, run each time the enclosing function runs.
+/// Null for any other block (one that answers a value included).
+pub fn expandComptimeBlock(env: *Env, body: []const ast.Stmt, loc: ast.Loc) InferError!?ast.TypedExpr {
+    if (env.templateEval == null) return null;
+    if (env.comptimeDepth > 0 or env.inDecoratorFn or env.inTemplateFn) return null;
+    var reaches = false;
+    for (body) |st| {
+        const e = st.expr;
+        if (e == .jump and e.jump.kind == .@"break" and e.jump.kind.@"break".value != null) return null;
+        if (e != .call or e.call.kind != .call) continue;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.calleeExpr != null or cc.trailing.len > 0) continue;
+        const t = (try targetOf(env, cc)) orelse continue;
+        if (writesInit(env, t.decl, 0)) reaches = true;
+    }
+    if (!reaches) return null;
+    var x: Expander = .{
+        .env = env,
+        .owner = env.modulePath,
+        .foreign = false,
+        .call_loc = loc,
+        .first_exp = env.expansionCount,
+        .build_mode = true,
+    };
+    var out: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+    _ = try x.walk(body, &out);
+    const expansion = try env.arena.create(ast.Expr);
+    expansion.* = exprsMod.makeBlockExpr(env.arena, .{ .line = loc.line, .col = loc.col, .expansion = try x.callerFresh() }, out.items) catch return error.OutOfMemory;
+    _ = try infer.inferExprTyped(env, expansion.*);
+    try env.srcRewrites.put(loc, expansion);
+    return .{ .comptime_ = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .comptimeBlock = .{ .body = &.{} } } } };
+}
+
+/// Decision 793 (3) — `program` with each statement-level call, in a
+/// top-level `comptime { … }` block (the decorator `parser/comptime_blocks.zig`
+/// reads it onto), of a function of another module that writes
+/// `compiler.init` replaced by a block of the function's body: each
+/// parameter read its argument, each name of the declaring module its alias
+/// (`Copier`), and each `compiler.init(f)` the block's own executor
+/// (`<handle>.compile(f)`), so it joins the block's init at its anchor. Run
+/// after the imports resolve and before inference (a block's decorator runs
+/// before its body is checked); the module's own functions the parser
+/// expanded already.
+pub fn expandBlockCalls(env: *Env, program: ast.Program) InferError!ast.Program {
+    if (env.expandedImports.count() == 0) return program;
+    var decls: ?[]ast.DeclKind = null;
+    for (program.decls, 0..) |d, i| {
+        if (d != .@"fn") continue;
+        const f = d.@"fn";
+        if (!std.mem.startsWith(u8, f.name, comptime_blocks.decorator_prefix) or f.params.len == 0) continue;
+        const handle = f.params[0].name;
+        if (!std.mem.eql(u8, handle, comptime_blocks.handle_name)) continue;
+        const body = (try blockCalls(env, f.body, handle, 0)) orelse continue;
+        if (decls == null) decls = try env.arena.dupe(ast.DeclKind, program.decls);
+        var nf = f;
+        nf.body = body;
+        decls.?[i] = .{ .@"fn" = nf };
+    }
+    return if (decls) |ds| .{ .decls = ds, .blankLineBefore = program.blankLineBefore } else program;
+}
+
+/// `stmts` with each call `expandBlockCalls` expands replaced; null when none
+/// is one.
+fn blockCalls(env: *Env, stmts: []ast.Stmt, handle: []const u8, depth: usize) InferError!?[]ast.Stmt {
+    if (depth > 16) return null;
+    var out: ?[]ast.Stmt = null;
+    for (stmts, 0..) |st, i| {
+        const replaced: ?ast.Expr = blk: {
+            if (st.deferred) break :blk null;
+            const e = st.expr;
+            if (e != .call or e.call.kind != .call) {
+                // A block the parser expanded a function of the module into.
+                if (blockBodyOf(e)) |inner| if (try blockCalls(env, inner, handle, depth + 1)) |nb| {
+                    break :blk exprsMod.makeBlockExpr(env.arena, e.getLoc(), nb) catch return error.OutOfMemory;
+                };
+                break :blk null;
+            }
+            const cc = e.call.kind.call;
+            if (cc.is_builtin or cc.calleeExpr != null or cc.trailing.len > 0) break :blk null;
+            const target = (try targetOf(env, cc)) orelse break :blk null;
+            if (std.mem.eql(u8, target.owner, env.modulePath)) break :blk null;
+            if (!writesInit(env, target.decl, 0)) break :blk null;
+            const key = @intFromPtr(target.decl.body.ptr);
+            if (env.expanding.contains(key)) break :blk null;
+            const args = (try argsOf(env, target.decl, cc.args, e.call.loc)) orelse break :blk null;
+            try env.expanding.put(env.arena, key, {});
+            defer _ = env.expanding.remove(key);
+            var x: Expander = .{ .env = env, .owner = target.owner, .foreign = true, .call_loc = e.call.loc, .first_exp = env.expansionCount };
+            for (target.decl.params, args) |p, a| try x.bindings.append(env.arena, .{ .name = p.name, .bound = .{ .param = a } });
+            var cp: Copier = .{ .x = &x, .exp = x.fresh(), .body = true, .eval = false };
+            var copied = try cp.copy([]const ast.Stmt, target.decl.body);
+            const mutable = try env.arena.dupe(ast.Stmt, copied);
+            for (mutable) |*s| {
+                s.tail = .none;
+                try compileOnHandle(env.arena, ast.Expr, &s.expr, handle);
+            }
+            copied = mutable;
+            const body = (try blockCalls(env, mutable, handle, depth + 1)) orelse mutable;
+            break :blk exprsMod.makeBlockExpr(env.arena, e.call.loc, body) catch return error.OutOfMemory;
+        };
+        if (replaced) |r| {
+            if (out == null) out = try env.arena.dupe(ast.Stmt, stmts);
+            out.?[i].expr = r;
+        }
+    }
+    return out;
+}
+
+/// The statements of a block written as an expression (`case true { _ { … } }`).
+fn blockBodyOf(e: ast.Expr) ?[]ast.Stmt {
+    if (e != .collection or e.collection.kind != .case) return null;
+    const cs = e.collection.kind.case;
+    if (!cs.isBlock or cs.arms.len != 1 or cs.arms[0].body != .function) return null;
+    return cs.arms[0].body.function.kind.body;
+}
+
+/// Every `init_here_builtin(f)` under `p` rewritten `<handle>.compile(f)`:
+/// the executor of the block the body was copied into (decision 615).
+fn compileOnHandle(arena: std.mem.Allocator, comptime N: type, p: *N, handle: []const u8) InferError!void {
+    if (N == ast.Expr) if (p.* == .call and p.call.kind == .call) {
+        const c = &p.call.kind.call;
+        if (c.is_builtin and std.mem.eql(u8, c.callee, compilerSurface.init_here_builtin)) {
+            const r = try arena.create(ast.Expr);
+            r.* = .{ .identifier = .{ .loc = p.call.loc, .kind = .{ .ident = handle } } };
+            c.is_builtin = false;
+            c.receiver = r;
+            c.callee = memberFn.compile_name;
+            return;
+        }
+    };
+    if (N == ast.ImportDecl or N == ast.TypeRef or N == ast.Pattern or N == ast.Loc) return;
+    switch (@typeInfo(N)) {
+        .@"struct" => |st| inline for (st.fields) |f| {
+            if (!f.is_comptime) try compileOnHandle(arena, f.type, &@field(p.*, f.name), handle);
+        },
+        .@"union" => |u| if (u.tag_type != null) switch (p.*) {
+            inline else => |*payload| try compileOnHandle(arena, @TypeOf(payload.*), payload, handle),
+        },
+        .optional => |o| if (p.*) |*inner| try compileOnHandle(arena, o.child, inner, handle),
+        .pointer => |pi| switch (pi.size) {
+            .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") try compileOnHandle(arena, pi.child, @constCast(p.*), handle),
+            .slice => if (pi.child != u8) for (@constCast(p.*)) |*e| try compileOnHandle(arena, pi.child, e, handle),
+            else => {},
+        },
+        else => {},
+    }
 }
 
 fn expandWith(x: *Expander, decl: ast.FnDecl, args: []const Arg, loc: ast.Loc, expected: ?*T.Type) InferError!?ast.TypedExpr {
@@ -370,6 +594,10 @@ const Expander = struct {
     blame: std.AutoHashMapUnmanaged(ast.Loc, ast.Loc) = .empty,
     /// The expansions this one opened: `(first, last]`.
     first_exp: u32 = 0,
+    /// Decision 808 (4) — every line runs at build (a `comptime { … }`
+    /// statement and the functions it expands): only an executor's body is
+    /// written into the program.
+    build_mode: bool = false,
 
     fn fresh(self: *Expander) u32 {
         self.env.expansionCount += 1;
@@ -448,14 +676,31 @@ const Expander = struct {
 
     fn stmt(self: *Expander, st: *const ast.Stmt, out: *std.ArrayListUnmanaged(ast.Stmt)) InferError!Flow {
         if (st.deferred) {
+            if (self.build_mode) return self.unsupported(st.expr.getLoc(), "a `defer` has no place in a `comptime` that writes an executor");
             try self.emit(st, out);
             return .normal;
         }
         const e = &st.expr;
+        if (e.* == .call and e.call.kind == .call) {
+            const cc = e.call.kind.call;
+            // Decision 808 (2), (4) — `compiler.init(f)`: `f`'s body written
+            // here, run when this line runs.
+            if (cc.is_builtin and std.mem.eql(u8, cc.callee, compilerSurface.init_here_builtin)) {
+                try self.initHere(cc, out);
+                return .normal;
+            }
+            if (self.build_mode) if (try self.expandAtBuild(e.call, out)) return .normal;
+        }
         switch (e.*) {
             .literal => |l| if (l.kind == .comment) return .normal,
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
+                    if (self.build_mode) {
+                        if (lb.mutable or lb.typeAnnotation != null) return self.unsupported(e.getLoc(), "a `comptime` that writes an executor binds its values with a plain `val`");
+                        const v = try self.evalBuild(lb.value);
+                        try self.bindings.append(self.env.arena, .{ .name = lb.name, .bound = .{ .build = v } });
+                        return .normal;
+                    }
                     if (!lb.mutable and lb.typeAnnotation == null and self.runRead(lb.value) == null) {
                         const v = try self.evalBuild(lb.value);
                         try self.bindings.append(self.env.arena, .{ .name = lb.name, .bound = .{ .build = v } });
@@ -466,6 +711,7 @@ const Expander = struct {
                     return .normal;
                 },
                 .localBindDestruct => |lb| {
+                    if (self.build_mode) return self.unsupported(e.getLoc(), "a `comptime` that writes an executor binds its values with a plain `val`");
                     try self.emit(st, out);
                     var names: std.ArrayListUnmanaged([]const u8) = .empty;
                     try destructNames(self.env.arena, lb.pattern, &names);
@@ -493,8 +739,84 @@ const Expander = struct {
             .call => |c| if (c.kind == .call) if (try self.failCall(c.kind.call)) return .normal,
             else => {},
         }
+        if (self.build_mode) {
+            try self.runBuild(st);
+            return .normal;
+        }
         try self.emit(st, out);
         return .normal;
+    }
+
+    /// Decision 808 (2), (4) — the body of the executor `compiler.init(f)`
+    /// hands, written where the line is: a block of its own when it binds a
+    /// name.
+    fn initHere(self: *Expander, cc: anytype, out: *std.ArrayListUnmanaged(ast.Stmt)) InferError!void {
+        if (cc.args.len != 1 or cc.args[0].value.* != .function) return;
+        const f = cc.args[0].value.function;
+        var inner: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+        for (f.kind.body) |*s| {
+            if (s.expr == .literal and s.expr.literal.kind == .comment) continue;
+            // A lambda's tail answers nothing here.
+            var one = s.*;
+            if (one.tail == .returned and one.expr == .jump and one.expr.jump.kind == .@"return") if (one.expr.jump.kind.@"return") |v| {
+                one.expr = v.*;
+            };
+            try self.emit(&one, &inner);
+        }
+        if (!declares(inner.items)) {
+            try out.appendSlice(self.env.arena, inner.items);
+            return;
+        }
+        const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
+        const blk = exprsMod.makeBlockExpr(self.env.arena, loc, inner.items) catch return error.OutOfMemory;
+        try out.append(self.env.arena, .{ .expr = blk });
+    }
+
+    /// Decision 808 (4) — a line of a build-mode expansion, run at build as
+    /// a `comptime { <line> }` of it (its prints the build's output).
+    fn runBuild(self: *Expander, st: *const ast.Stmt) InferError!void {
+        var cp: Copier = .{ .x = self, .exp = self.fresh(), .body = true, .eval = false };
+        var copied = try cp.copy(ast.Stmt, st.*);
+        copied.tail = .none;
+        const body = try self.env.arena.alloc(ast.Stmt, 1);
+        body[0] = copied;
+        const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
+        const node: ast.Expr = .{ .comptime_ = .{ .loc = loc, .kind = .{ .comptimeBlock = .{ .body = body } } } };
+        _ = try infer.inferExprTyped(self.env, node);
+    }
+
+    /// Decision 808 (4) — a call, in a build-mode expansion, of a function
+    /// that writes `compiler.init`: expanded here at build, its executors'
+    /// bodies written into `out`. False for any other call.
+    fn expandAtBuild(self: *Expander, c: ast.CallExprOf(.untyped), out: *std.ArrayListUnmanaged(ast.Stmt)) InferError!bool {
+        const written = c.kind.call;
+        if (written.is_builtin or written.calleeExpr != null or written.trailing.len > 0) return false;
+        var cp: Copier = .{ .x = self, .exp = self.fresh(), .body = true, .eval = false };
+        const copied = try cp.copy(ast.Expr, .{ .call = c });
+        if (copied != .call or copied.call.kind != .call) return false;
+        const call = copied.call.kind.call;
+        const target = (try targetOf(self.env, call)) orelse return false;
+        if (!writesInit(self.env, target.decl, 0)) return false;
+        const key = @intFromPtr(target.decl.body.ptr);
+        if (self.env.expanding.contains(key)) return false;
+        const site = self.at(c.loc);
+        const args = (try argsOf(self.env, target.decl, call.args, site)) orelse return false;
+        try self.env.expanding.put(self.env.arena, key, {});
+        defer _ = self.env.expanding.remove(key);
+        var x: Expander = .{
+            .env = self.env,
+            .owner = target.owner,
+            .foreign = !std.mem.eql(u8, target.owner, self.env.modulePath),
+            .call_loc = site,
+            .first_exp = self.env.expansionCount,
+            .build_mode = true,
+        };
+        for (target.decl.params, args) |p, a| try x.bindings.append(self.env.arena, .{ .name = p.name, .bound = .{ .param = a } });
+        _ = x.walk(target.decl.body, out) catch |err| {
+            if (err == error.TypeError) try x.locateInOwner();
+            return err;
+        };
+        return true;
     }
 
     /// `x.fail(message)` on a `comptime` parameter: reported at build, at
