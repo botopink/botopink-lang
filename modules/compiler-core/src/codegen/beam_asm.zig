@@ -672,11 +672,15 @@ fn moduleHasInit(program: ast.Program) bool {
 
 /// Decision 806 (3) — the run-time state a module of a loaded package clears
 /// before its body runs again at a `run()`: a cached `val` (`emitTopVal`'s
-/// `persistent_term` entry) or a `ProcessDict` module `var`.
-const RunState = enum { none, cached, process_dict };
+/// `persistent_term` entry) or a module `var` of any `BeamMemory`.
+const RunState = enum { none, cached, process_dict, ets, persistent_term };
 
 fn runStateOf(v: ast.ValDecl) RunState {
-    if (v.memory()) |mem| return if (mem.mode == .processDict) .process_dict else .none;
+    if (v.memory()) |mem| return switch (mem.mode) {
+        .processDict => .process_dict,
+        .ets => .ets,
+        .persistentTerm => .persistent_term,
+    };
     if (isSyntheticEntrypointVal(v)) return .none;
     return if (topValIsCached(v)) .cached else .none;
 }
@@ -2133,6 +2137,9 @@ fn emitBeamAsm(
     // Decision 806 (3) — a loaded package's module clears its run-time state
     // in its init, so each `run()` starts clean.
     if (crossModule.isLoadedModule(module_name) and hasRunState(program)) em.run_state = program;
+    // Its `PersistentTerm` vars are put by that init, at every `run()`, never
+    // at load.
+    if (em.run_state != null) pt_vars.clearRetainingCapacity();
     const emit_init = em.entry_stmts.items.len > 0 or em.run_state != null;
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
     // The modules this one imports, transitively, whose body the entry runs
@@ -5792,6 +5799,39 @@ const Emitter = struct {
         }
     }
 
+    /// Decision 806 (3) — `Ets` var `v`'s table back at its seed, in a loaded
+    /// package's init: a plain var's row set to the seed
+    /// (`'__bp_ets_set'(Name, Seed, Seed)`), a `keyed: true` var's rows
+    /// emptied (`ets:delete_all_objects/1` on the guard's table) and the
+    /// seed's rows put again. The rows are a literal list: staging them calls
+    /// nothing and writes `{x,0}` alone, so the table parked in `{x,1}`
+    /// survives it.
+    fn emitEtsReseed(self: *Emitter, v: ast.ValDecl) !void {
+        const key = Op.atom(try self.memoryKey(v.name));
+        if (!v.memory().?.keyed) {
+            const st = try self.stageOperands(&.{ v.value.*, v.value.* }, &[_]ast.TrailingLambda{});
+            try self.emitParallelMove(&.{ key, st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
+            try self.callFileHelper(MEM_ETS_SET, 3);
+            return;
+        }
+        const rows = try self.keyedRows(v.name);
+        for (0..2) |pass| {
+            const st = try self.stageOperands(&.{rows}, &[_]ast.TrailingLambda{});
+            try self.emitParallelMove(&.{ key, st.ops[0] }, &.{ 0, 1 });
+            try beamEmitter.writeTestHeap(self.out, 3, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_ROWS), Op.xr(1) });
+            try self.callFileHelper(MEM_ETS_GUARD, 2);
+            if (pass == 0) {
+                try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "ets", .function = "delete_all_objects" } }, 0);
+            } else {
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                const st2 = try self.stageOperands(&.{rows}, &[_]ast.TrailingLambda{});
+                try self.emitParallelMove(&.{ Op.xr(1), st2.ops[0] }, &.{ 0, 1 });
+                try self.beamPrimCall(.normal, "etsPut", 2, 0);
+            }
+        }
+    }
+
     /// `'__bp_load'/0`, the module's `-on_load` function: every
     /// `PersistentTerm` var put under its storage name, in declaration order.
     fn emitLoad(self: *Emitter, vars: []const ast.ValDecl) !void {
@@ -6197,11 +6237,20 @@ const Emitter = struct {
         for (self.entry_stmts.items) |v| {
             if (isSyntheticEntrypointVal(v)) n += self.precountLocalsInExpr(v.value.*);
         }
+        if (self.run_state) |program| for (program.decls) |decl| switch (decl) {
+            .val => |v| switch (runStateOf(v)) {
+                .ets, .persistent_term => n += self.precountLocalsInExpr(v.value.*),
+                else => {},
+            },
+            else => {},
+        };
         self.num_y = n;
         try self.emitFrame(0);
         // Decision 806 (3) — what an earlier `run()` of the loaded package
         // left: each cached `val`'s `persistent_term` entry, each
-        // `ProcessDict` `var`'s key.
+        // `ProcessDict` `var`'s key erased; each `Ets` var's table back at
+        // its seed; each `PersistentTerm` var put (`emitLoad` is not emitted
+        // for it).
         if (self.run_state) |program| for (program.decls) |decl| switch (decl) {
             .val => |v| switch (runStateOf(v)) {
                 .none => {},
@@ -6213,6 +6262,13 @@ const Emitter = struct {
                 .process_dict => {
                     try beamEmitter.writeMoveOp(self.out, Op.atom(try self.memoryKey(v.name)), Dst.xr(0));
                     try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "erase" } }, 0);
+                },
+                .ets => try self.emitEtsReseed(v),
+                .persistent_term => {
+                    try self.lowerExprIntoX0(v.value.*);
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                    try beamEmitter.writeMoveOp(self.out, Op.atom(try self.memoryKey(v.name)), Dst.xr(0));
+                    try self.beamPrimCall(.normal, "ptPut", 2, 0);
                 },
             },
             else => {},

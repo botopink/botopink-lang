@@ -299,7 +299,7 @@ pub fn moduleHasInit(program: ast.Program) bool {
 
 /// Decision 806 (3) — whether a module holds run-time state a `run()` of its
 /// loaded package must clear before the module body runs again: a cached
-/// effectful `val` (`cachedValueExpr`) or a `ProcessDict` module `var`.
+/// effectful `val` (`cachedValueExpr`) or a module `var` of any `BeamMemory`.
 pub fn hasRunState(program: ast.Program) bool {
     for (program.decls) |decl| switch (decl) {
         .val => |v| if (runStateOf(v) != .none) return true,
@@ -308,10 +308,14 @@ pub fn hasRunState(program: ast.Program) bool {
     return false;
 }
 
-const RunState = enum { none, cached, process_dict };
+const RunState = enum { none, cached, process_dict, ets, persistent_term };
 
 fn runStateOf(v: ast.ValDecl) RunState {
-    if (v.memory()) |mem| return if (mem.mode == .processDict) .process_dict else .none;
+    if (v.memory()) |mem| return switch (mem.mode) {
+        .processDict => .process_dict,
+        .ets => .ets,
+        .persistentTerm => .persistent_term,
+    };
     if (v.isStatement() or v.value.isComptimeExpr()) return .none;
     if (v.value.* == .comptime_ and v.value.comptime_.kind == .comptimeBlock) return .none;
     return if (initialiserCanHaveEffect(v.value.*)) .cached else .none;
@@ -2424,6 +2428,9 @@ fn emitErlangModule(
     // attribute that has to precede every function. Under `botopink test` the
     // runner's sibling loader loads such a module again once the siblings its
     // `-on_load` reaches are loaded (`testRunnerForms`).
+    // Decision 806 (3) — a loaded package's module puts its `PersistentTerm`
+    // vars in its init, at every `run()`, never at load.
+    if (clears_run_state) pt_vars.clearRetainingCapacity();
     if (pt_vars.items.len > 0) try forms.append(b.arena, .{ .on_load = .{ .name = MEM_LOAD, .arity = 0 } });
 
     // A comptime module reaches its host glue in the resident prelude by its
@@ -6037,8 +6044,10 @@ const Emitter = struct {
     ///
     /// Decision 806 (3) — `clear` (a loaded package's module): the init first
     /// erases what an earlier `run()` left — each cached `val`'s
-    /// `persistent_term` entry, each `ProcessDict` `var`'s key —, so the body
-    /// runs whole again and every `var` starts from its declaration.
+    /// `persistent_term` entry, each `ProcessDict` `var`'s key —, reseeds each
+    /// `Ets` var's table and puts each `PersistentTerm` var (`loadForms` is
+    /// not emitted for it), so the body runs whole again and every `var`
+    /// starts from its declaration.
     fn initForms(this: *Emitter, b: Ast.Builder, out: *Forms, body: []const ast.ValDecl, clear: ?ast.Program) !void {
         const saved = this.indent;
         this.indent = 1;
@@ -6050,6 +6059,8 @@ const Emitter = struct {
                 .none => {},
                 .cached => try stmts.append(b.arena, try b.remote("persistent_term", "erase", &.{try b.tuple(&.{ Ast.Expr.a(this.erl_atom), Ast.Expr.a(v.name) })})),
                 .process_dict => try stmts.append(b.arena, try b.remote("erlang", "erase", &.{try this.memoryKey(b, v.name)})),
+                .ets => try this.etsReseed(b, &stmts, v),
+                .persistent_term => try stmts.append(b.arena, try this.beamPrim(b, "ptPut", &.{ try this.memoryKey(b, v.name), try this.memoryInit(b, v) })),
             },
             else => {},
         };
@@ -6145,6 +6156,20 @@ const Emitter = struct {
     fn etsTable(this: *Emitter, b: Ast.Builder, name: []const u8) !Ast.Expr {
         const decl = this.module_var_decls.get(name).?;
         return this.fileCall(b, MEM_ETS_GUARD, &.{ try this.memoryKey(b, name), try this.memoryInit(b, decl) });
+    }
+
+    /// Decision 806 (3) — `Ets` var `v`'s table back at its seed: a plain
+    /// var's one row rewritten, a `keyed: true` var's rows emptied and the
+    /// seed's rows put again.
+    fn etsReseed(this: *Emitter, b: Ast.Builder, stmts: *std.ArrayListUnmanaged(Ast.Expr), v: ast.ValDecl) !void {
+        const key = try this.memoryKey(b, v.name);
+        if (v.memory().?.keyed) {
+            const tab = try this.fileCall(b, MEM_ETS_GUARD, &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_ROWS), try this.keyedRows(b, v.name) }) });
+            try stmts.append(b.arena, try b.remote("ets", "delete_all_objects", &.{tab}));
+            try stmts.append(b.arena, try this.beamPrim(b, "etsPut", &.{ tab, try this.keyedRows(b, v.name) }));
+            return;
+        }
+        try stmts.append(b.arena, try this.beamPrim(b, "etsPut", &.{ try this.etsTable(b, v.name), try b.tuple(&.{ key, try this.memoryInit(b, v) }) }));
     }
 
     /// A write to module `var` `name` (`name = value` / `name += value`).

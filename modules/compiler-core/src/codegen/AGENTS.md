@@ -1855,9 +1855,12 @@ codegen/
   body runs at every `run()`, decision 806 (3)), and erlang (`emitErlangModule`)
   and beam (`emitFn`) begin its root's `__bp_loaded_main` with the
   `'_botopink_init'/0` calls of its closure and its own; each module of the
-  package with run-time state (`hasRunState`: a cached `val`, a `ProcessDict`
-  `var`) has an init that first erases that state (`persistent_term:erase`,
-  `erlang:erase`), so every `run()` starts clean (806 (3)).
+  package with run-time state (`hasRunState`: a cached `val`, a module `var` of
+  any `BeamMemory`) has an init that first erases that state
+  (`persistent_term:erase`, `erlang:erase`), reseeds each `Ets` var's table (a
+  `keyed: true` one emptied, then its seed rows put) and puts each
+  `PersistentTerm` var — no `-on_load` for it —, so every `run()` starts clean
+  (806 (3)).
   wasm links a loaded package into the program's one module by name: its modules are never
   a "declared" link (`programEntry`), the root's `main` is kept as `<module>/main`, its
   initialisers run in `$__bp_loaded_init__<package>` at every `run()` — its `var`s
