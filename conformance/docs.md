@@ -4044,17 +4044,32 @@ loaded package still resolves its own to compile.
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
 
 A `Module` that compiled can be run (decisions 787, 792). `m.run()`, written in a `compiler.init`
-body, runs the loaded file's `main` when the program runs, at that point of the init body: `Ok` when
-`main` returns, `Error(Failure)` when it crashes or answers `Error(e)` — `Failure` as `attempt`
-answers it, read with `try … catch` as every `Result`. The loaded package — the file, its `mod`
-tree and its own dependencies, named from its path (`bp_load__<path>`, one package per file) — then
-joins the program; a loaded file no `run` reaches stays out of it. Its module body and its
-`compiler.init`s run at `run()`, just before its `main`, never at program start with the program's
-own; `run()` called twice runs `main` twice, in one package.
+body, runs the loaded file's `main` when the program runs, at that point of the init body, and
+answers `Result<void, RunFailure>` (decision 806), read with `try … catch` as every `Result`: `Ok`
+when `main` returns; `Error(RunFailure)` with `kind` `.Failed` when `main` returns `Error(e)`,
+`message` the text `print` writes for `e`, or `.Abort` when the package crashes — a `panic`, a host
+failure or a run-time crash, in its body, its executors or its `main` —, `message` the crash's.
+`RunFailure` is std's `compiler.RunFailure`; `attempt`'s `Failure` is another type. The loaded
+package — the file, its `mod` tree and its own dependencies, named from its path
+(`bp_load__<path>`, one package per file) — then joins the program; a loaded file no `run` reaches
+stays out of it. Its module body and its `compiler.init`s run at `run()`, just before its `main`,
+never at program start with the program's own; `run()` called twice runs `main` twice, in one
+package.
 
 <!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/compiler_load_module_run -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_body_at_run -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_twice -->
+
+`run()` answers `Result<void, RunFailure>`: `.Abort` when the loaded package crashes — in its body, its executors or
+its `main` —, `.Failed` when its `main` returns `Error(e)`; nothing it runs propagates, so the next `run()` runs.
+
+<!-- example: modules/decisions-taken/module_run_failure_contained-806/cells/module_run_contains_body_failure -->
+
+Each `run()` starts clean: the loaded package's `val`s, `var`s, body and `compiler.init` executors run again before
+its `main`, so no run-time state passes from one run to the next. What the build folded (`val total = comptime
+contar();`) is computed once and never again by a `run()`.
+
+<!-- example: modules/decisions-taken/module_run_failure_contained-806/cells/module_run_twice_body -->
 
 `run()` written anywhere but directly in a `compiler.init` body — in the body that runs at build
 outside its init, in a function the init body calls, in a body that runs when the program runs — is

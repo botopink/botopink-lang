@@ -670,6 +670,25 @@ fn moduleHasInit(program: ast.Program) bool {
     return body;
 }
 
+/// Decision 806 (3) — the run-time state a module of a loaded package clears
+/// before its body runs again at a `run()`: a cached `val` (`emitTopVal`'s
+/// `persistent_term` entry) or a `ProcessDict` module `var`.
+const RunState = enum { none, cached, process_dict };
+
+fn runStateOf(v: ast.ValDecl) RunState {
+    if (v.memory()) |mem| return if (mem.mode == .processDict) .process_dict else .none;
+    if (isSyntheticEntrypointVal(v)) return .none;
+    return if (topValIsCached(v)) .cached else .none;
+}
+
+fn hasRunState(program: ast.Program) bool {
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (runStateOf(v) != .none) return true,
+        else => {},
+    };
+    return false;
+}
+
 fn isSyntheticMainCall(v: ast.ValDecl) bool {
     if (std.mem.startsWith(u8, v.name, "_main")) return true;
     return isSyntheticEntrypointVal(v) and isZeroArgMainCall(v.value.*);
@@ -2111,7 +2130,10 @@ fn emitBeamAsm(
     // Decision 140 — a module runs its body when a program that imports it
     // (or declares its package, 660) starts: `'_botopink_init'/0`, called by the entry; a test unit's runner
     // calls it too (decision 513), so a module with `main/0` carries it as well.
-    const emit_init = em.entry_stmts.items.len > 0;
+    // Decision 806 (3) — a loaded package's module clears its run-time state
+    // in its init, so each `run()` starts clean.
+    if (crossModule.isLoadedModule(module_name) and hasRunState(program)) em.run_state = program;
+    const emit_init = em.entry_stmts.items.len > 0 or em.run_state != null;
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
     // The modules this one imports, transitively, whose body the entry runs
     // before its own, dependencies first.
@@ -2132,7 +2154,7 @@ fn emitBeamAsm(
             // `run()` (its `__bp_loaded_main`), never with the program's.
             if (crossModule.loadedElsewhere(dep, module_name)) continue;
             switch (o.outcome) {
-                .ok => |*dok| if (moduleHasInit(dok.transformed)) try em.import_inits.append(alloc, xc.atomFor(dep)),
+                .ok => |*dok| if (moduleHasInit(dok.transformed) or (crossModule.isLoadedModule(dep) and hasRunState(dok.transformed))) try em.import_inits.append(alloc, xc.atomFor(dep)),
                 else => {},
             }
         };
@@ -2607,6 +2629,9 @@ const Emitter = struct {
     /// before its own body — every module this one imports, transitively,
     /// that has a body (`moduleHasInit`), dependencies first (decision 140).
     import_inits: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Decision 806 (3) — a loaded package's module: the program whose
+    /// run-time state `'_botopink_init'/0` erases first (`runStateOf`).
+    run_state: ?ast.Program = null,
     /// Locals (and string-typed params) bound to a `string` in the frame being
     /// lowered — `isStringExpr` reads it to tell a string `+` from arithmetic.
     /// Cleared per function; a lambda/loop body inherits it (its captures).
@@ -6174,6 +6199,24 @@ const Emitter = struct {
         }
         self.num_y = n;
         try self.emitFrame(0);
+        // Decision 806 (3) — what an earlier `run()` of the loaded package
+        // left: each cached `val`'s `persistent_term` entry, each
+        // `ProcessDict` `var`'s key.
+        if (self.run_state) |program| for (program.decls) |decl| switch (decl) {
+            .val => |v| switch (runStateOf(v)) {
+                .none => {},
+                .cached => {
+                    const key = Term.tupleOf(&.{ Term.atomOf(self.module_name), Term.atomOf(v.name) });
+                    try beamEmitter.writeMoveOp(self.out, .{ .term = key }, Dst.xr(0));
+                    try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "persistent_term", .function = "erase" } }, 0);
+                },
+                .process_dict => {
+                    try beamEmitter.writeMoveOp(self.out, Op.atom(try self.memoryKey(v.name)), Dst.xr(0));
+                    try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "erase" } }, 0);
+                },
+            },
+            else => {},
+        };
         for (self.entry_stmts.items) |v| {
             if (isSyntheticEntrypointVal(v)) {
                 try self.lowerExprIntoX0(v.value.*);

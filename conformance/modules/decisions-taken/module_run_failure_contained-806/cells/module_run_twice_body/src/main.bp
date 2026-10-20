@@ -1,0 +1,24 @@
+//// Decision 806 (3) — each `run()` initialises the loaded package anew: its module body, its
+//// `compiler.init` executors and its `var`s run again before its `main`, so `vezes` starts at 0
+//// on every run and prints 1 both times.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/counted/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            try m.run() catch { r ->
+                print("abort " + r.message)
+            }
+            try m.run() catch { r ->
+                print("abort " + r.message)
+            }
+        });
+        Error(refused) -> print("refused");
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

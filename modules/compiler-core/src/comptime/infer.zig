@@ -13535,8 +13535,8 @@ fn refuseRun(env: *Env, why: enum { refused, no_main }, path: []const u8, loc: a
 /// `Module` of a load that refused, `run-module-refused`; on a file with no
 /// `main`, `load-no-main` — each at the call. The loaded package joins the
 /// program (`load.noteRun`, `comptime.compileWith`), and the call is
-/// rewritten to std's `attempt` over its `main` (`load.runRewrite`), so it
-/// answers `Result<void, Failure>`.
+/// rewritten to `load.run_fn` over its `main` (`load.runRewrite`), so it
+/// answers `Result<void, RunFailure>` (decision 806).
 fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr {
     if (call.args.len != 0 or call.trailing.len != 0) {
         env.lastError = TypeError.custom(

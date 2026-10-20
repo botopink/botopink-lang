@@ -29,8 +29,9 @@
 //!   written back as its constructor (`recordSource`); a `run()` an executor
 //!   writes brings the file into the program as a package of its own
 //!   (`packageModules`, `bp_load__<path>`), compiled again by
-//!   `comptime.compileWith` with it, the call rewritten to std's `attempt`
-//!   over the package's `loaded_main_fn` (`runRewrite`, `withRunImports`).
+//!   `comptime.compileWith` with it, the call rewritten to `run_fn` over the
+//!   package's `loaded_main_fn` (`runRewrite`, `withRunImports`), answering
+//!   std's `compiler.RunFailure` (decision 806).
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -86,8 +87,8 @@ pub threadlocal var build_target: ?[]const u8 = null;
 pub const package_prefix = "bp_load__";
 
 /// The function a loaded package's root gains (decision 787 (2)): its
-/// `main`, a `main` answering `Error(e)` raised as a `panic` so `run`
-/// answers `Error(Failure)` (792 (1)).
+/// `main`, answering `Error` with the text of the `Error(e)` a `main`
+/// answering a `Result` returned, so `run` answers `.Failed` (806 (1)).
 pub const loaded_main_fn = "__bp_loaded_main";
 
 /// The package a loaded file is compiled into when a `run` reaches it.
@@ -259,8 +260,16 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         .@"fn" => |fd| if (std.mem.eql(u8, fd.name, helper_fn)) return program,
         else => {},
     };
-    const src = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
+    const base = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
         "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n";
+    // A module that writes a `run()` also gets what the call is rewritten to
+    // (`runRewrite`): std's `compiler.RunFailure` and `run_fn` (decision 806).
+    var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
+    for (program.decls) |d| try runs_found.walk(ast.DeclKind, d);
+    const src: []const u8 = if (runs_found.calls.items.len > 0)
+        base ++ "import {compiler.RunFailure as " ++ run_failure_alias ++ "} from \"std\";\n" ++ run_fn_src
+    else
+        base;
     const helper = try parseShifted(arena, src, helper_first_line, null);
     // Both first: an alias of an imported type names it in a signature only
     // of a function declared after the import and before its callers.
@@ -524,6 +533,24 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
 /// The local name of std's `failure.attempt` in a module that runs a loaded
 /// file (`withRunImports`).
 pub const attempt_alias = "__bp_run_attempt";
+/// The local name of std's `compiler.RunFailure` in a module that loads.
+pub const run_failure_alias = "Bp_RunFailure";
+/// The function a `run()` is rewritten to call (decision 806): std's
+/// `attempt` over the loaded package's `loaded_main_fn`, its answer read as
+/// a `RunFailure` — `.Failed` with the text of the `Error` the loaded `main`
+/// returned, `.Abort` with the crash's text for anything the package's body,
+/// executors or `main` raised. Nothing propagates out of it.
+pub const run_fn = "__bp_run";
+const run_fn_src =
+    "fn " ++ run_fn ++ "(f: fn() -> Result<void, string>) -> Result<void, " ++ run_failure_alias ++ "> {\n" ++
+    "    case " ++ attempt_alias ++ "(f) {\n" ++
+    "        Ok(answer) -> case answer {\n" ++
+    "            Ok(_) -> return;\n" ++
+    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m);\n" ++
+    "        }\n" ++
+    "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message);\n" ++
+    "    }\n" ++
+    "}\n";
 /// The prefix of the local name a loaded package's `loaded_main_fn` is
 /// imported under: `__bp_run__<package>`.
 pub const run_alias_prefix = "__bp_run__";
@@ -555,16 +582,15 @@ pub fn receiverPath(arena: std.mem.Allocator, written: *const ast.Expr) !?[]cons
     return null;
 }
 
-/// `run()` rewritten: `__bp_run_attempt(__bp_run__<package>)` — std's
-/// `attempt` over the loaded package's `loaded_main_fn` —, or, while the
-/// package is not yet in the program (the compile that finds the `run`,
-/// compiled again with it, `comptime.compileWith`), over a function that
-/// does nothing.
+/// `run()` rewritten: `__bp_run(__bp_run__<package>)` — `run_fn` over the
+/// loaded package's `loaded_main_fn` —, or, while the package is not yet in
+/// the program (the compile that finds the `run`, compiled again with it,
+/// `comptime.compileWith`), over a function that does nothing.
 pub fn runRewrite(arena: std.mem.Allocator, loc: ast.Loc, alias: ?[]const u8) error{OutOfMemory}!*ast.Expr {
     const text = if (alias) |a|
-        try std.fmt.allocPrint(arena, "fn __bp_run_rewrite() {{ " ++ attempt_alias ++ "({s}); }}", .{a})
+        try std.fmt.allocPrint(arena, "fn __bp_run_rewrite() {{ " ++ run_fn ++ "({s}); }}", .{a})
     else
-        "fn __bp_run_rewrite() { " ++ attempt_alias ++ "(fn() -> void {}); }";
+        "fn __bp_run_rewrite() { " ++ run_fn ++ "(fn() -> Result<void, string> { return; }); }";
     const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
     const program = parseShifted(arena, text, line, null) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -648,15 +674,22 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     if (f.paths.items.len == 0) return program;
     var src: std.ArrayListUnmanaged(u8) = .empty;
     var has_attempt = false;
+    var has_failure = false;
+    var has_run_fn = false;
     for (program.decls) |d| switch (d) {
         .use => |u| for (u.imports) |imp| {
-            if (imp.alias) |a| if (std.mem.eql(u8, a, attempt_alias)) {
-                has_attempt = true;
-            };
+            if (imp.alias) |a| {
+                if (std.mem.eql(u8, a, attempt_alias)) has_attempt = true;
+                if (std.mem.eql(u8, a, run_failure_alias)) has_failure = true;
+            }
+        },
+        .@"fn" => |fd| if (std.mem.eql(u8, fd.name, run_fn)) {
+            has_run_fn = true;
         },
         else => {},
     };
     if (!has_attempt) try src.appendSlice(arena, "import {failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n");
+    if (!has_failure) try src.appendSlice(arena, "import {compiler.RunFailure as " ++ run_failure_alias ++ "} from \"std\";\n");
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     for (f.paths.items) |p| {
         const pkg = try packageName(arena, p);
@@ -668,6 +701,7 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         if (!present) continue;
         try src.print(arena, "import {{" ++ loaded_main_fn ++ " as {s}}} from \"{s}\";\n", .{ try runAlias(arena, pkg), pkg });
     }
+    if (!has_run_fn) try src.appendSlice(arena, run_fn_src);
     if (src.items.len == 0) return program;
     const imports = try parseShifted(arena, src.items, helper_first_line + 100, null);
     const decls = try arena.alloc(ast.DeclKind, program.decls.len + imports.decls.len);
@@ -681,7 +715,7 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
 /// The modules a loaded package joins the program with (decision 787 (2)):
 /// `entry`'s file and its `mod` tree, each named `<package>/<logical>`, the
 /// root gaining `loaded_main_fn` — its `main`, or, for a `main` answering a
-/// `Result`, a `panic` with the `Error`'s text (792 (1)).
+/// `Result`, its `Error`'s text thrown (806 (1)).
 /// The strings of the loaded packages' modules (their names, paths and
 /// sources) outlive the compile: a backend's output names its module and
 /// renders a diagnostic over its source after the session is gone, as a
@@ -708,9 +742,9 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
         if (m.root) source = try std.mem.concat(arena, u8, &.{
             source,
             if (entry.main_result)
-                "\n\nimport {failure.panic as __bp_load_panic} from \"std\";\n\npub fn " ++ loaded_main_fn ++ "() -> void {\n    case main() {\n        Ok(_) -> return;\n        Error(e) -> __bp_load_panic(\"${e}\");\n    }\n}\n"
+                "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    case main() {\n        Ok(_) -> return;\n        Error(e) -> throw \"${e}\";\n    }\n}\n"
             else
-                "\n\npub fn " ++ loaded_main_fn ++ "() -> void {\n    main();\n}\n",
+                "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    main();\n    return;\n}\n",
         });
         out[i] = .{
             .path = try lasting(try std.mem.concat(arena, u8, &.{ pkg, "/", m.path })),

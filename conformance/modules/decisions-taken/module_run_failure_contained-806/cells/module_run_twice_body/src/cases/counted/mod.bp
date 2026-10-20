@@ -1,0 +1,20 @@
+import {compiler, io.terminal.print} from "std";
+
+var vezes: i32 = 0;
+
+fn marcar(texto: string) -> string {
+    print(texto);
+    return texto;
+}
+
+// The module body: an effectful `val`, run at each `run()`.
+val corpo = marcar("[corpo]");
+
+comptime {
+    compiler.init({ -> print("[init]") });
+}
+
+pub fn main() -> void {
+    vezes = vezes + 1;
+    print(vezes);
+}

@@ -1,0 +1,12 @@
+botopink-cell 1
+out == boom
+out abort in body
+out end boom
+out == err
+out err main
+out failed bad answer
+out end err
+out == fine
+out fine main
+out end fine
+out main

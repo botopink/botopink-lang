@@ -298,22 +298,36 @@ pub type Diagnostic(
 // `compiler.load` answers one — `Module(…)` written outside std is
 // `module-construction` —, its fields readable.
 //
-// `m.run() -> Result<void, Failure>` (decisions 787, 792) runs the loaded
-// package's `main`, `Failure` std's `failure.Failure` as `attempt` answers
-// it. It is written directly in a `compiler.init` body (`run-outside-init`):
-// the package — its `mod` tree and its own dependencies, named from its path
-// (`bp_load__<path>`) — joins the program, and its module body and its
-// `compiler.init`s run there, just before `main`. `Ok` when `main` returns,
-// `Error(Failure)` when it crashes or answers `Error(e)`. The `Module` of a
-// `Refused` is `run-module-refused`, a file with no `main` `load-no-main`.
-// The checker answers the call (`comptime/infer.zig` `inferModuleRun`): it
-// is no method of the record, whose signature would name `Failure` in every
-// module that reads a `Module`.
+// `m.run() -> Result<void, RunFailure>` (decisions 787, 792, 806) runs the
+// loaded package's `main`. It is written directly in a `compiler.init` body
+// (`run-outside-init`): the package — its `mod` tree and its own
+// dependencies, named from its path (`bp_load__<path>`) — joins the program,
+// and at every `run()` its `val`s, `var`s, module body and `compiler.init`s
+// run anew, just before `main`; what the build folded is not recomputed.
+// `Ok` when `main` returns, `Error(RunFailure)` otherwise — nothing the
+// package runs propagates out of `run()`. The `Module` of a `Refused` is
+// `run-module-refused`, a file with no `main` `load-no-main`. The checker
+// answers the call (`comptime/infer.zig` `inferModuleRun`): it is no method
+// of the record, whose signature would name `RunFailure` in every module
+// that reads a `Module`.
 pub type Module(
     name: string,
     path: string,
     target: Target,
 )
+
+// What `m.run()` answers on its `Error` side (decision 806): `.Failed` when
+// the loaded `main` returns `Error(e)`, `message` the text `print` writes for
+// `e`; `.Abort` when the package crashes — a `panic`, a host failure or a
+// run-time crash, in its body, its executors or its `main` —, `message` the
+// crash's. `failure.Failure`, what `attempt` answers, is another type.
+pub type RunFailure(
+    kind: RunFailureKind,
+    message: string,
+)
+
+// The kinds of a `RunFailure`.
+pub type RunFailureKind { Failed, Abort }
 
 // A load that refused: the loaded file's `Module` and its refusals, never
 // empty.
@@ -1276,6 +1290,26 @@ pub type HookNode = __HookNode;
         "path": "string",
         "target": "Target"
       }
+    },
+    {
+      "ast": "record_def",
+      "name": "RunFailure",
+      "fields": {
+        "kind": "RunFailureKind",
+        "message": "string"
+      }
+    },
+    {
+      "ast": "enum_def",
+      "name": "RunFailureKind",
+      "variants": [
+        {
+          "name": "Failed"
+        },
+        {
+          "name": "Abort"
+        }
+      ]
     },
     {
       "ast": "record_def",

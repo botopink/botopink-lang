@@ -297,6 +297,32 @@ pub fn moduleHasInit(program: ast.Program) bool {
     return false;
 }
 
+/// Decision 806 (3) — whether a module holds run-time state a `run()` of its
+/// loaded package must clear before the module body runs again: a cached
+/// effectful `val` (`cachedValueExpr`) or a `ProcessDict` module `var`.
+pub fn hasRunState(program: ast.Program) bool {
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (runStateOf(v) != .none) return true,
+        else => {},
+    };
+    return false;
+}
+
+const RunState = enum { none, cached, process_dict };
+
+fn runStateOf(v: ast.ValDecl) RunState {
+    if (v.memory()) |mem| return if (mem.mode == .processDict) .process_dict else .none;
+    if (v.isStatement() or v.value.isComptimeExpr()) return .none;
+    if (v.value.* == .comptime_ and v.value.comptime_.kind == .comptimeBlock) return .none;
+    return if (initialiserCanHaveEffect(v.value.*)) .cached else .none;
+}
+
+/// Whether `name`'s module has a `'_botopink_init'/0`: a module body, or —
+/// a module of a loaded package — run-time state its init clears (806 (3)).
+pub fn moduleHasInitNamed(name: []const u8, program: ast.Program) bool {
+    return moduleHasInit(program) or (crossModule.isLoadedModule(name) and hasRunState(program));
+}
+
 fn initialiserCanHaveEffect(e: ast.Expr) bool {
     return switch (e) {
         .literal => |lit| switch (lit.kind) {
@@ -734,7 +760,7 @@ pub fn codegenEmit(
                     // program's.
                     if (crossModule.loadedElsewhere(dep, ct.name)) continue;
                     switch (o.outcome) {
-                        .ok => |*dok| if (moduleHasInit(dok.transformed)) try import_inits.append(alloc, cross.atomFor(dep)),
+                        .ok => |*dok| if (moduleHasInitNamed(dep, dok.transformed)) try import_inits.append(alloc, cross.atomFor(dep)),
                         else => {},
                     }
                 };
@@ -2225,7 +2251,10 @@ fn emitErlangModule(
     for (top_runtime_vals.items) |v| {
         if (initialiserCanHaveEffect(v.value.*)) try module_body.append(alloc, v);
     }
-    const emit_init = module_body.items.len > 0;
+    // Decision 806 (3) — a loaded package's module clears its run-time state
+    // in its init, so each `run()` starts clean.
+    const clears_run_state = crossModule.isLoadedModule(module_name) and hasRunState(program);
+    const emit_init = module_body.items.len > 0 or clears_run_state;
 
     // A *named* runtime module-level `val` is always emitted as a 0-arity function
     // (`topValForms`), so a bare reference to it lowers to the call `name()`.
@@ -2500,7 +2529,7 @@ fn emitErlangModule(
     // module whose one print is `val _x = @print(…)`) is defined (C-34). It is
     // written after them, before the entrypoints that call it, in every mode.
     var init_forms: Forms = .empty;
-    if (emit_init) try em.initForms(b, &init_forms, module_body.items);
+    if (emit_init) try em.initForms(b, &init_forms, module_body.items, if (clears_run_state) program else null);
 
     // Runtime helpers a lowering reached. A comptime module always carries
     // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
@@ -6005,12 +6034,25 @@ const Emitter = struct {
     /// statement inline (it has no reader, and `val _ = …` twice would collide
     /// on `'_'/0`), a named one as the call to its 0-arity reader, which caches.
     /// The trailing `ok` keeps the return value independent of the last `val`.
-    fn initForms(this: *Emitter, b: Ast.Builder, out: *Forms, body: []const ast.ValDecl) !void {
+    ///
+    /// Decision 806 (3) — `clear` (a loaded package's module): the init first
+    /// erases what an earlier `run()` left — each cached `val`'s
+    /// `persistent_term` entry, each `ProcessDict` `var`'s key —, so the body
+    /// runs whole again and every `var` starts from its declaration.
+    fn initForms(this: *Emitter, b: Ast.Builder, out: *Forms, body: []const ast.ValDecl, clear: ?ast.Program) !void {
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;
         this.resetLocals();
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (clear) |program| for (program.decls) |decl| switch (decl) {
+            .val => |v| switch (runStateOf(v)) {
+                .none => {},
+                .cached => try stmts.append(b.arena, try b.remote("persistent_term", "erase", &.{try b.tuple(&.{ Ast.Expr.a(this.erl_atom), Ast.Expr.a(v.name) })})),
+                .process_dict => try stmts.append(b.arena, try b.remote("erlang", "erase", &.{try this.memoryKey(b, v.name)})),
+            },
+            else => {},
+        };
         for (body) |v| {
             if (v.isStatement()) {
                 try stmts.append(b.arena, try this.exprNode(b, v.value.*));

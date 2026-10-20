@@ -1850,13 +1850,19 @@ codegen/
   (`bp_load__<path>`, `comptime/load.zig`) is a dependency to `Packages`
   (`isDep`) but no init list's: `crossModule.loadedElsewhere` drops its
   modules from every other package's closure; commonJS binds what a module
-  imports from it to a function that `require`s it when called (its body
-  runs at `run()`), and erlang (`emitErlangModule`) and beam (`emitFn`)
-  begin its root's `__bp_loaded_main` with the `'_botopink_init'/0` calls of
-  its closure and its own.
+  imports from it to a function that drops the package's entries from node's
+  `require` cache (its root's directory) and `require`s it when called (its
+  body runs at every `run()`, decision 806 (3)), and erlang (`emitErlangModule`)
+  and beam (`emitFn`) begin its root's `__bp_loaded_main` with the
+  `'_botopink_init'/0` calls of its closure and its own; each module of the
+  package with run-time state (`hasRunState`: a cached `val`, a `ProcessDict`
+  `var`) has an init that first erases that state (`persistent_term:erase`,
+  `erlang:erase`), so every `run()` starts clean (806 (3)).
   wasm links a loaded package into the program's one module by name: its modules are never
   a "declared" link (`programEntry`), the root's `main` is kept as `<module>/main`, its
-  initialisers run in `$__bp_loaded_init__<package>` (once), which its `__bp_loaded_main` calls first.
+  initialisers run in `$__bp_loaded_init__<package>` at every `run()` — its `var`s
+  take no constant path, so the init sets each from its declaration (806 (3)) —,
+  which its `__bp_loaded_main` calls first.
   The body is lowered BEFORE the runtime helpers are chosen (and written after
   them): a helper only a module-level initialiser reaches — a dependency whose
   one print is `val _x = @print("boot")` — was never defined, and the init

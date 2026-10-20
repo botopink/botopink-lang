@@ -3949,17 +3949,22 @@ const Emitter = struct {
                     try props.append(self.arena(), .{ .key = imp2.leaf(), .bind = imp2.alias });
                 }
                 if (props.items.len == 0) continue;
-                // Decisions 787, 792 (2) — a loaded package a `run()` reaches
-                // is required when it runs, never at load: its body runs at
-                // `run()`, just before its `main` (each name a function of no
-                // argument, `__bp_loaded_main`).
+                // Decisions 787, 792 (2), 806 (3) — a loaded package a `run()`
+                // reaches is required when it runs, never at load: its body
+                // runs at `run()`, just before its `main` (each name a function
+                // of no argument, `__bp_loaded_main`), and anew at every
+                // `run()` — the package's entries in node's `require` cache
+                // (its root's directory) are dropped first, so its `val`s,
+                // `var`s, body and executors run again.
                 if (@import("../comptime/load.zig").isLoadedPackage(info.module)) {
                     for (props.items) |p| {
-                        const req = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module }));
-                        const call = try self.b.call(try self.b.member(req, p.key), &.{});
+                        const path = try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module });
+                        const text = try std.fmt.allocPrint(self.arena(), "() => {{ const __p = require.resolve(\"{s}\"); const __d = require(\"path\").dirname(__p) + require(\"path\").sep; for (const __k of Object.keys(require.cache)) {{ if (__k.startsWith(__d)) {{ delete require.cache[__k]; }} }} return require(__p).{s}(); }}", .{ path, p.key });
+                        const parts = try self.arena().alloc(js.HostPart, 1);
+                        parts[0] = .{ .text = text };
                         try stmts.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .name = p.bind orelse p.key },
-                            .value = try self.b.arrowExpr(&.{}, call),
+                            .value = .{ .host = parts },
                         } });
                     }
                     continue;

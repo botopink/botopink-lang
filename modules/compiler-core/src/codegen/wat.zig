@@ -10981,10 +10981,14 @@ const Emitter = struct {
             try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
             return;
         }
+        // Decision 806 (3) — a loaded package's `var` starts from its
+        // declaration at every `run()`: no constant path, its value set by the
+        // package's init function (`emitGlobalInitGroup`) each time it runs.
+        const reset_at_run = v.mutable and self.loaded_pkg != null;
         // A `var` (front 17 step 2) is a mutable global on every path: the two
         // constant paths below declared an immutable one, which `global.set`
         // does not validate against.
-        if (self.folded_globals.get(v.name)) |text| {
+        if (!reset_at_run) if (self.folded_globals.get(v.name)) |text| {
             if (isNumericLiteral(text)) {
                 try self.item(.{ .global = .{ .name = v.name, .ty = self.vtOf(t), .mutable = v.mutable, .init = try numeralText(self.arena(), text) } });
                 return;
@@ -11012,8 +11016,8 @@ const Emitter = struct {
                 } });
                 return;
             }
-        }
-        switch (v.value.*) {
+        };
+        if (!reset_at_run) switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
                 // The comptime folder rewrites a folded `val` into a `numberLit`
                 // node carrying the *rendered* value, which is not always a
@@ -11046,7 +11050,7 @@ const Emitter = struct {
                 else => {},
             },
             else => {},
-        }
+        };
         // Not a constant expression: declare it zeroed and mutable, and fill it
         // in from `$__init_globals` (see `emitGlobalInit`).
         try self.item(.{ .global = .{
@@ -11115,20 +11119,8 @@ const Emitter = struct {
 
         var c: Capture = .{};
         self.open(&c);
-        // A loaded package's initialisers run once, however many `run()`s
-        // reach its `main`.
-        if (group) |g| {
-            const name = try std.fmt.allocPrint(self.arena(), "__bp_loaded_ran__{s}", .{g});
-            try self.item(.{ .global = .{ .name = name, .ty = .i32, .mutable = true, .init = "0" } });
-            try self.emit(.{ .global_get = name });
-            var done: Capture = .{};
-            self.open(&done);
-            try self.emit(.@"return");
-            const done_seq = self.seal(&done, .terminated);
-            try self.emit(.{ .@"if" = .{ .then = .{ .seq = done_seq } } });
-            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "1" } });
-            try self.emit(.{ .global_set = name });
-        }
+        // Decision 806 (3) — a loaded package's initialisers run at every
+        // `run()` that reaches its `main`: each run starts clean.
         for (self.deferred_globals.items, self.deferred_renames.items, self.deferred_pkg.items) |v, renames, pkg| {
             if (!sameGroup(pkg, group)) continue;
             self.global_renames = renames;
