@@ -24,6 +24,13 @@
 //!   runs only once std's template is ready (`comptime.stdlibTemplateReady`),
 //!   and a file that loads itself through a chain of loads is refused
 //!   (`load-cycle`) instead of compiling forever.
+//! - Decisions 787, 792 — `m.run()`: a read in a body that runs at build is
+//!   answered before the body runs (`runtimeAnswer`), a captured `Module`
+//!   written back as its constructor (`recordSource`); a `run()` an executor
+//!   writes brings the file into the program as a package of its own
+//!   (`packageModules`, `bp_load__<path>`), compiled again by
+//!   `comptime.compileWith` with it, the call rewritten to std's `attempt`
+//!   over the package's `loaded_main_fn` (`runRewrite`, `withRunImports`).
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -73,6 +80,99 @@ pub threadlocal var build_modules: []const Module = &.{};
 /// set it (tests, the language server): the lookup name stands in.
 pub threadlocal var build_target: ?[]const u8 = null;
 
+/// Decision 792 (5) — the prefix of a loaded package's name: `bp_load__`
+/// and the file's path, each `/` a `__`, `.bp` dropped
+/// (`src/cases/fine/mod.bp` → `bp_load__src__cases__fine__mod`).
+pub const package_prefix = "bp_load__";
+
+/// The function a loaded package's root gains (decision 787 (2)): its
+/// `main`, a `main` answering `Error(e)` raised as a `panic` so `run`
+/// answers `Error(Failure)` (792 (1)).
+pub const loaded_main_fn = "__bp_loaded_main";
+
+/// The package a loaded file is compiled into when a `run` reaches it.
+pub fn packageName(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const stem = if (std.mem.endsWith(u8, path, ".bp")) path[0 .. path.len - 3] else path;
+    const out = try std.mem.replaceOwned(u8, arena, stem, "/", "__");
+    return std.mem.concat(arena, u8, &.{ package_prefix, out });
+}
+
+/// Whether `package` is a loaded file's (`packageName`).
+pub fn isLoadedPackage(package: []const u8) bool {
+    return std.mem.startsWith(u8, package, package_prefix);
+}
+
+/// What one top-level compile knows of a loaded file (decisions 787, 792):
+/// the answer of its load — kept so the reads of one compile, and the
+/// compile again with the packages its `run`s reach, compile the file once —
+/// and what a `run` of it needs.
+pub const Entry = struct {
+    path: []const u8,
+    /// The refusals, empty when the file compiled.
+    diagnostics: []const Diagnostic,
+    /// The file and its `mod` tree (`gatherTree`), children first, each
+    /// named by its logical path in the package.
+    modules: []const Module,
+    /// Whether the file declares a `main`, and whether that `main` answers a
+    /// `Result`.
+    has_main: bool,
+    main_result: bool,
+};
+
+/// The state of one top-level compile (`comptime.compileWith` enters and
+/// leaves it): the loaded files' entries and the files a `run` reaches.
+pub const State = struct {
+    arena: ?*std.heap.ArenaAllocator = null,
+    entries: std.StringHashMapUnmanaged(Entry) = .empty,
+    /// The paths a `run` reached, in the order first reached.
+    runs: std.ArrayListUnmanaged([]const u8) = .empty,
+};
+
+threadlocal var state: State = .{};
+
+/// A fresh state for a top-level compile; the one it replaces, which
+/// `leave` gives back.
+pub fn enter() !State {
+    const saved = state;
+    const a = try std.heap.page_allocator.create(std.heap.ArenaAllocator);
+    a.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    state = .{ .arena = a };
+    return saved;
+}
+
+pub fn leave(saved: State) void {
+    if (state.arena) |a| {
+        a.deinit();
+        std.heap.page_allocator.destroy(a);
+    }
+    state = saved;
+}
+
+fn stateArena() std.mem.Allocator {
+    return if (state.arena) |a| a.allocator() else std.heap.page_allocator;
+}
+
+/// The entry of `path`, when this compile loaded it.
+pub fn entryOf(path: []const u8) ?Entry {
+    return state.entries.get(path);
+}
+
+/// Record that a `run` reaches `path` (decision 787 (2)).
+pub fn noteRun(path: []const u8) !void {
+    for (state.runs.items) |p| if (std.mem.eql(u8, p, path)) return;
+    try state.runs.append(stateArena(), try stateArena().dupe(u8, path));
+}
+
+/// The paths a `run` reached in this compile.
+pub fn runs() []const []const u8 {
+    return state.runs.items;
+}
+
+/// Forget the runs (a compile again records its own).
+pub fn clearRuns() void {
+    state.runs.clearRetainingCapacity();
+}
+
 /// The files being loaded on this thread, outermost first — a file loading
 /// one of them is a cycle.
 threadlocal var loading: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -105,16 +205,16 @@ fn mayHoldExpr(comptime T: type) bool {
 const Finder = struct {
     arena: std.mem.Allocator,
     found: bool = false,
-    /// The string-literal paths of the reads, as written (`literalPaths`).
+    /// The paths of the reads known as written (`literalPaths`, `foldedPath`).
     paths: std.ArrayListUnmanaged([]const u8) = .empty,
 
     fn walk(self: *Finder, comptime T: type, v: T) std.mem.Allocator.Error!void {
         if (T == ast.Expr) if (isLoadCall(v)) {
             self.found = true;
             const args = v.call.kind.call.args;
-            if (args.len == 1 and args[0].value.* == .literal and args[0].value.literal.kind == .stringLit) {
-                if (try @import("template_eval.zig").lexemeBytes(self.arena, args[0].value.literal.kind.stringLit)) |p| try self.paths.append(self.arena, p);
-            }
+            // A literal, or a `+` of literals — what a `comptime` parameter
+            // expanded at a top-level block's call leaves (decision 788).
+            if (args.len == 1) if (try foldedPath(self.arena, args[0].value)) |p| try self.paths.append(self.arena, p);
         };
         if (comptime !mayHoldExpr(T)) return;
         switch (@typeInfo(T)) {
@@ -159,7 +259,7 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         .@"fn" => |fd| if (std.mem.eql(u8, fd.name, helper_fn)) return program,
         else => {},
     };
-    const src = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ "} from \"std\";\n" ++
+    const src = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
         "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n";
     const helper = try parseShifted(arena, src, helper_first_line, null);
     // Both first: an alias of an imported type names it in a signature only
@@ -252,6 +352,409 @@ pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []con
     return out;
 }
 
+// ── a read in a body that runs at build (decisions 787, 792) ─────────────────
+
+/// The path a read writes, when it is known where the read stands: a string
+/// literal, or a `+` of such (what a `comptime` parameter expanded at its
+/// call leaves, `"src/cases/" + "fine" + "/mod.bp"`, decision 788). Null for
+/// any other argument.
+pub fn foldedPath(arena: std.mem.Allocator, e: *const ast.Expr) std.mem.Allocator.Error!?[]const u8 {
+    switch (e.*) {
+        .literal => |l| if (l.kind == .stringLit) return try @import("template_eval.zig").lexemeBytes(arena, l.kind.stringLit),
+        .binaryOp => |b| if (b.op == .add) {
+            const lhs = (try foldedPath(arena, b.lhs)) orelse return null;
+            const rhs = (try foldedPath(arena, b.rhs)) orelse return null;
+            return try std.mem.concat(arena, u8, &.{ lhs, rhs });
+        },
+        .comptime_ => |c| switch (c.kind) {
+            .comptimeExpr => |inner| return foldedPath(arena, inner),
+            else => {},
+        },
+        else => {},
+    }
+    return null;
+}
+
+/// `v` with each `compiler.load` read replaced by what `ctx.answer(call)`
+/// gives (null keeps the read): a body that runs at build reads the answer
+/// as a value the comptime runtime builds (`runtimeAnswer`).
+pub fn replaceReads(arena: std.mem.Allocator, comptime T: type, v: T, ctx: anytype) anyerror!T {
+    if (T == ast.Expr) if (isLoadCall(v)) {
+        if (try ctx.answer(v)) |r| return r;
+    };
+    if (comptime !mayHoldExpr(T)) return v;
+    switch (@typeInfo(T)) {
+        .pointer => |ptr| switch (ptr.size) {
+            .one => {
+                if (@typeInfo(ptr.child) == .@"fn" or @typeInfo(ptr.child) == .@"opaque") return v;
+                const n = try arena.create(ptr.child);
+                n.* = try replaceReads(arena, ptr.child, v.*, ctx);
+                return n;
+            },
+            .slice => {
+                const out = try arena.alloc(ptr.child, v.len);
+                for (v, 0..) |item, i| out[i] = try replaceReads(arena, ptr.child, item, ctx);
+                return out;
+            },
+            else => return v,
+        },
+        .optional => |o| return if (v) |x| try replaceReads(arena, o.child, x, ctx) else null,
+        .@"struct" => |st| {
+            var out = v;
+            inline for (st.fields) |fl| {
+                if (!fl.is_comptime) @field(out, fl.name) = try replaceReads(arena, fl.type, @field(v, fl.name), ctx);
+            }
+            return out;
+        },
+        .@"union" => |un| {
+            if (un.tag_type == null) return v;
+            switch (v) {
+                inline else => |payload, tag| return @unionInit(T, @tagName(tag), try replaceReads(arena, @TypeOf(payload), payload, ctx)),
+            }
+        },
+        else => return v,
+    }
+}
+
+/// Whether `fd`'s body reads `compiler.load`.
+pub fn fnReads(arena: std.mem.Allocator, fd: ast.FnDecl) !bool {
+    var f: Finder = .{ .arena = arena };
+    try f.walk(ast.FnDecl, fd);
+    return f.found;
+}
+
+/// The answer of a read in a body that runs at build, as code the comptime
+/// runtime builds: `Ok(Bp_LoadModule(…))`, or `Error(Bp_LoadRefused(module:
+/// …, diagnostics: […]))` — the records are the runtime's maps
+/// (`decorator_eval`'s host records), the target its variant's name.
+pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!ast.Expr {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.appendSlice(arena, "fn __bp_load_rewrite() { ");
+    try text.appendSlice(arena, if (ds.len == 0) "Ok(" else "Error(" ++ refused_alias ++ "(module: ");
+    try writeModule(arena, &text, loaded, .runtime);
+    if (ds.len > 0) {
+        try text.appendSlice(arena, ", diagnostics: ");
+        try writeDiagnostics(arena, &text, ds);
+        try text.append(arena, ')');
+    }
+    try text.appendSlice(arena, "); }");
+    const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
+    const program = parseShifted(arena, text.items, line, null) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => @panic("compiler.load: the build answer's code does not parse"),
+    };
+    return program.decls[0].@"fn".body[0].expr;
+}
+
+/// Decision 787 — a value a body that runs at build handed an executor
+/// (the runtime's JSON of the record), written back as the source of the
+/// record a `compiler.load` read answers: a `Module`, a `Refused`, a
+/// `Diagnostic`, an array of those. Null for any other value.
+pub fn recordSource(arena: std.mem.Allocator, v: std.json.Value) !?[]const u8 {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    if (!try writeRecord(arena, &text, v)) return null;
+    return text.items;
+}
+
+fn jsonString(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const v = o.get(key) orelse return null;
+    return if (v == .string) v.string else null;
+}
+
+fn jsonInt(o: std.json.ObjectMap, key: []const u8) ?usize {
+    const v = o.get(key) orelse return null;
+    return switch (v) {
+        .integer => |i| if (i >= 0) @intCast(i) else null,
+        else => null,
+    };
+}
+
+fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: std.json.Value) !bool {
+    switch (v) {
+        .array => |items| {
+            try text.append(arena, '[');
+            for (items.items, 0..) |x, i| {
+                if (i > 0) try text.appendSlice(arena, ", ");
+                if (!try writeRecord(arena, text, x)) return false;
+            }
+            try text.append(arena, ']');
+            return true;
+        },
+        .object => |o| {
+            if (o.get("diagnostics")) |ds| {
+                const m = o.get("module") orelse return false;
+                try text.appendSlice(arena, refused_alias ++ "(module: ");
+                if (!try writeRecord(arena, text, m)) return false;
+                try text.appendSlice(arena, ", diagnostics: ");
+                if (!try writeRecord(arena, text, ds)) return false;
+                try text.append(arena, ')');
+                return true;
+            }
+            if (o.get("message") != null) {
+                const d: Diagnostic = .{
+                    .code = jsonString(o, "code") orelse return false,
+                    .message = jsonString(o, "message") orelse return false,
+                    .file = jsonString(o, "file") orelse return false,
+                    .line = jsonInt(o, "line") orelse return false,
+                    .column = jsonInt(o, "column") orelse return false,
+                    .label = jsonString(o, "label"),
+                };
+                var one: std.ArrayListUnmanaged(u8) = .empty;
+                try writeDiagnostics(arena, &one, &.{d});
+                // `[…]` around the one written: the record alone.
+                try text.appendSlice(arena, one.items[1 .. one.items.len - 1]);
+                return true;
+            }
+            const path = jsonString(o, "path") orelse return false;
+            const name = jsonString(o, "name") orelse return false;
+            const target = jsonString(o, "target") orelse return false;
+            try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: Target.{s})", .{
+                try blockEval.stringLexeme(arena, name),
+                try blockEval.stringLexeme(arena, path),
+                target,
+            });
+            return true;
+        },
+        else => return false,
+    }
+}
+
+// ── `Module.run()` (decisions 787, 792) ─────────────────────────────────────
+
+/// The local name of std's `failure.attempt` in a module that runs a loaded
+/// file (`withRunImports`).
+pub const attempt_alias = "__bp_run_attempt";
+/// The prefix of the local name a loaded package's `loaded_main_fn` is
+/// imported under: `__bp_run__<package>`.
+pub const run_alias_prefix = "__bp_run__";
+
+/// The path of the `Module` a `run()` is called on, read off the receiver as
+/// an executor holds it (`recordSource`): `Bp_LoadModule(…, path: "…", …)`,
+/// or `Bp_LoadRefused(module: …, …).module`. Null for any other receiver.
+pub fn receiverPath(arena: std.mem.Allocator, written: *const ast.Expr) !?[]const u8 {
+    // A splice stands parenthesised: `(Bp_LoadModule(…)).run()`.
+    var e = written;
+    while (e.* == .collection and e.collection.kind == .grouped) e = e.collection.kind.grouped;
+    switch (e.*) {
+        .call => |c| if (c.kind == .call) {
+            const cc = c.kind.call;
+            if (cc.receiver != null or cc.is_builtin) return null;
+            if (!std.mem.eql(u8, cc.callee, module_alias)) return null;
+            for (cc.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, "path")) return foldedPath(arena, a.value);
+        },
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |acc| if (std.mem.eql(u8, acc.member, "module") and acc.receiver.* == .call and acc.receiver.call.kind == .call) {
+                const cc = acc.receiver.call.kind.call;
+                if (cc.receiver != null or !std.mem.eql(u8, cc.callee, refused_alias)) return null;
+                for (cc.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, "module")) return receiverPath(arena, a.value);
+            },
+            else => {},
+        },
+        else => {},
+    }
+    return null;
+}
+
+/// `run()` rewritten: `__bp_run_attempt(__bp_run__<package>)` — std's
+/// `attempt` over the loaded package's `loaded_main_fn` —, or, while the
+/// package is not yet in the program (the compile that finds the `run`,
+/// compiled again with it, `comptime.compileWith`), over a function that
+/// does nothing.
+pub fn runRewrite(arena: std.mem.Allocator, loc: ast.Loc, alias: ?[]const u8) error{OutOfMemory}!*ast.Expr {
+    const text = if (alias) |a|
+        try std.fmt.allocPrint(arena, "fn __bp_run_rewrite() {{ " ++ attempt_alias ++ "({s}); }}", .{a})
+    else
+        "fn __bp_run_rewrite() { " ++ attempt_alias ++ "(fn() -> void {}); }";
+    const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
+    const program = parseShifted(arena, text, line, null) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => @panic("Module.run: the rewrite does not parse"),
+    };
+    const out = try arena.create(ast.Expr);
+    out.* = program.decls[0].@"fn".body[0].expr;
+    return out;
+}
+
+/// The local name `withRunImports` gives the loaded package `package`'s
+/// `loaded_main_fn`.
+pub fn runAlias(arena: std.mem.Allocator, package: []const u8) ![]const u8 {
+    return std.mem.concat(arena, u8, &.{ run_alias_prefix, package });
+}
+
+/// A `run()` call as written: where, and on what.
+pub const RunCall = struct { loc: ast.Loc, receiver: *const ast.Expr };
+
+/// Every `x.run()` of `func`'s body — the calls an executor writes, before
+/// the locals it captures are spliced (`infer.zig` `refuseExecutorRuns`).
+pub fn runCalls(arena: std.mem.Allocator, func: ast.FunctionExpr) ![]const RunCall {
+    var f: RunFinder = .{ .arena = arena, .collect_all = true };
+    try f.walk([]const ast.Stmt, func.kind.body);
+    return f.calls.items;
+}
+
+/// The path of the `Module` a captured local's value (the runtime's JSON,
+/// `recordSource`) is: a `Module`'s own, or the `module` of a `Refused`
+/// when `member` is `module`.
+pub fn valuePath(v: std.json.Value, member: ?[]const u8) ?[]const u8 {
+    if (v != .object) return null;
+    if (member) |m| {
+        if (!std.mem.eql(u8, m, "module")) return null;
+        const inner = v.object.get("module") orelse return null;
+        return valuePath(inner, null);
+    }
+    return jsonString(v.object, "path");
+}
+
+const RunFinder = struct {
+    arena: std.mem.Allocator,
+    paths: std.ArrayListUnmanaged([]const u8) = .empty,
+    collect_all: bool = false,
+    calls: std.ArrayListUnmanaged(RunCall) = .empty,
+
+    fn walk(self: *RunFinder, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == ast.Expr) if (v == .call and v.call.kind == .call) {
+            const cc = v.call.kind.call;
+            if (std.mem.eql(u8, cc.callee, "run") and cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
+                if (self.collect_all) try self.calls.append(self.arena, .{ .loc = v.call.loc, .receiver = r });
+                if (try receiverPath(self.arena, r)) |p| try self.paths.append(self.arena, p);
+            };
+        };
+        if (comptime !mayHoldExpr(T)) return;
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (!fl.is_comptime) try self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// `program` with the imports its `run()` calls are rewritten to name
+/// (`runRewrite`): std's `failure.attempt` under `attempt_alias`, and the
+/// `loaded_main_fn` of each loaded package already in the program under
+/// `runAlias`. `program` itself when it calls none.
+pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var f: RunFinder = .{ .arena = arena };
+    for (program.decls) |d| try f.walk(ast.DeclKind, d);
+    if (f.paths.items.len == 0) return program;
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    var has_attempt = false;
+    for (program.decls) |d| switch (d) {
+        .use => |u| for (u.imports) |imp| {
+            if (imp.alias) |a| if (std.mem.eql(u8, a, attempt_alias)) {
+                has_attempt = true;
+            };
+        },
+        else => {},
+    };
+    if (!has_attempt) try src.appendSlice(arena, "import {failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n");
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    for (f.paths.items) |p| {
+        const pkg = try packageName(arena, p);
+        if (seen.contains(pkg)) continue;
+        try seen.put(arena, pkg, {});
+        const present = for (build_modules) |m| {
+            if (std.mem.eql(u8, m.package, pkg)) break true;
+        } else false;
+        if (!present) continue;
+        try src.print(arena, "import {{" ++ loaded_main_fn ++ " as {s}}} from \"{s}\";\n", .{ try runAlias(arena, pkg), pkg });
+    }
+    if (src.items.len == 0) return program;
+    const imports = try parseShifted(arena, src.items, helper_first_line + 100, null);
+    const decls = try arena.alloc(ast.DeclKind, program.decls.len + imports.decls.len);
+    @memcpy(decls[0..imports.decls.len], imports.decls);
+    @memcpy(decls[imports.decls.len..], program.decls);
+    var out = program;
+    out.decls = decls;
+    return out;
+}
+
+/// The modules a loaded package joins the program with (decision 787 (2)):
+/// `entry`'s file and its `mod` tree, each named `<package>/<logical>`, the
+/// root gaining `loaded_main_fn` — its `main`, or, for a `main` answering a
+/// `Result`, a `panic` with the `Error`'s text (792 (1)).
+/// The strings of the loaded packages' modules (their names, paths and
+/// sources) outlive the compile: a backend's output names its module and
+/// renders a diagnostic over its source after the session is gone, as a
+/// driver's own modules outlive it. Interned for the process, one copy per
+/// text however many compiles meet it.
+var lasting_mutex: std.atomic.Mutex = .unlocked;
+var lasting_arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var lasting_set: std.StringHashMapUnmanaged(void) = .empty;
+
+fn lasting(text: []const u8) ![]const u8 {
+    while (!lasting_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer lasting_mutex.unlock();
+    if (lasting_set.getKey(text)) |k| return k;
+    const copy = try lasting_arena.allocator().dupe(u8, text);
+    try lasting_set.put(lasting_arena.allocator(), copy, {});
+    return copy;
+}
+
+pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMod.Targets) ![]const Module {
+    const pkg = try packageName(arena, entry.path);
+    const out = try arena.alloc(Module, entry.modules.len);
+    for (entry.modules, 0..) |m, i| {
+        var source = try arena.dupe(u8, m.source);
+        if (m.root) source = try std.mem.concat(arena, u8, &.{
+            source,
+            if (entry.main_result)
+                "\n\nimport {failure.panic as __bp_load_panic} from \"std\";\n\npub fn " ++ loaded_main_fn ++ "() -> void {\n    case main() {\n        Ok(_) -> return;\n        Error(e) -> __bp_load_panic(\"${e}\");\n    }\n}\n"
+            else
+                "\n\npub fn " ++ loaded_main_fn ++ "() -> void {\n    main();\n}\n",
+        });
+        out[i] = .{
+            .path = try lasting(try std.mem.concat(arena, u8, &.{ pkg, "/", m.path })),
+            .source = try lasting(source),
+            .srcPath = try lasting(m.srcPath),
+            .package = try lasting(pkg),
+            .targets = targets,
+            .files = m.files,
+        };
+    }
+    return out;
+}
+
+const TargetForm = enum { source, runtime };
+
+/// `Bp_LoadModule(name: …, path: …, target: …)`: the target as std's
+/// `Target` variant in source, as the variant's name at build.
+fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded, form: TargetForm) !void {
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: ", .{
+        try blockEval.stringLexeme(arena, loaded.name()),
+        try blockEval.stringLexeme(arena, loaded.path),
+    });
+    switch (form) {
+        .source => try text.print(arena, "Target.{s})", .{targetVariant(loaded.target)}),
+        .runtime => try text.print(arena, "\"{s}\")", .{targetVariant(loaded.target)}),
+    }
+}
+
+fn writeDiagnostics(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), ds: []const Diagnostic) !void {
+    try text.append(arena, '[');
+    for (ds, 0..) |d, i| {
+        if (i > 0) try text.appendSlice(arena, ", ");
+        try text.print(arena, diagnostic_alias ++ "(code: \"{s}\", message: \"{s}\", file: \"{s}\", line: {d}, column: {d}, label: ", .{
+            try blockEval.stringLexeme(arena, d.code),
+            try blockEval.stringLexeme(arena, d.message),
+            try blockEval.stringLexeme(arena, d.file),
+            d.line,
+            d.column,
+        });
+        if (d.label) |l| try text.print(arena, "\"{s}\")", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null)");
+    }
+    try text.append(arena, ']');
+}
+
 // ── the nested compile ───────────────────────────────────────────────────────
 
 pub const Request = struct {
@@ -281,17 +784,22 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const comptimeMod = @import("../comptime.zig");
     if (!comptimeMod.stdlibTemplateReady()) return .std_initialising;
     for (loading.items) |p| if (std.mem.eql(u8, p, req.path)) return .cycle;
+    // One compile per file per top-level compile (decision 787): every read
+    // of it, and the compile again with the packages `run` reaches, read the
+    // first answer.
+    if (state.entries.get(req.path)) |e| return .{ .diagnostics = e.diagnostics };
 
     var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer scratch_state.deinit();
     const scratch = scratch_state.allocator();
 
     var refusals: std.ArrayListUnmanaged(Diagnostic) = .empty;
-    const own = gatherTree(scratch, arena, req, &refusals) catch |err| switch (err) {
+    var main_of: MainOf = .{};
+    const own = gatherTree(scratch, arena, req, &refusals, &main_of) catch |err| switch (err) {
         error.FileNotFound => return .missing,
         else => |e| return e,
     };
-    if (refusals.items.len > 0) return .{ .diagnostics = refusals.items };
+    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, refusals.items, own, main_of) };
 
     // The caller's manifest: its targets, its reader and its dependencies.
     const caller = build_modules;
@@ -325,7 +833,35 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         if (!ownModule) continue;
         if (try diagnosticOf(arena, o)) |d| try refusals.append(arena, d);
     }
-    return .{ .diagnostics = refusals.items };
+    return .{ .diagnostics = try remember(req.path, refusals.items, own, main_of) };
+}
+
+const MainOf = struct { has: bool = false, result: bool = false };
+
+/// `path`'s entry in this compile's state, copied into the state's arena;
+/// its diagnostics.
+fn remember(path: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
+    const a = stateArena();
+    const dcopy = try a.alloc(Diagnostic, ds.len);
+    for (ds, 0..) |d, i| dcopy[i] = .{
+        .code = try a.dupe(u8, d.code),
+        .message = try a.dupe(u8, d.message),
+        .file = try a.dupe(u8, d.file),
+        .line = d.line,
+        .column = d.column,
+        .label = if (d.label) |l| try a.dupe(u8, l) else null,
+    };
+    const mcopy = try a.alloc(Module, own.len);
+    for (own, 0..) |m, i| mcopy[i] = .{
+        .path = try a.dupe(u8, m.path),
+        .source = try a.dupe(u8, m.source),
+        .srcPath = try a.dupe(u8, m.srcPath),
+        .root = m.root,
+        .files = m.files,
+    };
+    const key = try a.dupe(u8, path);
+    try state.entries.put(a, key, .{ .path = key, .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
+    return dcopy;
 }
 
 /// The loaded file and the `mod` tree beside it, children before their
@@ -333,7 +869,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
 /// logical path as the CLI's resolver names a package's modules. A `mod`
 /// naming no file, or two, is a refusal of the tree (`refusals`), as the
 /// resolver's.
-fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request, refusals: *std.ArrayListUnmanaged(Diagnostic)) ![]const Module {
+fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request, refusals: *std.ArrayListUnmanaged(Diagnostic), main_of: *MainOf) ![]const Module {
     const Item = struct { logical: []const u8, file: []const u8, root: bool };
     var work: std.ArrayListUnmanaged(Item) = .empty;
     const base = std.fs.path.basename(req.path);
@@ -347,11 +883,18 @@ fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request
             error.OutOfMemory => return error.OutOfMemory,
             else => if (item.root) return error.FileNotFound else continue,
         };
-        try out.append(scratch, .{ .path = item.logical, .source = source, .srcPath = item.file, .root = item.root });
+        try out.append(scratch, .{ .path = item.logical, .source = source, .srcPath = item.file, .root = item.root, .files = req.files });
         var lx = Lexer.init(source);
         const tokens = lx.scanAll(scratch) catch continue;
         var p = Parser.init(tokens);
         const program = p.parse(scratch) catch continue;
+        if (item.root) for (program.decls) |d| switch (d) {
+            .@"fn" => |fd| if (std.mem.eql(u8, fd.name, "main")) {
+                main_of.has = true;
+                if (fd.returnType) |rt| main_of.result = rt == .generic and std.mem.eql(u8, rt.generic.name, "Result");
+            },
+            else => {},
+        };
         const dir = std.fs.path.dirname(item.file) orelse "";
         for (program.decls) |d| {
             const m = switch (d) {

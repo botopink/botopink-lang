@@ -3935,8 +3935,9 @@ package of its own — the caller's manifest, the `mod` tree beside the file, th
 `Diagnostic` is the refusal as printed: `message` the text after `error: `, `file`, `line` and
 `column` where it points, `label` the text beside the caret.
 
-The loaded file never joins the program that loads it: no module declares it, the package's
-module tree leaves it out, and its refusals never refuse the program. The answer is read as
+The loaded file never joins the program that loads it — unless a `run()` reaches it, below: no
+module declares it, the package's module tree leaves it out, and its refusals never refuse the
+program. The answer is read as
 every `Result` is (decision 783): `try comptime compiler.load(path) catch { r -> … }` handles
 the refusals — the region's value is the `Module`, so the handler ends with one, `r.module`
 (decision 595 (4)) —, `try comptime compiler.load(path);` propagates them to the enclosing
@@ -3963,6 +3964,31 @@ The `Module` (decision 786) is the loaded file's, on both sides: `name` the dire
 loaded package still resolves its own to compile.
 
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
+
+A `Module` that compiled can be run (decisions 787, 792). `m.run()`, written in a `compiler.init`
+body, runs the loaded file's `main` when the program runs, at that point of the init body: `Ok` when
+`main` returns, `Error(Failure)` when it crashes or answers `Error(e)` — `Failure` as `attempt`
+answers it, read with `try … catch` as every `Result`. The loaded package — the file, its `mod`
+tree and its own dependencies, named from its path (`bp_load__<path>`, one package per file) — then
+joins the program; a loaded file no `run` reaches stays out of it. Its module body and its
+`compiler.init`s run at `run()`, just before its `main`, never at program start with the program's
+own; `run()` called twice runs `main` twice, in one package.
+
+<!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/compiler_load_module_run -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_body_at_run -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_twice -->
+
+`run()` written anywhere but directly in a `compiler.init` body — in the body that runs at build
+outside its init, in a function the init body calls, in a body that runs when the program runs — is
+`run-outside-init`, at the call. `run()` on the `module` of a `Refused` is `run-module-refused`, and
+on a loaded file that declares no `main` `load-no-main`, each at the call. A `Module` is answered by
+`compiler.load` alone: `Module(…)` written by hand is `module-construction`.
+
+<!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/run_outside_init -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/run_in_called_function -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/run_module_refused -->
+<!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/load_no_main -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/module_construction -->
 
 The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`

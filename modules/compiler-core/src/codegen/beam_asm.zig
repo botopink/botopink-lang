@@ -2128,6 +2128,9 @@ fn emitBeamAsm(
         try crossModule.importClosure(alloc, all_outputs, xc, program, &seen, &closure);
         for (closure.items) |dep| for (all_outputs) |*o| {
             if (!std.mem.eql(u8, o.name, dep)) continue;
+            // Decisions 787, 792 (2) — a loaded package's bodies run at
+            // `run()` (its `__bp_loaded_main`), never with the program's.
+            if (crossModule.loadedElsewhere(dep, module_name)) continue;
             switch (o.outcome) {
                 .ok => |*dok| if (moduleHasInit(dok.transformed)) try em.import_inits.append(alloc, xc.atomFor(dep)),
                 else => {},
@@ -4030,6 +4033,17 @@ const Emitter = struct {
 
         try self.emitFrame(arity);
         try self.emitParamSpill(nparams);
+        // Decisions 787, 792 (2) — a loaded package's root runs its
+        // package's bodies, and its own, when a `run()` calls it.
+        if (std.mem.eql(u8, f.name, @import("../comptime/load.zig").loaded_main_fn) and crossModule.isLoadedModule(self.module_path)) {
+            for (self.import_inits.items) |dep| {
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
+            }
+            if (self.entry_stmts.items.len > 0) {
+                const own_init = try self.fnLabelsFor("'_botopink_init'", 0);
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = own_init.entry }, 0);
+            }
+        }
         // A destructuring parameter (`{ name, .. }: Person`) binds its names
         // from the spilled argument before the body runs.
         {

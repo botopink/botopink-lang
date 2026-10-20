@@ -146,6 +146,11 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
         .module => |m| m,
         .root, .key => return,
     };
+    if (std.mem.eql(u8, module, "std/compiler")) {
+        // Decision 792 (3) — `Module` is made by `compiler.load` alone.
+        if (std.mem.eql(u8, imp.leaf(), "Module") and !std.mem.eql(u8, local, loadMod.module_alias)) try env.stdModuleCtorNames.put(env.arena, local, {});
+        return;
+    }
     if (std.mem.eql(u8, module, "std/hooks")) {
         // Decisions 771, 774 — std's `hooks.memo`, lowered where it is `use`d.
         if (std.mem.eql(u8, imp.leaf(), "memo")) try env.stdMemoNames.put(env.arena, local, {});
@@ -6257,7 +6262,7 @@ fn runDeclDecorators(
         // Decision 587 — the types the body names once inference resolved its
         // leading-dot variants (`.Erlang(…)` is `Implementation.Erlang(…)`).
         var hosts = try hostCells.Writer.init(env, program.decls);
-        const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
+        const runDfn = if (local) try withBuildLoads(env, try hosts.rewrite(try sameLoweredFn(env, program, dfn))) else dfn;
         // Decision 380 — an argument is written in this module: its std calls
         // (`clock.hours(1)`, 290) are this module's to rename, and the std
         // functions they reach travel with it.
@@ -6686,12 +6691,16 @@ fn executorSource(
     splices[values.len + captured.len] = .{ .param = declName, .lexeme = annotated };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
-        const lit = (try memberFn.literalSource(env.arena, v)) orelse {
+        // Decision 787 — a `Module` (or a `Refused`) a `compiler.load` read
+        // of the body answered: the record's constructor, under the names
+        // the module's load helper imports (`load.withLoadHelper`).
+        const lit = (try memberFn.literalSource(env.arena, v)) orelse (try loadMod.recordSource(env.arena, v)) orelse {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s executor reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_local_not_literal, a.name, n });
             return localNotLiteral(env, a, sig, func, local, n, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
         };
         splices[values.len + k] = .{ .param = n, .lexeme = lit };
     }
+    try refuseExecutorRuns(env, func, captured, handed);
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
     // The executor written as a function of no parameter: `fn() { … }`.
     var asFn = func;
@@ -12772,6 +12781,17 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         ).withLoc(argLoc);
         return error.TypeError;
     };
+    const ds = try answerLoad(env, path, argLoc);
+    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = path, .target = env.target }, ds);
+    try env.srcRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
+/// The refusals of the file `path` names, compiled at build
+/// (`load.compileFile`), empty when it compiles; a path refused, a file
+/// missing, a compiler with no reader and a cycle are refusals of the
+/// caller, at `argLoc`.
+fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const loadMod.Diagnostic {
     if (embedMod.checkPath(path)) |refusal| {
         env.lastError = switch (refusal) {
             .absolute => TypeError.custom(
@@ -12832,9 +12852,33 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
             return error.TypeError;
         },
     };
-    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = path, .target = env.target }, ds);
-    try env.srcRewrites.put(loc, rewrite);
-    return inferExprTyped(env, rewrite.*);
+    return ds;
+}
+
+/// Decisions 787, 792 — `fd`, a body that runs at build (a top-level
+/// `comptime { … }`, a decorator), with each `compiler.load` read it writes
+/// answered now: the comptime runtime builds the answer
+/// (`load.runtimeAnswer`) — a `Module` an executor captures, which
+/// `executorSource` writes back as the record's constructor. A read whose
+/// path is not known is left to the runtime, which refuses it.
+fn withBuildLoads(env: *Env, fd: ast.FnDecl) InferError!ast.FnDecl {
+    if (!(try loadMod.fnReads(env.arena, fd))) return fd;
+    const Ctx = struct {
+        env: *Env,
+        pub fn answer(self: @This(), e: ast.Expr) anyerror!?ast.Expr {
+            const call = e.call.kind.call;
+            if (call.args.len != 1) return null;
+            const arg = call.args[0].value;
+            const path = (try loadMod.foldedPath(self.env.arena, arg)) orelse return null;
+            const ds = try answerLoad(self.env, path, arg.getLoc());
+            return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = path, .target = self.env.target }, ds);
+        }
+    };
+    return loadMod.replaceReads(env.arena, ast.FnDecl, fd, Ctx{ .env = env }) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.TypeError => error.TypeError,
+        else => error.OutOfMemory,
+    };
 }
 
 /// Decision 519 — the `Asset(…)` constructor of the file `path` of this
@@ -13011,6 +13055,107 @@ fn inferAssetOpen(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     } } } };
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
+}
+
+/// Whether `ty` is std's `compiler.Module` (decision 786): the record
+/// `compiler.load` answers, `name`, `path` and `target`.
+fn isLoadModuleType(env: *Env, ty: *T.Type) bool {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "Module")) return false;
+    const td = env.lookupTypeDef("Module") orelse return true;
+    _ = td;
+    return true;
+}
+
+/// Decision 792 (4) — the `run()` calls an executor writes, refused where
+/// they are written before the captured `Module` is spliced: on the `module`
+/// of a `Refused`, `run-module-refused`; on a file with no `main`,
+/// `load-no-main`.
+fn refuseExecutorRuns(env: *Env, func: ast.FunctionExpr, captured: []const []const u8, handed: []const std.json.Value) InferError!void {
+    for (try loadMod.runCalls(env.arena, func)) |rc| {
+        var r = rc.receiver;
+        while (r.* == .collection and r.collection.kind == .grouped) r = r.collection.kind.grouped;
+        const local: []const u8, const member: ?[]const u8 = switch (r.*) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| .{ n, null },
+                .identAccess => |acc| if (acc.receiver.* == .identifier and acc.receiver.identifier.kind == .ident) .{ acc.receiver.identifier.kind.ident, acc.member } else continue,
+                else => continue,
+            },
+            else => continue,
+        };
+        const k = for (captured, 0..) |n, i| {
+            if (std.mem.eql(u8, n, local)) break i;
+        } else continue;
+        if (k >= handed.len) continue;
+        const path = loadMod.valuePath(handed[k], member) orelse continue;
+        const entry = loadMod.entryOf(path) orelse continue;
+        if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, rc.loc);
+        if (!entry.has_main) return refuseRun(env, .no_main, path, rc.loc);
+    }
+}
+
+fn refuseRun(env: *Env, why: enum { refused, no_main }, path: []const u8, loc: ast.Loc) InferError {
+    env.lastError = switch (why) {
+        .refused => TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on the `Module` of `{s}`, whose load refused", .{ diagnostics.run_module_refused, path }),
+            "A `Refused`'s `module` names a file that did not compile: there is no `main` to run (decision 792 (4)). Run the `Module` on the `Ok` side.",
+        ),
+        .no_main => TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on `{s}`, which declares no `main`", .{ diagnostics.load_no_main, path }),
+            "`run()` runs the loaded file's `main` (decision 787 (3)): declare `pub fn main()` in it.",
+        ),
+    }.withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decisions 787, 792 — `m.run()`: written directly in a `compiler.init`
+/// body (an executor, `__bp_executor_<k>`), else `run-outside-init`; on the
+/// `Module` of a load that refused, `run-module-refused`; on a file with no
+/// `main`, `load-no-main` — each at the call. The loaded package joins the
+/// program (`load.noteRun`, `comptime.compileWith`), and the call is
+/// rewritten to std's `attempt` over its `main` (`load.runRewrite`), so it
+/// answers `Result<void, Failure>`.
+fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            "`run()` takes no argument",
+            "Write `m.run()` — it runs the loaded file's `main` (decision 787).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.run_outside_init ++ ": `run()` is called outside a `compiler.init` body",
+            "A loaded file's `main` runs when the program runs, at the point of an init body that calls `run()` (decisions 787, 792 (7)): write `compiler.init({ -> try m.run() catch { f -> … }; })` in the body that runs at build, never in a function it calls.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const path = (try loadMod.receiverPath(env.arena, call.receiver.?)) orelse {
+        // The body that runs at build, checked before its executor is: the
+        // `Module` is a local of the body there, its file known once the
+        // executor holds it (`load.recordSource`).
+        if (env.initArgDepth > 0) return try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null)).*);
+        env.lastError = TypeError.custom(
+            diagnostics.run_outside_init ++ ": `run()` is called on a `Module` that no `compiler.load` of the body answered",
+            "Call `run()` on the `Module` the body's `compiler.load` answered, captured by the init body (decision 787).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const entry = loadMod.entryOf(path) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_outside_init, path }),
+            "Call `run()` on the `Module` the body's `compiler.load` answered (decision 787).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, loc);
+    if (!entry.has_main) return refuseRun(env, .no_main, path, loc);
+    try loadMod.noteRun(path);
+    const alias = try loadMod.runAlias(env.arena, try loadMod.packageName(env.arena, path));
+    const present = env.lookup(alias) != null;
+    const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null);
+    try env.srcRewrites.put(loc, rewrite);
+    return try inferExprTyped(env, rewrite.*);
 }
 
 /// Whether `ty` is the builtin `Asset` (decision 519).
@@ -21511,6 +21656,18 @@ fn noteMemoUse(env: *Env, operand: ast.Expr, typed: TypedExpr, loc: ast.Loc) Inf
 /// whole initializer of a module-level `val` (its identity is the
 /// declaration, 281).
 fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    // Decision 792 (3) — a `compiler.Module` is answered by `compiler.load`
+    // alone: its constructor is std's.
+    if (env.stdModuleCtorNames.count() > 0 and c.kind == .call) {
+        const call = c.kind.call;
+        if (call.receiver == null and !call.is_builtin and call.calleeExpr == null and env.localBindDepth(call.callee) == null and env.stdModuleCtorNames.contains(call.callee)) {
+            env.lastError = TypeError.custom(
+                diagnostics.module_construction ++ ": a `compiler.Module` is made only by `compiler.load` — its constructor is std's (decision 792 (3))",
+                "Load the file: `val m = try comptime compiler.load(\"src/cases/<case>/mod.bp\") catch { r -> … };` answers its `Module`, whose fields stay readable.",
+            ).withLoc(c.loc);
+            return error.TypeError;
+        }
+    }
     const which = stdContextCallee(env, c) orelse return;
     switch (which) {
         .context_type => {
@@ -23902,6 +24059,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "text") and isAssetType(rp.getType())) {
                 return inferAssetText(env, call, rp, loc);
             };
+            // Decisions 787, 792 — `m.run()` on a `compiler.Module`.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "run") and isLoadModuleType(env, rp.getType())) {
+                if (try inferModuleRun(env, call, loc)) |typed| return typed;
+            };
             // Decision 538 — `a.open()` on an `Asset`: the `File` std's `io.fs`
             // opens over its bytes (`fs.openAsset(a)`).
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "open") and isAssetType(rp.getType())) {
@@ -25811,12 +25972,15 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     env.currentParams = &.{};
     env.inDecoratorFn = false;
     env.decoratorBody = null;
+    // Decisions 787, 792 (7) — `Module.run()` is written here.
+    env.initArgDepth += 1;
     const fnTyped = try env.arena.create(TypedExpr);
     fnTyped.* = blk: {
         defer {
             env.currentParams = savedParams;
             env.inDecoratorFn = savedInDecorator;
             env.decoratorBody = savedBody;
+            env.initArgDepth -= 1;
         }
         break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
     };

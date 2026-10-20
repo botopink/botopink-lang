@@ -1093,6 +1093,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 expr_ptr.* = rewrite.*;
             };
         }
+        // Decisions 787, 792 — `m.run()` on a `compiler.Module` → std's
+        // `attempt` over the loaded package's `main` (`infer.zig`
+        // `inferModuleRun`).
+        if (std.mem.eql(u8, callee, "run")) {
+            if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| if (rewrite.* == .call) {
+                expr_ptr.* = rewrite.*;
+            };
+        }
         // Decision 538 — `a.open()` on an `Asset` → `<fs>.openAsset(a)`, the call
         // inference wrote (`infer.zig` `inferAssetOpen`).
         if (std.mem.eql(u8, callee, "open")) {

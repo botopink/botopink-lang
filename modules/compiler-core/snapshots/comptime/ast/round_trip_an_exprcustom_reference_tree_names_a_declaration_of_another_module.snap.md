@@ -41,7 +41,8 @@
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 //// - The program: `find`, `typeInfo`, `load` (decisions 780, 782, 786), and
-////   what `load` answers: `Module`, `Refused`, `Diagnostic`.
+////   what `load` answers: `Module` — run by `m.run()` (decisions 787, 792) —,
+////   `Refused`, `Diagnostic`.
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -288,12 +289,26 @@ pub type Diagnostic(
     label: ?string,
 )
 
-// ── What `compiler.load` answers (decision 786) ──────────────────────────
+// ── What `compiler.load` answers (decisions 786, 787, 792) ───────────────
 // The loaded file (decision 786 (1)): `name` the directory it sits in
 // (`<case>` for `src/cases/<case>/mod.bp`), `path` the file relative to the
 // package (as a `Diagnostic`'s `file`), `target` the build's — std's
 // `Target`, `.Node` for commonJS. No dependency list: the loaded package
-// still resolves its own to compile.
+// still resolves its own to compile. Opaque (decision 792 (3)): only
+// `compiler.load` answers one — `Module(…)` written outside std is
+// `module-construction` —, its fields readable.
+//
+// `m.run() -> Result<void, Failure>` (decisions 787, 792) runs the loaded
+// package's `main`, `Failure` std's `failure.Failure` as `attempt` answers
+// it. It is written directly in a `compiler.init` body (`run-outside-init`):
+// the package — its `mod` tree and its own dependencies, named from its path
+// (`bp_load__<path>`) — joins the program, and its module body and its
+// `compiler.init`s run there, just before `main`. `Ok` when `main` returns,
+// `Error(Failure)` when it crashes or answers `Error(e)`. The `Module` of a
+// `Refused` is `run-module-refused`, a file with no `main` `load-no-main`.
+// The checker answers the call (`comptime/infer.zig` `inferModuleRun`): it
+// is no method of the record, whose signature would name `Failure` in every
+// module that reads a `Module`.
 pub type Module(
     name: string,
     path: string,

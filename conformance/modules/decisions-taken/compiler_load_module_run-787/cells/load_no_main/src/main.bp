@@ -1,0 +1,18 @@
+//// Decision 787 (3), 792 (4) — `run()` runs the loaded file's `main`: on a file that compiles
+//// and declares none it is refused `load-no-main`, located at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/helper/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            try m.run() catch { f ->
+                print("abort " + f.message)
+            }
+        });
+        Error(r) -> print("refused");
+    }
+}
+
+pub fn main() {}

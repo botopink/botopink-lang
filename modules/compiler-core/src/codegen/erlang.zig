@@ -25,6 +25,7 @@ const hostMethods = @import("./hostMethods.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const Ast = @import("./beam/erl_ast.zig");
+const loadMod = @import("../comptime/load.zig");
 const erlTemplate = @import("./beam/erl_template.zig");
 const Term = @import("./beam/term.zig").Term;
 const genRuntime = @import("./beam/gen_runtime.zig");
@@ -728,6 +729,10 @@ pub fn codegenEmit(
                 defer import_inits.deinit(alloc);
                 for (closure.items) |dep| for (scope.outputs) |*o| {
                     if (!std.mem.eql(u8, o.name, dep)) continue;
+                    // Decisions 787, 792 (2) — a loaded package's bodies run
+                    // at `run()` (its `__bp_loaded_main`), never with the
+                    // program's.
+                    if (crossModule.loadedElsewhere(dep, ct.name)) continue;
                     switch (o.outcome) {
                         .ok => |*dok| if (moduleHasInit(dok.transformed)) try import_inits.append(alloc, cross.atomFor(dep)),
                         else => {},
@@ -2562,6 +2567,22 @@ fn emitErlangModule(
         });
         if (load_siblings) try forms.appendSlice(b.arena, &.{ .blank, try siblingLoaderForm(b) });
     }
+
+    // Decisions 787, 792 (2) — a loaded package's root runs its package's
+    // bodies, and its own, when a `run()` calls it: `__bp_loaded_main`
+    // (`comptime/load.zig` `packageModules`) begins with them.
+    if (crossModule.isLoadedModule(module_name)) for (forms.items) |*form| switch (form.*) {
+        .function => |*f| if (std.mem.eql(u8, f.name, loadMod.loaded_main_fn) and f.clauses.len == 1) {
+            var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+            for (import_inits) |dep| try stmts.append(b.arena, .{ .expr = try b.remote(dep, "_botopink_init", &.{}) });
+            if (emit_init) try stmts.append(b.arena, .{ .expr = try b.call("_botopink_init", &.{}) });
+            try stmts.appendSlice(b.arena, f.clauses[0].body.stmts);
+            const clauses = try b.arena.dupe(Ast.Clause, f.clauses);
+            clauses[0].body = .{ .stmts = stmts.items };
+            f.clauses = clauses;
+        },
+        else => {},
+    };
 
     // Decision 513 (2): the reserved exports, last.
     try forms.appendSlice(b.arena, priv_forms.items);

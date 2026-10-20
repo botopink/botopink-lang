@@ -1,0 +1,10 @@
+//// Decision 792 (3) — a `Module` is answered by `compiler.load` alone: its constructor is
+//// std's, and `Module(…)` written by hand is refused `module-construction`, located at the
+//// call. Its fields stay readable on the `Module` a load answers.
+
+import {compiler.Module, io.terminal.print} from "std";
+
+pub fn main() {
+    val m = Module(name: "fine", path: "src/cases/fine/mod.bp", target: .Node);
+    print(m.path);
+}

@@ -3949,6 +3949,21 @@ const Emitter = struct {
                     try props.append(self.arena(), .{ .key = imp2.leaf(), .bind = imp2.alias });
                 }
                 if (props.items.len == 0) continue;
+                // Decisions 787, 792 (2) — a loaded package a `run()` reaches
+                // is required when it runs, never at load: its body runs at
+                // `run()`, just before its `main` (each name a function of no
+                // argument, `__bp_loaded_main`).
+                if (@import("../comptime/load.zig").isLoadedPackage(info.module)) {
+                    for (props.items) |p| {
+                        const req = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module }));
+                        const call = try self.b.call(try self.b.member(req, p.key), &.{});
+                        try stmts.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .name = p.bind orelse p.key },
+                            .value = try self.b.arrowExpr(&.{}, call),
+                        } });
+                    }
+                    continue;
+                }
                 try stmts.append(self.arena(), .{ .decl = .{
                     .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
                     .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module })),

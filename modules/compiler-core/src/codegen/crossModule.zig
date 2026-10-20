@@ -480,6 +480,10 @@ pub const Packages = struct {
     fn isDep(self: Packages, name: []const u8) bool {
         if (std.mem.eql(u8, name, self.root)) return false;
         if (std.mem.eql(u8, name, EMBEDDED_PACKAGE)) return true;
+        // Decision 787 — a loaded file a `run()` brought into the program is
+        // a package of its own (`comptime/load.zig` `packageName`), never
+        // one of `deps`: no init list runs its body (792 (2)).
+        if (@import("../comptime/load.zig").isLoadedPackage(name)) return true;
         for (self.deps) |d| if (std.mem.eql(u8, d, name)) return true;
         return false;
     }
@@ -2050,6 +2054,22 @@ pub fn programModules(
         if (o.outcome != .ok) continue;
         try out.append(alloc, o);
     }
+}
+
+/// Decision 787 — whether `module` is a module of a loaded package
+/// (`comptime/load.zig` `packageName`).
+pub fn isLoadedModule(module: []const u8) bool {
+    return @import("../comptime/load.zig").isLoadedPackage(module);
+}
+
+/// Decisions 787, 792 (2) — whether `dep`, in the init closure of
+/// `module_name`, is a module of a loaded package other than
+/// `module_name`'s own: its body runs at `run()`, never in another
+/// package's init list.
+pub fn loadedElsewhere(dep: []const u8, module_name: []const u8) bool {
+    if (!isLoadedModule(dep)) return false;
+    const pkg = dep[0 .. std.mem.indexOfScalar(u8, dep, '/') orelse dep.len];
+    return !(module_name.len > pkg.len and std.mem.startsWith(u8, module_name, pkg) and module_name[pkg.len] == '/');
 }
 
 /// `importClosure`'s list, seeded with decisions 660 and 677's: each module

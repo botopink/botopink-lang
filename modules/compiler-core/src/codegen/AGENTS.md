@@ -1846,6 +1846,14 @@ codegen/
   `conformance/test/module_init_requires_its_importer`), and wasm links them into the
   entry (`programEntry`; `Linked.declared`, whose refusal says the module is
   a declared dependency's rather than "this import").
+  **Decisions 787, 792 (2)**: a loaded package a `run()` brought in
+  (`bp_load__<path>`, `comptime/load.zig`) is a dependency to `Packages`
+  (`isDep`) but no init list's: `crossModule.loadedElsewhere` drops its
+  modules from every other package's closure; commonJS binds what a module
+  imports from it to a function that `require`s it when called (its body
+  runs at `run()`), and erlang (`emitErlangModule`) and beam (`emitFn`)
+  begin its root's `__bp_loaded_main` with the `'_botopink_init'/0` calls of
+  its closure and its own.
   The body is lowered BEFORE the runtime helpers are chosen (and written after
   them): a helper only a module-level initialiser reaches — a dependency whose
   one print is `val _x = @print("boot")` — was never defined, and the init

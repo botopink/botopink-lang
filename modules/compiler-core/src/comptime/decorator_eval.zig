@@ -20,6 +20,7 @@
 /// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
 /// from the declaration it runs over — so one module serves every declaration a
 /// decorator annotates with the same annotation arguments.
+const loadMod = @import("load.zig");
 const std = @import("std");
 const memberFnMod = @import("member_fn.zig");
 const ast = @import("../ast.zig");
@@ -537,6 +538,11 @@ fn buildModule(
             // Decision 370 (1) — a parameter handed to a typed meta value's
             // `@Expr<T>` field (`syntax_param.eraseFn`).
             .{ .name = typedMeta.expr_ref_record, .fields = &.{typedMeta.expr_ref_field} },
+            // Decisions 786, 787 — what a `compiler.load` read in the body
+            // answers (`load.runtimeAnswer`).
+            .{ .name = loadMod.module_alias, .fields = loadMod.records[0].fields },
+            .{ .name = loadMod.refused_alias, .fields = loadMod.records[1].fields },
+            .{ .name = loadMod.diagnostic_alias, .fields = loadMod.records[2].fields },
         },
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms_src,

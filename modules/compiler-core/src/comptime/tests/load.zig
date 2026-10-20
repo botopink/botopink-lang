@@ -177,3 +177,101 @@ test "decision 786: a driver's own target wins over the lookup name — a BEAM b
     loadMod.build_target = "commonJS";
     try std.testing.expectEqualStrings("Node", loadMod.targetVariant("node"));
 }
+
+test "decision 787: a `run()` in an init body brings the loaded file into the program as a package of its own" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ -> try m.run() catch { f -> print(f.message) }; });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() {}
+        \\
+    ;
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null, null);
+    defer session.deinit(gpa);
+    var main_ok = false;
+    var loaded_ok = false;
+    for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
+        if (std.mem.eql(u8, o.name, "bp_load__src__cases__fine/fine")) loaded_ok = o.outcome == .ok;
+    }
+    try std.testing.expect(main_ok);
+    try std.testing.expect(loaded_ok);
+}
+
+test "decision 787: a load no `run()` reaches stays out of the program" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ -> print(m.path) });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() {}
+        \\
+    ;
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null, null);
+    defer session.deinit(gpa);
+    for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) try std.testing.expect(o.outcome == .ok);
+        try std.testing.expect(!std.mem.startsWith(u8, o.name, "bp_load__"));
+    }
+}
+
+test "decision 792 (5): a loaded package is named from its path" {
+    const loadMod = @import("../load.zig");
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try std.testing.expectEqualStrings("bp_load__src__cases__fine__mod", try loadMod.packageName(arena, "src/cases/fine/mod.bp"));
+    try std.testing.expect(loadMod.isLoadedPackage("bp_load__src__cases__fine__mod"));
+    try std.testing.expect(!loadMod.isLoadedPackage("lib"));
+}
+
+test "decision 787: a read's path is known as written — a literal, or a `+` of literals a `comptime` parameter left" {
+    const loadMod = @import("../load.zig");
+    const ast = @import("../../ast.zig");
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const at: ast.Loc = .{ .line = 1, .col = 1 };
+    var a: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "src/cases/" } } };
+    var b: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "fine" } } };
+    var c: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "/mod.bp" } } };
+    var ab: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &a, .rhs = &b } };
+    const abc: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &ab, .rhs = &c } };
+    try std.testing.expectEqualStrings("src/cases/fine/mod.bp", (try loadMod.foldedPath(arena, &abc)).?);
+    var n: ast.Expr = .{ .identifier = .{ .loc = at, .kind = .{ .ident = "name" } } };
+    const an: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &a, .rhs = &n } };
+    try std.testing.expect((try loadMod.foldedPath(arena, &an)) == null);
+}
+
+test "decision 787: a `Module` a body handed an executor is written back as its constructor" {
+    const loadMod = @import("../load.zig");
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"src/cases/fine/mod.bp\",\"target\":\"Node\"}", .{});
+    try std.testing.expectEqualStrings(
+        loadMod.module_alias ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\", target: Target.Node)",
+        (try loadMod.recordSource(arena, parsed)).?,
+    );
+    try std.testing.expectEqualStrings("src/cases/fine/mod.bp", loadMod.valuePath(parsed, null).?);
+    const refused = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"module\":{\"name\":\"b\",\"path\":\"src/cases/b/mod.bp\",\"target\":\"Erlang\"},\"diagnostics\":[]}", .{});
+    try std.testing.expectEqualStrings("src/cases/b/mod.bp", loadMod.valuePath(refused, "module").?);
+    try std.testing.expect((try loadMod.recordSource(arena, .{ .integer = 3 })) == null);
+}

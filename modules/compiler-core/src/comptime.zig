@@ -223,10 +223,18 @@ pub const ComptimeSession = struct {
     /// its entries hold and the entries still without them, for the emit
     /// (`codegen.generateWith`). Null without a store. In `arena`.
     level_b_code: ?*levelB.Code = null,
+    /// Decision 787 — the modules of the loaded packages a `run()` brought
+    /// into the program (`compileWith`): their sources, which the outputs
+    /// read, live as long as the session.
+    loaded: ?*std.heap.ArenaAllocator = null,
 
     pub fn deinit(self: *ComptimeSession, allocator: std.mem.Allocator) void {
         self.outputs.deinit(allocator);
         self.arena.deinit();
+        if (self.loaded) |l| {
+            l.deinit();
+            std.heap.page_allocator.destroy(l);
+        }
     }
 };
 
@@ -1841,7 +1849,9 @@ fn analyzeSource(
     const inserted = if (inserts) |ins| try typeinfoAll.withInsertedArgs(arena, parsed_source, ins) else parsed_source;
     // Decisions 780, 782 — a module that loads a file declares the function
     // its reads are rewritten to call (`comptime/load.zig`).
-    const parsed_as_written = try loadMod.withLoadHelper(arena, inserted);
+    // Decisions 787, 792 — and the imports its `run()` calls are rewritten
+    // to name (`loadMod.withRunImports`).
+    const parsed_as_written = try loadMod.withRunImports(arena, try loadMod.withLoadHelper(arena, inserted));
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
@@ -2032,7 +2042,10 @@ fn analyzeSource(
             with_members = .{ .decls = grown };
             prepended += imports.len;
         }
-        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items, env.executorAnchors.items, prepended)) |merged_program| {
+        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items, env.executorAnchors.items, prepended)) |merged_written| {
+            // Decisions 787, 792 — an executor that runs a loaded file names
+            // what its `run()` is rewritten to (`loadMod.withRunImports`).
+            const merged_program = try loadMod.withRunImports(arena, merged_written);
             // Decision 575 (6): a library's `compiler.implement` of this pass
             // joins the declarations the re-analysis reads.
             try infer.applyImplementContributions(&env, merged_program);
@@ -4477,6 +4490,9 @@ pub fn compileTypesOnly(
     modules_in: []const Module,
     eval_ctx: ?envMod.TemplateEvalCtx,
 ) !ComptimeSession {
+    // Decision 787 — the loads of this compile, held for it alone.
+    const saved_load = try loadMod.enter();
+    defer loadMod.leave(saved_load);
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .outputs = .empty,
@@ -4708,6 +4724,82 @@ pub fn compile(
 /// (144 B-60): a dependency whose entry reads back is not analysed, one
 /// analysed is handed to the store as an entry (`comptime/level_b.zig`).
 pub fn compileWith(
+    allocator: std.mem.Allocator,
+    modules: []const Module,
+    io: std.Io,
+    build_root: ?[]const u8,
+    target_name: ?[]const u8,
+    store: ?*levelB.Store,
+) !ComptimeSession {
+    // Decisions 787, 792 — the loaded files of this compile, and the ones a
+    // `run()` reaches: each joins the program as a package of its own, and
+    // the modules are compiled again with them (`loadMod.packageModules`),
+    // until a compile reaches no package it lacks.
+    const saved_load = try loadMod.enter();
+    defer loadMod.leave(saved_load);
+    var current = modules;
+    var grown: std.ArrayListUnmanaged(Module) = .empty;
+    defer grown.deinit(allocator);
+    const extra = try std.heap.page_allocator.create(std.heap.ArenaAllocator);
+    extra.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var extra_owned = true;
+    defer if (extra_owned) {
+        extra.deinit();
+        std.heap.page_allocator.destroy(extra);
+    };
+    while (true) {
+        loadMod.clearRuns();
+        var session = try compileModules(allocator, current, io, build_root, target_name, store);
+        const lacking = try lackingRuns(extra.allocator(), current);
+        if (lacking.len == 0) {
+            if (grown.items.len > 0) {
+                session.loaded = extra;
+                extra_owned = false;
+            }
+            return session;
+        }
+        session.deinit(allocator);
+        // The packages join after every dependency, before the root package's
+        // modules: a loaded package depends on std and on the caller's
+        // dependencies alone.
+        var targets: ?@import("./module.zig").Targets = null;
+        for (current) |m| if (m.package.len == 0) {
+            targets = m.targets;
+            break;
+        };
+        var next: std.ArrayListUnmanaged(Module) = .empty;
+        var placed = false;
+        for (current) |m| {
+            if (!placed and m.package.len == 0) {
+                for (lacking) |e| try next.appendSlice(allocator, try loadMod.packageModules(extra.allocator(), e, targets));
+                placed = true;
+            }
+            try next.append(allocator, m);
+        }
+        if (!placed) for (lacking) |e| try next.appendSlice(allocator, try loadMod.packageModules(extra.allocator(), e, targets));
+        grown.deinit(allocator);
+        grown = next;
+        current = grown.items;
+    }
+}
+
+/// The entries of the files a `run()` of the last compile reached whose
+/// package is not among `modules`.
+fn lackingRuns(arena: std.mem.Allocator, modules: []const Module) ![]const loadMod.Entry {
+    var out: std.ArrayListUnmanaged(loadMod.Entry) = .empty;
+    for (loadMod.runs()) |path| {
+        const pkg = try loadMod.packageName(arena, path);
+        const present = for (modules) |m| {
+            if (std.mem.eql(u8, m.package, pkg)) break true;
+        } else false;
+        if (present) continue;
+        const e = loadMod.entryOf(path) orelse continue;
+        try out.append(arena, e);
+    }
+    return out.items;
+}
+
+fn compileModules(
     allocator: std.mem.Allocator,
     modules: []const Module,
     io: std.Io,

@@ -1023,6 +1023,11 @@ pub const Env = struct {
     /// — the fn name, `Type.method` for a method, the test name (or `test_<idx>`)
     /// inside a `test` block, `""` at module level. A lambda does not change it.
     currentFnName: []const u8 = "",
+    /// Decisions 787, 792 (7) — how deep the checker is inside the executor a
+    /// body that runs at build hands `compiler.init` (the argument of its
+    /// handle's `compile`): `Module.run()` is written there, or in the
+    /// executor's function (`__bp_executor_<k>`), and nowhere else.
+    initArgDepth: u32 = 0,
     /// Decision 364 — the parameters of the function whose body is being
     /// inferred: a `comptime x: @Expr<T>` among them (`Param.exprWrapped`) is
     /// read `x.value`, never `.value` of a type, and answers no other method
@@ -1123,6 +1128,11 @@ pub const Env = struct {
     /// Decisions 771, 774 — the local names a leaf import of std's `hooks`
     /// module binds to its `memo` hook (`import {hooks.memo} from "std"`).
     stdMemoNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 792 (3) — the local names a leaf import binds std's
+    /// `compiler.Module` to: a call of one is `module-construction` (only
+    /// `compiler.load` answers a `Module`). The name the load helper imports
+    /// it under (`load.module_alias`) is the compiler's and never recorded.
+    stdModuleCtorNames: std.StringHashMapUnmanaged(void) = .empty,
     /// Decisions 755, 771 — each `use memo(make)`, by the `use`'s location:
     /// the `T` it answers. The scope lowering gives each one a slot made with
     /// the component's value (`context_lower.zig`).
