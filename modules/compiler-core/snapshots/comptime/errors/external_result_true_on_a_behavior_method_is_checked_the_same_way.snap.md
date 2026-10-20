@@ -13,4 +13,4 @@ error: `area` writes `result: true` on `.JavaScript`, so it must return `Result<
 2 │     #[compiler.external(.JavaScript("area", result: true))]
   │       ^
 
-  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.
+  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `Result`.

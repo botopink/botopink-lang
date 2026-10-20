@@ -14,7 +14,7 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn checked(xs: i32[]) -> Iter<Result<i32, string>> {
+iter fn checked(xs: i32[]) -> Iter<Result<i32, string>> {
     for (xs) { x ->
         yield try check(x);
     }

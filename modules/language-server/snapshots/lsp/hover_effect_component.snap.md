@@ -1,13 +1,13 @@
 ----- SOURCE
 ```botopink
 val Element = type() implement Renderable
-fn state(initial: i32) -> Component<i32> {
-   ↑
+component fn state(initial: i32) -> Component<i32> {
+             ↑
     return initial;
 }
 ```
 
------ HOVER at (line 1, char 3)
+----- HOVER at (line 1, char 13)
 kind: markdown
 
 ```botopink

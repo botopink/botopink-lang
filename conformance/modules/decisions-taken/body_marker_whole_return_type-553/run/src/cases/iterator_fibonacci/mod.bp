@@ -25,7 +25,7 @@ iter fn fibonacci(limit: i32) -> Iter<i32> {
     }
 }
 
-fn firstNegative(xs: i32[]) -> Iter<i32> {
+iter fn firstNegative(xs: i32[]) -> Iter<i32> {
     for (xs) { x ->
         if (x < 0) break x;
         yield x;

@@ -16,10 +16,10 @@ const h = @import("helpers.zig");
 
 test "js: star fn ---- async function with await" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> Async<i32> {
+        \\async fn fetch(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\fn loadTwice(x: i32) -> Async<i32> {
+        \\async fn loadTwice(x: i32) -> Async<i32> {
         \\    val a = await fetch(x);
         \\    return a + a;
         \\}
@@ -28,7 +28,7 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn counter() -> Iter<i32> {
+        \\iter fn counter() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -38,7 +38,7 @@ test "js: star fn ---- generator with yield" {
 
 test "js: star fn ---- future generator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn stream() -> AsyncIter<Result<i32, string>> {
+        \\async iter fn stream() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -47,13 +47,13 @@ test "js: star fn ---- future generator" {
 
 test "js: star fn ---- pub typedefs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn loadOne(x: i32) -> Async<i32> {
+        \\pub async fn loadOne(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\pub fn count() -> Iter<i32> {
+        \\pub iter fn count() -> Iter<i32> {
         \\    yield 1;
         \\}
-        \\pub fn pulses() -> AsyncIter<Result<i32, string>> {
+        \\pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\}
     );
@@ -63,14 +63,14 @@ test "js: star fn ---- pub typedefs" {
 
 test "js: effect annotation ---- future/iterator/futureGenerator/result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fetch(x: i32) -> Async<i32> {
+        \\async fn fetch(x: i32) -> Async<i32> {
         \\    return x;
         \\}
-        \\fn counter() -> Iter<i32> {
+        \\iter fn counter() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
-        \\fn stream() -> AsyncIter<Result<i32, string>> {
+        \\async iter fn stream() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\}
         \\fn parse(n: i32) -> Result<i32, string> {
@@ -82,7 +82,7 @@ test "js: effect annotation ---- future/iterator/futureGenerator/result" {
 
 test "js: effect annotation ---- generator lowers to function*" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn range(a: i32, b: i32) -> Iter<i32> {
+        \\iter fn range(a: i32, b: i32) -> Iter<i32> {
         \\    yield a;
         \\    yield b;
         \\}
@@ -95,7 +95,7 @@ test "js: effect annotation ---- generator lowers to function*" {
 // head and rebind the receiver to the rest.
 test "js: effect annotation ---- next by hand steps an iterator with YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn two() -> Iter<i32> {
+        \\iter fn two() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -119,7 +119,7 @@ test "js: effect annotation ---- next by hand steps an iterator with YieldStep" 
 
 test "js: effect annotation ---- next by hand on a stream answers a Async of YieldStep" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn countdown(n: i32) -> AsyncIter<i32> {
+        \\async iter fn countdown(n: i32) -> AsyncIter<i32> {
         \\    var i = n;
         \\    while (i > 0) {
         \\        yield i;
@@ -133,7 +133,7 @@ test "js: effect annotation ---- next by hand on a stream answers a Async of Yie
         \\    };
         \\    return t;
         \\}
-        \\fn run() -> Async<void> {
+        \\async fn run() -> Async<void> {
         \\    val s = countdown(1);
         \\    print(stepText(await s.next()));
         \\    print(stepText(await s.next()));
@@ -248,10 +248,10 @@ test "js: import ---- named imports" {
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
-        \\fn state(initial: i32) -> Component<i32> {
+        \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn Counter() -> Component<Element> {
+        \\component fn Counter() -> Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    return Element();
         \\}
@@ -264,11 +264,11 @@ test "codegen ---- use object destructure is a plain call" {
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
+        \\component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> Component<Element> {
+        \\component fn LikeWidget() -> Component<Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    return Element();
@@ -279,13 +279,13 @@ test "codegen ---- use tuple destructure is a plain call" {
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement Renderable
-        \\fn state(initial: i32) -> Component<i32> {
+        \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn memo(f: fn() -> i32) -> Component<i32> {
+        \\component fn memo(f: fn() -> i32) -> Component<i32> {
         \\    return 0;
         \\}
-        \\fn Counter() -> Component<Element> {
+        \\component fn Counter() -> Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    return Element();
@@ -299,10 +299,10 @@ test "codegen ---- use effect void hook is a plain call" {
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect(f: fn()) -> Component<i32> {
+        \\component fn effect(f: fn()) -> Component<i32> {
         \\    return 0;
         \\}
-        \\fn Widget() -> Component<Element> {
+        \\component fn Widget() -> Component<Element> {
         \\    use effect { -> cleanup(); };
         \\    return Element();
         \\}
@@ -993,7 +993,7 @@ test "js: iterator fromList yields array items" {
     // by RI1 (§1I). A `@Iter<T>` is infallible, so a plain fn iterates it
     // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fromList<T>(xs: Array<T>) -> Iter<T> {
+        \\iter fn fromList<T>(xs: Array<T>) -> Iter<T> {
         \\    for (xs) { item ->
         \\        yield item;
         \\    };

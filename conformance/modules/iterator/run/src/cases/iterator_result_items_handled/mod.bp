@@ -5,7 +5,7 @@ fn port(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn ports(xs: i32[]) -> Iter<Result<i32, string>> {
+iter fn ports(xs: i32[]) -> Iter<Result<i32, string>> {
     for (xs) { x ->
         yield try port(x);
     } // a failed `try` emits Error(e) and ends

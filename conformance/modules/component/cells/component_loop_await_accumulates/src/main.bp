@@ -13,7 +13,7 @@ fn piece(s: string) -> Piece {
     return Piece(text: s);
 }
 
-pub fn item(s: string) -> Async<Piece> {
+pub async fn item(s: string) -> Async<Piece> {
     return piece(s);
 }
 

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> Iter<Result<i32, string>> :outer {
+iter fn nums() -> Iter<Result<i32, string>> :outer {
     yield 1;
     break :nonsense 42;
 }
@@ -11,4 +11,4 @@ error: break-label-unbound: `break :<label>` targets an unknown label
 3 │     break :nonsense 42;
   │     ^
 
-  hint: Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iter<…> :name`, `iter loop :name {`).
+  hint: Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`iter fn … -> Iter<…> :name`, `iter loop :name {`).

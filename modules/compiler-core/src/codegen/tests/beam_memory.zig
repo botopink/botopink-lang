@@ -23,14 +23,14 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
         \\#[compiler.beamMemory(.ProcessDict)]
         \\var hits: i32 = 0;
         \\
-        \\fn request() -> Async<i32> {
+        \\async fn request() -> Async<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    return hits;
         \\}
         \\
-        \\fn main() -> Async<void> {
+        \\async fn main() -> Async<void> {
         \\    val seen = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    print(seen);
         \\    print(hits);
@@ -55,14 +55,14 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\#[compiler.beamMemory(.Ets)]
         \\var hits: i32 = 0;
         \\
-        \\fn request() -> Async<i32> {
+        \\async fn request() -> Async<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits += 1;
         \\    return 0;
         \\}
         \\
-        \\fn main() -> Async<void> {
+        \\async fn main() -> Async<void> {
         \\    val done = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    print(done.length());
         \\    print(hits);
@@ -84,11 +84,11 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
         \\#[compiler.beamMemory(.Ets)]
         \\var hits: i32 = 0;
         \\
-        \\fn read() -> Async<i32> {
+        \\async fn read() -> Async<i32> {
         \\    return hits;
         \\}
         \\
-        \\fn main() -> Async<void> {
+        \\async fn main() -> Async<void> {
         \\    hits = 40;
         \\    hits = hits - 2;
         \\    val seen = await async.runAll([{ -> read() }]);
@@ -111,11 +111,11 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         \\#[compiler.beamMemory(.PersistentTerm)]
         \\var version: i32 = 101;
         \\
-        \\fn read() -> Async<i32> {
+        \\async fn read() -> Async<i32> {
         \\    return version;
         \\}
         \\
-        \\fn main() -> Async<void> {
+        \\async fn main() -> Async<void> {
         \\    val seen = await async.runAll([{ -> read() }, { -> read() }]);
         \\    print(seen);
         \\    print(version);
@@ -139,7 +139,7 @@ const keyed_program =
     \\#[compiler.beamMemory(.Ets(keyed: true))]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
     \\
-    \\fn writer(key: string) -> Async<i32> {
+    \\async fn writer(key: string) -> Async<i32> {
     \\    var i = 0;
     \\    while (i < 2000) {
     \\        i += 1;
@@ -148,7 +148,7 @@ const keyed_program =
     \\    return i;
     \\}
     \\
-    \\fn main() -> Async<void> {
+    \\async fn main() -> Async<void> {
     \\    val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
     \\    print(done);
     \\    print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
@@ -184,7 +184,7 @@ const bump_program =
     \\#[compiler.beamMemory(.Ets(keyed: true))]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
     \\
-    \\fn worker(n: i32) -> Async<i32> {
+    \\async fn worker(n: i32) -> Async<i32> {
     \\    var i = 0;
     \\    while (i < 2000) {
     \\        i += 1;
@@ -193,7 +193,7 @@ const bump_program =
     \\    return i;
     \\}
     \\
-    \\fn main() -> Async<void> {
+    \\async fn main() -> Async<void> {
     \\    val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
     \\    counts = counts.bump("seed", 5);
     \\    print(done);

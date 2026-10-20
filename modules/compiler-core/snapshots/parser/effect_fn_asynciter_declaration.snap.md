@@ -5,6 +5,7 @@
       "fn": {
         "isPub": true,
         "effect": "stream",
+        "marker": "stream",
         "isDeclare": false,
         "isDefault": false,
         "label": null,

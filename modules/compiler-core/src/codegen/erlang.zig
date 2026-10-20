@@ -11853,7 +11853,7 @@ const Emitter = struct {
     /// field. An `@Iter` method that yields is a generator scope
     /// (decision 105) exactly as a free fn's is.
     fn methodEffect(m: anytype) ?ast.EffectKind {
-        return ast.EffectKind.ofMethod(m.returnType, m.body);
+        return ast.EffectKind.ofMethod(m.returnType, m.body, m.marker);
     }
 
     fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {

@@ -5,11 +5,15 @@
 
 type Element(count: i32) implement Renderable
 
-component fn state(initial: i32) -> Component<i32> { return initial; }
+component fn state(initial: i32) -> Component<i32> {
+    return initial;
+}
 
-fn Page() -> Async<Element> {
+async fn Page() -> Async<Element> {
     val c = use state(0);
     return Element(count: c);
 }
 
-pub fn main() { Page(); }
+pub fn main() {
+    Page();
+}

@@ -17,7 +17,7 @@ var counts: Dict<string, i32> = Dict.ofEntries(
     [#("seed", 1), #("other", 2), #("seed", 7)],
 );
 
-fn writer(key: string) -> Async<i32> {
+async fn writer(key: string) -> Async<i32> {
     var i = 0;
     while (i < 20000) {
         i += 1;

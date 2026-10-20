@@ -2,7 +2,7 @@ import {io.terminal.print} from "std";
 
 type User(id: i32, name: string)
 
-fn fetchUser(id: i32) -> Async<Result<User, string>> {
+async fn fetchUser(id: i32) -> Async<Result<User, string>> {
     if (id <= 0)
         throw "no user " + id.toString(); // legal: the value is a Result
     return User(id: id, name: "ana"); // a Async holding Ok(…)

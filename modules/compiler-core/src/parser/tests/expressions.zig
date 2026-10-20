@@ -553,7 +553,7 @@ test "parser: assert pattern ---- with list and rest" {
 
 test "parser: await ---- prefix expression" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn run() -> Async<Int> {
+        \\async fn run() -> Async<Int> {
         \\    val x = await fetch(url);
         \\    return x;
         \\}
@@ -562,7 +562,7 @@ test "parser: await ---- prefix expression" {
 
 test "parser: await ---- chained with try" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn run() -> Async<Int> {
+        \\async fn run() -> Async<Int> {
         \\    val x = try await fetch(url);
         \\    return x;
         \\}
@@ -571,7 +571,7 @@ test "parser: await ---- chained with try" {
 
 test "parser: loop await ---- async iteration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn consume(items: Int[]) -> Async<Int> {
+        \\async fn consume(items: Int[]) -> Async<Int> {
         \\    for await (items) { item ->
         \\        handle(item);
         \\    }

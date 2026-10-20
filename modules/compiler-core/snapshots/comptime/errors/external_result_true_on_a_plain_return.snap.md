@@ -11,4 +11,4 @@ error: `jsParse` writes `result: true` on `.JavaScript`, so it must return `Resu
 1 │ #[compiler.external(.JavaScript("JSON.parse($0)", result: true))]
   │   ^
 
-  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.
+  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `Result`.

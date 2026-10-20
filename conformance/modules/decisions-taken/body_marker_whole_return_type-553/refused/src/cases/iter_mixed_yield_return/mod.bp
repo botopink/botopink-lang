@@ -4,8 +4,10 @@
 
 import {io.terminal.print} from "std";
 
-fn evens(xs: i32[]) -> Iter<i32> {
-    for (xs) { x -> if (x % 2 == 0) { yield x; } }
+iter fn evens(xs: i32[]) -> Iter<i32> {
+    for (xs) { x ->
+        if (x % 2 == 0) yield x;
+    }
 }
 
 iter fn k(xs: i32[]) -> Iter<i32> {
@@ -13,4 +15,8 @@ iter fn k(xs: i32[]) -> Iter<i32> {
     return evens(xs);
 }
 
-pub fn main() { for (k([1, 2])) { x -> print(x); } }
+pub fn main() {
+    for (k([1, 2])) { x ->
+        print(x);
+    }
+}

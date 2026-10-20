@@ -24,7 +24,7 @@ component fn label() -> Component<string> {
     return "clicks";
 }
 
-fn answer(n: i32) -> Async<i32> {
+async fn answer(n: i32) -> Async<i32> {
     return n;
 }
 

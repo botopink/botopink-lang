@@ -2277,8 +2277,8 @@ pub const builtin_type_mirrors = [_][]const u8{ decl_reflection_src, custom_ast_
 /// `YieldStep<T>` (decision 122) — the one step of both sequences, `Yield`
 /// then `Done`, registered into the global env so an annotation, a `case` over
 /// its variants and a `.next()` called by hand type-check. The canonical copy
-/// is `libs/std/src/primitives.bp`'s compiler section's (`comptime/effect_chain.zig`'s drift test
-/// reads it; `yield step prelude matches primitives.bp` below reads this one).
+/// is `libs/std/src/primitives.bp`'s compiler section's (`yield step prelude
+/// matches primitives.bp` below reads both).
 /// A module that names it gets `yield_step_decl_src` spliced in
 /// (`withYieldStepDecl`).
 const yield_step_src =
@@ -4009,8 +4009,8 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
 /// that leaves `Display`, `Closeable`, `Index` and `Slice`; a plain behavior
 /// added to `primitives.bp`'s compiler section joins them with no compiler change.
 pub const rule_read_behaviors = [_][]const u8{
-    // The effect wrappers, written `@Async<…>` / `@Iter<…>` / … and read
-    // by `comptime/effect_chain.zig`.
+    // The effect wrappers, written `Async<…>` / `Iter<…>` / … under their
+    // body markers (`comptime/effect_chain.zig`).
     "Async",
     "Iter",
     "AsyncIter",

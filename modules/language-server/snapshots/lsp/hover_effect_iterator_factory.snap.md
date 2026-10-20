@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn counter() -> Iter<i32> :gen { yield 1; }
+iter fn counter() -> Iter<i32> :gen { yield 1; }
 fn fresh() -> Iter<i32> { return counter(); }
    ↑
 ```

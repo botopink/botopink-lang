@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn gen() -> Iter<i32> {
+iter fn gen() -> Iter<i32> {
     yield 1;
 }
 ```

@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn load() -> Async<i32> { return 1; }
+async fn load() -> Async<i32> { return 1; }
 val it = load();
 val first = it.
                ↑

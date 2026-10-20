@@ -165,7 +165,7 @@ pub fn errorText<T>(settled: Result<T, string>) -> string {
 // order. The tasks were started by the caller (`allOf([fetchUser(1),
 // fetchUser(2)])`), so on commonJS they run concurrently and this only waits;
 // on erlang they already ran. `allOf([])` answers `Ok([])`.
-pub fn allOf<T, E>(
+pub async fn allOf<T, E>(
     tasks: Array<Async<Result<T, E>>>,
 ) -> Async<Result<Array<T>, E>> {
     var out: Array<T> = [];
@@ -177,7 +177,7 @@ pub fn allOf<T, E>(
 }
 
 // The values of every Async, in input order — the infallible `allOf`.
-pub fn all<T>(tasks: Array<Async<T>>) -> Async<Array<T>> {
+pub async fn all<T>(tasks: Array<Async<T>>) -> Async<Array<T>> {
     var out: Array<T> = [];
     for (tasks) { t ->
         val v = await t;
@@ -435,7 +435,7 @@ async fn handshake(mine: Gate, theirs: Gate, value: string) -> Async<string> {
 
 // `value` with no timer at all: resolved in the microtask queue on commonJS,
 // the process's first reply on erlang.
-fn answerNow(value: string) -> Async<string> {
+async fn answerNow(value: string) -> Async<string> {
     return value;
 }
 

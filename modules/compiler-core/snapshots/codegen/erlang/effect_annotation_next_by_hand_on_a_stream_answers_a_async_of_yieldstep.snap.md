@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn countdown(n: i32) -> AsyncIter<i32> {
+async iter fn countdown(n: i32) -> AsyncIter<i32> {
     var i = n;
     while (i > 0) {
         yield i;
@@ -14,7 +14,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     };
     return t;
 }
-fn run() -> Async<void> {
+async fn run() -> Async<void> {
     val s = countdown(1);
     print(stepText(await s.next()));
     print(stepText(await s.next()));

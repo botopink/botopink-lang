@@ -1,0 +1,20 @@
+//// Decision 570 — without a marker a body is an ordinary function returning
+//// the whole type: `load` returns `Async<Result<i32, string>>` and carries no
+//// `async`, so the `Result` is inside the task it returns, no channel of its
+//// body — its `throw` is `effect-try-without-fallible-channel`, naming
+//// `async fn`.
+
+import {io.terminal.print} from "std";
+
+async fn fetch(n: i32) -> Async<Result<i32, string>> {
+    return n;
+}
+
+fn load(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative";
+    return fetch(n);
+}
+
+pub async fn main() -> Async<void> {
+    print((await load(1)).unwrapOr(0));
+}

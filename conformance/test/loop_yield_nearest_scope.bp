@@ -4,7 +4,7 @@
 //// unannotated `loop` inside the scope is an ordinary loop: its bare `break`
 //// leaves it and the `yield`s pass through.
 
-fn evens(xs: i32[]) -> Iter<i32> :out {
+iter fn evens(xs: i32[]) -> Iter<i32> :out {
     for (xs) { x ->
         if (x % 2 == 1) continue;
         yield :out x;

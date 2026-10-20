@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> AsyncIter<Result<i32, string>> {
+async iter fn nums() -> AsyncIter<Result<i32, string>> {
     yield 1;
     return 42;
 }

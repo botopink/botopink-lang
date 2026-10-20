@@ -7,7 +7,7 @@ import {async, io.terminal.print} from "std";
 #[compiler.beamMemory(.PersistentTerm)]
 var version: i32 = 101;
 
-fn read() -> Async<i32> {
+async fn read() -> Async<i32> {
     return version;
 }
 

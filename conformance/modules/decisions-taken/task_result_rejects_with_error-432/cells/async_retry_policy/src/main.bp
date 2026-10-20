@@ -5,7 +5,7 @@
 
 import {async, io.terminal.print} from "std";
 
-fn ok(value: string) -> Async<Result<string, string>> {
+async fn ok(value: string) -> Async<Result<string, string>> {
     return value;
 }
 

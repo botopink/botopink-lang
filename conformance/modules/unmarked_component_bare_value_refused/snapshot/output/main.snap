@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: type mismatch: expected Component<View>, got View — this body carries no `component` marker, so it returns the whole `Component<View>`
+at src/main.bp:11:12

@@ -5,6 +5,7 @@
       "fn": {
         "isPub": false,
         "effect": "task",
+        "marker": "task",
         "isDeclare": false,
         "isDefault": false,
         "label": null,

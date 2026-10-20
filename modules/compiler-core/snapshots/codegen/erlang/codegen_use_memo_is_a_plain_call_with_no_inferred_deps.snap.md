@@ -454,13 +454,13 @@ root() ->
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type() implement Renderable
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
-fn memo(f: fn() -> i32) -> Component<i32> {
+component fn memo(f: fn() -> i32) -> Component<i32> {
     return 0;
 }
-fn Counter() -> Component<Element> {
+component fn Counter() -> Component<Element> {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };
     return Element();

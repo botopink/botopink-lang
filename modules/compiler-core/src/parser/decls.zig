@@ -642,7 +642,7 @@ pub fn parseFnBody(
         _ = this.match(.semicolon);
         return FnDecl{
             .isPub = isPub,
-            .effect = ast.EffectKind.ofFn(returnType, &.{}, false),
+            .effect = ast.EffectKind.ofFn(returnType, false),
             .isDeclare = true,
             .label = label,
             .name = name,
@@ -663,9 +663,9 @@ pub fn parseFnBody(
 
     return FnDecl{
         .isPub = isPub,
-        // Decision 118 — the syntactic return is the effect; decision 123 — an
-        // `@Iter` / `@AsyncIter` return whose body does not yield is a factory.
-        .effect = ast.EffectKind.ofFn(returnType, body, true),
+        // Decisions 553 (4), 570 — an unmarked body is an ordinary function
+        // (`Result` aside); the marker, applied after, sets the effect.
+        .effect = ast.EffectKind.ofFn(returnType, true),
         .isDeclare = isDeclare,
         .label = label,
         .name = name,

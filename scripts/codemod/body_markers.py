@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compiler_keyword import mask, match_close, functions  # noqa: E402
 from prelude_names import move_snapshot_locations, SKIP_DIRS, ZIG_LINE  # noqa: E402
 
-HEAD = re.compile(r"\s*(AsyncIter|Async|Iter|Component)\b")
+HEAD = re.compile(r"\s*(AsyncIter|Async|Iter|Component)\s*<")
 PREV_MARKER = re.compile(r"\b(async|iter|component)\s+$")
 WORD = lambda w: re.compile(r"\b%s\b" % w)  # noqa: E731
 
@@ -41,6 +41,27 @@ def blank(chars, a, b):
     for k in range(a, b):
         if chars[k] != "\n":
             chars[k] = " "
+
+
+def loop_body(m, a, p):
+    """Whether the `{` at `p` opens a `for (…) { x -> … }` body: its binding list is no lambda, and the
+    body is the function's own scope."""
+    j = p - 1
+    while j >= a and m[j].isspace():
+        j -= 1
+    if j < a or m[j] != ")":
+        return False
+    depth = 0
+    while j >= a:
+        if m[j] == ")":
+            depth += 1
+        elif m[j] == "(":
+            depth -= 1
+            if depth == 0:
+                break
+        j -= 1
+    # `iter for (…) { … }` / `stream for` is a generator scope of its own (decision 125).
+    return re.search(r"\bfor\s*$", m[a:j]) is not None and re.search(r"\b(iter|stream)\s+for\s*$", m[a:j]) is None
 
 
 def own_scope(m, fn, fns):
@@ -58,7 +79,7 @@ def own_scope(m, fn, fns):
         prev = "".join(chars[a:p]).rstrip()
         nested = re.search(r"\b(async|iter|stream)\s*(loop)?$", prev) is not None and (
             prev.endswith("async") or prev.endswith("loop"))
-        if not nested:
+        if not nested and not loop_body(m, a, p):
             nested = re.match(r"\s*(?:(?:async|iter|component)\s+)*(?:[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)?\s*->",
                               "".join(chars[p + 1:b])) is not None
         if nested:

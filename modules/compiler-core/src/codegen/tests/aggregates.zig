@@ -661,22 +661,22 @@ test "wasm: a record out of try await keeps its string field a string" {
     // so `u.name` was a word and `"H" + u.name` concatenated its address.
     const src =
         \\type User(id: i32, name: string)
-        \\fn fetchUser(id: i32) -> Async<Result<User, string>> {
+        \\async fn fetchUser(id: i32) -> Async<Result<User, string>> {
         \\    if (id <= 0) throw "no user";
         \\    return User(id: id, name: "ana");
         \\}
-        \\fn viaCatch(id: i32) -> Async<string> {
+        \\async fn viaCatch(id: i32) -> Async<string> {
         \\    val u = try await fetchUser(id) catch User(id: 0, name: "guest");
         \\    return "H" + u.name;
         \\}
-        \\fn viaBlock() -> Async<Result<string, string>> {
+        \\async fn viaBlock() -> Async<Result<string, string>> {
         \\    val first = async {
         \\        return try await fetchUser(1);
         \\    };
         \\    val u = try await first;
         \\    return "B" + u.name;
         \\}
-        \\pub fn main() -> Async<void> {
+        \\pub async fn main() -> Async<void> {
         \\    print(await viaCatch(0));
         \\    val r = await viaBlock();
         \\    print(r.unwrapOr("none"));

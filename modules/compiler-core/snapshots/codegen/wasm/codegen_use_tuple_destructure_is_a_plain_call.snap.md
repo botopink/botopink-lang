@@ -811,11 +811,11 @@ fn frameParent(f: Frame) -> unknown {
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type() implement Renderable
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
+component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
     val push: fn(i32) -> i32 = { action -> f(base, action) };
     return #(base, push);
 }
-fn LikeWidget() -> Component<Element> {
+component fn LikeWidget() -> Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
     return Element();

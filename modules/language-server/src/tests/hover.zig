@@ -160,41 +160,41 @@ fn hoverSnap(slug: []const u8, source: []const u8, line: u32, col: u32) !void {
 
 test "hover: @Iter fn shows its for item type" {
     try hoverSnap("hover_effect_iterator",
-        \\fn counter() -> Iter<i32> :gen { yield 1; }
-    , 0, 3);
+        \\iter fn counter() -> Iter<i32> :gen { yield 1; }
+    , 0, 8);
 }
 
 test "hover: @Async<@Result<T, E>> fn shows the whole Result as the await value" {
     try hoverSnap("hover_effect_task_result",
         \\pub type User(id: i32, name: string);
-        \\fn fetchUser(id: i32) -> Async<Result<User, string>> {
+        \\async fn fetchUser(id: i32) -> Async<Result<User, string>> {
         \\    if (id < 0) { throw "negative"; };
         \\    return User(id: id, name: "ana");
         \\}
-    , 1, 3);
+    , 1, 9);
 }
 
 test "hover: @Component<T> fn shows T, not the context base" {
     try hoverSnap("hover_effect_component",
         \\val Element = type() implement Renderable
-        \\fn state(initial: i32) -> Component<i32> {
+        \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-    , 1, 3);
+    , 1, 13);
 }
 
 test "hover: @AsyncIter fn shows its for await item type" {
     try hoverSnap("hover_effect_stream",
-        \\fn pulses() -> AsyncIter<Result<i32, string>> {
+        \\async iter fn pulses() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
-    , 0, 3);
+    , 0, 14);
 }
 
 test "hover: @Iter factory (no yield) still shows its item type" {
     try hoverSnap("hover_effect_iterator_factory",
-        \\fn counter() -> Iter<i32> :gen { yield 1; }
+        \\iter fn counter() -> Iter<i32> :gen { yield 1; }
         \\fn fresh() -> Iter<i32> { return counter(); }
     , 1, 3);
 }

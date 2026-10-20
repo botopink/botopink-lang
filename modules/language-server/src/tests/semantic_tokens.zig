@@ -46,7 +46,7 @@ test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
         \\behavior Greeter { fn greet(self: Self) -> string; }
-        \\fn counter() -> Iter<i32> :gen { yield 1; }
+        \\iter fn counter() -> Iter<i32> :gen { yield 1; }
     ;
     try run(std.testing.allocator, "semantic_tokens_fn_kinds", source);
 }
@@ -64,14 +64,14 @@ test "semanticTokens: async modifier follows each effect return wrapper" {
         \\val Element = type() implement Renderable
         \\fn plain(a: i32) -> i32 { return a; }
         \\fn fails(a: i32) -> Result<i32, string> { return a; }
-        \\fn waits<T>(a: T) -> Async<T> { return a; }
-        \\fn hook(a: i32) -> Component<i32> { return a; }
-        \\fn seq() -> Iter<i32> { yield 1; }
-        \\fn pulses() -> AsyncIter<i32> { yield 1; }
+        \\async fn waits<T>(a: T) -> Async<T> { return a; }
+        \\component fn hook(a: i32) -> Component<i32> { return a; }
+        \\iter fn seq() -> Iter<i32> { yield 1; }
+        \\async iter fn pulses() -> AsyncIter<i32> { yield 1; }
         \\fn takes(t: Async<i32>) -> i32[] { return [1]; }
         \\fn opt() -> ?Async<i32> { return null; }
         \\type Box(v: i32) {
-        \\    fn load(self: Self) -> Async<i32> { return self.v; }
+        \\    async fn load(self: Self) -> Async<i32> { return self.v; }
         \\}
     ;
     try run(std.testing.allocator, "semantic_tokens_effect_returns", source);
@@ -88,7 +88,7 @@ test "semanticTokens: async modifier follows each effect return wrapper" {
 test "semanticTokens: contextual async / iter / stream and loop labels" {
     const source =
         \\import {async} from "std";
-        \\fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
+        \\async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
         \\    val t = async { return 1; };
         \\    val all = async.allOf([t]);
         \\    val a = iter loop { yield 1; break; };
@@ -114,7 +114,7 @@ test "semanticTokens: body markers" {
         \\iter fn two() -> Iter<i32> { yield 2; }
         \\async iter fn three() -> AsyncIter<i32> { yield 3; }
         \\component fn Four() -> Component<i32> { return 4; }
-        \\fn f() -> Async<i32> {
+        \\async fn f() -> Async<i32> {
         \\    val g: fn(x: i32) -> Async<i32> = { async x -> await one() };
         \\    val component = 1;
         \\    val iter = 2;

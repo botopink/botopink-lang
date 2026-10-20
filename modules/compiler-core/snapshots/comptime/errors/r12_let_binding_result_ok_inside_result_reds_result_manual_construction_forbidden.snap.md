@@ -5,7 +5,7 @@ fn parse(n: i32) -> Result<i32, string> {
 }
 
 ----- ERROR
-error: result-manual-construction-forbidden: in a body whose return carries a `@Result`, the variants are constructed by `return` / `throw` alone.
+error: result-manual-construction-forbidden: in a body whose return carries a `Result`, the variants are constructed by `return` / `throw` alone.
   ┌─ main.bp:2:20
   │
 2 │     val r = Result.Ok(result: n);

@@ -404,15 +404,15 @@ pub const TypeError = struct {
         if (e.* == .typeVar or g.* == .typeVar) return null;
         if (!gIsResult) return try gpa.dupe(u8, generic_result_hint);
         const fix: []const u8 = switch (origin.source) {
-            .await_ => "`await` answers the `@Result` the Async holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
-            .for_item => "a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`",
+            .await_ => "`await` answers the `Result` the Async holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
+            .for_item => "a `for` over a sequence of `Result`s hands over each item as the `Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`",
             .unknown => if (origin.made_at == null)
                 return try gpa.dupe(u8, generic_result_hint)
             else
-                "a `@Result` stands where its value is expected: propagate it with `try`, or handle it with `case` / `catch`",
+                "a `Result` stands where its value is expected: propagate it with `try`, or handle it with `case` / `catch`",
         };
         const at = origin.made_at orelse return try gpa.dupe(u8, fix);
-        return try std.fmt.allocPrint(gpa, "{s}; it is a `@Result` because of the `{s}` at {d}:{d} in its own block", .{
+        return try std.fmt.allocPrint(gpa, "{s}; it is a `Result` because of the `{s}` at {d}:{d} in its own block", .{
             fix,
             switch (origin.made_by) {
                 .try_ => "try",
@@ -424,7 +424,7 @@ pub const TypeError = struct {
     }
 
     /// The hint when nothing says where the `@Result` came from.
-    const generic_result_hint = "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Async, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
+    const generic_result_hint = "a `Result` stands where its value is expected: propagate it with `try` (`try await t` for a Async, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `Result` became one from a `throw` / `try` in its own block";
 
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.
@@ -463,9 +463,9 @@ pub const TypeError = struct {
             .recursiveType => std.fmt.allocPrint(gpa, "recursive type detected", .{}),
             .unknownTypeName => |n| std.fmt.allocPrint(gpa, "unknown type '{s}'", .{n}),
             .missingField => |m| std.fmt.allocPrint(gpa, "missing required field '{s}' on type '{s}'", .{ m.field, m.typeName }),
-            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `@Component<R>`", .{r}),
-            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<R>`", .{e}),
-            .useWithoutComponent => |u| std.fmt.allocPrint(gpa, "use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
+            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `Component<R>`", .{r}),
+            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `Component<R>`", .{e}),
+            .useWithoutComponent => |u| std.fmt.allocPrint(gpa, "use-without-component: `use` needs a body marked `component` — the enclosing fn '{s}' carries no `component` marker (it returns '{s}'): write `component fn`", .{ u.fnName, u.returnType }),
             .useTupleArity => |u| blk: {
                 const source = try typeLabelAlloc(gpa, u.sourceType);
                 defer gpa.free(source);
@@ -474,7 +474,7 @@ pub const TypeError = struct {
                 else
                     try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields '{s}', which is not a tuple", .{ u.patternLen, source });
             },
-            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`", .{}),
+            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),
             .notAnExtension => |name| std.fmt.allocPrint(gpa, "'{s}' does not name an implement/extend symbol", .{name}),
@@ -485,7 +485,7 @@ pub const TypeError = struct {
             .unknownInterface => |u| std.fmt.allocPrint(gpa, "'{s}' is not a behavior implemented here (method '{s}')", .{ u.qualifier, u.method }),
             .ambiguousMethod => |a| std.fmt.allocPrint(gpa, "'{s}' is declared by both '{s}' and '{s}' — qualify it", .{ a.method, a.interfaceA, a.interfaceB }),
             .typeparamConstraint => |c| std.fmt.allocPrint(gpa, "'{s}' has type '{s}', which does not satisfy its type constraint", .{ c.paramName, typeLabel(c.got) }),
-            .tryOnNonResult => |ty| std.fmt.allocPrint(gpa, "`try` requires a @Result<D, E> value, found '{s}'", .{typeLabel(ty)}),
+            .tryOnNonResult => |ty| std.fmt.allocPrint(gpa, "`try` requires a Result<D, E> value, found '{s}'", .{typeLabel(ty)}),
             .nonExhaustive => |n| nonExhaustiveMessage(gpa, n),
             .redundantPattern => |r| std.fmt.allocPrint(gpa, "unreachable `case` arm ({s}): {s} is already covered by an earlier arm", .{ r.typeName, r.description }),
             .custom => |c| std.fmt.allocPrint(gpa, "{s}", .{c.message}),

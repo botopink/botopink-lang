@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fromList<T>(xs: Array<T>) -> Iter<T> {
+iter fn fromList<T>(xs: Array<T>) -> Iter<T> {
     for (xs) { item ->
         yield item;
     };

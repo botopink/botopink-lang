@@ -10,7 +10,7 @@ import {async, io.terminal.print} from "std";
 #[compiler.beamMemory(.ProcessDict)]
 var scratch: i32 = 0;
 
-fn elsewhere() -> Async<i32> {
+async fn elsewhere() -> Async<i32> {
     val before = scratch;
     scratch = 99;
     return before;

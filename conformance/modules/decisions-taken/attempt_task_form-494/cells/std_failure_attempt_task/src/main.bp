@@ -14,7 +14,7 @@ async fn doubled(n: i32) -> Async<i32> {
     return n * 2;
 }
 
-fn lookup(n: i32) -> Async<Result<i32, string>> {
+async fn lookup(n: i32) -> Async<Result<i32, string>> {
     if (n < 0) throw "not found";
     return n;
 }

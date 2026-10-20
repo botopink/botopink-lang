@@ -683,10 +683,10 @@ fn frameParent(f: Frame) -> unknown {
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type() implement Renderable
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
-fn Counter() -> Component<Element> {
+component fn Counter() -> Component<Element> {
     val {count, setCount} = use state(0);
     return Element();
 }

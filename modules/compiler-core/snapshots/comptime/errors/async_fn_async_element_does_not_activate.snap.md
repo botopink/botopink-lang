@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 val Element = type() implement Renderable
 val Request = type(path: string)
-fn request() -> Component<Request> {
+component fn request() -> Component<Request> {
     return Request(path: "/");
 }
 fn Page() -> Async<Element> {
@@ -10,11 +10,11 @@ fn Page() -> Async<Element> {
 }
 
 ----- ERROR
-error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn
+error: use-without-component: `use` needs a body marked `component`
   ┌─ main.bp:7:13
   │
 7 │     val r = use request();
   │             ^
 
-  fn 'Page' returns '@Async<Element>',
-  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)
+  fn 'Page' returns 'Async<Element>' and carries no `component` marker,
+  and only a `component fn` body activates a hook: write `component fn` (decisions 553, 573)

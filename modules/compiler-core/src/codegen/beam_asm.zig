@@ -4660,7 +4660,7 @@ const Emitter = struct {
         // has no parsed `effect`, so it is read off the return type as
         // erlang's `methodEffect` does. An `@Iter` / `@AsyncIter` method that
         // yields is a generator scope exactly as a free fn is (`emitFn`).
-        const gen_fn = effectChain.grants(ast.EffectKind.ofMethod(m.returnType, m.body), .yield_) and m.body.?.len > 0;
+        const gen_fn = effectChain.grants(ast.EffectKind.ofMethod(m.returnType, m.body, m.marker), .yield_) and m.body.?.len > 0;
         if (gen_fn) {
             var extra: u32 = 1;
             countGenForSlots(self, m.body.?, &extra);

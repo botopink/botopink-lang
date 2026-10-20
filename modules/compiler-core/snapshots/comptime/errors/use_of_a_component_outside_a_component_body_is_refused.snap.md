@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 val Element = type() implement Renderable
-fn Card() -> Component<Element> {
+component fn Card() -> Component<Element> {
     return Element();
 }
 fn page() -> Element {
@@ -9,11 +9,11 @@ fn page() -> Element {
 }
 
 ----- ERROR
-error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn
+error: use-without-component: `use` needs a body marked `component`
   ┌─ main.bp:6:13
   │
 6 │     val c = use Card();
   │             ^
 
-  fn 'page' returns 'Element',
-  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)
+  fn 'page' returns 'Element' and carries no `component` marker,
+  and only a `component fn` body activates a hook: write `component fn` (decisions 553, 573)

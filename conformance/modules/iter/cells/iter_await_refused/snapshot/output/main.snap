@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: iter-await: `await` does not exist in an `@Iter` — its items are produced synchronously
+refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
 at src/main.bp:2:11

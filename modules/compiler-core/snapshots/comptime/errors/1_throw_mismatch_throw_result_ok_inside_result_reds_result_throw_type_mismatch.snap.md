@@ -4,7 +4,7 @@ fn fetch() -> Result<i32, string> {
 }
 
 ----- ERROR
-error: result-throw-type-mismatch: a body whose return carries `@Result<R, E>` raises E via `throw`; use `return` for the success variant.
+error: result-throw-type-mismatch: a body whose return carries `Result<R, E>` raises E via `throw`; use `return` for the success variant.
   ┌─ main.bp:2:5
   │
 2 │     throw Result.Ok(42);

@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn pulses() -> AsyncIter<i32> { yield 1; }
+async iter fn pulses() -> AsyncIter<i32> { yield 1; }
 val it = pulses();
 val first = it.
                ↑

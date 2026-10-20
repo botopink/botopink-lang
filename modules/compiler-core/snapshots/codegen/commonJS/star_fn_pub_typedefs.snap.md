@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn loadOne(x: i32) -> Async<i32> {
+pub async fn loadOne(x: i32) -> Async<i32> {
     return x;
 }
-pub fn count() -> Iter<i32> {
+pub iter fn count() -> Iter<i32> {
     yield 1;
 }
-pub fn pulses() -> AsyncIter<Result<i32, string>> {
+pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 ```

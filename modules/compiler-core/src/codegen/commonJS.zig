@@ -2715,7 +2715,7 @@ const Emitter = struct {
     /// effect is read off its return type and body here, as the parser reads
     /// a fn's.
     fn methodEffect(m: ast.BehaviorMethod) ?ast.EffectKind {
-        return ast.EffectKind.ofMethod(m.returnType, m.body);
+        return ast.EffectKind.ofMethod(m.returnType, m.body, m.marker);
     }
 
     /// A top-level `fn` decl: an external alias/template breadcrumb, or a real

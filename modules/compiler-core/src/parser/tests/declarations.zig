@@ -24,17 +24,29 @@ test "parser: empty interface" {
     try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior {}");
 }
 
-test "parser: a @Async return sets FnDecl.effect" {
+test "parser: the `async` marker sets FnDecl.effect" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("fn f() -> @Async<i32> { return 0; }");
+    var lx = Lexer.init("async fn f() -> Async<i32> { return 0; }");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
     try std.testing.expect(program.decls.len == 1);
     try std.testing.expect(program.decls[0] == .@"fn");
     try std.testing.expectEqual(ast.EffectKind.task, program.decls[0].@"fn".effect.?);
+}
+
+// Decision 570 — an unmarked body is an ordinary function, whatever it returns.
+test "parser: an unmarked Async return sets no effect" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("fn f() -> Async<i32> { return Async.resolve(0); }");
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    try std.testing.expect(program.decls[0].@"fn".effect == null);
 }
 
 test "parser: a plain fn has no effect" {
@@ -931,7 +943,7 @@ test "parser: effect fn ---- @Async declaration" {
 
 test "parser: effect fn ---- @Iter-of-Result declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn fib() -> Iter<Int> {
+        \\iter fn fib() -> Iter<Int> {
         \\    yield 1;
         \\}
     );
@@ -939,7 +951,7 @@ test "parser: effect fn ---- @Iter-of-Result declaration" {
 
 test "parser: effect fn ---- @AsyncIter declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub fn stream() -> AsyncIter<Result<Int, Error>> {
+        \\pub async iter fn stream() -> AsyncIter<Result<Int, Error>> {
         \\    yield 1;
         \\}
     );
@@ -947,7 +959,7 @@ test "parser: effect fn ---- @AsyncIter declaration" {
 
 test "parser: effect fn ---- @Iter-of-Result label after return type" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn gen() -> Iter<Int> :gen {
+        \\iter fn gen() -> Iter<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

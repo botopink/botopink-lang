@@ -161,18 +161,18 @@ test "parser error: removed error union syntax T!E" {
 }
 
 test "parser error: deprecated *fn prefix" {
-    // v0.beta.19 hard-removed the `*fn` parse path; since decision 118 the
-    // return type is the effect. A user migrating from an old codebase sees
-    // this diagnostic, which names the canonical replacement.
+    // v0.beta.19 hard-removed the `*fn` parse path; since decision 553 a body
+    // that compiles specially carries a marker. A user migrating from an old
+    // codebase sees this diagnostic, which names the canonical replacement.
     try h.expectParseError(std.testing.allocator,
         \\error[deprecated-star-fn]: the `*fn` prefix was removed in v0.beta.19
         \\ --> <test>:1:1
         \\  |
         \\1 | *fn parse(n: i32) -> Result<i32, string> { return n; }
-        \\  | ^^^ write a plain `fn` whose return type is the effect wrapper
+        \\  | ^^^ write the body marker before `fn` and its type as the return
         \\  |
-        \\  = note: the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect
-        \\  = hint: rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Async`, `@Component`, `@Iter` or `@AsyncIter`
+        \\  = note: the `*fn` form was deprecated in v0.beta.12; a body that compiles specially carries a marker before `fn` (decision 553)
+        \\  = hint: rewrite as `<marker> fn <name>(...) -> <Wrapper><...> { ... }` — `async fn … -> Async<T>`, `iter fn … -> Iter<T>`, `async iter fn … -> AsyncIter<T>` or `component fn … -> Component<R>`; a `Result` return takes no marker
         \\
         \\
     , "*fn parse(n: i32) -> Result<i32, string> { return n; }");

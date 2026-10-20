@@ -1,53 +1,25 @@
-//! The effect chain — decisions 118, 120 and 128 of 1.0.10-beta.
+//! What a body marker admits — decisions 553 (1), (4) and 573.
 //!
-//! The return type is the annotation (decision 118): a body gains `await`,
-//! `use` or `yield` by writing the effect wrapper as its return type. The
-//! wrappers form a subsumption order, and each level grants everything below
-//! it. The order is declared in botopink, on the wrappers in
-//! `libs/std/src/primitives.bp`'s compiler section:
+//! A body writes `await`, `yield` or `use` only under the marker that admits
+//! it, never by its return type alone:
 //!
-//!     pub behavior Async<T>                   { … }
-//!     pub behavior Component<R> extends Async      // decisions 128, 354
-//!     pub behavior AsyncIter<T> extends Async         // decision 122
-//!     pub behavior Iter<T>                    // no clause
+//!     async        await
+//!     iter         yield
+//!     async iter   yield · await
+//!     component    use · await
 //!
-//! `@Result` is NOT a level of the chain (decision 120): only `@Result` fails
-//! (decision 121), and `throw` / `try` read the FALLIBLE CHANNEL — a `@Result`
-//! in some layer of the return — which the checker computes from the return
-//! type apart from the level (`comptime/infer.zig` `fallibleErrorOf`). So
-//! `grants` answers the three level capabilities only.
-//!
-//! `extends` cannot carry type arguments, so the full clauses stay in the
-//! comment block beside the declarations. That file is not parsed into the
-//! type env — the whole `.d.bp` is documentation, and `comptime.zig`'s
-//! embedded mirrors exist for the same reason — so the relation is restated
-//! here, ONCE, and the drift tests at the foot read the file and fail if the
-//! two disagree. Every legality check — `await`, `use`, `yield` — asks
-//! `grants` rather than switching on an effect kind, so adding a wrapper is a
-//! row in `clauses` and nothing else.
+//! `Result` takes no marker and admits none of the three: `throw` / `try`
+//! follow the fallible channel (decision 121), which the checker reads off
+//! the return type (`comptime/infer.zig` `fallibleErrorOf`). An unmarked body
+//! is an ordinary function (decision 570) and admits nothing. Every legality
+//! check asks `grants`, and a refusal names the markers that would admit the
+//! keyword (`refusal`).
 
 const std = @import("std");
 const ast = @import("../ast.zig");
 
-/// One declared clause: `wrapper extends implements`.
-const Clause = struct { wrapper: []const u8, implements: []const u8 };
-
-/// The chain, in the order `primitives.bp`'s compiler section declares it. Transitivity is
-/// computed by `wrapperImplements`. `@Renderable` is not here: it is the
-/// MARKER a component's `R` implements (decision 354), not a wrapper, and
-/// grants nothing.
-pub const clauses = [_]Clause{
-    .{ .wrapper = "Component", .implements = "Async" },
-    .{ .wrapper = "AsyncIter", .implements = "Async" },
-};
-
-/// The wrappers whose body may `yield`. `yield` is not a level of the chain:
-/// it belongs to the two sequence wrappers and is granted by none of the
-/// others, in either direction (decision 122).
-pub const yielding_wrappers = [_][]const u8{ "Iter", "AsyncIter" };
-
-/// A body operation whose legality the chain decides. `throw` / `try` are not
-/// here: they follow the fallible channel, not the level (decision 121).
+/// A body operation whose legality the marker decides. `throw` / `try` are
+/// not here: they follow the fallible channel, not the marker (decision 121).
 pub const Capability = enum {
     await_,
     use_,
@@ -61,214 +33,85 @@ pub const Capability = enum {
             .yield_ => "yield",
         };
     }
-
-    /// The wrapper this capability belongs to, or null for `yield`, which
-    /// belongs to a set rather than to a level.
-    pub fn wrapper(self: Capability) ?[]const u8 {
-        return switch (self) {
-            .await_ => "Async",
-            .use_ => "Component",
-            .yield_ => null,
-        };
-    }
 };
 
-/// True when `wrapper` implements `target`, reflexively and transitively.
-/// The chain is two clauses deep at most, so the walk is a bounded loop
-/// rather than a visited set.
-pub fn wrapperImplements(wrapper: []const u8, target: []const u8) bool {
-    var current = wrapper;
-    var steps: usize = 0;
-    while (steps <= clauses.len) : (steps += 1) {
-        if (std.mem.eql(u8, current, target)) return true;
-        const next = directSuper(current) orelse return false;
-        current = next;
-    }
-    return false;
-}
-
-/// The wrapper `w` directly implements, or null when it declares no clause.
-fn directSuper(w: []const u8) ?[]const u8 {
-    for (clauses) |c| {
-        if (std.mem.eql(u8, c.wrapper, w)) return c.implements;
-    }
-    return null;
-}
-
-/// True when a body whose return activates `eff` may write `cap`. A body with
-/// no effect grants nothing — pass null and every answer is false.
+/// True when a body marked `eff` may write `cap`. An unmarked body (null, or
+/// `Result`, which takes no marker) admits nothing.
 pub fn grants(eff: ?ast.EffectKind, cap: Capability) bool {
     const e = eff orelse return false;
-    const w = e.returnWrapper();
-    if (cap == .yield_) {
-        for (yielding_wrappers) |y| {
-            if (std.mem.eql(u8, w, y)) return true;
-        }
-        return false;
-    }
-    return wrapperImplements(w, cap.wrapper().?);
+    return switch (cap) {
+        .await_ => e == .task or e == .stream or e == .component,
+        .yield_ => e == .iterator or e == .stream,
+        .use_ => e == .component,
+    };
 }
 
-/// Every effect that grants `cap`, in declaration order — the list a refusal
-/// names so the author reads the return they would need rather than guessing it.
-pub fn grantingEffects(cap: Capability, buf: *[ast.EffectKind.all.len]ast.EffectKind) []const ast.EffectKind {
+/// The markers that admit `cap`, spelled — "`async`, `async iter` or
+/// `component`".
+pub fn grantingMarkersSpelled(arena: std.mem.Allocator, cap: Capability) ![]const u8 {
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    var granting: [ast.EffectKind.all.len]ast.EffectKind = undefined;
     var n: usize = 0;
     for (ast.EffectKind.all) |e| {
-        if (grants(e, cap)) {
-            buf[n] = e;
-            n += 1;
-        }
+        if (!grants(e, cap)) continue;
+        granting[n] = e;
+        n += 1;
     }
-    return buf[0..n];
-}
-
-/// The returns that grant `cap`, spelled — "`@Async<…>`, `@AsyncIter<…>` or
-/// `@Component<…>`".
-pub fn grantingReturnsSpelled(arena: std.mem.Allocator, cap: Capability) ![]const u8 {
-    var buf: [ast.EffectKind.all.len]ast.EffectKind = undefined;
-    const granting = grantingEffects(cap, &buf);
-    var names: std.ArrayListUnmanaged(u8) = .empty;
-    for (granting, 0..) |e, i| {
-        if (i > 0) try names.appendSlice(arena, if (i + 1 == granting.len) " or " else ", ");
-        const one = try std.fmt.allocPrint(arena, "`-> @{s}<…>`", .{e.returnWrapper()});
-        try names.appendSlice(arena, one);
+    for (granting[0..n], 0..) |e, i| {
+        if (i > 0) try names.appendSlice(arena, if (i + 1 == n) " or " else ", ");
+        try names.print(arena, "`{s}`", .{e.markerWord()});
     }
     return names.items;
 }
 
-/// The refusal for `cap` written in a body whose return activates `eff`
-/// (null: a plain `fn`). Decision 67 — located, with no flag, and naming the
-/// return it would need.
+/// The refusal for `cap` written in a body marked `eff` (null: no marker).
+/// Decision 573 — named after the marker, located, naming the markers that
+/// admit it.
 pub fn refusal(arena: std.mem.Allocator, code: []const u8, cap: Capability, eff: ?ast.EffectKind) ![]const u8 {
-    const names = try grantingReturnsSpelled(arena, cap);
-    const body: []const u8 = if (eff) |e|
-        try std.fmt.allocPrint(arena, "this fn returns `@{s}<…>`, which does not", .{e.returnWrapper()})
+    const names = try grantingMarkersSpelled(arena, cap);
+    const marker: ?ast.EffectKind = if (eff) |e| (if (e == .result) null else e) else null;
+    const body: []const u8 = if (marker) |e|
+        try std.fmt.allocPrint(arena, "this body is marked `{s}`", .{e.markerWord()})
     else
-        "this fn's return type is no effect wrapper";
-    return std.fmt.allocPrint(
-        arena,
-        "{s}: `{s}` needs {s} return — {s}",
-        .{ code, cap.spelling(), names, body },
-    );
+        "this body carries no marker";
+    return std.fmt.allocPrint(arena, "{s}: `{s}` needs a body marked {s} — {s}", .{ code, cap.spelling(), names, body });
 }
 
-// ── the file is the declaration; these tests are the drift gate ──────────────
-
-/// `libs/std/src/primitives.bp`'s compiler section, embedded so the tests below can read the
-/// clauses the language actually declares rather than a copy of them.
-const builtins_source = @import("std_prelude").builtins;
-
-/// The declaration line of `wrapper` in `primitives.bp`'s compiler section, or null.
-fn declarationLine(wrapper: []const u8) ?[]const u8 {
-    var buf: [64]u8 = undefined;
-    const decl = std.fmt.bufPrint(&buf, "pub behavior {s}<", .{wrapper}) catch return null;
-    const at = std.mem.indexOf(u8, builtins_source, decl) orelse return null;
-    const end = std.mem.indexOfScalarPos(u8, builtins_source, at, '\n') orelse builtins_source.len;
-    return builtins_source[at..end];
-}
-
-test "effect chain: every clause here is declared in primitives.bp" {
-    for (clauses) |c| {
-        const line = declarationLine(c.wrapper) orelse {
-            std.debug.print("primitives.bp declares no `{s}` behavior\n", .{c.wrapper});
-            return error.WrapperNotDeclared;
-        };
-        var buf: [64]u8 = undefined;
-        const clause = try std.fmt.bufPrint(&buf, "extends {s} ", .{c.implements});
-        if (std.mem.indexOf(u8, line, clause) == null) {
-            std.debug.print(
-                "primitives.bp: `{s}` does not `extends {s}` — the chain drifted from the file:\n  {s}\n",
-                .{ c.wrapper, c.implements, line },
-            );
-            return error.ClauseNotDeclared;
-        }
-    }
-}
-
-test "effect chain: primitives.bp declares no clause this module does not carry" {
-    // The other direction: a clause added to the file and forgotten here would
-    // otherwise pass the test above.
-    var seen: usize = 0;
-    var rest: []const u8 = builtins_source;
-    while (std.mem.indexOf(u8, rest, "pub behavior ")) |at| {
-        const end = std.mem.indexOfScalarPos(u8, rest, at, '\n') orelse rest.len;
-        const line = rest[at..end];
-        rest = rest[end..];
-        if (std.mem.indexOf(u8, line, " extends ") == null) continue;
-        seen += 1;
-        var found = false;
-        for (clauses) |c| {
-            var buf: [64]u8 = undefined;
-            const decl = try std.fmt.bufPrint(&buf, "pub behavior {s}<", .{c.wrapper});
-            if (std.mem.startsWith(u8, line, decl)) found = true;
-        }
-        if (!found) {
-            std.debug.print("primitives.bp carries an `extends` this module does not:\n  {s}\n", .{line});
-            return error.ClauseNotCarried;
-        }
-    }
-    try std.testing.expectEqual(clauses.len, seen);
-}
-
-test "effect chain: every effect wrapper is declared, and no removed one is" {
-    for (ast.EffectKind.all) |e| {
-        if (e == .result) continue; // `Result` is a `type`, not a behavior
-        if (declarationLine(e.returnWrapper()) == null) {
-            std.debug.print("primitives.bp declares no `{s}` behavior\n", .{e.returnWrapper()});
-            return error.WrapperNotDeclared;
-        }
-    }
-    // Decision 127 — gone, not aliased.
-    for ([_][]const u8{ "Future", "Generator", "ResultGenerator", "FutureGenerator", "Use", "Iterable" }) |old| {
-        try std.testing.expect(declarationLine(old) == null);
-    }
-    try std.testing.expect(std.mem.indexOf(u8, builtins_source, "pub type YieldStep<T> {") != null);
-    // `@Iter<T>` declares no clause: it neither awaits nor fails.
-    const line = declarationLine("Iter") orelse return error.WrapperNotDeclared;
-    try std.testing.expect(std.mem.indexOf(u8, line, "extends") == null);
-}
-
-test "effect chain: decision 118's table, row by row" {
-    // `-> @Result<T, E>` — no level: `throw` / `try` come from the fallible channel.
-    try std.testing.expect(!grants(.result, .await_));
-    try std.testing.expect(!grants(.result, .use_));
-    try std.testing.expect(!grants(.result, .yield_));
-    // `-> @Async<T>` — await.
+test "body markers: what each marker admits" {
+    // `async` — await.
     try std.testing.expect(grants(.task, .await_));
     try std.testing.expect(!grants(.task, .use_));
     try std.testing.expect(!grants(.task, .yield_));
-    // `-> @Component<R>` ⊃ `@Async` — use · await.
+    // `component` — use · await.
     try std.testing.expect(grants(.component, .await_));
     try std.testing.expect(grants(.component, .use_));
     try std.testing.expect(!grants(.component, .yield_));
-    // `-> @Iter<T>` — yield, and nothing else (`iter-await`).
+    // `iter` — yield, and nothing else (`iter-await`).
     try std.testing.expect(!grants(.iterator, .await_));
     try std.testing.expect(!grants(.iterator, .use_));
     try std.testing.expect(grants(.iterator, .yield_));
-    // `-> @AsyncIter<T>` ⊃ `@Async` — yield · await.
+    // `async iter` — yield · await.
     try std.testing.expect(grants(.stream, .await_));
     try std.testing.expect(!grants(.stream, .use_));
     try std.testing.expect(grants(.stream, .yield_));
-    // A plain `fn` grants nothing.
-    try std.testing.expect(!grants(null, .await_));
-    try std.testing.expect(!grants(null, .use_));
-    try std.testing.expect(!grants(null, .yield_));
+    // `Result` takes no marker, and an unmarked body admits nothing.
+    for ([_]?ast.EffectKind{ .result, null }) |e| {
+        try std.testing.expect(!grants(e, .await_));
+        try std.testing.expect(!grants(e, .use_));
+        try std.testing.expect(!grants(e, .yield_));
+    }
 }
 
-test "effect chain: the chain grants downwards, never upwards" {
-    // `use` is `@Component`'s alone.
-    for (ast.EffectKind.all) |e| {
-        if (e == .component) continue;
-        try std.testing.expect(!grants(e, .use_));
-    }
-    // `@Result` is outside the chain (decision 120).
-    try std.testing.expect(!wrapperImplements("Result", "Async"));
-    try std.testing.expect(!wrapperImplements("Async", "Result"));
-    try std.testing.expect(!wrapperImplements("Component", "Result"));
-    try std.testing.expect(!wrapperImplements("Async", "Component"));
-    try std.testing.expect(wrapperImplements("Component", "Async"));
-    try std.testing.expect(wrapperImplements("AsyncIter", "Async"));
-    try std.testing.expect(!wrapperImplements("Iter", "Async"));
-    // `@Renderable` is a marker, not a level of the chain.
-    try std.testing.expect(!wrapperImplements("Renderable", "Async"));
+test "body markers: a refusal names the markers that admit the keyword" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try std.testing.expectEqualStrings(
+        "await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker",
+        try refusal(arena, "await-without-async", .await_, null),
+    );
+    try std.testing.expectEqualStrings(
+        "yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body is marked `async`",
+        try refusal(arena, "yield-without-iter", .yield_, .task),
+    );
 }

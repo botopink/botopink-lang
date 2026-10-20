@@ -3118,8 +3118,35 @@ what it captures reach the body:
 <!-- example: modules/decisions-taken/component_lambda_runs-574/cells/component_lambda_typed_val -->
 <!-- example: modules/decisions-taken/component_lambda_runs-574/cells/component_lambda_typed_param -->
 
-Until every body writes its marker, an unmarked body keeps its return's effect
-(`-> Iter<T>` with a `yield` is still a generator).
+The marker, never the return type, admits the keyword (decisions 553 (4),
+573): `await`, `yield` or `use` in a body with no marker that admits it is
+`await-without-async`, `yield-without-iter` or `use-without-component`, at the
+keyword, the hint naming the marker to write:
+
+<!-- example: modules/await_without_marker_refused -->
+<!-- example: modules/yield_without_marker_refused -->
+<!-- example: modules/use_without_marker_refused -->
+
+Without a marker a body is an ordinary function and returns the whole type
+(decision 570): an unmarked `-> Async<T>` body returns an `Async<T>` —
+`Async.resolve(v)`, std's settled task, or a call that answers one — and a
+caller awaits it as it awaits an `async fn`:
+
+<!-- example: modules/async_resolve_unmarked -->
+
+An unmarked `-> Async<T>` / `-> Component<R>` body returning the bare value is
+a type mismatch at the value, its hint naming the marker (`async fn`,
+`component fn`) and `Async.resolve`:
+
+<!-- example: modules/unmarked_async_bare_value_refused -->
+<!-- example: modules/unmarked_component_bare_value_refused -->
+
+An unmarked `-> Async<Result<T, E>>` body has no failure channel of its own:
+the `Result` is inside the task it returns whole, so its `throw` or
+propagating `try` is `effect-try-without-fallible-channel`, naming the
+marker:
+
+<!-- example: modules/unmarked_async_throw_refused -->
 
 ### Results
 

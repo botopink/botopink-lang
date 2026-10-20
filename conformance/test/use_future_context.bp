@@ -17,7 +17,7 @@ component fn request() -> Component<Request> {
     return Request(code: 7);
 }
 
-fn load(n: i32) -> Async<i32> {
+async fn load(n: i32) -> Async<i32> {
     return n;
 }
 

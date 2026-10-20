@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: use-not-top-level: `use` inside a lambda — a `use` is written at the top level of a `@Component` body and runs on every call (decision 357)
+refused error: use-not-top-level: `use` inside a lambda — a `use` is written at the top level of a `component` body and runs on every call (decision 357)
 at src/cases/use_in_lambda/mod.bp:13:17

@@ -17,11 +17,11 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn layerValue(n: i32) -> Async<Result<i32, string>> {
+async fn layerValue(n: i32) -> Async<Result<i32, string>> {
     return n;
 }
 
-fn layerResult(r: Result<i32, string>) -> Async<Result<i32, string>> {
+async fn layerResult(r: Result<i32, string>) -> Async<Result<i32, string>> {
     return r;
 }
 

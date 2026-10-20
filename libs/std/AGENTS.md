@@ -521,8 +521,8 @@ the boundary itself.
 
 There are no effect annotations (decision 118). `@Result<T, E>`, `@Async<T>`,
 `@Component<T>` (with the owner marker `@Renderable`), `@Iter<T>` and
-`@AsyncIter<T>` over `YieldStep<T>` — the chain `Component ⊃ Async`, `AsyncIter ⊃ Async`
-that `comptime/effect_chain.zig` restates and drift-tests — and default generic
+`@AsyncIter<T>` over `YieldStep<T>` — the chain `Component ⊃ Async`, `AsyncIter ⊃ Async`;
+which keywords a body may write is its marker's (`comptime/effect_chain.zig`) — and default generic
 parameters are documented in the effect-wrapper blocks of `src/primitives.bp`.
 `@Future`, `@Generator`, `@ResultGenerator`, `@FutureGenerator` and `@Use` are
 gone, not aliased (decision 127).

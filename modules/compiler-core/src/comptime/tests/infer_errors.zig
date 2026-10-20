@@ -356,7 +356,7 @@ test "infer error: await outside an await channel" {
 
 test "infer error: await on a non-@Async value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Async<i32> {
+        \\async fn bad() -> Async<i32> {
         \\    val x = await 5;
         \\    return x;
         \\}
@@ -365,7 +365,7 @@ test "infer error: await on a non-@Async value" {
 
 test "infer error: yield targets an unknown label" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn gen() -> Iter<i32> {
+        \\iter fn gen() -> Iter<i32> {
         \\    yield :nope 1;
         \\}
     );
@@ -373,7 +373,7 @@ test "infer error: yield targets an unknown label" {
 
 test "infer error: for await on a non-@AsyncIter value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Async<i32> {
+        \\async fn bad() -> Async<i32> {
         \\    for await (5) { x ->
         \\        ping(x);
         \\    }
@@ -433,7 +433,7 @@ test "infer error: an unannotated method's return type comes from its body" {
 
 test "infer error: @Async body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn bad() -> Async<i32> {
+        \\async fn bad() -> Async<i32> {
         \\    yield 1;
         \\}
     );
@@ -649,7 +649,7 @@ test "infer error: still_reports_unbound ---- a genuinely undefined name still e
 
 test "infer error: RG3 ---- @Async<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Async<> { return 0; }
+        \\async fn empty() -> Async<> { return 0; }
     );
 }
 
@@ -692,7 +692,7 @@ test "infer error: R12 ---- let-binding Result.Ok inside @Result reds result-man
 
 test "infer error: decision 123 ---- yield and return <expr> in an @Iter<@Result<…>> body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<i32> {
+        \\iter fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -701,7 +701,7 @@ test "infer error: decision 123 ---- yield and return <expr> in an @Iter<@Result
 
 test "infer error: decision 123 ---- yield and return <expr> in a @AsyncIter body reds iter-mixed-yield-return" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> AsyncIter<Result<i32, string>> {
+        \\async iter fn nums() -> AsyncIter<Result<i32, string>> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -710,7 +710,7 @@ test "infer error: decision 123 ---- yield and return <expr> in a @AsyncIter bod
 
 test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<Result<i32, string>> :outer {
+        \\iter fn nums() -> Iter<Result<i32, string>> :outer {
         \\    yield 1;
         \\    break :nonsense 42;
         \\}
@@ -722,7 +722,7 @@ test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
 // with the completion channel `C`).
 test "infer: decision 103 ---- break <expr> inside @Iter-of-Result is the last item" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> Iter<Result<i32, string>> {
+        \\iter fn nums() -> Iter<Result<i32, string>> {
         \\    yield 1;
         \\    break 42;
         \\}
@@ -731,7 +731,7 @@ test "infer: decision 103 ---- break <expr> inside @Iter-of-Result is the last i
 
 test "infer error: RG5 ---- a second argument on @Async reds generic-arg-count-exceeded" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Async<i32, string> {
+        \\async fn nums() -> Async<i32, string> {
         \\    return 1;
         \\}
     );
@@ -764,10 +764,10 @@ test "infer error: RG5 ---- a declared type written with more arguments than it 
 
 test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator and a Async of it on a stream" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn two() -> Iter<i32> {
+        \\iter fn two() -> Iter<i32> {
         \\    yield 1;
         \\}
-        \\fn ticks() -> AsyncIter<i32> {
+        \\async iter fn ticks() -> AsyncIter<i32> {
         \\    yield 1;
         \\}
         \\fn first() -> i32 {
@@ -777,7 +777,7 @@ test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator a
         \\        Done -> 0;
         \\    };
         \\}
-        \\fn firstTick() -> Async<i32> {
+        \\async fn firstTick() -> Async<i32> {
         \\    val t: Async<YieldStep<i32>> = ticks().next();
         \\    val s = await t;
         \\    return case s {
@@ -792,7 +792,7 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
-        \\fn lookup() -> Component<User> {
+        \\component fn lookup() -> Component<User> {
         \\    val u = use plain();
         \\    return u;
         \\}
@@ -803,7 +803,7 @@ test "infer error: break <wrongType> in a generator reds a type mismatch against
     // `break v` emits `v` and ends the generator: `v` is an item, so it must
     // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<Result<i32, string>> {
+        \\iter fn nums() -> Iter<Result<i32, string>> {
         \\    yield 1;
         \\    break "not an i32";
         \\}
@@ -915,8 +915,8 @@ test "infer: return ---- a hook body returns the X of @Component<X>, or another 
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
-        \\fn state<T>(initial: T) -> Component<Cell<T>> { return Cell(value: initial); }
-        \\fn counter(start: i32) -> Component<Cell<i32>> { return state(start); }
+        \\component fn state<T>(initial: T) -> Component<Cell<T>> { return Cell(value: initial); }
+        \\component fn counter(start: i32) -> Component<Cell<i32>> { return state(start); }
     );
 }
 

@@ -310,7 +310,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
         }
         env.lastError = TypeError.custom(
             "unknown \"std\" module in import",
-            "Available std modules: bool. (A `@Result`'s `map` / `flatMap` / `unwrapOr` / `isOk` / `isError` are its methods: `r.map(f)`, no import.)",
+            "Available std modules: bool. (A `Result`'s `map` / `flatMap` / `unwrapOr` / `isOk` / `isError` are its methods: `r.map(f)`, no import.)",
         ).withLoc(imp.loc);
         return error.TypeError;
     }
@@ -2190,6 +2190,26 @@ fn extractImplementNames(arena: std.mem.Allocator, impls: []const ast.TypeRef) !
     return names;
 }
 
+/// `text` with the effect wrappers spelled as the types in force — `Async`,
+/// `Iter`, `AsyncIter`, `Component`, `Result` — not with the `@` a builtin
+/// `TypeRef` renders (specs/retired.md). For a diagnostic's display only.
+fn wrappersSpelled(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (text[i] == '@') {
+            const rest = text[i + 1 ..];
+            const wrapper = for (ast.EffectKind.all) |e| {
+                const w = e.returnWrapper();
+                if (std.mem.startsWith(u8, rest, w) and (rest.len == w.len or !std.ascii.isAlphanumeric(rest[w.len]))) break true;
+            } else false;
+            if (wrapper) continue;
+        }
+        try out.append(arena, text[i]);
+    }
+    return out.items;
+}
+
 /// Render a `TypeRef` to its source-level string form (heap-allocated in `arena`).
 fn typeRefToString(arena: std.mem.Allocator, ref: ast.TypeRef) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -2213,7 +2233,7 @@ fn implementsRenderable(impls: []const ast.TypeRef) bool {
 /// `annotated` is the `@Component` return and nothing else — the same flag as
 /// `env.inContextFn`.
 fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
-    const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
+    const display = if (retType) |rt| try wrappersSpelled(env.arena, try typeRefToString(env.arena, rt)) else "void";
     const annotated = eff == .component;
     if (retType) |rt| switch (rt) {
         .generic => |g| if (std.mem.eql(u8, g.name, "Component")) {
@@ -4399,7 +4419,7 @@ fn refuseResultReturn(env: *Env, impl: ast.Implementation, name: []const u8, ret
         env.arena,
         "`{s}` writes `result: true` on `.{s}`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `{s}`",
         .{ name, variant, written },
-    ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.");
+    ), "`result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from \"std\";`). Without the flag the binding promises no failure: delete it, or declare the `Result`.");
 }
 
 /// How a `result: true` binding's return reads: `@Result<T, E>` or
@@ -4837,9 +4857,9 @@ fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
             if (!g.is_builtin or !std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk "another type";
             if (!std.mem.eql(u8, spelledType(g.args[1], self_ty), "string")) break :blk "another type";
             const ok = spelledType(g.args[0], self_ty);
-            if (std.mem.eql(u8, ok, "i64")) break :blk "@Result<i64, string>";
-            if (std.mem.eql(u8, ok, "f64")) break :blk "@Result<f64, string>";
-            if (std.mem.eql(u8, ok, "T")) break :blk "@Result<T, string>";
+            if (std.mem.eql(u8, ok, "i64")) break :blk "Result<i64, string>";
+            if (std.mem.eql(u8, ok, "f64")) break :blk "Result<f64, string>";
+            if (std.mem.eql(u8, ok, "T")) break :blk "Result<T, string>";
             break :blk "another type";
         },
         else => "another type",
@@ -9293,7 +9313,7 @@ fn inferTypeMethods(
         // Decision 118 — the method's return type is its effect, as a free
         // fn's is; decision 123 — an `@Iter` return that yields nothing is
         // a factory.
-        const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body);
+        const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body, m.marker);
         env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
         defer env.fnContext = savedFnCtx;
         // Decision 375, question 04s12-a — a `@Component` method is marked by
@@ -9513,7 +9533,13 @@ fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError
     if (!stmtsMayFallThrough(env, f.body)) return;
     const rendered = try snapshotMod.typeNameOf(env.arena, rt);
     const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares `-> {s}` and its body can reach its end without a `return`", .{ f.name, rendered });
-    var err = TypeError.custom(msg, "A value leaves a function through `return` (decision 2): end every path with `return <value>;`, or `@panic(…)` / `@todo()` where it cannot happen.");
+    // Decision 570 — an unmarked `-> Async<T>` / `-> Component<R>` body is an
+    // ordinary function: the hint names the marker that would wrap its value.
+    const hint: []const u8 = if (f.effect == null and unmarkedWrapper(retType) != null)
+        try unmarkedWrapperHint(env, unmarkedWrapper(retType).?)
+    else
+        "A value leaves a function through `return` (decision 2): end every path with `return <value>;`, or `@panic(…)` / `@todo()` where it cannot happen.";
+    var err = TypeError.custom(msg, hint);
     if (f.returnTypeLoc.line > 0) err = err.withLoc(f.returnTypeLoc) else if (f.body.len > 0) err = err.withLoc(f.body[0].expr.getLoc());
     env.lastError = err;
     return error.TypeError;
@@ -9570,6 +9596,48 @@ fn exprMayFallThrough(env: *Env, e: anytype) bool {
         },
         else => true,
     };
+}
+
+/// Decision 570 — the marker a `-> Async<T>` / `-> Component<R>` return
+/// names, or null for any other return: without it the body is an ordinary
+/// function and returns the whole type.
+fn unmarkedWrapper(retType: *T.Type) ?ast.EffectKind {
+    const d = retType.deref();
+    if (d.* != .named) return null;
+    if (std.mem.eql(u8, d.named.name, "Async")) return .task;
+    if (std.mem.eql(u8, d.named.name, "Component")) return .component;
+    return null;
+}
+
+/// Decision 570 — the hint for an unmarked `-> Async<T>` / `-> Component<R>`
+/// body: the marker that wraps the value, and `Async.resolve` for a task.
+fn unmarkedWrapperHint(env: *Env, eff: ast.EffectKind) ![]const u8 {
+    return switch (eff) {
+        .task => "An unmarked function returns the whole `Async<T>` (decision 570): write `async fn` to return the value and let the marker wrap it, or return `Async.resolve(v)`.",
+        else => try std.fmt.allocPrint(env.arena, "An unmarked function returns the whole `{s}<…>` (decision 570): write `{s} fn` to return the value and let the marker wrap it.", .{ eff.returnWrapper(), eff.markerWord() }),
+    };
+}
+
+/// Decision 570 — a `return v` in an unmarked `-> Async<T>` /
+/// `-> Component<R>` body whose `v` is no such wrapper: a type mismatch (the
+/// body returns the whole type), named so, its hint naming the marker and
+/// `Async.resolve`. Only where the return target IS the whole declared type
+/// (an unmarked fn or method); a value still unresolved is left to unify.
+fn refuseBareValueInUnmarked(env: *Env, target: *T.Type, value: *T.Type, loc: ast.Loc) InferError!void {
+    const whole = env.returnWhole orelse return;
+    if (whole != target) return;
+    const eff = unmarkedWrapper(target) orelse return;
+    const v = value.deref();
+    if (v.* == .typeVar) return;
+    if (v.* == .named) {
+        if (std.mem.eql(u8, v.named.name, eff.returnWrapper())) return;
+        if (std.mem.eql(u8, v.named.name, "noreturn")) return;
+    }
+    const expected = try snapshotMod.typeSignatureOf(env.arena, target);
+    const got = try snapshotMod.typeSignatureOf(env.arena, value);
+    const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected {s}, got {s} — this body carries no `{s}` marker, so it returns the whole `{s}`", .{ expected, got, eff.markerWord(), expected });
+    env.lastError = TypeError.custom(msg, try unmarkedWrapperHint(env, eff)).withLoc(loc);
+    return error.TypeError;
 }
 
 fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
@@ -13625,7 +13693,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                         var err = TypeError.custom(
                             try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes {s}{d} type argument{s}, {d} given", .{ diagnostics.generic_arg_count_exceeded, b.name, if (max == 0) "" else "at most ", max, if (max == 1) "" else "s", b.args.len }),
                             if (std.mem.eql(u8, b.name, yield_step_type_name))
-                                "`YieldStep<T>` is `{ Yield(value: T), Done }` (decision 122): an item that can fail is a `@Result`, so write `YieldStep<@Result<T, E>>`."
+                                "`YieldStep<T>` is `{ Yield(value: T), Done }` (decision 122): an item that can fail is a `Result`, so write `YieldStep<Result<T, E>>`."
                             else
                                 "Drop the extra type argument: the type declares no parameter for it.",
                         );
@@ -15684,7 +15752,7 @@ fn checkAssertPatternSubject(
     // the one that asserts a variant, and its failure is fatal.
     if (!fatal and eq(u8, n.name, "Result")) {
         var ce = TypeError.custom(
-            "after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch`",
+            "after `catch` the value is not a Result — a `val assert` over a `Result` takes no `catch`",
             "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
         );
         // 01 R9 — the caret is on the `catch` that makes it an error.
@@ -17637,14 +17705,14 @@ fn inEffectContext(env: *Env, kind: ast.EffectKind) bool {
 /// The refusal for `what` written outside a generator scope: the returns and
 /// the loop prefixes that open one (decisions 122, 125), read off the chain.
 fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const u8 {
-    const names = try effectChain.grantingReturnsSpelled(env.arena, .yield_);
+    const names = try effectChain.grantingMarkersSpelled(env.arena, .yield_);
     const body: []const u8 = if (env.fnEffect) |e|
-        try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>`, which is no sequence", .{e.returnWrapper()})
+        (if (e == .result) "this body carries no marker" else try std.fmt.allocPrint(env.arena, "this body is marked `{s}`, which is no sequence", .{e.markerWord()}))
     else
-        "this body is no sequence";
+        "this body carries no marker";
     return std.fmt.allocPrint(
         env.arena,
-        "{s}: {s} needs a generator scope — a {s} return that yields, or an `iter` / `stream` loop; {s}",
+        "{s}: {s} needs a generator scope — a body marked {s}, or an `iter` / `stream` loop; {s}",
         .{ code, what, names, body },
     );
 }
@@ -17652,23 +17720,34 @@ fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const
 /// Decision 431 (1) — the ways out `effect-try-without-fallible-channel` names:
 /// `try … catch` handles the failure on the spot, and a host binding answers a
 /// `@Result` only under `result: true` (490).
-const fallible_channel_ways_out = "; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`";
+const fallible_channel_ways_out = "; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`";
 
 /// Decision 121 — the refusal for `throw` / `try` in a body whose return
 /// carries no `@Result` layer, naming the return.
 fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
     if (env.inLambdaBody) return std.fmt.allocPrint(
         env.arena,
-        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none{s}",
+        "{s}: `{s}` in a lambda needs a `Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none{s}",
         .{ diagnostics.effect_try_without_fallible_channel, what, fallible_channel_ways_out },
     );
+    // Decision 570 — an unmarked `-> Async<Result<T, E>>` body is an ordinary
+    // function: its `Result` is inside the `Async` it returns whole, no
+    // channel of the body's; the marker opens it.
+    const unmarked: ?ast.EffectKind = if (env.fnEffect == null) blk: {
+        const w = (env.returnWhole orelse break :blk null).deref();
+        if (w.* != .named) break :blk null;
+        break :blk ast.EffectKind.fromWrapperName(w.named.name);
+    } else null;
     const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
-        .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
-        else => try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>` with no `@Result` in it", .{e.returnWrapper()}),
-    } else "this fn's return has no `@Result` in it";
+        .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `{s}<T>` has to be `Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
+        else => try std.fmt.allocPrint(env.arena, "this fn returns `{s}<…>` with no `Result` in it", .{e.returnWrapper()}),
+    } else if (unmarked != null and unmarked.? != .result)
+        try std.fmt.allocPrint(env.arena, "this body carries no `{s}` marker, so it returns the whole `{s}<…>` and a `Result` inside it is no channel of the body's — write `{s} fn`", .{ unmarked.?.markerWord(), unmarked.?.returnWrapper(), unmarked.?.markerWord() })
+    else
+        "this fn's return has no `Result` in it";
     return std.fmt.allocPrint(
         env.arena,
-        "{s}: `{s}` needs a `@Result` in some layer of the return — {s}{s}",
+        "{s}: `{s}` needs a `Result` in some layer of the return — {s}{s}",
         .{ diagnostics.effect_try_without_fallible_channel, what, shape, fallible_channel_ways_out },
     );
 }
@@ -17683,8 +17762,8 @@ fn unifyErrorChannel(env: *Env, errType: *T.Type, got: *T.Type, loc: ast.Loc) In
         error.TypeError => {
             env.lastError = TypeError.custom(
                 diagnostics.gen_infer_conflicting_errors ++
-                    ": the error types of this block's `throw` / `try` do not agree, so its `@Result<U, E>` has no one `E`",
-                "Annotate the value with the error you mean: `val x: @Async<@Result<U, E>> = async { … };` (or `@Iter<@Result<U, E>>` for a loop), and handle the other error where it happens.",
+                    ": the error types of this block's `throw` / `try` do not agree, so its `Result<U, E>` has no one `E`",
+                "Annotate the value with the error you mean: `val x: Async<Result<U, E>> = async { … };` (or `Iter<Result<U, E>>` for a loop), and handle the other error where it happens.",
             ).withLoc(loc);
             return error.TypeError;
         },
@@ -17700,10 +17779,10 @@ fn refuseBehindAlias(env: *Env, what: []const u8, loc: ast.Loc) InferError!bool 
     env.lastError = TypeError.custom(
         try std.fmt.allocPrint(
             env.arena,
-            "{s}: `{s}` under an aliased return — the alias resolves to `@{s}<…>`, and an alias does not activate the effect",
+            "{s}: `{s}` under an aliased return — the alias resolves to `{s}<…>`, and an alias does not activate the effect",
             .{ diagnostics.effect_wrapper_behind_alias, what, w },
         ),
-        try std.fmt.allocPrint(env.arena, "Write `@{s}<…>` literally in the return type to activate the effect (decision 118): whoever reads the signature has to see the `@`.", .{w}),
+        try std.fmt.allocPrint(env.arena, "Write `{s}<…>` literally in the return type to activate the effect (decision 118): whoever reads the signature has to see the wrapper.", .{w}),
     ).withLoc(loc);
     return true;
 }
@@ -17829,13 +17908,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (std.mem.eql(u8, variant, "Ok")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.return_must_be_bare_R ++
-                                    ": a body whose return carries `@Result<R, E>` must `return` a value of type R; the @Result::Ok wrapping is implicit.",
+                                    ": a body whose return carries `Result<R, E>` must `return` a value of type R; the Result::Ok wrapping is implicit.",
                                 "Drop the `Result.Ok(...)` wrapping — write `return <r>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_return_type_mismatch ++
-                                    ": a body whose return carries `@Result<R, E>` returns R via `return`; use `throw` for the error variant.",
+                                    ": a body whose return carries `Result<R, E>` returns R via `return`; use `throw` for the error variant.",
                                 "If the value is an error, change `return Result.Error(<e>);` to `throw <e>;`.",
                             ).withLoc(loc);
                         }
@@ -17916,8 +17995,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (env.returnTarget) |target| if (isResultType(target)) {
                             env.lastError = TypeError.custom(
                                 diagnostics.effect_return_ambiguous_nesting ++
-                                    ": this `@Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `@Result` layer (passed through)",
-                                "Say which: return the inner value and let `return` wrap it (`return try r;`), or bind the whole value with the declared type (`val w: @Result<@Result<U, E>, E> = …; return w;`) and return that.",
+                                    ": this `Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `Result` layer (passed through)",
+                                "Say which: return the inner value and let `return` wrap it (`return try r;`), or bind the whole value with the declared type (`val w: Result<Result<U, E>, E> = …; return w;`) and return that.",
                             ).withLoc(loc);
                             return error.TypeError;
                         };
@@ -17960,6 +18039,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                             std.mem.eql(u8, wd.named.name, vt.named.name)) break :blk w;
                         break :blk null;
                     };
+                    if (!passthrough) try refuseBareValueInUnmarked(env, target, vp.getType(), rv.getLoc());
                     if (whole) |w| {
                         try unifyAt(env, w, vp.getType(), rv.getLoc());
                     } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
@@ -17981,13 +18061,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (std.mem.eql(u8, variant, "Error")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.throw_must_be_bare_E ++
-                                    ": a body whose return carries `@Result<R, E>` must `throw` a value of type E; the @Result::Err wrapping is implicit.",
+                                    ": a body whose return carries `Result<R, E>` must `throw` a value of type E; the Result::Err wrapping is implicit.",
                                 "Drop the `Result.Error(...)` wrapping — write `throw <e>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_throw_type_mismatch ++
-                                    ": a body whose return carries `@Result<R, E>` raises E via `throw`; use `return` for the success variant.",
+                                    ": a body whose return carries `Result<R, E>` raises E via `throw`; use `return` for the success variant.",
                                 "If the value is the success payload, change `throw Result.Ok(<r>);` to `return <r>;`.",
                             ).withLoc(loc);
                         }
@@ -18017,7 +18097,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 .plain => {
                     env.lastError = TypeError.custom(
                         try fallibleChannelRefusal(env, "throw"),
-                        "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Async<@Result<T, E>>`, `-> @Iter<@Result<T, E>>`, …) or handle the failure where it happens.",
+                        "Put a `Result` in the return (`-> Result<T, E>`, `-> Async<Result<T, E>>`, `-> Iter<Result<T, E>>`, …) or handle the failure where it happens.",
                     ).withLoc(loc);
                     return error.TypeError;
                 },
@@ -18063,7 +18143,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 if (try refuseBehindAlias(env, "try", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
                     try fallibleChannelRefusal(env, "try"),
-                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `@Result` in the return.",
+                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `Result` in the return.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -18137,14 +18217,14 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 if (try refuseBehindAlias(env, "await", loc)) return error.TypeError;
                 if (env.starFn != null and env.starFn.?.effect == .iterator) {
                     env.lastError = TypeError.custom(
-                        diagnostics.iter_await ++ ": `await` does not exist in an `@Iter` — its items are produced synchronously",
-                        "Use `@AsyncIter<T>` (or a `stream` loop): a stream is the sequence that may wait between items.",
+                        diagnostics.iter_await ++ ": `await` does not exist in an `iter` body — its items are produced synchronously",
+                        "Write `async iter fn` (an `AsyncIter<T>`, or a `stream` loop): a stream is the sequence that may wait between items.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.await_without_async, .await_, env.fnEffect),
-                    "Write `async fn` (the return becomes `@Async<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).",
+                    "Write `async fn` (its return is `Async<…>`; `component fn` / `async iter fn` answer `Component<…>` / `AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -18159,7 +18239,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const deref = rawTy.deref();
             if (deref.* == .named and unwrapTaskType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Task<_>` value",
+                    "`await` expects an `Async<_>` value",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
@@ -18198,7 +18278,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 if (try refuseBehindAlias(env, "yield", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.yield_without_iter, .yield_, env.fnEffect),
-                    "A `yield` feeds the nearest generator scope: write `iter fn` (`async iter fn` for a `@AsyncIter<T>`), or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
+                    "A `yield` feeds the nearest generator scope: write `iter fn` (`async iter fn` for an `AsyncIter<T>`), or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -18210,14 +18290,14 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     if (env.hasLabel(lbl)) {
                         env.lastError = TypeError.custom(
                             diagnostics.yield_label_not_generator ++ ": `yield :<label>` names a loop, and a `yield` feeds a generator scope",
-                            "Label the scope it feeds: `fn … -> @Iter<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
+                            "Label the scope it feeds: `iter fn … -> Iter<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
                         ).withLoc(loc);
                         return error.TypeError;
                     }
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`fn … -> @Iter<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
+                        "Label a generator fn (`iter fn … -> Iter<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
@@ -18621,8 +18701,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             try env.instanceLowerings.put(lp.loc, .{ .sequence_next = .stream });
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                diagnostics.for_await_expects_stream ++ ": `for await` expects a `@AsyncIter<T>` value",
-                "An `@Iter<T>` is iterated by `for (it) { x -> … }`; only a `@AsyncIter` suspends between items.",
+                diagnostics.for_await_expects_stream ++ ": `for await` expects an `AsyncIter<T>` value",
+                "An `Iter<T>` is iterated by `for (it) { x -> … }`; only an `AsyncIter` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -18641,7 +18721,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             itemTy = n.args[0];
         } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "AsyncIter")) {
             env.lastError = TypeError.custom(
-                diagnostics.for_over_stream ++ ": a `@AsyncIter` suspends between items — iterate it with `for await`",
+                diagnostics.for_over_stream ++ ": an `AsyncIter` suspends between items — iterate it with `for await`",
                 "`for await (s) { x -> … }` where there is an await channel.",
             ).withLoc(loc);
             return error.TypeError;
@@ -20107,12 +20187,12 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
     if (is_call and builtinsMod.hasMethod("Result", member)) return;
     const msg = try std.fmt.allocPrint(
         env.arena,
-        diagnostics.result_member_not_a_method ++ ": `{s}` is not a member of a `@Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `@Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`",
+        diagnostics.result_member_not_a_method ++ ": `{s}` is not a member of a `Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`",
         .{member},
     );
     const hint = try std.fmt.allocPrint(
         env.arena,
-        "A `@Result` is `Ok` or `Error`, not its payload: take the payload with `try` (`val v = try r;`, then `v.{s}`) or with a default (`r.unwrapOr(<default>).{s}`).",
+        "A `Result` is `Ok` or `Error`, not its payload: take the payload with `try` (`val v = try r;`, then `v.{s}`) or with a default (`r.unwrapOr(<default>).{s}`).",
         .{ member, member },
     );
     env.lastError = TypeError.custom(msg, hint).withLoc(loc);
@@ -21111,14 +21191,14 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
         else
             "a template function's body";
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` inside {s} — compile-time evaluation has no render tree, so no hook runs there (decision 354)", .{ diagnostics.use_outside_render_tree, where });
-        env.lastError = TypeError.custom(msg, "Read what compile-time code needs from the catalogue (`@TypeInfo.all(with: …)`) or from its arguments; `use` belongs in a `@Component` body.").withLoc(loc);
+        env.lastError = TypeError.custom(msg, "Read what compile-time code needs from the catalogue (`@TypeInfo.all(with: …)`) or from its arguments; `use` belongs in a `component` body.").withLoc(loc);
         return error.TypeError;
     }
     // Decision 357 — the rules of hooks: a `use` stands at the top level of a
     // `@Component` body and runs on every call (an `iter` / `stream` loop's
     // body, decision 125, is one of the constructs it may not stand in).
     if (env.useConstruct) |what| {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` inside {s} — a `use` is written at the top level of a `@Component` body and runs on every call (decision 357)", .{ diagnostics.use_not_top_level, what });
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` inside {s} — a `use` is written at the top level of a `component` body and runs on every call (decision 357)", .{ diagnostics.use_not_top_level, what });
         env.lastError = TypeError.custom(msg, "Move the `use` to the top level of the body; a condition goes inside its argument (`use provide(Ctx, if (c) a else b);`), never around it.").withLoc(loc);
         return error.TypeError;
     }
@@ -21147,15 +21227,15 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
         env.lastError = TypeError.custom(
             diagnostics.use_without_component ++
                 ": `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it",
-            "Activate the hook in the `@Component` body before the block and let the block read its value.",
+            "Activate the hook in the `component` body before the block and let the block read its value.",
         ).withLoc(loc);
         return error.TypeError;
     }
     if (env.starFn == null) {
         env.lastError = TypeError.custom(
             diagnostics.use_without_component ++
-                ": `use` inside a nested closure — the closure is not the `@Component` body, and `use` is not inherited (as `await` is not)",
-            "Activate the hook in the `@Component` body itself (`val s = use state(0);`) and let the closure read `s`.",
+                ": `use` inside a nested closure — the closure is not the `component` body, and `use` is not inherited (as `await` is not)",
+            "Activate the hook in the `component` body itself (`val s = use state(0);`) and let the closure read `s`.",
         ).withLoc(loc);
         return error.TypeError;
     }
@@ -21443,7 +21523,7 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
         }
         if (!fc.renderable) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` in '{s}', which returns '{s}' — a provider gives its value to what a COMPONENT renders below it, and this body is no component (its `R` does not implement `@Renderable`)", .{ diagnostics.context_provide_outside_component, fc.fnName, fc.returnDisplay });
-            env.lastError = TypeError.custom(msg, "Provide the context in the component that renders the children which read it (`fn App() -> @Component<Element> { use provide(…); … }`).").withLoc(loc);
+            env.lastError = TypeError.custom(msg, "Provide the context in the component that renders the children which read it (`component fn App() -> Component<Element> { use provide(…); … }`).").withLoc(loc);
             return error.TypeError;
         }
         if (env.firstRenderAt) |r| {
@@ -23443,7 +23523,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
         if (resultVariantCallName(.{ .call = c })) |_| {
             env.lastError = TypeError.custom(
                 diagnostics.result_manual_construction_forbidden ++
-                    ": in a body whose return carries a `@Result`, the variants are constructed by `return` / `throw` alone.",
+                    ": in a body whose return carries a `Result`, the variants are constructed by `return` / `throw` alone.",
                 "Replace the manual `Result.Ok(...)` / `Result.Error(...)` with the implicit form (`return <r>;` / `throw <e>;`), or move the construction outside this body.",
             ).withLoc(loc);
             return error.TypeError;
@@ -25345,7 +25425,7 @@ fn checkJumpLabel(env: *Env, lbl: []const u8, comptime word: []const u8, loc: as
         env.lastError = TypeError.custom(
             diagnostics.break_label_unbound ++
                 ": `" ++ word ++ " :<label>` targets an unknown label",
-            "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iter<…> :name`, `iter loop :name {`).",
+            "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`iter fn … -> Iter<…> :name`, `iter loop :name {`).",
         ).withLoc(loc);
         return error.TypeError;
     }
@@ -25764,7 +25844,7 @@ fn checkLambdaMarker(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
     const w = want orelse {
         env.lastError = TypeError.custom(
             try std.fmt.allocPrint(env.arena, "{s}: a lambda marked `{s}` needs the function type it is written for", .{ diagnostics.marker_lambda_without_expected_type, m.markerWord() }),
-            try std.fmt.allocPrint(env.arena, "A marked lambda takes its type from where it is written (decisions 147, 553): annotate the binding (`val f: fn(x: i32) -> @{s}<i32> = …`) or pass it where a function type is expected.", .{m.returnWrapper()}),
+            try std.fmt.allocPrint(env.arena, "A marked lambda takes its type from where it is written (decisions 147, 553): annotate the binding (`val f: fn(x: i32) -> {s}<i32> = …`) or pass it where a function type is expected.", .{m.returnWrapper()}),
         ).withLoc(loc);
         return error.TypeError;
     };
@@ -25774,13 +25854,13 @@ fn checkLambdaMarker(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
     if (r.isUnbound()) return;
     if (r.* == .named and std.mem.eql(u8, r.named.name, m.returnWrapper())) return;
     env.lastError = TypeError.custom(
-        try std.fmt.allocPrint(env.arena, "{s}: a lambda marked `{s}` answers `@{s}<…>`, and the function type it is written for returns `{s}`", .{
+        try std.fmt.allocPrint(env.arena, "{s}: a lambda marked `{s}` answers `{s}<…>`, and the function type it is written for returns `{s}`", .{
             diagnostics.marker_type_mismatch,
             m.markerWord(),
             m.returnWrapper(),
             try snapshotMod.typeSignatureOf(env.arena, w.func.ret),
         }),
-        try std.fmt.allocPrint(env.arena, "Each marker answers its wrapper (decision 553): `async` a `@Async`, `iter` an `@Iter`, `async iter` a `@AsyncIter`, `component` a `@Component`. Write the marker the expected type names, or drop it.", .{}),
+        try std.fmt.allocPrint(env.arena, "Each marker answers its wrapper (decision 553): `async` an `Async`, `iter` an `Iter`, `async iter` an `AsyncIter`, `component` a `Component`. Write the marker the expected type names, or drop it.", .{}),
     ).withLoc(loc);
     return error.TypeError;
 }

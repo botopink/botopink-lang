@@ -11,4 +11,4 @@ error: `pause` writes `result: true` on `.Erlang`, so it must return `Result<…
 1 │ #[compiler.external(.Erlang("timer:sleep($0)", result: true))]
   │   ^
 
-  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `@Result`.
+  hint: `result: true` turns every way the host fails into `Error(HostError(…))`, std's `failure.HostError` (`import {failure.HostError} from "std";`). Without the flag the binding promises no failure: delete it, or declare the `Result`.

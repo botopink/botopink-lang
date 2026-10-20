@@ -14,4 +14,4 @@ error: try on non-Result
 5 │     val r = try fetch();
   │             ^
 
-  `try` requires a @Result<D, E> value, found 'i32'
+  `try` requires a Result<D, E> value, found 'i32'

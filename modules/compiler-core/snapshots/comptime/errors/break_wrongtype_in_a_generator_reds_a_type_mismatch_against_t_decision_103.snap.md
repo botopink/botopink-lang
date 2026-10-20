@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> Iter<Result<i32, string>> {
+iter fn nums() -> Iter<Result<i32, string>> {
     yield 1;
     break "not an i32";
 }

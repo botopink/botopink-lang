@@ -1,17 +1,17 @@
 ----- SOURCE CODE
-fn fetchUser() -> Async<Result<i32, string>> {
+async fn fetchUser() -> Async<Result<i32, string>> {
     return 1;
 }
-fn count() -> Async<i32> {
+async fn count() -> Async<i32> {
     val n = try await fetchUser();
     return n;
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer of the return — this fn returns `@Async<…>` with no `@Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`
+error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer of the return — this fn returns `Async<…>` with no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
   ┌─ main.bp:5:13
   │
 5 │     val n = try await fetchUser();
   │             ^
 
-  hint: Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `@Result` in the return.
+  hint: Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `Result` in the return.

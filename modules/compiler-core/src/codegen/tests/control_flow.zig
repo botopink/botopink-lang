@@ -1469,8 +1469,8 @@ test "beam: a top-level fn named as a value is its fun" {
 // (`{nocatch,'__bp_break'}`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/generator_break_value`).
 test "erlang: a bare break at a generator's own level ends it" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn ends() -> Iter<i32> { yield 1; break; yield 2; }
-        \\fn upto(n: i32) -> Iter<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
+        \\iter fn ends() -> Iter<i32> { yield 1; break; yield 2; }
+        \\iter fn upto(n: i32) -> Iter<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
         \\fn digits(g: Iter<i32>) -> string { var acc = ""; for (g) { x -> acc = acc + x.toString(); }; return acc; }
         \\fn main() {
         \\  print(digits(ends()));
@@ -1705,7 +1705,7 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
 
 test "js: generator loop ---- break v inside a for ends the whole generator" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn firstOver(xs: i32[], limit: i32) -> Iter<i32> {
+        \\iter fn firstOver(xs: i32[], limit: i32) -> Iter<i32> {
         \\    for (xs) { x ->
         \\        if (x > limit) { break x; };
         \\        yield 0;
@@ -1721,7 +1721,7 @@ test "js: generator loop ---- break v inside a for ends the whole generator" {
 
 test "js: generator loop ---- a futureGenerator loop awaits inside and for await consumes it" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn fetch(n: i32) -> Async<i32> { return n * 2; }
+        \\async fn fetch(n: i32) -> Async<i32> { return n * 2; }
         \\type Ticker(gen: AsyncIter<i32>)
         \\fn ticks(limit: i32) -> Ticker {
         \\    var i = 0;
@@ -1733,7 +1733,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
         \\    };
         \\    return Ticker(gen: gen);
         \\}
-        \\fn total(limit: i32) -> Async<i32> {
+        \\async fn total(limit: i32) -> Async<i32> {
         \\    var sum = 0;
         \\    for await (ticks(limit).gen) { v -> sum = sum + v; };
         \\    print(sum);
@@ -1802,7 +1802,7 @@ test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned
 
 test "erlang: generator ---- a condition-loop body yields its elements in order" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn nums(n: i32) -> Iter<i32> {
+        \\iter fn nums(n: i32) -> Iter<i32> {
         \\  var i = 0;
         \\  while (i < n) { yield i; i = i + 1; };
         \\}
@@ -1823,7 +1823,7 @@ test "erlang: generator ---- a bare-yield body is a generator too" {
     // Literals only, so nothing in it runs, yet the handle is stateful like any
     // other (144 B-134).
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn two() -> Iter<i32> { yield 1; yield 2; }
+        \\iter fn two() -> Iter<i32> { yield 1; yield 2; }
         \\fn main() {
         \\  var a = "";
         \\  for (two()) { x -> a = a + x.toString(); };

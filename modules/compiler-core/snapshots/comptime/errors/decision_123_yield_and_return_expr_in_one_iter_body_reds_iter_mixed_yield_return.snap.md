@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn nums() -> Iter<i32> {
+iter fn nums() -> Iter<i32> {
     yield 1;
     return 2;
 }

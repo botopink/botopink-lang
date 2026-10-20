@@ -1,13 +1,13 @@
 ----- SOURCE
 ```botopink
-fn pulses() -> AsyncIter<Result<i32, string>> {
-   ↑
+async iter fn pulses() -> AsyncIter<Result<i32, string>> {
+              ↑
     yield 1;
     yield 2;
 }
 ```
 
------ HOVER at (line 0, char 3)
+----- HOVER at (line 0, char 14)
 kind: markdown
 
 ```botopink

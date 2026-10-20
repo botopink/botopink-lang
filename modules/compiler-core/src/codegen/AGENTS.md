@@ -747,7 +747,7 @@ codegen/
   modifiers (`is_async`, `is_generator`) an effect asks for, and `FnShape
   .keyword()` spells them as `async function` / `function*` /
   `async function*` for a declaration. A **method** carries no `effect` field
-  (`ast.BehaviorMethod` has none), so `methodEffect` reads it off the return
+  (`ast.BehaviorMethod` has none), so `methodEffect` reads it off its marker
   (`ast.EffectKind.ofMethod`): a record's own body, a record's `implement`
   block and an enum's body all route through it, and a class member spells the
   same two modifiers without the `function` word (`static async *name`,
@@ -2631,8 +2631,8 @@ codegen/
   the key; at the end of the statement list that made it (`endGenCells` in
   `emitStmtList`) the name's slot takes the cell's last value. A
   generator METHOD is a scope exactly as a fn is (`emitMethodAsFn`):
-  `ast.BehaviorMethod` has no parsed `effect`, so it is read off the return
-  type (`ast.EffectKind.ofMethod`, erlang's `methodEffect`). A body that
+  `ast.BehaviorMethod` has no parsed `effect`, so it is read off its marker
+  (`ast.EffectKind.ofMethod`, erlang's `methodEffect`). A body that
   yields outside any scope is `error.ConditionLoopValueUnsupported`
   (`condLoopYieldsValue`) — the checker refuses it first. A consumer steps a
   sequence through the runtime: a `for` over an `@Iter` / `@AsyncIter`
@@ -3611,10 +3611,13 @@ std-wasm's `array.unique` answers the same (`modules/decisions-taken/array_uniqu
 
 ## Effects (the return is the effect — decisions 118–128)
 
-`ast.FnDecl.effect` is read off the syntactic return by the parser
-(`ast.EffectKind.ofFn`); a method's by `methodEffect` → `ast.EffectKind.ofMethod`.
-An `@Iter` / `@AsyncIter` return whose body does not yield is a FACTORY and has
-no effect: it lowers as a plain function on every backend (decision 123).
+`ast.FnDecl.effect` is the body marker the parser read (`async`, `iter`,
+`async iter`, `component`, decision 553), else `ast.EffectKind.ofFn`: an
+unmarked fn with a body has no effect but `Result`'s, and a bodyless
+declaration keeps its return's; a method's by `methodEffect` →
+`ast.EffectKind.ofMethod`, which reads the method's marker the same way. An
+unmarked body — an `Iter` factory (decision 123), a `-> Async<T>` returning
+`Async.resolve(v)` (570) — lowers as a plain function on every backend.
 
 | Return | commonJS | erlang | beam_asm | wat |
 |---|---|---|---|---|

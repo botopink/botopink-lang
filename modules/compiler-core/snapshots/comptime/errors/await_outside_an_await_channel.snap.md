@@ -5,10 +5,10 @@ fn notAsync() -> i32 {
 }
 
 ----- ERROR
-error: await-without-async: `await` needs `-> @Async<…>`, `-> @AsyncIter<…>` or `-> @Component<…>` return — this fn's return type is no effect wrapper
+error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
   ┌─ main.bp:2:13
   │
 2 │     val x = await ready();
   │             ^
 
-  hint: Write `async fn` (the return becomes `@Async<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).
+  hint: Write `async fn` (its return is `Async<…>`; `component fn` / `async iter fn` answer `Component<…>` / `AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).

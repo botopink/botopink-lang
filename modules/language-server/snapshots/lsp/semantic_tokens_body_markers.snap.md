@@ -4,7 +4,7 @@ async fn one() -> Async<i32> { return 1; }
 iter fn two() -> Iter<i32> { yield 2; }
 async iter fn three() -> AsyncIter<i32> { yield 3; }
 component fn Four() -> Component<i32> { return 4; }
-fn f() -> Async<i32> {
+async fn f() -> Async<i32> {
     val g: fn(x: i32) -> Async<i32> = { async x -> await one() };
     val component = 1;
     val iter = 2;
@@ -38,10 +38,11 @@ fn f() -> Async<i32> {
   (3,23) +9  type [defaultLibrary]  "Component"
   (3,33) +3  type [defaultLibrary]  "i32"
   (3,40) +6  keyword  "return"
-  (4,0) +2  keyword  "fn"
-  (4,3) +1  function [declaration,async]  "f"
-  (4,10) +5  type [defaultLibrary]  "Async"
-  (4,16) +3  type [defaultLibrary]  "i32"
+  (4,0) +5  keyword  "async"
+  (4,6) +2  keyword  "fn"
+  (4,9) +1  function [declaration,async]  "f"
+  (4,16) +5  type [defaultLibrary]  "Async"
+  (4,22) +3  type [defaultLibrary]  "i32"
   (5,4) +3  keyword  "val"
   (5,8) +1  variable [declaration]  "g"
   (5,11) +2  keyword  "fn"
@@ -88,7 +89,8 @@ fn f() -> Async<i32> {
   0 10 9 0 4
   0 10 3 0 4
   0 7 6 9 0
-  1 0 2 9 0
+  1 0 5 9 0
+  0 6 2 9 0
   0 3 1 4 9
   0 7 5 0 4
   0 6 3 0 4

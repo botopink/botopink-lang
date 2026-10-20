@@ -8,9 +8,11 @@
 //// `effect-throw-without-fallible-channel` — whether the two merge is the
 //// README's open point 2, and this cell holds either answer.
 
-fn answer(n: i32) -> Async<i32> {
-    if (n < 0) { throw "negative"; }
+async fn answer(n: i32) -> Async<i32> {
+    if (n < 0) throw "negative";
     return n;
 }
 
-pub fn main() { answer(1); }
+pub fn main() {
+    answer(1);
+}

@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-fn evens(xs: i32[]) -> Iter<i32> :out {
+iter fn evens(xs: i32[]) -> Iter<i32> :out {
     for :inner (xs) { x ->
         if (x % 2 == 1) continue;
         yield :out x;

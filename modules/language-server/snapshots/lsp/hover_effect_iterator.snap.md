@@ -1,10 +1,10 @@
 ----- SOURCE
 ```botopink
-fn counter() -> Iter<i32> :gen { yield 1; }
-   ↑
+iter fn counter() -> Iter<i32> :gen { yield 1; }
+        ↑
 ```
 
------ HOVER at (line 0, char 3)
+----- HOVER at (line 0, char 8)
 kind: markdown
 
 ```botopink

@@ -1,4 +1,4 @@
 botopink-cell 1
-refused error[effect-type-removed]: `@FutureGenerator` was removed — the asynchronous sequence is `@AsyncIter` (decision 122)
+refused error[effect-type-removed]: `@FutureGenerator` was removed — the asynchronous sequence is `AsyncIter` (decision 122)
 at src/cases/effect_type_removed_future_generator/mod.bp:6:21
-label write `@AsyncIter<@Result<T, E>>` (or `@AsyncIter<T>`)
+label write `AsyncIter<Result<T, E>>` (or `AsyncIter<T>`)

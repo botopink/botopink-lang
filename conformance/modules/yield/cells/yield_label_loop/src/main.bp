@@ -4,10 +4,12 @@
 
 import {io.terminal.print} from "std";
 
-fn doubled(xs: i32[]) -> Iter<i32> :out {
+iter fn doubled(xs: i32[]) -> Iter<i32> :out {
     for :inner (xs) { x ->
         yield :inner x * 2;
     }
 }
 
-pub fn main() { print(1); }
+pub fn main() {
+    print(1);
+}

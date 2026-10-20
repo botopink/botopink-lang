@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn 'Page' (it returns '@Async<Element>'): only a `@Component` body activates a hook
-at src/cases/use_future_without_owner/mod.bp:12:13
+refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Page' carries no `component` marker (it returns 'Async<Element>'): write `component fn`
+at src/cases/use_future_without_owner/mod.bp:15:13

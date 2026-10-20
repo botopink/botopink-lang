@@ -27,7 +27,7 @@ async fn check(n: i32) -> Async<Result<i32, string>> {
     return v * 10;
 }
 
-fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> Async<i32>) -> Async<i32> {
+async fn sumTo<T>(xs: Array<T>, f: fn(x: T) -> Async<i32>) -> Async<i32> {
     var total = 0;
     for (xs) { x ->
         val got = await f(x);

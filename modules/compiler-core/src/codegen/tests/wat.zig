@@ -65,14 +65,14 @@ test "wat: front 164 s2 P4 ---- tasks and their frames are GC structs" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
-        \\fn twice(n: i32) -> Async<i32> {
+        \\async fn twice(n: i32) -> Async<i32> {
         \\    return n * 2;
         \\}
-        \\fn greet(name: string) -> Async<string> {
+        \\async fn greet(name: string) -> Async<string> {
         \\    val n = await twice(21);
         \\    return name + " " + n.toString();
         \\}
-        \\fn run() -> Async<void> {
+        \\async fn run() -> Async<void> {
         \\    val b = async {
         \\        val g = await greet("hi");
         \\        return g;
@@ -4261,7 +4261,7 @@ test "wat: gc ---- unique, flatten, chunked, sliding, zip and the array walks wi
 
 test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and flatMap" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn evens(n: i32) -> Iter<i32> {
+        \\iter fn evens(n: i32) -> Iter<i32> {
         \\    var i = 0;
         \\    while (i < n) {
         \\        if (i % 2 == 0) yield i;

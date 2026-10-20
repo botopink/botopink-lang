@@ -3838,8 +3838,8 @@ pub const EffectKind = enum {
     component,
 
     /// Every effect, in declaration order. The one list: `fromWrapperName`
-    /// and `comptime/effect_chain.zig` both walk it, so a sixth effect is a
-    /// value here and nowhere else.
+    /// and `comptime/effect_chain.zig`'s refusals walk it, so a sixth effect
+    /// is a value here and in `effect_chain.grants`.
     pub const all = [_]EffectKind{ .result, .task, .iterator, .stream, .component };
 
     /// The builtin return-type wrapper that activates this effect (`@Async`, …).
@@ -3873,14 +3873,17 @@ pub const EffectKind = enum {
         return fromWrapperName(t.generic.name);
     }
 
-    /// The effect of a fn with return `rt` and body `body` (decision 123): an
-    /// `@Iter` / `@AsyncIter` return whose body neither `yield`s nor
-    /// `break v`s in its own scope is a FACTORY — an ordinary function that
-    /// returns a ready iterator — and carries no effect. A bodyless
-    /// declaration keeps the wrapper's effect.
-    pub fn ofFn(rt: ?TypeRef, body: []const Stmt, hasBody: bool) ?EffectKind {
+    /// The effect of an UNMARKED fn with return `rt` (decisions 553 (4),
+    /// 570): a body compiles specially only under its marker, so an unmarked
+    /// fn with a body is an ordinary function that returns the whole type —
+    /// `fn load() -> Async<i32> { return Async.resolve(1) }`, an `Iter`
+    /// factory (decision 123) — and carries no effect; `Result` needs no
+    /// marker (a failure changes nothing of how a body runs) and keeps its. A
+    /// bodyless declaration keeps the wrapper's effect. A marker sets the
+    /// effect over this (`parser/decls.zig` `applyFnMarker`).
+    pub fn ofFn(rt: ?TypeRef, hasBody: bool) ?EffectKind {
         const e = fromReturnType(rt) orelse return null;
-        if ((e == .iterator or e == .stream) and hasBody and !bodyYields(body)) return null;
+        if (hasBody and e != .result) return null;
         return e;
     }
 
@@ -3899,9 +3902,11 @@ pub const EffectKind = enum {
     }
 
     /// `ofFn` for a method, whose body is optional (a bodyless member is a
-    /// declaration and keeps the wrapper's effect).
-    pub fn ofMethod(rt: ?TypeRef, body: ?[]const Stmt) ?EffectKind {
-        return ofFn(rt, body orelse &.{}, body != null);
+    /// declaration and keeps the wrapper's effect); its marker, when written,
+    /// is its effect.
+    pub fn ofMethod(rt: ?TypeRef, body: ?[]const Stmt, marker: ?EffectKind) ?EffectKind {
+        if (marker) |m| return m;
+        return ofFn(rt, body != null);
     }
 };
 

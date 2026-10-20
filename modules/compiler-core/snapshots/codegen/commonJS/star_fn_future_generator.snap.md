@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn stream() -> AsyncIter<Result<i32, string>> {
+async iter fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
     yield 2;
 }

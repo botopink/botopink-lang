@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 import {async} from "std";
-fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
+async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
     val t = async { return 1; };
     val all = async.allOf([t]);
     val a = iter loop { yield 1; break; };
@@ -19,16 +19,17 @@ fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   (0,0) +6  keyword  "import"
   (0,8) +5  variable  "async"
   (0,15) +4  keyword  "from"
-  (1,0) +2  keyword  "fn"
-  (1,3) +1  function [declaration,async]  "f"
-  (1,5) +2  parameter  "xs"
-  (1,9) +3  type [defaultLibrary]  "i32"
-  (1,16) +1  parameter  "g"
-  (1,19) +4  variable  "Grid"
-  (1,25) +4  parameter  "http"
-  (1,31) +4  variable  "Http"
-  (1,40) +5  type [defaultLibrary]  "Async"
-  (1,46) +3  type [defaultLibrary]  "i32"
+  (1,0) +5  keyword  "async"
+  (1,6) +2  keyword  "fn"
+  (1,9) +1  function [declaration,async]  "f"
+  (1,11) +2  parameter  "xs"
+  (1,15) +3  type [defaultLibrary]  "i32"
+  (1,22) +1  parameter  "g"
+  (1,25) +4  variable  "Grid"
+  (1,31) +4  parameter  "http"
+  (1,37) +4  variable  "Http"
+  (1,46) +5  type [defaultLibrary]  "Async"
+  (1,52) +3  type [defaultLibrary]  "i32"
   (2,4) +3  keyword  "val"
   (2,8) +1  variable [declaration]  "t"
   (2,12) +5  keyword  "async"
@@ -90,7 +91,8 @@ fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   0 0 6 9 0
   0 8 5 7 0
   0 7 4 9 0
-  1 0 2 9 0
+  1 0 5 9 0
+  0 6 2 9 0
   0 3 1 4 9
   0 2 2 6 0
   0 4 3 0 4

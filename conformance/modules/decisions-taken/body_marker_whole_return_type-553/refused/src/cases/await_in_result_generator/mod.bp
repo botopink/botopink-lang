@@ -5,11 +5,15 @@
 
 import {io.terminal.print} from "std";
 
-fn fetch(n: i32) -> Async<i32> { return n; }
+async fn fetch(n: i32) -> Async<i32> {
+    return n;
+}
 
 iter fn bad(n: i32) -> Iter<i32> {
     val w = await fetch(n);
     yield w;
 }
 
-pub fn main() { print(1); }
+pub fn main() {
+    print(1);
+}

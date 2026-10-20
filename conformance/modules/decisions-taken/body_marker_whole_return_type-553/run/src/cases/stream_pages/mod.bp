@@ -15,7 +15,7 @@ import {io.terminal.print} from "std";
 
 type Page(users: Array<string>, next: string)
 
-fn fetchPage(url: string) -> Async<Result<Page, string>> {
+async fn fetchPage(url: string) -> Async<Result<Page, string>> {
     if (url == "p1") return Page(users: ["ana", "bia"], next: "p2");
     if (url == "p2") return Page(users: ["caio"], next: "p3");
     if (url == "q1") return Page(users: ["dani"], next: "");

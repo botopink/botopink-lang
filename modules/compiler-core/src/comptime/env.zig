@@ -181,10 +181,10 @@ pub const FnContext = struct {
     implementsContext: bool,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
-    /// True when the enclosing fn's return is `@Component<R>` — and only
-    /// then (decisions 104, 118, 128, 354). It is the same flag as
-    /// `Env.inContextFn`. A `use` in any other body is
-    /// `useWithoutComponent`, which names the return to write.
+    /// True when the enclosing fn is marked `component` — and only then
+    /// (decisions 354, 553, 573). It is the same flag as `Env.inContextFn`. A
+    /// `use` in any other body is `useWithoutComponent`, which names the
+    /// marker to write.
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",

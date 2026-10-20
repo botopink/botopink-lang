@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn upTo(n: i32) -> Iter<Result<i32, string>> {
+iter fn upTo(n: i32) -> Iter<Result<i32, string>> {
     yield n;
 }
 fn total(n: i32) -> i32 {
@@ -17,4 +17,4 @@ error: type mismatch
 
   expected: i32
   found:    Result<i32,string>
-  hint: a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`
+  hint: a `for` over a sequence of `Result`s hands over each item as the `Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`

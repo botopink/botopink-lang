@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fetch(x: i32) -> Async<i32> {
+async fn fetch(x: i32) -> Async<i32> {
     return x;
 }
-fn counter() -> Iter<i32> {
+iter fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
 }
-fn stream() -> AsyncIter<Result<i32, string>> {
+async iter fn stream() -> AsyncIter<Result<i32, string>> {
     yield 1;
 }
 fn parse(n: i32) -> Result<i32, string> {

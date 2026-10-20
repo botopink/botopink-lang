@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
 at src/cases/effect_type_removed_async_iterator/mod.bp:10:21
-label write `@AsyncIter<T>`, `@Iter<T>` or `YieldStep<T>`
+label write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`

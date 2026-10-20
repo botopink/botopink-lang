@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-fn evens(xs: i32[]) -> Iter<i32> {
+iter fn evens(xs: i32[]) -> Iter<i32> {
     // an iterator: it yields
     for (xs) { x ->
         if (x % 2 == 0) yield x;

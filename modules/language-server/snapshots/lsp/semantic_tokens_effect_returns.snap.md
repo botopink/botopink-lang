@@ -3,14 +3,14 @@
 val Element = type() implement Renderable
 fn plain(a: i32) -> i32 { return a; }
 fn fails(a: i32) -> Result<i32, string> { return a; }
-fn waits<T>(a: T) -> Async<T> { return a; }
-fn hook(a: i32) -> Component<i32> { return a; }
-fn seq() -> Iter<i32> { yield 1; }
-fn pulses() -> AsyncIter<i32> { yield 1; }
+async fn waits<T>(a: T) -> Async<T> { return a; }
+component fn hook(a: i32) -> Component<i32> { return a; }
+iter fn seq() -> Iter<i32> { yield 1; }
+async iter fn pulses() -> AsyncIter<i32> { yield 1; }
 fn takes(t: Async<i32>) -> i32[] { return [1]; }
 fn opt() -> ?Async<i32> { return null; }
 type Box(v: i32) {
-    fn load(self: Self) -> Async<i32> { return self.v; }
+    async fn load(self: Self) -> Async<i32> { return self.v; }
 }
 ```
 
@@ -36,33 +36,38 @@ type Box(v: i32) {
   (2,32) +6  type [defaultLibrary]  "string"
   (2,42) +6  keyword  "return"
   (2,49) +1  parameter  "a"
-  (3,0) +2  keyword  "fn"
-  (3,3) +5  function [declaration,async]  "waits"
-  (3,9) +1  type [declaration]  "T"
-  (3,12) +1  parameter  "a"
-  (3,15) +1  type  "T"
-  (3,21) +5  type [defaultLibrary]  "Async"
-  (3,27) +1  type  "T"
-  (3,32) +6  keyword  "return"
-  (3,39) +1  parameter  "a"
-  (4,0) +2  keyword  "fn"
-  (4,3) +4  function [declaration,async]  "hook"
-  (4,8) +1  parameter  "a"
-  (4,11) +3  type [defaultLibrary]  "i32"
-  (4,19) +9  type [defaultLibrary]  "Component"
-  (4,29) +3  type [defaultLibrary]  "i32"
-  (4,36) +6  keyword  "return"
-  (4,43) +1  parameter  "a"
-  (5,0) +2  keyword  "fn"
-  (5,3) +3  function [declaration,async]  "seq"
-  (5,12) +4  type [defaultLibrary]  "Iter"
-  (5,17) +3  type [defaultLibrary]  "i32"
-  (5,24) +5  keyword  "yield"
-  (6,0) +2  keyword  "fn"
-  (6,3) +6  function [declaration,async]  "pulses"
-  (6,15) +9  type [defaultLibrary]  "AsyncIter"
-  (6,25) +3  type [defaultLibrary]  "i32"
-  (6,32) +5  keyword  "yield"
+  (3,0) +5  keyword  "async"
+  (3,6) +2  keyword  "fn"
+  (3,9) +5  function [declaration,async]  "waits"
+  (3,15) +1  type [declaration]  "T"
+  (3,18) +1  parameter  "a"
+  (3,21) +1  type  "T"
+  (3,27) +5  type [defaultLibrary]  "Async"
+  (3,33) +1  type  "T"
+  (3,38) +6  keyword  "return"
+  (3,45) +1  parameter  "a"
+  (4,0) +9  keyword  "component"
+  (4,10) +2  keyword  "fn"
+  (4,13) +4  function [declaration,async]  "hook"
+  (4,18) +1  parameter  "a"
+  (4,21) +3  type [defaultLibrary]  "i32"
+  (4,29) +9  type [defaultLibrary]  "Component"
+  (4,39) +3  type [defaultLibrary]  "i32"
+  (4,46) +6  keyword  "return"
+  (4,53) +1  parameter  "a"
+  (5,0) +4  keyword  "iter"
+  (5,5) +2  keyword  "fn"
+  (5,8) +3  function [declaration,async]  "seq"
+  (5,17) +4  type [defaultLibrary]  "Iter"
+  (5,22) +3  type [defaultLibrary]  "i32"
+  (5,29) +5  keyword  "yield"
+  (6,0) +5  keyword  "async"
+  (6,6) +4  keyword  "iter"
+  (6,11) +2  keyword  "fn"
+  (6,14) +6  function [declaration,async]  "pulses"
+  (6,26) +9  type [defaultLibrary]  "AsyncIter"
+  (6,36) +3  type [defaultLibrary]  "i32"
+  (6,43) +5  keyword  "yield"
   (7,0) +2  keyword  "fn"
   (7,3) +5  function [declaration]  "takes"
   (7,9) +1  parameter  "t"
@@ -80,15 +85,16 @@ type Box(v: i32) {
   (9,5) +3  type [declaration]  "Box"
   (9,9) +1  property  "v"
   (9,12) +3  type [defaultLibrary]  "i32"
-  (10,4) +2  keyword  "fn"
-  (10,7) +4  method [declaration,async]  "load"
-  (10,12) +4  parameter  "self"
-  (10,18) +4  type [defaultLibrary]  "Self"
-  (10,27) +5  type [defaultLibrary]  "Async"
-  (10,33) +3  type [defaultLibrary]  "i32"
-  (10,40) +6  keyword  "return"
-  (10,47) +4  parameter  "self"
-  (10,52) +1  property  "v"
+  (10,4) +5  keyword  "async"
+  (10,10) +2  keyword  "fn"
+  (10,13) +4  method [declaration,async]  "load"
+  (10,18) +4  parameter  "self"
+  (10,24) +4  type [defaultLibrary]  "Self"
+  (10,33) +5  type [defaultLibrary]  "Async"
+  (10,39) +3  type [defaultLibrary]  "i32"
+  (10,46) +6  keyword  "return"
+  (10,53) +4  parameter  "self"
+  (10,58) +1  property  "v"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 3 9 0
   0 4 7 0 1
@@ -111,7 +117,8 @@ type Box(v: i32) {
   0 5 6 0 4
   0 10 6 9 0
   0 7 1 6 0
-  1 0 2 9 0
+  1 0 5 9 0
+  0 6 2 9 0
   0 3 5 4 9
   0 6 1 0 1
   0 3 1 6 0
@@ -120,7 +127,8 @@ type Box(v: i32) {
   0 6 1 0 0
   0 5 6 9 0
   0 7 1 6 0
-  1 0 2 9 0
+  1 0 9 9 0
+  0 10 2 9 0
   0 3 4 4 9
   0 5 1 6 0
   0 3 3 0 4
@@ -128,12 +136,15 @@ type Box(v: i32) {
   0 10 3 0 4
   0 7 6 9 0
   0 7 1 6 0
-  1 0 2 9 0
+  1 0 4 9 0
+  0 5 2 9 0
   0 3 3 4 9
   0 9 4 0 4
   0 5 3 0 4
   0 7 5 9 0
-  1 0 2 9 0
+  1 0 5 9 0
+  0 6 4 9 0
+  0 5 2 9 0
   0 3 6 4 9
   0 12 9 0 4
   0 10 3 0 4
@@ -155,7 +166,8 @@ type Box(v: i32) {
   0 5 3 0 1
   0 4 1 8 0
   0 3 3 0 4
-  1 4 2 9 0
+  1 4 5 9 0
+  0 6 2 9 0
   0 3 4 5 9
   0 5 4 6 0
   0 6 4 0 4

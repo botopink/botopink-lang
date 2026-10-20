@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn range(a: i32, b: i32) -> Iter<i32> {
+iter fn range(a: i32, b: i32) -> Iter<i32> {
     yield a;
     yield b;
 }

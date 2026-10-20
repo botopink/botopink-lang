@@ -74,12 +74,12 @@ pub const Shape = enum {
         return switch (sh) {
             .i32 => "i32",
             .t => "T",
-            .task_t => "@Async<T>",
-            .task_array_t => "@Async<Array<T>>",
-            .array_task_t => "Array<@Async<T>>",
-            .array_thunk_task_t => "Array<fn() -> @Async<T>>",
+            .task_t => "Async<T>",
+            .task_array_t => "Async<Array<T>>",
+            .array_task_t => "Array<Async<T>>",
+            .array_thunk_task_t => "Array<fn() -> Async<T>>",
             .thunk_t => "fn() -> T",
-            .result_t => "@Result<T, string>",
+            .result_t => "Result<T, string>",
             .other => "another type",
         };
     }
@@ -311,7 +311,7 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result) or sig.result_task != ad.answers_task) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
-            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "@Async<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
+            const answers = if (ad.answers_task) try std.fmt.allocPrint(alloc, "Async<{s}>", .{slotText(ad.result)}) else try alloc.dupe(u8, slotText(ad.result));
             defer alloc.free(answers);
             return refused(alloc, "`.Wasm({s})`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ shown, value, takes, answers });
         }
@@ -605,12 +605,12 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "wasi:delay", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = &.{.t}, .result_shape = .task_t });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> @Async<T>` over one type parameter `T`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> Async<T>` over one type parameter `T`") != null);
     }
     {
         const r = try parse(a, "wasi:race_of", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = null });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> @Async<T>>) -> @Async<T>`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> Async<T>>) -> Async<T>`") != null);
     }
     {
         const r = try parse(a, "$0 + 1", f64x1);

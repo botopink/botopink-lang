@@ -5,6 +5,7 @@
       "fn": {
         "isPub": false,
         "effect": "iterator",
+        "marker": "iterator",
         "isDeclare": false,
         "isDefault": false,
         "label": null,

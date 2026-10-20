@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn evens(n: i32) -> Iter<i32> {
+iter fn evens(n: i32) -> Iter<i32> {
     var i = 0;
     while (i < n) {
         if (i % 2 == 0) yield i;

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn counter() -> Iter<i32> {
+iter fn counter() -> Iter<i32> {
     yield 1;
     yield 2;
     yield 3;

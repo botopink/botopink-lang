@@ -2,7 +2,7 @@
 ```botopink
 fn free(a: i32) -> i32 { return a; }
 behavior Greeter { fn greet(self: Self) -> string; }
-fn counter() -> Iter<i32> :gen { yield 1; }
+iter fn counter() -> Iter<i32> :gen { yield 1; }
 ```
 
 ----- SEMANTIC TOKENS
@@ -20,12 +20,13 @@ fn counter() -> Iter<i32> :gen { yield 1; }
   (1,28) +4  parameter  "self"
   (1,34) +4  type [defaultLibrary]  "Self"
   (1,43) +6  type [defaultLibrary]  "string"
-  (2,0) +2  keyword  "fn"
-  (2,3) +7  function [declaration,async]  "counter"
-  (2,16) +4  type [defaultLibrary]  "Iter"
-  (2,21) +3  type [defaultLibrary]  "i32"
-  (2,27) +3  keyword  "gen"
-  (2,33) +5  keyword  "yield"
+  (2,0) +4  keyword  "iter"
+  (2,5) +2  keyword  "fn"
+  (2,8) +7  function [declaration,async]  "counter"
+  (2,21) +4  type [defaultLibrary]  "Iter"
+  (2,26) +3  type [defaultLibrary]  "i32"
+  (2,32) +3  keyword  "gen"
+  (2,38) +5  keyword  "yield"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 2 9 0
   0 3 4 4 1
@@ -41,7 +42,8 @@ fn counter() -> Iter<i32> :gen { yield 1; }
   0 6 4 6 0
   0 6 4 0 4
   0 9 6 0 4
-  1 0 2 9 0
+  1 0 4 9 0
+  0 5 2 9 0
   0 3 7 4 9
   0 13 4 0 4
   0 5 3 0 4

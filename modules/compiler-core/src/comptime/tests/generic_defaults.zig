@@ -111,7 +111,7 @@ test "§1G — defaulted struct trailing param is accepted" {
 
 test "§1G RG3 — @Async<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn empty() -> Async<> { return 0; }
+        \\async fn empty() -> Async<> { return 0; }
     );
 }
 
@@ -155,25 +155,25 @@ test "§1G RG4 — user-defined skip rejected (nominal TypeRef site)" {
 
 test "§1G resolution — @Async<i32> resolves (one argument, no error parameter)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn fetch(id: i64) -> Async<i32> { return 0; }
+        \\async fn fetch(id: i64) -> Async<i32> { return 0; }
     );
 }
 
 test "§1G resolution — @Iter<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn count(n: i32) -> Iter<i32> { yield n; }
+        \\iter fn count(n: i32) -> Iter<i32> { yield n; }
     );
 }
 
 test "§1G resolution — @AsyncIter<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn run(n: i32) -> AsyncIter<Result<i32, string>> { yield n; }
+        \\async iter fn run(n: i32) -> AsyncIter<Result<i32, string>> { yield n; }
     );
 }
 
 test "§1G resolution — @Iter<i32> resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn range(a: i32) -> Iter<i32> { yield a; }
+        \\iter fn range(a: i32) -> Iter<i32> { yield a; }
     );
 }
 

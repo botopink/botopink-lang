@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn fetchCount() -> Async<i32> {
+async fn fetchCount() -> Async<i32> {
     return 3;
 }
 fn semAwait() -> Result<i32, string> {
@@ -8,10 +8,10 @@ fn semAwait() -> Result<i32, string> {
 }
 
 ----- ERROR
-error: await-without-async: `await` needs `-> @Async<…>`, `-> @AsyncIter<…>` or `-> @Component<…>` return — this fn returns `@Result<…>`, which does not
+error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
   ┌─ main.bp:5:13
   │
 5 │     val x = await fetchCount();
   │             ^
 
-  hint: Write `async fn` (the return becomes `@Async<…>`; `component fn` / `async iter fn` give `@Component<…>` / `@AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).
+  hint: Write `async fn` (its return is `Async<…>`; `component fn` / `async iter fn` answer `Component<…>` / `AsyncIter<…>`), or consume the Async through its own functions (`.map`, `.then`).

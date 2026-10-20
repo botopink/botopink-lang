@@ -1037,9 +1037,9 @@ pub fn renderTypeErrorBody(
         .redundantActivation => "redundant activation",
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
         .useNotContext => "use-of-non-context-fn: `use` takes a hook",
-        .useWithoutComponent => "use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn",
+        .useWithoutComponent => "use-without-component: `use` needs a body marked `component`",
         .useTupleArity => "use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements",
-        .throwWithoutResult => "throw outside @Result",
+        .throwWithoutResult => "throw outside Result",
         .missingMethod => "missing interface method",
         .unknownMethod => "unknown method",
         .unknownInterface => "unknown interface",
@@ -1171,21 +1171,21 @@ pub fn renderTypeErrorBody(
         .useNotAllowed => |returnType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  function returns `{s}`, which is not a `@Component<R>`\n",
+                "\n  function returns `{s}`, which is not a `Component<R>`\n",
                 .{returnType},
             ));
         },
         .useNotContext => |exprType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `{s}` is not a hook — `use` requires a hook @Component<R>\n",
+                "\n  `{s}` is not a hook — `use` requires a hook Component<R>\n",
                 .{exprType},
             ));
         },
         .useWithoutComponent => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  fn '{s}' returns '{s}',\n  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)\n",
+                "\n  fn '{s}' returns '{s}' and carries no `component` marker,\n  and only a `component fn` body activates a hook: write `component fn` (decisions 553, 573)\n",
                 .{ u.fnName, u.returnType },
             ));
         },
@@ -1205,7 +1205,7 @@ pub fn renderTypeErrorBody(
             }
         },
         .throwWithoutResult => {
-            try out.appendSlice(allocator, "\n  'throw' requires the enclosing fn to return '@Result<D, E>'\n");
+            try out.appendSlice(allocator, "\n  'throw' requires the enclosing fn to return 'Result<D, E>'\n");
         },
         .missingMethod => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
@@ -1251,7 +1251,7 @@ pub fn renderTypeErrorBody(
         .tryOnNonResult => |ty| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `try` requires a @Result<D, E> value, found '{s}'\n",
+                "\n  `try` requires a Result<D, E> value, found '{s}'\n",
                 .{try typeNameOf(tmp, ty)},
             ));
         },

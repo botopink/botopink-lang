@@ -1,0 +1,14 @@
+//// Decision 570 — without a marker a body returns the whole type: `load`
+//// returns `Async<i32>` and carries no `async`, so `return 1` gives an `i32`
+//// where an `Async<i32>` is expected — a type mismatch at the value, its hint
+//// naming `async fn` and `Async.resolve`.
+
+import {io.terminal.print} from "std";
+
+fn load() -> Async<i32> {
+    return 1;
+}
+
+pub async fn main() -> Async<void> {
+    print(await load());
+}

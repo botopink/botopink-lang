@@ -552,7 +552,7 @@ test "format: multiline string ---- as function argument" {
 
 test "format: await ---- prefix expression" {
     try h.assertFormat(std.testing.allocator,
-        \\fn run() -> Async<Int> {
+        \\async fn run() -> Async<Int> {
         \\    val x = await load(url);
         \\    return x;
         \\}
@@ -702,7 +702,7 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
 
 test "format: the front-24 forms round-trip — async block, the prefixed while / for, try await, yield :label" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[]) -> Async<Result<i32, string>> {
+        \\async fn f(xs: i32[]) -> Async<Result<i32, string>> {
         \\    val t = async {
         \\        return try await load(1);
         \\    };
@@ -727,7 +727,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\    return n;
         \\}
         \\
-        \\fn g(xs: i32[]) -> Iter<i32> :out {
+        \\iter fn g(xs: i32[]) -> Iter<i32> :out {
         \\    for (xs) { x ->
         \\        yield :out x;
         \\    }
@@ -1641,7 +1641,7 @@ test "format: body markers print as written (decision 553)" {
         \\    }
         \\}
         \\
-        \\fn main() -> Async<void> {
+        \\async fn main() -> Async<void> {
         \\    val f: fn(x: i32) -> Async<i32> = { async x -> await one() + x };
         \\    val g: fn(n: i32) -> Iter<i32> = { iter n ->
         \\        yield n;

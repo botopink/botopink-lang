@@ -82,9 +82,9 @@ pub const Type = enum {
             .bytes => "Bytes",
             .opt_bytes => "?Bytes",
             .opt_i32 => "?i32",
-            .result_i64 => "@Result<i64, string>",
-            .result_f64 => "@Result<f64, string>",
-            .result_t => "@Result<T, string>",
+            .result_i64 => "Result<i64, string>",
+            .result_f64 => "Result<f64, string>",
+            .result_t => "Result<T, string>",
             else => @tagName(t),
         };
     }

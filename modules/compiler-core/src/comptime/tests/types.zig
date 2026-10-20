@@ -277,7 +277,7 @@ test "types: generator loop ---- worth the annotation's wrapper, its break v an 
 
 test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn doubles(arr: i32[]) -> Iter<i32> {
+        \\iter fn doubles(arr: i32[]) -> Iter<i32> {
         \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };

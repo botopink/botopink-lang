@@ -4,7 +4,9 @@
 
 import {io.terminal.print} from "std";
 
-fn fetch(n: i32) -> Async<i32> { return n; }
+async fn fetch(n: i32) -> Async<i32> {
+    return n;
+}
 
 async fn feed() -> Async<i32> {
     val g = iter loop {
@@ -14,4 +16,6 @@ async fn feed() -> Async<i32> {
     return 1;
 }
 
-pub fn main() { print(1); }
+pub fn main() {
+    print(1);
+}

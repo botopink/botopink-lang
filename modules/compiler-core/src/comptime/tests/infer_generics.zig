@@ -272,18 +272,18 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type() implement Renderable
-        \\fn layer1(initial: i32) -> Component<i32> {
+        \\component fn layer1(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
-        \\fn layer2() -> Component<i32> {
+        \\component fn layer2() -> Component<i32> {
         \\    val a = use layer1(0);
         \\    return a;
         \\}
-        \\fn layer3() -> Component<i32> {
+        \\component fn layer3() -> Component<i32> {
         \\    val b = use layer2();
         \\    return b;
         \\}
-        \\fn Widget() -> Component<Element> {
+        \\component fn Widget() -> Component<Element> {
         \\    val c = use layer3();
         \\    return Element();
         \\}

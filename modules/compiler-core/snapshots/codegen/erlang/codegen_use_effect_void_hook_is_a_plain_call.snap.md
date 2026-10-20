@@ -457,10 +457,10 @@ val Element = type() implement Renderable
 fn cleanup() {
     0;
 }
-fn effect(f: fn()) -> Component<i32> {
+component fn effect(f: fn()) -> Component<i32> {
     return 0;
 }
-fn Widget() -> Component<Element> {
+component fn Widget() -> Component<Element> {
     use effect { -> cleanup(); };
     return Element();
 }

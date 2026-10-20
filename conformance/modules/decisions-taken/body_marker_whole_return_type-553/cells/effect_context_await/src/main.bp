@@ -20,7 +20,7 @@ component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 
-fn answer(n: i32) -> Async<i32> {
+async fn answer(n: i32) -> Async<i32> {
     return n;
 }
 

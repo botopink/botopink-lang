@@ -23,7 +23,7 @@ const h = @import("helpers.zig");
 
 test "§1 R10 — yield :nonsense inside @Iter reds yield-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<i32> :outer {
+        \\iter fn nums() -> Iter<i32> :outer {
         \\    yield :nonsense 1;
         \\}
     );
@@ -33,7 +33,7 @@ test "§1 R10 — yield :nonsense inside @Iter reds yield-label-unbound" {
 
 test "§1 happy path — yield <expr> inside @Iter type-checks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> Iter<i32> {
+        \\iter fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -43,7 +43,7 @@ test "§1 happy path — yield <expr> inside @Iter type-checks" {
 
 test "§1 happy path — labelled yield :outer matches enclosing fn label" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> Iter<i32> :outer {
+        \\iter fn nums() -> Iter<i32> :outer {
         \\    yield :outer 1;
         \\}
     );
@@ -54,7 +54,7 @@ test "decision 123 — yield and return <expr> in one @Iter body reds iter-mixed
     // ready one (a factory). The last value of an iterator is an item
     // (`break <v>`), never a `return <r>`.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<i32> {
+        \\iter fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    return 2;
         \\}
@@ -63,7 +63,7 @@ test "decision 123 — yield and return <expr> in one @Iter body reds iter-mixed
 
 test "decision 103 — break <v> at the level of a @Iter body is its last item" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn nums() -> Iter<i32> {
+        \\iter fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    break 2;
         \\}
@@ -72,7 +72,7 @@ test "decision 103 — break <v> at the level of a @Iter body is its last item" 
 
 test "decision 121 — throw inside @Iter<i32> reds effect-try-without-fallible-channel" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> Iter<i32> {
+        \\iter fn nums() -> Iter<i32> {
         \\    yield 1;
         \\    throw "no";
         \\}
@@ -81,7 +81,7 @@ test "decision 121 — throw inside @Iter<i32> reds effect-try-without-fallible-
 
 test "RG5 — a second argument on @AsyncIter reds generic-arg-count-exceeded" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn nums() -> AsyncIter<i32, string> {
+        \\async iter fn nums() -> AsyncIter<i32, string> {
         \\    yield 1;
         \\}
     );

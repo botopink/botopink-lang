@@ -4,10 +4,10 @@ fn run() -> i32 {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — this fn's return has no `@Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `@Result` with `result: true`
+error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — this fn's return has no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
   ┌─ main.bp:2:5
   │
 2 │     throw "x";
   │     ^
 
-  hint: Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Async<@Result<T, E>>`, `-> @Iter<@Result<T, E>>`, …) or handle the failure where it happens.
+  hint: Put a `Result` in the return (`-> Result<T, E>`, `-> Async<Result<T, E>>`, `-> Iter<Result<T, E>>`, …) or handle the failure where it happens.

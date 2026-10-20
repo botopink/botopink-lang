@@ -1,4 +1,4 @@
 botopink-cell 1
-refused error[effect-type-removed]: `@Future` was removed — the wrapper is `@Async<T>`, which never fails (decision 120)
+refused error[effect-type-removed]: `@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)
 at src/cases/effect_type_removed_future_no_error/mod.bp:11:12
-label write `@Async<@Result<T, E>>` (or `@Async<T>` when it cannot fail)
+label write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)

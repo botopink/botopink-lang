@@ -13,7 +13,7 @@ fn pass(t: Async<i32>) -> Async<i32> {
     return t;
 }
 
-fn total(ts: Async<i32>[]) -> Async<i32> {
+async fn total(ts: Async<i32>[]) -> Async<i32> {
     var acc = 0;
     for (ts) { t ->
         val v = await t;

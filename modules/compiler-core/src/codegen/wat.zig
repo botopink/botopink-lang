@@ -6259,8 +6259,8 @@ const Emitter = struct {
     /// `r.unwrapOr(d)` over a GC `@Result`: the `Ok` payload, or `d`.
     fn gcResultUnwrapOr(self: *Emitter, recv: ast.Expr, dflt: ?*ast.Expr) anyerror!void {
         const d = dflt orelse return self.gcFail("an unwrapOr with no default");
-        const sh = self.resultShapeOf(recv) orelse return self.gcFail("an unwrapOr over a @Result of no known shape");
-        const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
+        const sh = self.resultShapeOf(recv) orelse return self.gcFail("an unwrapOr over a Result of no known shape");
+        const pr = self.reprOf(sh.ok orelse return self.gcFail("a Result of no known Ok type"));
         const rr: Repr = .{ .ref = .result };
         const rti = self.gcTyIndex(.result);
         const tmp = try self.gcTemp(rr);
@@ -6285,8 +6285,8 @@ const Emitter = struct {
     fn gcTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
         if (self.regions.items.len > 0) return self.gcFail("a try in a `try … catch` region");
         if (self.gen_item == null and self.yield_target != null and !(self.gen_repr.isArrRef() and self.gen_repr.ref.arr == .any)) return self.gcFail("a try inside a sequence of words");
-        const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a @Result of no known shape");
-        const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
+        const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a Result of no known shape");
+        const pr = self.reprOf(sh.ok orelse return self.gcFail("a Result of no known Ok type"));
         const rr: Repr = .{ .ref = .result };
         const rti = self.gcTyIndex(.result);
         const slot = try self.gcTemp(rr);
@@ -6333,8 +6333,8 @@ const Emitter = struct {
     /// `try r catch h` in a GC module (front 164 s2 P4): the `$result`'s Ok
     /// payload unboxed, or the handler's value.
     fn gcTryCatch(self: *Emitter, tc: anytype) anyerror!void {
-        const sh = self.resultShapeOf(tc.expr.*) orelse return self.gcFail("a try over a @Result of no known shape");
-        const pr = self.reprOf(sh.ok orelse return self.gcFail("a @Result of no known Ok type"));
+        const sh = self.resultShapeOf(tc.expr.*) orelse return self.gcFail("a try over a Result of no known shape");
+        const pr = self.reprOf(sh.ok orelse return self.gcFail("a Result of no known Ok type"));
         const rr: Repr = .{ .ref = .result };
         const rti = self.gcTyIndex(.result);
         const slot = try self.gcTemp(rr);
@@ -9916,9 +9916,9 @@ const Emitter = struct {
                 if (!g.is_builtin or !std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk "another type";
                 if (!std.mem.eql(u8, stdSpelling(g.args[1]), "string")) break :blk "another type";
                 const ok = stdSpelling(g.args[0]);
-                if (std.mem.eql(u8, ok, "i64")) break :blk "@Result<i64, string>";
-                if (std.mem.eql(u8, ok, "f64")) break :blk "@Result<f64, string>";
-                if (std.mem.eql(u8, ok, "T")) break :blk "@Result<T, string>";
+                if (std.mem.eql(u8, ok, "i64")) break :blk "Result<i64, string>";
+                if (std.mem.eql(u8, ok, "f64")) break :blk "Result<f64, string>";
+                if (std.mem.eql(u8, ok, "T")) break :blk "Result<T, string>";
                 break :blk "another type";
             },
             else => "another type",
@@ -13541,8 +13541,8 @@ const Emitter = struct {
         const rr: Repr = .{ .ref = .result };
         const rvt = self.vtOf(rr);
         const rti = self.gcTyIndex(.result);
-        const sh = self.resultShapeOf(recv) orelse return self.gcFail("a map over a @Result of no known shape");
-        const ok_tr = sh.ok orelse return self.gcFail("a map over a @Result of no known Ok type");
+        const sh = self.resultShapeOf(recv) orelse return self.gcFail("a map over a Result of no known shape");
+        const ok_tr = sh.ok orelse return self.gcFail("a map over a Result of no known Ok type");
         const okr = self.reprOf(ok_tr);
         const slot = try self.gcTemp(rr);
         try self.lowerCoerced(recv, rr);
@@ -15175,7 +15175,7 @@ const Emitter = struct {
     fn gcLoadPayload(self: *Emitter, ref: VariantRef, slot: usize) anyerror!void {
         const fv = switch (ref) {
             .user => |fv| fv,
-            else => return self.gcFail("a @Result payload"),
+            else => return self.gcFail("a Result payload"),
         };
         const k = try self.gcVariantTy(fv);
         try self.emit(.{ .ref_cast = ValType.def(k) });

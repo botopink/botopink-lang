@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 val Element = type() implement Renderable
-fn state(initial: i32) -> Component<i32> {
+component fn state(initial: i32) -> Component<i32> {
     return initial;
 }
 fn Counter() -> Element {
@@ -9,11 +9,11 @@ fn Counter() -> Element {
 }
 
 ----- ERROR
-error: use-without-component: `use` needs a `-> @Component<R>` return on the enclosing fn
+error: use-without-component: `use` needs a body marked `component`
   ┌─ main.bp:6:13
   │
 6 │     val n = use state(0);
   │             ^
 
-  fn 'Counter' returns 'Element',
-  but only a `component fn` body activates a hook: write `component fn` (decisions 104, 118)
+  fn 'Counter' returns 'Element' and carries no `component` marker,
+  and only a `component fn` body activates a hook: write `component fn` (decisions 553, 573)

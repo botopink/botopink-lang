@@ -13,7 +13,7 @@ const h = @import("helpers.zig");
 test "@Async happy path — bare return <t> + throw <e> inside @Async<@Result<…>> type-checks" {
     try h.assertInfersOk(std.testing.allocator,
         \\type User(id: i32, name: string)
-        \\fn fetchUser(id: i32) -> Async<Result<User, string>> {
+        \\async fn fetchUser(id: i32) -> Async<Result<User, string>> {
         \\    if (id < 0) { throw "negative-id"; };
         \\    return User(id: id, name: "alice");
         \\}
@@ -23,10 +23,10 @@ test "@Async happy path — bare return <t> + throw <e> inside @Async<@Result<�
 test "@Async — try await unwraps @Async<@Result<T, E>> to T and propagates" {
     try h.assertInfersOk(std.testing.allocator,
         \\type User(id: i32, name: string)
-        \\fn fetchUser(id: i32) -> Async<Result<User, string>> {
+        \\async fn fetchUser(id: i32) -> Async<Result<User, string>> {
         \\    return User(id: id, name: "alice");
         \\}
-        \\fn greet(id: i32) -> Async<Result<string, string>> {
+        \\async fn greet(id: i32) -> Async<Result<string, string>> {
         \\    val u = try await fetchUser(id);
         \\    return u.name;
         \\}
@@ -35,10 +35,10 @@ test "@Async — try await unwraps @Async<@Result<T, E>> to T and propagates" {
 
 test "@Async — await answers the @Result; case reads both outcomes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn fetchCount() -> Async<Result<i32, string>> {
+        \\async fn fetchCount() -> Async<Result<i32, string>> {
         \\    return 3;
         \\}
-        \\fn count() -> Async<i32> {
+        \\async fn count() -> Async<i32> {
         \\    val r = await fetchCount();
         \\    return r.unwrapOr(0);
         \\}
@@ -51,7 +51,7 @@ test "@Async — a @Result value passes through the Async layer (decision 119)" 
         \\    if (s == "") { throw "empty"; };
         \\    return 1;
         \\}
-        \\fn load(s: string) -> Async<Result<i32, string>> {
+        \\async fn load(s: string) -> Async<Result<i32, string>> {
         \\    return parse(s);
         \\}
     );
@@ -59,7 +59,7 @@ test "@Async — a @Result value passes through the Async layer (decision 119)" 
 
 test "@Async — throw in a @Async<i32> reds effect-try-without-fallible-channel" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetch() -> Async<i32> {
+        \\async fn fetch() -> Async<i32> {
         \\    throw "boom";
         \\}
     );
@@ -67,10 +67,10 @@ test "@Async — throw in a @Async<i32> reds effect-try-without-fallible-channel
 
 test "@Async — try await in a @Async<i32> reds effect-try-without-fallible-channel" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetchUser() -> Async<Result<i32, string>> {
+        \\async fn fetchUser() -> Async<Result<i32, string>> {
         \\    return 1;
         \\}
-        \\fn count() -> Async<i32> {
+        \\async fn count() -> Async<i32> {
         \\    val n = try await fetchUser();
         \\    return n;
         \\}
@@ -79,7 +79,7 @@ test "@Async — try await in a @Async<i32> reds effect-try-without-fallible-cha
 
 test "@Async — await under a @Result return reds await-without-async" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn fetchCount() -> Async<i32> {
+        \\async fn fetchCount() -> Async<i32> {
         \\    return 3;
         \\}
         \\fn semAwait() -> Result<i32, string> {

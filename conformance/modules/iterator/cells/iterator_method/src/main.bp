@@ -1,7 +1,7 @@
 import {io.terminal.print} from "std";
 
 type Grid(cells: i32[]) {
-    fn iter(self: Self) -> Iter<i32> {
+    iter fn iter(self: Self) -> Iter<i32> {
         for (self.cells) { c ->
             yield c;
         }

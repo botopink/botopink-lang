@@ -9,7 +9,7 @@ import {async, collections.Dict, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
 
-fn worker(by: i32) -> Async<i32> {
+async fn worker(by: i32) -> Async<i32> {
     var i = 0;
     while (i < 2000) {
         i += 1;

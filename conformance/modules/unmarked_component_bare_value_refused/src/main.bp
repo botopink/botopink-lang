@@ -1,0 +1,17 @@
+//// Decision 570 — without a marker a body returns the whole type: `Badge`
+//// returns `Component<View>` and carries no `component`, so `return View(…)`
+//// gives a `View` where a `Component<View>` is expected — a type mismatch at
+//// the value, its hint naming `component fn`.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+fn Badge() -> Component<View> {
+    return View(text: "badge");
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Badge().run(RenderScope.root());
+    print(r.value.text);
+}
