@@ -736,7 +736,7 @@ methods answer alike on both sides of that edge:
 - The numeric contracts carry no host code (decision 617 (2), (3)): `Number`, `Integer`, `Signed` and `Float` hold
   signatures and `default fn` bodies, and each width declares the members it runs on the host itself (`min`, `max`,
   `toString`, the conversions, `Float`'s `floor` …), `Self` the width; an implementation on a behavior's member is
-  `external-on-behavior` (`modules/external_on_behavior`), `String`, `Array`, `Bool`, `BigInt` and `Bytes` (std's, and a
+  `external-on-behavior` (`modules/decisions-taken/primitive_widths_are_types-617/cells/external_on_behavior`), `String`, `Array`, `Bool`, `BigInt` and `Bytes` (std's, and a
   program's behavior extending one) excepted until decision 641 dissolves them into their types. A member every width implementing the contract
   declares with the same host code is read back onto the contract's member (`prelude_cache.foldWidthMembers`,
   `BehaviorMethod.folded`), so its calls keep the contract's dispatch; one the widths declare differently (`abs`) or

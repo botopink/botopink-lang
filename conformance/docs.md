@@ -358,7 +358,7 @@ own text — the emitted code keeps `Dict`. The alias names the type in the whol
 function declared after the one that calls it takes the alias in its signature
 (`fn hostOf(u: U)` below `main`, after `import {url.Url as U} from "std"`):
 
-<!-- example: modules/imported_type_alias_in_later_signature -->
+<!-- example: modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cells/imported_type_alias_in_later_signature -->
 
 Two same-named types of two modules
 are two types when each is imported under an alias, or one of the two is
@@ -931,15 +931,15 @@ contract's algorithm on erlang and wasm, and a form that reads a `BigInt` on
 commonJS. A module declaring a width is refused at the name,
 `primitive-type-redeclared` (decision 639):
 
-<!-- example: modules/primitive_width_is_a_type -->
+<!-- example: modules/decisions-taken/primitive_widths_are_types-617/cells/primitive_width_is_a_type -->
 
-<!-- example: modules/primitive_width_redeclared_refused -->
+<!-- example: modules/decisions-taken/primitive_type_redeclared_refused-639/cells/primitive_width_redeclared_refused -->
 
 Neither `Pair` nor `Function` is a name of the prelude (decision 738): a pair is
 the tuple `#(A, B)`, and the combinators `identity`, `compose`, `flip` and
 `constant` are std's `functions` module:
 
-<!-- example: modules/prelude_has_no_pair_or_function -->
+<!-- example: modules/decisions-taken/prelude_has_no_pair_or_function-738/cells/prelude_has_no_pair_or_function -->
 
 A `string` is indexed by codepoint on every target (decision 320): `length`,
 `at`, `slice`, `indexOf` and `lastIndexOf` count codepoints — `"e\u{301}".length`
@@ -4859,7 +4859,7 @@ host code lives on the type that implements it — `#[compiler.external(…)] de
 string;` inside `pub type i32 implement Signed { … }`, `Self` the type. An implementation on a behavior's
 member is refused at the annotation, `external-on-behavior`:
 
-<!-- example: modules/external_on_behavior -->
+<!-- example: modules/decisions-taken/primitive_widths_are_types-617/cells/external_on_behavior -->
 
 A bodyless `declare fn` no annotation implements has no code on any target: it
 is refused at the declaration, before any call — top-level, a type's method or

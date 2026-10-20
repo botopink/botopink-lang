@@ -1,11 +1,13 @@
 # generic
 
+[cells/generic_answer_record_field_read/src/main.bp](cells/generic_answer_record_field_read/src/main.bp)
 [run/src/cases/generic_body_specialized/mod.bp](run/src/cases/generic_body_specialized/mod.bp)
 [run/src/cases/generic_call_result_shape/mod.bp](run/src/cases/generic_call_result_shape/mod.bp)
 [cells/generic_field_float/src/main.bp](cells/generic_field_float/src/main.bp)
 [cells/generic_field_fn_value/src/main.bp](cells/generic_field_fn_value/src/main.bp)
 [run/src/cases/generic_field_fn_value_nested/mod.bp](run/src/cases/generic_field_fn_value_nested/mod.bp)
 [run/src/cases/generic_fn_and_type/mod.bp](run/src/cases/generic_fn_and_type/mod.bp)
+[cells/generic_fn_result_array_string_bool/src/main.bp](cells/generic_fn_result_array_string_bool/src/main.bp)
 [cells/generic_method_array_join/src/main.bp](cells/generic_method_array_join/src/main.bp)
 [run/src/cases/generic_method_lambda_param_typed/mod.bp](run/src/cases/generic_method_lambda_param_typed/mod.bp)
 [cells/generic_method_map/src/main.bp](cells/generic_method_map/src/main.bp)

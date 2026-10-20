@@ -1,5 +1,6 @@
 # Decision 319 — `i64` is a real 64-bit integer on every target.
 
+[cells/case_wide_arm_in_narrow_fn/src/main.bp](cells/case_wide_arm_in_narrow_fn/src/main.bp)
 [cells/i64_dict_key_across_safe_edge/src/main.bp](cells/i64_dict_key_across_safe_edge/src/main.bp)
 [cells/i64_full_range/src/main.bp](cells/i64_full_range/src/main.bp)
 [cells/i64_number_methods_past_js_safe/src/main.bp](cells/i64_number_methods_past_js_safe/src/main.bp)

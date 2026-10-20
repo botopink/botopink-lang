@@ -4,4 +4,5 @@ The example builds a pair as the tuple `#(1, "x")`. `p._1` reads its second elem
 
 Cells in this repository that bear on it: `modules/decisions-taken/prelude_is_primitives-606/cells/prelude_name_bare`, `modules/decisions-taken/prelude_is_primitives-606/run/src/cases/prelude_name_shadowed`.
 
+[cells/prelude_has_no_pair_or_function/src/main.bp](cells/prelude_has_no_pair_or_function/src/main.bp)
 [cells/tuple_destructure_discard/src/main.bp](cells/tuple_destructure_discard/src/main.bp)

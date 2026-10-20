@@ -140,7 +140,7 @@ scope (the function value `compose<A, B, C>` answers) crosses boxed in its own r
 over an optional array is an array (`isArrayExpr`, `printShapeOf` by the optional's declared payload) and its
 empty `[]` default takes the branch's array type (`branchLastStmt`); a `[]` element of a tuple returned against
 its declared `#(…)` takes its slot's type (`expected_tuple`, `gcTupleLit`); a value whose GC repr is a string
-prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish_default_optional_array`, whose wasm
+prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish/cells/nullish_default_optional_array`, whose wasm
 answers were addresses before. Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
