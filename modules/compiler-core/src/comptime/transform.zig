@@ -1285,6 +1285,16 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         // `-xs.at(0).unwrapOr(1)`, `!flags.at(0).unwrapOr(false)` — the
         // operand was never walked (onze F9's family).
         .unaryOp => |*u| rewriteExpr(agg, fn_decls, comptime_arrays, u.expr) catch return ScanError.OutOfMemory,
+        // `use <template call>` (`use view @`a``) — the template call is
+        // spliced as it is written anywhere else, the spliced code rewritten
+        // like ordinary AST, and `use` resolves the answer (B-162, decision
+        // 791 (3)). Any other operand — a hook call, its trailing lambda — is
+        // left as written: the context lowering reads it in that shape.
+        .useHook => |*uh| {
+            const inner = uh.kind.inner;
+            if (inner.* == .call and inner.call.kind == .call and agg.template_expansions.contains(inner.call.loc))
+                rewriteExpr(agg, fn_decls, comptime_arrays, inner) catch return ScanError.OutOfMemory;
+        },
         .collection => |*col| switch (col.kind) {
             .arrayLit => |al| {
                 for (al.elems) |*e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
@@ -1381,7 +1391,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
             else => {},
         },
-        else => {},
     }
 }
 
