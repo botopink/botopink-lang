@@ -23,7 +23,7 @@ const h = @import("helpers.zig");
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8, lowering: []const u8) !void {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome == .typeError) {
@@ -40,7 +40,7 @@ fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8, lowe
 fn assertAcceptsWithReply(comptime loc: std.builtin.SourceLocation, src: []const u8, lowering: []const u8, reply: []const u8) !void {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .ok);
@@ -71,7 +71,7 @@ fn expectLowering(traces: []const comptimeMod.trace.Entry, lowering: []const u8)
 fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, expected: []const u8) !void {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome != .typeError) {

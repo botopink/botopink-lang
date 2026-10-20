@@ -131,7 +131,7 @@ test "C-21: every type error a reject cell raises carries a location" {
         const name = s[0];
         const src = s[1];
         walked += 1;
-        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src }}, io, build_root, null);
+        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src }}, io, build_root);
         defer session.deinit(gpa);
         for (session.outputs.items) |output| switch (output.outcome) {
             .typeError => |te| {
@@ -286,7 +286,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
         },
     };
     for (cases) |c| {
-        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root, null);
+        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root);
         defer session.deinit(gpa);
         var seen = false;
         for (session.outputs.items) |output| switch (output.outcome) {
@@ -343,7 +343,7 @@ test "a raise inside a decorator is located in its own build when an earlier bui
         .{ .src = "\n" ++ decorated, .line = 5 },
     };
     for (cases) |c| {
-        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root, null);
+        var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = c.src }}, io, build_root);
         defer session.deinit(gpa);
         var seen = false;
         for (session.outputs.items) |output| switch (output.outcome) {

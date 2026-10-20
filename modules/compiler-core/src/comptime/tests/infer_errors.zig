@@ -9,6 +9,8 @@ const T = @import(".././types.zig");
 const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
+const targetCheck = @import("../../codegen/target_check.zig");
+const test_scratch = @import("test_scratch");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
 const Module = @import("../../module.zig").Module;
@@ -1156,12 +1158,6 @@ test "infer error: hand-written is builtin is refused" {
 /// message is asserted by content so that the case does not add a cell to
 /// `snapshots/comptime/errors/`.
 fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
-    return typeErrorMessageOn(allocator, src, null);
-}
-
-/// `typeErrorMessage` on the project-side compile path of `target` — the
-/// `env.target` a build sets (null: the language server's pass).
-fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]const u8) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1172,7 +1168,6 @@ fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, allocator);
     defer env.deinit();
-    env.target = target;
     try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
     const err = env.lastError orelse return error.TestExpectedEqual;
     try std.testing.expect(err.loc != null);
@@ -1301,38 +1296,31 @@ test "infer: `#[compiler.stage(.Any)]` on a host function (decisions 681, 774)" 
 // ── decision 167: off the BEAM, `#[compiler.beamMemory(…)]` is refused at the annotation ─
 
 test "infer error: `#[compiler.beamMemory(…)]` has no meaning on commonJS or wasm" {
-    // `env.target` is the lookup name (`node`); the message names the target
-    // as `--target` spells it.
+    // Inference reads no target (decision 798 (4)): it records the
+    // annotation, and the emit's check refuses it off the BEAM. The lookup
+    // name is `node`; the message names the target as `--target` spells it.
+    const io = std.testing.io;
     for ([_][2][]const u8{ .{ "node", "commonJS" }, .{ "wasm", "wasm" } }) |t| {
-        const msg = try typeErrorMessageOn(std.testing.allocator,
-            \\#[compiler.beamMemory(.ProcessDict)]
-            \\var x: i32 = 0;
-        , t[0]);
-        defer std.testing.allocator.free(msg);
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "main.bp", .source = "#[compiler.beamMemory(.ProcessDict)]\nvar x: i32 = 0;\n" }}, io, test_scratch.path(io, "comptime/beam_memory_off_beam"));
+        defer session.deinit(std.testing.allocator);
+        const items = session.outputs.items;
+        try std.testing.expect(items[items.len - 1].outcome == .ok);
+        _ = try targetCheck.apply(session.arena.allocator(), items, t[0]);
+        const outcome = items[items.len - 1].outcome;
+        try std.testing.expect(outcome == .typeError);
         const want = try std.fmt.allocPrint(std.testing.allocator, "`#[compiler.beamMemory(…)]` has no meaning on the {s} backend", .{t[1]});
         defer std.testing.allocator.free(want);
-        try std.testing.expect(std.mem.indexOf(u8, msg, want) != null);
+        try std.testing.expectEqualStrings(want, outcome.typeError.kind.custom.message);
+        try std.testing.expectEqual(@as(usize, 1), outcome.typeError.loc.?.line);
     }
 }
 
 test "infer: `#[compiler.beamMemory(…)]` is accepted on erlang and beam" {
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "main.bp", .source = "#[compiler.beamMemory(.Ets)]\nvar hits: i32 = 0;\nfn bump() -> void { hits += 1; }\n" }}, io, test_scratch.path(io, "comptime/beam_memory_on_beam"));
+    defer session.deinit(std.testing.allocator);
     for ([_][]const u8{ "erlang", "beam" }) |t| {
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-        const alloc = arena.allocator();
-        var lx = Lexer.init(
-            \\#[compiler.beamMemory(.Ets)]
-            \\var hits: i32 = 0;
-            \\fn bump() -> void { hits += 1; }
-        );
-        const tokens = try lx.scanAll(alloc);
-        var p = Parser.init(tokens);
-        var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
-        defer program.deinit(alloc);
-        var env = try inferMod.freshEnv(alloc, std.testing.allocator);
-        defer env.deinit();
-        env.target = t;
-        _ = try inferMod.inferProgram(&env, program);
+        try std.testing.expectEqual(@as(usize, 0), (try targetCheck.apply(session.arena.allocator(), session.outputs.items, t)).len);
     }
 }
 

@@ -10,6 +10,8 @@ const loadMod = @import("./comptime/load.zig");
 const moduleMod = @import("./module.zig");
 const runtime = @import("./codegen/runtime.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
+/// Decision 798 (4) — the target's checks over the analysed tree, at emit.
+pub const targetCheck = @import("./codegen/target_check.zig");
 
 pub const Module = moduleMod.Module;
 pub const ModuleOutput = moduleOutput.ModuleOutput;
@@ -73,12 +75,17 @@ pub fn generate(
 /// the comptime session that owns them is freed (front 26 step 4: `build` and
 /// `test` print them as `check` does). Matched by module name; a module that
 /// emitted no output has nothing to carry them.
-fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput, outputs: []ModuleOutput) !void {
+fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput, outputs: []ModuleOutput, refused: []const []const u8) !void {
     for (session) |ct| {
         const ok = switch (ct.outcome) {
             .ok => |ok| ok,
             else => continue,
         };
+        // A module the target refused at emit is a failed module, as one its
+        // analysis refused (decision 798 (4)).
+        if (for (refused) |r| {
+            if (std.mem.eql(u8, r, ct.name)) break true;
+        } else false) continue;
         // Decision 788 (3) — the build's output travels the same way.
         if (ok.build_output.len > 0) for (outputs) |*o| {
             if (!std.mem.eql(u8, o.name, ct.name) or o.result.build_output.len > 0) continue;
@@ -104,33 +111,51 @@ fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput,
     }
 }
 
-/// The comptime pass of `generateWith` alone: every module analysed for
-/// `config`'s target. The caller owns the session (`deinit`).
+/// The comptime pass of `generateWith` alone: every module analysed, for no
+/// target — comptime never reads the target (decision 798 (4)), so one
+/// analysis serves every backend; what depends on the target is `emit`'s
+/// (`codegen/target_check.zig`). The caller owns the session (`deinit`).
 pub fn analyse(allocator: std.mem.Allocator, modules: []const Module, io: std.Io, config: Config) !ComptimeSession {
-    // STD-001 — lookup name the `#[@External.<Target>(…)]` parser expects for
-    // each codegen target. BEAM consumes the Erlang vocabulary (matches the
-    // `externalFor("erlang")` calls in `beam_asm.zig`).
-    const target_name: []const u8 = switch (config.targetSource) {
-        .commonJS => "node",
-        .erlang, .beam => "erlang",
-        // Decision 334: a wasm build's lookup names its host (`wasm` is
-        // `wasi`'s, `wasm.browser` the browser's).
-        .wasm => config.wasm_host.lookupName(),
-    };
     // The comptime pass runs on the wasm runtime whatever the target
-    // (decision 434); `target_name` picks each host function's lookup.
-    return comptimeMod.compileWith(allocator, modules, io, config.build_root, target_name, config.analysis_store);
+    // (decision 434).
+    return comptimeMod.compileWith(allocator, modules, io, config.build_root, config.analysis_store);
 }
 
 /// The emit of `generateWith` alone, over analysed `outputs` — the session's,
 /// or ones read back from the code cache's level B (144 B-60). An emitter may
 /// rewrite an output's AST in place: an entry is encoded before this runs.
+///
+/// First the target's own checks over the analysed tree
+/// (`codegen/target_check.zig`, decision 798 (4)): a module the target
+/// refuses is emitted as a failed module, and its analysis is handed back
+/// once the emit returns.
 pub fn emit(allocator: std.mem.Allocator, outputs: []ComptimeOutput, config: Config) !std.ArrayListUnmanaged(ModuleOutput) {
+    return emitChecked(allocator, outputs, config, null);
+}
+
+/// `emit`, naming in `refused_names` (when given) each module the target
+/// refused: it carries no warnings and no build output, as a module refused
+/// by its analysis does not (`attachWarnings`).
+fn emitChecked(
+    allocator: std.mem.Allocator,
+    outputs: []ComptimeOutput,
+    config: Config,
+    refused_names: ?*std.ArrayListUnmanaged([]const u8),
+) !std.ArrayListUnmanaged(ModuleOutput) {
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    const lookup = targetCheck.lookupName(config);
+    const kept = try targetCheck.withoutBeamStorage(scratch.allocator(), outputs, lookup);
+    const emitted = kept orelse outputs;
+    defer if (kept) |k| targetCheck.writeBack(outputs, k);
+    const refused = try targetCheck.apply(scratch.allocator(), emitted, lookup);
+    defer targetCheck.restore(emitted, refused);
+    if (refused_names) |names| for (refused) |r| try names.append(allocator, emitted[r.index].name);
     return switch (config.targetSource) {
-        .commonJS => commonJS.codegenEmit(allocator, outputs, config),
-        .erlang => erlang.codegenEmit(allocator, outputs, config),
-        .beam => beam_asm.codegenEmit(allocator, outputs, config),
-        .wasm => wat.codegenEmit(allocator, outputs, config),
+        .commonJS => commonJS.codegenEmit(allocator, emitted, config),
+        .erlang => erlang.codegenEmit(allocator, emitted, config),
+        .beam => beam_asm.codegenEmit(allocator, emitted, config),
+        .wasm => wat.codegenEmit(allocator, emitted, config),
     };
 }
 
@@ -154,13 +179,15 @@ pub fn generateWith(
     // 513), and a test unit is never cached (`analysis_entry.code_skips`).
     var cfg = config;
     cfg.level_b_code = session.level_b_code;
-    var outputs = try emit(allocator, session.outputs.items, cfg);
+    var refused: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer refused.deinit(allocator);
+    var outputs = try emitChecked(allocator, session.outputs.items, cfg, &refused);
     errdefer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
     }
     if (cfg.level_b_code) |code| try code.record(allocator, outputs.items, cfg.codeEmit());
-    try attachWarnings(allocator, session.outputs.items, outputs.items);
+    try attachWarnings(allocator, session.outputs.items, outputs.items, refused.items);
 
     // A host that cannot spawn a process (the browser build, front 18 step 5)
     // has no executor: the harness's `execute` is refused there rather than

@@ -176,13 +176,10 @@ fn collectCompileDiagnostics(
     out: *std.ArrayList(CompileDiagnostic),
 ) !void {
     const io = std.testing.io;
-    const target_name: []const u8 = switch (cfg.targetSource) {
-        .commonJS => "node",
-        .erlang, .beam => "erlang",
-        .wasm => "wasm",
-    };
-    var session = try comptimeMod.compile(allocator, modules, io, cfg.build_root, target_name);
+    var session = try comptimeMod.compile(allocator, modules, io, cfg.build_root);
     defer session.deinit(allocator);
+    // The target's refusals are the emit's (decision 798 (4)).
+    _ = try codegen.targetCheck.apply(session.arena.allocator(), session.outputs.items, codegen.targetCheck.lookupName(cfg));
 
     for (session.outputs.items) |o| {
         const file = try ctSnapshot.moduleFile(allocator, o.name);

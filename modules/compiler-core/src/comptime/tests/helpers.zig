@@ -149,7 +149,7 @@ pub fn assertComptimeAstExpecting(
 
     const build_root_path = buildRootPathFromSrc(io, loc);
 
-    var session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
+    var session = try comptimeMod.compile(allocator, modules, io, build_root_path);
     defer session.deinit(allocator);
 
     var outputs = std.ArrayList(comptimeMod.ComptimeOutput).empty;
@@ -358,7 +358,7 @@ pub fn canonicalReplies(
 ) ![]const []const u8 {
     const io = std.testing.io;
     const build_root = buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(allocator, modules, io, build_root, null);
+    var session = try comptimeMod.compile(allocator, modules, io, build_root);
     defer session.deinit(allocator);
 
     var replies: std.ArrayListUnmanaged([]const u8) = .empty;

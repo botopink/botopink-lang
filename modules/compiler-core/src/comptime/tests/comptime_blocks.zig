@@ -15,7 +15,7 @@ const Parser = @import("../../parser.zig").Parser;
 
 /// The one module's build output, or its type error's message as `error: …`.
 fn buildOutput(gpa: std.mem.Allocator, source: []const u8) ![]u8 {
-    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = source, .srcPath = "src/main.bp", .root = true }}, std.testing.io, null, null);
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = source, .srcPath = "src/main.bp", .root = true }}, std.testing.io, null);
     defer session.deinit(gpa);
     for (session.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) switch (o.outcome) {
         .ok => |ok| return gpa.dupe(u8, ok.build_output),

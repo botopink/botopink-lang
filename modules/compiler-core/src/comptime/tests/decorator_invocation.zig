@@ -17,7 +17,7 @@ const h = @import("helpers.zig");
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome == .typeError) {
@@ -39,7 +39,7 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
 fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8, at: ?[2]usize) !void {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
@@ -140,7 +140,7 @@ test "decorator invocation: a raise in another module's decorator body names the
     var session = try comptimeMod.compile(std.testing.allocator, &.{
         .{ .path = "deco", .source = deco },
         .{ .path = "", .source = src },
-    }, io, build_root, null);
+    }, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = for (session.outputs.items) |o| {
         if (std.mem.eql(u8, o.name, "main")) break o.outcome;
@@ -377,7 +377,7 @@ test "decorator invocation: @emit contributes a top-level declaration" {
         \\#[singleton]
         \\type Service(x: i32)
     ;
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .ok);
@@ -393,10 +393,10 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     if (decoratorEmitted) return error.DecoratorFnNotDropped;
 }
 
-test "decorator invocation: the body runs on the wat runtime for every target (decision 434)" {
-    // `comptime.compile` selects the runtime itself, so every driver —
-    // `botopink build`, `test`, and `check` — evaluates decorators on wat,
-    // whatever the target name it is given, and for none.
+test "decorator invocation: the body runs on the wat runtime, for no target (decisions 434, 798)" {
+    // `comptime.compile` selects the runtime itself and takes no target —
+    // comptime never reads it (decision 798 (4)) —, so every driver
+    // (`botopink build`, `test`, `check`) evaluates decorators on wat.
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
@@ -406,20 +406,17 @@ test "decorator invocation: the body runs on the wat runtime for every target (d
         \\#[singleton]
         \\type Service(x: i32)
     ;
-    const targets = [_]?[]const u8{ "node", "wasm", "erlang", "beam", null };
-    for (targets) |target| {
-        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, target);
-        defer session.deinit(std.testing.allocator);
-        const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
-        try std.testing.expect(outcome == .ok);
-        const traces = outcome.ok.comptime_traces;
-        try std.testing.expect(traces.len > 0);
-        // The listing is the wasm the module was lowered to.
-        for (traces) |t| {
-            const listing = try t.listing.render(std.testing.allocator);
-            defer std.testing.allocator.free(listing);
-            try std.testing.expect(std.mem.indexOf(u8, listing, "(func ") != null);
-        }
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
+    defer session.deinit(std.testing.allocator);
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
+    try std.testing.expect(outcome == .ok);
+    const traces = outcome.ok.comptime_traces;
+    try std.testing.expect(traces.len > 0);
+    // The listing is the wasm the module was lowered to.
+    for (traces) |t| {
+        const listing = try t.listing.render(std.testing.allocator);
+        defer std.testing.allocator.free(listing);
+        try std.testing.expect(std.mem.indexOf(u8, listing, "(func ") != null);
     }
 }
 
@@ -568,7 +565,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     {
         const warm = try std.fmt.allocPrint(alloc, "{s}#[big]\ntype Warm(x: i32)\n", .{body.items});
         defer alloc.free(warm);
-        var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = warm }}, io, build_root, null);
+        var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = warm }}, io, build_root);
         defer session.deinit(alloc);
         try std.testing.expect(session.outputs.items[session.outputs.items.len - 1].outcome == .ok);
     }
@@ -578,7 +575,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     try src.appendSlice(alloc, body.items);
     var t: usize = 0;
     while (t < calls) : (t += 1) try src.print(alloc, "#[big]\ntype T{d}(x: i32)\n", .{t});
-    var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = src.items }}, io, build_root, null);
+    var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = src.items }}, io, build_root);
     defer session.deinit(alloc);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .ok);

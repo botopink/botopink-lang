@@ -848,7 +848,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
     mem.init();
     defer mem.deinit();
 
-    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer first.deinit(testing.allocator);
     for (first.outputs.items) |o| try testing.expect(o.outcome == .ok);
     try testing.expect(mem.staged.contains("looks"));
@@ -857,7 +857,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
     try testing.expect(!mem.staged.contains(""));
     try mem.commit();
 
-    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer second.deinit(testing.allocator);
     for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
     // `looks` read back (std's `compiler` is no dependency, decision 606);
@@ -898,13 +898,13 @@ test "decision 793 (4): a dependency read back from its entry replays its top-le
     mem.init();
     defer mem.deinit();
 
-    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer first.deinit(testing.allocator);
     try testing.expectEqualStrings("build lib\n", buildOutputOf(first, "lib/root"));
     try testing.expect(mem.staged.contains("lib"));
     try mem.commit();
 
-    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer second.deinit(testing.allocator);
     // `lib` read back, not analysed: its block did not run, its output did.
     try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
@@ -967,7 +967,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
     // `local` is the root's own: named, never imported.
     const want = [_][]const u8{"frame/root.frameCore"};
 
-    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer first.deinit(testing.allocator);
     for (first.outputs.items) |o| try testing.expect(o.outcome == .ok);
     try testing.expect(mem.staged.contains("frame"));
@@ -975,7 +975,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
     try testing.expect(!mem.staged.contains(""));
     try mem.commit();
 
-    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer second.deinit(testing.allocator);
     for (second.outputs.items) |o| try testing.expect(o.outcome == .ok);
     // `frame`'s module (std's `compiler` is no dependency, decision 606).
@@ -1021,7 +1021,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     var mem: MemoryStore = undefined;
     mem.init();
     defer mem.deinit();
-    var session = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var session = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer session.deinit(testing.allocator);
     try testing.expect(!mem.staged.contains("cat"));
     // Nothing is staged: std's `compiler`, which `cat` imports (decision
@@ -1043,12 +1043,12 @@ test "level B: a hit is the dependency's module — one of the package under tes
     var mem: MemoryStore = undefined;
     mem.init();
     defer mem.deinit();
-    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var first = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer first.deinit(testing.allocator);
     try testing.expect(mem.staged.contains("looks"));
     try mem.commit();
 
-    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, "erlang", &mem.store);
+    var second = try comptimeMod.compileWith(testing.allocator, &modules, io, build_root, &mem.store);
     defer second.deinit(testing.allocator);
     // The dependency's module read back; the project's own analysed.
     try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_read);
@@ -1066,13 +1066,13 @@ test "level B: an entry under the group's key for another module set is a miss, 
     var mem: MemoryStore = undefined;
     mem.init();
     defer mem.deinit();
-    var first = try comptimeMod.compileWith(testing.allocator, &[_]Module{ root, looks }, io, build_root, "erlang", &mem.store);
+    var first = try comptimeMod.compileWith(testing.allocator, &[_]Module{ root, looks }, io, build_root, &mem.store);
     defer first.deinit(testing.allocator);
     try mem.commit();
 
     // The same key (`MemoryStore` has one), the package with one module
     // fewer: nothing of the entry is used, the group is analysed and staged.
-    var second = try comptimeMod.compileWith(testing.allocator, &[_]Module{looks}, io, build_root, "erlang", &mem.store);
+    var second = try comptimeMod.compileWith(testing.allocator, &[_]Module{looks}, io, build_root, &mem.store);
     defer second.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), mem.store.stats.modules_read);
     try testing.expectEqual(@as(usize, 1), mem.store.stats.modules_analysed);

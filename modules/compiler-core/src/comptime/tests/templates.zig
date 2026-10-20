@@ -412,7 +412,6 @@ fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !
         &.{.{ .path = "", .source = src }},
         io,
         build_root,
-        null,
     );
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
@@ -442,7 +441,7 @@ test "comptime: runtime template body ---- a method nothing answers is refused a
     ;
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
@@ -516,7 +515,6 @@ test "template: runtime fail() maps into the caller's template" {
         &.{.{ .path = "", .source = src }},
         io,
         test_scratch.path(io, "comptime/runtime_fail_maps_into_template"),
-        null,
     );
     defer session.deinit(std.testing.allocator);
 
@@ -571,7 +569,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     try std.testing.expect(std.mem.indexOf(u8, replies[0], "\"kind\":\"custom\"") != null);
 
     const io = std.testing.io;
-    var session = try comptimeMod.compile(std.testing.allocator, modules, io, h.buildRootPathFromSrc(io, @src()), null);
+    var session = try comptimeMod.compile(std.testing.allocator, modules, io, h.buildRootPathFromSrc(io, @src()));
     defer session.deinit(std.testing.allocator);
     const out = session.outputs.items[session.outputs.items.len - 1];
     try std.testing.expect(out.outcome == .ok);
@@ -723,7 +721,7 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
     ;
     const io = std.testing.io;
     {
-        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()));
         defer session.deinit(std.testing.allocator);
         // The module alone: std's `compiler` is no dependency (decision 606).
         try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
@@ -786,7 +784,6 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         &.{.{ .path = "", .source = src }},
         io,
         test_scratch.path(io, "comptime/expr_custom_carrier"),
-        null,
     );
     defer session.deinit(std.testing.allocator);
 
@@ -863,7 +860,6 @@ test "decision 112: lookup answers the declaration's identity, never the alias" 
         },
         io,
         test_scratch.path(io, "comptime/dsl_hygiene_lookup"),
-        null,
     );
     defer session.deinit(std.testing.allocator);
 
@@ -1312,7 +1308,7 @@ test "templates: a raise in another module's template body names the body's file
     var session = try comptimeMod.compile(std.testing.allocator, &.{
         .{ .path = "tpl", .source = tpl },
         .{ .path = "", .source = src },
-    }, io, build_root, null);
+    }, io, build_root);
     defer session.deinit(std.testing.allocator);
     const outcome = for (session.outputs.items) |o| {
         if (std.mem.eql(u8, o.name, "main")) break o.outcome;

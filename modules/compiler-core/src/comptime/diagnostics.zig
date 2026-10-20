@@ -496,9 +496,9 @@ pub const result_template_shape_mismatch: []const u8 = "result-template-shape-mi
 
 /// STD-001 — a call of a std function that reaches a host declaration with no
 /// `#[@External.<target>( …)]` for the active target (the function itself, or
-/// one of its module's functions its body reaches). Fires when `Env.target !=
-/// null`, at the call; an import is never refused (decision 518 (4),
-/// `infer.zig` `checkStdCall`).
+/// one of its module's functions its body reaches), at the call; an import is
+/// never refused (decision 518 (4)). Raised at emit, never by inference
+/// (decision 798 (4), `codegen/target_check.zig`).
 pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 
 /// Decision 107 — two import items bind one local name (`import {url.parse,

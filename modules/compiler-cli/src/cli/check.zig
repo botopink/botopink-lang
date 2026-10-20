@@ -95,15 +95,15 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
     var failed: std.ArrayListUnmanaged([]const u8) = .empty;
 
-    // STD-001 — same target-name vocabulary `codegen.generate` threads in,
-    // so `botopink check` reds on the same `from "std"` imports `botopink build`
-    // would have aborted on.
+    // The analysis reads no target (decision 798 (4)); the target's own
+    // refusals — a std call with no binding for it (STD-001), a
+    // `compiler.beamMemory` off the BEAM — are the ones `botopink build`'s
+    // emit gives (`codegen.targetCheck`), so `check` reds where `build` would.
     var session = bp.comptime_pipeline.compileWith(
         gpa,
         all_modules,
         io,
         ".botopinkbuild",
-        diagnostics.comptimeTargetName(target, proj.wasmHost()),
         &level_b.store,
     ) catch |err| {
         reporter.errMsg("type-check failed");
@@ -112,6 +112,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     };
     defer session.deinit(gpa);
     level_b.commit();
+    _ = try bp.codegen.targetCheck.apply(session.arena.allocator(), session.outputs.items, diagnostics.comptimeTargetName(target, proj.wasmHost()));
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 

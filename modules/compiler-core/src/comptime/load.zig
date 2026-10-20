@@ -7,8 +7,9 @@
 //!   `@embed`'s) reads the path by `@embed`'s rules and calls `compileFile`.
 //! - `compileFile` gathers the file's own `mod` tree beside it through the
 //!   package's reader (`Module.files`), adds the caller build's dependency
-//!   modules (the caller's manifest), and runs `comptime.compile` on them for
-//!   the build's target — captured: nothing is printed, and the caller's
+//!   modules (the caller's manifest), and runs `comptime.compile` on them —
+//!   no target, which comptime never reads (decision 798 (4)): a refusal
+//!   that depends on the target is the emit's — captured: nothing is printed, and the caller's
 //!   program never sees the modules. Each refused module is one `Diagnostic`,
 //!   in the order `botopink build` prints them, with the text and the place it
 //!   prints (decision 780 (2), 781).
@@ -762,7 +763,6 @@ pub const Request = struct {
     files: PackageFiles,
     io: std.Io,
     build_root: ?[]const u8,
-    target: ?[]const u8,
 };
 
 pub const Answer = union(enum) {
@@ -820,7 +820,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const saved = build_modules;
     defer build_modules = saved;
 
-    var session = try comptimeMod.compile(std.heap.page_allocator, modules.items, req.io, req.build_root, req.target);
+    var session = try comptimeMod.compile(std.heap.page_allocator, modules.items, req.io, req.build_root);
     defer session.deinit(std.heap.page_allocator);
     for (session.outputs.items) |o| {
         // A dependency's refusal is no refusal of the loaded file: it is the

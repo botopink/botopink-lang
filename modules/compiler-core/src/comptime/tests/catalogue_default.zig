@@ -89,7 +89,7 @@ test "catalogue default: a module of the program analysed after the root is list
         \\
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, build_root, "erlang");
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, build_root);
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |o| {
         if (o.outcome != .ok) std.debug.print("\n{s}: {s}\n", .{ o.name, @tagName(o.outcome) });
@@ -127,7 +127,7 @@ test "catalogue default: a call outside the package's root is refused at the cal
         \\import {io.terminal.print} from "std";
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, build_root, "erlang");
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, build_root);
     defer session.deinit(std.testing.allocator);
     const setup = try outputOf(&session, "setup");
     try std.testing.expect(setup.outcome == .typeError);

@@ -334,7 +334,6 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         &modules,
         io,
         test_scratch.path(io, "comptime/cross_module_extension_ambiguity"),
-        null,
     );
     defer session.deinit(std.testing.allocator);
 
@@ -371,7 +370,7 @@ const same_name_pages = [_]Module{
 fn consumerTypeError(path: []const u8, consumer: []const u8, comptime scratch: []const u8) !?[]u8 {
     const io = std.testing.io;
     const modules = [_]Module{ same_name_pages[0], same_name_pages[1], .{ .path = path, .source = consumer } };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| {
         if (!std.mem.eql(u8, out.name, path)) continue;
@@ -387,7 +386,7 @@ fn consumerTypeError(path: []const u8, consumer: []const u8, comptime scratch: [
 /// The message of `path`'s type error in a build of `modules`, null when it checked.
 fn moduleTypeError(modules: []const Module, path: []const u8, comptime scratch: []const u8) !?[]u8 {
     const io = std.testing.io;
-    var session = try comptimeMod.compile(std.testing.allocator, modules, io, test_scratch.path(io, scratch), null);
+    var session = try comptimeMod.compile(std.testing.allocator, modules, io, test_scratch.path(io, scratch));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| {
         if (!std.mem.eql(u8, out.name, path)) continue;
@@ -511,7 +510,7 @@ test "infer: import source ---- a module path below the importer's package names
         \\}
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_below_package"), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_below_package"));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
@@ -553,7 +552,7 @@ test "infer: import source ---- two packages' modules of one name are two module
         \\}
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_two_packages_one_module_name"), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_two_packages_one_module_name"));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
@@ -577,7 +576,7 @@ test "infer: import source ---- a project's own module wins over a dependency's 
         \\}
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_own_module_first"), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_own_module_first"));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
@@ -615,7 +614,7 @@ test "infer: import source ---- two un-aliased imports of one name collide at th
         \\}
         },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_twice_unaliased"), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_twice_unaliased"));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| {
         if (!std.mem.eql(u8, out.name, "routes")) continue;
@@ -653,7 +652,7 @@ fn policyConsumerTypeError(consumer: []const u8, comptime scratch: []const u8) !
         },
         .{ .path = "routes", .source = consumer },
     };
-    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch), null);
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch));
     defer session.deinit(std.testing.allocator);
     for (session.outputs.items) |out| {
         if (!std.mem.eql(u8, out.name, "routes")) continue;

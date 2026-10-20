@@ -244,6 +244,34 @@ pub const MethodHooks = struct {
 /// A std function a leaf import binds (`Env.stdLeafFns`).
 pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
 
+/// STD-001 (decision 518 (4)) — one call of std function `module.name` at
+/// `loc` and the host declarations it reaches (`StdHost`), in the order the
+/// call is followed through the module's own bodies: the first one with no
+/// binding for a target is the one its refusal names
+/// (`codegen/target_check.zig`).
+pub const StdCall = struct {
+    site: TargetSite,
+    module: []const u8,
+    name: []const u8,
+    hosts: []const StdHost,
+};
+
+/// Where a refusal of the target is located: the place inference saw, moved
+/// as an inference error there would be — code a decorator added is located
+/// at its annotation, with the call that added it (`comptime.zig`
+/// `locateInOutputs`).
+pub const TargetSite = struct {
+    loc: ast.Loc,
+    origin: ?@import("error.zig").Frame = null,
+    frames: []const @import("error.zig").Frame = &.{},
+};
+
+/// A host declaration (`declare fn` with implementations) a std call reaches.
+pub const StdHost = struct {
+    name: []const u8,
+    implementations: []const ast.Implementation,
+};
+
 pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 
 /// Decisions 354, 379, 723 — one `use provide(ctx)` / `use context(ctx)` /
@@ -459,6 +487,20 @@ pub fn declIdentity(arena: std.mem.Allocator, modulePath: []const u8, name: []co
 pub const TemplateEvalCtx = struct {
     io: std.Io,
     build_root: []const u8,
+    /// Where the module's analysis records, across every pass, what the
+    /// target's checks read when the analysis is refused (`TargetTrace`).
+    target_trace: ?*TargetTrace = null,
+};
+
+/// What `codegen/target_check.zig` reads of a module whose analysis was
+/// refused (a type or validation error): the std calls reaching a host
+/// declaration inference met before the refusal, in order, and the module's
+/// first `#[compiler.beamMemory(…)]` once the program's validation passed. A
+/// refusal of the target there came first when inference read the target, so
+/// it is the one the module answers on that target (decision 798 (4)).
+pub const TargetTrace = struct {
+    calls: std.ArrayListUnmanaged(StdCall) = .empty,
+    beam_memory_at: ?TargetSite = null,
 };
 
 /// Constraint metadata for one `comptime ...: typeparam` parameter of a function.
@@ -938,10 +980,10 @@ pub const Env = struct {
     /// `name = name.insert(key, value)`, by the identifier's loc. Any other
     /// read of the binding is refused (`infer.zig` `refuseKeyedWholeRead`).
     keyedRowAccess: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
-    /// Decision 167 — the first `#[compiler.beamMemory(…)]` annotation of a module whose
-    /// `target` is not the BEAM; `infer.zig` `reportOffBeamMemory` refuses it
-    /// once the module is inferred.
-    offBeamMemory: ?ast.Loc = null,
+    /// Decision 167 — the first `#[compiler.beamMemory(…)]` annotation of the
+    /// module, whatever the target: `codegen/target_check.zig` refuses it at
+    /// emit on a target that is not the BEAM (decision 798 (4)).
+    beamMemoryAt: ?TargetSite = null,
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.
@@ -1637,21 +1679,28 @@ pub const Env = struct {
     stdModuleTypes: std.StringHashMap([]const ast.DeclKind),
     /// STD-001 — full FnDecl slice of each "std" package module, keyed by
     /// module name. Populated by `registerStdlib` alongside `stdModuleTypes`.
-    /// Consumed by `markStdImports` when `Env.target != null` to red
-    /// `std-unsupported-on-target` on imports whose declares lack an
-    /// `#[@External.<Target>(…)]` binding. Owns nothing — the FnDecl slices
-    /// point into the arena where `registerStdlib` parsed them.
+    /// Read by the stage and decorator lookups of a std function. Owns
+    /// nothing — the FnDecl slices point into the arena where
+    /// `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
     /// STD-001 (decision 518 (4)) — every `fn` of each std module, private
     /// ones too, keyed like `stdModuleFns`: the call check follows a call
     /// through the module's own bodies to the host cell it reaches
     /// (`infer.zig` `stdUnsupportedReach`). Owns nothing.
     stdModuleAllFns: std.StringHashMap([]const ast.FnDecl),
-    /// STD-001 — active codegen target name when this env is on the
-    /// project-side compile path (null in tests / LSP / std-prelude
-    /// inference). Set via `setTarget`; consumed by `markStdImports`.
-    /// One of `"commonJS"` / `"erlang"` / `"beam"` / `"wasm"`.
-    target: ?[]const u8 = null,
+    /// STD-001 (decision 518 (4)) — every call of a std function that
+    /// reaches a host declaration, in inference order, with the host
+    /// declarations it reaches (`infer.zig` `recordStdCall`). Inference never
+    /// reads the build target (decision 798 (4)): the refusal of a call whose
+    /// host has no binding for the target is `codegen/target_check.zig`'s, at
+    /// emit. There is no `target` field: a comptime read of the target does
+    /// not compile.
+    stdHostCalls: std.ArrayListUnmanaged(StdCall) = .empty,
+    /// `stdHostCalls`' host lists, shared per `<module>\x00<function>`.
+    stdHostsReached: std.StringHashMapUnmanaged([]const StdHost) = .empty,
+    /// The module's `TargetTrace` (`TemplateEvalCtx.target_trace`), null in
+    /// tooling paths.
+    targetTrace: ?*TargetTrace = null,
     /// Stdlib method calls on builtin-array receivers (`xs.isEmpty()` sugar).
     /// Key: call loc, value: { module, method }. Consumed by transform.
     stdArrayLowerings: std.AutoHashMap(ast.Loc, StdArrayLowering),

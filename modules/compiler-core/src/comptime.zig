@@ -130,6 +130,9 @@ pub const ComptimeOutput = struct {
     /// `assert`'s `<file>:<line>` names, as `@src().file` does
     /// (`displaySrcPath`) — a backend falls back to `<name>.bp`.
     srcPath: []const u8 = "",
+    /// A refused analysis' record of what the target's checks read
+    /// (`envMod.TargetTrace`, `codegen/target_check.zig`); null otherwise.
+    target_trace: ?*const envMod.TargetTrace = null,
 
     pub const Outcome = union(enum) {
         ok: OkData,
@@ -191,6 +194,15 @@ pub const ComptimeOutput = struct {
         /// Decision 375 — the calls and `use`s of a synchronous component or
         /// hook, by location (`Env.syncCalls`): commonJS emits no `await` there.
         sync_calls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+        /// STD-001 (decision 518 (4)) — this module's calls of std functions
+        /// that reach a host declaration, in inference order (`Env.stdHostCalls`):
+        /// `codegen/target_check.zig` refuses at emit the first whose host has
+        /// no binding for the target (decision 798 (4)).
+        std_host_calls: []const envMod.StdCall = &.{},
+        /// Decision 167 — this module's first `#[compiler.beamMemory(…)]`
+        /// (`Env.beamMemoryAt`), refused at emit off the BEAM
+        /// (`codegen/target_check.zig`).
+        beam_memory_at: ?envMod.TargetSite = null,
     };
 };
 
@@ -772,13 +784,12 @@ fn analyzeModule(
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     types_only: bool,
-    target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
 ) !AnalysisResult {
     // The language server's session runs no comptime and marks no root: a
     // call leaving a catalogue default out type-checks as written there.
-    if (types_only) return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection, null, &.{});
-    return fillCatalogueDefaults(arena, mod, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection);
+    if (types_only) return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, reflection, null, &.{});
+    return fillCatalogueDefaults(arena, mod, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, reflection);
 }
 
 /// Decision 551 — whether the root module is worth a probe: a function with a
@@ -861,7 +872,6 @@ fn fillCatalogueDefaults(
     decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
     templateEvalCtx: ?envMod.TemplateEvalCtx,
-    target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
 ) !AnalysisResult {
     const at_root = if (reflection.rootModule) |r| std.mem.eql(u8, r, mod.path) else false;
@@ -876,17 +886,17 @@ fn fillCatalogueDefaults(
         copy.* = try reflection.probeCopy(arena);
         break :blk copy;
     } else reflection;
-    const first = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, scratch, null, &.{});
+    const first = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, scratch, null, &.{});
     if (first != .success) {
         if (!probe) return first;
-        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null, &.{});
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, reflection, null, &.{});
     }
     var res = first;
     const calls = try catalogueDefaultCalls(arena, &res.success.env);
     if (calls.len == 0) {
         if (!probe) return first;
         res.success.env.deinit();
-        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, null, &.{});
+        return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, reflection, null, &.{});
     }
     const program = res.success.program;
     if (!at_root) {
@@ -933,7 +943,7 @@ fn fillCatalogueDefaults(
         try inserts.put(arena, loc, extra.items);
     }
     res.success.env.deinit();
-    var again = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, target_name, reflection, &inserts, &.{});
+    var again = try analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, false, false, reflection, &inserts, &.{});
     if (again != .success) return again;
     const left = try catalogueDefaultCalls(arena, &again.success.env);
     if (left.len > 0) {
@@ -1177,6 +1187,13 @@ fn locateInOutputs(arena: std.mem.Allocator, te: validation.TypeError, source: [
         line = last;
     }
     return te;
+}
+
+/// `locateInOutputs` for a refusal of the target recorded by inference
+/// (`envMod.TargetSite`), which `codegen/target_check.zig` raises at emit.
+fn locateSite(arena: std.mem.Allocator, site: envMod.TargetSite, source: []const u8, env: *const Env) envMod.TargetSite {
+    const te = locateInOutputs(arena, .{ .kind = .{ .unboundVariable = "" }, .loc = site.loc, .origin = site.origin, .frames = site.frames }, source, env);
+    return .{ .loc = te.loc orelse site.loc, .origin = te.origin, .frames = te.frames };
 }
 
 fn locatedAt(arena: std.mem.Allocator, te: validation.TypeError, loc: ?ast.Loc, call: ?envMod.CallSite) validation.TypeError {
@@ -1576,7 +1593,6 @@ fn analyzeMerged(
     decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
     templateEvalCtx: ?envMod.TemplateEvalCtx,
-    target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
     typeinfo_plan: ?typeinfoAll.Plan,
     hygiene: []const envMod.HygieneImport,
@@ -1600,8 +1616,8 @@ fn analyzeMerged(
     env.usesAsset = false;
     env.usesYieldStep = false;
     env.templateEval = templateEvalCtx;
+    if (templateEvalCtx) |c| env.targetTrace = c.target_trace;
     env.skipDecoratorInvoke = true;
-    env.target = target_name;
     env.typeDeclRegistry = typeDeclRegistry;
     env.exportsRegistry = registry;
 
@@ -1755,7 +1771,6 @@ fn analyzeSource(
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     types_only: bool,
     skip_invoke: bool,
-    target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
     inserts: ?*const CatalogueInserts,
     carried: []const envMod.ImplementContribution,
@@ -1781,11 +1796,8 @@ fn analyzeSource(
     env.usesYieldStep = false;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
     env.templateEval = templateEvalCtx;
+    if (templateEvalCtx) |c| env.targetTrace = c.target_trace;
     env.skipDecoratorInvoke = skip_invoke;
-    // STD-001 — codegen-path target name (null in LSP / tests). Consumed by
-    // `markStdImports` to red imports of `from "std"` modules whose
-    // host-bound declares lack an `#[@External.<Target>(…)]` match.
-    env.target = target_name;
     env.typeDeclRegistry = typeDeclRegistry;
     env.exportsRegistry = registry;
 
@@ -2026,9 +2038,13 @@ fn analyzeSource(
             // Decision 575 (6): a library's `compiler.implement` of this pass
             // joins the declarations the re-analysis reads.
             try infer.applyImplementContributions(&env, merged_program);
-            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan, hygiene.items);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, reflection, typeinfo_plan, hygiene.items);
             if (reanalysis == .typeError) reanalysis.typeError = locateInOutputs(arena, reanalysis.typeError, source, &env);
             if (reanalysis == .success) {
+                // The target's refusals are the emit's (decision 798 (4)),
+                // located as an inference error here would be.
+                for (reanalysis.success.env.stdHostCalls.items) |*c| c.site = locateSite(arena, c.site, source, &env);
+                if (reanalysis.success.env.beamMemoryAt) |*b| b.* = locateSite(arena, b.*, source, &env);
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
                 return reanalysis;
@@ -2049,7 +2065,7 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection, inserts, env.implementContributions.items);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, reflection, inserts, env.implementContributions.items);
         if (reanalysis == .success) {
             try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
@@ -2406,15 +2422,16 @@ fn stdKeyOf(path: []const u8) ?[]const u8 {
 /// order, deduplicated). Modules that fail to parse pass through untouched —
 /// `analyzeModule` reports the parse error later.
 ///
-/// On a BEAM target (`target_name` `erlang` or `beam`) a module that declares a
-/// module-level `var` needs `std/beam` too, whether or not it imports it: the
-/// emitters lower the binding's reads and writes onto that module's host
-/// primitives (front 17, decision 43's layer 2), so the module has to be in
-/// the build for the calls to answer.
-fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_name: ?[]const u8, lb: ?*levelB.Session) ![]const Module {
+/// A module that declares a module-level `var` needs `std/beam` too, whether
+/// or not it imports it: the BEAM emitters lower the binding's reads and
+/// writes onto that module's host primitives (front 17, decision 43's layer
+/// 2), so the module has to be in the build for the calls to answer. It is
+/// analysed whatever the target — comptime never reads the target (decision
+/// 798 (4)) — and the emit of a target that is not the BEAM leaves it out
+/// when no module imports it (`codegen/target_check.zig` `withoutBeamStorage`).
+fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, lb: ?*levelB.Session) ![]const Module {
     var needed = [_]bool{false} ** std_pkg_modules.len;
     var any = false;
-    const beam_target = if (target_name) |t| std.mem.eql(u8, t, "erlang") or std.mem.eql(u8, t, "beam") else false;
     for (modules) |mod| {
         // A module read back from the code cache's level B (144 B-60) is not
         // parsed: its entry's META names the std modules it needs.
@@ -2425,7 +2442,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
             };
             continue;
         };
-        const needs = try stdNeedsOf(arena, mod, beam_target);
+        const needs = try stdNeedsOf(arena, mod);
         for (needs) |i| {
             needed[i] = true;
             any = true;
@@ -2456,7 +2473,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
             // A std module that declares a module-level `var` reaches
             // `std/beam` the same way a user module does (above), imported
             // or not.
-            if (beam_target and beam_at < std_pkg_modules.len and !needed[beam_at] and graph.declares_var[i]) {
+            if (beam_at < std_pkg_modules.len and !needed[beam_at] and graph.declares_var[i]) {
                 needed[beam_at] = true;
                 changed = true;
             }
@@ -2488,10 +2505,10 @@ fn stdIndex(path: []const u8) ?usize {
 
 /// The std modules (indices into `std_pkg_modules`, ascending) module `mod`
 /// needs itself: each `from "std"` item, `std/context` for a `@Component`, and
-/// `std/beam` for a module-level `var` on erlang and beam (`beam_target`). A
+/// `std/beam` for a module-level `var` (`expandStdImports`). A
 /// module that does not parse needs what its `@Component` says; its analysis
 /// reports the error.
-fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const usize {
+fn stdNeedsOf(arena: std.mem.Allocator, mod: Module) ![]const usize {
     var needed = [_]bool{false} ** std_pkg_modules.len;
     // The module's tokens and tree here are a probe's: scratch (144 B-127).
     var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -2527,7 +2544,7 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module, beam_target: bool) ![]const
         // dependency.
         const program = std_calls.expand(scratch, expanded, null) catch break :collect;
         for (program.decls) |decl| switch (decl) {
-            .val => |v| if (beam_target and v.mutable) {
+            .val => |v| if (v.mutable) {
                 if (stdIndex("std/beam")) |i| needed[i] = true;
             },
             .use => |u| {
@@ -4318,9 +4335,9 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             }
         }
 
-        // STD-001 — collect every `pub fn` of this std module so a future
-        // `markStdImports` red can read the per-target `externalFor` set
-        // without re-parsing. The FnDecl slice points into `env.arena` (the
+        // STD-001 — collect every `pub fn` of this std module so a call's
+        // host declarations (`infer.zig` `stdHostsOf`) are read without
+        // re-parsing. The FnDecl slice points into `env.arena` (the
         // shared parse arena), so callers see stable references.
         {
             var fn_decls: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
@@ -4492,7 +4509,7 @@ pub fn compileTypesOnly(
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
-    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null, null), &reflection, &reader_refusals, null);
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null), &reflection, &reader_refusals, null);
     const tree = try arena_alloc.create(mod_tree.Tree);
     tree.* = try mod_tree.build(arena_alloc, all_modules);
     reflection.modTree = tree;
@@ -4505,7 +4522,7 @@ pub fn compileTypesOnly(
             try reflection.failedModules.put(arena_alloc, mod.path, {});
             continue;
         }
-        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null, &reflection);
+        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, &reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -4671,6 +4688,8 @@ pub fn compileTypesOnly(
                         .warnings = succ.env.warnings.items,
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
+                        .std_host_calls = succ.env.stdHostCalls.items,
+                        .beam_memory_at = succ.env.beamMemoryAt,
                     } },
                 });
             },
@@ -4693,9 +4712,8 @@ pub fn compile(
     modules: []const Module,
     io: std.Io,
     build_root: ?[]const u8,
-    target_name: ?[]const u8,
 ) !ComptimeSession {
-    return compileWith(allocator, modules, io, build_root, target_name, null);
+    return compileWith(allocator, modules, io, build_root, null);
 }
 
 /// `compile` reading and writing the code cache's level B through `store`
@@ -4706,7 +4724,6 @@ pub fn compileWith(
     modules: []const Module,
     io: std.Io,
     build_root: ?[]const u8,
-    target_name: ?[]const u8,
     store: ?*levelB.Store,
 ) !ComptimeSession {
     // Decisions 787, 792 — the loaded files of this compile, and the ones a
@@ -4727,7 +4744,7 @@ pub fn compileWith(
     };
     while (true) {
         loadMod.clearRuns();
-        var session = try compileModules(allocator, current, io, build_root, target_name, store);
+        var session = try compileModules(allocator, current, io, build_root, store);
         const lacking = try lackingRuns(extra.allocator(), current);
         if (lacking.len == 0) {
             if (grown.items.len > 0) {
@@ -4782,7 +4799,6 @@ fn compileModules(
     modules: []const Module,
     io: std.Io,
     build_root: ?[]const u8,
-    target_name: ?[]const u8,
     store: ?*levelB.Store,
 ) !ComptimeSession {
     if (store) |st| st.stats = .{};
@@ -4796,12 +4812,12 @@ fn compileModules(
     // analysed later added an entry to an answer (`staleTemplateRead`), the
     // modules are compiled again with the first session's complete catalogue
     // as the oracle the answers are read from.
-    var first = try compileOnce(allocator, modules, io, build_root, target_name, null, store);
+    var first = try compileOnce(allocator, modules, io, build_root, null, store);
     if (try staleTemplateRead(first.session.arena.allocator(), first.reflection) == null) return first.session;
     // The second session counts afresh; what the first staged stays staged
     // (a stored group's analysis reads no catalogue).
     if (store) |st| st.stats = .{};
-    var second = compileOnce(allocator, modules, io, build_root, target_name, first.reflection, store) catch |err| {
+    var second = compileOnce(allocator, modules, io, build_root, first.reflection, store) catch |err| {
         first.session.deinit(allocator);
         return err;
     };
@@ -4855,7 +4871,6 @@ fn compileOnce(
     modules_in: []const Module,
     io: std.Io,
     build_root: ?[]const u8,
-    target_name: ?[]const u8,
     oracle: ?*const reflectionMod.Reflection,
     store: ?*levelB.Store,
 ) !CompiledOnce {
@@ -4902,7 +4917,7 @@ fn compileOnce(
         break :blk &lb_session;
     } else null;
     if (lb) |l| try l.lookup(modules, .packages);
-    const expanded = try expandStdImports(arena_alloc, modules, target_name, lb);
+    const expanded = try expandStdImports(arena_alloc, modules, lb);
     if (lb) |l| try l.lookup(expanded, .std);
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
     const all_modules = try orderReaders(arena_alloc, expanded, reflection, &reader_refusals, lb);
@@ -4933,10 +4948,13 @@ fn compileOnce(
         }
         var snapshot: ?levelB.Snapshot = if (lb) |l| try l.begin(mod, regs) else null;
         defer if (snapshot) |*sn| sn.deinit();
+        const target_trace = try arena_alloc.create(envMod.TargetTrace);
+        target_trace.* = .{};
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
-        }, false, target_name, reflection);
+            .target_trace = target_trace,
+        }, false, reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -4953,6 +4971,7 @@ fn compileOnce(
                     .src = mod.source,
                     .srcPath = mod.srcPath,
                     .outcome = .{ .validationError = verr.info },
+                    .target_trace = target_trace,
                 });
             },
             .typeError => |te| {
@@ -4962,6 +4981,7 @@ fn compileOnce(
                     .srcPath = mod.srcPath,
                     // Decision 788 — a block's decorator named `comptime`.
                     .outcome = .{ .typeError = try te.blockNamed(arena_alloc, false) },
+                    .target_trace = target_trace,
                 });
             },
             .success => |succ| {
@@ -5087,6 +5107,8 @@ fn compileOnce(
                         .warnings = succ.env.warnings.items,
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
+                        .std_host_calls = succ.env.stdHostCalls.items,
+                        .beam_memory_at = succ.env.beamMemoryAt,
                     } },
                 });
             },

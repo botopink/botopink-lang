@@ -453,8 +453,10 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
     }
 }
 
-/// The target vocabulary the comptime pipeline takes (`codegen.generate` threads
-/// the same names in); a wasm build's names its host (decision 334).
+/// The lookup name a target's `#[compiler.external(…)]` implementations are
+/// read by, as `codegen.targetCheck.lookupName` answers it for a build — the
+/// target `check` refuses for (decision 798 (4)); a wasm build's names its
+/// host (decision 334).
 pub fn comptimeTargetName(t: anytype, wasm_host: bp.ast.WasmHost) []const u8 {
     return switch (t) {
         .commonJS => "node",

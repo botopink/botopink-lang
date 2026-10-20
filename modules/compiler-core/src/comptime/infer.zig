@@ -654,23 +654,43 @@ fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) In
 /// STD-001 (decision 518 (4)) — the refusal belongs to the CALL, never to the
 /// import: `import {failure} from "std"` and `import {erlang.node}` are
 /// accepted on every target, and a call of a std function that reaches a
-/// host-bound declaration with no implementation for the active target is
+/// host-bound declaration with no implementation for the build's target is
 /// refused at the call, naming the function — and, when the declaration is
-/// another function of the module the call goes through, that one too
-/// (`stdUnsupportedReach`). Pure-bp functions whose bodies reach no such
-/// declaration ship on every target. A function value taken without a call is
-/// the backend's refusal (`has no implementation for the <t> backend`).
-fn checkStdCall(env: *Env, mod_name: []const u8, name: []const u8, loc: ast.Loc) InferError!void {
-    const tgt = env.target orelse return;
-    const reached = try stdUnsupportedReach(env, mod_name, name, tgt) orelse return;
-    return refuseStdUnsupported(env, mod_name, name, reached, tgt, loc);
+/// another function of the module the call goes through, that one too.
+/// Inference never reads the target (decision 798 (4)): it records each call
+/// that reaches a host declaration, with the declarations it reaches
+/// (`stdHostsOf`), and `codegen/target_check.zig` refuses at emit the first
+/// one whose host has no binding for the target. Pure-bp functions whose
+/// bodies reach no host declaration are not recorded. A function value taken
+/// without a call is the backend's refusal (`has no implementation for the
+/// <t> backend`).
+fn recordStdCall(env: *Env, mod_name: []const u8, name: []const u8, loc: ast.Loc) InferError!void {
+    const hosts = try stdHostsOf(env, mod_name, name);
+    if (hosts.len == 0) return;
+    const call: envMod.StdCall = .{ .site = .{ .loc = loc }, .module = mod_name, .name = name, .hosts = hosts };
+    try env.stdHostCalls.append(env.arena, call);
+    if (env.targetTrace) |t| try t.calls.append(env.arena, call);
 }
 
-/// The first host-bound declaration of std module `mod_name` that a call of
-/// `name` reaches with no binding for `tgt` — `name` itself when it is one,
-/// else one its body reaches through the module's own functions —, or null.
-fn stdUnsupportedReach(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8) InferError!?[]const u8 {
-    const fns = env.stdModuleAllFns.get(mod_name) orelse return null;
+/// Decision 167 — the module's first `#[compiler.beamMemory(…)]`, kept for
+/// the target's checks once the program's validation passed: a refusal of
+/// the module after this point answers the annotation's refusal off the BEAM
+/// (`envMod.TargetTrace`).
+fn traceBeamMemory(env: *Env) void {
+    const t = env.targetTrace orelse return;
+    if (t.beam_memory_at == null) t.beam_memory_at = env.beamMemoryAt;
+}
+
+/// The host-bound declarations of std module `mod_name` a call of `name`
+/// reaches — `name` itself when it is one, else the ones its body reaches
+/// through the module's own functions —, in the order the call is followed.
+/// The first of them with no binding for a target is the one a refusal names
+/// on that target, whatever the target.
+fn stdHostsOf(env: *Env, mod_name: []const u8, name: []const u8) InferError![]const envMod.StdHost {
+    const fns = env.stdModuleAllFns.get(mod_name) orelse return &.{};
+    const key = try std.fmt.allocPrint(env.arena, "{s}\x00{s}", .{ mod_name, name });
+    if (env.stdHostsReached.get(key)) |known| return known;
+    var hosts: std.ArrayListUnmanaged(envMod.StdHost) = .empty;
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     try names.append(env.arena, name);
@@ -682,65 +702,11 @@ fn stdUnsupportedReach(env: *Env, mod_name: []const u8, name: []const u8, tgt: [
         const f = for (fns) |g| {
             if (std.mem.eql(u8, g.name, n)) break g;
         } else continue;
-        if (stdDeclUnsupported(f, tgt)) return f.name;
+        if (f.body.len == 0 and f.isExternal()) try hosts.append(env.arena, .{ .name = f.name, .implementations = f.implementations });
         try ast.collectNames(env.arena, f.body, &names);
     }
-    return null;
-}
-
-/// Decision 167 — the first `#[compiler.beamMemory(…)]` of a module built for a target
-/// that is not the BEAM, refused at the annotation (`validateMemoryAnnotations`
-/// recorded it). The target is named as `--target` spells it (`node` is
-/// commonJS's lookup name).
-fn reportOffBeamMemory(env: *Env) InferError!void {
-    const loc = env.offBeamMemory orelse return;
-    const lookup = ast.ExternalLookup.of(env.target orelse return).member;
-    const t = if (std.mem.eql(u8, lookup, "node")) "commonJS" else lookup;
-    return failAt(
-        env,
-        loc,
-        try std.fmt.allocPrint(env.arena, "`#[compiler.beamMemory(…)]` has no meaning on the {s} backend", .{t}),
-        try std.fmt.allocPrint(env.arena, "`compiler.beamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
-    );
-}
-
-fn stdDeclUnsupported(f: ast.FnDecl, tgt: []const u8) bool {
-    return f.body.len == 0 and f.isExternal() and f.externalFor(tgt) == null;
-}
-
-/// `std-unsupported-on-target` speaks today's spellings: the binding is the
-/// `.<Variant>(…)` implementation (`Node`, `Erlang`, `Wasm` — the beam target
-/// reads `Erlang`'s, decision 437), and the target is the one `--target`
-/// takes (`commonJS`, never the internal `node`).
-///
-/// A wasm build names its host too (decision 334): the lookup `wasm` is the
-/// `wasi` host's, `wasm.browser` the `browser` host's, and the target reads
-/// `'wasm' on host 'wasi'`.
-fn externalSpelling(env: *Env, tgt: []const u8) InferError!struct { member: []const u8, target: []const u8 } {
-    const lookup = ast.ExternalLookup.of(tgt);
-    const member: []const u8 = if (ast.Implementation.Target.ofMember(lookup.member)) |t| t.variant() else blk: {
-        const m = try env.arena.dupe(u8, lookup.member);
-        if (m.len > 0) m[0] = std.ascii.toUpper(m[0]);
-        break :blk m;
-    };
-    const target = if (std.mem.eql(u8, lookup.member, "node"))
-        "commonJS"
-    else if (lookup.host) |h|
-        try std.fmt.allocPrint(env.arena, "{s}' on host '{s}", .{ lookup.member, @tagName(h) })
-    else
-        lookup.member;
-    return .{ .member = member, .target = target };
-}
-
-fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, reached: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
-    const sp = try externalSpelling(env, tgt);
-    const msg = if (std.mem.eql(u8, name, reached))
-        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `.{s}(…)` implementation for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, sp.member, sp.target })
-    else
-        try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} reaches `{s}`, which has no `.{s}(…)` implementation for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, reached, sp.member, sp.target });
-    const hint = try std.fmt.allocPrint(env.arena, "The call is refused, not the import: the function reaches a host declaration with no binding for this target. Call it on a target the module supports (see libs/std/src/examples.md per-target coverage matrix), or give the declaration a `.{s}(…)` implementation (`#[external(…)]`).", .{sp.member});
-    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
-    return error.TypeError;
+    try env.stdHostsReached.put(env.arena, key, hosts.items);
+    return hosts.items;
 }
 
 /// Append one `TypedBinding` per imported symbol in a `use` decl so the LSP's
@@ -926,7 +892,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
     try validateProgram(env, program);
-    try reportOffBeamMemory(env);
+    traceBeamMemory(env);
     try publishHookFns(env, program);
     // Decisions 384, 385 — what each name resolves to here, for the code
     // another module reads from this one.
@@ -1207,7 +1173,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
     try validateProgram(env, program);
-    try reportOffBeamMemory(env);
+    traceBeamMemory(env);
     try publishHookFns(env, program);
     // Decisions 384, 385 — what each name resolves to here, for the code
     // another module reads from this one.
@@ -9060,14 +9026,11 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         // target whose execution context is the whole program has none to
         // name, and reading the annotation as a no-op there would build a
         // program whose `ProcessDict` / `Ets` behaviour silently differs from
-        // the one written: refused at the annotation, once the module is
-        // inferred (`reportOffBeamMemory`), so the annotation's own rules
-        // answer first and on every target. A null target (the language
-        // server, the type-only pass) reads the annotation as a BEAM target
-        // would.
-        if (env.target) |t| if (!std.mem.eql(u8, t, "erlang") and !std.mem.eql(u8, t, "beam")) {
-            if (env.offBeamMemory == null) env.offBeamMemory = loc;
-        };
+        // the one written: refused at the annotation on such a target. The
+        // annotation's own rules answer first and on every target; the
+        // refusal is `codegen/target_check.zig`'s, at emit, since inference
+        // never reads the target (decision 798 (4)).
+        if (env.beamMemoryAt == null) env.beamMemoryAt = .{ .loc = loc };
     }
     const mem = v.memory() orelse return;
     if (mem.keyed) {
@@ -13243,7 +13206,6 @@ fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const l
         .files = files,
         .io = if (env.templateEval) |ctx| ctx.io else files.io,
         .build_root = if (env.templateEval) |ctx| ctx.build_root else null,
-        .target = env.target,
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
@@ -24210,7 +24172,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
     // STD-001 (decision 518 (4)) — a call of a std function that reaches a
     // host declaration with no binding for the target is refused here, at
     // the call; the import never is.
-    if (env.target != null and c.kind == .call) if (stdCallee(env, c)) |sf| try checkStdCall(env, sf.module, sf.name, loc);
+    if (c.kind == .call) if (stdCallee(env, c)) |sf| try recordStdCall(env, sf.module, sf.name, loc);
     return switch (c.kind) {
         .call => |call| {
             // Decision 370 (2) — `decl.addMember(name, fn…)` in a decorator's

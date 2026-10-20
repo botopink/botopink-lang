@@ -49,7 +49,7 @@ fn memory(io: std.Io) moduleMod.PackageFiles {
 /// type error (`error.Unexpected` for any other refusal).
 fn compileMain(gpa: std.mem.Allocator, source: []const u8, reader: ?moduleMod.PackageFiles) !?[]u8 {
     const io = std.testing.io;
-    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = source, .srcPath = "src/main.bp", .root = true, .files = reader }}, io, null, null);
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = source, .srcPath = "src/main.bp", .root = true, .files = reader }}, io, null);
     defer session.deinit(gpa);
     for (session.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) switch (o.outcome) {
         .ok => return null,
@@ -136,7 +136,7 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
         \\
     ;
     const io = std.testing.io;
-    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null, null);
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
     defer session.deinit(gpa);
     for (session.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) switch (o.outcome) {
         .ok => return,
@@ -179,7 +179,7 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
         \\
     ;
     const io = std.testing.io;
-    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null, null);
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
     defer session.deinit(gpa);
     var main_ok = false;
     var loaded_ok = false;
@@ -208,7 +208,7 @@ test "decision 787: a load no `run()` reaches stays out of the program" {
         \\
     ;
     const io = std.testing.io;
-    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null, null);
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
     defer session.deinit(gpa);
     for (session.outputs.items) |o| {
         if (std.mem.eql(u8, o.name, "main")) try std.testing.expect(o.outcome == .ok);
