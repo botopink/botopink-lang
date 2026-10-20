@@ -318,3 +318,25 @@ test "decision 792 (4): `run()` on a receiver traced to no load of the body is `
     defer gpa.free(got);
     try std.testing.expect(std.mem.startsWith(u8, got, "run-module-untraced: "));
 }
+
+test "decision 789 (4): an expanded function's handled load that returns takes its branch at build" {
+    try std.testing.expect(try bringsFine(std.testing.allocator,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn runCase(comptime name: string) -> void {
+        \\    val loaded = try comptime compiler.load("src/cases/" + name + ".bp") catch { r ->
+        \\        compiler.init({ -> print("refused " + r.module.path) });
+        \\        return;
+        \\    };
+        \\    compiler.init({ -> try loaded.run() catch { f -> print(f.message) }; });
+        \\}
+        \\
+        \\comptime {
+        \\    runCase("fine");
+        \\    runCase("broken");
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    ));
+}

@@ -4010,6 +4010,13 @@ is the build's output, written on stdout by `botopink build` / `run`. A refusal 
 <!-- example: modules/decisions-taken/module_comptime_block-788/cells/module_comptime_block -->
 <!-- example: modules/decisions-taken/module_comptime_block-788/cells/block_refusal_names_comptime -->
 
+A load the function handles and leaves on (decision 789 (4)) — `val loaded = try comptime
+compiler.load(…) catch { r -> …; return; };` — takes its branch at build when the block expands the
+function: on `Error` the handler's statements are the block's and the `return` ends the expansion; on
+`Ok` the `Module` is bound and the statements after it are the block's.
+
+<!-- example: modules/decisions-taken/cell_records_build_phase-789/cells/comptime_load_try_catch_return_in_expansion -->
+
 One rule holds for every block (decision 793): a `return` or a `throw` inside it is
 `comptime-block-exit`, at the jump; a block in a library package runs in the build of the package that
 uses the library, in decision 660's level order; a cached build replays the build output; and a

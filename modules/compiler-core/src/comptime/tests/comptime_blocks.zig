@@ -12,6 +12,7 @@ const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
 const Lexer = @import("../../lexer.zig").Lexer;
 const Parser = @import("../../parser.zig").Parser;
+const ast = @import("../../ast.zig");
 
 /// The one module's build output, or its type error's message as `error: …`.
 fn buildOutput(gpa: std.mem.Allocator, source: []const u8) ![]u8 {
@@ -108,6 +109,48 @@ test "decision 788: a block is read onto a decorator over an anchor, and a priva
     const want = [_][]const u8{ "g", "__bp_comptime_0", "__bp_comptime_0_at", "main" };
     try std.testing.expectEqual(want.len, names.items.len);
     for (want, names.items) |w, n| try std.testing.expectEqualStrings(w, n);
+}
+
+test "decision 789 (4): a handled load that returns is read as a `case` on its answer, so the block expands the function" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var lx = Lexer.init(
+        \\import {compiler, io.terminal.print} from "std";
+        \\fn runCase(comptime name: string) -> void {
+        \\    val loaded = try comptime compiler.load("src/cases/" + name + "/mod.bp") catch { r ->
+        \\        compiler.init({ -> print("refused " + name) });
+        \\        return;
+        \\    };
+        \\    compiler.init({ -> try loaded.run() catch { f -> print(f.message) } });
+        \\}
+        \\comptime {
+        \\    runCase("fine");
+        \\}
+        \\pub fn main() -> void {}
+    );
+    var p = Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    var block: ?[]const ast.Stmt = null;
+    for (program.decls) |d| switch (d) {
+        // `runCase` was expanded and leaves the program.
+        .@"fn" => |f| if (std.mem.eql(u8, f.name, "runCase")) return error.TestUnexpectedResult else if (std.mem.eql(u8, f.name, "__bp_comptime_0")) {
+            block = f.body;
+        },
+        else => {},
+    };
+    // The call is the block of the body; its one statement the `case` on the
+    // load's answer, `Ok(loaded)` holding what followed and `Error(r)` the
+    // handler without its `return`.
+    const call = block.?[0].expr.collection.kind.case.arms[0].body.function.kind.body;
+    try std.testing.expectEqual(@as(usize, 1), call.len);
+    const lifted = call[0].expr.collection.kind.case;
+    try std.testing.expect(!lifted.isBlock);
+    try std.testing.expectEqual(@as(usize, 2), lifted.arms.len);
+    for (lifted.arms) |arm| {
+        try std.testing.expectEqual(@as(usize, 1), arm.body.function.kind.body.len);
+        try std.testing.expect(!ast.exprMayExitEarly(arm.body.function.kind.body[0].expr));
+    }
 }
 
 test "decision 793 (1): a `throw` inside a top-level block is refused `comptime-block-exit`" {

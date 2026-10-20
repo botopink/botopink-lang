@@ -24,6 +24,15 @@
 //! expanded. A private function every call of which was expanded leaves the
 //! program (562: an expanded function has no run-time body); any other keeps
 //! its body, where a `compiler.init` is refused as before.
+//!
+//! **A handled read that returns (789 (4)).** A statement of the body
+//! `[val x =] try e catch { r -> …; return; }` — its handler ending with a
+//! bare `return`, leaving nowhere else — is read, before the check above, as
+//! `case e { Ok(x) -> { <the statements after it> } Error(r) -> { <the
+//! handler without its return> } }` (`liftCatchReturns`): what `return` left
+//! is what the other arm holds, so the body leaves nothing early and is
+//! expanded. `e` is a `comptime compiler.load(…)` the block's body answers
+//! at build, so the branch is taken at build.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -150,7 +159,7 @@ const Expander = struct {
         if (e != .call or e.call.kind != .call) return null;
         const c = e.call.kind.call;
         if (c.receiver != null or c.calleeExpr != null or c.is_builtin or c.trailing.len > 0) return null;
-        const f = x.target(c.callee) orelse return null;
+        const f = (try x.target(c.callee)) orelse return null;
         for (x.stack.items) |n| if (std.mem.eql(u8, n, f.name)) return null;
         const args = (try argsOf(x.alloc, f, c.args)) orelse return null;
         const copied = try substitute([]ast.Stmt, x.alloc, f.body, f.params, args);
@@ -161,10 +170,13 @@ const Expander = struct {
         return try exprs.makeBlockExpr(x.alloc, e.call.loc, body);
     }
 
-    /// The function of the module `name` calls, when a block expands it.
-    fn target(x: *Expander, name: []const u8) ?ast.FnDecl {
+    /// The function of the module `name` calls, when a block expands it:
+    /// its body with each handled read that returns lifted
+    /// (`liftCatchReturns`).
+    fn target(x: *Expander, name: []const u8) Error!?ast.FnDecl {
         for (x.program.decls) |d| if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, name)) {
-            const f = d.@"fn";
+            var f = d.@"fn";
+            if (try liftCatchReturns(x.alloc, f.body)) |body| f.body = body;
             if (!expandable(f)) return null;
             if (!x.writesInit(f, 0)) return null;
             return f;
@@ -192,6 +204,68 @@ const Expander = struct {
         return false;
     }
 };
+
+/// Decision 789 (4) — `stmts` with its first statement `[val x =] try e
+/// catch { r -> …; return; }` (operand form, the handler a block ending with
+/// a bare `return` and leaving nowhere else) read as `case e { Ok(x) -> {
+/// <the statements after it, lifted too> } Error(r) -> { <the handler
+/// without its return> } }`; null when no statement is one.
+fn liftCatchReturns(alloc: std.mem.Allocator, stmts: []ast.Stmt) Error!?[]ast.Stmt {
+    for (stmts, 0..) |s, i| {
+        if (s.deferred) continue;
+        var name: ?[]const u8 = null;
+        var e = s.expr;
+        if (e == .binding and e.binding.kind == .localBind) {
+            const lb = e.binding.kind.localBind;
+            if (lb.mutable or lb.typeAnnotation != null) continue;
+            name = lb.name;
+            e = lb.value.*;
+        }
+        if (e != .branch or e.branch.kind != .tryCatch) continue;
+        const tc = e.branch.kind.tryCatch;
+        if (tc.region) continue;
+        const handler = blockBody(tc.handler.*) orelse continue;
+        if (handler.len == 0) continue;
+        const last = handler[handler.len - 1].expr;
+        if (last != .jump or last.jump.kind != .@"return" or last.jump.kind.@"return" != null) continue;
+        const kept = handler[0 .. handler.len - 1];
+        const leaves = for (kept) |h| {
+            if (ast.exprMayExitEarly(h.expr)) break true;
+        } else false;
+        if (leaves) continue;
+
+        const rest = stmts[i + 1 ..];
+        const after = (try liftCatchReturns(alloc, rest)) orelse rest;
+        const text = try std.fmt.allocPrint(alloc, "fn __bp_lift() -> void {{ case __bp_lift {{ Ok({s}) -> {{ 0 }} Error({s}) -> {{ 0 }} }} }}\n", .{ name orelse "_", tc.binder orelse "_" });
+        var lx = Lexer.init(text);
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        const parsed = try p.parseRawDecls(alloc);
+        var lifted = parsed.decls[0].@"fn".body[0].expr;
+        const cs = &lifted.collection.kind.case;
+        lifted.collection.loc = e.getLoc();
+        cs.subjects[0] = tc.expr.*;
+        const loc = e.getLoc();
+        for (cs.arms, [_][]ast.Stmt{ after, kept }) |*arm, body| {
+            arm.patternLoc = loc;
+            arm.body = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = &.{}, .body = body } } };
+        }
+        const out = try alloc.alloc(ast.Stmt, i + 1);
+        @memcpy(out[0..i], stmts[0..i]);
+        out[i] = .{ .expr = lifted };
+        return out;
+    }
+    return null;
+}
+
+/// The statements of a block written as an expression (`exprs.makeBlockExpr`:
+/// `case true { _ { … } }`), null for any other expression.
+fn blockBody(e: ast.Expr) ?[]ast.Stmt {
+    if (e != .collection or e.collection.kind != .case) return null;
+    const cs = e.collection.kind.case;
+    if (!cs.isBlock or cs.arms.len != 1 or cs.arms[0].body != .function) return null;
+    return cs.arms[0].body.function.kind.body;
+}
 
 /// Whether `f` is expanded where a block calls it: a function with a body,
 /// every parameter `comptime` (at least one), that never leaves early and
