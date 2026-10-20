@@ -1440,6 +1440,29 @@ test "wat: option ---- a value assigned into a declared `?T` is boxed like one" 
     );
 }
 
+// A top-level `-> void` function used as a value and called through a record
+// field typed `fn(…)`: the call site unboxes the unit word a void function value
+// answers, so the trampoline boxes one. Once `-> void` answered nothing (decision
+// 622, `ast.answersNothing`) the trampoline pushed `ref.null` and the unbox
+// trapped `null reference` (decision 354's `context_sheet_registers`).
+test "wat: function value ---- a -> void function in a fn field is called through its trampoline" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Writer(add: fn(s: string))
+        \\
+        \\fn shout(s: string) -> void {
+        \\    print(s + "!");
+        \\}
+        \\
+        \\fn main() -> void {
+        \\    val w = Writer(add: shout);
+        \\    w.add("a");
+        \\    w.add("b");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    , "a!\nb!\n");
+}
+
 // ── step 7: function values ─────────────────────────────────────────────────
 //
 // The step asked whether to build them or defer, on the reading that "wasm has no

@@ -20923,7 +20923,13 @@ const Emitter = struct {
             try self.gcUnbox(pr);
         }
         try self.emit(.{ .call = target });
-        if (sig.result) |r| try self.gcBox(r) else try self.emit(.{ .ref_null = .anyref });
+        // A function that answers nothing (`-> void`, decision 622) answers the
+        // unit word through a function value, as a void lambda's wrapper does:
+        // the call site unboxes an `i32` (`gcValueCallRepr`).
+        if (sig.result) |r| try self.gcBox(r) else {
+            try self.emit(try self.constInt(0));
+            try self.gcBox(.i32);
+        }
         const body = self.seal(&c, .{ .value = .anyref });
         try self.item(.{ .func = try self.builder().func(.{
             .name = l.name,
