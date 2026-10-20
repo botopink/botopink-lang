@@ -319,6 +319,10 @@ pub const load_cycle: []const u8 = "load-cycle";
 /// Decisions 787 (3), 792 (4), (7) — `Module.run()` written anywhere but
 /// directly in a `compiler.init` body (a function the body calls included).
 pub const run_outside_init: []const u8 = "run-outside-init";
+/// Decision 792 (4) — `run()` in an init body on a receiver no
+/// `compiler.load` of the build is traced to: neither the captured `Module`
+/// nor a local alias of it (a parameter, a `var`, a computed value).
+pub const run_module_untraced: []const u8 = "run-module-untraced";
 /// Decision 792 (4) — `run()` on the `Module` of a load that refused.
 pub const run_module_refused: []const u8 = "run-module-refused";
 /// Decisions 787 (3), 792 (4) — `run()` on a loaded file that declares no
@@ -1002,6 +1006,7 @@ pub const all_codes = [_][]const u8{
     load_arguments,
     load_cycle,
     run_outside_init,
+    run_module_untraced,
     run_module_refused,
     load_no_main,
     module_construction,

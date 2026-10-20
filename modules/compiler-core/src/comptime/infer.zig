@@ -13524,14 +13524,14 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         // executor holds it (`load.recordSource`).
         if (env.initArgDepth > 0) return try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null)).*);
         env.lastError = TypeError.custom(
-            diagnostics.run_outside_init ++ ": `run()` is called on a `Module` that no `compiler.load` of the body answered",
-            "Call `run()` on the `Module` the body's `compiler.load` answered, captured by the init body (decision 787).",
+            diagnostics.run_module_untraced ++ ": `run()` is called on a `Module` that no `compiler.load` of the body answered",
+            "Call `run()` on the `Module` the body's `compiler.load` answered, captured by the init body or a `val` bound to it (decisions 787, 792 (4)).",
         ).withLoc(loc);
         return error.TypeError;
     };
     const entry = loadMod.entryOf(path) orelse {
         env.lastError = TypeError.custom(
-            try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_outside_init, path }),
+            try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_module_untraced, path }),
             "Call `run()` on the `Module` the body's `compiler.load` answered (decision 787).",
         ).withLoc(loc);
         return error.TypeError;

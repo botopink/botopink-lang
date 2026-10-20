@@ -603,6 +603,84 @@ pub fn valuePath(v: std.json.Value, member: ?[]const u8) ?[]const u8 {
     return jsonString(v.object, "path");
 }
 
+/// Decision 792 (4), (7) — `run()` on a local alias of a `Module` the
+/// executor holds (`val m2 = m; m2.run()`, `m` spliced as its constructor,
+/// `recordSource`): the receiver is written as the constructor the alias was
+/// bound to, so `receiverPath` reads its file. A `val` whose value is traced
+/// (a spliced constructor, a `Refused`'s `module`, or another traced alias)
+/// binds its name for the statements after it in its block; any other `val`
+/// and a lambda's parameter shadow the name.
+const AliasTracer = struct {
+    arena: std.mem.Allocator,
+    scope: std.ArrayListUnmanaged(struct { name: []const u8, value: ?*const ast.Expr }) = .empty,
+
+    fn lookup(self: *AliasTracer, name: []const u8) ?*const ast.Expr {
+        var i = self.scope.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, self.scope.items[i].name, name)) return self.scope.items[i].value;
+        }
+        return null;
+    }
+
+    fn traced(self: *AliasTracer, e: *const ast.Expr) std.mem.Allocator.Error!?*const ast.Expr {
+        if ((try receiverPath(self.arena, e)) != null) return e;
+        var x = e;
+        while (x.* == .collection and x.collection.kind == .grouped) x = x.collection.kind.grouped;
+        if (x.* == .identifier and x.identifier.kind == .ident) return self.lookup(x.identifier.kind.ident);
+        return null;
+    }
+
+    fn walk(self: *AliasTracer, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == []const ast.Stmt or T == []ast.Stmt) {
+            const mark = self.scope.items.len;
+            defer self.scope.shrinkRetainingCapacity(mark);
+            for (v) |st| {
+                try self.walk(ast.Expr, st.expr);
+                if (st.expr == .binding and st.expr.binding.kind == .localBind) {
+                    const lb = st.expr.binding.kind.localBind;
+                    const value = if (lb.mutable) null else try self.traced(lb.value);
+                    try self.scope.append(self.arena, .{ .name = lb.name, .value = value });
+                }
+            }
+            return;
+        }
+        if (T == ast.Expr) {
+            if (v == .call and v.call.kind == .call) {
+                const cc = v.call.kind.call;
+                if (std.mem.eql(u8, cc.callee, "run") and cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
+                    if (r.* == .identifier and r.identifier.kind == .ident) if (self.lookup(r.identifier.kind.ident)) |m| {
+                        r.* = m.*;
+                    };
+                };
+            }
+            if (v == .function) {
+                const mark = self.scope.items.len;
+                defer self.scope.shrinkRetainingCapacity(mark);
+                for (v.function.kind.params) |p| try self.scope.append(self.arena, .{ .name = p, .value = null });
+                try self.walk(@TypeOf(v.function.kind.body), v.function.kind.body);
+                return;
+            }
+        }
+        if (comptime !mayHoldExpr(T)) return;
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (!fl.is_comptime) try self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
 const RunFinder = struct {
     arena: std.mem.Allocator,
     paths: std.ArrayListUnmanaged([]const u8) = .empty,
@@ -641,6 +719,8 @@ const RunFinder = struct {
 /// `loaded_main_fn` of each loaded package already in the program under
 /// `runAlias`. `program` itself when it calls none.
 pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var t: AliasTracer = .{ .arena = arena };
+    for (program.decls) |d| try t.walk(ast.DeclKind, d);
     var f: RunFinder = .{ .arena = arena };
     for (program.decls) |d| try f.walk(ast.DeclKind, d);
     if (f.paths.items.len == 0) return program;

@@ -4098,6 +4098,13 @@ on a loaded file that declares no `main` `load-no-main`, each at the call. A `Mo
 <!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/load_no_main -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_construction -->
 
+`run-outside-init` names a place, never a receiver (decision 792 (4), (7)): a local alias of the captured
+`Module` (`val m2 = m; m2.run()`) in the init body runs the loaded file's `main` as `m.run()` does. A
+receiver the build traces to no `compiler.load` of the body — a parameter, a `var`, a computed value — is
+`run-module-untraced`, at the call.
+
+<!-- example: modules/decisions-taken/module_run_answers-792/cells/run_on_module_alias -->
+
 The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`
 segment `load-path-outside-package` and a path that names no file of the package

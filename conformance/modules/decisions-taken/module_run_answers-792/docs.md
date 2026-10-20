@@ -9,10 +9,13 @@ on one `Module` runs `main` twice, in one package (`module_run_twice`). A `main`
 `run()` is written directly in the init body: in a function the init body calls it is `run-outside-init`
 (`run_in_called_function`). On the `module` of a `Refused` it is `run-module-refused` (`run_module_refused`). A
 `Module` is answered by `compiler.load` alone: `Module(…)` written by hand is `module-construction`
-(`module_construction`). Each refusal is located at the call.
+(`module_construction`). Each refusal is located at the call. `run-outside-init` names a place: a local alias of
+the captured `Module` in the init body runs `main` (`run_on_module_alias`); a receiver traced to no load of the body
+is `run-module-untraced`.
 
 [cells/module_run_body_at_run/src/main.bp](cells/module_run_body_at_run/src/main.bp)
 [cells/module_run_twice/src/main.bp](cells/module_run_twice/src/main.bp)
 [cells/run_in_called_function/src/main.bp](cells/run_in_called_function/src/main.bp)
 [cells/run_module_refused/src/main.bp](cells/run_module_refused/src/main.bp)
 [cells/module_construction/src/main.bp](cells/module_construction/src/main.bp)
+[cells/run_on_module_alias/src/main.bp](cells/run_on_module_alias/src/main.bp)

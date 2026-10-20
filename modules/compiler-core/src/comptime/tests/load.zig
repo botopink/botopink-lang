@@ -259,3 +259,62 @@ test "decision 787: a `Module` a body handed an executor is written back as its 
     try std.testing.expectEqualStrings("src/cases/b/mod.bp", loadMod.valuePath(refused, "module").?);
     try std.testing.expect((try loadMod.recordSource(arena, .{ .integer = 3 })) == null);
 }
+
+/// Whether compiling `src` (its `main` and every loaded package) succeeds and
+/// brings the loaded `src/cases/fine.bp` into the program.
+fn bringsFine(gpa: std.mem.Allocator, src: []const u8) !bool {
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
+    defer session.deinit(gpa);
+    var main_ok = false;
+    var loaded_ok = false;
+    for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
+        if (std.mem.eql(u8, o.name, "bp_load__src__cases__fine/fine")) loaded_ok = o.outcome == .ok;
+    }
+    return main_ok and loaded_ok;
+}
+
+test "decision 792 (4), (7): `run()` on a local alias of the captured `Module` in the init body runs the loaded file" {
+    try std.testing.expect(try bringsFine(std.testing.allocator,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ ->
+        \\            val m2 = m;
+        \\            val m3 = m2;
+        \\            try m3.run() catch { f -> print(f.message) };
+        \\        });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    ));
+}
+
+test "decision 792 (4): `run()` on a receiver traced to no load of the body is `run-module-untraced`" {
+    const gpa = std.testing.allocator;
+    const got = (try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ ->
+        \\            var m2 = m;
+        \\            try m2.run() catch { f -> print(f.message) };
+        \\        });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    , memory(std.testing.io))) orelse return error.TestUnexpectedResult;
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "run-module-untraced: "));
+}
