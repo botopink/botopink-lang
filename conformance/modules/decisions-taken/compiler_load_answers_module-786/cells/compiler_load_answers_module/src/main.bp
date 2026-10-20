@@ -1,8 +1,7 @@
 //// Decision 786 — `compiler.load(path)` answers `Result<compiler.Module, compiler.Refused>`:
 //// the loaded file's `Module` on both sides — `name` the directory it sits in, `path` the
-//// file relative to the package, `target` the build's, std's `Target` — and, on a refusal,
-//// a `Refused` holding that `Module` beside its `diagnostics`. The target differs per
-//// build, so the cell prints that both answers carry the same one, never the variant.
+//// file relative to the package, no target (decision 805 (4)) — and, on a refusal, a
+//// `Refused` holding that `Module` beside its `diagnostics`.
 
 import {compiler, io.terminal.print} from "std";
 
@@ -27,10 +26,6 @@ pub fn main() -> void {
             print(r.diagnostics.length > 0);
             print("refused " + r.module.path);
             print("refused name=" + r.module.name);
-            case fine {
-                Ok(m) -> print(m.target == r.module.target);
-                Error(e) -> print("never");
-            }
         }
     }
 }

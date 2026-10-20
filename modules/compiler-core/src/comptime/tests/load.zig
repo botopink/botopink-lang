@@ -125,7 +125,7 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\fn show(m: compiler.Module) -> void {
-        \\    print("${m.name} ${m.path} ${m.target}");
+        \\    print("${m.name} ${m.path}");
         \\}
         \\
         \\pub fn main() -> void {
@@ -151,31 +151,15 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
     return error.TestMainMissing;
 }
 
-test "decision 786: the `Module`'s `name` is the file's directory, its `target` std's `Target` variant" {
+test "decisions 786, 805 (4): the `Module`'s `name` is the file's directory, and it carries no target" {
     const loadMod = @import("../load.zig");
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    try std.testing.expectEqualStrings("Wasm", loadMod.targetVariant("wasm"));
-    try std.testing.expectEqualStrings("Wasm", loadMod.targetVariant("wasm.browser"));
-    try std.testing.expectEqualStrings("Erlang", loadMod.targetVariant("erlang"));
-    try std.testing.expectEqualStrings("Beam", loadMod.targetVariant("beam"));
-    try std.testing.expectEqualStrings("Node", loadMod.targetVariant("commonJS"));
-    try std.testing.expectEqualStrings("Node", loadMod.targetVariant(null));
-    const loaded: loadMod.Loaded = .{ .path = "src/cases/alpha/mod.bp", .target = "erlang" };
+    const loaded: loadMod.Loaded = .{ .path = "src/cases/alpha/mod.bp" };
     try std.testing.expectEqualStrings("alpha", loaded.name());
     const e = try loadMod.rewrite(arena, .{ .line = 3, .col = 5 }, loaded, &.{});
     try std.testing.expect(e.* == .call);
-}
-
-test "decision 786: a driver's own target wins over the lookup name — a BEAM build is `Beam`" {
-    const loadMod = @import("../load.zig");
-    const saved = loadMod.build_target;
-    defer loadMod.build_target = saved;
-    loadMod.build_target = "beam";
-    try std.testing.expectEqualStrings("Beam", loadMod.targetVariant("erlang"));
-    loadMod.build_target = "commonJS";
-    try std.testing.expectEqualStrings("Node", loadMod.targetVariant("node"));
 }
 
 test "decision 787: a `run()` in an init body brings the loaded file into the program as a package of its own" {
@@ -265,13 +249,13 @@ test "decision 787: a `Module` a body handed an executor is written back as its 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"src/cases/fine/mod.bp\",\"target\":\"Node\"}", .{});
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"src/cases/fine/mod.bp\"}", .{});
     try std.testing.expectEqualStrings(
-        loadMod.module_alias ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\", target: Target.Node)",
+        loadMod.module_alias ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\")",
         (try loadMod.recordSource(arena, parsed)).?,
     );
     try std.testing.expectEqualStrings("src/cases/fine/mod.bp", loadMod.valuePath(parsed, null).?);
-    const refused = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"module\":{\"name\":\"b\",\"path\":\"src/cases/b/mod.bp\",\"target\":\"Erlang\"},\"diagnostics\":[]}", .{});
+    const refused = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"module\":{\"name\":\"b\",\"path\":\"src/cases/b/mod.bp\"},\"diagnostics\":[]}", .{});
     try std.testing.expectEqualStrings("src/cases/b/mod.bp", loadMod.valuePath(refused, "module").?);
     try std.testing.expect((try loadMod.recordSource(arena, .{ .integer = 3 })) == null);
 }

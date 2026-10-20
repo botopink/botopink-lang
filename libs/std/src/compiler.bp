@@ -288,11 +288,11 @@ pub type Diagnostic(
 )
 
 // ── What `compiler.load` answers (decisions 786, 787, 792) ───────────────
-// The loaded file (decision 786 (1)): `name` the directory it sits in
-// (`<case>` for `src/cases/<case>/mod.bp`), `path` the file relative to the
-// package (as a `Diagnostic`'s `file`), `target` the build's — std's
-// `Target`, `.Node` for commonJS. No dependency list: the loaded package
-// still resolves its own to compile. Opaque (decision 792 (3)): only
+// The loaded file (decisions 786 (1), 805 (4)): `name` the directory it sits
+// in (`<case>` for `src/cases/<case>/mod.bp`), `path` the file relative to
+// the package (as a `Diagnostic`'s `file`). No target — comptime reads none —
+// and no dependency list: the loaded package still resolves its own to
+// compile. Opaque (decision 792 (3)): only
 // `compiler.load` answers one — `Module(…)` written outside std is
 // `module-construction` —, its fields readable.
 //
@@ -311,7 +311,6 @@ pub type Diagnostic(
 pub type Module(
     name: string,
     path: string,
-    target: Target,
 )
 
 // What `m.run()` answers on its `Error` side (decision 806): `.Failed` when

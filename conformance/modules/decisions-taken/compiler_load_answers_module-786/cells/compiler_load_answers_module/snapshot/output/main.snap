@@ -5,4 +5,3 @@ out path=src/cases/fine/mod.bp
 out true
 out refused src/cases/broken/mod.bp
 out refused name=broken
-out true

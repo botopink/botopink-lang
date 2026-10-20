@@ -5,6 +5,6 @@
 import {compiler.Module, io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val m = Module(name: "fine", path: "src/cases/fine/mod.bp", target: .Node);
+    val m = Module(name: "fine", path: "src/cases/fine/mod.bp");
     print(m.path);
 }

@@ -117,11 +117,6 @@ pub fn analyse(allocator: std.mem.Allocator, modules: []const Module, io: std.Io
         // `wasi`'s, `wasm.browser` the browser's).
         .wasm => config.wasm_host.lookupName(),
     };
-    // Decision 786 — `compiler.load`'s `Module.target` is the backend's own
-    // (`beam` apart from `erlang`), not the lookup name.
-    const saved_target = loadMod.build_target;
-    loadMod.build_target = @tagName(config.targetSource);
-    defer loadMod.build_target = saved_target;
     // The comptime pass runs on the wasm runtime whatever the target
     // (decision 434); `target_name` picks each host function's lookup.
     return comptimeMod.compileWith(allocator, modules, io, config.build_root, target_name, config.analysis_store);

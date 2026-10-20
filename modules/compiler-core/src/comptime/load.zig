@@ -18,8 +18,7 @@
 //!   ds))` otherwise, decisions 782, 786), std's `compiler.Module`,
 //!   `compiler.Refused` and `compiler.Diagnostic` imported under names no
 //!   source writes. The `Module` is the loaded file's (`Loaded`): `name` its
-//!   directory's, `path` the file, `target` the build's as std's `Target`
-//!   (`targetVariant`), written `.Wasm` so no source name is needed.
+//!   directory's, `path` the file — no target (decision 805 (4)).
 //! - A nested compile re-enters nothing of std's one-time initialisation: it
 //!   runs only once std's template is ready (`comptime.stdlibTemplateReady`),
 //!   and a file that loads itself through a chain of loads is refused
@@ -58,7 +57,7 @@ pub const refused_alias = "Bp_LoadRefused";
 /// writes them — std's `compiler.Module`, `compiler.Refused` and
 /// `compiler.Diagnostic`, record for record (`tests/compiler_members.zig`).
 pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
-    .{ .name = "Module", .fields = &.{ "name", "path", "target" } },
+    .{ .name = "Module", .fields = &.{ "name", "path" } },
     .{ .name = "Refused", .fields = &.{ "module", "diagnostics" } },
     .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label" } },
 };
@@ -73,13 +72,6 @@ const rewrite_first_line: usize = 4_000_000;
 /// shares with its caller (the caller's manifest): set by `comptime.compile`
 /// around each compile, restored after it (a nested compile sets its own).
 pub threadlocal var build_modules: []const Module = &.{};
-
-/// The build's own target (decision 786 (1), `Module.target`), as the driver
-/// names its backend (`commonJS`, `erlang`, `beam`, `wasm`): set by
-/// `codegen.analyse` around its compile — the checker's `Env.target` is the
-/// host-binding lookup, `erlang` for both BEAM targets. Null where no driver
-/// set it (tests, the language server): the lookup name stands in.
-pub threadlocal var build_target: ?[]const u8 = null;
 
 /// Decision 792 (5) — the prefix of a loaded package's name: `bp_load__`
 /// and the file's path, each `/` a `__`, `.bp` dropped
@@ -296,12 +288,10 @@ fn parseShifted(arena: std.mem.Allocator, src: []const u8, first: usize, col: ?u
 
 // ── the answer as code ───────────────────────────────────────────────────────
 
-/// The loaded file's `Module` (decision 786 (1)).
+/// The loaded file's `Module` (decisions 786 (1), 805 (4)).
 pub const Loaded = struct {
     /// The file, relative to the package's `botopink.json`.
     path: []const u8,
-    /// The build's target, as the compile names it (`commonJS`, `erlang`, …).
-    target: ?[]const u8,
 
     /// `name`: the directory the file sits in, by its last segment
     /// (`src/cases/<case>/mod.bp` → `<case>`); `""` for a file at the
@@ -312,29 +302,12 @@ pub const Loaded = struct {
     }
 };
 
-/// The build's target as a variant of std's `Target` (`primitives.bp`):
-/// `build_target` when the driver set it, else `target` (the lookup name);
-/// commonJS (`node`) is `Node`, the wasm hosts `Wasm`; a compile given no
-/// target is commonJS's.
-pub fn targetVariant(target: ?[]const u8) []const u8 {
-    const t = build_target orelse target orelse return "Node";
-    if (std.mem.eql(u8, t, "erlang")) return "Erlang";
-    if (std.mem.eql(u8, t, "beam")) return "Beam";
-    if (std.mem.eql(u8, t, "typescript")) return "Typescript";
-    if (std.mem.startsWith(u8, t, "wasm")) return "Wasm";
-    return "Node";
-}
-
 /// The call a read at `loc` is rewritten to: `__bp_loaded(Bp_LoadModule(…),
 /// […])`, one `Bp_LoadDiagnostic(…)` per refusal, on a line of its own.
 pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!*ast.Expr {
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.appendSlice(arena, "fn __bp_load_rewrite() { " ++ helper_fn ++ "(");
-    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: Target.{s})", .{
-        try blockEval.stringLexeme(arena, loaded.name()),
-        try blockEval.stringLexeme(arena, loaded.path),
-        targetVariant(loaded.target),
-    });
+    try writeModule(arena, &text, loaded);
     try text.appendSlice(arena, ", [");
     for (ds, 0..) |d, i| {
         if (i > 0) try text.appendSlice(arena, ", ");
@@ -435,12 +408,12 @@ pub fn fnReads(arena: std.mem.Allocator, fd: ast.FnDecl) !bool {
 /// The answer of a read in a body that runs at build, as code the comptime
 /// runtime builds: `Ok(Bp_LoadModule(…))`, or `Error(Bp_LoadRefused(module:
 /// …, diagnostics: […]))` — the records are the runtime's maps
-/// (`decorator_eval`'s host records), the target its variant's name.
+/// (`decorator_eval`'s host records), no target (decision 805 (4)).
 pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!ast.Expr {
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.appendSlice(arena, "fn __bp_load_rewrite() { ");
     try text.appendSlice(arena, if (ds.len == 0) "Ok(" else "Error(" ++ refused_alias ++ "(module: ");
-    try writeModule(arena, &text, loaded, .runtime);
+    try writeModule(arena, &text, loaded);
     if (ds.len > 0) {
         try text.appendSlice(arena, ", diagnostics: ");
         try writeDiagnostics(arena, &text, ds);
@@ -516,11 +489,9 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
             }
             const path = jsonString(o, "path") orelse return false;
             const name = jsonString(o, "name") orelse return false;
-            const target = jsonString(o, "target") orelse return false;
-            try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: Target.{s})", .{
+            try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
                 try blockEval.stringLexeme(arena, name),
                 try blockEval.stringLexeme(arena, path),
-                target,
             });
             return true;
         },
@@ -758,19 +729,12 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
     return out;
 }
 
-const TargetForm = enum { source, runtime };
-
-/// `Bp_LoadModule(name: …, path: …, target: …)`: the target as std's
-/// `Target` variant in source, as the variant's name at build.
-fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded, form: TargetForm) !void {
-    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", target: ", .{
+/// `Bp_LoadModule(name: …, path: …)`.
+fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded) !void {
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
     });
-    switch (form) {
-        .source => try text.print(arena, "Target.{s})", .{targetVariant(loaded.target)}),
-        .runtime => try text.print(arena, "\"{s}\")", .{targetVariant(loaded.target)}),
-    }
 }
 
 fn writeDiagnostics(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), ds: []const Diagnostic) !void {
