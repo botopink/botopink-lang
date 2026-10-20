@@ -1081,6 +1081,7 @@ pub const all_codes = [_][]const u8{
     implement_with_body,
     external_on_behavior,
     type_parameter_unbound,
+    fn_return_missing,
 };
 
 test "every reserved code has a stable, non-empty spelling" {
@@ -1188,3 +1189,9 @@ pub const ast_ill_formed: []const u8 = "ast-ill-formed";
 /// parameter's type (directly, inside one, or as `comptime t: type<T>`): the
 /// return type alone never binds it. Refused at the declaration.
 pub const type_parameter_unbound: []const u8 = "type-parameter-unbound";
+
+/// Decision 622 — a function that writes no `->`: a free `fn`, a method (a
+/// `default fn`, a static, a `declare fn`, an `implement` / `extend` method),
+/// or a typed `fn` expression. Every function writes its return type, `-> void`
+/// included; refused at its name (a `fn` expression at its `fn`).
+pub const fn_return_missing: []const u8 = "fn-return-missing";

@@ -416,7 +416,9 @@ test "infer error: a method the receiver type does not declare" {
     );
 }
 
-test "infer error: an unannotated method's return type comes from its body" {
+// Decision 622 — a method writes its return type: 06 C9's reading of it off
+// the body's `return`s is removed, and the method is refused at its name.
+test "infer error: a method that writes no return type is refused at its name" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\type D(id: i32) {
         \\    fn get(self: Self) { return self.id; }

@@ -1,0 +1,13 @@
+//// Decision 622 — every function writes its return type, `-> void` included:
+//// `greet` answers nothing and writes no `->`, so it is refused at its name,
+//// `fn-return-missing`.
+
+import {io.terminal.print} from "std";
+
+fn greet(name: string) {
+    print("hi " + name);
+}
+
+pub fn main() -> void {
+    greet("ana");
+}

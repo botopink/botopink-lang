@@ -831,6 +831,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
+    try refuseFnReturnMissing(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
     try refuseTypesNamedLikeLiterals(env, program);
     try noteExplicitTypeNames(env, program);
@@ -999,6 +1000,63 @@ fn refuseDeclsNamedLikeImports(env: *Env, program: ast.Program) InferError!void 
     }
 }
 
+/// Decision 622 — every function writes its return type, `-> void` included:
+/// a free `fn` (`main` too), a method of a type or a behavior (a `default fn`, a
+/// static, a `declare fn`), an `implement` / `extend` method. One that writes no
+/// `->` is refused at its name, `fn-return-missing`, before any body is read —
+/// its type is never taken from its `return`s or its tail (06 C9 removed). A
+/// member the compiler synthesised (no location) is not the program's to fix.
+/// A typed `fn` expression is refused where it is inferred
+/// (`refuseFnExprReturnMissing`).
+fn refuseFnReturnMissing(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (f.returnType == null) {
+            const what = if (f.anonymousDefault)
+                "this `default fn`"
+            else
+                try std.fmt.allocPrint(env.arena, "`{s}`", .{f.name});
+            return failFnReturnMissing(env, what, f.nameLoc);
+        },
+        .type_ => |td| try refuseTypeMethodsReturnMissing(env, td),
+        .behavior => |bd| for (bd.methods) |m| {
+            if (m.returnType == null and !isSynthesised(m.nameLoc))
+                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ bd.name, m.name }), m.nameLoc);
+        },
+        inline .implement, .extend => |b| for (b.methods) |m| {
+            if (m.returnType == null and !isSynthesised(m.loc))
+                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ b.target, m.name }), m.loc);
+        },
+        else => {},
+    };
+}
+
+fn refuseTypeMethodsReturnMissing(env: *Env, td: ast.TypeDecl) InferError!void {
+    for (td.methods) |m| {
+        if (m.returnType == null and !isSynthesised(m.nameLoc))
+            return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ td.printedName(), m.name }), m.nameLoc);
+    }
+    for (td.assocTypes) |at| try refuseTypeMethodsReturnMissing(env, at);
+}
+
+fn isSynthesised(loc: ast.Loc) bool {
+    return loc.line == 0 and loc.col == 0;
+}
+
+/// Decision 622, with 408 — a typed `fn` expression (`fn(n: i32) { … }`, a
+/// parameter type written) writes its return type as a declaration does; an
+/// untyped one (`fn(x) { … }`) is a lambda (583) and takes its type from its
+/// position. Refused at the `fn`.
+fn refuseFnExprReturnMissing(env: *Env, fk: anytype, loc: ast.Loc) InferError!void {
+    if (fk.syntax != .fnExpr or fk.returnType != null or fk.paramTypes.len == 0) return;
+    return failFnReturnMissing(env, "this `fn` expression", loc);
+}
+
+fn failFnReturnMissing(env: *Env, what: []const u8, loc: ast.Loc) InferError {
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: {s} writes no return type — write -> void, or the type it answers", .{ diagnostics.fn_return_missing, what });
+    env.lastError = locatedAt(TypeError.custom(msg, "Every function writes its return type, `-> void` included (decision 622)."), loc);
+    return error.TypeError;
+}
+
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     env.foldableCall = callFoldable;
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
@@ -1011,6 +1069,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
+    try refuseFnReturnMissing(env, program);
     try refuseDeclsNamedLikePrimitives(env, program);
     try refuseTypesNamedLikeLiterals(env, program);
     try noteExplicitTypeNames(env, program);
@@ -6702,12 +6761,14 @@ fn executorSource(
     }
     try refuseExecutorRuns(env, func, captured, handed);
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
-    // The executor written as a function of no parameter: `fn() { … }`.
+    // The executor written as a function of no parameter answering nothing:
+    // `fn() -> void { … }` (decision 622 — every function writes its return
+    // type; a body answering nothing already refused a valued tail).
     var asFn = func;
     asFn.kind.syntax = .fnExpr;
     asFn.kind.params = &.{};
     asFn.kind.paramTypes = &.{};
-    asFn.kind.returnType = null;
+    asFn.kind.returnType = .{ .named = "void" };
     const k = env.contributions.items.len;
     const name = try std.fmt.allocPrint(env.arena, "__bp_executor_{d}", .{k});
     const rendered = memberFn.render(env.arena, name, asFn, splices, typeArgs, "", renames) catch return error.OutOfMemory;
@@ -26064,6 +26125,7 @@ fn refuseCaptures(env: *Env, func: ast.FunctionExpr, params: []const ast.Param, 
 
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
+    try refuseFnExprReturnMissing(env, func.kind, loc);
     // Decision 357 — a lambda runs when it is called, if ever: no `use` in it.
     const prevUseConstruct = enterUseConstruct(env, "a lambda");
     defer env.useConstruct = prevUseConstruct;
@@ -26262,6 +26324,7 @@ fn inferFunctionExprExpected(
     params_only: bool,
 ) InferError!TypedExpr {
     try checkLambdaMarker(env, func, loc, expected);
+    try refuseFnExprReturnMissing(env, func.kind, loc);
     // Decision 408 — the typed function expression `fn(x: T, …) -> R { … }`
     // is legal in every position. The member a decorator hands to
     // `decl.addMember(name, fn…)` arrives with its written signature as

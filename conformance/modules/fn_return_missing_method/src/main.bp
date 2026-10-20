@@ -1,0 +1,15 @@
+//// Decision 622 — a method writes its return type as a free `fn` does. `area`
+//// returns a value and writes no `->`: its type is no longer read off its
+//// `return`s (06 C9 removed), and it is refused at its name, `fn-return-missing`.
+
+import {io.terminal.print} from "std";
+
+type Square(side: i32) {
+    fn area(self: Self) {
+        return self.side * self.side;
+    }
+}
+
+pub fn main() -> void {
+    print(Square(side: 3).area());
+}

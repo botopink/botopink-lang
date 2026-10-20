@@ -843,6 +843,22 @@ belongs to the module version that created it and dies with it on reload.
 
 <!-- example: modules/fn/run/src/cases/fn_declaration -->
 
+Every function writes its return type, `-> void` included (decision 622): `pub fn main() -> void { … }`,
+`fn m(self: Self) -> void { … }`. It holds for every form — a free `fn`, `main`, a method, a `default fn`,
+a static, a `declare fn`, an `implement` or `extend` method, the typed function expression `fn(x: T) -> R { … }`
+and a `.bpp`'s unfolded function. A function that writes no `->` is refused at its name (a function
+expression at its `fn`), `fn-return-missing`, `write -> void, or the type it answers`; its type is never
+read off its `return`s or its tail. An untyped `fn(x) { … }` is a lambda (§ Lambdas) and takes its type
+from its position.
+
+<!-- example: modules/fn_return_missing -->
+
+<!-- example: modules/fn_return_missing_main -->
+
+<!-- example: modules/fn_return_missing_method -->
+
+<!-- example: modules/fn_return_missing_fn_expr -->
+
 A declaration with no body says what it answers: `fn f(x: string);` with no `-> R` is `bodyless-fn-needs-return-type`, whose label suggests `-> void` or a body.
 
 <!-- example: modules/bodyless/cells/bodyless_fn_no_return_type -->
