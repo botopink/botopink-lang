@@ -1,0 +1,41 @@
+//// Decision 800 — what the signature check leaves free: a parameter's name
+//// and default, and `Self` written as the implementing type's own name. The
+//// required member, the overridden `default fn` and the extension block all
+//// meet their contracts, and the program runs.
+
+import {io.terminal.print} from "std";
+
+behavior Labelled {
+    fn label(self: Self, prefix: string) -> string;
+
+    default fn twice(self: Self, other: Self) -> string {
+        return "twice";
+    }
+}
+
+behavior Measured {
+    fn size(self: Self) -> i32;
+}
+
+type Tag(name: string) implement Labelled {
+    fn label(self: Tag, before: string = "#") -> string {
+        return before + self.name;
+    }
+
+    fn twice(self: Self, again: Tag) -> string {
+        return self.name + again.name;
+    }
+}
+
+TagSize implement Measured for Tag {
+    fn size(self: Tag) -> i32 {
+        return self.name.length;
+    }
+};
+
+pub fn main() -> void {
+    val t = Tag(name: "a");
+    print(t.label("#"));
+    print(t.twice(Tag(name: "b")));
+    print(t.size());
+}

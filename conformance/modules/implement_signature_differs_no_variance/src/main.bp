@@ -1,0 +1,19 @@
+//// Decision 800 (2) — identical means identical: a contract's `-> ?string`
+//// is not met by `-> string`, though every `string` is a `?string`. No
+//// variance; refused at the member, `implement-signature-differs`.
+
+import {io.terminal.print} from "std";
+
+behavior Lookup {
+    fn find(self: Self, key: string) -> ?string;
+}
+
+type Always(value: string) implement Lookup {
+    fn find(self: Self, key: string) -> string {
+        return self.value;
+    }
+}
+
+pub fn main() -> void {
+    print(Always(value: "x").find("k"));
+}

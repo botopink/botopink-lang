@@ -419,6 +419,11 @@ pub const implement_with_body: []const u8 = "implement-with-body";
 /// a behavior holds signatures and `default fn` bodies, and host code lives on
 /// the type that implements it.
 pub const external_on_behavior: []const u8 = "external-on-behavior";
+/// Decision 800 — an implementor's member whose parameter count, a
+/// parameter's type or the return type is not the contract's, `Self` read as
+/// the implementing type (a required member and an overridden `default fn`
+/// alike, a type's own clause and an extension block alike).
+pub const implement_signature_differs: []const u8 = "implement-signature-differs";
 /// Decision 621 — a second unlabelled argument of a cell of
 /// `Implementation`: only the `template` is positional.
 pub const external_field_unlabelled: []const u8 = "external-field-unlabelled";

@@ -1,0 +1,22 @@
+//// Decision 800 (3) — an extension block (`Sym implement B for T`) is checked
+//// as a type's own clause is: `Shape.area` answers `f64`, the block's `area`
+//// answers `i32`. Refused at the block's member,
+//// `implement-signature-differs`.
+
+import {io.terminal.print} from "std";
+
+behavior Shape {
+    fn area(self: Self) -> f64;
+}
+
+type Square(side: i32)
+
+SquareArea implement Shape for Square {
+    fn area(self: Self) -> i32 {
+        return self.side * self.side;
+    }
+};
+
+pub fn main() -> void {
+    print("built");
+}

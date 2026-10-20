@@ -1247,6 +1247,8 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
         .type_ => |td| try validateInlineImplements(env, td, interfaces, program),
         else => {},
     };
+    // Decision 800 — every implementor's member against its contract.
+    try checkSignaturesWith(env, program, &interfaces);
 }
 
 /// Decision 58 — an inline `implement <Behavior> { }` on a type declaration
@@ -1441,6 +1443,343 @@ fn primitiveAnswers(env: *Env, typeName: []const u8, member: []const u8) bool {
         current = if (decl.extends.len > 0) decl.extends[0] else null;
     }
     return false;
+}
+
+// ── decision 800: an implementor's member against its contract ────────────────
+
+/// A name a signature renders as something else (decision 800): a contract's
+/// type parameter as the argument the `implement` clause gives it, an
+/// implementor member's own type parameter as the contract member's.
+const SigName = struct { name: []const u8, as: []const u8 };
+
+/// The scope a signature renders in: `Self` read as the implementing type,
+/// and the names `SigName` rewrites.
+const SigScope = struct {
+    env: *Env,
+    self_name: []const u8,
+    names: []const SigName = &.{},
+};
+
+/// `t` as the signature check compares it (decision 800): `Self` the
+/// implementing type, a renamed name replaced, a type alias read through,
+/// `Array<T>` written `T[]` and a prelude wrapper with or without its `@` one
+/// spelling. Anything else is the type as written — identical means
+/// identical, no variance.
+fn writeSigType(w: *std.Io.Writer, t: ast.TypeRef, s: SigScope, depth: u8) std.Io.Writer.Error!void {
+    if (t.unionMembers()) |members| {
+        for (members, 0..) |m, i| {
+            if (i > 0) try w.writeAll(" | ");
+            try writeSigType(w, m, s, depth);
+        }
+        return;
+    }
+    if (t.isSelf()) return w.writeAll(s.self_name);
+    switch (t) {
+        .named => |n| {
+            for (s.names) |sn| if (std.mem.eql(u8, sn.name, n)) return w.writeAll(sn.as);
+            if (depth < 8) if (s.env.lookupTypeAlias(n)) |a| if (a.genericParams.len == 0)
+                return writeSigType(w, a.target, s, depth + 1);
+            try w.writeAll(n);
+        },
+        .array => |e| {
+            try writeSigType(w, e.*, s, depth);
+            try w.writeAll("[]");
+        },
+        .tuple_ => |elems| {
+            try w.writeAll("#(");
+            for (elems, 0..) |e, i| {
+                if (i > 0) try w.writeAll(", ");
+                try writeSigType(w, e, s, depth);
+            }
+            try w.writeAll(")");
+        },
+        .labeledTuple => |lt| {
+            try w.writeAll("#(");
+            for (lt.elems, 0..) |e, i| {
+                if (i > 0) try w.writeAll(", ");
+                try w.print("{s}: ", .{lt.labels[i]});
+                try writeSigType(w, e, s, depth);
+            }
+            try w.writeAll(")");
+        },
+        .optional => |e| {
+            try w.writeAll("?");
+            try writeSigType(w, e.*, s, depth);
+        },
+        .function => |f| {
+            try w.writeAll("fn(");
+            if (f.anyParams) try w.writeAll("..");
+            for (f.params, 0..) |p, i| {
+                if (i > 0) try w.writeAll(", ");
+                try writeSigType(w, p, s, depth);
+            }
+            try w.writeAll(") -> ");
+            try writeSigType(w, f.returnType.*, s, depth);
+        },
+        .generic => |g| {
+            if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, ast.expr_type_name) or std.mem.eql(u8, g.name, ast.expr_custom_type_name))) {
+                try w.writeAll("syntax ");
+                return writeSigType(w, g.args[0], s, depth);
+            }
+            if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or std.mem.eql(u8, g.name, "array"))) {
+                try writeSigType(w, g.args[0], s, depth);
+                return w.writeAll("[]");
+            }
+            if (!g.is_builtin and depth < 8) if (s.env.lookupTypeAlias(g.name)) |a| if (a.genericParams.len == g.args.len) {
+                const names = s.env.arena.alloc(SigName, s.names.len + g.args.len) catch return error.WriteFailed;
+                for (a.genericParams, g.args, 0..) |gp, arg, i| names[i] = .{
+                    .name = gp.name,
+                    .as = sigTypeText(arg, s) catch return error.WriteFailed,
+                };
+                @memcpy(names[g.args.len..], s.names);
+                return writeSigType(w, a.target, .{ .env = s.env, .self_name = s.self_name, .names = names }, depth + 1);
+            };
+            try w.print("{s}<", .{g.name});
+            for (g.args, 0..) |a, i| {
+                if (i > 0) try w.writeAll(", ");
+                try writeSigType(w, a, s, depth);
+            }
+            try w.writeAll(">");
+        },
+        .typeparam => |constraints| {
+            try w.writeAll("type");
+            for (constraints, 0..) |c, i| {
+                try w.writeAll(if (i == 0) "<" else " | ");
+                try writeSigType(w, c, s, depth);
+            }
+            if (constraints.len > 0) try w.writeAll(">");
+        },
+    }
+}
+
+fn sigTypeText(t: ast.TypeRef, s: SigScope) (std.mem.Allocator.Error || std.Io.Writer.Error)![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(s.env.arena);
+    try writeSigType(&out.writer, t, s, 0);
+    return out.toOwnedSlice();
+}
+
+/// One member's signature, as the check reads it.
+const SigMember = struct {
+    name: []const u8,
+    generics: []const ast.GenericParam = &.{},
+    params: []const ast.Param,
+    ret: ?ast.TypeRef,
+    loc: ?ast.Loc = null,
+};
+
+/// `fn name<G>(p: T, …) -> R` in `s` — with the parameter names for the
+/// refusal (`named`), or without them for the comparison (labels, parameter
+/// names and defaults are free).
+fn sigText(m: SigMember, s: SigScope, named: bool) (std.mem.Allocator.Error || std.Io.Writer.Error)![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(s.env.arena);
+    const w = &out.writer;
+    try w.print("fn {s}", .{m.name});
+    if (m.generics.len > 0) {
+        try w.writeAll("<");
+        for (m.generics, 0..) |gp, i| {
+            if (i > 0) try w.writeAll(", ");
+            // The contract's names, positionally (`names` maps the written ones).
+            var shown = gp.name;
+            for (s.names) |sn| if (std.mem.eql(u8, sn.name, gp.name)) {
+                shown = sn.as;
+            };
+            try w.writeAll(shown);
+        }
+        try w.writeAll(">");
+    }
+    try w.writeAll("(");
+    for (m.params, 0..) |p, i| {
+        if (i > 0) try w.writeAll(", ");
+        if (named) try w.print("{s}: ", .{p.name});
+        try writeSigType(w, p.typeRef, s, 0);
+    }
+    try w.writeAll(") -> ");
+    if (m.ret) |r| try writeSigType(w, r, s, 0) else try w.writeAll("void");
+    return out.toOwnedSlice();
+}
+
+/// The behavior `name` a signature check reads: the program's own or an
+/// ambient one (`interfaces`), an imported one, or one of the prelude's
+/// behaviors a rule reads.
+fn sigBehavior(env: *Env, interfaces: *const std.StringHashMap(ast.BehaviorDecl), name: []const u8) ?ast.BehaviorDecl {
+    return interfaces.get(name) orelse env.importedBehaviorDecls.get(name) orelse env.ruleReadBehaviorDecls.get(name);
+}
+
+/// The member `name` of behavior `b` or of a behavior it extends, first found.
+fn contractMember(env: *Env, interfaces: *const std.StringHashMap(ast.BehaviorDecl), b: ast.BehaviorDecl, name: []const u8, depth: u8) ?ast.BehaviorMethod {
+    for (b.methods) |m| if (std.mem.eql(u8, m.name, name)) return m;
+    if (depth >= 16) return null;
+    for (b.extends) |sup| {
+        const sb = sigBehavior(env, interfaces, sup) orelse continue;
+        if (contractMember(env, interfaces, sb, name, depth + 1)) |m| return m;
+    }
+    return null;
+}
+
+/// The contract's type parameters as the clause `iface` gives them, in the
+/// implementor's scope.
+fn contractNames(b: ast.BehaviorDecl, iface: ast.TypeRef, s: SigScope) InferError![]const SigName {
+    const args: []const ast.TypeRef = switch (iface) {
+        .generic => |g| g.args,
+        else => &.{},
+    };
+    if (args.len == 0 or args.len != b.genericParams.len) return &.{};
+    const names = try s.env.arena.alloc(SigName, args.len);
+    for (b.genericParams, args, 0..) |gp, a, i| names[i] = .{
+        .name = gp.name,
+        .as = sigTypeText(a, s) catch return error.OutOfMemory,
+    };
+    return names;
+}
+
+/// Decision 800 — `written` against the contract's member `contract`: the
+/// same number of parameters, each parameter's type and the return type
+/// identical with `Self` the implementing type; labels, parameter names and
+/// defaults free; no variance. A difference is refused at the member,
+/// `implement-signature-differs`, naming both signatures.
+fn checkMemberSignature(env: *Env, behavior: []const u8, self_name: []const u8, contract_names: []const SigName, contract: ast.BehaviorMethod, written: SigMember) InferError!void {
+    // Decision 8 (A1) — a plain implementer of a generic contract reads
+    // `Self<…>` as `Self`: a type parameter the member introduces in
+    // `Self<…>`'s arguments is bound to the clause's argument at its place
+    // (`map<U>(…) -> Self<U>` under `implement Mappable<i32>` is `U = i32`),
+    // and leaves the member's type parameters.
+    var names: std.ArrayListUnmanaged(SigName) = .empty;
+    try names.appendSlice(env.arena, contract_names);
+    var generics: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
+    if (contract_names.len > 0 and std.mem.indexOfScalar(u8, self_name, '<') == null) {
+        for (contract.params) |p| try bindSelfArgs(env, &names, contract_names, contract.genericParams, p.typeRef);
+        if (contract.returnType) |r| try bindSelfArgs(env, &names, contract_names, contract.genericParams, r);
+    }
+    for (contract.genericParams) |gp| {
+        if (sigNameIndex(names.items[contract_names.len..], gp.name) == null) try generics.append(env.arena, gp);
+    }
+    const cs: SigScope = .{ .env = env, .self_name = self_name, .names = names.items };
+    // The member's own type parameters read as the contract member's, by position.
+    var ws: SigScope = .{ .env = env, .self_name = self_name };
+    if (written.generics.len == generics.items.len and written.generics.len > 0) {
+        const wnames = try env.arena.alloc(SigName, written.generics.len);
+        for (written.generics, generics.items, 0..) |wg, cg, i| wnames[i] = .{ .name = wg.name, .as = cg.name };
+        ws.names = wnames;
+    }
+    const cm: SigMember = .{ .name = contract.name, .generics = generics.items, .params = contract.params, .ret = contract.returnType };
+    const ck = sigText(cm, cs, false) catch return error.OutOfMemory;
+    const wk = sigText(written, ws, false) catch return error.OutOfMemory;
+    if (std.mem.eql(u8, ck, wk)) return;
+    return implError(env, written.loc, try std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}.{s}` does not match the contract `{s}` — contract: {s} · written: {s}",
+        .{
+            diagnostics.implement_signature_differs,
+            self_name,
+            written.name,
+            behavior,
+            sigText(cm, cs, true) catch return error.OutOfMemory,
+            sigText(written, ws, true) catch return error.OutOfMemory,
+        },
+    ), "Write the member with the contract's parameter types and return type, `Self` the implementing type — labels, parameter names and defaults are free.");
+}
+
+fn sigNameIndex(names: []const SigName, name: []const u8) ?usize {
+    for (names, 0..) |n, i| if (std.mem.eql(u8, n.name, name)) return i;
+    return null;
+}
+
+/// Decision 8 (A1) — each `Self<…>` in `t` whose argument at place `i` is one
+/// of the member's own type parameters binds it to the contract argument at
+/// place `i` (`contract_names[i]`).
+fn bindSelfArgs(env: *Env, names: *std.ArrayListUnmanaged(SigName), contract_names: []const SigName, member_generics: []const ast.GenericParam, t: ast.TypeRef) InferError!void {
+    switch (t) {
+        .generic => |g| {
+            if (t.isSelf()) {
+                for (g.args, 0..) |a, i| {
+                    if (i >= contract_names.len or a != .named) continue;
+                    for (member_generics) |gp| if (std.mem.eql(u8, gp.name, a.named) and sigNameIndex(names.items, gp.name) == null)
+                        try names.append(env.arena, .{ .name = gp.name, .as = contract_names[i].as });
+                }
+            }
+            for (g.args) |a| try bindSelfArgs(env, names, contract_names, member_generics, a);
+        },
+        .array, .optional => |e| try bindSelfArgs(env, names, contract_names, member_generics, e.*),
+        .tuple_ => |elems| for (elems) |e| try bindSelfArgs(env, names, contract_names, member_generics, e),
+        .labeledTuple => |lt| for (lt.elems) |e| try bindSelfArgs(env, names, contract_names, member_generics, e),
+        .function => |f| {
+            for (f.params) |e| try bindSelfArgs(env, names, contract_names, member_generics, e);
+            try bindSelfArgs(env, names, contract_names, member_generics, f.returnType.*);
+        },
+        else => {},
+    }
+}
+
+/// `Name` or `Name<T, …>` — what `Self` reads as in a type's members.
+fn sigSelfName(env: *Env, name: []const u8, generics: []const ast.GenericParam) InferError![]const u8 {
+    if (generics.len == 0) return name;
+    var out: std.Io.Writer.Allocating = .init(env.arena);
+    const w = &out.writer;
+    w.print("{s}<", .{name}) catch return error.OutOfMemory;
+    for (generics, 0..) |gp, i| w.print("{s}{s}", .{ if (i > 0) ", " else "", gp.name }) catch return error.OutOfMemory;
+    w.writeAll(">") catch return error.OutOfMemory;
+    return out.toOwnedSlice() catch return error.OutOfMemory;
+}
+
+/// Decision 800 (3) — a type's own `implement` clause: each member the type
+/// declares that a contract it names (or one that contract extends) declares.
+fn checkTypeSignatures(env: *Env, td: ast.TypeDecl, interfaces: *const std.StringHashMap(ast.BehaviorDecl)) InferError!void {
+    if (td.implement.len == 0) return;
+    const self_name = try sigSelfName(env, td.name, td.genericParams);
+    for (td.implement) |iface| {
+        const b = sigBehavior(env, interfaces, interfaceRefName(iface)) orelse continue;
+        const names = try contractNames(b, iface, .{ .env = env, .self_name = self_name });
+        for (td.methods) |m| {
+            const contract = contractMember(env, interfaces, b, m.name, 0) orelse continue;
+            try checkMemberSignature(env, b.name, self_name, names, contract, .{
+                .name = m.name,
+                .generics = m.genericParams,
+                .params = m.params,
+                .ret = m.returnType,
+                .loc = m.nameLoc,
+            });
+        }
+    }
+}
+
+/// Decision 800 (3) — an extension block (`Sym implement B for T`): each
+/// member against the contract that declares it (its qualifier's, when
+/// written).
+fn checkImplementSignatures(env: *Env, impl: ast.ImplementDecl, interfaces: *const std.StringHashMap(ast.BehaviorDecl)) InferError!void {
+    for (impl.methods) |m| for (impl.interfaces) |iface| {
+        const iname = interfaceRefName(iface);
+        if (m.qualifier) |q| if (!std.mem.eql(u8, q, iname)) continue;
+        const b = sigBehavior(env, interfaces, iname) orelse continue;
+        const contract = contractMember(env, interfaces, b, m.name, 0) orelse continue;
+        const names = try contractNames(b, iface, .{ .env = env, .self_name = impl.target });
+        try checkMemberSignature(env, b.name, impl.target, names, contract, .{
+            .name = m.name,
+            .params = m.params,
+            .ret = m.returnType,
+            .loc = m.loc,
+        });
+    };
+}
+
+/// Decision 800 over a whole program — every type's own clause and every
+/// extension block. `registerStdlib` runs it on the prelude's primitive
+/// types, which its inference leaves out.
+pub fn checkProgramSignatures(env: *Env, program: ast.Program) InferError!void {
+    var interfaces = std.StringHashMap(ast.BehaviorDecl).init(env.arena);
+    defer interfaces.deinit();
+    for (program.decls) |decl| switch (decl) {
+        .behavior => |d| try interfaces.put(d.name, d),
+        else => {},
+    };
+    try checkSignaturesWith(env, program, &interfaces);
+}
+
+fn checkSignaturesWith(env: *Env, program: ast.Program, interfaces: *const std.StringHashMap(ast.BehaviorDecl)) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .implement => |impl| try checkImplementSignatures(env, impl, interfaces),
+        .type_ => |td| try checkTypeSignatures(env, td, interfaces),
+        else => {},
+    };
 }
 
 // ── stdlib preload ────────────────────────────────────────────────────────────

@@ -2856,6 +2856,24 @@ block, as a behavior of the program's own, unless the program declares or import
 value is `InstanceLowering.by_value`. Never emitted. An imported behavior stays unchecked in both forms
 — its members are not visible here.
 
+**Every implementor's member against its contract (decision 800).** After the coverage rules, `validateProgram`
+runs `checkSignaturesWith`: each member a type writes (`checkTypeSignatures`, the type's own `implement` clause) or an
+extension block writes (`checkImplementSignatures`, `Sym implement B for T`, its qualifier's contract when written) that
+the named behavior — or one it `extends` — declares (`contractMember`) is compared with that declaration, a required
+member and an overridden `default fn` alike. Both sides render through `writeSigType` in one scope (`SigScope`): `Self`
+(bare or `Self<…>`) as the implementing type (`Name<T, …>` for a generic one), the behavior's type parameters as the
+clause's arguments, the written member's own type parameters as the contract member's by position, a type alias read
+through, `Array<T>` as `T[]` and a prelude wrapper with or without its `@` one spelling; parameter names, labels and
+defaults are left out of the comparison. Decision 8 (A1) holds: under a plain implementer a type parameter the member
+introduces in `Self<…>`'s arguments is bound to the clause's argument at its place (`bindSelfArgs` —
+`map<U>(…) -> Self<U>` under `implement Mappable<i32>` is `U = i32`). A difference is
+`implement-signature-differs` at the member's name, naming both signatures (`contract: fn label(self: Tag) -> string ·
+written: fn label(self: Tag, extra: i32) -> i32`); no variance (`-> string` does not meet `-> ?string`). The behaviors
+it reads are the program's own and the ambient ones, an imported one (`importedBehaviorDecls`) and a rule-read one
+(`ruleReadBehaviorDecls`). `registerStdlib` runs it (`checkProgramSignatures`) on the parsed prelude before
+`preludeForInference` drops the primitive types, so `pub type i32 implement Signed { … }` is checked too
+(`modules/implement_signature_differs{,_default_fn,_extension_block,_no_variance}`, `modules/implement_signature_same`).
+
 **A member of a behavior-typed value (B-162).** The rule-read behaviors' declarations are kept too, in
 `Env.ruleReadBehaviorDecls` (`registerBuiltinDecls`, cloned like the ambient ones), read only for their
 members. A field read or a method call on a value a behavior types — `Component<P>`, `Async<string>`, a

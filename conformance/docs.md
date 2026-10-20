@@ -1243,6 +1243,26 @@ scope.
 
 <!-- example: modules/import/run/src/cases/import_behavior_named_like_prelude -->
 
+Every implementor of a behavior is checked against it, on every member it writes
+that the behavior (or one it extends) declares — a required member and an
+overridden `default fn` alike, a type's own `implement` clause and an extension
+block (`Sym implement B for T`) alike, std's types and a program's (decision
+800): the same number of parameters, and each parameter's type and the return
+type identical, `Self` read as the implementing type. Labels, parameter names
+and defaults are free; there is no variance — a contract's `-> ?string` is not
+met by `-> string`. A difference is refused at the member,
+`implement-signature-differs`, naming both signatures:
+
+<!-- example: modules/implement_signature_differs -->
+
+<!-- example: modules/implement_signature_differs_default_fn -->
+
+<!-- example: modules/implement_signature_differs_extension_block -->
+
+<!-- example: modules/implement_signature_differs_no_variance -->
+
+<!-- example: modules/implement_signature_same -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the

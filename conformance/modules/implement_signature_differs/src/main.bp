@@ -1,0 +1,21 @@
+//// Decision 800 (1) — a type's member is checked against the contract it
+//// implements: `label` takes one parameter more and answers `i32` where
+//// `Labelled` declares `fn label(self: Self) -> string`. Refused at the
+//// member, `implement-signature-differs`, naming both signatures with `Self`
+//// read as `Tag`.
+
+import {io.terminal.print} from "std";
+
+behavior Labelled {
+    fn label(self: Self) -> string;
+}
+
+type Tag(name: string) implement Labelled {
+    fn label(self: Self, extra: i32) -> i32 {
+        return extra;
+    }
+}
+
+pub fn main() -> void {
+    print(Tag(name: "a").label(1));
+}

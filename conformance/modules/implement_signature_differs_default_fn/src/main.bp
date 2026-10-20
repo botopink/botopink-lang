@@ -1,0 +1,22 @@
+//// Decision 800 — an overridden `default fn` is checked as a required member
+//// is: `Greeting.greet` answers `string` and takes a `string`; `Polite`'s
+//// override takes an `i32`. Refused at the override,
+//// `implement-signature-differs`.
+
+import {io.terminal.print} from "std";
+
+behavior Greeting {
+    default fn greet(self: Self, name: string) -> string {
+        return "hello " + name;
+    }
+}
+
+type Polite(title: string) implement Greeting {
+    fn greet(self: Self, times: i32) -> string {
+        return self.title;
+    }
+}
+
+pub fn main() -> void {
+    print(Polite(title: "sir").greet(2));
+}

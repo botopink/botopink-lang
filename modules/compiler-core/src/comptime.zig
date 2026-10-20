@@ -4161,7 +4161,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // this call.
         const alloc = env.arena;
 
-        const program = try preludeForInference(try parseEmbeddedStd(alloc, "primitives", src), alloc);
+        const parsed = try parseEmbeddedStd(alloc, "primitives", src);
+        // Decision 800 (3) — the primitive types' own `implement` clauses,
+        // which `preludeForInference` leaves out of the inference below.
+        try infer.checkProgramSignatures(env, parsed);
+        const program = try preludeForInference(parsed, alloc);
         // A prelude behavior's members keep `primitives.bp`'s locations
         // wherever a backend copies them (`ast.BehaviorMethod.from_prelude`).
         for (program.decls) |d| if (d == .behavior) for (d.behavior.methods) |*m| {
