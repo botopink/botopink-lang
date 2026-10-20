@@ -9461,11 +9461,11 @@ fn inferTypeMethods(
         env.returnTarget = if (env.returnWhole) |w| returnTargetFor(w, methodEffect, !env.inTemplateFn) else null;
         env.returnBareIsVoid = env.returnTarget != null and (methodEffect == null or methodEffect.? == .result or methodEffect.? == .task);
 
-        // 06 C9 — a method body is part of the strict contract, like a
-        // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
-        // used to swallow `error.TypeError` into `lastError = null`, so a real
-        // mismatch inside a method compiled and only failed at run time.
-        var inferredReturn: ?*T.Type = null;
+        // A method body is part of the strict contract, like a `default fn`
+        // interface body (`inferInterfaceDefaultBodies`): a type error in it
+        // fails the compile. Its return is the one it writes (decision 622 —
+        // `refuseFnReturnMissing` refused a method writing none; nothing is
+        // read off its `return`s, the inference 06 C9 added is gone).
         // The early-exit narrowing (`narrowAfterEarlyExit`) lives as long as
         // the block does, so it is collected here and restored below.
         var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
@@ -9479,35 +9479,10 @@ fn inferTypeMethods(
             const typed = try inferExprTyped(env, stmt.expr);
             if (stmt.tail == .value) tailTy = typed.getType();
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
-            // 06 C9 — the return type of a method that annotates none comes
-            // from its body. `registerInherentMethodTypes` stores a signature
-            // only for an annotated method ("rather than mis-typing them as
-            // `void`"), so `d.get()` fell to the fresh-var fallback and
-            // `val a: string = d.get();` compiled. Every `return <v>` in the
-            // body agrees (they unify), and a bare `return` / no return leaves
-            // it `void`.
-            if (m.returnType == null and stmt.expr == .jump and stmt.expr.jump.kind == .@"return") {
-                if (stmt.expr.jump.kind.@"return" != null) {
-                    const rv = typed.jump.kind.@"return".?;
-                    if (inferredReturn) |prev| {
-                        try unifyAt(env, prev, rv.getType(), rv.getLoc());
-                    } else {
-                        inferredReturn = rv.getType();
-                    }
-                }
-            }
         }
         if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
-        if (answersNothing(m.returnType) and (m.returnType != null or inferredReturn == null))
+        if (answersNothing(m.returnType))
             try refuseValueTailInVoid(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ typeName, m.name }), body, tailTy);
-        if (m.returnType == null) {
-            const params = try env.arena.alloc(*T.Type, m.params.len);
-            for (m.params, 0..) |p, i| {
-                params[i] = env.lookup(p.name) orelse try env.freshVar();
-            }
-            const ret = inferredReturn orelse try env.namedType("void");
-            try env.setInherentMethodType(typeName, m.name, try env.funcType(params, ret));
-        }
     }
 }
 
