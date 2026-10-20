@@ -71,6 +71,20 @@ pub const iter_await: []const u8 = "iter-await";
 /// alone; a component is resolved by `use c` in a component body or run by
 /// the tree as a child. Located at the `await`.
 pub const await_component: []const u8 = "await-component";
+/// Decision 804 (1) — a type implementing `Component<R>` that declares no
+/// `fn compose(self: Self) -> Component<R>`, its body. Located at the type.
+pub const component_compose_missing: []const u8 = "component-compose-missing";
+/// Decisions 804 (1), 388 (5) — a type component's field typed `RenderScope`:
+/// the renderer hands the scope to `compose` at each run. Located at the
+/// field's type.
+pub const component_scope_field: []const u8 = "component-scope-field";
+/// Decision 804 (1) — a `use` in a type component's helper method: hooks are
+/// read in `compose` alone. Located at the `use`.
+pub const component_use_outside_compose: []const u8 = "component-use-outside-compose";
+/// Decision 804 (1) — `Card.compose()` called directly: the component is
+/// called (`Card(…)`) or placed in the tree; its body is never called.
+/// Located at the call.
+pub const component_compose_called: []const u8 = "component-compose-called";
 
 /// Decision 123 — `yield` and `return <iterator>` in one body.
 pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
@@ -891,6 +905,10 @@ pub const all_codes = [_][]const u8{
     await_without_async,
     iter_await,
     await_component,
+    component_compose_missing,
+    component_scope_field,
+    component_use_outside_compose,
+    component_compose_called,
     iter_mixed_yield_return,
     gen_infer_conflicting_errors,
     yield_without_iter,

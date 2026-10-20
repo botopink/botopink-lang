@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: component-compose-missing: `Card` implements `Component<View>` and declares no `compose` — a type component's body is its `fn compose(self: Self) -> Component<View>` (decision 804 (1))
+at src/main.bp:9:6

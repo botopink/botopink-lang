@@ -9742,6 +9742,7 @@ fn inferTypeMethods(
         // a factory.
         const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body, m.marker);
         env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
+        env.fnContext.?.composeHelperOf = env.composedTypes.get(typeName);
         defer env.fnContext = savedFnCtx;
         // Decision 375, question 04s12-a — a `@Component` method is marked by
         // its body as a top-level function is (`Env.methodHooks`).
@@ -21837,6 +21838,12 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // Decision 104 — `use` is legal only in a `#[@use]` body, whatever the
     // return type: a `#[@future] fn … -> @Future<Element>` does not activate
     // (decision 90 revoked), and neither does an unannotated fn.
+    // Decision 804 (1) — a type component's helper is an ordinary method.
+    if (!fc.annotated) if (fc.composeHelperOf) |comp| {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` in `{s}.{s}`, a helper of the type component `{s}` — hooks are read in its `compose` alone (decision 804 (1))", .{ diagnostics.component_use_outside_compose, comp, fc.fnName, comp });
+        env.lastError = TypeError.custom(msg, "Read the hook in `compose` and hand its value to the helper as an argument.").withLoc(loc);
+        return error.TypeError;
+    };
     if (!fc.annotated) {
         env.lastError = TypeError.useWithoutComponent(fc.fnName, fc.returnDisplay).withLoc(loc);
         return error.TypeError;
@@ -24079,11 +24086,30 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     const expected = env.expectedType;
     try refuseBehaviorCallOnEntry(env, c, loc);
+    try refuseComposeCall(env, c, loc);
     const typed = try inferCallExprWith(env, c, loc, null);
     // Decision 562 — a call of a function whose every parameter is
     // `comptime` is replaced by the code its body emits.
     if (try expandCall.expand(env, c, loc, expected)) |expanded| return expanded;
     return typed;
+}
+
+/// Decision 804 (1) — `Card.compose()`, `Card` a type component of this
+/// module: the body is never called; the component is (`Card(…)`), or placed
+/// in the tree.
+fn refuseComposeCall(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!void {
+    if (c.kind != .call) return;
+    const call = c.kind.call;
+    if (call.is_builtin or !std.mem.eql(u8, call.callee, "compose")) return;
+    const recv = call.receiver orelse return;
+    if (recv.* != .identifier or recv.identifier.kind != .ident) return;
+    const name = recv.identifier.kind.ident;
+    var it = env.composedTypes.valueIterator();
+    while (it.next()) |comp| if (std.mem.eql(u8, comp.*, name)) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.compose()` calls the body of the type component `{s}` — call the component, not its body: `{s}(…)`, or place it in the tree (decision 804 (1))", .{ diagnostics.component_compose_called, name, name, name });
+        env.lastError = TypeError.custom(msg, "A component's body runs when the component is resolved (`use` in a component body) or rendered as a child; `compose` is never called by hand.").withLoc(loc);
+        return error.TypeError;
+    };
 }
 
 /// Decision 570 — `Async.resolve(v)`, std's one way to hand on a value as an `Async<T>` from a

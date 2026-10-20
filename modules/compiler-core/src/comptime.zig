@@ -19,6 +19,7 @@ pub const level_b = levelB;
 const mod_namespace = @import("./comptime/mod_namespace.zig");
 const inline_types = @import("./comptime/inline_types.zig");
 const nested_types = @import("./comptime/nested_types.zig");
+const component_types = @import("./comptime/component_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
 const type_token = @import("./comptime/type_token.zig");
@@ -1876,7 +1877,19 @@ fn analyzeSource(
     for (try std_calls.itemsOf(arena, namespaced)) |it| {
         try reflection.stdCalls.put(reflection.arena, try reflectionMod.Reflection.scopeKey(reflection.arena, mod.path, it.local), it);
     }
-    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_calls.expand(arena, namespaced, stdKeyOf(mod.path)))));
+    const hoisted = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_calls.expand(arena, namespaced, stdKeyOf(mod.path)))));
+    // Decision 804 (1): a type implementing `Component<R>` is the component
+    // its `compose` is the body of, and the record its `self` reads.
+    const nested = switch (try component_types.expand(arena, hoisted)) {
+        .ok => |r| blk: {
+            for (r.composed) |c| try env.composedTypes.put(env.arena, c.record, c.component);
+            break :blk r.program;
+        },
+        .refused => |te| {
+            env.deinit();
+            return .{ .typeError = te };
+        },
+    };
     // Decision 298: a module that reads a catalogue entry's typed meta
     // (`d.meta(T)`) declares the function the read calls, inferred with it.
     // Decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` is the

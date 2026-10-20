@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: component-use-outside-compose: `use` in `Card.mode`, a helper of the type component `Card` — hooks are read in its `compose` alone (decision 804 (1))
+at src/main.bp:19:17

@@ -2697,6 +2697,22 @@ the server renders.
 
 <!-- example: modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_default_fn_sync -->
 
+**A type is a component** (decisions 804 (1), 593 (2)). A type implementing
+`Component<R>` is the `fn` component it reads as: its fields are the props
+(defaults, optionals and type parameters as a function's), its `fn
+compose(self: Self) -> Component<R>` is the body — hooks read there, the fields
+on `self`, the type's other methods ordinary helpers — and `Card(…)` answers
+the component, never a record, so a caller cannot tell the two forms apart.
+Refused, located: a type with no `compose` (`component-compose-missing`), a
+`compose` of another signature (`implement-signature-differs`, decision 800),
+a field typed `RenderScope` (`component-scope-field`, 388 (5)), a `use` in a
+helper (`component-use-outside-compose`) and `Card.compose()` called by hand
+(`component-compose-called`).
+
+<!-- example: modules/decisions-taken/component_compose_entry-804/cells/component_compose_entry -->
+
+<!-- example: modules/decisions-taken/component_compose_entry-804/cells/component_compose_signature_differs -->
+
 **Contexts** (decisions 354, 378, 379, 722, 723). What a body reads from above
 it is a context; its identity is its value's type. std's
 `context.createContext(value)` makes one; written as a module-level `val`'s

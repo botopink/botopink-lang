@@ -191,6 +191,9 @@ pub const FnContext = struct {
     /// Decision 354 — true when the return is `@Component<R>` with an `R` that
     /// implements `@Renderable`: a component, whose body may `use provide`.
     renderable: bool = false,
+    /// Decision 804 (1) — set on a helper method of a type component (the
+    /// component's name): hooks are read in its `compose` alone.
+    composeHelperOf: ?[]const u8 = null,
 };
 
 /// Decision 354 — what a name imported from std's `context` module declares;
@@ -1317,6 +1320,11 @@ pub const Env = struct {
     /// children scope and answers its `R` (`context_lower.zig`), where a hook's
     /// `use` runs it with the scope the body received.
     componentUses: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 804 (1) — the module's type components, as
+    /// `component_types.zig` rewrote them: the record a `compose` body's
+    /// `self` reads (`Card__Self`) to the component's name (`Card`). A helper
+    /// of the record takes no `use`, and `Card.compose()` is refused.
+    composedTypes: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Every `use`'s operand type, by the `use`'s location: the `R` a `use`
     /// of a value that is no call (`use c`) runs, carried for wasm.
     useOperandTypes: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,

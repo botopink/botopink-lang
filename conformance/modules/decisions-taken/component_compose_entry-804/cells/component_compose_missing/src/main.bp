@@ -1,0 +1,18 @@
+//// Decision 804 (1) — a type implementing `Component<R>` is a component
+//// whose body is its `fn compose(self: Self) -> Component<R>`; one that
+//// declares no `compose` is refused at the type.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Card(title: string) implement Component<View> {
+    fn render(self: Self) -> Component<View> {
+        return View(text: self.title);
+    }
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Card(title: "x").run(RenderScope.root());
+    print(r.value.text);
+}
