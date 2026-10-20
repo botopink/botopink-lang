@@ -98,6 +98,8 @@ helper() ->
             {fail, Msg, ALoc};
         error:{bp_assert, Msg, ALoc} ->
             {fail, Msg, ALoc};
+        error:{panic, PMsg} when erlang:is_binary(PMsg) ->
+            {fail, PMsg, Loc};
         Class:Reason ->
             {fail, {Class, Reason}, Loc}
     end,

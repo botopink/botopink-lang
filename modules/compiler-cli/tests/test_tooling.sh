@@ -110,16 +110,18 @@ failrun() { # failrun <target>
   echo "$out"
   [[ $code -ne 0 ]] || fail "$1: a run with a failing test must exit non-zero"
   grep -q "ok   this one passes" <<<"$out" || fail "$1: the passing test should still run"
-  grep -qF "FAIL this one fails with a custom message  (double(2) should be five)  at src/main.bp:22" <<<"$out" ||
-    fail "$1: the assert's FAIL line should carry its message at src/main.bp:22"
-  grep -qF "FAIL t: fails  (went wrong)  at src/main.bp:25" <<<"$out" ||
-    fail "$1: the try's FAIL line should carry the error string at src/main.bp:25"
-  grep -qF "TEST src/main.bp:17 this one passes" <<<"$out" || fail "$1: the TEST line should name src/main.bp"
-  grep -q "1 passed, 2 failed" <<<"$out" || fail "$1: expected a 1-pass / 2-fail summary"
-  [[ "$(tail -1 <<<"$out")" == "total: 1 passed, 2 failed in 1 module(s)" ]] || fail "$1: the last line should be the run's total, got: $(tail -1 <<<"$out")"
+  grep -qF "FAIL this one fails with a custom message  (double(2) should be five)  at src/main.bp:25" <<<"$out" ||
+    fail "$1: the assert's FAIL line should carry its message at src/main.bp:25"
+  grep -qF "FAIL t: fails  (went wrong)  at src/main.bp:28" <<<"$out" ||
+    fail "$1: the try's FAIL line should carry the error string at src/main.bp:28"
+  grep -qF "TEST src/main.bp:20 this one passes" <<<"$out" || fail "$1: the TEST line should name src/main.bp"
+  grep -qF "FAIL t: panics  (boom)  at src/main.bp:" <<<"$out" ||
+    fail "$1: a panic's FAIL line should carry the plain message, not the raw term"
+  grep -q "1 passed, 3 failed" <<<"$out" || fail "$1: expected a 1-pass / 3-fail summary"
+  [[ "$(tail -1 <<<"$out")" == "total: 1 passed, 3 failed in 1 module(s)" ]] || fail "$1: the last line should be the run's total, got: $(tail -1 <<<"$out")"
 }
 failrun commonJS
-if command -v escript >/dev/null 2>&1; then failrun erlang; fi
+if command -v escript >/dev/null 2>&1; then failrun erlang; failrun beam; fi
 
 # ── botopink test names every snapshot candidate it leaves ─────────────────────
 # The `snap` library writes `<path>.new` for a missing or a mismatched snapshot;

@@ -1,10 +1,13 @@
 // test-tooling fixture (mixed pass/fail): one passing test, one failing
-// `assert cond, "msg"` and one `try` on an `Error`. The runner must (a) surface
+// `assert cond, "msg"`, one `try` on an `Error` and one `panic("boom")`. The runner must (a) surface
 // the custom message and the error string in the FAIL lines, (b) name the
 // package-relative file (`src/main.bp:<line>`) in each, (c) still run the
 // passing test, and (d) exit non-zero. The harness (../../test_tooling.sh)
 // asserts all four. The failing assert also shows the runner catches a thrown
-// assertion gracefully rather than crashing.
+// assertion gracefully rather than crashing. The panic's FAIL line carries the
+// plain message on every target, never the raw `{error,{panic,…}}` term.
+
+import {failure.panic} from "std";
 
 fn double(n: i32) -> i32 {
     return n * 2;
@@ -24,4 +27,8 @@ test "this one fails with a custom message" {
 
 test "t: fails" {
     try failing();
+}
+
+test "t: panics" {
+    panic("boom");
 }

@@ -346,6 +346,7 @@ const test_runner_body =
     \\            catch
     \\                error:{bp_assert, Msg, ALoc, _} -> {fail, Msg, ALoc};
     \\                error:{bp_assert, Msg, ALoc} -> {fail, Msg, ALoc};
+    \\                error:{panic, PMsg} when is_binary(PMsg) -> {fail, PMsg, Loc};
     \\                Class:Reason -> {fail, {Class, Reason}, Loc}
     \\            end,
     \\        T1 = erlang:monotonic_time(millisecond),

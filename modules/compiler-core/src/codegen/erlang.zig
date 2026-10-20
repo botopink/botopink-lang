@@ -2773,23 +2773,32 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, impor
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
-    const outcome = try b.match(V("Outcome"), .{ .try_catch = .{
-        .body = try b.body(&.{ .{ .apply = .{ .fun = try b.ptr(V("Fun")) } }, A("ok") }),
-        .catches = try b.arena.dupe(Ast.Clause, &.{
-            .{
-                .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc"), V("_") }))}),
-                .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
-            },
-            .{
-                .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc") }))}),
-                .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
-            },
-            .{
-                .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
-                .body = try b.body(&.{try b.tuple(&.{ A("fail"), try b.tuple(&.{ V("Class"), V("Reason") }), V("Loc") })}),
-            },
-        }),
-    } });
+    const outcome = try b.match(V("Outcome"), .{
+        .try_catch = .{
+            .body = try b.body(&.{ .{ .apply = .{ .fun = try b.ptr(V("Fun")) } }, A("ok") }),
+            .catches = try b.arena.dupe(Ast.Clause, &.{
+                .{
+                    .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc"), V("_") }))}),
+                    .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
+                },
+                .{
+                    .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc") }))}),
+                    .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
+                },
+                .{
+                    // `panic("boom")` raises `{panic, <<"boom">>}`: the test fails with the
+                    // plain message, as commonJS prints it, never the raw term.
+                    .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("panic"), V("PMsg") }))}),
+                    .guards = try b.exprs(&.{try b.remote("erlang", "is_binary", &.{V("PMsg")})}),
+                    .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("PMsg"), V("Loc") })}),
+                },
+                .{
+                    .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+                    .body = try b.body(&.{try b.tuple(&.{ A("fail"), try b.tuple(&.{ V("Class"), V("Reason") }), V("Loc") })}),
+                },
+            }),
+        },
+    });
     const fail_pattern = try b.tuple(&.{ A("fail"), V("FMsg"), V("FLoc") });
     const report = try b.caseOf(V("Outcome"), &.{
         .{ .patterns = try b.exprs(&.{A("ok")}), .body = try b.body(&.{ try ioFormat(b, "  ok   ~ts~n", &.{V("Name")}), A("ok") }) },
