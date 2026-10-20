@@ -404,6 +404,9 @@ pub fn codegenEmit(
                     for (dep_mods.items) |o| {
                         const dok = &o.outcome.ok;
                         if (visited.contains(o.name) or !erlangBackend.moduleHasInit(dok.transformed)) continue;
+                        // Decisions 787, 792 (2) — a loaded package's bodies run at
+                        // `run()`, never with the program's own.
+                        if (crossModule.isLoadedModule(o.name)) continue;
                         try visited.put(o.name, {});
                         try collectLinks(alloc, scope.outputs, &scope.cross, dok.transformed, &visited, &linked, entry);
                         try linked.append(alloc, .{
@@ -752,6 +755,14 @@ fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: [
         return true;
     };
     return false;
+}
+
+/// The name of the function holding a loaded package's initialisers.
+const loaded_init_prefix = "__bp_loaded_init__";
+
+/// The package of a loaded module's path (`bp_load__a__b/mod` → `bp_load__a__b`).
+fn loadedPackageOf(module: []const u8) []const u8 {
+    return module[0 .. std.mem.indexOfScalar(u8, module, '/') orelse module.len];
 }
 
 /// `link_mangled`'s key: the module that declares `name`, then the name.
@@ -1675,7 +1686,9 @@ fn emitWatPass(
         var is_linked_main = false;
         switch (d) {
             .@"fn" => |f| if (isMain0(f)) {
-                if (!main_imported) continue;
+                // A loaded package's `main` is its `__bp_loaded_main`'s
+                // (decisions 787, 792), mangled beside the entry's.
+                if (!main_imported and !crossModule.isLoadedModule(l.name)) continue;
                 is_linked_main = true;
             },
             .@"test", .use, .mod, .comment => continue,
@@ -1925,8 +1938,21 @@ fn emitWatPass(
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
         em.global_renames = if (val_maps.len > 0) &val_maps[from] else null;
         em.foreign_origin = if (from < linked.len) linked[from].via else null;
+        em.loaded_pkg = if (from < linked.len and crossModule.isLoadedModule(linked[from].name)) loadedPackageOf(linked[from].name) else null;
         const before = em.items.items.len;
         try em.emitDecl(decl);
+        // Decisions 787, 792 (2) — the loaded root's `__bp_loaded_main` begins
+        // with its package's initialisers.
+        if (em.loaded_pkg) |pkg| if (decl == .@"fn" and std.mem.endsWith(u8, decl.@"fn".name, @import("../comptime/load.zig").loaded_main_fn)) {
+            for (em.items.items[before..]) |*it| if (it.* == .func) {
+                const lines = try ar0.alloc(wat.Line, it.func.body.lines.len + 1);
+                lines[0] = .{ .instr = .{ .call = try std.fmt.allocPrint(ar0, "{s}{s}", .{ loaded_init_prefix, pkg }) }, .folded = true };
+                @memcpy(lines[1..], it.func.body.lines);
+                it.func.body.lines = lines;
+                try em.loaded_inits_called.put(em.alloc, pkg, {});
+            };
+        };
+        em.loaded_pkg = null;
         // Front 164 s2 P2b — the functions a linked module's declarations
         // brought (`finishGc` may stub one nothing reaches).
         if (em.mode == .gc and from < linked.len) for (em.items.items[before..]) |it| if (it == .func) try em.gc_linked_fns.put(em.alloc, it.func.name, {});
@@ -1990,7 +2016,7 @@ fn emitWatPass(
 
     // Runs at instantiation, ahead of `_start`: fills in the globals whose
     // initialiser is not a constant expression.
-    if (em.deferred_globals.items.len > 0)
+    if (em.has_start_init)
         try items.append(ar, .{ .start = "__init_globals" });
 
     for (em.data_segments.items) |seg| {
@@ -2742,6 +2768,16 @@ const Emitter = struct {
     /// The `global_renames` each `deferred_globals` entry was declared under,
     /// so `$__init_globals` reads its initialiser in its own module.
     deferred_renames: std.ArrayListUnmanaged(?*const std.StringHashMapUnmanaged([]const u8)) = .empty,
+    /// The loaded package (decisions 787, 792 (2)) each `deferred_globals`
+    /// entry belongs to, null for the program's own: a loaded package's
+    /// initialisers run at its `run()`, in `$__bp_loaded_init__<package>`.
+    deferred_pkg: std.ArrayListUnmanaged(?[]const u8) = .empty,
+    /// The loaded packages whose `__bp_loaded_main` calls their init function.
+    loaded_inits_called: std.StringHashMapUnmanaged(void) = .empty,
+    /// The loaded package whose declaration is being emitted.
+    loaded_pkg: ?[]const u8 = null,
+    /// Whether `$__init_globals` exists (the module's `(start …)`).
+    has_start_init: bool = false,
     /// `<module>\x00<name>` → `<module>/<name>`: a linked FUNCTION whose name
     /// an earlier declaration of the program already took (`emitWat`).
     link_mangled: std.StringHashMapUnmanaged([]const u8) = .empty,
@@ -3282,6 +3318,8 @@ const Emitter = struct {
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
+        self.deferred_pkg.deinit(self.alloc);
+        self.loaded_inits_called.deinit(self.alloc);
         self.link_mangled_vals.deinit(self.alloc);
         self.link_mangled_types.deinit(self.alloc);
         self.deferred_renames.deinit(self.alloc);
@@ -3351,6 +3389,7 @@ const Emitter = struct {
                     try self.deferred_stmts.put(self.alloc, v.name, {});
                     try self.deferred_globals.append(self.alloc, v);
                     try self.deferred_renames.append(self.alloc, self.global_renames);
+                    try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
                 }
             },
             .comment => |c| try self.itemComment(c.text),
@@ -10938,6 +10977,7 @@ const Emitter = struct {
             try self.item(.{ .global = .{ .name = v.name, .ty = .i32, .mutable = true, .init = "0" } });
             try self.deferred_globals.append(self.alloc, v);
             try self.deferred_renames.append(self.alloc, self.global_renames);
+            try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
             return;
         }
         // A `var` (front 17 step 2) is a mutable global on every path: the two
@@ -10960,6 +11000,7 @@ const Emitter = struct {
                     try self.item(.{ .global = .{ .name = v.name, .ty = self.vtOf(Repr.string), .mutable = true, .init = "0" } });
                     try self.deferred_globals.append(self.alloc, folded);
                     try self.deferred_renames.append(self.alloc, self.global_renames);
+                    try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
                     return;
                 }
                 const seg = try self.internString(str);
@@ -11015,18 +11056,56 @@ const Emitter = struct {
         } });
         try self.deferred_globals.append(self.alloc, v);
         try self.deferred_renames.append(self.alloc, self.global_renames);
+        try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
     }
 
     /// Emit `$__init_globals`, the body of the module's `(start …)`: every
     /// top-level `val` whose initialiser is not a wasm constant expression is
     /// evaluated here, in source order, before `main` runs.
     fn emitGlobalInit(self: *Emitter) !void {
-        if (self.deferred_globals.items.len == 0) return;
+        // The program's own initialisers, then each loaded package's
+        // (decisions 787, 792 (2)), in the order the packages were met.
+        var groups: std.ArrayListUnmanaged(?[]const u8) = .empty;
+        defer groups.deinit(self.alloc);
+        try groups.append(self.alloc, null);
+        for (self.deferred_pkg.items) |pkg| {
+            const p = pkg orelse continue;
+            var seen = false;
+            for (groups.items) |g| if (g != null and std.mem.eql(u8, g.?, p)) {
+                seen = true;
+            };
+            if (!seen) try groups.append(self.alloc, p);
+        }
+        // A package whose `__bp_loaded_main` calls its init function has one,
+        // empty when the package has no initialiser.
+        var called = self.loaded_inits_called.keyIterator();
+        while (called.next()) |k| {
+            var seen = false;
+            for (groups.items) |g| if (g != null and std.mem.eql(u8, g.?, k.*)) {
+                seen = true;
+            };
+            if (!seen) try groups.append(self.alloc, k.*);
+        }
+        for (groups.items) |group| try self.emitGlobalInitGroup(group);
+    }
+
+    fn sameGroup(a: ?[]const u8, b: ?[]const u8) bool {
+        if (a == null or b == null) return a == null and b == null;
+        return std.mem.eql(u8, a.?, b.?);
+    }
+
+    fn emitGlobalInitGroup(self: *Emitter, group: ?[]const u8) !void {
+        var any = false;
+        for (self.deferred_pkg.items) |pkg| if (sameGroup(pkg, group)) {
+            any = true;
+        };
+        if (!any and (group == null or !self.loaded_inits_called.contains(group.?))) return;
         self.resetFnState(null);
 
         var total_mems: u32 = 0;
         var total_trys: u32 = 0;
-        for (self.deferred_globals.items) |v| {
+        for (self.deferred_globals.items, self.deferred_pkg.items) |v, pkg| {
+            if (!sameGroup(pkg, group)) continue;
             total_mems += self.countMemsExpr(v.value.*);
             total_trys += countTrysExpr(v.value.*);
         }
@@ -11035,7 +11114,22 @@ const Emitter = struct {
 
         var c: Capture = .{};
         self.open(&c);
-        for (self.deferred_globals.items, self.deferred_renames.items) |v, renames| {
+        // A loaded package's initialisers run once, however many `run()`s
+        // reach its `main`.
+        if (group) |g| {
+            const name = try std.fmt.allocPrint(self.arena(), "__bp_loaded_ran__{s}", .{g});
+            try self.item(.{ .global = .{ .name = name, .ty = .i32, .mutable = true, .init = "0" } });
+            try self.emit(.{ .global_get = name });
+            var done: Capture = .{};
+            self.open(&done);
+            try self.emit(.@"return");
+            const done_seq = self.seal(&done, .terminated);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = done_seq } } });
+            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "1" } });
+            try self.emit(.{ .global_set = name });
+        }
+        for (self.deferred_globals.items, self.deferred_renames.items, self.deferred_pkg.items) |v, renames, pkg| {
+            if (!sameGroup(pkg, group)) continue;
             self.global_renames = renames;
             defer self.global_renames = null;
             if (self.deferred_stmts.contains(v.name)) {
@@ -11050,8 +11144,9 @@ const Emitter = struct {
         }
         const body = self.seal(&c, .none);
 
+        if (group == null) self.has_start_init = true;
         try self.item(.{ .func = try self.builder().func(.{
-            .name = "__init_globals",
+            .name = if (group) |g| try std.fmt.allocPrint(self.arena(), "{s}{s}", .{ loaded_init_prefix, g }) else "__init_globals",
             .locals = try self.localLines(),
             .body = body,
         }) });

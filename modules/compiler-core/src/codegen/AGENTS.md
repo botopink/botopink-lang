@@ -1854,6 +1854,9 @@ codegen/
   runs at `run()`), and erlang (`emitErlangModule`) and beam (`emitFn`)
   begin its root's `__bp_loaded_main` with the `'_botopink_init'/0` calls of
   its closure and its own.
+  wasm links a loaded package into the program's one module by name: its modules are never
+  a "declared" link (`programEntry`), the root's `main` is kept as `<module>/main`, its
+  initialisers run in `$__bp_loaded_init__<package>` (once), which its `__bp_loaded_main` calls first.
   The body is lowered BEFORE the runtime helpers are chosen (and written after
   them): a helper only a module-level initialiser reaches — a dependency whose
   one print is `val _x = @print("boot")` — was never defined, and the init
