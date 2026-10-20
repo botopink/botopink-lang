@@ -18028,8 +18028,30 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (vt.* == .named and env.throwContext == .result and std.mem.eql(u8, vt.named.name, "Result")) break :blk true;
                         break :blk false;
                     };
+                    // B-162 (decision 791) — a body written `-> Component<R>`
+                    // answers `R`: a returned component (`return mk(1)`, its
+                    // `R` a `Renderable`) is a lambda, not its answer, and the
+                    // types differ. `use` resolves it. A hook handing over
+                    // another hook whole keeps the rule below.
+                    if (env.returnWhole) |w| {
+                        const wd = w.deref();
+                        const vt = vp.getType().deref();
+                        if (w != target and wd.* == .named and std.mem.eql(u8, wd.named.name, "Component") and
+                            isComponentType(env, vt))
+                        {
+                            const rName = try snapshotMod.typeNameOf(env.arena, target.deref());
+                            const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected {s}, got {s} — a body written `-> {s}` answers `{s}`, and a component call only makes its lambda: resolve it with `use` (decision 791)", .{
+                                rName,
+                                try snapshotMod.typeNameOf(env.arena, vt),
+                                try snapshotMod.typeNameOf(env.arena, wd),
+                                rName,
+                            });
+                            env.lastError = TypeError.custom(msg, "Resolve the component with `use` and return its answer (`val v = use c; return v;`), or place it in the tree as a child (decision 791 (3)).").withLoc(rv.getLoc());
+                            return error.TypeError;
+                        }
+                    }
                     // A value that is already the declared wrapper (`return
-                    // state(start)` in a `-> @Component<X>` hook) unifies with
+                    // state(start)` in a `-> Component<X>` hook) unifies with
                     // the whole declared return type.
                     const whole: ?*T.Type = blk: {
                         const w = env.returnWhole orelse break :blk null;

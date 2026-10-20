@@ -2854,6 +2854,8 @@ behavior of the program's own — names a field or a method the behavior, or one
 extension of it; anything else is refused at the name (`infer.zig` `refuseBehaviorUnknownMember`: `unknown
 field 'zzz' on 'Component<View>': the behavior `Component` declares `run``) — it used to be typed a fresh
 variable and reach the backends (`modules/behavior_value_unknown_field`, `modules/behavior_value_unknown_method`).
+A `return` of a component (a `Component<…>` whose `R` is a `Renderable`) in a body written `-> Component<R>`
+(which answers `R`) is a type mismatch whose message names `use`; a hook handing over another hook whole is not (decision 791; `modules/component_return_needs_use`).
 
 ## A type-qualified call to a type's own method (decision 62)
 
