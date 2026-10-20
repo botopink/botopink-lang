@@ -1038,6 +1038,10 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   `member_fn.capturedLocals`) and `memberFnSource` splices each as a literal
   (`member_fn.literalSource`: a string, a number, a `bool`, `null`, an array
   of those; any other value is `decorator-member-local-not-literal`, 759).
+  A name the member or executor binds itself — a parameter, a `val`, a
+  pattern, a `catch { r -> … }` binder, an `if (x) { b -> … }` binding
+  (`member_fn.boundNames`) — is its own, never a captured local of the same
+  name.
 - **Decision 576 (13) — the types of `compiler.bp` are imported.** The
   records and enum the compiler hands a body (`Span`, `Source`,
   `ExprContext`, `CustomNode`, `DeclKind`, `HookNode`, `DeclAnnotation`,

@@ -16,6 +16,7 @@
 [cells/files_one_module_twice/src/main.bp](cells/files_one_module_twice/src/main.bp)
 [refused/src/cases/implementation_twice/mod.bp](refused/src/cases/implementation_twice/mod.bp)
 [cells/init_executor_before_main/src/main.bp](cells/init_executor_before_main/src/main.bp)
+[cells/init_executor_binder_shadows_local/src/main.bp](cells/init_executor_binder_shadows_local/src/main.bp)
 [cells/init_executor_from_library/src/main.bp](cells/init_executor_from_library/src/main.bp)
 [refused/src/cases/removed_type_bare_param/mod.bp](refused/src/cases/removed_type_bare_param/mod.bp)
 [refused/src/cases/type_param_binds_mismatch/mod.bp](refused/src/cases/type_param_binds_mismatch/mod.bp)

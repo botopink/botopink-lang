@@ -236,6 +236,10 @@ const Binder = struct {
                 // `params` of a lambda, a fn expression, a loop, a trailing block.
                 if (comptime std.mem.eql(u8, fl.name, "params") and fl.type == []const []const u8) {
                     for (@field(v, fl.name)) |n| try self.add(n);
+                } else if (comptime (std.mem.eql(u8, fl.name, "binder") or std.mem.eql(u8, fl.name, "binding")) and fl.type == ?[]const u8) {
+                    // A `catch { e -> … }` binder (decision 595 (3)), an
+                    // `if (x) { b -> … }` binding: a name the node binds.
+                    if (@field(v, fl.name)) |n| try self.add(n);
                 } else if (comptime T != ast.Loc and T != ast.TypeRef) {
                     try self.walk(fl.type, @field(v, fl.name));
                 }
