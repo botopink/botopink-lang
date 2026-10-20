@@ -9,6 +9,7 @@
 ///      constructor types for them.
 ///   2. Infer the type of every expression/declaration and bind the result.
 const std = @import("std");
+const adoptDefaults = @import("adopt_defaults.zig");
 const compilerSurface = @import("../parser/compiler_surface.zig");
 const inlineTypes = @import("./inline_types.zig");
 const ast = @import("../ast.zig");
@@ -800,22 +801,29 @@ pub const literal_type_names = ast.literal_type_names;
 
 /// Decision 639 (a) — `type i32(value: i64)` refused at the name,
 /// `primitive-type-redeclared`: a shadowing `i32` would make `val x: i32 = 1`
-/// a mismatch between two `i32`s.
+/// a mismatch between two `i32`s. Decision 799 (3) — a `behavior string { … }`
+/// is a behavior named like that type, refused alike: a program adds members
+/// to a primitive through a contract of its own implemented for it.
 fn refuseTypesNamedLikeLiterals(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| {
-        const name, const loc: ast.Loc = switch (decl) {
+        const name, const loc: ast.Loc, const what = switch (decl) {
             // The shorthand's `loc` is its name; the val form's is `type`.
-            .type_ => |t| .{ t.name, t.loc },
+            .type_ => |t| .{ t.name, t.loc, "type" },
             // An alias's `loc` is its `type` keyword: the name follows it.
-            .typeAlias => |a| .{ a.name, .{ .line = a.loc.line, .col = a.loc.col + "type ".len, .expansion = a.loc.expansion } },
+            .typeAlias => |a| .{ a.name, ast.Loc{ .line = a.loc.line, .col = a.loc.col + "type ".len, .expansion = a.loc.expansion }, "type" },
+            .behavior => |b| .{ b.name, b.nameLoc, "behavior" },
             else => continue,
         };
         const taken = for (literal_type_names) |n| {
             if (std.mem.eql(u8, n, name)) break true;
         } else false;
         if (!taken) continue;
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is the type of a literal; a module cannot declare a type of that name", .{ diagnostics.primitive_type_redeclared, name });
-        env.lastError = locatedAt(TypeError.custom(msg, "Rename the type: a literal is typed by the language, never by a name this module declares (decision 639)."), loc);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is the type of a literal; a module cannot declare a {s} of that name", .{ diagnostics.primitive_type_redeclared, name, what });
+        const hint = if (decl == .behavior)
+            try std.fmt.allocPrint(env.arena, "A program adds members to `{s}` through a contract of its own implemented for it: `behavior Shout {{ … }}` then `StringShout implement Shout for {s} {{}}` (decision 799).", .{ name, name })
+        else
+            "Rename the type: a literal is typed by the language, never by a name this module declares (decision 639).";
+        env.lastError = locatedAt(TypeError.custom(msg, hint), loc);
         return error.TypeError;
     }
 }
@@ -1407,12 +1415,32 @@ fn validateImplement(
                     break;
                 }
             }
+            // Decision 799 (1) — a primitive's own member meets a contract's
+            // required one: `StringShout implement Shout for string {}` over
+            // `fn length(self: Self) -> i32;` is met by `string`'s `length`.
+            if (!covered and primitiveAnswers(env, impl.target, am.name)) covered = true;
             if (!covered) {
                 env.lastError = locatedAt(TypeError.missingMethod(impl.target, iname, am.name), impl.loc);
                 return error.TypeError;
             }
         }
     }
+}
+
+/// Whether the primitive `typeName` answers `member` by a member of its own —
+/// one its std behavior (`String` for `string`), or what that extends,
+/// declares as a method or a field.
+fn primitiveAnswers(env: *Env, typeName: []const u8, member: []const u8) bool {
+    var current: ?[]const u8 = primitiveInterfaceName(typeName) orelse return false;
+    var guard: usize = 0;
+    while (current) |cname| : (guard += 1) {
+        if (guard >= 16) return false;
+        const decl = env.stdBehaviorBase.get(cname) orelse env.assocInterfaceDecls.get(cname) orelse return false;
+        for (decl.methods) |m| if (std.mem.eql(u8, m.name, member)) return true;
+        for (decl.fields) |f| if (std.mem.eql(u8, f.name, member)) return true;
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    return false;
 }
 
 // ── stdlib preload ────────────────────────────────────────────────────────────
@@ -2740,6 +2768,13 @@ fn extendStdBehavior(env: *Env, d: ast.BehaviorDecl) InferError!ast.BehaviorDecl
     };
     for (d.methods) |m| for (base.methods) |bm| {
         if (!std.mem.eql(u8, m.name, bm.name)) continue;
+        // Decision 799 (4) — a contract's member the primitive already has,
+        // refused at the implementation that would add it.
+        if (m.adoptedBy) |by| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is a member of `{s}` already — `{s} implement {s} for {s}` adds members to `{s}` and redeclares none", .{ diagnostics.behavior_member_redeclared, by.contract, m.name, by.target, by.implementation, by.contract, by.target, by.target });
+            env.lastError = TypeError.custom(msg, "Give the contract's member another name.").withLoc(by.loc);
+            return error.TypeError;
+        }
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is a member of std's `{s}` already — a program's `behavior {s}` adds members to std's and redeclares none", .{ diagnostics.behavior_member_redeclared, d.name, m.name, d.name, d.name });
         var e = TypeError.custom(msg, "Give the member another name.");
         if (m.returnTypeLoc.line != 0) e = e.withLoc(m.returnTypeLoc);
@@ -9316,6 +9351,11 @@ fn inferBehaviorDefaultBodies(env: *Env, d: ast.BehaviorDecl) InferError!void {
     var it2 = env.instanceLowerings.iterator();
     while (it2.next()) |e| {
         if (before.contains(e.key_ptr.*)) continue;
+        // Decision 799 — a contract's member copied onto a primitive
+        // (`adopt_defaults.zig`) is emitted for that primitive alone, at
+        // lines of its own: a receiver it types as a primitive beside `self`
+        // (`ys.all(…)` over `ys: Self<T>`) keeps its lowering.
+        if (e.key_ptr.line >= adoptDefaults.first_line and e.value_ptr.* == .prim) continue;
         try added.append(env.arena, e.key_ptr.*);
     }
     for (added.items) |k| _ = env.instanceLowerings.remove(k);
@@ -21409,7 +21449,7 @@ fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, lo
         try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}` — did you mean `{s}`?", .{ diagnostics.unknown_primitive_method, tn, callee, sugg })
     else
         try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}`", .{ diagnostics.unknown_primitive_method, tn, callee });
-    const hint = try std.fmt.allocPrint(env.arena, "The methods of `{s}` are the ones `{s}` declares in the std prelude (`primitives.bp`), and those an `extend` block adds.", .{ tn, ifaceName });
+    const hint = try std.fmt.allocPrint(env.arena, "The methods of `{s}` are the ones `{s}` declares in the std prelude (`primitives.bp`), and those of a contract implemented for it (`implement <Behavior> for {s}`, decision 799).", .{ tn, ifaceName, tn });
     env.lastError = TypeError.custom(msg, hint).withLoc(loc);
     return error.TypeError;
 }

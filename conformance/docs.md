@@ -951,6 +951,26 @@ commonJS. A module declaring a width is refused at the name,
 
 <!-- example: modules/decisions-taken/primitive_type_redeclared_refused-639/cells/primitive_width_redeclared_refused -->
 
+A program adds members to a primitive type through a contract of its own
+implemented for it (decision 799): `behavior Shout { default fn tailShout(self:
+Self) -> string { … } }` then `StringShout implement Shout for string {}`, and
+every `string` answers `tailShout` beside its own members — `"a+b".tailShout()`
+is `a+b!`. `array<T>` takes one the same way, `ArrPick<T> implement Pick<T> for
+array<T> {}`. A contract's required member that the primitive already has is met
+by it; a `default fn` it already has is refused at the implementation,
+`behavior-member-redeclared`. The primitive is no value of the contract (an
+extension block, decision 684). A lowercase `behavior string { … }` is a behavior
+named like a literal's type, `primitive-type-redeclared`, and `extend string { … }`
+adds no member, naming `implement <Behavior> for string`:
+
+<!-- example: modules/primitive_member_by_contract -->
+
+<!-- example: modules/program/cells/program_primitive_behavior_redeclares_std -->
+
+<!-- example: modules/primitive_behavior_named_like_type_refused -->
+
+<!-- example: modules/primitive_extend_refused -->
+
 Neither `Pair` nor `Function` is a name of the prelude (decision 738): a pair is
 the tuple `#(A, B)`, and the combinators `identity`, `compose`, `flip` and
 `constant` are std's `functions` module:

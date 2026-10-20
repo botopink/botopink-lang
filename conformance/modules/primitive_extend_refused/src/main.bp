@@ -1,0 +1,14 @@
+//// Decision 799 (3) — `extend` adds no member to a primitive: `StringExtras extend string { … }` keeps its refusal,
+//// naming `implement <Behavior> for string`, the form that does.
+
+import {io.terminal.print} from "std";
+
+StringExtras extend string {
+    fn tailShout(self: Self) -> string {
+        return self + "!";
+    }
+};
+
+pub fn main() -> void {
+    print("a+b".tailShout());
+}

@@ -2702,6 +2702,11 @@ const Emitter = struct {
     /// The primitive kind `self` carries while an interface `default fn` body
     /// is emitted (inference recorded nothing for the prelude's bodies).
     self_prim_kind: ?envMod.PrimKind = null,
+    /// Whether that `default fn` is the prelude's. A program's own — one it
+    /// declares, or a contract's member it implemented for the primitive
+    /// (decision 799) — was inferred where it is written, so a receiver other
+    /// than `self` (`ys.all(…)`) reads its recorded lowering.
+    self_prim_from_prelude: bool = true,
     /// The outer names a `lists:foldl` loop fun threads as its accumulator
     /// while its body is emitted — `break`/`continue` return them.
     fold_group: ?[]const []const u8 = null,
@@ -8772,7 +8777,10 @@ const Emitter = struct {
             self.emitted_defaults += 1;
             const saved_kind = self.self_prim_kind;
             defer self.self_prim_kind = saved_kind;
+            const saved_prelude = self.self_prim_from_prelude;
+            defer self.self_prim_from_prelude = saved_prelude;
             self.self_prim_kind = primKindForIface(d.iface);
+            self.self_prim_from_prelude = d.method.from_prelude;
             self.cur_fn_name = d.method.name;
             try self.emitMethodAsFn(d.iface, d.method);
         }
@@ -8792,8 +8800,8 @@ const Emitter = struct {
 
     fn instanceLowering(self: *const Emitter, loc: ast.Loc, recv: ast.Expr) ?envMod.InstanceLowering {
         if (self.self_prim_kind != null) {
-            const k = self.selfPrimKind(recv) orelse return null;
-            return .{ .prim = k };
+            if (self.selfPrimKind(recv)) |k| return .{ .prim = k };
+            if (self.self_prim_from_prelude) return null;
         }
         return self.instance_lowerings.get(loc);
     }

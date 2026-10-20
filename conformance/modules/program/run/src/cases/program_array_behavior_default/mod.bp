@@ -1,16 +1,29 @@
-//// A program's own `behavior Array<T>` extends std's `Array`: its default fns
-//// call std's members on `self` (`at`, `length`, `filter`, `all`,
-//// `contains`, `join`), take a `T` and a `Self<T>` beside `self`, and answer
-//// `?T`, `T`, `Self<T>`, a bool and a string — over integers, strings and
-//// records. wasm trapped on every one (`prim method not lowered on wasm`);
-//// it calls a copy of the default with `Self<T>` written as the receiver's
-//// array type and `T` as its element.
+//// A program's own contract implemented for `array<T>` (decision 799 (2))
+//// gives every array its default fns: they call std's members on `self`
+//// (`at`, `length`, `filter`, `all`, `contains`, `join`, which the contract
+//// declares and `array<T>`'s own members meet), take a `T` and a `Self<T>`
+//// beside `self`, and answer `?T`, `T`, `Self<T>`, a bool and a string — over
+//// integers, strings and records. wasm trapped on every one (`prim method not
+//// lowered on wasm`); it calls a copy of the default with `Self<T>` written as
+//// the receiver's array type and `T` as its element.
 
 import {io.terminal.print} from "std";
 
 type P(x: i32)
 
-behavior Array<T> {
+behavior Pick<T> {
+    val length: i32;
+
+    fn at(self: Self<T>, index: i32) -> ?T;
+
+    fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
+
+    fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool;
+
+    fn contains(self: Self<T>, x: T) -> bool;
+
+    fn join(self: Self<T>, sep: string) -> string;
+
     default fn second(self: Self<T>) -> ?T {
         return self.at(1);
     }
@@ -35,6 +48,8 @@ behavior Array<T> {
         return self.join(",");
     }
 }
+
+ArrPick<T> implement Pick<T> for array<T> {};
 
 pub fn runCase() -> void {
     val xs = [1, 2, 3, 4];

@@ -1026,9 +1026,27 @@ pub const Parser = struct {
     /// true for a named shorthand decl `Name <kind> …` or `pub Name <kind> …`,
     /// used to detect `Name implement …` / `Name extend …`.
     pub inline fn checkNamedDecl(this: *This, kind: TokenKind) bool {
-        if (this.check(.identifier)) return this.peekAt(1).kind == kind;
-        if (this.check(.@"pub")) return this.peekAt(1).kind == .identifier and this.peekAt(2).kind == kind;
+        if (this.check(.identifier)) return this.kindAfterGenerics(1) == kind;
+        if (this.check(.@"pub")) return this.peekAt(1).kind == .identifier and this.kindAfterGenerics(2) == kind;
         return false;
+    }
+
+    /// The kind of the token at `at`, or — when a `<…>` list of type
+    /// parameters starts there (`ArrShout<T> implement …`, decision 799 (2))
+    /// — of the token after its closing `>`.
+    fn kindAfterGenerics(this: *This, at: usize) TokenKind {
+        if (this.peekAt(at).kind != .lessThan) return this.peekAt(at).kind;
+        var i = at + 1;
+        var depth: usize = 1;
+        while (depth > 0) : (i += 1) {
+            switch (this.peekAt(i).kind) {
+                .lessThan => depth += 1,
+                .greaterThan => depth -= 1,
+                .identifier, .comma, .colon, .equal, .pipe => {},
+                else => return this.peekAt(i).kind,
+            }
+        }
+        return this.peekAt(i).kind;
     }
 
     /// true if a removed `*fn` declaration is next: `*fn` or `pub *fn`. Used
@@ -1871,6 +1889,8 @@ pub const Parser = struct {
         isPub: bool,
         name: []const u8,
         annotations: []Annotation,
+        /// Where the name is written.
+        nameLoc: ast.Loc = .{ .line = 0, .col = 0 },
     };
 
     /// Frees an owned annotation slice (used on declaration parse-error paths).
@@ -1890,19 +1910,19 @@ pub const Parser = struct {
             errdefer freeAnnotations(alloc, annotations);
             const isPub = this.match(.@"pub");
             _ = try this.consume(keyword);
-            const name = (try this.consume(.identifier)).lexeme;
+            const nameTok = try this.consume(.identifier);
             _ = this.tryParseId();
-            return .{ .isPub = isPub, .name = name, .annotations = annotations };
+            return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok) };
         }
         const isPub = this.match(.@"pub");
         _ = try this.consume(.val);
-        const name = (try this.consume(.identifier)).lexeme;
+        const nameTok = try this.consume(.identifier);
         _ = this.tryParseId();
         _ = try this.consume(.equal);
         const annotations = try this.parseAnnotations(alloc);
         errdefer freeAnnotations(alloc, annotations);
         _ = try this.consume(keyword);
-        return .{ .isPub = isPub, .name = name, .annotations = annotations };
+        return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok) };
     }
 
     // ── expression helper ─────────────────────────────────────────────────────

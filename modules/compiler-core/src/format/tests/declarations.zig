@@ -160,6 +160,12 @@ test "format: implement ---- shorthand named pub" {
     );
 }
 
+test "format: implement ---- shorthand with type parameters and a generic target (decision 799 (2))" {
+    try h.assertFormat(std.testing.allocator,
+        \\ArrPick<T> implement Pick<T> for array<T> {};
+    );
+}
+
 test "format: extend ---- shorthand named" {
     try h.assertFormat(std.testing.allocator,
         \\PatoExtra extend Pato {

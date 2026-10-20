@@ -858,7 +858,22 @@ pub fn parseImplementBody(
     }
 
     _ = try this.consume(.@"for");
-    const target = (try this.consume(.identifier)).lexeme;
+    const targetTok = try this.consume(.identifier);
+    const target = targetTok.lexeme;
+    // Decision 799 (2) — `for array<T>`: the target's type arguments.
+    var targetArgs: std.ArrayList(TypeRef) = .empty;
+    errdefer {
+        for (targetArgs.items) |*t| t.deinit(alloc);
+        targetArgs.deinit(alloc);
+    }
+    if (this.match(.lessThan)) {
+        while (true) {
+            try targetArgs.append(alloc, try this.parseTypeRef(alloc));
+            if (!this.match(.comma)) break;
+        }
+        _ = try this.consume(.greaterThan);
+    }
+    const targetArgsSlice = try targetArgs.toOwnedSlice(alloc);
 
     const ifaceSlice = try interfaces.toOwnedSlice(alloc);
     errdefer {
@@ -874,6 +889,7 @@ pub fn parseImplementBody(
         .genericParams = genericParams,
         .interfaces = ifaceSlice,
         .target = target,
+        .targetArgs = targetArgsSlice,
         .methods = methods,
         .loc = parser.Parser.locFromToken(kwTok),
     };
@@ -1826,7 +1842,9 @@ pub fn parseBehaviorDecl(this: *This, alloc: std.mem.Allocator) ParseError!Behav
     const p = try this.parseDeclPreamble(alloc, .behavior, false);
     errdefer freeAnnotations(alloc, p.annotations);
     const extendsSlice = try this.parseExtendsClause(alloc);
-    return parseBehaviorBody(this, alloc, p.name, extendsSlice, p.annotations, p.isPub);
+    var decl = try parseBehaviorBody(this, alloc, p.name, extendsSlice, p.annotations, p.isPub);
+    decl.nameLoc = p.nameLoc;
+    return decl;
 }
 
 /// Shorthand: `#[…] [pub] behavior Name<G> extends B { … }`.
@@ -1839,6 +1857,7 @@ pub fn parseShorthandBehaviorDecl(this: *This, alloc: std.mem.Allocator) ParseEr
     errdefer alloc.free(early);
     const extendsSlice = try this.parseExtendsClause(alloc);
     var decl = try parseBehaviorBody(this, alloc, p.name, extendsSlice, p.annotations, p.isPub);
+    decl.nameLoc = p.nameLoc;
     if (early.len > 0) {
         if (decl.genericParams.len > 0) return failAt(this, .unexpectedToken, this.tokens[this.current - 1]);
         alloc.free(decl.genericParams);

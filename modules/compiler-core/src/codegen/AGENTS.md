@@ -2721,7 +2721,10 @@ codegen/
   `'<Iface>_<method>'(Self, …)` (`callIfaceDefault`/`emitNeededDefaults`,
   omitted trailing params filled from their declared defaults). Inside such a
   body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
-  the lowering of `self.m(…)`/`self.length`. The drain resumes at
+  the lowering of `self.m(…)`/`self.length`; a default the program wrote
+  (`from_prelude` false — its own `behavior String` member or a contract's
+  member implemented for the primitive, decision 799) reads the lowering
+  inference recorded for any other receiver (`self_prim_from_prelude`). The drain resumes at
   `emitted_defaults`: it runs again after every shim pass, and restarting at 0
   wrote each default a second time (`'Array_all'/2` twice — `erlc +from_asm`
   refuses the module with "label(s) referenced but not defined"), which any

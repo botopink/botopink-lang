@@ -2259,6 +2259,11 @@ pub const BehaviorMethod = struct {
     /// writes it on the types, never on the behavior (`external-on-behavior`
     /// does not read it). Left out of the AST dump.
     folded: bool = false,
+    /// Decision 799 — set on the copy of a contract's `default fn` that a
+    /// program's `Sym implement Contract for string {}` adds to the
+    /// primitive's members (`adopt_defaults.zig`): the implementation a
+    /// refusal of the member is located at. Left out of the AST dump.
+    adoptedBy: ?*const AdoptedBy = null,
 
     /// True when the method has a host implementation (decision 575 (6)).
     pub fn isExternal(this: BehaviorMethod) bool {
@@ -2288,8 +2293,18 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "folded", "markerLoc", "implementations", "nameLoc" }, &.{ "comments", "trailingComment", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "from_prelude", "folded", "markerLoc", "implementations", "nameLoc", "adoptedBy" }, &.{ "comments", "trailingComment", "marker" });
     }
+};
+
+/// Decision 799 — where a contract's member reached a primitive: the
+/// implementation (`StringShout implement Shout for string {}`), the contract
+/// that declares the member, the primitive, and the implementation's place.
+pub const AdoptedBy = struct {
+    implementation: []const u8,
+    contract: []const u8,
+    target: []const u8,
+    loc: Loc,
 };
 
 /// Decisions 663, 774 — the two members of `compiler` over an enum the
@@ -2977,6 +2992,10 @@ pub const BehaviorDecl = struct {
     methods: []BehaviorMethod,
     /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
     bodyComments: []const []const u8 = &.{},
+    /// Where the name is written — where a refusal of the declaration points
+    /// (`primitive-type-redeclared`). `{0,0}` when synthesised; left out of
+    /// the AST dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
@@ -2995,7 +3014,7 @@ pub const BehaviorDecl = struct {
     }
 
     pub fn jsonStringify(this: BehaviorDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
+        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{"bodyComments"});
     }
 };
 
@@ -4864,6 +4883,10 @@ pub const ImplementDecl = struct {
     interfaces: []TypeRef,
     /// The type this implement is for, e.g. "SmartCamera".
     target: []const u8,
+    /// The type arguments written on the target — `T` of `for array<T>`
+    /// (decision 799 (2)). Empty when none is written; left out of the AST
+    /// dump.
+    targetArgs: []TypeRef = &.{},
     methods: []ImplementMethod,
 
     /// Where the declaration is written (01 step 9 — the diagnostics about it
@@ -4875,12 +4898,14 @@ pub const ImplementDecl = struct {
         allocator.free(this.genericParams);
         for (this.interfaces) |*iface| iface.deinit(allocator);
         allocator.free(this.interfaces);
+        for (this.targetArgs) |*t| t.deinit(allocator);
+        if (this.targetArgs.len > 0) allocator.free(this.targetArgs);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
     }
 
     pub fn jsonStringify(this: ImplementDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
+        return stringifyOmitting(this, jws, &.{ "loc", "targetArgs" }, &.{});
     }
 };
 

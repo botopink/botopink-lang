@@ -701,16 +701,25 @@ into the second, `footer/2 undefined` on erlang) — four targets, no padding �
 `modules/decisions-taken/template_code_located_by_expansion-429/cells/template_built_code_diagnostic_located` (a diagnostic in built code at the place in the
 caller's text the code copies, after the two-byte `` @` ``; the parent binary located it at `1:20`).
 `test/program_primitive_behavior_extends_std` and `modules/program/cells/program_primitive_behavior_redeclares_std`
-(another front's finding) — a program's own `behavior String` adds members to std's `String` (its
-default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
-and redeclaring a std member is `behavior-member-redeclared`. `modules/program/run/src/cases/program_primitive_behavior_extends_std`
+— a program's own contract implemented for `string` (`StringShout implement Shout for string {}`,
+decision 799) adds its members to `string` (its default fns call `slice`, `startsWith`, `length` on
+`self`, the contract declaring the ones it calls and `string`'s own members meeting them, and std's
+members answer beside them), and a contract member `string` already has is
+`behavior-member-redeclared` at the implementation. `modules/program/run/src/cases/program_primitive_behavior_extends_std`
 is its running twin on all four targets, a
 `behavior Number` default beside it; wasm called no program-declared default fn of a primitive
-(it trapped) until `05-wasm`'s `lowerPrimDefault`. Both refused by the parent binary.
-`modules/program/run/src/cases/program_array_behavior_default` does the same for a program's `behavior Array<T>` — defaults
+(it trapped) until `05-wasm`'s `lowerPrimDefault`.
+`modules/program/run/src/cases/program_array_behavior_default` does the same for a contract implemented for `array<T>`
+(`ArrPick<T> implement Pick<T> for array<T> {}`) — defaults
 calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`, taking a `T` and a
 `Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
-on all four targets (wasm trapped: the copy did not substitute `Self<T>`).
+on all four targets (wasm trapped: the copy did not substitute `Self<T>`; beam aborted on `ys.all(…)`
+over a `Self<T>` parameter until a program's default read its recorded lowering). Decision 799's own
+cells: `modules/primitive_member_by_contract` (`"a+b".tailShout()` is `a+b!`, a contract of another
+module, `array<T>`'s `second`, four targets), `modules/primitive_behavior_named_like_type_refused`
+(`behavior string`, `primitive-type-redeclared` at the name) and `modules/primitive_extend_refused`
+(`extend string` keeps its refusal, naming `implement <Behavior> for string`; green on the parent
+binary, the kept rule). All but the last refused by the parent binary.
 Decision 206 (`from` names a package — std or a declared dependency — and a
 module of the importing package is imported by its path inside the braces) adds three `modules/`
 cells. `import_own_module_with_from` is the refusal: `import {area, perimeter as around} from

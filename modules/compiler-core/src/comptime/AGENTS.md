@@ -50,7 +50,7 @@ comptime/
 ├── reflection.zig     ← decision 216: what decorators record for reflection (`decl.setMeta`, `decl.addType`; decision 298's typed meta), one per compile session
 ├── typeinfo_all.zig   ← decision 216 (4): `@TypeInfo.all(with: d)` — the program's declarations carrying `d`, answered as a `Declared<unknown>[]` (decision 254)
 ├── builtins.zig       ← decision 252: the table of every `@name` builtin the compiler implements, held to `libs/std/src/primitives.bp` by its unit tests
-├── adopt_defaults.zig ← 144 B-19: a type implementing a behavior of another module receives a copy of each bodied instance `default fn` it does not write (what the behavior extends included, `comptime.zig` `behaviorsReached`), its locations moved past the module's lines (`first_line`), before the module is checked — so every backend lowers it as the type's own method; a generic behavior is not adopted this way
+├── adopt_defaults.zig ← 144 B-19: a type implementing a behavior of another module receives a copy of each bodied instance `default fn` it does not write (what the behavior extends included, `comptime.zig` `behaviorsReached`), its locations moved past the module's lines (`first_line`), before the module is checked — so every backend lowers it as the type's own method; a generic behavior is not adopted this way. Decision 799: a program's `Sym implement Contract for string {}` (or `for array<T>`, `bool`, `bigint`, `bytes`) copies the contract's bodied instance `default fn`s — of a contract of this module or an imported one, what it extends included — into the members of the std behavior that holds the primitive's (`primitiveHolder`: `String`, `Array<T>`, …), a synthesised `behavior String { … }` placed after the module's imports (or the program's own, when it writes one); a generic contract's type parameters are renamed to the holder's (`contractSubs`), and each copy carries the implementation (`ast.AdoptedBy`) a refusal of it is located at
 ├── assoc_types.zig    ← decision 216 (3): `Owner.Name` (an associated type) rewritten on the parsed program into the declared `Owner__Name`, its import item added
 ├── nested_types.zig   ← decision 330 (7): a type declared in a type's body (`TypeDecl.assocTypes`) hoisted as the top-level `Owner__Name` shown `Owner.Name` (`expand`, run by `analyzeSource` after `value_or_type` and on every embedded std module)
 ├── dsl_hygiene.zig    ← decision 112: a template's built code — the library's names resolve in the library
@@ -2562,8 +2562,17 @@ declaration already has is `behavior-member-redeclared` at the program's member.
 fns, `slice`'s default fill included, would be missing otherwise). A primitive behavior's default
 bodies type `self` as the primitive (`primitiveOfInterface`: `String` → `string`, `Array<T>` →
 `array<T>`), and `transform.zig` walks a behavior's default bodies whichever rewrite map is set
-(`self.slice(1)`'s fill). Cells: `test/program_primitive_behavior_extends_std`,
-`modules/program/cells/program_primitive_behavior_redeclares_std`.
+(`self.slice(1)`'s fill). Decision 799 reaches this path from a contract: `adopt_defaults.zig` copies
+the contract's default fns implemented for a primitive into the holder behavior (§ the folder map), a
+copy's `adoptedBy` making the redeclaration `behavior-member-redeclared` at the implementation; a
+copy keeps the `.prim` lowerings its body records (`inferBehaviorDefaultBodies`, lines past
+`adopt_defaults.first_line`), so a primitive receiver beside `self` (`ys.all(…)`) is lowered as one;
+and `validateImplement` takes a member the primitive already has (`primitiveAnswers`) as meeting the
+contract's required one. A lowercase `behavior string { … }` is refused at the name,
+`primitive-type-redeclared` (`refuseTypesNamedLikeLiterals`). Cells:
+`test/program_primitive_behavior_extends_std`, `modules/program/run` (its two cases),
+`modules/program/cells/program_primitive_behavior_redeclares_std`, `modules/primitive_member_by_contract`,
+`modules/primitive_behavior_named_like_type_refused`, `modules/primitive_extend_refused`.
 
 ## An inline parameter type (decision 207)
 

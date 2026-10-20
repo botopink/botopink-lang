@@ -3001,6 +3001,14 @@ pub const Formatter = struct {
         return this.concatAll(out.items);
     }
 
+    /// `<T>` of `for array<T>` (decision 799 (2)); nothing when none is written.
+    fn fmtTargetArgs(this: *Formatter, args: []const ast.TypeRef) !*const Doc {
+        if (args.len == 0) return this.text("");
+        const docs = try this.arena.alloc(*const Doc, args.len);
+        for (args, 0..) |a, i| docs[i] = try this.fmtTypeRef(a);
+        return this.concatAll(&.{ try this.text("<"), try this.join(docs, try this.text(", ")), try this.text(">") });
+    }
+
     fn fmtImplement(this: *Formatter, impl: ast.ImplementDecl) !*const Doc {
         // `implement Interface1, Interface2 for Type`
         var ifaceDocs = try this.arena.alloc(*const Doc, impl.interfaces.len);
@@ -3035,6 +3043,7 @@ pub const Formatter = struct {
             ifacesDoc,
             try this.text(" for "),
             try this.text(impl.target),
+            try this.fmtTargetArgs(impl.targetArgs),
             try this.text(" "),
             body,
         });
