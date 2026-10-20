@@ -3090,3 +3090,5 @@ wholly inside it may break, a label naming a loop outside it is refused), `defer
 propagating `try` are not refused (decision 539 (5) names neither), and the deferred value is discarded, never checked:
 no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed statement. Cells
 `defer_refuses_return` / `_break` / `_continue` / `_yield` / `_await`.
+
+- `registerTypeDecl` (`infer.zig`) notes an imported type in `ownTypeDecls`, so a recursive imported `type Node` is not read as std's `compiler.Node` value; `locateInImported` (`comptime.zig`) locates a registration refusal in the declaring file.

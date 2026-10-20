@@ -1,0 +1,10 @@
+import {main.Node, main.label};
+
+fn kind(n: Node) -> string {
+    return label(n);
+}
+
+test "a recursive type named like a std type, imported" {
+    assert kind(Node.Rule(selector: "a", body: [Node.Space(text: " ")]))
+        == "rule";
+}

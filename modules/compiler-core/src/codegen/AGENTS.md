@@ -3850,3 +3850,5 @@ Cells: `defer_block_end_reverse_order`, `defer_scope_is_block`, `defer_reads_lat
 (`comptime/AGENTS.md` § `defer`).
 
 - A run-time `Source(file, line, col)` (`compiler.Source`, the alias of the prelude record `__Source`): `infer.zig` marks `env.usesSourceRecord` at the call and `comptime.zig` `withSourceRecordDecl` splices a private `type __Source(file, line, col)` into the module, as `SourceLocation` is, so every backend builds it through its record path (beam reads a `__Name` callee as a constructor). Cell `run_time_source_constructed`.
+
+- `externalDeclFor` (`beam_asm.zig`) binds an imported fn only to its owner module's host declaration, never std's of the same name; `user_fn_names` (`commonJS.zig`) keeps a local or imported `panic` / `todo` out of the builtin dispatch.

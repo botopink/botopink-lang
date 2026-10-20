@@ -1964,6 +1964,11 @@ const Emitter = struct {
     /// importing the runtime fn they call) must not redeclare it — `const x`
     /// twice is a JS `SyntaxError`. Tracked per module; reset in `emitterInit`.
     seen_imports: std.StringHashMap(void),
+    /// The names this module's own bodied top-level `fn`s and its imports of
+    /// another module of the program bind: a call by one of them is that
+    /// declaration's, never the prelude host binding of the same name
+    /// (`panic`, `todo`, …) that `builtin_node_dispatch` holds.
+    user_fn_names: std.StringHashMapUnmanaged(void) = .empty,
     /// §A4 type-naive prim-method rename: method name → JS prototype symbol,
     /// driven by the 2-arg `#[@External.Node("X")]` annotation on a primitive
     /// interface method. Consulted at the call site as a fallback when no
@@ -2385,6 +2390,7 @@ const Emitter = struct {
         for (program.decls) |decl| if (decl == .type_) try self.eq_decls.put(self.arena(), decl.type_.name, decl.type_);
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
+                if (f.body.len > 0) try self.user_fn_names.put(self.arena(), f.name, {});
                 if (f.genericParams.len > 0) try self.shape_fns.put(self.arena(), f.name, f);
                 if (f.returnType) |rt| {
                     try self.fn_return_types.put(f.name, rt);
@@ -3939,6 +3945,7 @@ const Emitter = struct {
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
+                    try self.user_fn_names.put(self.arena(), imp2.name(), {});
                     try props.append(self.arena(), .{ .key = imp2.leaf(), .bind = imp2.alias });
                 }
                 if (props.items.len == 0) continue;
@@ -7163,7 +7170,7 @@ const Emitter = struct {
         // implementation (`primitives.bp`, both sections). Those are free functions: their templates have
         // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.
-        if (cc.receiver == null and self.builtin_node_dispatch.contains(cc.callee)) {
+        if (cc.receiver == null and !self.user_fn_names.contains(cc.callee) and self.builtin_node_dispatch.contains(cc.callee)) {
             if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
             // Fall through to a plain call if annotation dispatch fails.
         }

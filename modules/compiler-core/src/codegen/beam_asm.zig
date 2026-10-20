@@ -8971,13 +8971,21 @@ const Emitter = struct {
         // The program's own `fn run` / `fn size` is the program's, not the
         // std host binding of the same bare name another module declares.
         if (self.top_fns.contains(name)) return null;
-        if (self.externals.get(name)) |f| return f;
-        if (self.crossOwnerOf(name, .@"fn") == null) return null;
+        // Nor is a fn this module imports from another of the program's: the
+        // import binds the name to that module's fn (`import {match.attempt}`),
+        // so only that owner's host declaration of the name can be the binding
+        // — never std's `failure.attempt` another module happened to load.
+        const imported = self.imported_fn_owners.get(name);
+        if (imported == null) {
+            if (self.externals.get(name)) |f| return f;
+            if (self.crossOwnerOf(name, .@"fn") == null) return null;
+        }
         for (self.all_outputs) |*other| {
             const ok = switch (other.outcome) {
                 .ok => |*o| o,
                 else => continue,
             };
+            if (imported) |imp| if (!std.mem.eql(u8, self.atomOf(other.name), imp.owner)) continue;
             for (ok.transformed.decls) |d| switch (d) {
                 .@"fn" => |f| if (std.mem.eql(u8, f.name, name) and isHostDeclare(f)) return f,
                 else => {},

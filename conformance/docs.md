@@ -133,6 +133,15 @@ Order` keep two types, and each module's `Order(…)`, `Order.make(…)` and
 <!-- example: modules/two/run/src/cases/two_modules_one_type_name -->
 <!-- example: test/two_test_modules_one_type_name -->
 
+A name a module declares or imports is the module's own, whatever std holds of
+that name and whether or not the program imported it. A recursive `type Node`
+another module imports stays that type (std's `compiler.Node` is not read for
+it), and an imported or local `fn attempt`, `panic` or `todo` is called, never
+std's host binding of the name, on every target:
+
+<!-- example: test/imported_type_named_like_a_std_type -->
+<!-- example: test/imported_fn_named_like_a_std_host_fn -->
+
 There is no combined form and no re-export syntax (decision 337 (3)). `a.b` names
 either an item of `a.bp` or the module `a/b.bp`; a package holding both is refused
 `module-item-collision`, located at both (decision 582 (4)).

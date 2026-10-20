@@ -1,0 +1,15 @@
+import {match.attempt, match.panic};
+
+fn todo(s: string) -> string {
+    return "own: " + s;
+}
+
+test "a fn named like a std host fn, imported" {
+    assert attempt("/", "/").ok;
+    assert attempt("/a", "/b").ok.negate();
+}
+
+test "a fn named like a std builtin, imported or declared here" {
+    assert panic("x") == "mine: x";
+    assert todo("y") == "own: y";
+}

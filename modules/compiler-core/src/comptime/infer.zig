@@ -1721,6 +1721,13 @@ fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     switch (decl) {
         .type_ => |tdecl| {
             dropReflectionAlias(env, tdecl.name);
+            // A type this module declares or imports is what its name means
+            // here, in its own declaration too: `type Node { Rule(body: Node[]) }`
+            // imported by another module registers while a prelude value of the
+            // name (std's `compiler.Node`) still binds it, and the recursive
+            // field would read "a value, not a type". Own declarations were
+            // noted ahead of this (`noteOwnDecls`); this notes the imported.
+            if (!env.ownTypeDecls.contains(tdecl.name)) try env.ownTypeDecls.put(env.arena, tdecl.name, tdecl.genericParams.len);
             switch (tdecl.shape) {
                 .record => try registerRecord(env, tdecl),
                 .enum_ => try registerEnum(env, tdecl),

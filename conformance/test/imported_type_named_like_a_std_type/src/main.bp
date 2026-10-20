@@ -1,0 +1,17 @@
+pub type Node { Space(text: string), Rule(selector: string, body: Node[]) }
+
+fn describe(n: Node) -> string {
+    return case n {
+        Space(text) -> "space";
+        Rule(selector, body) -> "rule";
+    };
+}
+
+pub fn label(n: Node) -> string {
+    return describe(n);
+}
+
+pub fn main() -> i32 {
+    val x = describe(Node.Space(text: ""));
+    return 0;
+}

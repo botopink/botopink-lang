@@ -1,0 +1,1 @@
+{ "name": "imported_type_named_like_a_std_type", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

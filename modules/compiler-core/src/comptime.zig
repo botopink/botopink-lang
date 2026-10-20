@@ -3065,8 +3065,8 @@ fn resolveImports(
                                     break;
                                 };
                                 if (!seen) {
-                                    try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
-                                    try infer.registerImportedTypeDecl(env, type_decl);
+                                    infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl) catch |err| return locateInImported(env, err, e.key_ptr.*, imp);
+                                    infer.registerImportedTypeDecl(env, type_decl) catch |err| return locateInImported(env, err, e.key_ptr.*, imp);
                                 }
                                 // Decision 110 — `as` binds a type leaf like any
                                 // other: a checker-local alias of the declared
@@ -3296,6 +3296,23 @@ fn resolveImports(
 
 /// The module `path` names when the build refused it earlier (its key in
 /// `Reflection.failedModules`), else null.
+/// A refusal met while registering a declaration of another module of the
+/// program (an imported type and its closure) is located in that module's
+/// file (the error's `origin`), the importing module's `loc` the import item
+/// that brought it — never the declaring file's line read against the
+/// importer's file. `infer.locateInStd` is its std twin.
+fn locateInImported(env: *envMod.Env, err: anyerror, module_path: []const u8, imp: ast.ImportPath) anyerror {
+    if (err == error.TypeError) {
+        if (env.lastError) |*te| if (te.origin == null) {
+            const r = env.reflection orelse return err;
+            const file = r.srcPaths.get(module_path) orelse return err;
+            if (te.loc) |at| te.origin = .{ .file = file, .loc = at };
+            te.loc = imp.loc;
+        };
+    }
+    return err;
+}
+
 fn failedModule(env: *const envMod.Env, path: []const u8) ?[]const u8 {
     const r = env.reflection orelse return null;
     if (isStdPkgPath(path)) return null;
