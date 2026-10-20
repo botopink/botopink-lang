@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn average(xs: Array<f64>) -> f64 {
+fn average(xs: array<f64>) -> f64 {
     var total = 0.0;
     var n = 0.0;
     for (xs) { x ->

@@ -35,12 +35,12 @@ pub fn mentionsBigint(t: *T.Type) bool {
     };
 }
 
-/// Decision 346 — whether `t` is or holds `Bytes`.
+/// Decision 346 — whether `t` is or holds `bytes`.
 pub fn mentionsBytes(t: *T.Type) bool {
     const d = t.deref();
     return switch (d.*) {
         .named => |n| blk: {
-            if (std.mem.eql(u8, n.name, "Bytes")) break :blk true;
+            if (std.mem.eql(u8, n.name, "bytes")) break :blk true;
             for (n.args) |a| if (mentionsBytes(a)) break :blk true;
             break :blk false;
         },
@@ -104,8 +104,8 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
         // and as numbers on another.
         if (mentionsBytes(tb)) {
             env.lastError = TypeError.custom(
-                diagnostics.bytes_widened ++ ": `Bytes` does not widen to `unknown`",
-                "`Bytes` is told from a `string` by its static type alone (decision 346): keep it typed `Bytes`, or convert it (`b.toUtf8()`, `b.length()`).",
+                diagnostics.bytes_widened ++ ": `bytes` does not widen to `unknown`",
+                "`bytes` is told from a `string` by its static type alone (decision 346): keep it typed `bytes`, or convert it (`b.toUtf8()`, `b.length()`).",
             );
             return error.TypeError;
         }

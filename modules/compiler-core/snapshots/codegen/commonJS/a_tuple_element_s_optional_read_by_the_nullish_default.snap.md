@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
+fn firstAndRest(xs: array<i32>) -> #(array<i32>, ?i32) {
     val head = xs.at(0);
     val rest = xs.slice(1, xs.length);
     return #(rest, head);
@@ -92,7 +92,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

@@ -86,7 +86,7 @@ fn escaped(c: string) -> string {
     if (c == "n") return "\n";
     if (c == "t") return "\t";
     if (c == "r") return "\r";
-    if (c == "0") return String.fromCodepoint(0);
+    if (c == "0") return string.fromCodepoint(0);
     return c;
 }
 

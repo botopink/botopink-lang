@@ -21,14 +21,14 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
 {labels, 63}.
 
-{function, 'Array_range', 2, 3}.
+{function, 'array_range', 2, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_range'}, 2}.
   {label, 3}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -70,10 +70,10 @@ import {io.terminal.print} from "std";
     {deallocate, 6}.
     return.
 
-{function, 'Array_repeat', 2, 5}.
+{function, 'array_repeat', 2, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_repeat'}, 2}.
   {label, 5}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -270,17 +270,17 @@ import {io.terminal.print} from "std";
   {label, 11}.
     {call_only, 0, {f, 9}}.
 
-{function, '__bp_priv__Array_range', 2, 58}.
+{function, '__bp_priv__array_range', 2, 58}.
   {label, 57}.
     {line, [{location, "test@main.erl", 7}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_range'}, 2}.
   {label, 58}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__Array_repeat', 2, 60}.
+{function, '__bp_priv__array_repeat', 2, 60}.
   {label, 59}.
     {line, [{location, "test@main.erl", 8}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_repeat'}, 2}.
   {label, 60}.
     {call_only, 2, {f, 5}}.
 

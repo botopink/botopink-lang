@@ -14,6 +14,6 @@ pub fn runCase() -> void {
     print(xs.indexOf(2));
     val ss = ["a", "b", "a"];
     print(ss.lastIndexOf("a"));
-    val empty: Array<i32> = [];
+    val empty: array<i32> = [];
     print(empty.lastIndexOf(1));
 }

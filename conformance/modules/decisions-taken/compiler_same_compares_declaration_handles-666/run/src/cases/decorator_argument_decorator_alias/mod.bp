@@ -9,8 +9,8 @@ import {cases.decorator_argument_decorator_alias.markers.each, cases.decorator_a
 import {io.terminal.print} from "std";
 
 type Invite(
-    #[each(markers.email)] guests: Array<string>,
-    #[each(lower)] #[all([markers.email, lower])] hosts: Array<string>,
+    #[each(markers.email)] guests: array<string>,
+    #[each(lower)] #[all([markers.email, lower])] hosts: array<string>,
 )
 
 pub fn runCase() -> void {

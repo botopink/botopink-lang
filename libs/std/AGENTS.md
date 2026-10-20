@@ -22,7 +22,7 @@ std/
 └── src/
     ├── root.bp              ← module-tree root: twenty-four `pub mod` lines — the twenty-two root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
-    ├── primitives.bp        ← primitive behavior registry (the contracts Number/Integer/Signed/Float; the widths as types, `pub type i32 implement Signed` … `pub type f64 implement Float` — decision 617 (1): a width's methods are found through its `implement` clause, read by the checker and every backend (`prelude_cache.primitiveContract`); Bool, String, Array; no `Pair`, no `Function`, decision 738); no tests (see `test/`). `Array.lastIndexOf` is a `default fn` over `reverse` + `indexOf` (beam's path) with an erlang and a node cell; wasm lowers it to std-wasm's `array.lastIndexOf*` (decision 442 (2)); every other `String` member but `toUpper` / `toLower` carries a `#[@external(.Wasm(std: "text.…"))]` cell naming the std-wasm function the wasm codegen calls (144 B-00g). Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global. A trailing section `// ── the wasm bodies (front 164 s3)` holds the private `text<Name>OnWasm` bodies of `split`, `chars`, `lines`, `words`, `contains`, `startsWith`, `endsWith`, `indexOf`, `lastIndexOf`, `at`, `padStart`, `padEnd`, `repeat`, `replace`, `replaceAll`, `trim`, `trimStart`, `trimEnd` over the leaves `stringByteLength` / `stringByteAt` / `stringByteSlice` (`std: "text.byteLength"` …); each answers std-wasm's `text.zig` (decisions 441, 565). A private bodied `fn` here is the prelude's own: `registerStdlib` infers it with the prelude (`true` / `false` bound first) and then takes it out of the global environment (`hidePreludeBodies`), so no program calls or collides with it; the wasm codegen adopts it when a `String` method's `#[@external(.Wasm(body: …))]` cell names it. Nothing binds them until a `fn:` cell replaces a method's `std:` cell (s3 P1-d, decision 566). `String.parseInt()` / `String.parseFloat()` (1.0.11-beta front 97) are `default fn`s over four free cells — see *String numerals* below
+    ├── primitives.bp        ← primitive behavior registry (the contracts Number/Integer/Signed/Float; the widths as types, `pub type i32 implement Signed` … `pub type f64 implement Float` — decision 617 (1): a width's methods are found through its `implement` clause, read by the checker and every backend (`prelude_cache.primitiveContract`); the primitive types that hold their own members, `pub type bigint`, `bytes`, `bool`, `string` and `array<T>` — decision 641: every primitive type lowercase, a capitalised name a contract several types share, the statics on the type (`string.fromCodepoint(65)`, `array.range(0, 3)`, `bytes.fromUtf8(s)`, `bigint.of(n)`), each table read under the type's name (`prelude_cache.dissolvedTypesAsMemberTables`), a member one target runs in botopink naming its private body (`.Wasm(body: arrayIsEmptyBody)`, decision 610); no `Pair`, no `Function`, decision 738); no tests (see `test/`). `array.lastIndexOf` is a `declare fn` with an erlang and a node cell and a botopink body over `reverse` + `indexOf` on wasm (`arrayLastIndexOfBody`); every other `string` member but `toUpper` / `toLower` carries a `#[@external(.Wasm(std: "text.…"))]` cell naming the std-wasm function the wasm codegen calls (144 B-00g). Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global. A trailing section `// ── the wasm bodies (front 164 s3)` holds the private `text<Name>OnWasm` bodies of `split`, `chars`, `lines`, `words`, `contains`, `startsWith`, `endsWith`, `indexOf`, `lastIndexOf`, `at`, `padStart`, `padEnd`, `repeat`, `replace`, `replaceAll`, `trim`, `trimStart`, `trimEnd` over the leaves `stringByteLength` / `stringByteAt` / `stringByteSlice` (`std: "text.byteLength"` …); each answers std-wasm's `text.zig` (decisions 441, 565). A private bodied `fn` here is the prelude's own: `registerStdlib` infers it with the prelude (`true` / `false` bound first) and then takes it out of the global environment (`hidePreludeBodies`), so no program calls or collides with it; the wasm codegen adopts it when a `String` method's `#[@external(.Wasm(body: …))]` cell names it. Nothing binds them until a `fn:` cell replaces a method's `std:` cell (s3 P1-d, decision 566). `String.parseInt()` / `String.parseFloat()` (1.0.11-beta front 97) are `default fn`s over four free cells — see *String numerals* below
     ├── external.bp          ← decision 575 (6): `WasmNeed`, `WasmHost`, `WasiAdapter`, the enum `Implementation` (`Erlang(template, body, inline, result)`, `JavaScript(template, body, result)`, `Wasm(template, op, std, wasi, body, host, needs, result)`) and `external(syntax decl: unknown, comptime ..sources: Implementation[])`, the annotation a bodyless `declare fn` names its sources with — `#[external(…)]` inside std, `#[@external(…)]` outside; a core file registered into every environment before the prelude (`comptime.zig` `registerExternalPrelude`), its variants reached through their type only; the parser reads its sources (`parser/implementations.zig`) until `#[builtin]` (B-139) marks it
     │   └ its last section   ← `// ── the compiler's declarations` (B-139: no `.d.bp`; read apart by `prelude.zig` — `primitives` the part the checker infers, `builtins` this section, which the compiler reads itself; std's own build does not analyse the `primitives` module a second time, `comptime.zig` `withPreludeModuleEmpty`): builtin surface: every `@name` builtin fn declared (decision 252 — `comptime/builtins.zig`'s table is held to it by a unit test, and a call to it is checked against it), @Result/@Async/@Component/@Iter/@AsyncIter (`YieldStep`)…, `Display` (decision 8 §7), `Closeable` (decision 539 (6), ambient), `Index`/`Slice` (decision 63, amended), `Target`, the checker's internal tree and declaration-handle forms (`__Expr`, `__ExprContext`, `__CustomNode`, `__Decl`, …) — what `compiler.bp`'s members read and answer —, `TypeInfo<T>` with its static `all` and `RecordField`, effect-wrapper rules
     │                        — the PURE root: same input, same output; imports nothing from `io/` (`std-root-imports-io`)
@@ -296,7 +296,7 @@ sidecar's Mulberry32, which also answers at comptime on every target and
 refuses a draw before any seed there (decision 451) —, the rest `fn:` bodies at
 the end of `io/random.bp`; `modules/decisions-taken/seeded_random_std_wasm-451/cells/std_random_on_every_target`,
 `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/comptime_random_seeded`, `modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/comptime_random_unseeded`).
-`Array.range` / `Array.repeat` build by doubling, a range of one being its
+`array.range` / `array.repeat` build by doubling, a range of one being its
 element, and wasm lowers them from their bodies (`modules/array/run/src/cases/array_range_and_repeat`); no
 std module holds a module-level `var` (on erlang it lowers to `std@beam`,
 which a std module does not import). `encoding`, `querystring` and `unicode`
@@ -736,23 +736,23 @@ methods answer alike on both sides of that edge:
 - The numeric contracts carry no host code (decision 617 (2), (3)): `Number`, `Integer`, `Signed` and `Float` hold
   signatures and `default fn` bodies, and each width declares the members it runs on the host itself (`min`, `max`,
   `toString`, the conversions, `Float`'s `floor` …), `Self` the width; an implementation on a behavior's member is
-  `external-on-behavior` (`modules/decisions-taken/primitive_widths_are_types-617/cells/external_on_behavior`), `String`, `Array`, `Bool`, `BigInt` and `Bytes` (std's, and a
-  program's behavior extending one) excepted until decision 641 dissolves them into their types. A member every width implementing the contract
+  `external-on-behavior` (`modules/decisions-taken/primitive_widths_are_types-617/cells/external_on_behavior`). `bigint`, `bytes`, `bool`, `string`
+  and `array<T>` are types holding their own members (decision 641), so their cells are a type's, never a behavior's. A member every width implementing the contract
   declares with the same host code is read back onto the contract's member (`prelude_cache.foldWidthMembers`,
   `BehaviorMethod.folded`), so its calls keep the contract's dispatch; one the widths declare differently (`abs`) or
   with a `body:` cell (`isEven` / `isOdd`: `.JavaScript` reads a `BigInt`, erlang and wasm run the private
   `i64IsEvenBody` …) goes through the width's free function — erlang and beam emit the body into the module
   (`widthBodyCellNode`, `widthBodyCall`), wasm adopts it (`lowerWidthMember`).
 
-## `bigint` — `behavior BigInt` (decision 332)
+## `bigint` — `pub type bigint` (decision 332)
 
-`bigint`'s surface is `primitives.bp`'s `behavior BigInt`, outside the numeric tower (a `bigint`
+`bigint`'s surface is `primitives.bp`'s `pub type bigint { … }` (decision 641), outside the numeric tower (a `bigint`
 mixes with no other number): `toString()`, `toI64()` (aborts past −2^63 … 2^63 − 1, `toI64: <v> does
 not fit i64`), `toF64()` (aborts unless exact, `toF64: <v> has no exact f64`), and two associated host
 primitives of decision 262's form, written through the type's own name — `bigint.of(n: i64)` and
 `bigint.parse(text)` (`@Result<bigint, string>`: an optional sign and digits of any length, else
-`bigint.parse: "<text>" is not an integer`). The checker renames the receiver to `BigInt` for the
-backends. commonJS patches the methods on `BigInt.prototype`, which the tower's patch writes too (an
+`bigint.parse: "<text>" is not an integer`). The backends read the call through the type's member table,
+`bigint.of(…)`. commonJS patches the methods on `BigInt.prototype`, which the tower's patch writes too (an
 `i64` past 2^53 is a `BigInt`): `BigInt.toI64`'s and `Integer.toI64`'s Node forms are one text, which
 answers 319's canonical form (a `number` within ±(2^53 − 1)), and the two `toF64` forms are one text,
 so the two patches are one function whichever runs last. wasm lowers the five itself (`wat.zig`, the
@@ -772,13 +772,12 @@ limit rather than a choice:
 | type | behaviors | how it is written |
 |---|---|---|
 | `Dict<K, V>` (`collections.bp`) | `Index<K, V>` | `pub type Dict<K, V>(…) implement Index<K, V>` — the real clause; `lookup` was renamed `at` |
-| `Array<T>` (`primitives.bp`) | `Index<i32, T>`, `Slice<T[]>` | a comment naming the conformance |
+| `array<T>` (`primitives.bp`) | `Index<i32, T>`, `Slice<T[]>` | a comment naming the conformance |
 | `string` (`primitives.bp`) | `Index<i32, string>`, `Slice<string>` | a comment; `charAt` was renamed `at` |
 
-**Why the last two are comments.** `Array` and `string` are `behavior` declarations — the primitive
-registry — and `parseBehaviorDecl` reads only an `extends` clause, whose members are bare
-identifiers (`parser/decls.zig:593`), so neither `behavior Array<T> implement Index<i32, T>` nor
-`extends Index<i32, T>` parses. The separate block form does parse for a builtin target
+**Why the last two are comments.** `array<T>` and `string` are primitive types whose `implement`
+clause names the contract their methods are found through (decision 617 (1)) — `Index` and `Slice`
+are ambient behaviors the checker reads by rule, not that contract. The separate block form does parse for a builtin target
 (`ArrayIndex implement Index<i32, T> for Array { … }`) but it is not a conformance *declaration*: it
 requires the methods **in its own body** (`comptime/infer.zig:463-486`) and does not consult the
 target's existing members, so `for string { }` reds with *'string' does not implement 'at'* even

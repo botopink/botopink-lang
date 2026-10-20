@@ -24,7 +24,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export([main/0, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__array_unique'/1, '__bp_priv__array_flatten'/1, '__bp_priv__array_chunked'/2, '__bp_priv__array_sliding'/2, '__bp_priv__array_any'/2, '__bp_priv__array_all'/2, '__bp_priv__array_count'/2, '__bp_priv__array_slice'/3]).
 
-%% behavior Array
+%% behavior array
 
 array_range(Start, Stop) ->
     case ((Stop - Start) =< 0) of

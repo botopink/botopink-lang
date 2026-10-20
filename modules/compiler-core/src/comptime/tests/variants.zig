@@ -507,7 +507,7 @@ test "enum sections: the expected type picks among the enums carrying one path" 
         \\fn pick() -> Border { return .Color.Red.500; }
         \\val a: Token = .Color.Red.500;
         \\val b: Border = .Color.Red.500;
-        \\val c: Array<Token> = [.Color.Red.100];
+        \\val c: array<Token> = [.Color.Red.100];
         \\val d = onToken(.Color.Red.100);
         \\val e = onBorder(.Color.Red.100);
         \\type BoxT(w: i32 = 7, tone: Token = .Color.Red.500)

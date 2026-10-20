@@ -159,10 +159,10 @@ test ".d.ts: a private behavior is declared; the prelude's Array is not" {
         \\    fn area(self: Self) -> f64;
         \\}
         \\type Name = string;
-        \\pub fn names(xs: Array<Name>, s: Shape) -> Array<Name> { return xs.map(fn(x) { return x; }); }
+        \\pub fn names(xs: array<Name>, s: Shape) -> array<Name> { return xs.map(fn(x) { return x; }); }
     ,
         &.{
-            "export declare function names(xs: Array<string>, s: Shape): Array<string>;",
+            "export declare function names(xs: string[], s: Shape): string[];",
             \\declare interface Shape {
             \\    area(): number;
             \\}

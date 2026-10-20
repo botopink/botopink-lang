@@ -12,11 +12,11 @@ import {io.terminal.print} from "std";
 type Color { Red, Green }
 
 pub fn runCase() -> void {
-    val ts: Array<i32> = [1, 2];
+    val ts: array<i32> = [1, 2];
     val x: ?i32 = ts[0];
     print(x);
     print(x == 1);
-    val cs: Array<Color> = [Color.Red, Color.Green];
+    val cs: array<Color> = [Color.Red, Color.Green];
     val c: ?Color = cs[1];
     print(c == Color.Green);
     val d: Color = cs[0] ?? Color.Green;

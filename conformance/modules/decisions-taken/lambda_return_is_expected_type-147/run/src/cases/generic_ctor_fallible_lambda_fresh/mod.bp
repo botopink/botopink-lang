@@ -13,7 +13,7 @@ pub type Box<T>(
         return Box(run: { at -> optionalOf(at, inner) });
     }
 
-    pub fn array(self: Self<T>) -> Box<Array<T>> {
+    pub fn array(self: Self<T>) -> Box<array<T>> {
         val inner = self.run;
         return Box(run: { at -> arrayOf(at, inner) });
     }
@@ -34,7 +34,7 @@ fn optionalOf<T>(
 fn arrayOf<T>(
     at: string,
     inner: fn(at: string) -> Result<T, string>,
-) -> Result<Array<T>, string> {
+) -> Result<array<T>, string> {
     val v = try inner(at);
     return [v, v];
 }

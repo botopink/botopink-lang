@@ -246,8 +246,9 @@ primitive/array/string receiver (`n.abs()`, `true.toString()`, `xs.map(…)`,
 (all three are `libs/std/src/primitives.bp`). The receiver's inferred type name
 (a width → the contract its `pub type … implement` names in `primitives.bp`,
 `comptime_pipeline.primitiveContract` — `i32`→`Signed`, decision 617 (1);
-`bool`→`Bool`, `array`→`Array`, `string`→`String`) selects the interface;
-integer literals default to `i32`, `true`/`false` to `Bool`.
+`bool`, `array`, `string`, `bigint`, `bytes` → the type's own block, `pub type
+string { … }`, decision 641; the hover names it `type string`) selects the interface;
+integer literals default to `i32`, `true`/`false` to `bool`.
 `signatureHelp` drops the leading `self`. Gotcha: an integer *literal* receiver
 (`42.`) only surfaces through the text-based engine path — the lexer reads `42.`
 as a float, so the editor reaches this via a variable (`val n = 42; n.`).
@@ -258,7 +259,7 @@ source by `collectInterfaceMembers`. The slice stops at a comment, at
 and at any token on a later line; a `default fn` body is skipped whole, so its
 locals are not mistaken for members. `#` only ends a signature when it opens
 `#[` — a bare `#` is the tuple sigil in `Array<#(T, U)>`. Members whose first
-parameter is not `self` (`Array.range`, `Array.repeat`) are associated fns and
+parameter is not `self` (`array.range`, `array.repeat`) are associated fns and
 are hidden from instance completion (`xs.`).
 
 `signatureHelp` builds each `ParameterInformation.label` as `name: Type`, with

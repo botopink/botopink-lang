@@ -14,61 +14,61 @@
 test "iterator range append prepend" {
     val a = [1, 2];
     val b = [2, 3];
-    assert Array.range(1, 5).join(",") == "1,2,3,4", "range half-open";
+    assert array.range(1, 5).join(",") == "1,2,3,4", "range half-open";
     assert a.append([3, 4]).join(",") == "1,2,3,4", "append";
     assert b.prepend(1).join(",") == "1,2,3", "prepend";
 }
 
 test "iterator range produces expected values" {
-    val lr = Array.range(0, 5);
+    val lr = array.range(0, 5);
     assert lr.join(",") == "0,1,2,3,4";
 }
 
 test "iterator range half-open semantics" {
-    val xs = Array.range(3, 3);
+    val xs = array.range(3, 3);
     assert xs.length == 0;
 }
 
 test "iterator range single element" {
-    val xs = Array.range(7, 8);
+    val xs = array.range(7, 8);
     assert xs.length == 1;
     assert xs.join(",") == "7";
 }
 
 test "iterator toList collects range" {
-    val xs = Array.range(0, 4).toList();
+    val xs = array.range(0, 4).toList();
     assert xs.length == 4;
     assert xs.join(",") == "0,1,2,3";
 }
 
 test "iterator fold sums range" {
-    val total = Array.range(1, 5).fold(0, { acc, item -> acc + item });
+    val total = array.range(1, 5).fold(0, { acc, item -> acc + item });
     assert total == 10;
 }
 
 test "iterator map doubles range" {
-    val xs = Array.range(0, 3).map({ n -> n * 2 });
+    val xs = array.range(0, 3).map({ n -> n * 2 });
     assert xs.join(",") == "0,2,4";
 }
 
 test "iterator filter evens from range" {
-    val evens = Array.range(0, 6).filter({ n -> n % 2 == 0 });
+    val evens = array.range(0, 6).filter({ n -> n % 2 == 0 });
     assert evens.join(",") == "0,2,4";
 }
 
 test "iterator take first three" {
-    val xs = Array.range(0, 10).take(3);
+    val xs = array.range(0, 10).take(3);
     assert xs.length == 3;
     assert xs.join(",") == "0,1,2";
 }
 
 test "iterator take more than available" {
-    val xs = Array.range(0, 2).take(10);
+    val xs = array.range(0, 2).take(10);
     assert xs.length == 2;
 }
 
 test "iterator fold empty is initial" {
-    val total = Array.range(5, 5).fold(99, { acc, item -> acc + item });
+    val total = array.range(5, 5).fold(99, { acc, item -> acc + item });
     assert total == 99;
 }
 

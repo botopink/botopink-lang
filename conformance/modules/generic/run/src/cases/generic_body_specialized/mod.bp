@@ -10,7 +10,7 @@
 import {collections.Dict, io.terminal.print} from "std";
 
 behavior Seq<A> {
-    fn firstOr(xs: Array<A>, d: A) -> A {
+    fn firstOr(xs: array<A>, d: A) -> A {
         return xs.at(0) ?? d;
     }
 }
@@ -23,7 +23,7 @@ fn ident<T>(x: T) -> T {
     return x;
 }
 
-fn pair<T>(a: T, b: T) -> Array<T> {
+fn pair<T>(a: T, b: T) -> array<T> {
     return [a, b];
 }
 

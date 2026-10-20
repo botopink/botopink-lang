@@ -29,7 +29,7 @@ pub fn main() -> void {
         method: .Post,
         url: "https://example.com/b",
         headers: [http.Header(name: "content-type", value: "text/plain")],
-        body: Bytes.fromUtf8("hi"),
+        body: bytes.fromUtf8("hi"),
     );
     print(post.method.verb() + " " + post.url);
     print(post.headers.length.toString());

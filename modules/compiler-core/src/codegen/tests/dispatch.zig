@@ -303,7 +303,7 @@ test "js: interface ---- a generic record adopts defaults through an extends cha
         \\}
         \\
         \\type Bag<T>(
-        \\    items: Array<T>,
+        \\    items: array<T>,
         \\) implement Counted {
         \\    pub fn size(self: Self<T>) -> i32 {
         \\        return self.items.length;

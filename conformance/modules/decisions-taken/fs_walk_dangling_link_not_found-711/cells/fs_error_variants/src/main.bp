@@ -40,9 +40,9 @@ pub fn main() -> void {
     fs.removeTree("errors");
     fs.mkdir("errors");
     fs.writeText("errors/file.txt", "text");
-    fs.writeBytes("errors/bad.bin", Bytes
+    fs.writeBytes("errors/bad.bin", bytes
         .fromUtf8("ab")
-        .concat(Bytes.fromUtf8("é").slice(0, 1)));
+        .concat(bytes.fromUtf8("é").slice(0, 1)));
     show("readText of a missing file", fs.readText("errors/nope.txt"));
     show("readText of a directory", fs.readText("errors"));
     show("list of a file", fs.list("errors/file.txt"));

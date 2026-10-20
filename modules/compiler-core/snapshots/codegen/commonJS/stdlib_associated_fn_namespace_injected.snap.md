@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    print(Array.range(0, 3).length);
-    print(Array.repeat("x", 2).join(","));
+    print(array.range(0, 3).length);
+    print(array.repeat("x", 2).join(","));
 }
 
 import {io.terminal.print} from "std";
@@ -83,7 +83,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

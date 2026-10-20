@@ -4,7 +4,7 @@
 
 import {encoding, io.terminal.print} from "std";
 
-fn show(r: Result<Bytes, encoding.EncodingError>) -> string {
+fn show(r: Result<bytes, encoding.EncodingError>) -> string {
     return case r {
         Ok(b) -> "bytes " + encoding.hexEncodeBytes(b);
         Error(e) -> "error " + errorName(e);
@@ -20,7 +20,7 @@ fn errorName(e: encoding.EncodingError) -> string {
 }
 
 pub fn main() -> void {
-    val hi = Bytes.fromUtf8("hi");
+    val hi = bytes.fromUtf8("hi");
     print(encoding.base64EncodeBytes(hi));
     print(encoding.hexEncodeBytes(hi));
     val raw = encoding.hexDecodeBytes("00ff80c3").unwrapOr(hi);

@@ -3,4 +3,4 @@
 
 pub val greeting: string = "hi";
 
-pub val sizes: Array<i32> = [1, 2, 3];
+pub val sizes: array<i32> = [1, 2, 3];

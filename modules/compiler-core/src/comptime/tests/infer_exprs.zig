@@ -317,7 +317,7 @@ test "infer: assign ---- type mismatch error" {
 test "infer: stdlib array method dispatch ---- xs.isEmpty() sugar" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
-        \\    val xs: Array<i32> = [1, 2];
+        \\    val xs: array<i32> = [1, 2];
         \\    val empty = xs.isEmpty();
         \\}
     );

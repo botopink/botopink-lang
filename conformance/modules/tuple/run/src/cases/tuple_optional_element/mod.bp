@@ -12,7 +12,7 @@ import {io.terminal.print} from "std";
 type P(n: i32)
 
 pub type Q<T>(
-    items: Array<T>,
+    items: array<T>,
 ) {
     pub fn pop(self: Self<T>) -> #(Q<T>, ?T) {
         return #(
@@ -22,7 +22,7 @@ pub type Q<T>(
     }
 }
 
-fn firstOf(xs: Array<i32>) -> #(i32, ?i32) {
+fn firstOf(xs: array<i32>) -> #(i32, ?i32) {
     return #(xs.length, xs.at(0));
 }
 
@@ -30,7 +30,7 @@ fn mixed() -> #(?string, ?bool, ?f64, ?P) {
     return #(["s"].at(0), [true].at(5), [1.5].at(0), [P(n: 2)].at(0));
 }
 
-fn rows() -> Result<Array<#(string, string)>, string> {
+fn rows() -> Result<array<#(string, string)>, string> {
     val xs = [#("a", "b"), #("c", "d")];
     if (xs.length > 5) throw "too many";
     return xs;

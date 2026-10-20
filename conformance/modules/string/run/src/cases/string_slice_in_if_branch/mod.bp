@@ -12,7 +12,7 @@ fn page(s: string) -> string {
     return if (s == "/") "index.html" else s.slice(1) + "/index.html";
 }
 
-fn rest(xs: Array<i32>, skip: bool) -> i32 {
+fn rest(xs: array<i32>, skip: bool) -> i32 {
     return if (skip) xs.slice(1).length else xs.length;
 }
 

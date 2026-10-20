@@ -835,10 +835,12 @@ first `self`), and the checker refuses `X()` (`namespace-type-construction`).
 `parseTypeDeclRest` refuses a `type` that ends up with none of the three
 (`type X {}`, a bare `type X`) as `typeWithoutFieldList`
 (`type-without-field-list`), located at the token after the name and generics —
-where the `()` belongs — except a type named like a literal's type
-(`ast.isLiteralTypeName`: `i32` … `bigint`), which is a primitive type
-(`TypeDecl.isPrimitive`, decision 617 (1)): `pub type i32 implement Signed { … }`
-in std's prelude, no field list since the language gives its values; the checker
+where the `()` belongs — except a primitive type (`ast.isPrimitiveTypeName`: the
+literals' types `i32` … `bigint`, then `bytes` and `array`; `TypeDecl.isPrimitive`,
+decisions 617 (1), 641): `pub type i32 implement Signed { … }`, `pub type string { … }`
+in std's prelude, no field list since the language gives its values — its body may
+declare a property the language gives them, `val length: i32;` on `array<T>`
+(`TypeDecl.properties`, printed back by the formatter); the checker
 refuses one in a module at the name (`primitive-type-redeclared`, decision 639), and a
 `behavior` of such a name alike (decision 799 (3); `BehaviorDecl.nameLoc`, the name's place).
 An `implement` block's shorthand takes type parameters after its name and type arguments on

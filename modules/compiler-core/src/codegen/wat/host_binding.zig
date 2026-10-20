@@ -75,9 +75,9 @@ pub const Shape = enum {
             .i32 => "i32",
             .t => "T",
             .task_t => "Async<T>",
-            .task_array_t => "Async<Array<T>>",
-            .array_task_t => "Array<Async<T>>",
-            .array_thunk_task_t => "Array<fn() -> Async<T>>",
+            .task_array_t => "Async<array<T>>",
+            .array_task_t => "array<Async<T>>",
+            .array_thunk_task_t => "array<fn() -> Async<T>>",
             .thunk_t => "fn() -> T",
             .result_t => "Result<T, string>",
             .other => "another type",
@@ -241,7 +241,7 @@ fn taskValue(t: ast.TypeRef) ?ast.TypeRef {
 fn arrayElem(t: ast.TypeRef) ?ast.TypeRef {
     return switch (t) {
         .array => |el| el.*,
-        .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else null,
+        .generic => |g| if (std.mem.eql(u8, g.name, "array") and g.args.len == 1) g.args[0] else null,
         else => null,
     };
 }
@@ -610,7 +610,7 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "wasi:race_of", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = null });
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> Async<T>>) -> Async<T>`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(array<fn() -> Async<T>>) -> Async<T>`") != null);
     }
     {
         const r = try parse(a, "$0 + 1", f64x1);

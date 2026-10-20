@@ -4,7 +4,7 @@
 pub declare fn hostKey(v: i32) -> string;
 
 #[compiler.external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
-pub declare fn hostLen(xs: Array<string>) -> i32;
+pub declare fn hostLen(xs: array<string>) -> i32;
 
 #[compiler.external(.JavaScript("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;
@@ -41,7 +41,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { hostKey, hostLen, nodeO
 export declare function hostKey(v: number): string;
 
 
-export declare function hostLen(xs: Array<string>): number;
+export declare function hostLen(xs: string[]): number;
 
 
 export declare function nodeOnly(s: string): void;

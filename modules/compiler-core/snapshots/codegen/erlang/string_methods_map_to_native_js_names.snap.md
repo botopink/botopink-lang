@@ -17,7 +17,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__main'/0, '__bp_priv__string_slice'/3]).
 
-%% behavior String
+%% behavior string
 
 main() ->
     S = <<"Hello,World">>,

@@ -77,7 +77,7 @@ pub fn extname(path: string) -> string {
 // the first segment is preserved; intra-segment slashes are normalised
 // (`"foo/" + "/bar"` joins to `"foo/bar"`, never `"foo//bar"`). Uses
 // `map` + `filter` + `join` rather than `fold` / `flatMap`: those land
-// on `Array<T>` default-fn bodies that lower to a `var` + `push` shape,
+// on `array<T>` default-fn bodies that lower to a `var` + `push` shape,
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
@@ -691,7 +691,7 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; the first segment is preserved; intra-segment slashes are normalised
   ;; (`"foo/" + "/bar"` joins to `"foo/bar"`, never `"foo//bar"`). Uses
   ;; `map` + `filter` + `join` rather than `fold` / `flatMap`: those land
-  ;; on `Array<T>` default-fn bodies that lower to a `var` + `push` shape,
+  ;; on `array<T>` default-fn bodies that lower to a `var` + `push` shape,
   ;; which lowers to a dead store on Erlang's immutable runtime (the same
   ;; trap `split` sidesteps).
   (func $join (export "join") (param $parts (ref null $arr_any)) (result (ref null $str))
@@ -3449,7 +3449,7 @@ pub type FileStat(
     .JavaScript("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true),
 )]
-declare fn rawReadBytes(path: string) -> Result<Bytes, HostError>;
+declare fn rawReadBytes(path: string) -> Result<bytes, HostError>;
 
 // Write `contents` to `path`, creating or truncating.
 // Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
@@ -3457,7 +3457,7 @@ declare fn rawReadBytes(path: string) -> Result<Bytes, HostError>;
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawWriteBytes(path: string, contents: Bytes) -> Result<i32, HostError>;
+declare fn rawWriteBytes(path: string, contents: bytes) -> Result<i32, HostError>;
 
 // Append `contents` to `path`, creating it when it is not there.
 // Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
@@ -3475,7 +3475,7 @@ declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostErro
     .JavaScript("""((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })($0)"""),
     .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)($0)"""),
 )]
-declare fn utf8Offset(bytes: Bytes) -> i64;
+declare fn utf8Offset(bytes: bytes) -> i64;
 
 // `line` without its line terminator: one trailing `\n`, and the `\r` before it.
 // Node: `subarray`. Erlang: `binary:part/3`.
@@ -3483,7 +3483,7 @@ declare fn utf8Offset(bytes: Bytes) -> i64;
     .JavaScript("""((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })($0)"""),
     .Erlang("""(fun(__B) -> __N = byte_size(__B), if __N >= 2 -> case binary:part(__B, __N - 2, 2) of <<13, 10>> -> binary:part(__B, 0, __N - 2); <<_, 10>> -> binary:part(__B, 0, __N - 1); _ -> __B end; __N =:= 1 -> case __B of <<10>> -> <<>>; _ -> __B end; true -> __B end end)($0)"""),
 )]
-declare fn stripEol(line: Bytes) -> Bytes;
+declare fn stripEol(line: bytes) -> bytes;
 
 // The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
 // (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
@@ -3507,7 +3507,7 @@ declare fn rawCreate(path: string) -> Result<unknown, HostError>;
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
 )]
-declare fn memHandle(bytes: Bytes) -> unknown;
+declare fn memHandle(bytes: bytes) -> unknown;
 
 // The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
 #[compiler.external(
@@ -3521,21 +3521,21 @@ declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true),
     .Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
 )]
-declare fn rawRead(handle: unknown, n: i32) -> Result<Bytes, HostError>;
+declare fn rawRead(handle: unknown, n: i32) -> Result<bytes, HostError>;
 
 // Every byte from the handle's position to the end.
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true),
 )]
-declare fn rawReadAll(handle: unknown) -> Result<Bytes, HostError>;
+declare fn rawReadAll(handle: unknown) -> Result<bytes, HostError>;
 
 // The next line, terminator included; empty at the end.
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
 )]
-declare fn rawReadLine(handle: unknown) -> Result<Bytes, HostError>;
+declare fn rawReadLine(handle: unknown) -> Result<bytes, HostError>;
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 // whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
@@ -3551,7 +3551,7 @@ declare fn rawHash(handle: unknown) -> Result<string, HostError>;
     .JavaScript("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true),
     .Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
 )]
-declare fn rawWrite(handle: unknown, bytes: Bytes) -> Result<i32, HostError>;
+declare fn rawWrite(handle: unknown, bytes: bytes) -> Result<i32, HostError>;
 
 // Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
 #[compiler.external(
@@ -3771,7 +3771,7 @@ fn lift<T>(path: string, r: Result<T, HostError>) -> Result<T, FsError> {
 }
 
 // The text of `b`, or `InvalidUtf8` at the first invalid byte.
-fn decode(path: string, b: Bytes) -> Result<string, FsError> {
+fn decode(path: string, b: bytes) -> Result<string, FsError> {
     val offset = utf8Offset(b);
     if (offset >= 0l) throw FsError.InvalidUtf8(path: path, offset: offset);
     return b.toUtf8().unwrapOr("");
@@ -3794,7 +3794,7 @@ declare fn rawReadOnly(handle: unknown) -> bool;
 // ── whole-file shortcuts ─────────────────────────────────────────────────────
 
 // The file's bytes.
-pub fn readBytes(path: string) -> Result<Bytes, FsError> {
+pub fn readBytes(path: string) -> Result<bytes, FsError> {
     val b = try lift(path, rawReadBytes(path));
     return b;
 }
@@ -3808,7 +3808,7 @@ pub fn readText(path: string) -> Result<string, FsError> {
 }
 
 // Write `contents` to `path`, creating or truncating.
-pub fn writeBytes(path: string, contents: Bytes) -> Result<i32, FsError> {
+pub fn writeBytes(path: string, contents: bytes) -> Result<i32, FsError> {
     val n = try lift(path, rawWriteBytes(path, contents));
     return n;
 }
@@ -3879,7 +3879,7 @@ pub fn glob(pattern: string, root: string) -> Result<string[], FsError> {
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
 )]
-declare fn memoryHandle(bytes: Bytes) -> unknown;
+declare fn memoryHandle(bytes: bytes) -> unknown;
 
 // ── the handle ───────────────────────────────────────────────────────────────
 
@@ -3899,14 +3899,14 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // Up to `n` bytes from the position; empty at the end of the file.
-    pub fn read(self: Self, n: i32) -> Result<Bytes, FsError> {
-        if (n <= 0) return Bytes.fromUtf8("");
+    pub fn read(self: Self, n: i32) -> Result<bytes, FsError> {
+        if (n <= 0) return bytes.fromUtf8("");
         val b = try lift(self.location, rawRead(self.handle, n));
         return b;
     }
 
     // Every byte from the position to the end.
-    pub fn bytes(self: Self) -> Result<Bytes, FsError> {
+    pub fn bytes(self: Self) -> Result<bytes, FsError> {
         val b = try lift(self.location, rawReadAll(self.handle));
         return b;
     }
@@ -3919,7 +3919,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // The rest of the file in pieces of at most `size` bytes. An error ends the stream.
-    pub async iter fn chunks(self: Self, size: i32 = 65536) -> AsyncIter<Result<Bytes, FsError>> {
+    pub async iter fn chunks(self: Self, size: i32 = 65536) -> AsyncIter<Result<bytes, FsError>> {
         while (true) {
             val b = try self.read(size);
             if (b.length == 0) break;
@@ -3953,7 +3953,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // Write `b` at the position; answers the number of bytes written.
-    pub fn write(self: Self, b: Bytes) -> Result<i32, FsError> {
+    pub fn write(self: Self, b: bytes) -> Result<i32, FsError> {
         if (rawReadOnly(self.handle))
             throw FsError.Other(path: self.location, message: "the file is open for reading");
         val n = try lift(self.location, rawWrite(self.handle, b));
@@ -4329,14 +4329,14 @@ test "fs.readText of bytes that are not UTF-8 is InvalidUtf8 at the first invali
     val dir = scratchDir();
     val path = [dir, "/bad.bin"].join("");
     // "ok", then the first byte of a two-byte sequence, then "z".
-    writeBytes(path, Bytes
+    writeBytes(path, bytes
         .fromUtf8("ok")
-        .concat(Bytes.fromUtf8("é").slice(0, 1))
-        .concat(Bytes.fromUtf8("z")));
+        .concat(bytes.fromUtf8("é").slice(0, 1))
+        .concat(bytes.fromUtf8("z")));
     assert variantOf(readText(path)) == "InvalidUtf8 " + path + " 2";
     assert readBytes(path).isOk();
     // A sequence cut short at the end of the file.
-    writeBytes(path, Bytes.fromUtf8("é").slice(0, 1));
+    writeBytes(path, bytes.fromUtf8("é").slice(0, 1));
     assert variantOf(readText(path)) == "InvalidUtf8 " + path + " 0";
     // A well-formed multi-byte file reads back whole.
     writeText(path, "héllo ✓");
@@ -4355,23 +4355,23 @@ test "fs.appendText adds to the end and creates the file" {
 
 // Internal, test scaffolding: the file a failed `open` falls back to.
 fn noFile() -> File {
-    return File(location: "", handle: memHandle(Bytes.fromUtf8("")));
+    return File(location: "", handle: memHandle(bytes.fromUtf8("")));
 }
 
 test "fs.File writes, then reads bytes, text, a size and a hash" {
     val dir = scratchDir();
     val path = [dir, "/data.txt"].join("");
     val w = create(path).unwrapOr(noFile());
-    assert w.write(Bytes.fromUtf8("hello ")).unwrapOr(-1) == 6;
-    assert w.write(Bytes.fromUtf8("world")).unwrapOr(-1) == 5;
+    assert w.write(bytes.fromUtf8("hello ")).unwrapOr(-1) == 6;
+    assert w.write(bytes.fromUtf8("world")).unwrapOr(-1) == 5;
     w.close();
     val r = open(path).unwrapOr(w);
     assert r.path() == path;
     assert r.size().unwrapOr(-1l) == 11l;
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("")).toUtf8().unwrapOr("")
+    assert r.read(5).unwrapOr(bytes.fromUtf8("")).toUtf8().unwrapOr("")
         == "hello";
     assert r.text().unwrapOr("") == " world";
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("x")).length == 0;
+    assert r.read(5).unwrapOr(bytes.fromUtf8("x")).length == 0;
     assert r.hash().unwrapOr("")
         == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     r.close();
@@ -4382,10 +4382,10 @@ test "fs.File's hash leaves the position where it was" {
     val dir = scratchDir();
     val path = [dir, "/pos.txt"].join("");
     val w = create(path).unwrapOr(noFile());
-    assert w.write(Bytes.fromUtf8("hello world")).unwrapOr(-1) == 11;
+    assert w.write(bytes.fromUtf8("hello world")).unwrapOr(-1) == 11;
     w.close();
     val r = open(path).unwrapOr(w);
-    assert r.read(5).unwrapOr(Bytes.fromUtf8("")).length == 5;
+    assert r.read(5).unwrapOr(bytes.fromUtf8("")).length == 5;
     assert r.hash().unwrapOr("")
         == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     assert r.text().unwrapOr("") == " world";

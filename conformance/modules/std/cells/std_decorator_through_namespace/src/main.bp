@@ -13,7 +13,7 @@ import {testing.mocks, io.terminal.print} from "std";
 #[mocks.mock]
 pub behavior Repo {
     fn find(self: Self, id: i32) -> string;
-    fn all(self: Self) -> Array<string>;
+    fn all(self: Self) -> array<string>;
 }
 
 pub fn main() -> void {

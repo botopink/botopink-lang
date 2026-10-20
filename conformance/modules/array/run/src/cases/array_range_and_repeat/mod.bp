@@ -8,17 +8,17 @@
 import {io.terminal.print} from "std";
 
 pub fn runCase() -> void {
-    print(Array.range(0, 3));
-    print(Array.range(2, 3));
-    print(Array.range(5, 5));
-    print(Array.range(4, 1));
-    print(Array.range(-2, 5));
-    val b = Array.range(0, 5000);
+    print(array.range(0, 3));
+    print(array.range(2, 3));
+    print(array.range(5, 5));
+    print(array.range(4, 1));
+    print(array.range(-2, 5));
+    val b = array.range(0, 5000);
     print(b.length);
     print(b[4999]);
-    print(Array.repeat("x", 3));
-    print(Array.repeat(7, 0));
-    print(Array.repeat(true, 2));
-    print(Array.repeat(2.5, 2));
-    print(Array.repeat(1, 1000).length);
+    print(array.repeat("x", 3));
+    print(array.repeat(7, 0));
+    print(array.repeat(true, 2));
+    print(array.repeat(2.5, 2));
+    print(array.repeat(1, 1000).length);
 }

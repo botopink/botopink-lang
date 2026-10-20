@@ -1,6 +1,6 @@
 import {point.Point};
 
-pub type Outline(points: Array<Point>) {
+pub type Outline(points: array<Point>) {
     pub fn first(self: Self) -> Point {
         return self.points.at(0) ?? Point(x: 0, y: 0);
     }

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    val xs: Array<i32> = [1, 2];
+    val xs: array<i32> = [1, 2];
     val empty = xs.isEmpty();
 }
 ```
@@ -18,7 +18,7 @@ fn main() -> void {
       "return_type": "void",
       "body": [
         {
-          "source": "val xs: Array<i32> = [1, 2];"
+          "source": "val xs: array<i32> = [1, 2];"
         },
         {
           "source": "val empty = xs.isEmpty();"

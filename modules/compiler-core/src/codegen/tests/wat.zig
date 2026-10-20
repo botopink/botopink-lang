@@ -215,87 +215,6 @@ test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC mo
     );
 }
 
-// Front 164 s3 P1-b, decision 565 — a `String` method whose wasm cell is
-// `#[@External.Wasm(fn: <name>)]` lowers to a call of that private body, the
-// receiver its first argument: a `string`, a `bool`, a `?string` and a
-// `string[]` answer read at the call as the method's own. `primitives.bp`
-// binds none of its methods so yet (decision 566), so the program is the
-// module that declares the method and its body.
-test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private body" {
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
-        \\behavior String {
-        \\    #[compiler.external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(body: shoutBody))]
-        \\    fn shout(self: Self) -> string;
-        \\    #[compiler.external(.Erlang("($0 =:= $1)"), .JavaScript("startsWith"), .Wasm(body: sameBody))]
-        \\    fn same(self: Self, other: string) -> bool;
-        \\    #[compiler.external(.Erlang("$0"), .JavaScript("at"), .Wasm(body: pickBody))]
-        \\    fn pick(self: Self, i: i32) -> ?string;
-        \\    #[compiler.external(.Erlang("[$0, $0]"), .JavaScript("split"), .Wasm(body: twiceBody))]
-        \\    fn twice(self: Self) -> string[];
-        \\}
-        \\fn shoutBody(s: string) -> string {
-        \\    return s + "!";
-        \\}
-        \\fn sameBody(s: string, other: string) -> bool {
-        \\    return s == other;
-        \\}
-        \\fn pickBody(s: string, i: i32) -> ?string {
-        \\    if (i < 0) return null;
-        \\    return s;
-        \\}
-        \\fn twiceBody(s: string) -> string[] {
-        \\    var out: string[] = [];
-        \\    out.push(s);
-        \\    out.push(s);
-        \\    return out;
-        \\}
-        \\fn main() -> void {
-        \\    val s = "hi";
-        \\    print(s.shout());
-        \\    print(s.shout().length());
-        \\    print(s.same("hi"));
-        \\    print(s.same("ho"));
-        \\    print(s.pick(0));
-        \\    print(s.pick(-1));
-        \\    print(s.pick(-1) ?? "none");
-        \\    print(s.twice());
-        \\    print(s.twice().join("+"));
-        \\}
-        \\
-        \\import {io.terminal.print, compiler} from "std";
-    }}, io, h.configs[3]);
-    defer {
-        for (outputs.items) |*o| o.result.deinit(alloc);
-        outputs.deinit(alloc);
-    }
-    const o = for (outputs.items) |o| {
-        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
-    } else return error.ModuleDidNotCompile;
-    if (o.result.diagnostic) |d| switch (d) {
-        .type => |t| std.debug.print("\n=== refused: {s}\n", .{t.message}),
-        .syntax => {},
-    };
-    const wat_text = o.result.js;
-    for ([_][]const u8{ "shoutBody", "sameBody", "pickBody", "twiceBody" }) |body| {
-        var buf: [64]u8 = undefined;
-        try std.testing.expect(std.mem.indexOf(u8, wat_text, try std.fmt.bufPrint(&buf, "call ${s}", .{body})) != null);
-    }
-    try std.testing.expectEqualStrings(
-        \\hi!
-        \\3
-        \\true
-        \\false
-        \\hi
-        \\null
-        \\none
-        \\["hi", "hi"]
-        \\hi+hi
-        \\
-    , o.result.run_output orelse "");
-}
-
 // Front 164 s3 P2-a — an integer's text is the `.wat` leaves'
 // (`number.i32ToString`, `number.i64ToString`, `number.u64ToString`) in a GC
 // module: `@print` of an `i64` / `u64` writes the leaf's `$str`, a `toString`
@@ -354,16 +273,16 @@ test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC modu
 // leaves `encoding`'s byte codecs are written over (decision 585 (k)). Their
 // `std:` cells wait for the `.bp` half in `libs/std`, so the program is a
 // module of std's own declaring them.
-test "wat: front 164 s3 ---- the Bytes leaves answer in a GC module" {
+test "wat: front 164 s3 ---- the bytes leaves answer in a GC module" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
         \\#[compiler.external(.Wasm(std: "bytes.length"))]
-        \\declare fn bytesLength(b: Bytes) -> i32;
+        \\declare fn bytesLength(b: bytes) -> i32;
         \\#[compiler.external(.Wasm(std: "bytes.at"))]
-        \\declare fn bytesAt(b: Bytes, i: i32) -> i32;
+        \\declare fn bytesAt(b: bytes, i: i32) -> i32;
         \\#[compiler.external(.Wasm(std: "bytes.ofWords"))]
-        \\declare fn bytesOfWords(w: Array<i32>) -> Bytes;
+        \\declare fn bytesOfWords(w: array<i32>) -> bytes;
         \\fn main() -> void {
         \\    val b = bytesOfWords([104, 105, 256 + 33]);
         \\    print(bytesLength(b));
@@ -1408,14 +1327,14 @@ test "wat: print ---- a record and a variant print their names and fields" {
 // erlang's and beam's own cross-module rows are pinned.
 test "wat: option ---- a value assigned into a declared `?T` is boxed like one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\type Box(items: Array<i32>) {
+        \\type Box(items: array<i32>) {
         \\    fn total(self: Self) -> i32 {
         \\        var sum = 0;
         \\        self.items.forEach({ n -> sum = sum + n });
         \\        return sum;
         \\    }
         \\    fn isBig(self: Self) -> bool { return self.items.length > 1; }
-        \\    fn doubled(self: Self) -> Array<i32> { return self.items.map({ n -> n * 2 }); }
+        \\    fn doubled(self: Self) -> array<i32> { return self.items.map({ n -> n * 2 }); }
         \\    fn label(self: Self) -> string { return "box"; }
         \\}
         \\fn main() -> void {
@@ -1528,7 +1447,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // backends, so an all-backend fixture would move
 // `snapshots/codegen/{commonJS,erlang,beam}/`, which this front does not own.
 // `conformance/modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/string_at` is the cross-backend half.
-test "wat: prim method ---- String.at answers a one-character string, and null out of range" {
+test "wat: prim method ---- string.at answers a one-character string, and null out of range" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() -> void {
         \\    val s = "abc";
@@ -2143,17 +2062,19 @@ test "wat: behavior ---- a primitive method on a default's result inside an adop
     , "area 18\n");
 }
 
-// A program's own `default fn` of a primitive behavior: a copy with `Self`
-// written as the receiver's primitive, called with the receiver as `self`
-// (`lowerPrimDefault`). It trapped (`prim method not lowered on wasm`). The
-// RUN LOG is commonJS's and erlang's for the program.
+// A program's own `default fn` on a primitive, a contract implemented for it
+// (decision 799): a copy with `Self` written as the receiver's primitive,
+// called with the receiver as `self` (`lowerPrimDefault`). It trapped (`prim
+// method not lowered on wasm`). The RUN LOG is commonJS's and erlang's for the
+// program.
 test "wat: behavior ---- a program's default fn on a primitive behavior is called" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\behavior String {
+        \\behavior Shout {
         \\    default fn shout(self: Self) -> string {
         \\        return self + "!";
         \\    }
         \\}
+        \\StringShout implement Shout for string {};
         \\behavior Number {
         \\    default fn twice(self: Self) -> Self {
         \\        return self + self;
@@ -2169,20 +2090,21 @@ test "wat: behavior ---- a program's default fn on a primitive behavior is calle
     , "hi!\n42\n");
 }
 
-// A program's own `default fn` on `Array<T>`: the copy writes `Self<T>` as the
-// receiver's array type and `T` as its element (`ensurePrimDefault`). It
-// trapped (`prim method not lowered on wasm`). The RUN LOG is commonJS's and
-// erlang's for the program.
-test "wat: behavior ---- a program's default fn on Array<T> is called with its element type" {
+// A program's own `default fn` on `array<T>`, a contract implemented for it
+// (decision 799): the copy writes `Self<T>` as the receiver's array type and
+// `T` as its element (`ensurePrimDefault`). It trapped (`prim method not
+// lowered on wasm`). The RUN LOG is commonJS's and erlang's for the program.
+test "wat: behavior ---- a program's default fn on array<T> is called with its element type" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\behavior Array<T> {
+        \\behavior Tagged<T> {
         \\    default fn tag(self: Self<T>) -> string {
         \\        return "arr";
         \\    }
-        \\    default fn pairUp(self: Self<T>, x: T) -> Self<T> {
+        \\    default fn pairUp(self: Self<T>, x: T) -> T[] {
         \\        return [x, x];
         \\    }
         \\}
+        \\ArrTagged<T> implement Tagged<T> for array<T> {};
         \\fn main() -> void {
         \\    print([1, 2].tag());
         \\    print([1].pairUp(7));
@@ -2259,7 +2181,7 @@ test "wat: refusal ---- a comptime-only builtin in a program body is refused" {
 // so it is refused rather than answered.
 test "wat: refusal ---- pop on a call's result is refused, pop on a record field shrinks it" {
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\fn xs() -> Array<i32> {
+        \\fn xs() -> array<i32> {
         \\    return [1, 2];
         \\}
         \\pub fn main() -> void {
@@ -2269,7 +2191,7 @@ test "wat: refusal ---- pop on a call's result is refused, pop on a record field
         \\import {io.terminal.print} from "std";
     , "`pop` on the wasm backend rebinds its receiver", 5, 16);
     try h.assertWasmRunLog(std.testing.allocator,
-        \\type Stack(items: Array<i32>)
+        \\type Stack(items: array<i32>)
         \\pub fn main() -> void {
         \\    val s = Stack(items: [1, 2, 3]);
         \\    print(s.items.pop());
@@ -2744,11 +2666,12 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
     const stdWasm = @import("std_wasm");
     const src = @import("std_prelude").primitives;
     for (watCodegen.std_method_exports) |row| {
-        // A behavior's member, or — a contract carries no host code
-        // (decision 617 (3)) — the member of the first type implementing it
-        // (`Float.toString` is written on `f32` and `f64`).
+        // A primitive type's own member (`pub type string { … }`, decision
+        // 641), or — a contract carries no host code (decision 617 (3)) — the
+        // member of the first type implementing it (`Float.toString` is
+        // written on `f32` and `f64`).
         var head_buf: [64]u8 = undefined;
-        const head = try std.fmt.bufPrint(&head_buf, "behavior {s} ", .{row.behavior});
+        const head = try std.fmt.bufPrint(&head_buf, "pub type {s} ", .{row.behavior});
         var type_buf: [64]u8 = undefined;
         const type_head = try std.fmt.bufPrint(&type_buf, " implement {s} {{", .{row.behavior});
         const at = std.mem.indexOf(u8, src, type_head) orelse std.mem.indexOf(u8, src, head) orelse return error.BehaviorMissing;
@@ -3035,7 +2958,7 @@ test "wat: arithmetic ---- an integer that leaves its width traps instead of wra
 test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\type P(n: i32)
-        \\type Q<T>(items: Array<T>) {
+        \\type Q<T>(items: array<T>) {
         \\    fn pop(self: Self<T>) -> #(Q<T>, ?T) {
         \\        return #(Q(items: self.items), self.items.at(0));
         \\    }
@@ -3074,7 +2997,7 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
 // string element as an integer at exit 0.
 test "wat: the nullish default ---- the answer keeps the payload's tuple shape" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn rows() -> Result<Array<#(string, string)>, string> {
+        \\fn rows() -> Result<array<#(string, string)>, string> {
         \\    val xs = [#("a", "b"), #("c", "d")];
         \\    if (xs.length > 5) throw "too many";
         \\    return xs;
@@ -3311,20 +3234,20 @@ test "wat: a package template's answer is its library's record, its field read a
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
     \\pub fn main() -> void {
-    \\    val b = Bytes.fromUtf8("héllo");
+    \\    val b = bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
     \\    print(b.slice(1, 2).toUtf8().isError());
-    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    val j = bytes.fromUtf8("ab").concat(bytes.fromUtf8("cd"));
     \\    print(j[2..].toUtf8().unwrapOr("?"));
-    \\    print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j == bytes.fromUtf8("abcd"));
     \\}
     \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
-test "wat: decision 346 ---- Bytes is a string's buffer, toUtf8 std-wasm's bytes.isUtf8" {
+test "wat: decision 346 ---- bytes is a string's buffer, toUtf8 std-wasm's bytes.isUtf8" {
     try h.assertWasmRunLog(std.testing.allocator, bytes_src, bytes_log);
 }
 
@@ -3976,15 +3899,15 @@ test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr
     );
 }
 
-test "wat: gc ---- Bytes, and the string arrays and optional strings std-wasm answers" {
+test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {
-        \\    val b = Bytes.fromUtf8("hello");
+        \\    val b = bytes.fromUtf8("hello");
         \\    print(b.length());
         \\    print(b.slice(1, 3).length());
-        \\    val c = b.concat(Bytes.fromUtf8("!"));
+        \\    val c = b.concat(bytes.fromUtf8("!"));
         \\    print(c.length());
-        \\    print(b == Bytes.fromUtf8("hello"));
+        \\    print(b == bytes.fromUtf8("hello"));
         \\    val r = b.toUtf8();
         \\    print(r);
         \\    val parts = "a,b,c".split(",");
@@ -4146,13 +4069,13 @@ test "wat: gc ---- indexOf, lastIndexOf and contains over a generic array" {
 // function value a generic function answers, each in GC form.
 test "wat: gc ---- unwrapOr's array, a lambda in a generic fn and a call through what compose answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn parse(s: string) -> Result<Array<#(string, string)>, string> {
+        \\fn parse(s: string) -> Result<array<#(string, string)>, string> {
         \\    if (s == "") throw "empty";
         \\    return [#(s, s.toUpper())];
         \\}
         \\
-        \\fn pairsOf(r: Result<Array<#(string, string)>, string>) -> string {
-        \\    val none: Array<#(string, string)> = [];
+        \\fn pairsOf(r: Result<array<#(string, string)>, string>) -> string {
+        \\    val none: array<#(string, string)> = [];
         \\    return r.unwrapOr(none).map({ p -> [p._0, "=>", p._1].join("") }).join("|");
         \\}
         \\

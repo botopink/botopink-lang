@@ -1676,6 +1676,13 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     }
     var assocNameToks: std.ArrayList(Token) = .empty;
     defer assocNameToks.deinit(alloc);
+    // Decision 641 — a primitive type's properties (`val length: i32;` in
+    // `pub type array<T> { … }`): the values the language gives it.
+    var properties: std.ArrayList(ast.BehaviorField) = .empty;
+    errdefer {
+        for (properties.items) |*f| f.typeRef.deinit(alloc);
+        properties.deinit(alloc);
+    }
     // Decision 329 — the `self` of the first function in the body that takes
     // one: refused there when the body makes the type a namespace type.
     var selfTok: ?Token = null;
@@ -1699,6 +1706,18 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
                 nested.comments = memberComments;
                 try assocTypes.append(alloc, nested);
                 try assocNameToks.append(alloc, nameTok);
+                sawMethod = true;
+                needSeparator = false;
+                continue;
+            }
+            if (ast.isPrimitiveTypeName(name) and this.check(.val)) {
+                _ = try this.consume(.val);
+                const fieldName = (try this.consume(.identifier)).lexeme;
+                _ = try this.consume(.colon);
+                var typeRef = try this.parseTypeRef(alloc);
+                errdefer typeRef.deinit(alloc);
+                try expectMemberSemicolon(this);
+                try properties.append(alloc, .{ .name = fieldName, .typeRef = typeRef, .comments = memberComments });
                 sawMethod = true;
                 needSeparator = false;
                 continue;
@@ -1757,7 +1776,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     // Decision 617 (1) — a primitive type, `pub type i32 implement Signed { … }`,
     // has no field list: the language gives its values. A module's is refused
     // by the checker at the name (`primitive-type-redeclared`, decision 639).
-    const isPrimitive = !isEnum and !hasFieldList and ast.isLiteralTypeName(name);
+    const isPrimitive = !isEnum and !hasFieldList and ast.isPrimitiveTypeName(name);
     const isNamespace = !isPrimitive and !isEnum and !hasFieldList and (methods.items.len > 0 or assocTypes.items.len > 0) and implementList.len == 0;
     if (isNamespace) if (selfTok) |t| return failAt(this, .namespaceTypeSelf, t);
     // Decision 138: a record writes its field list, even when empty —
@@ -1791,6 +1810,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
         .bodyComments = bodyComments,
         .isNamespace = isNamespace,
         .isPrimitive = isPrimitive,
+        .properties = try properties.toOwnedSlice(alloc),
         .assocTypes = try assocTypes.toOwnedSlice(alloc),
     };
 }

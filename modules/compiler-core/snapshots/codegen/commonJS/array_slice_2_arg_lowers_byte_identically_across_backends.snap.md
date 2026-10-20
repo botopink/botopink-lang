@@ -83,7 +83,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

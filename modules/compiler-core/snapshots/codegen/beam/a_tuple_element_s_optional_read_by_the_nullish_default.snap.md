@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
+fn firstAndRest(xs: array<i32>) -> #(array<i32>, ?i32) {
     val head = xs.at(0);
     val rest = xs.slice(1, xs.length);
     return #(rest, head);
@@ -20,14 +20,14 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__firstAndRest', 1}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__firstAndRest', 1}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
 {labels, 71}.
 
-{function, 'Array_range', 2, 3}.
+{function, 'array_range', 2, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_range'}, 2}.
   {label, 3}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -69,10 +69,10 @@ import {io.terminal.print} from "std";
     {deallocate, 6}.
     return.
 
-{function, 'Array_repeat', 2, 5}.
+{function, 'array_repeat', 2, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_repeat'}, 2}.
   {label, 5}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -223,17 +223,17 @@ import {io.terminal.print} from "std";
   {label, 13}.
     {call_only, 0, {f, 11}}.
 
-{function, '__bp_priv__Array_range', 2, 64}.
+{function, '__bp_priv__array_range', 2, 64}.
   {label, 63}.
     {line, [{location, "test@main.erl", 8}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_range'}, 2}.
   {label, 64}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__Array_repeat', 2, 66}.
+{function, '__bp_priv__array_repeat', 2, 66}.
   {label, 65}.
     {line, [{location, "test@main.erl", 9}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_repeat'}, 2}.
   {label, 66}.
     {call_only, 2, {f, 5}}.
 

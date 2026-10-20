@@ -924,8 +924,8 @@ test "infer: return ---- a hook body returns the X of @Component<X>, or another 
 
 test "infer: return ---- body annotations see the fn's generic params" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn wrap<P>(xs: Array<P>) -> Array<#(P, P)> {
-        \\    var acc: Array<#(P, P)> = [];
+        \\fn wrap<P>(xs: array<P>) -> array<#(P, P)> {
+        \\    var acc: array<#(P, P)> = [];
         \\    return acc;
         \\}
         \\val n = wrap([1, 2]);
@@ -1419,7 +1419,7 @@ test "infer error: a keyed seed is `Dict.empty()` or `Dict.ofEntries` of literal
         \\var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
         ,
         \\import {collections.Dict} from "std";
-        \\fn entries() -> Array<#(string, i32)> { return []; }
+        \\fn entries() -> array<#(string, i32)> { return []; }
         \\#[compiler.beamMemory(.Ets(keyed: true))]
         \\var counts: Dict<string, i32> = Dict.ofEntries(entries());
         ,
@@ -1791,14 +1791,14 @@ test "type position: a module-level value is refused too" {
 
 // ── 01 R6: a behavior's associated fn types its result ───────────────────────
 
-test "associated fn: `Array.range` answers an array, so a method on it resolves" {
+test "associated fn: `array.range` answers an array, so a method on it resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn main() -> void { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); print(xs); }
+        \\pub fn main() -> void { val xs: i32[] = array.range(0, 3).map({ x -> x + 2 }); print(xs); }
         \\
         \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\pub fn main() -> void { val b: bool = Array.range(0, 3); print(b); }
+        \\pub fn main() -> void { val b: bool = array.range(0, 3); print(b); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2244,14 +2244,14 @@ test "infer: record spread ---- an overridden labelled value is evaluated in the
     try std.testing.expect(found);
 }
 
-// ── decision 346: `Bytes` ─────────────────────────────────────────────────────
+// ── decision 346: `bytes` ─────────────────────────────────────────────────────
 
-test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alone" {
+test "decision 346: bytes crosses to and from text through fromUtf8 / toUtf8 alone" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn roundTrip(s: string) -> string {
-        \\    val b: Bytes = Bytes.fromUtf8(s);
+        \\    val b: bytes = bytes.fromUtf8(s);
         \\    val n: i32 = b.length();
-        \\    val cut: Bytes = b.slice(1).concat(b[0..1]);
+        \\    val cut: bytes = b.slice(1).concat(b[0..1]);
         \\    val same: bool = cut == b;
         \\    print(n);
         \\    print(same);
@@ -2262,14 +2262,14 @@ test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alo
         \\import {io.terminal.print} from "std";
     );
     const cases = [_]struct { src: []const u8, want: []const u8 }{
-        .{ .src = "pub fn main() -> void { val b: Bytes = \"a\"; @print(b.length()); }", .want = "expected Bytes, got string" },
-        .{ .src = "fn f(s: string) -> i32 { return s.length(); }\npub fn main() -> void { @print(f(Bytes.fromUtf8(\"a\"))); }", .want = "expected string, got Bytes" },
-        .{ .src = "pub fn main() -> void { @print(Bytes.fromUtf8(\"a\")); }", .want = "bytes-widened" },
-        .{ .src = "pub fn main() -> void { val s = \"x\" + Bytes.fromUtf8(\"a\"); @print(s); }", .want = "`Bytes` is no text to join" },
-        .{ .src = "pub fn main() -> void { val b = Bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`Bytes` is no text to join" },
-        .{ .src = "pub fn main() -> void { val b = Bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`Bytes` takes no `<`" },
-        .{ .src = "fn f(v: string | Bytes) -> bool { return v is Bytes; }\npub fn main() -> void { @print(f(\"a\")); }", .want = "bytes-type-test" },
-        .{ .src = "pub fn main() -> void { val b = Bytes.fromText(\"a\"); @print(b.length()); }", .want = "`Bytes` has no associated function `fromText`" },
+        .{ .src = "pub fn main() -> void { val b: bytes = \"a\"; @print(b.length()); }", .want = "expected bytes, got string" },
+        .{ .src = "fn f(s: string) -> i32 { return s.length(); }\npub fn main() -> void { @print(f(bytes.fromUtf8(\"a\"))); }", .want = "expected string, got bytes" },
+        .{ .src = "pub fn main() -> void { @print(bytes.fromUtf8(\"a\")); }", .want = "bytes-widened" },
+        .{ .src = "pub fn main() -> void { val s = \"x\" + bytes.fromUtf8(\"a\"); @print(s); }", .want = "`bytes` is no text to join" },
+        .{ .src = "pub fn main() -> void { val b = bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`bytes` is no text to join" },
+        .{ .src = "pub fn main() -> void { val b = bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`bytes` takes no `<`" },
+        .{ .src = "fn f(v: string | bytes) -> bool { return v is bytes; }\npub fn main() -> void { @print(f(\"a\")); }", .want = "bytes-type-test" },
+        .{ .src = "pub fn main() -> void { val b = bytes.fromText(\"a\"); @print(b.length()); }", .want = "`bytes` has no associated function `fromText`" },
     };
     for (cases) |c| {
         const msg = try typeErrorMessage(std.testing.allocator, c.src);

@@ -300,7 +300,7 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
             \\pub declare fn hostKey(v: i32) -> string;
             \\
             \\#[compiler.external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
-            \\pub declare fn hostLen(xs: Array<string>) -> i32;
+            \\pub declare fn hostLen(xs: array<string>) -> i32;
             \\
             \\#[compiler.external(.JavaScript("console.log($0)"))]
             \\pub declare fn nodeOnly(s: string) -> void;
@@ -443,8 +443,8 @@ test "js: external ---- a host-backed method is declared in the .d.ts when node 
 // A `#[@External.Node("…$0…")]` template on a BEHAVIOR method becomes a
 // `<Owner>.prototype.<m> = function(…)` patch (`commonJS.buildInterface`), so a
 // template that calls the method it patches calls the patch it has just
-// installed. `String.charCodeAt` read `(($0.charCodeAt($1) ?? -1) | 0)` and one
-// `s.slice(…)` — enough to install the `String` prelude — made every
+// installed. `string.charCodeAt` read `(($0.charCodeAt($1) ?? -1) | 0)` and one
+// `s.slice(…)` — enough to install the `string` prelude — made every
 // `.charCodeAt(…)` in the program blow the stack, at run time, in a library
 // that never named `charCodeAt` itself. The rule was already written down in
 // `libs/std/AGENTS.md`; this is the gate that holds it, over the prelude the
@@ -461,8 +461,11 @@ test "js: external ---- no prelude template calls the method it patches" {
     var program = try @import("../../comptime/std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
+    // Decision 641 — a primitive type's own members (`pub type string { … }`)
+    // are read as the backends read them, its member table.
+    const tables = try @import("../prelude_cache.zig").dissolvedTypesAsMemberTables(alloc, program);
     var seen: usize = 0;
-    for (program.decls) |decl| {
+    for (tables.decls) |decl| {
         if (decl != .behavior) continue;
         for (decl.behavior.methods) |m| {
             const ref = m.externalFor("node") orelse continue;
@@ -487,7 +490,7 @@ test "js: external ---- no prelude template calls the method it patches" {
         }
     }
     // The scan is worthless if the prelude stopped parsing or stopped carrying
-    // templates: `chars`, `lines`, `words`, `charCodeAt` and `Array.zip` are
+    // templates: `chars`, `lines`, `words`, `charCodeAt` and `array.zip` are
     // five of them.
     try std.testing.expect(seen >= 5);
 }

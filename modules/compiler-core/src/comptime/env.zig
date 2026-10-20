@@ -568,7 +568,7 @@ pub fn primKindOfName(typeName: []const u8) ?PrimKind {
         .{ .t = "f32", .k = .float },
         .{ .t = "f64", .k = .float },
         .{ .t = "bigint", .k = .bigint },
-        .{ .t = "Bytes", .k = .bytes },
+        .{ .t = "bytes", .k = .bytes },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
     return null;
@@ -2423,6 +2423,17 @@ pub const Env = struct {
         try log.append(self.arena, .{ .name = name, .prev = self.bindings.get(name), .wasVal = self.valNames.contains(name) });
     }
 
+    /// Decision 641 — whether the body being inferred binds `name` (a
+    /// parameter, a local, a pattern binder, a lambda's parameter): a value
+    /// named like a primitive type (`val bytes = …`) shadows the type's
+    /// statics there. `localBindDepth` cannot tell: a parameter typed by the
+    /// name (`bytes: bytes`) is bound to the type's own binding.
+    pub fn boundInBody(self: *const Env, name: []const u8) bool {
+        const log = self.bodyScope orelse return false;
+        for (log.items) |u| if (std.mem.eql(u8, u.name, name)) return true;
+        return false;
+    }
+
     /// 01 step 13 — a body's bindings end with the body. `bindings` is one flat
     /// table, so a `val` declared inside one `fn` used to stay bound for every
     /// declaration inferred after it: `fn later() { return v; }` checked
@@ -2655,7 +2666,7 @@ pub const Env = struct {
             // Decision 332 — an integer of any size
             "bigint",
             // Decision 346 — an immutable byte sequence
-            "Bytes",
+            "bytes",
             // float types
             "f32", "f64",
             // other primitives

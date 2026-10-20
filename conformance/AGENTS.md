@@ -720,6 +720,14 @@ module, `array<T>`'s `second`, four targets), `modules/primitive_behavior_named_
 (`behavior string`, `primitive-type-redeclared` at the name) and `modules/primitive_extend_refused`
 (`extend string` keeps its refusal, naming `implement <Behavior> for string`; green on the parent
 binary, the kept rule). All but the last refused by the parent binary.
+Decision 641 (every primitive type lowercase, a capitalised name a contract several types share)
+adds two cells under `modules/decisions-taken/primitive_types_lowercase-641/cells/`:
+`primitive_static_on_type` (`string.fromCodepoint(65)`, `array.range(0, 3)`, `array.repeat`,
+`bytes.fromUtf8`, `bigint.of` called through the type's name, four targets) and
+`primitive_contract_dissolved` (`String.fromCodepoint(65)` refused as an unknown name), both red on
+the parent binary. The cells and std were respelled by `scripts/codemod/primitive_names.py`; a cell's
+local named like a type (`val bytes = …`) shadows that type's statics where it is in scope, so
+`fs_read_text_not_utf8`'s local is `written`.
 Decision 206 (`from` names a package — std or a declared dependency — and a
 module of the importing package is imported by its path inside the braces) adds three `modules/`
 cells. `import_own_module_with_from` is the refusal: `import {area, perimeter as around} from

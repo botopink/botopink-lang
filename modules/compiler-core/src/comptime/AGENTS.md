@@ -1699,12 +1699,19 @@ expected is refused at the literal naming the spelling (`expectsBigint`: `val x:
 is not in `isIntType`: it joins no numeric promotion, so `2n * a` with `a: i64` and `2n + 1.5` are
 the ordinary mismatch, located at the right operand. An arithmetic operator over two records
 `ArithKind.bigint` (`range()` null: no overflow check on any backend). The methods are
-`primitives.bp`'s `behavior BigInt` (`primitiveInterfaceName`, `PrimKind.bigint`); `bigint.of(n)` /
+`primitives.bp`'s `pub type bigint { … }` (decision 641: the type holds them; `primitiveInterfaceName`
+answers the type's own name, `PrimKind.bigint`); `bigint.of(n)` /
 `bigint.parse(text)` (`inferPrimitiveStaticCall`, entered when the receiver names the primitive and no
-binding shadows it — `registerBuiltins` binds a primitive's name to its type) type each argument
+binding of the body shadows it — `Env.boundInBody`: a parameter or local named `bytes` is a value,
+whatever its type) type each argument
 against the associated function's parameter (`bigint.of(5)` reads `5` as an `i64`) through
-`inferAssociatedFnCall`, and rename the receiver to `BigInt` through `env.indexRewrites` (decision
-110's alias channel), so every backend renders decision 262's associated host primitive. Question
+`inferAssociatedFnCall`, and the backends read the call through the type's member table
+(`bigint.of`), so every backend renders decision 262's associated host primitive. Decision 641 —
+`string`, `bool`, `bigint`, `bytes` and `array<T>` hold their members as `BehaviorDecl`s of their own
+names with `primitiveType` set (`prelude_cache.dissolvedTypesAsMemberTables`): such a table binds no
+name (`string` stays the type `registerBuiltins` bound), takes no name from the prelude, is no
+`primitive-type-redeclared` and no `external-on-behavior`; `String`, `Bool`, `BigInt`, `Bytes` and
+`Array` name nothing, so each is an unknown name. Question
 139-a's answer (the most restrictive reading, built): a `bigint` does not widen to `unknown`
 (`unify.zig`, `bigint-widened`; `@print`'s variadic `unknown` takes one — `checkDeclaredArguments`),
 `is` and a type pattern neither test for one nor test a subject that holds one (`bigint-type-test`),
@@ -1713,14 +1720,14 @@ and a `comptime` whose value holds one is refused at the `comptime` (`foldBodyCo
 `modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_arithmetic`, `modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_in_containers`, `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_to_i64_aborts`,
 `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_division_by_zero`, `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_across_modules`, `reject/bigint_*`.
 
-## `Bytes`, an immutable byte sequence (decision 346, 144 B-12 step 32)
+## `bytes`, an immutable byte sequence (decision 346, 144 B-12 step 32)
 
-`Bytes` is a primitive (`Env.registerBuiltins`, `scalar_type_names`, `primKindOfName` →
-`PrimKind.bytes`) whose behavior shares its name (`primitives.bp`'s `behavior Bytes`,
-`primitiveInterfaceName("Bytes")` is `"Bytes"`): a method call on a `Bytes` value skips the
+`bytes` is a primitive (`Env.registerBuiltins`, `scalar_type_names`, `primKindOfName` →
+`PrimKind.bytes`) whose member table shares its name (`primitives.bp`'s `pub type bytes { … }`,
+decision 641, `primitiveInterfaceName("bytes")` is `"bytes"`): a method call on a `bytes` value skips the
 inherent-method and behavior-typed-receiver paths of `inferCallExprWith` (which the shared name
 would otherwise enter) and is the primitive's, `length` renamed to commonJS's property as an array's
-and a string's are. `Bytes.fromUtf8(s)` is `inferPrimitiveStaticCall`'s, as `bigint.of` is. No
+and a string's are. `bytes.fromUtf8(s)` is `inferPrimitiveStaticCall`'s, as `bigint.of` is. No
 literal is `Bytes` and nothing converts: a string where `Bytes` is expected, and `Bytes` where a
 `string` is, are the ordinary mismatch at the value. The most restrictive reading of the rest
 (decision 67): `Bytes` does not widen to `unknown` (`unify.zig`, `bytes-widened` — so `@print` does

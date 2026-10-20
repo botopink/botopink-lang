@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub fn main() -> void {
-    val b = Bytes.fromUtf8("hello");
+    val b = bytes.fromUtf8("hello");
     print(b.length());
     print(b.slice(1, 3).length());
-    val c = b.concat(Bytes.fromUtf8("!"));
+    val c = b.concat(bytes.fromUtf8("!"));
     print(c.length());
-    print(b == Bytes.fromUtf8("hello"));
+    print(b == bytes.fromUtf8("hello"));
     val r = b.toUtf8();
     print(r);
     val parts = "a,b,c".split(",");
@@ -91,7 +91,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Bytes
+// behavior bytes
 //   fn fromUtf8(...)
 //   fn toUtf8(...)
 //   fn length(...)

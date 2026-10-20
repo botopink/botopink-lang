@@ -85,7 +85,7 @@ pub declare fn pushMatcher(kind: string, k: string) -> i32;
 pub declare fn invoke<T>(
     id: string,
     method: string,
-    keys: Array<string>,
+    keys: array<string>,
     def: T,
 ) -> T;
 
@@ -254,8 +254,8 @@ pub fn mock(syntax decl: unknown) -> void {
     compiler
         .methods(decl)
         .forEach({ m ->
-            var paramList: Array<string> = [];
-            var keyList: Array<string> = [];
+            var paramList: array<string> = [];
+            var keyList: array<string> = [];
             m.params.forEach({ p ->
                 if (p.name != "self") {
                     paramList.push(p.name + ": " + p.typeName);
@@ -272,7 +272,7 @@ pub fn mock(syntax decl: unknown) -> void {
                 "\"\""
             else if (m.returnType == "bool")
                 "false"
-            else if (m.returnType.startsWith("Array<")
+            else if (m.returnType.startsWith("array<")
                 || m.returnType.endsWith("[]"))
                 "[]"
             else
@@ -336,12 +336,12 @@ fn raisedText(body: fn() -> i32) -> string {
 #[mock]
 behavior UserRepo {
     fn find(self: Self, id: i32) -> string;
-    fn all(self: Self) -> Array<string>;
+    fn all(self: Self) -> array<string>;
 }
 
 // A unit under test that depends only on the behavior.
 type UserService(repo: UserRepo) {
-    pub fn list(self: Self) -> Array<string> {
+    pub fn list(self: Self) -> array<string> {
         return self.repo.all();
     }
     pub fn name(self: Self, id: i32) -> string {

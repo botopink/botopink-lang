@@ -78,7 +78,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export([main/0, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__find'/1, '__bp_priv__contains'/2, '__bp_priv__pair'/1, '__bp_priv__label'/2, '__bp_priv__verdict'/1, '__bp_priv__both'/1, '__bp_priv__text'/1, '__bp_priv__array_fill'/2]).
 
-%% behavior Array
+%% behavior array
 
 array_range(Start, Stop) ->
     case ((Stop - Start) =< 0) of

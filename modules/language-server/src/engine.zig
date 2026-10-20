@@ -1837,12 +1837,10 @@ fn typeRefState(tref: ast.TypeRef) ReceiverType {
     };
 }
 
-/// Like `builtinInterfaceForType`, but also accepts the source spellings that
-/// appear in `TypeRef`s (`Array`, `String`) on top of the inferred-type names
-/// (`array`, `string`, `i32`, …).
+/// `builtinInterfaceForType` over a name a `TypeRef` spells: a primitive type
+/// is written as its inferred type is named (`array`, `string`, `i32`, …;
+/// decision 641).
 fn builtinForName(name: []const u8) ?BuiltinInterface {
-    if (std.mem.eql(u8, name, "Array")) return builtinInterfaceForType("array");
-    if (std.mem.eql(u8, name, "String")) return builtinInterfaceForType("string");
     return builtinInterfaceForType(name);
 }
 
@@ -4457,7 +4455,7 @@ fn isPrimitiveType(name: []const u8) bool {
         "bool",     "string",  "void",    "v128",   "noreturn",
         "i8",       "i16",     "i32",     "i64",    "isize",
         "u8",       "u16",     "u32",     "u64",    "usize",
-        "f32",      "f64",     "unknown", "bigint", "Bytes",
+        "f32",      "f64",     "unknown", "bigint", "bytes",
         "anyvalue", "anytype",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
@@ -5303,11 +5301,14 @@ fn builtinInterfaceForType(type_name: []const u8) ?BuiltinInterface {
     // its `implement` clause names in `primitives.bp`.
     if (comptime_pipeline.primitiveContract(type_name)) |contract|
         return .{ .name = contract, .source = prim, .via = type_name };
-    if (std.mem.eql(u8, type_name, "bool")) return .{ .name = "Bool", .source = prim };
+    // Decision 641 — `bool`, `array<T>`, `string`, `bigint` and `bytes` hold
+    // their own members: `pub type string { … }`.
+    if (std.mem.eql(u8, type_name, "bool") or std.mem.eql(u8, type_name, "bigint") or std.mem.eql(u8, type_name, "bytes"))
+        return .{ .name = type_name, .source = prim };
     if (std.mem.eql(u8, type_name, "array"))
-        return .{ .name = "Array", .source = comptime_pipeline.array_interface_src };
+        return .{ .name = "array", .source = comptime_pipeline.array_interface_src };
     if (std.mem.eql(u8, type_name, "string"))
-        return .{ .name = "String", .source = comptime_pipeline.string_interface_src };
+        return .{ .name = "string", .source = comptime_pipeline.string_interface_src };
     return null;
 }
 
@@ -5431,7 +5432,9 @@ fn collectInterfaceMembers(
         var i: usize = 0;
         var body_start: ?usize = null;
         while (i < tokens.len) : (i += 1) {
-            if (tokens[i].kind != .interface and tokens[i].kind != .behavior) continue;
+            // A primitive type's own block (`pub type string { … }`,
+            // decision 641) holds its members as a behavior's does.
+            if (tokens[i].kind != .interface and tokens[i].kind != .behavior and tokens[i].kind != .type) continue;
             var j = i + 1;
             while (j < tokens.len and tokens[j].kind == .endOfFile) : (j += 1) {}
             if (j >= tokens.len or tokens[j].kind != .identifier) continue;
@@ -5690,8 +5693,13 @@ fn hoverBuiltinInterfaceMethod(
         // `type i32 implement Signed` (decided 2026-09-17, decision 617 (1)).
         // Naming only the receiver sent the reader to a declaration whose body
         // has no such member.
+        // Decision 641 — a primitive type holds its own members
+        // (`pub type array<T> { … }`): the declaration is a `type`.
+        const owned = for ([_][]const u8{ "string", "bool", "bigint", "bytes", "array" }) |t| {
+            if (std.mem.eql(u8, t, iface.name)) break true;
+        } else false;
         if (std.mem.eql(u8, m.owner, iface.name) and iface.via == null)
-            try buf.print(gpa, "\n\n*from `behavior {s}`*", .{iface.name})
+            try buf.print(gpa, "\n\n*from `{s} {s}`*", .{ if (owned) "type" else "behavior", iface.name })
         else
             try buf.print(gpa, "\n\n*from `behavior {s}` (via {s})*", .{ m.owner, iface.via orelse iface.name });
         return .{ .contents = .{ .kind = proto.MarkupKind.Markdown, .value = try buf.toOwnedSlice(gpa) } };

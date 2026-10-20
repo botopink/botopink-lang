@@ -194,13 +194,13 @@ test "functions.constant ignores its argument" {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn parse(s: string) -> Result<Array<#(string, string)>, string> {
+fn parse(s: string) -> Result<array<#(string, string)>, string> {
     if (s == "") throw "empty";
     return [#(s, s.toUpper())];
 }
 
-fn pairsOf(r: Result<Array<#(string, string)>, string>) -> string {
-    val none: Array<#(string, string)> = [];
+fn pairsOf(r: Result<array<#(string, string)>, string>) -> string {
+    val none: array<#(string, string)> = [];
     return r.unwrapOr(none).map({ p -> [p._0, "=>", p._1].join("") }).join("|");
 }
 

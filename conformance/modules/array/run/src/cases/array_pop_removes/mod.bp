@@ -7,7 +7,7 @@
 
 import {io.terminal.print} from "std";
 
-fn drain(start: Array<i32>) -> i32 {
+fn drain(start: array<i32>) -> i32 {
     var xs = start;
     var sum = 0;
     while (xs.length() > 0) {

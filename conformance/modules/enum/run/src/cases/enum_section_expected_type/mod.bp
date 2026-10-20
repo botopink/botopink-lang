@@ -56,7 +56,7 @@ type Boxed(tone: Token, weight: i32 = 7)
 pub fn runCase() -> void {
     val t: Token = .Color.Red.500;
     val b: Border = .Color.Red.500;
-    val ts: Array<Token> = [.Color.Red.100];
+    val ts: array<Token> = [.Color.Red.100];
     val boxed = Boxed(tone: .Color.Red.100);
 
     print(tokenName(t));

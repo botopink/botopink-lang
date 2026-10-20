@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: `Bytes` is no text to join with `+` or a string template
+refused error: `bytes` is no text to join with `+` or a string template
 at src/cases/bytes_interpolated/mod.bp:8:18

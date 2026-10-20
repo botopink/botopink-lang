@@ -2,7 +2,7 @@
 
 pub fn tag(
     name: string,
-    attrs: Array<string> = [],
+    attrs: array<string> = [],
     closed: bool = false,
     depth: i32 = -1,
 ) -> string {
@@ -15,6 +15,6 @@ pub fn tag(
         + depth.toString();
 }
 
-pub fn pair(label: string = "p", at: Array<i32> = [0, 0]) -> string {
+pub fn pair(label: string = "p", at: array<i32> = [0, 0]) -> string {
     return label + at.map({ n -> n.toString() }).join("");
 }

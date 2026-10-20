@@ -244,7 +244,7 @@ test "js: tuple ---- chained positional access and a method on an element" {
 // four backends (the bare `pair.0` is `element/2` on erlang and beam).
 test "js: tuple ---- a bare digit index and optional chaining over a found pair" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
+        \\fn lookup(pairs: array<#(string, i32)>, key: string) -> ?i32 {
         \\    return pairs.find({ pair -> pair.0 == key })?.1;
         \\}
         \\

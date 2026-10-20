@@ -37,7 +37,7 @@ pub fn main() -> void {
     print(s.0 + 1);
     print(s.1 - 1);
     print(first(#(top, "q")));
-    val rows: Array<#(u64, string)> = [#(top, "a"), #(three, "b")];
+    val rows: array<#(u64, string)> = [#(top, "a"), #(three, "b")];
     print(rows);
     for (rows) { r ->
         print(r.1, r.0);

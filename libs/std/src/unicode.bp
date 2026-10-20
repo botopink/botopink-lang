@@ -29,11 +29,11 @@
 import {unicode_tables as tables, compiler};
 
 // The one-character string of the scalar value `cp` (decision 262): every
-// target runs this body, a call of the primitive `String.fromCodepoint`, so a
+// target runs this body, a call of the primitive `string.fromCodepoint`, so a
 // `cp` that is no Unicode scalar value — negative, a surrogate, past U+10FFFF —
 // aborts the program the same way everywhere.
 pub fn fromCodepoint(cp: i32) -> string {
-    return String.fromCodepoint(cp);
+    return string.fromCodepoint(cp);
 }
 
 #[compiler.external(
@@ -71,10 +71,10 @@ pub fn firstCodepoint(s: string) -> ?i32 {
     .Erlang("unicode:characters_to_list($0, utf8)"),
     .Wasm(body: codepointsBody),
 )]
-pub declare fn codepoints(s: string) -> Array<i32>;
+pub declare fn codepoints(s: string) -> array<i32>;
 
 // wasm's cell: one code point per character (decision 240).
-fn codepointsBody(s: string) -> Array<i32> {
+fn codepointsBody(s: string) -> array<i32> {
     return s.chars().map({ c -> c.charCodeAt(0) });
 }
 
@@ -132,7 +132,7 @@ fn isHangulSyllable(cp: i32) -> bool {
     return above && cp < hangulSBase + hangulSCount;
 }
 
-fn hangulDecomposition(cp: i32) -> Array<i32> {
+fn hangulDecomposition(cp: i32) -> array<i32> {
     val index = cp - hangulSBase;
     val t = index % hangulTCount;
     val vt = index % hangulNCount;
@@ -145,25 +145,25 @@ fn hangulDecomposition(cp: i32) -> Array<i32> {
 // The full decomposition of `cp`: its mapping, decomposed again until no
 // code point maps. A compatibility mapping is followed only when `compat`
 // and the code point has no canonical one.
-fn fullDecomposition(cp: i32, compat: bool) -> Array<i32> {
+fn fullDecomposition(cp: i32, compat: bool) -> array<i32> {
     if (isHangulSyllable(cp)) return hangulDecomposition(cp);
     val canonical = tables.canonicalDecomposition(cp);
-    val mapping: Array<i32> = if (canonical.length > 0)
+    val mapping: array<i32> = if (canonical.length > 0)
         canonical
     else if (compat)
         tables.compatibilityDecomposition(cp)
     else
         canonical;
     if (mapping.length == 0) return [cp];
-    var out: Array<i32> = [];
+    var out: array<i32> = [];
     for (mapping) { m ->
         out = out.append(fullDecomposition(m, compat));
     }
     return out;
 }
 
-fn decompose(cps: Array<i32>, compat: bool) -> Array<i32> {
-    var out: Array<i32> = [];
+fn decompose(cps: array<i32>, compat: bool) -> array<i32> {
+    var out: array<i32> = [];
     for (cps) { c ->
         out = out.append(fullDecomposition(c, compat));
     }
@@ -172,9 +172,9 @@ fn decompose(cps: Array<i32>, compat: bool) -> Array<i32> {
 
 // The canonical ordering algorithm: every run of non-starters (combining
 // class > 0) sorted by class, stably — marks of one class keep their order.
-fn canonicalOrder(cps: Array<i32>) -> Array<i32> {
-    var out: Array<i32> = [];
-    var run: Array<i32> = [];
+fn canonicalOrder(cps: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
+    var run: array<i32> = [];
     for (cps) { c ->
         val k = tables.combiningClass(c);
         if (k == 0) {
@@ -187,7 +187,7 @@ fn canonicalOrder(cps: Array<i32>) -> Array<i32> {
 
 // `c` (of class `k`) placed into `run`, which is sorted by class, after
 // every mark whose class is at most `k`.
-fn insertByClass(run: Array<i32>, c: i32, k: i32) -> Array<i32> {
+fn insertByClass(run: array<i32>, c: i32, k: i32) -> array<i32> {
     val at = run.count({ x -> tables.combiningClass(x) <= k });
     return run.slice(0, at).append([c]).append(run.slice(at, run.length));
 }
@@ -199,10 +199,10 @@ fn insertByClass(run: Array<i32>, c: i32, k: i32) -> Array<i32> {
 // `pending` holds the characters after the starter that did not compose
 // (all non-starters: a starter that does not compose becomes the next
 // starter), `lastClass` the class of the last of them.
-fn recompose(cps: Array<i32>) -> Array<i32> {
-    var out: Array<i32> = [];
+fn recompose(cps: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
     var starter = -1;
-    var pending: Array<i32> = [];
+    var pending: array<i32> = [];
     var lastClass = 0;
     for (cps) { c ->
         val k = tables.combiningClass(c);
@@ -225,10 +225,10 @@ fn recompose(cps: Array<i32>) -> Array<i32> {
 
 // `out` followed by the starter (none when negative) and what followed it.
 fn withStarter(
-    out: Array<i32>,
+    out: array<i32>,
     starter: i32,
-    pending: Array<i32>,
-) -> Array<i32> {
+    pending: array<i32>,
+) -> array<i32> {
     if (starter < 0) return out.append(pending);
     return out.append([starter]).append(pending);
 }
@@ -267,7 +267,7 @@ test "unicode.fromCodepoint of a code point above U+FFFF is one code point" {
 }
 
 test "unicode.fromCodepoint of U+00E9 is the primitive's one code point" {
-    assert fromCodepoint(233) == String.fromCodepoint(233);
+    assert fromCodepoint(233) == string.fromCodepoint(233);
     assert codepoints(fromCodepoint(233)).length == 1;
 }
 
@@ -308,7 +308,7 @@ test "unicode.normalize NFKD is a no-op on ASCII" {
 
 // Non-ASCII text is built from code points: the erlang backend truncates a
 // `\u{…}` literal above U+007F to one latin1 byte.
-fn text(cps: Array<i32>) -> string {
+fn text(cps: array<i32>) -> string {
     return cps.map({ c -> fromCodepoint(c) }).join("");
 }
 

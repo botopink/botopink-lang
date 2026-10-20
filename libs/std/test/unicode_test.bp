@@ -45,8 +45,8 @@ fn mismatch(
     line: string,
     form: NormalizationForm,
     name: string,
-    cols: Array<string>,
-    indices: Array<i32>,
+    cols: array<string>,
+    indices: array<i32>,
     want: i32,
 ) -> string {
     val expected = cols.at(want) ?? "";
@@ -70,14 +70,14 @@ fn mismatch(
 }
 
 // Every failure of the lines of `@Part<part>`, and how many lines it has.
-fn checkPart(part: string) -> #(i32, Array<string>) {
+fn checkPart(part: string) -> #(i32, array<string>) {
     val file = fs
         .readText("tools/unicode-gen/NormalizationTest.txt")
         .unwrapOr("");
     val header = ["@Part", part].join("");
     var inPart = false;
     var count = 0;
-    var failures: Array<string> = [];
+    var failures: array<string> = [];
     for (file.split("\n")) { line ->
         if (line.startsWith("@Part")) inPart = line.startsWith(header) else {
             val data = inPart && !line.startsWith("#") && line != "";
@@ -142,7 +142,7 @@ fn checkPart(part: string) -> #(i32, Array<string>) {
     return #(count, failures);
 }
 
-fn report(failures: Array<string>) -> i32 {
+fn report(failures: array<string>) -> i32 {
     failures.take(10).forEach({ f -> print(f) });
     return failures.length;
 }

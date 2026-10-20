@@ -6,7 +6,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val ts: Array<i32> = [1, 2];
+    val ts: array<i32> = [1, 2];
     val x: i32 = ts[0];
     print(x);
 }

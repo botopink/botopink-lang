@@ -2815,7 +2815,9 @@ pub const Formatter = struct {
 
         // Decision 330 (7) — the types declared in the body (associated
         // types) print first, then the functions.
-        const memberCount = t.assocTypes.len + t.methods.len;
+        // Decision 641 — a primitive type's properties (`val length: i32;`)
+        // print after them, before the functions.
+        const memberCount = t.assocTypes.len + t.properties.len + t.methods.len;
         const methodDocs = try this.arena.alloc(*const Doc, memberCount);
         const methodBlanks = try this.arena.alloc(bool, memberCount);
         const noGroups = try this.arena.alloc(u8, memberCount);
@@ -2825,7 +2827,17 @@ pub const Formatter = struct {
             methodBlanks[i] = c.blank;
             noGroups[i] = 0;
         }
-        for (t.methods, t.assocTypes.len..) |m, i| {
+        for (t.properties, t.assocTypes.len..) |f, i| {
+            const c = try this.withMemberComments(f.comments, try this.concatAll(&.{
+                try this.text(try std.fmt.allocPrint(this.arena, "val {s}: ", .{f.name})),
+                try this.fmtTypeRef(f.typeRef),
+                try this.text(";"),
+            }));
+            methodDocs[i] = c.doc;
+            methodBlanks[i] = c.blank;
+            noGroups[i] = 0;
+        }
+        for (t.methods, t.assocTypes.len + t.properties.len..) |m, i| {
             const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
                 try this.fmtAnnotations(m.annotations),
                 try this.fmtInterfaceMethod(m),

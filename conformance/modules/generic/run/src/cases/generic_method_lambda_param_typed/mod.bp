@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-type Bag<T>(items: Array<T>) {
+type Bag<T>(items: array<T>) {
     pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Bag<U> {
         return Bag(items: self.items.map(f));
     }

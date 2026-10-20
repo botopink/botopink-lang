@@ -2368,10 +2368,10 @@ pub fn stringLexeme(arena: std.mem.Allocator, s: []const u8) Error![]const u8 {
     return out.items;
 }
 
-/// Whether the type a lifted value is read under is `Bytes` (decision 520).
+/// Whether the type a lifted value is read under is `bytes` (decision 520).
 fn isBytesHint(hint: ?*T.Type) bool {
     const h = (hint orelse return false).deref();
-    return h.* == .named and std.mem.eql(u8, h.named.name, "Bytes");
+    return h.* == .named and std.mem.eql(u8, h.named.name, "bytes");
 }
 
 /// `value` as the expression the program is emitted with, typed `ty` (the

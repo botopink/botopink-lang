@@ -22,7 +22,7 @@
 
 import {io.terminal.print} from "std";
 
-type Box(items: Array<i32>) {
+type Box(items: array<i32>) {
     iter fn each(self: Self) -> Iter<i32> {
         for (self.items) { x ->
             yield x;

@@ -27,7 +27,7 @@ pub fn markup(syntax q: string) -> string {
         DeclKind.Component
     else
         DeclKind.Element;
-    var attrs: Array<#(string, string)> = [];
+    var attrs: array<#(string, string)> = [];
     if (text.contains("id=\"")) {
         val rest = text.slice(text.indexOf("id=\"") + 4, text.length);
         attrs = [#("id", rest.slice(0, rest.indexOf("\"")))];

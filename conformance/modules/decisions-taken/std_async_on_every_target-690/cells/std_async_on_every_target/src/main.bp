@@ -32,7 +32,7 @@ fn pauseText(policy: async.RetryPolicy, attempt: i32) -> string {
     return if (pause != null) pause.toString() else "none";
 }
 
-fn show(label: string, r: Result<Array<string>, string>) -> void {
+fn show(label: string, r: Result<array<string>, string>) -> void {
     case r {
         Ok(xs) -> print(label + " ok " + xs.join(","));
         Error(e) -> print(label + " error " + e);
@@ -81,7 +81,7 @@ async fn run() -> Async<void> {
     val closed = await async.awaitGate(async.newGate(), 10);
     print("awaitGate " + open.toString() + " " + closed.toString());
     val policy = async.RetryPolicy(4, 100, 1.5, 300);
-    val delays = Array
+    val delays = array
         .range(1, 6)
         .map({ attempt -> pauseText(policy, attempt) });
     print("nextDelay " + delays.join(","));

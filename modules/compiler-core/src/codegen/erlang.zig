@@ -3249,17 +3249,17 @@ const PrimErlangCall = struct {
 /// on an unsigned receiver, so starting from the signed contract is safe.
 fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
     return switch (k) {
-        .array => "Array",
-        .string => "String",
-        .bool => "Bool",
+        .array => "array",
+        .string => "string",
+        .bool => "bool",
         .int, .float => blk: {
             const chain = prelude_cache.contractChainOfKind(k);
             break :blk if (chain.len > 0) chain[0] else null;
         },
         // Decision 332 — `bigint`'s own interface, outside the tower.
-        .bigint => "BigInt",
+        .bigint => "bigint",
         // Decision 346 — `Bytes`' own interface (a binary, as a `string` is).
-        .bytes => "Bytes",
+        .bytes => "bytes",
     };
 }
 
@@ -4204,8 +4204,8 @@ const Emitter = struct {
     /// A primitive method call rendered from its `#[@External.Erlang(…)]`
     /// annotation, or null when none is registered for `<iface>.<method>`
     /// (callers fall through to the inline lowerings for irreducible cases).
-    /// `primIfaceForKind` maps a `PrimKind` to its interface (`.array` →
-    /// `"Array"`), and the `extends` chain is walked so a method declared on a
+    /// `primIfaceForKind` maps a `PrimKind` to its member table (`.array` →
+    /// `"array"`, decision 641), and the `extends` chain is walked so a method declared on a
     /// parent interface (`Integer.toString` from an `i32` receiver) resolves.
     fn primAnnotationNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
         const head_iface = primIfaceForKind(k) orelse return null;
@@ -4567,7 +4567,7 @@ const Emitter = struct {
             .array => .{ .prim = .array },
             .generic => |g| if (g.is_builtin and std.mem.eql(u8, g.name, "Result"))
                 .result
-            else if (std.mem.eql(u8, g.name, "Array"))
+            else if (std.mem.eql(u8, g.name, "array"))
                 .{ .prim = .array }
             else
                 null,
@@ -5891,7 +5891,7 @@ const Emitter = struct {
                 if (g.args.len == 0) return null;
                 const looks_through = (g.is_builtin and (std.mem.eql(u8, g.name, "Result") or
                     std.mem.eql(u8, g.name, "Future") or std.mem.eql(u8, g.name, "Option"))) or
-                    std.mem.eql(u8, g.name, "Array");
+                    std.mem.eql(u8, g.name, "array");
                 return if (looks_through) recordNameOfReturn(g.args[0]) else null;
             },
             else => null,
@@ -9507,6 +9507,17 @@ const Emitter = struct {
             } };
         }
 
+        // Decision 641 — a primitive's static, called through the type's own
+        // lowercase name (`array.range(0, 3)`, `string.fromCodepoint(65)`).
+        if (recv.* == .identifier and recv.identifier.kind == .ident and prelude_cache.isMemberTableStatic(recv.identifier.kind.ident, cc.callee)) {
+            const name = recv.identifier.kind.ident;
+            if (try this.assocHostNode(b, name, cc)) |node| return node;
+            if (this.isInterfaceAssoc(name, cc.callee)) {
+                var mraw: [256]u8 = undefined;
+                const mname = try interfaceAssocAtom(&mraw, name, cc.callee);
+                return this.fileCall(b, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+            }
+        }
         const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and this.isTypeRef(recv.identifier.kind.ident))
             recv.identifier.kind.ident
         else
@@ -11251,7 +11262,7 @@ const Emitter = struct {
             },
             .array => return try b.remote("erlang", "is_list", &.{subject}),
             .generic => |g| {
-                if (std.mem.eql(u8, g.name, "Array")) return try b.remote("erlang", "is_list", &.{subject});
+                if (std.mem.eql(u8, g.name, "array")) return try b.remote("erlang", "is_list", &.{subject});
                 return this.typeTestNode(b, .{ .named = g.name }, subject);
             },
             // `?T` is absent or a `T`.

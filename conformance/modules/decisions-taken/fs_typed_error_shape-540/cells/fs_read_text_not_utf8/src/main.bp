@@ -7,14 +7,14 @@
 import {io.fs, encoding, io.terminal.print} from "std";
 
 fn probe(hex: string) -> void {
-    val bytes = encoding.hexDecodeBytes(hex).unwrapOr(Bytes.fromUtf8(""));
-    fs.writeBytes("sample.bin", bytes);
-    val kept = fs.readBytes("sample.bin").unwrapOr(Bytes.fromUtf8(""));
+    val written = encoding.hexDecodeBytes(hex).unwrapOr(bytes.fromUtf8(""));
+    fs.writeBytes("sample.bin", written);
+    val kept = fs.readBytes("sample.bin").unwrapOr(bytes.fromUtf8(""));
     val back = encoding.hexEncodeBytes(kept);
     case fs.readText("sample.bin") {
         Ok(text) -> print(hex
             + ": ok text="
-            + encoding.hexEncodeBytes(Bytes.fromUtf8(text))
+            + encoding.hexEncodeBytes(bytes.fromUtf8(text))
             + " bytes="
             + back);
         Error(e) -> case e {

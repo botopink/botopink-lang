@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
+fn lookup(pairs: array<#(string, i32)>, key: string) -> ?i32 {
     return pairs.find({ pair -> pair.0 == key })?.1;
 }
 

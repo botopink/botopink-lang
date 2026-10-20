@@ -10,7 +10,7 @@ behavior Sized {
     }
 }
 
-type Bag<T>(items: Array<T>) implement Sized {
+type Bag<T>(items: array<T>) implement Sized {
     pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }

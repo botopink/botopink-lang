@@ -652,6 +652,27 @@ pub fn renameTemplateSelf(arena: std.mem.Allocator, f: ast.FnDecl) std.mem.Alloc
     return out;
 }
 
+/// Decision 641 — `stmts` with every bare `from` written `to` (new nodes
+/// throughout): a primitive type's member whose body is a private
+/// function's (`.Wasm(body: f)`, `prelude_cache.dissolvedTypesAsMemberTables`)
+/// reads the function's receiver parameter as the member's `self`.
+pub fn renameIdentifier(arena: std.mem.Allocator, stmts: []ast.Stmt, from: []const u8, to: []const u8) std.mem.Allocator.Error![]ast.Stmt {
+    var r: Rewrite(RenameIdent) = .{ .arena = arena, .hook = .{ .from = from, .to = to } };
+    return r.clone([]ast.Stmt, stmts);
+}
+
+const RenameIdent = struct {
+    from: []const u8,
+    to: []const u8,
+
+    fn replace(h: *RenameIdent, _: std.mem.Allocator, v: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
+        if (v != .identifier or v.identifier.kind != .ident or !std.mem.eql(u8, v.identifier.kind.ident, h.from)) return null;
+        var out = v.identifier;
+        out.kind = .{ .ident = h.to };
+        return .{ .identifier = out };
+    }
+};
+
 const RenameSelf = struct {
     fn replace(_: *RenameSelf, _: std.mem.Allocator, v: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
         if (v != .identifier or v.identifier.kind != .ident or !std.mem.eql(u8, v.identifier.kind.ident, "self")) return null;

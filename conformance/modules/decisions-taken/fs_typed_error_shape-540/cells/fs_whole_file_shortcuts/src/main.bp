@@ -10,7 +10,7 @@ import {io.fs, encoding, io.terminal.print} from "std";
 fn hex(path: string) -> string {
     return encoding.hexEncodeBytes(fs
         .readBytes(path)
-        .unwrapOr(Bytes.fromUtf8("?")));
+        .unwrapOr(bytes.fromUtf8("?")));
 }
 
 pub fn main() -> void {
@@ -18,7 +18,7 @@ pub fn main() -> void {
     print(fs.mkdirRecursive("shortcuts/a/b").isOk());
     print(fs.mkdirRecursive("shortcuts/a/b").isOk());
 
-    val raw = encoding.hexDecodeBytes("00ff80c3").unwrapOr(Bytes.fromUtf8("?"));
+    val raw = encoding.hexDecodeBytes("00ff80c3").unwrapOr(bytes.fromUtf8("?"));
     print(fs.writeBytes("shortcuts/raw.bin", raw).unwrapOr(-1));
     print(hex("shortcuts/raw.bin"));
 

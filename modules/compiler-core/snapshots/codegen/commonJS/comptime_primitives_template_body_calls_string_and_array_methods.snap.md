@@ -4459,7 +4459,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior String
+// behavior string
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)
@@ -4526,7 +4526,7 @@ String.prototype.parseFloat = function() {
     return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: 'parseFloat: "' + self + '" is not a number' }); } })();
 };
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

@@ -1,7 +1,7 @@
 import {point.Point};
 import {outline.Outline};
 
-pub type Canvas(outlines: Array<Outline>, origin: Point) {
+pub type Canvas(outlines: array<Outline>, origin: Point) {
     pub fn count(self: Self) -> i32 {
         return self.outlines.length;
     }

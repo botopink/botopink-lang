@@ -7,7 +7,7 @@ import {io.terminal.print} from "std";
 
 type W(x: i32)
 
-type Q<T>(items: Array<T>)
+type Q<T>(items: array<T>)
 
 type B<T>(v: T)
 

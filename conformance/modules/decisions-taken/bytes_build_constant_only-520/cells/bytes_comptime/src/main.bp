@@ -5,6 +5,6 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val b = comptime Bytes.fromUtf8("a");
+    val b = comptime bytes.fromUtf8("a");
     print(b.length());
 }

@@ -65,7 +65,7 @@ pub declare fn args() -> string[];
     .JavaScript("""(Object.entries(process.env))"""),
     .Erlang("""(fun() -> [(fun(__E) -> [__K, __V] = string:split(__E, "=", leading), {list_to_binary(__K), list_to_binary(__V)} end)(__E) || __E <- os:getenv()] end)()"""),
 )]
-pub declare fn vars() -> Array<#(string, string)>;
+pub declare fn vars() -> array<#(string, string)>;
 
 // ── tests ────────────────────────────────────────────────────────────────────
 

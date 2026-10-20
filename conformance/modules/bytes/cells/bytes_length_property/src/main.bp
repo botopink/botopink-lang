@@ -8,14 +8,14 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""<<104, 255, 200>>"""),
     .Wasm(body: rawBody),
 )]
-declare fn raw() -> Bytes;
+declare fn raw() -> bytes;
 
-fn rawBody() -> Bytes {
-    return Bytes.fromUtf8("h").concat(Bytes.fromUtf8("é"));
+fn rawBody() -> bytes {
+    return bytes.fromUtf8("h").concat(bytes.fromUtf8("é"));
 }
 
 pub fn main() -> void {
-    val b: Bytes = raw();
+    val b: bytes = raw();
     print(b.length);
-    print(Bytes.fromUtf8("héllo").length);
+    print(bytes.fromUtf8("héllo").length);
 }

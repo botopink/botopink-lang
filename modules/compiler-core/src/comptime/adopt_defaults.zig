@@ -79,26 +79,18 @@ fn adoptForTypes(
     return p;
 }
 
-/// Decision 799 — the std behavior that holds a primitive's members until
-/// decision 641 dissolves it into the type, for an implementation's target.
-/// The numeric widths share their contracts (`Signed`, `Float`) and are not
-/// here.
-/// The type parameters the holder declares — `Array<T>`'s `T`, the element.
+/// The type parameters the holder declares — `array<T>`'s `T`, the element.
 fn holderParams(holder: []const u8) []const []const u8 {
-    if (std.mem.eql(u8, holder, "Array")) return &.{"T"};
+    if (std.mem.eql(u8, holder, "array")) return &.{"T"};
     return &.{};
 }
 
+/// Decision 799 — the member table that holds a primitive's members, for an
+/// implementation's target: the type's own (decision 641, `pub type string
+/// { … }`). The numeric widths share their contracts (`Signed`, `Float`) and
+/// are not here.
 pub fn primitiveHolder(target: []const u8) ?[]const u8 {
-    const map = [_]struct { t: []const u8, b: []const u8 }{
-        .{ .t = "string", .b = "String" },
-        .{ .t = "bool", .b = "Bool" },
-        .{ .t = "bigint", .b = "BigInt" },
-        .{ .t = "bytes", .b = "Bytes" },
-        .{ .t = "Bytes", .b = "Bytes" },
-        .{ .t = "array", .b = "Array" },
-    };
-    for (map) |e| if (std.mem.eql(u8, target, e.t)) return e.b;
+    for ([_][]const u8{ "string", "bool", "bigint", "bytes", "array" }) |t| if (std.mem.eql(u8, target, t)) return t;
     return null;
 }
 
@@ -108,7 +100,7 @@ pub fn primitiveHolder(target: []const u8) ?[]const u8 {
 /// of what it extends, is copied into the members of the std behavior that
 /// holds the primitive's (`primitiveHolder`), as a program's own member of it
 /// — checked there with `Self` the primitive and lowered by every backend as
-/// one (a program's `behavior String { … }` until 641). The copy's locations
+/// one (the primitive type's own member table, decision 641). The copy's locations
 /// move to lines of their own (`shift`), and it carries the implementation
 /// (`ast.AdoptedBy`) a refusal of it is located at: a member the primitive
 /// already has is `behavior-member-redeclared` there (799 (4)). A member the
@@ -155,7 +147,7 @@ fn adoptForPrimitives(
     while (it.next()) |e| {
         if (e.value_ptr.items.len == 0) continue;
         const holder = e.key_ptr.*;
-        // A program that also writes `behavior String { … }` receives the
+        // A declaration of the table already in the program receives the
         // copies there: one declaration per name.
         const own = for (decls.items) |*d| {
             if (d.* == .behavior and std.mem.eql(u8, d.behavior.name, holder)) break d;
@@ -167,13 +159,18 @@ fn adoptForPrimitives(
         const params = holderParams(holder);
         const gps = try arena.alloc(ast.GenericParam, params.len);
         for (params, 0..) |n, i| gps[i] = .{ .name = n };
-        try decls.insert(arena, head, .{ .behavior = .{
-            .name = holder,
-            .genericParams = gps,
-            .fields = &.{},
-            .methods = e.value_ptr.items,
-            .nameLoc = at.get(holder).?,
-        } });
+        try decls.insert(arena, head, .{
+            .behavior = .{
+                .name = holder,
+                .genericParams = gps,
+                .fields = &.{},
+                .methods = e.value_ptr.items,
+                .nameLoc = at.get(holder).?,
+                // The primitive's own member table (decision 641), the adopted
+                // members added to std's.
+                .primitiveType = true,
+            },
+        });
         head += 1;
     }
     var p = program;

@@ -373,7 +373,7 @@ test "hover: interface method on array receiver shows signature" {
         \\fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>
         \\```
         \\
-        \\*from `behavior Array`*
+        \\*from `type array`*
     ,
         result.?.contents.value,
     );

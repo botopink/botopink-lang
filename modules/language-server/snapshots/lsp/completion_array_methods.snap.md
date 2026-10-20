@@ -16,9 +16,9 @@ reverse  [Method]  detail: fn reverse(self: Self<T>) -> Self<T>
 indexOf  [Method]  detail: fn indexOf(self: Self<T>, item: T) -> i32
 lastIndexOf  [Method]  detail: fn lastIndexOf(self: Self<T>, item: T) -> i32
 forEach  [Method]  detail: fn forEach(self: Self<T>, action: fn(item: T)) -> void
-map  [Method]  detail: fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>
+map  [Method]  detail: fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>
 filter  [Method]  detail: fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>
-zip  [Method]  detail: fn zip<U>(self: Self<T>, other: Array<U>) -> Array<#(T, U)>
+zip  [Method]  detail: fn zip<U>(self: Self<T>, other: array<U>) -> array<#(T, U)>
 isEmpty  [Method]  detail: fn isEmpty(self: Self<T>) -> bool
 contains  [Method]  detail: fn contains(self: Self<T>, x: T) -> bool
 first  [Method]  detail: fn first(self: Self<T>) -> ?T
@@ -36,17 +36,14 @@ all  [Method]  detail: fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 any  [Method]  detail: fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 append  [Method]  detail: fn append(self: Self<T>, other: Self<T>) -> Self<T>
 prepend  [Method]  detail: fn prepend(self: Self<T>, item: T) -> Self<T>
-flatten  [Method]  detail: fn flatten<E>(self: Self<Array<E>>) -> Array<E>
-flatMap  [Method]  detail: fn flatMap<U>(
-        self: Self<T>,
-        transform: fn(item: T) -> U,
-    ) -> Array<U>
+flatten  [Method]  detail: fn flatten<E>(self: Self<array<E>>) -> array<E>
+flatMap  [Method]  detail: fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>
 toList  [Method]  detail: fn toList(self: Self<T>) -> Self<T>
 some  [Method]  detail: fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 every  [Method]  detail: fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool
-flat  [Method]  detail: fn flat<E>(self: Self<Array<E>>) -> Array<E>
+flat  [Method]  detail: fn flat<E>(self: Self<array<E>>) -> array<E>
 findIndex  [Method]  detail: fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32
-fill  [Method]  detail: fn fill<E>(self: Self<T>, value: E) -> Array<E>
-chunked  [Method]  detail: fn chunked(self: Self<T>, n: i32) -> Array<Self<T>>
-sliding  [Method]  detail: fn sliding(self: Self<T>, n: i32) -> Array<Self<T>>
+fill  [Method]  detail: fn fill<E>(self: Self<T>, value: E) -> array<E>
+chunked  [Method]  detail: fn chunked(self: Self<T>, n: i32) -> array<Self<T>>
+sliding  [Method]  detail: fn sliding(self: Self<T>, n: i32) -> array<Self<T>>
 unique  [Method]  detail: fn unique(self: Self<T>) -> Self<T>

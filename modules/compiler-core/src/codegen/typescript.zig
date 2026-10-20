@@ -888,8 +888,8 @@ const Builder = struct {
         if (std.mem.eql(u8, name, "char")) return "string";
         // The checker's type of a call that never returns (`@panic`).
         if (std.mem.eql(u8, name, "noreturn")) return "never";
-        // Decision 346 — `Bytes` is a `Uint8Array` (`commonJS.jsPrototypeOwner`).
-        if (std.mem.eql(u8, name, "Bytes")) return "Uint8Array";
+        // Decision 346 — `bytes` is a `Uint8Array` (`commonJS.jsPrototypeOwner`).
+        if (std.mem.eql(u8, name, "bytes")) return "Uint8Array";
         // The compiler-known markup child list is an array at run time (the
         // coercion is type-level only, `comptime/env.zig`).
         if (std.mem.eql(u8, name, "Children")) return "any[]";

@@ -46,6 +46,6 @@ pub fn runCase() -> void {
     print(r.path());
     print(r.weight(10));
     print(home().path());
-    val all: Array<Request> = [Page(route: "/p"), Api(version: 3)];
+    val all: array<Request> = [Page(route: "/p"), Api(version: 3)];
     print(all.map({ q -> q.weight(2) }));
 }

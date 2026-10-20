@@ -4,6 +4,6 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val b = Bytes.fromText("a");
+    val b = bytes.fromText("a");
     print(b.length());
 }

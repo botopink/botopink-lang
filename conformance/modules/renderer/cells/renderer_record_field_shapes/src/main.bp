@@ -29,9 +29,9 @@ pub fn main() -> void {
     print(label("x"));
     val first: string = firstOf(Box(items: ["a", "b"]), "z");
     print(first);
-    val none: Array<string> = [];
+    val none: array<string> = [];
     val fallback: string = firstOf(Box(items: none), "z");
     print(fallback);
-    val thunks: Array<fn() -> Async<Node>> = [];
+    val thunks: array<fn() -> Async<Node>> = [];
     print(count(v, thunks));
 }

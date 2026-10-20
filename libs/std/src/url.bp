@@ -107,7 +107,7 @@ fn parsePortWalk(s: string, idx: i32, acc: i32) -> i32 {
 }
 
 // Internal: render an i32 as a decimal string by piggy-backing on
-// `Array<i32>.join("")` — both backends stringify numeric elements
+// `array<i32>.join("")` — both backends stringify numeric elements
 // for `join`: Node's `Array.prototype.join` calls `String(n)` per
 // element and Erlang's `lists:join` + iolist-to-binary path maps
 // `is_integer(__E) -> integer_to_binary(__E)`. The single-element

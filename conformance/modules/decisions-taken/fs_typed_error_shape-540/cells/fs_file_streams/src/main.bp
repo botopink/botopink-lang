@@ -53,7 +53,7 @@ async fn run() -> Async<void> {
     await printLines(open("sample.txt"));
 
     val partway = open("sample.txt");
-    val head = partway.read(2).unwrapOr(Bytes.fromUtf8("?"));
+    val head = partway.read(2).unwrapOr(bytes.fromUtf8("?"));
     print(encoding.hexEncodeBytes(head));
     await printLines(partway);
 
@@ -61,10 +61,10 @@ async fn run() -> Async<void> {
     await printChunks(open("empty.txt"), 4);
     await printLines(open("empty.txt"));
 
-    fs.writeBytes("bad.txt", Bytes
+    fs.writeBytes("bad.txt", bytes
         .fromUtf8("ok\nfine\n")
-        .concat(Bytes.fromUtf8("é").slice(0, 1))
-        .concat(Bytes.fromUtf8("\nnever\n")));
+        .concat(bytes.fromUtf8("é").slice(0, 1))
+        .concat(bytes.fromUtf8("\nnever\n")));
     await printLines(open("bad.txt"));
 
     fs.rm("sample.txt");

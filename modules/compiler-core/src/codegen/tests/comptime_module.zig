@@ -182,7 +182,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
         \\fn component(syntax decl: unknown) -> void {
-        \\    var args: Array<string> = [];
+        \\    var args: array<string> = [];
         \\    args.push("first");
         \\    compiler.fields(decl).forEach({ f ->
         \\        var valKey = "";
@@ -203,7 +203,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
 
     // A parameter is not rebound: the push keeps its plain lowering.
     const param = try lower(arena_state.allocator(),
-        \\fn tag(syntax decl: unknown, names: Array<string>) -> void {
+        \\fn tag(syntax decl: unknown, names: array<string>) -> void {
         \\    names.push(compiler.name(decl)!);
         \\    @emit(names.join(", "));
         \\}

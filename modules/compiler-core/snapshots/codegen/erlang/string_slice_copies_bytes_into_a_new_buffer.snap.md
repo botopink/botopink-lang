@@ -11,7 +11,7 @@ fn first3() -> string {
 -module(test@main).
 -export(['__bp_priv__first3'/0, '__bp_priv__string_slice'/3]).
 
-%% behavior String
+%% behavior string
 
 first3() ->
     S = <<"hello">>,

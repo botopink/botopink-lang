@@ -4,7 +4,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val b = Bytes.fromUtf8("a");
+    val b = bytes.fromUtf8("a");
     val s = "x" + b;
     print(s);
 }

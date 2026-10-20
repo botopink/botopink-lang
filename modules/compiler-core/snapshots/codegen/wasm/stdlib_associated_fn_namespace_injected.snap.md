@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    print(Array.range(0, 3).length);
-    print(Array.repeat("x", 2).join(","));
+    print(array.range(0, 3).length);
+    print(array.repeat("x", 2).join(","));
 }
 
 import {io.terminal.print} from "std";
@@ -22,17 +22,17 @@ import {io.terminal.print} from "std";
   (func $main
     i32.const 0
     i32.const 3
-    call $Array_range
+    call $array_range
     array.len
     call $__print_i32
     global.get $__s0
     i32.const 2
-    call $Array_repeat__E_string
+    call $array_repeat__E_string
     global.get $__s1
     call $__arr_join_any
     call $__print_str
   )
-  (func $Array_repeat__E_string (param $value (ref null $str)) (param $times i32) (result (ref null $arr_any))
+  (func $array_repeat__E_string (param $value (ref null $str)) (param $times i32) (result (ref null $arr_any))
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $half (ref null $arr_any))
@@ -48,7 +48,7 @@ import {io.terminal.print} from "std";
     local.get $times
     i32.const 2
     i32.div_s
-    call $Array_repeat__E_string
+    call $array_repeat__E_string
     local.set $half
     local.get $times
     i32.const 2
@@ -74,7 +74,7 @@ import {io.terminal.print} from "std";
     )
     return
   )
-  (func $Array_range (param $start i32) (param $stop i32) (result (ref null $arr_i32))
+  (func $array_range (param $start i32) (param $stop i32) (result (ref null $arr_i32))
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $count i32)
@@ -115,7 +115,7 @@ import {io.terminal.print} from "std";
     i32.div_s
     global.get $__s5
     call $__i32_add_chk
-    call $Array_range
+    call $array_range
     local.set $low
     local.get $start
     local.get $count
@@ -124,7 +124,7 @@ import {io.terminal.print} from "std";
     global.get $__s6
     call $__i32_add_chk
     local.get $stop
-    call $Array_range
+    call $array_range
     local.set $high
     local.get $low
     local.get $high
@@ -808,15 +808,15 @@ import {io.terminal.print} from "std";
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 ",")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "integer overflow: - on i32 at main.bp:1146:25")
+  (data $__d2 "integer overflow: - on i32 at main.bp:1326:21")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "integer overflow: - on i32 at main.bp:1148:23")
+  (data $__d3 "integer overflow: - on i32 at main.bp:1326:52")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "integer overflow: - on i32 at main.bp:1151:30")
+  (data $__d4 "integer overflow: - on i32 at main.bp:1327:26")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 "integer overflow: + on i32 at main.bp:1152:48")
+  (data $__d5 "integer overflow: + on i32 at main.bp:1328:44")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "integer overflow: + on i32 at main.bp:1153:42")
+  (data $__d6 "integer overflow: + on i32 at main.bp:1329:38")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

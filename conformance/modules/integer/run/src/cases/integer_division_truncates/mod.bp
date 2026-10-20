@@ -9,7 +9,7 @@ fn half(n: i32) -> i32 {
     return n / 2;
 }
 
-fn mean(xs: Array<i32>) -> i32 {
+fn mean(xs: array<i32>) -> i32 {
     val total = xs.fold(0, { acc, x -> acc + x });
     return total / xs.length;
 }

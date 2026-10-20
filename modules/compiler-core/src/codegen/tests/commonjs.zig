@@ -7,17 +7,20 @@ const h = @import("helpers.zig");
 const stdWasm = @import("std_wasm");
 const jsPrelude = @import("../js/js_prelude.zig");
 
-// A `default fn` of a primitive behavior (`behavior String`, std's
-// `primitives.bp` or a program's own) becomes a prototype patch
-// (`String.prototype.m = function () { … }`), and its body is lowered with no
-// per-call answer from inference: the checker does not type it. The receiver
-// is still known — it is the behavior's own primitive — so a call on `self`
-// lowers as the same call on a typed `string` would. `self.length()` was
-// written as it stands: `TypeError: self.length is not a function`, because
-// JavaScript's `length` is a property.
+// A `default fn` of a program's contract implemented for a primitive
+// (decision 799: `StringTwice implement Twice for string {}`), and its body is
+// lowered with no per-call answer from inference: the checker does not type it.
+// The receiver is still known — the primitive the contract is implemented for
+// — so a call on `self` lowers as the same call on a typed `string` would.
+// `self.length()` was written as it stands: `TypeError: self.length is not a
+// function`, because JavaScript's `length` is a property.
 test "js: primitive behavior default fn ---- a call on self lowers as on the declared receiver" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\behavior String {
+        \\behavior Twice {
+        \\    fn length(self: Self) -> i32;
+        \\
+        \\    fn at(self: Self, index: i32) -> ?string;
+        \\
         \\    default fn twiceLength(self: Self) -> i32 {
         \\        return self.length() * 2;
         \\    }
@@ -26,6 +29,8 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
         \\        return self.at(0);
         \\    }
         \\}
+        \\
+        \\StringTwice implement Twice for string {};
         \\
         \\pub fn main() -> void {
         \\    print("abc".twiceLength());
@@ -51,12 +56,17 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
 // expression (decision 208).
 test "js: primitive behavior default fn ---- return and throw build the @Result" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\behavior String {
+        \\behavior NonEmpty {
+        \\    fn toString(self: Self) -> string;
+        \\
         \\    default fn nonEmpty(self: Self) -> Result<string, string> {
-        \\        if (self == "") throw "empty";
-        \\        return self;
+        \\        val s = self.toString();
+        \\        if (s == "") throw "empty";
+        \\        return s;
         \\    }
         \\}
+        \\
+        \\StringNonEmpty implement NonEmpty for string {};
         \\
         \\pub fn main() -> void {
         \\    print("ab".nonEmpty().isOk());
@@ -321,20 +331,20 @@ test "js: f64 text ---- a record's and a variant's float field" {
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
     \\pub fn main() -> void {
-    \\    val b = Bytes.fromUtf8("héllo");
+    \\    val b = bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
     \\    print(b.slice(1, 2).toUtf8().isError());
-    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    val j = bytes.fromUtf8("ab").concat(bytes.fromUtf8("cd"));
     \\    print(j[2..].toUtf8().unwrapOr("?"));
-    \\    print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j == bytes.fromUtf8("abcd"));
     \\}
     \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
-test "js: decision 346 ---- Bytes is a Uint8Array, its methods patched on its prototype" {
+test "js: decision 346 ---- bytes is a Uint8Array, its methods patched on its prototype" {
     try h.assertJsRunLog(std.testing.allocator, bytes_src, bytes_log);
 }
 

@@ -2975,7 +2975,7 @@ pub fn parseExternalCallTemplate(
 /// Strips the surrounding quotes off a string-literal annotation argument.
 /// Recognises triple-quoted raw strings (`"""…"""`) for the
 /// `prim-op-annotation` template grammar — needed when the template body
-/// itself carries `"` (e.g. `Array.join`'s `io_lib:format("~p", …)`). The
+/// itself carries `"` (e.g. `array.join`'s `io_lib:format("~p", …)`). The
 /// "indent the block" convention strips ONE leading newline immediately
 /// after the opening `"""` and ONE trailing newline immediately before the
 /// closing `"""`; inner indentation is preserved (target-language whitespace).
@@ -3017,6 +3017,13 @@ pub const BehaviorDecl = struct {
     /// (`primitive-type-redeclared`). `{0,0}` when synthesised; left out of
     /// the AST dump.
     nameLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 641 — the member table of a primitive type of the prelude
+    /// (`pub type string { … }`, `pub type array<T> { … }`), which
+    /// `prelude_cache.withWidthMembers` holds under the type's own name: the
+    /// type's methods, statics and properties, never a contract a program can
+    /// name. Its members carry the type's host cells (617 (3)). Left out of
+    /// the AST dump when false.
+    primitiveType: bool = false,
 
     pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
@@ -3035,7 +3042,7 @@ pub const BehaviorDecl = struct {
     }
 
     pub fn jsonStringify(this: BehaviorDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{"bodyComments"});
+        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{ "bodyComments", "primitiveType" });
     }
 };
 
@@ -4689,6 +4696,17 @@ pub const TypeShape = union(enum) {
 /// (`TypeDecl.isPrimitive`, decision 617 (1)).
 pub const literal_type_names = [_][]const u8{ "i32", "i64", "u32", "u64", "f32", "f64", "bool", "string", "bigint" };
 
+/// The primitive types std's prelude declares (decisions 617 (1), 641): the
+/// literals' types, then `bytes` and `array<T>`, which no literal has. Each is
+/// written lowercase; a capitalised name is a contract.
+pub const primitive_type_names = literal_type_names ++ [_][]const u8{ "bytes", "array" };
+
+/// True when `name` is one of `primitive_type_names`.
+pub fn isPrimitiveTypeName(name: []const u8) bool {
+    for (primitive_type_names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
 /// True when `name` is one of `literal_type_names`.
 pub fn isLiteralTypeName(name: []const u8) bool {
     for (literal_type_names) |n| if (std.mem.eql(u8, n, name)) return true;
@@ -4762,6 +4780,10 @@ pub const TypeDecl = struct {
     /// module's is `primitive-type-redeclared` (decision 639). Left out of the
     /// dump when false.
     isPrimitive: bool = false,
+    /// Decision 641 — a primitive type's properties, the values the language
+    /// gives it (`array<T>`'s `val length: i32;`). Empty on every other type;
+    /// left out of the dump when empty.
+    properties: []BehaviorField = &.{},
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -4811,10 +4833,15 @@ pub const TypeDecl = struct {
         for (this.assocTypes) |*a| a.deinit(allocator);
         if (this.assocTypes.len > 0) allocator.free(this.assocTypes);
         if (this.comments.len > 0) allocator.free(this.comments);
+        for (this.properties) |*f| {
+            f.typeRef.deinit(allocator);
+            if (f.comments.len > 0) allocator.free(f.comments);
+        }
+        if (this.properties.len > 0) allocator.free(this.properties);
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive" });
+        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive", "properties" });
     }
 };
 

@@ -481,7 +481,7 @@ fn combiningClass6(cp: i32) -> i32 {
 
 // The canonical decomposition mapping of `cp`, one level (`[]` when it has
 // none). A mapped code point may map again: the caller recurses.
-pub fn canonicalDecomposition(cp: i32) -> Array<i32> {
+pub fn canonicalDecomposition(cp: i32) -> array<i32> {
     return case cp {
         192...266 -> canonicalDecomposition0(cp);
         267...347 -> canonicalDecomposition1(cp);
@@ -520,7 +520,7 @@ pub fn canonicalDecomposition(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition0(cp: i32) -> Array<i32> {
+fn canonicalDecomposition0(cp: i32) -> array<i32> {
     return case cp {
         192 -> [65, 768];
         193 -> [65, 769];
@@ -590,7 +590,7 @@ fn canonicalDecomposition0(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition1(cp: i32) -> Array<i32> {
+fn canonicalDecomposition1(cp: i32) -> array<i32> {
     return case cp {
         267 -> [99, 775];
         268 -> [67, 780];
@@ -660,7 +660,7 @@ fn canonicalDecomposition1(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition2(cp: i32) -> Array<i32> {
+fn canonicalDecomposition2(cp: i32) -> array<i32> {
     return case cp {
         348 -> [83, 770];
         349 -> [115, 770];
@@ -730,7 +730,7 @@ fn canonicalDecomposition2(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition3(cp: i32) -> Array<i32> {
+fn canonicalDecomposition3(cp: i32) -> array<i32> {
     return case cp {
         491 -> [111, 808];
         492 -> [490, 772];
@@ -800,7 +800,7 @@ fn canonicalDecomposition3(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition4(cp: i32) -> Array<i32> {
+fn canonicalDecomposition4(cp: i32) -> array<i32> {
     return case cp {
         884 -> [697];
         894 -> [59];
@@ -870,7 +870,7 @@ fn canonicalDecomposition4(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition5(cp: i32) -> Array<i32> {
+fn canonicalDecomposition5(cp: i32) -> array<i32> {
     return case cp {
         1258 -> [1256, 776];
         1259 -> [1257, 776];
@@ -940,7 +940,7 @@ fn canonicalDecomposition5(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition6(cp: i32) -> Array<i32> {
+fn canonicalDecomposition6(cp: i32) -> array<i32> {
     return case cp {
         3549 -> [3548, 3530];
         3550 -> [3545, 3551];
@@ -1010,7 +1010,7 @@ fn canonicalDecomposition6(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition7(cp: i32) -> Array<i32> {
+fn canonicalDecomposition7(cp: i32) -> array<i32> {
     return case cp {
         7713 -> [103, 772];
         7714 -> [72, 775];
@@ -1080,7 +1080,7 @@ fn canonicalDecomposition7(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition8(cp: i32) -> Array<i32> {
+fn canonicalDecomposition8(cp: i32) -> array<i32> {
     return case cp {
         7777 -> [115, 775];
         7778 -> [83, 803];
@@ -1150,7 +1150,7 @@ fn canonicalDecomposition8(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition9(cp: i32) -> Array<i32> {
+fn canonicalDecomposition9(cp: i32) -> array<i32> {
     return case cp {
         7846 -> [194, 768];
         7847 -> [226, 768];
@@ -1220,7 +1220,7 @@ fn canonicalDecomposition9(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition10(cp: i32) -> Array<i32> {
+fn canonicalDecomposition10(cp: i32) -> array<i32> {
     return case cp {
         7910 -> [85, 777];
         7911 -> [117, 777];
@@ -1290,7 +1290,7 @@ fn canonicalDecomposition10(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition11(cp: i32) -> Array<i32> {
+fn canonicalDecomposition11(cp: i32) -> array<i32> {
     return case cp {
         7984 -> [953, 787];
         7985 -> [953, 788];
@@ -1360,7 +1360,7 @@ fn canonicalDecomposition11(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition12(cp: i32) -> Array<i32> {
+fn canonicalDecomposition12(cp: i32) -> array<i32> {
     return case cp {
         8056 -> [959, 768];
         8057 -> [972];
@@ -1430,7 +1430,7 @@ fn canonicalDecomposition12(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition13(cp: i32) -> Array<i32> {
+fn canonicalDecomposition13(cp: i32) -> array<i32> {
     return case cp {
         8123 -> [902];
         8124 -> [913, 837];
@@ -1500,7 +1500,7 @@ fn canonicalDecomposition13(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition14(cp: i32) -> Array<i32> {
+fn canonicalDecomposition14(cp: i32) -> array<i32> {
     return case cp {
         8622 -> [8596, 824];
         8653 -> [8656, 824];
@@ -1570,7 +1570,7 @@ fn canonicalDecomposition14(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition15(cp: i32) -> Array<i32> {
+fn canonicalDecomposition15(cp: i32) -> array<i32> {
     return case cp {
         12406 -> [12405, 12441];
         12407 -> [12405, 12442];
@@ -1640,7 +1640,7 @@ fn canonicalDecomposition15(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition16(cp: i32) -> Array<i32> {
+fn canonicalDecomposition16(cp: i32) -> array<i32> {
     return case cp {
         63769 -> [37226];
         63770 -> [39409];
@@ -1710,7 +1710,7 @@ fn canonicalDecomposition16(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition17(cp: i32) -> Array<i32> {
+fn canonicalDecomposition17(cp: i32) -> array<i32> {
     return case cp {
         63833 -> [38517];
         63834 -> [35712];
@@ -1780,7 +1780,7 @@ fn canonicalDecomposition17(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition18(cp: i32) -> Array<i32> {
+fn canonicalDecomposition18(cp: i32) -> array<i32> {
     return case cp {
         63897 -> [34030];
         63898 -> [36899];
@@ -1850,7 +1850,7 @@ fn canonicalDecomposition18(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition19(cp: i32) -> Array<i32> {
+fn canonicalDecomposition19(cp: i32) -> array<i32> {
     return case cp {
         63961 -> [24900];
         63962 -> [26647];
@@ -1920,7 +1920,7 @@ fn canonicalDecomposition19(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition20(cp: i32) -> Array<i32> {
+fn canonicalDecomposition20(cp: i32) -> array<i32> {
     return case cp {
         64030 -> [32701];
         64032 -> [34322];
@@ -1990,7 +1990,7 @@ fn canonicalDecomposition20(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition21(cp: i32) -> Array<i32> {
+fn canonicalDecomposition21(cp: i32) -> array<i32> {
     return case cp {
         64101 -> [36104];
         64102 -> [36790];
@@ -2060,7 +2060,7 @@ fn canonicalDecomposition21(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition22(cp: i32) -> Array<i32> {
+fn canonicalDecomposition22(cp: i32) -> array<i32> {
     return case cp {
         64167 -> [30427];
         64168 -> [30452];
@@ -2130,7 +2130,7 @@ fn canonicalDecomposition22(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition23(cp: i32) -> Array<i32> {
+fn canonicalDecomposition23(cp: i32) -> array<i32> {
     return case cp {
         64309 -> [1493, 1468];
         64310 -> [1494, 1468];
@@ -2200,7 +2200,7 @@ fn canonicalDecomposition23(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition24(cp: i32) -> Array<i32> {
+fn canonicalDecomposition24(cp: i32) -> array<i32> {
     return case cp {
         119230 -> [119228, 119150];
         119231 -> [119227, 119151];
@@ -2270,7 +2270,7 @@ fn canonicalDecomposition24(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition25(cp: i32) -> Array<i32> {
+fn canonicalDecomposition25(cp: i32) -> array<i32> {
     return case cp {
         194621 -> [21560];
         194622 -> [21576];
@@ -2340,7 +2340,7 @@ fn canonicalDecomposition25(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition26(cp: i32) -> Array<i32> {
+fn canonicalDecomposition26(cp: i32) -> array<i32> {
     return case cp {
         194685 -> [138726];
         194686 -> [23918];
@@ -2410,7 +2410,7 @@ fn canonicalDecomposition26(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition27(cp: i32) -> Array<i32> {
+fn canonicalDecomposition27(cp: i32) -> array<i32> {
     return case cp {
         194749 -> [25572];
         194750 -> [142321];
@@ -2480,7 +2480,7 @@ fn canonicalDecomposition27(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition28(cp: i32) -> Array<i32> {
+fn canonicalDecomposition28(cp: i32) -> array<i32> {
     return case cp {
         194813 -> [27853];
         194814 -> [27751];
@@ -2550,7 +2550,7 @@ fn canonicalDecomposition28(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition29(cp: i32) -> Array<i32> {
+fn canonicalDecomposition29(cp: i32) -> array<i32> {
     return case cp {
         194877 -> [151620];
         194878 -> [16380];
@@ -2620,7 +2620,7 @@ fn canonicalDecomposition29(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition30(cp: i32) -> Array<i32> {
+fn canonicalDecomposition30(cp: i32) -> array<i32> {
     return case cp {
         194941 -> [32864];
         194942 -> [157096];
@@ -2690,7 +2690,7 @@ fn canonicalDecomposition30(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition31(cp: i32) -> Array<i32> {
+fn canonicalDecomposition31(cp: i32) -> array<i32> {
     return case cp {
         195005 -> [34667];
         195006 -> [34694];
@@ -2760,7 +2760,7 @@ fn canonicalDecomposition31(cp: i32) -> Array<i32> {
     };
 }
 
-fn canonicalDecomposition32(cp: i32) -> Array<i32> {
+fn canonicalDecomposition32(cp: i32) -> array<i32> {
     return case cp {
         195069 -> [169110];
         195070 -> [38923];
@@ -2801,7 +2801,7 @@ fn canonicalDecomposition32(cp: i32) -> Array<i32> {
 
 // The compatibility decomposition mapping of `cp` — a TAGGED mapping only,
 // one level (`[]` when it has none, a canonical mapping included).
-pub fn compatibilityDecomposition(cp: i32) -> Array<i32> {
+pub fn compatibilityDecomposition(cp: i32) -> array<i32> {
     return case cp {
         160...1016 -> compatibilityDecomposition0(cp);
         1017...7520 -> compatibilityDecomposition1(cp);
@@ -2867,7 +2867,7 @@ pub fn compatibilityDecomposition(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition0(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition0(cp: i32) -> array<i32> {
     return case cp {
         160 -> [32];
         168 -> [32, 776];
@@ -2937,7 +2937,7 @@ fn compatibilityDecomposition0(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition1(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition1(cp: i32) -> array<i32> {
     return case cp {
         1017 -> [931];
         1415 -> [1381, 1410];
@@ -3007,7 +3007,7 @@ fn compatibilityDecomposition1(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition2(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition2(cp: i32) -> array<i32> {
     return case cp {
         7521 -> [967];
         7522 -> [105];
@@ -3077,7 +3077,7 @@ fn compatibilityDecomposition2(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition3(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition3(cp: i32) -> array<i32> {
     return case cp {
         8228 -> [46];
         8229 -> [46, 46];
@@ -3147,7 +3147,7 @@ fn compatibilityDecomposition3(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition4(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition4(cp: i32) -> array<i32> {
     return case cp {
         8455 -> [400];
         8457 -> [176, 70];
@@ -3217,7 +3217,7 @@ fn compatibilityDecomposition4(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition5(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition5(cp: i32) -> array<i32> {
     return case cp {
         8545 -> [73, 73];
         8546 -> [73, 73, 73];
@@ -3287,7 +3287,7 @@ fn compatibilityDecomposition5(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition6(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition6(cp: i32) -> array<i32> {
     return case cp {
         9340 -> [40, 57, 41];
         9341 -> [40, 49, 48, 41];
@@ -3357,7 +3357,7 @@ fn compatibilityDecomposition6(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition7(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition7(cp: i32) -> array<i32> {
     return case cp {
         9404 -> [71];
         9405 -> [72];
@@ -3427,7 +3427,7 @@ fn compatibilityDecomposition7(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition8(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition8(cp: i32) -> array<i32> {
     return case cp {
         12040 -> [20154];
         12041 -> [20799];
@@ -3497,7 +3497,7 @@ fn compatibilityDecomposition8(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition9(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition9(cp: i32) -> array<i32> {
     return case cp {
         12104 -> [26352];
         12105 -> [26376];
@@ -3567,7 +3567,7 @@ fn compatibilityDecomposition9(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition10(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition10(cp: i32) -> array<i32> {
     return case cp {
         12168 -> [33311];
         12169 -> [33390];
@@ -3637,7 +3637,7 @@ fn compatibilityDecomposition10(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition11(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition11(cp: i32) -> array<i32> {
     return case cp {
         12232 -> [40643];
         12233 -> [40653];
@@ -3707,7 +3707,7 @@ fn compatibilityDecomposition11(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition12(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition12(cp: i32) -> array<i32> {
     return case cp {
         12634 -> [4460];
         12635 -> [4461];
@@ -3777,7 +3777,7 @@ fn compatibilityDecomposition12(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition13(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition13(cp: i32) -> array<i32> {
     return case cp {
         12701 -> [22825];
         12702 -> [22320];
@@ -3847,7 +3847,7 @@ fn compatibilityDecomposition13(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition14(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition14(cp: i32) -> array<i32> {
     return case cp {
         12862 -> [40, 36039, 41];
         12863 -> [40, 21332, 41];
@@ -3917,7 +3917,7 @@ fn compatibilityDecomposition14(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition15(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition15(cp: i32) -> array<i32> {
     return case cp {
         12935 -> [20843];
         12936 -> [20061];
@@ -3987,7 +3987,7 @@ fn compatibilityDecomposition15(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition16(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition16(cp: i32) -> array<i32> {
     return case cp {
         12999 -> [56, 26376];
         13000 -> [57, 26376];
@@ -4057,7 +4057,7 @@ fn compatibilityDecomposition16(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition17(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition17(cp: i32) -> array<i32> {
     return case cp {
         13063 -> [12456, 12473, 12463, 12540, 12489];
         13064 -> [12456, 12540, 12459, 12540];
@@ -4127,7 +4127,7 @@ fn compatibilityDecomposition17(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition18(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition18(cp: i32) -> array<i32> {
     return case cp {
         13127 -> [12510, 12531, 12471, 12519, 12531];
         13128 -> [12511, 12463, 12525, 12531];
@@ -4197,7 +4197,7 @@ fn compatibilityDecomposition18(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition19(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition19(cp: i32) -> array<i32> {
     return case cp {
         13191 -> [71, 66];
         13192 -> [99, 97, 108];
@@ -4267,7 +4267,7 @@ fn compatibilityDecomposition19(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition20(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition20(cp: i32) -> array<i32> {
     return case cp {
         13255 -> [67, 111, 46];
         13256 -> [100, 66];
@@ -4337,7 +4337,7 @@ fn compatibilityDecomposition20(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition21(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition21(cp: i32) -> array<i32> {
     return case cp {
         43000 -> [294];
         43001 -> [339];
@@ -4407,7 +4407,7 @@ fn compatibilityDecomposition21(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition22(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition22(cp: i32) -> array<i32> {
     return case cp {
         64370 -> [1668];
         64371 -> [1668];
@@ -4477,7 +4477,7 @@ fn compatibilityDecomposition22(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition23(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition23(cp: i32) -> array<i32> {
     return case cp {
         64467 -> [1709];
         64468 -> [1709];
@@ -4547,7 +4547,7 @@ fn compatibilityDecomposition23(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition24(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition24(cp: i32) -> array<i32> {
     return case cp {
         64531 -> [1579, 1609];
         64532 -> [1579, 1610];
@@ -4617,7 +4617,7 @@ fn compatibilityDecomposition24(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition25(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition25(cp: i32) -> array<i32> {
     return case cp {
         64595 -> [1607, 1609];
         64596 -> [1607, 1610];
@@ -4687,7 +4687,7 @@ fn compatibilityDecomposition25(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition26(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition26(cp: i32) -> array<i32> {
     return case cp {
         64659 -> [1610, 1605];
         64660 -> [1610, 1606];
@@ -4757,7 +4757,7 @@ fn compatibilityDecomposition26(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition27(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition27(cp: i32) -> array<i32> {
     return case cp {
         64723 -> [1606, 1581];
         64724 -> [1606, 1582];
@@ -4827,7 +4827,7 @@ fn compatibilityDecomposition27(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition28(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition28(cp: i32) -> array<i32> {
     return case cp {
         64787 -> [1593, 1609];
         64788 -> [1593, 1610];
@@ -4897,7 +4897,7 @@ fn compatibilityDecomposition28(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition29(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition29(cp: i32) -> array<i32> {
     return case cp {
         64869 -> [1589, 1581, 1581];
         64870 -> [1589, 1605, 1605];
@@ -4967,7 +4967,7 @@ fn compatibilityDecomposition29(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition30(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition30(cp: i32) -> array<i32> {
     return case cp {
         64935 -> [1580, 1605, 1609];
         64936 -> [1587, 1582, 1609];
@@ -5056,7 +5056,7 @@ fn compatibilityDecomposition30(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition31(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition31(cp: i32) -> array<i32> {
     return case cp {
         65080 -> [125];
         65081 -> [12308];
@@ -5126,7 +5126,7 @@ fn compatibilityDecomposition31(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition32(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition32(cp: i32) -> array<i32> {
     return case cp {
         65154 -> [1570];
         65155 -> [1571];
@@ -5196,7 +5196,7 @@ fn compatibilityDecomposition32(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition33(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition33(cp: i32) -> array<i32> {
     return case cp {
         65218 -> [1591];
         65219 -> [1591];
@@ -5266,7 +5266,7 @@ fn compatibilityDecomposition33(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition34(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition34(cp: i32) -> array<i32> {
     return case cp {
         65286 -> [38];
         65287 -> [39];
@@ -5336,7 +5336,7 @@ fn compatibilityDecomposition34(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition35(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition35(cp: i32) -> array<i32> {
     return case cp {
         65350 -> [102];
         65351 -> [103];
@@ -5406,7 +5406,7 @@ fn compatibilityDecomposition35(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition36(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition36(cp: i32) -> array<i32> {
     return case cp {
         65414 -> [12491];
         65415 -> [12492];
@@ -5476,7 +5476,7 @@ fn compatibilityDecomposition36(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition37(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition37(cp: i32) -> array<i32> {
     return case cp {
         65483 -> [12630];
         65484 -> [12631];
@@ -5546,7 +5546,7 @@ fn compatibilityDecomposition37(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition38(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition38(cp: i32) -> array<i32> {
     return case cp {
         67494 -> [634];
         67495 -> [122632];
@@ -5616,7 +5616,7 @@ fn compatibilityDecomposition38(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition39(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition39(cp: i32) -> array<i32> {
     return case cp {
         119816 -> [73];
         119817 -> [74];
@@ -5686,7 +5686,7 @@ fn compatibilityDecomposition39(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition40(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition40(cp: i32) -> array<i32> {
     return case cp {
         119880 -> [85];
         119881 -> [86];
@@ -5756,7 +5756,7 @@ fn compatibilityDecomposition40(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition41(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition41(cp: i32) -> array<i32> {
     return case cp {
         119945 -> [104];
         119946 -> [105];
@@ -5826,7 +5826,7 @@ fn compatibilityDecomposition41(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition42(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition42(cp: i32) -> array<i32> {
     return case cp {
         120020 -> [69];
         120021 -> [70];
@@ -5896,7 +5896,7 @@ fn compatibilityDecomposition42(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition43(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition43(cp: i32) -> array<i32> {
     return case cp {
         120088 -> [85];
         120089 -> [86];
@@ -5966,7 +5966,7 @@ fn compatibilityDecomposition43(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition44(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition44(cp: i32) -> array<i32> {
     return case cp {
         120160 -> [111];
         120161 -> [112];
@@ -6036,7 +6036,7 @@ fn compatibilityDecomposition44(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition45(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition45(cp: i32) -> array<i32> {
     return case cp {
         120224 -> [65];
         120225 -> [66];
@@ -6106,7 +6106,7 @@ fn compatibilityDecomposition45(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition46(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition46(cp: i32) -> array<i32> {
     return case cp {
         120288 -> [77];
         120289 -> [78];
@@ -6176,7 +6176,7 @@ fn compatibilityDecomposition46(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition47(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition47(cp: i32) -> array<i32> {
     return case cp {
         120352 -> [89];
         120353 -> [90];
@@ -6246,7 +6246,7 @@ fn compatibilityDecomposition47(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition48(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition48(cp: i32) -> array<i32> {
     return case cp {
         120416 -> [107];
         120417 -> [108];
@@ -6316,7 +6316,7 @@ fn compatibilityDecomposition48(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition49(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition49(cp: i32) -> array<i32> {
     return case cp {
         120480 -> [119];
         120481 -> [120];
@@ -6386,7 +6386,7 @@ fn compatibilityDecomposition49(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition50(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition50(cp: i32) -> array<i32> {
     return case cp {
         120546 -> [913];
         120547 -> [914];
@@ -6456,7 +6456,7 @@ fn compatibilityDecomposition50(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition51(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition51(cp: i32) -> array<i32> {
     return case cp {
         120610 -> [919];
         120611 -> [920];
@@ -6526,7 +6526,7 @@ fn compatibilityDecomposition51(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition52(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition52(cp: i32) -> array<i32> {
     return case cp {
         120674 -> [925];
         120675 -> [926];
@@ -6596,7 +6596,7 @@ fn compatibilityDecomposition52(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition53(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition53(cp: i32) -> array<i32> {
     return case cp {
         120738 -> [931];
         120739 -> [932];
@@ -6666,7 +6666,7 @@ fn compatibilityDecomposition53(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition54(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition54(cp: i32) -> array<i32> {
     return case cp {
         120804 -> [50];
         120805 -> [51];
@@ -6736,7 +6736,7 @@ fn compatibilityDecomposition54(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition55(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition55(cp: i32) -> array<i32> {
     return case cp {
         122964 -> [1075];
         122965 -> [1076];
@@ -6806,7 +6806,7 @@ fn compatibilityDecomposition55(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition56(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition56(cp: i32) -> array<i32> {
     return case cp {
         126508 -> [1605];
         126509 -> [1606];
@@ -6876,7 +6876,7 @@ fn compatibilityDecomposition56(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition57(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition57(cp: i32) -> array<i32> {
     return case cp {
         126606 -> [1587];
         126607 -> [1593];
@@ -6946,7 +6946,7 @@ fn compatibilityDecomposition57(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition58(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition58(cp: i32) -> array<i32> {
     return case cp {
         127262 -> [40, 79, 41];
         127263 -> [40, 80, 41];
@@ -7016,7 +7016,7 @@ fn compatibilityDecomposition58(cp: i32) -> Array<i32> {
     };
 }
 
-fn compatibilityDecomposition59(cp: i32) -> Array<i32> {
+fn compatibilityDecomposition59(cp: i32) -> array<i32> {
     return case cp {
         127512 -> [20132];
         127513 -> [26144];

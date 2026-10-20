@@ -334,7 +334,7 @@ test "infer: generic-inference-finalize ---- chained map().filter() propagates e
 // `Dict<string, i32>` the binding's annotation asks for.
 test "infer: generic-inference-finalize ---- empty<K,V>(K, V) meets the annotated binding (decision 668)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\type Dict<K, V>(pairs: Array<#(K, V)>)
+        \\type Dict<K, V>(pairs: array<#(K, V)>)
         \\fn empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V> {
         \\    return Dict(pairs: []);
         \\}
@@ -354,8 +354,8 @@ test "infer: generic-inference-finalize ---- linq join builds tuple element type
     try h.assertInfersOk(std.testing.allocator,
         \\type Person(id: i32, name: string)
         \\type Order(personId: i32, product: string)
-        \\fn crossJoin<P, O>(left: Array<P>, right: Array<O>, on: fn(p: P, o: O) -> bool) -> Array<#(P, O)> {
-        \\    var acc: Array<#(P, O)> = [];
+        \\fn crossJoin<P, O>(left: array<P>, right: array<O>, on: fn(p: P, o: O) -> bool) -> array<#(P, O)> {
+        \\    var acc: array<#(P, O)> = [];
         \\    left.forEach({ p ->
         \\        right.forEach({ o ->
         \\            if (on(p, o)) { acc.push(#(p, o)); }
@@ -495,7 +495,7 @@ test "infer: a type parameter is bound inside a parameter's type or by the type 
         \\fn make<R>(build: fn() -> R) -> R {
         \\    return build();
         \\}
-        \\fn firstOf<T>(items: Array<T>) -> ?T {
+        \\fn firstOf<T>(items: array<T>) -> ?T {
         \\    return items.at(0);
         \\}
         \\fn empty<T>(comptime t: type<T>) -> T[] {

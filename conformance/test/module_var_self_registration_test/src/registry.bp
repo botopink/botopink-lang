@@ -5,14 +5,14 @@
 //// memory — so the module-level `val` in `component` ran (decision 140) and
 //// registered nothing; `pop` read the last name and left it there.
 
-var names: Array<string> = [];
+var names: array<string> = [];
 
 pub fn register(n: string) -> i32 {
     names.push(n);
     return names.length;
 }
 
-pub fn registered() -> Array<string> {
+pub fn registered() -> array<string> {
     return names;
 }
 

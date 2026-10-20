@@ -461,7 +461,7 @@ test "js: operators ---- plus on untyped operands and division of floats" {
     // A lambda parameter carries no type: `x + y` over two strings concatenates
     // and `/` over floats divides — erlang's `+` and `div` raised `badarith`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn average(xs: Array<f64>) -> f64 {
+        \\fn average(xs: array<f64>) -> f64 {
         \\    var total = 0.0;
         \\    var n = 0.0;
         \\    for (xs) { x ->

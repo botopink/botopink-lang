@@ -32,8 +32,8 @@ fn shape(syntax decl: unknown) -> void {
 }
 
 #[shape]
-type Info(a: Array<string>, b: Array<#(string, string)>, c: string[], d: fn(x: i32) -> i32, e: #(string, string), f: ?i32, g: string) {
-    fn pick(self: Self, xs: i32[], k: ?string) -> Array<i32> {
+type Info(a: array<string>, b: array<#(string, string)>, c: string[], d: fn(x: i32) -> i32, e: #(string, string), f: ?i32, g: string) {
+    fn pick(self: Self, xs: i32[], k: ?string) -> array<i32> {
         return xs;
     }
 }

@@ -16,7 +16,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__main'/0, '__bp_priv__bool_nor'/2, '__bp_priv__bool_nand'/2, '__bp_priv__bool_exclusiveOr'/2]).
 
-%% behavior Bool
+%% behavior bool
 
 main() ->
     '__bp_print'([(not true)]),

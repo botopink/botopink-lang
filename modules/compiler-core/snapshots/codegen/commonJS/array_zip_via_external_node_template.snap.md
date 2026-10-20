@@ -84,7 +84,7 @@ function __bp_print_as(shapes) {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

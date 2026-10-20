@@ -270,13 +270,17 @@ pub fn isAssociatedFn(m: ast.BehaviorMethod) bool {
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
 
-/// Map a primitive controller interface name to the JS constructor whose
-/// `prototype` carries the instance methods (`Bool` → `Boolean`). Other names
+/// Map a primitive's member table (decision 641: the type's own name,
+/// `string`) or a contract of the widths to the JS constructor whose
+/// `prototype` carries the instance methods (`bool` → `Boolean`). Other names
 /// (incl. local interfaces) own their prototype directly.
 pub fn jsPrototypeOwner(name: []const u8) []const u8 {
-    if (std.mem.eql(u8, name, "Bool")) return "Boolean";
-    // Decision 346 — `Bytes` is a `Uint8Array`.
-    if (std.mem.eql(u8, name, "Bytes")) return "Uint8Array";
+    if (std.mem.eql(u8, name, "bool")) return "Boolean";
+    if (std.mem.eql(u8, name, "string")) return "String";
+    if (std.mem.eql(u8, name, "array")) return "Array";
+    if (std.mem.eql(u8, name, "bigint")) return "BigInt";
+    // Decision 346 — `bytes` is a `Uint8Array`.
+    if (std.mem.eql(u8, name, "bytes")) return "Uint8Array";
     // A contract the numeric widths implement (decision 617 (1): `Number`,
     // `Integer`, `Signed`, `Float`, read from their `implement` clauses) maps
     // to `Number`.
@@ -976,7 +980,7 @@ fn adoptTargetOf(buf: *[16]u8, t: ast.TypeRef, depth: usize) ?AdoptTarget {
         },
         .generic => |g| {
             if (g.args.len == 0) return null;
-            if (std.mem.eql(u8, g.name, "Array")) {
+            if (std.mem.eql(u8, g.name, "array")) {
                 buf[depth] = 'a';
                 return adoptTargetOf(buf, g.args[0], depth + 1);
             }
@@ -3603,7 +3607,9 @@ const Emitter = struct {
             // SHADOW the global and leave `Array.prototype.*` patches setting
             // properties on `undefined`. Only a fresh interface (`Array`)
             // needs the namespace object.
-            const assoc_ns = jsIdent(i.name);
+            // A primitive's statics sit on its JS constructor (`string` →
+            // `String`, decision 641).
+            const assoc_ns = if (isJsGlobalNamespace(jsPrototypeOwner(i.name))) jsPrototypeOwner(i.name) else jsIdent(i.name);
             if (!isJsGlobalNamespace(jsPrototypeOwner(i.name)) and !isJsGlobalNamespace(i.name)) {
                 try stmts.append(self.arena(), .{ .decl = .{
                     .pattern = .{ .name = assoc_ns },
@@ -6040,10 +6046,10 @@ const Emitter = struct {
                     const lw = self.lowerings orelse break :blk null;
                     const iface_name: []const u8 = switch (lw.get(c.loc) orelse break :blk null) {
                         .prim => |k| switch (k) {
-                            .array => "Array",
-                            .string => "String",
+                            .array => "array",
+                            .string => "string",
                             // Decision 332 — `b.toF64()` prints as the float it is.
-                            .bigint => "BigInt",
+                            .bigint => "bigint",
                             else => break :blk null,
                         },
                         .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => break :blk null,
@@ -6483,7 +6489,7 @@ const Emitter = struct {
     fn eqArrayElem(t: ast.TypeRef) ?ast.TypeRef {
         return switch (t) {
             .array => |inner| inner.*,
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else null,
             else => null,
         };
     }
@@ -6605,12 +6611,12 @@ const Emitter = struct {
                     const lw = self.lowerings orelse break :blk null;
                     const iface_name: []const u8 = switch (lw.get(c.loc) orelse break :blk null) {
                         .prim => |k| switch (k) {
-                            .array => "Array",
-                            .string => "String",
+                            .array => "array",
+                            .string => "string",
                             .int, .float => "Number",
-                            .bool => "Bool",
-                            .bigint => "BigInt",
-                            .bytes => "Bytes",
+                            .bool => "bool",
+                            .bigint => "bigint",
+                            .bytes => "bytes",
                         },
                         else => break :blk null,
                     };
@@ -6844,7 +6850,7 @@ const Emitter = struct {
                 break :blk .{ .array = .{ .elems = out } };
             },
             .array => |inner| self.arrayShape(try self.typeShape(inner.*)),
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array"))
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array"))
                 self.arrayShape(try self.typeShape(g.args[0]))
             else
                 null,
@@ -6889,7 +6895,7 @@ const Emitter = struct {
             .named => |n| if (std.mem.eql(u8, n, tp)) shape else null,
             .optional => |inner| shapeAtParam(inner.*, shape, tp),
             .array => |inner| arrayElemShape(shape, inner.*, tp),
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) arrayElemShape(shape, g.args[0], tp) else null,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) arrayElemShape(shape, g.args[0], tp) else null,
             .tuple_, .labeledTuple => blk: {
                 const elems = ty.tupleElems().?;
                 if (shape != .array or shape.array.elems.len != elems.len + 1) break :blk null;
@@ -7227,6 +7233,15 @@ const Emitter = struct {
                 const template = self.prelude_assoc_templates.get(key) orelse break :assoc;
                 return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
             }
+            // Decision 641 — a primitive's static, called through the type's
+            // own lowercase name: a static of its JS constructor
+            // (`array.range(0, 3)` → `Array.range(0, 3)`).
+            if (recv.* == .identifier and recv.identifier.kind == .ident and prelude_cache.isMemberTableStatic(recv.identifier.kind.ident, cc.callee)) {
+                callee = try self.b.member(.{ .name = jsPrototypeOwner(recv.identifier.kind.ident) }, cc.callee);
+                for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+                for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
+                return self.b.call(callee, try args.toOwnedSlice(self.arena()));
+            }
             if (self.sequenceNext(loc)) |kind| {
                 const native = try self.b.call(try self.b.memberOpt(try self.buildExpr(recv.*), "next", cc.optional), &.{});
                 const step = self.helper(.yield_step);
@@ -7532,7 +7547,7 @@ const Emitter = struct {
             // is not checkable).
             .array => return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject}),
             .generic => |g| {
-                if (std.mem.eql(u8, g.name, "Array")) {
+                if (std.mem.eql(u8, g.name, "array")) {
                     return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
                 }
                 return self.b.binaryBare("instanceof", subject, .{ .name = g.name });

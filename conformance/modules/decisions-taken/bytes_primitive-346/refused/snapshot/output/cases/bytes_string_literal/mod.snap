@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: type mismatch: expected Bytes, got string
+refused error: type mismatch: expected bytes, got string
 at src/cases/bytes_string_literal/mod.bp:9:20

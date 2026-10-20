@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub fn component(syntax decl: unknown) -> void {
-    var args: Array<string> = [];
+    var args: array<string> = [];
     compiler.fields(decl).forEach({ f ->
         var valKey = "";
         f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
@@ -26,8 +26,8 @@ type Service(
     name: string,
 )
 
-fn collect(xs: Array<i32>) -> Array<string> {
-    var out: Array<string> = [];
+fn collect(xs: array<i32>) -> array<string> {
+    var out: array<string> = [];
     out.push("start");
     xs.forEach({ x ->
         val doubled = x * 2;

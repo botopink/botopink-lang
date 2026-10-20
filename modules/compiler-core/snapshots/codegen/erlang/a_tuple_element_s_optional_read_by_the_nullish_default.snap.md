@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
+fn firstAndRest(xs: array<i32>) -> #(array<i32>, ?i32) {
     val head = xs.at(0);
     val rest = xs.slice(1, xs.length);
     return #(rest, head);
@@ -23,7 +23,7 @@ import {io.terminal.print} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__firstAndRest'/1, '__bp_priv__main'/0, '__bp_priv__array_slice'/3]).
 
-%% behavior Array
+%% behavior array
 
 array_range(Start, Stop) ->
     case ((Stop - Start) =< 0) of

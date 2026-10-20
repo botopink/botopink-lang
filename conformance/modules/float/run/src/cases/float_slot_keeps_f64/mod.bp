@@ -37,7 +37,7 @@ pub fn runCase() -> void {
     print([1.1, 1.1, 2.2].unique());
     print(xs.fill(0.3));
     print(xs.filter({ x -> x > 2.0 }));
-    var ys: Array<f64> = [];
+    var ys: array<f64> = [];
     ys.push(0.1);
     print(ys);
     val t = #(1.1, "a");

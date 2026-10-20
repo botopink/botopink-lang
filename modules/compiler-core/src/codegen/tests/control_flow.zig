@@ -177,7 +177,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
     // the reassignments of outer `var`s survive the loop like the plain
     // `for (xs) { x -> }` form's (a library's lexer written as a counter loop).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn pick(xs: Array<string>) -> string {
+        \\fn pick(xs: array<string>) -> string {
         \\    var first = "";
         \\    var last = "";
         \\    var i = 0;
@@ -188,7 +188,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
         \\    };
         \\    return first + "-" + last;
         \\}
-        \\fn weigh(xs: Array<i32>) -> i32 {
+        \\fn weigh(xs: array<i32>) -> i32 {
         \\    var total = 0;
         \\    for (0..xs.length) { i ->
         \\        total = total + (xs[i] ?? 0) * (i + 1);
@@ -277,7 +277,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
     // A markup template's shape: a named closure appends to an outer `var`, and
     // is called both directly and from inside a loop.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn render(words: Array<string>) -> string {
+        \\fn render(words: array<string>) -> string {
         \\    var out = "";
         \\    var count = 0;
         \\    val emit: fn(string) -> void = { w ->
@@ -1345,7 +1345,7 @@ test "erlang: a return inside a loop's body leaves the function" {
         \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
         \\  return n;
         \\}
-        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\fn find(xs: array<i32>, t: i32) -> i32 {
         \\  var i = 0;
         \\  while (i < xs.length) { if ((xs.at(i) ?? 0) == t) { return i; }; i = i + 1; };
         \\  return -1;
@@ -1375,7 +1375,7 @@ test "beam: a return inside a loop's body leaves the function" {
         \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
         \\  return n;
         \\}
-        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\fn find(xs: array<i32>, t: i32) -> i32 {
         \\  var i = 0;
         \\  while (i < xs.length) { if ((xs.at(i) ?? 0) == t) { return i; }; i = i + 1; };
         \\  return -1;
@@ -1549,7 +1549,7 @@ test "beam: calling the result of a call applies it (`calleeExpr`)" {
         \\  print(adder(3)(4));
         \\  print(adder(10)(adder(1)(2)));
         \\  print(twice(4));
-        \\  val xs: Array<i32> = [1, 2];
+        \\  val xs: array<i32> = [1, 2];
         \\  print(xs.map({ x -> adder(x)(100) }));
         \\}
         \\

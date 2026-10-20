@@ -15,7 +15,7 @@ import {io.terminal.print} from "std";
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `Array<f64>`)
+error: the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `f64[]`)
   ┌─ :6:34
   │
 6 │         precosComTaxa.push(valor + taxa);

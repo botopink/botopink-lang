@@ -99,7 +99,7 @@ pub declare fn match(pattern: string, input: string) -> ?Match;
     .JavaScript("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))"""),
     .Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [{'std@regex@@Match', binary:part($1, __O, __L), __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()"""),
 )]
-pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
+pub declare fn matchAll(pattern: string, input: string) -> array<Match>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 //
@@ -145,7 +145,7 @@ pub declare fn compile(pattern: string) -> Result<Regex, HostError>;
     .JavaScript("""(() => { const __m = $1.match(new RegExp($0)); return __m ? Array.from(__m).map(__g => __g ?? '') : null })()"""),
     .Erlang("""(fun() -> case re:run($1, $0, [{capture, all, binary}]) of {match, __G} -> __G; nomatch -> undefined end end)()"""),
 )]
-pub declare fn captures(pattern: string, input: string) -> ?Array<string>;
+pub declare fn captures(pattern: string, input: string) -> ?array<string>;
 
 // The named groups of the first match as `#(name, value)` pairs, SORTED BY
 // NAME (Erlang's `all_names` order; the Node template sorts to agree). No
@@ -160,7 +160,7 @@ pub declare fn captures(pattern: string, input: string) -> ?Array<string>;
 pub declare fn namedCaptures(
     pattern: string,
     input: string,
-) -> Array<#(string, string)>;
+) -> array<#(string, string)>;
 
 // `s` as a pattern that matches exactly `s`: every metacharacter of the
 // ECMAScript and PCRE syntaxes (`\ ^ $ . | ? * + ( ) [ ] { }`) gets a

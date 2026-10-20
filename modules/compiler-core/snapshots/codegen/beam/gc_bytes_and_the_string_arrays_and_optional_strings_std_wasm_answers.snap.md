@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 pub fn main() -> void {
-    val b = Bytes.fromUtf8("hello");
+    val b = bytes.fromUtf8("hello");
     print(b.length());
     print(b.slice(1, 3).length());
-    val c = b.concat(Bytes.fromUtf8("!"));
+    val c = b.concat(bytes.fromUtf8("!"));
     print(c.length());
-    print(b == Bytes.fromUtf8("hello"));
+    print(b == bytes.fromUtf8("hello"));
     val r = b.toUtf8();
     print(r);
     val parts = "a,b,c".split(",");
@@ -21,7 +21,7 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__Bytes_slice', 3}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__bytes_slice', 3}]}.
 {attributes, []}.
 {labels, 139}.
 
@@ -123,10 +123,10 @@ import {io.terminal.print} from "std";
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, 'Bytes_slice', 3, 41}.
+{function, 'bytes_slice', 3, 41}.
   {label, 40}.
     {line, [{location, "test@main.erl", 4}]}.
-    {func_info, {atom, test@main}, {atom, 'Bytes_slice'}, 3}.
+    {func_info, {atom, test@main}, {atom, 'bytes_slice'}, 3}.
   {label, 41}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -143,10 +143,10 @@ import {io.terminal.print} from "std";
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 123}, 3}.
 
-{function, '__bp_priv__Bytes_slice', 3, 138}.
+{function, '__bp_priv__bytes_slice', 3, 138}.
   {label, 137}.
     {line, [{location, "test@main.erl", 5}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Bytes_slice'}, 3}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__bytes_slice'}, 3}.
   {label, 138}.
     {call_only, 3, {f, 41}}.
 

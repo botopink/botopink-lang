@@ -75,7 +75,7 @@ pub fn extname(path: string) -> string {
 // the first segment is preserved; intra-segment slashes are normalised
 // (`"foo/" + "/bar"` joins to `"foo/bar"`, never `"foo//bar"`). Uses
 // `map` + `filter` + `join` rather than `fold` / `flatMap`: those land
-// on `Array<T>` default-fn bodies that lower to a `var` + `push` shape,
+// on `array<T>` default-fn bodies that lower to a `var` + `push` shape,
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {

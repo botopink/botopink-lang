@@ -13,7 +13,7 @@
 
 import {io.terminal.print} from "std";
 
-type Page(users: Array<string>, next: string)
+type Page(users: array<string>, next: string)
 
 async fn fetchPage(url: string) -> Async<Result<Page, string>> {
     if (url == "p1") return Page(users: ["ana", "bia"], next: "p2");
@@ -22,7 +22,7 @@ async fn fetchPage(url: string) -> Async<Result<Page, string>> {
     throw url + ": 503";
 }
 
-async iter fn pages(url: string) -> AsyncIter<Result<Array<string>, string>> {
+async iter fn pages(url: string) -> AsyncIter<Result<array<string>, string>> {
     var next = url;
     while (next != "") {
         val page = try await fetchPage(next);

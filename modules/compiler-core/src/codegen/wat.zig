@@ -295,7 +295,7 @@ fn i64CellCode(n: []const u8) ?u8 {
 fn arrayScalarCode(t: ast.TypeRef) ?u8 {
     const elem: ast.TypeRef = switch (t) {
         .array => |ie| ie.*,
-        .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
+        .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else return null,
         else => return null,
     };
     const n = switch (elem) {
@@ -713,7 +713,7 @@ fn methodFnCell(m: ast.BehaviorMethod) ?[]const u8 {
 /// `primitives.bp`'s `String.<method>`, or null.
 fn preludeStringMethod(method: []const u8) ?ast.BehaviorMethod {
     const prog = preludeCache.primitives() orelse return null;
-    for (prog.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, "String")) {
+    for (prog.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, "string")) {
         for (d.behavior.methods) |m| if (std.mem.eql(u8, m.name, method)) return m;
     };
     return null;
@@ -742,7 +742,7 @@ fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
 fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: []const ast.DeclKind) bool {
     // The numeric contracts are the ones the widths' `implement` clauses
     // reach (decision 617 (1)).
-    const prelude_names = [_][]const u8{ "String", "Array", "Bool" };
+    const prelude_names = [_][]const u8{ "string", "array", "bool" };
     const is_prelude = preludeCache.kindsReaching(b.name).len > 0 or for (prelude_names) |pn| {
         if (std.mem.eql(u8, pn, b.name)) break true;
     } else false;
@@ -2306,30 +2306,30 @@ fn emitWatPass(
 /// float-to-text path calls). `codegen/tests/wat.zig` holds this table and
 /// the cells `primitives.bp` writes to each other.
 pub const std_method_exports = [_]struct { behavior: []const u8, method: []const u8, export_name: []const u8 }{
-    .{ .behavior = "String", .method = "trim", .export_name = "text.trim" },
-    .{ .behavior = "String", .method = "trimStart", .export_name = "text.trimStart" },
-    .{ .behavior = "String", .method = "trimEnd", .export_name = "text.trimEnd" },
+    .{ .behavior = "string", .method = "trim", .export_name = "text.trim" },
+    .{ .behavior = "string", .method = "trimStart", .export_name = "text.trimStart" },
+    .{ .behavior = "string", .method = "trimEnd", .export_name = "text.trimEnd" },
     .{ .behavior = "Float", .method = "toString", .export_name = "number.floatToString" },
-    .{ .behavior = "String", .method = "length", .export_name = "text.length" },
-    .{ .behavior = "String", .method = "split", .export_name = "text.split" },
-    .{ .behavior = "String", .method = "chars", .export_name = "text.chars" },
-    .{ .behavior = "String", .method = "lines", .export_name = "text.lines" },
-    .{ .behavior = "String", .method = "words", .export_name = "text.words" },
-    .{ .behavior = "String", .method = "contains", .export_name = "text.contains" },
-    .{ .behavior = "String", .method = "startsWith", .export_name = "text.startsWith" },
-    .{ .behavior = "String", .method = "endsWith", .export_name = "text.endsWith" },
-    .{ .behavior = "String", .method = "indexOf", .export_name = "text.indexOf" },
-    .{ .behavior = "String", .method = "lastIndexOf", .export_name = "text.lastIndexOf" },
-    .{ .behavior = "String", .method = "at", .export_name = "text.at" },
-    .{ .behavior = "String", .method = "charCodeAt", .export_name = "text.charCodeAt" },
-    .{ .behavior = "String", .method = "padStart", .export_name = "text.padStart" },
-    .{ .behavior = "String", .method = "padEnd", .export_name = "text.padEnd" },
-    .{ .behavior = "String", .method = "repeat", .export_name = "text.repeat" },
-    .{ .behavior = "String", .method = "replace", .export_name = "text.replace" },
-    .{ .behavior = "String", .method = "replaceAll", .export_name = "text.replaceAll" },
-    .{ .behavior = "String", .method = "fromCodepoint", .export_name = "text.fromCodepoint" },
-    .{ .behavior = "String", .method = "toUpper", .export_name = "text.toUpper" },
-    .{ .behavior = "String", .method = "toLower", .export_name = "text.toLower" },
+    .{ .behavior = "string", .method = "length", .export_name = "text.length" },
+    .{ .behavior = "string", .method = "split", .export_name = "text.split" },
+    .{ .behavior = "string", .method = "chars", .export_name = "text.chars" },
+    .{ .behavior = "string", .method = "lines", .export_name = "text.lines" },
+    .{ .behavior = "string", .method = "words", .export_name = "text.words" },
+    .{ .behavior = "string", .method = "contains", .export_name = "text.contains" },
+    .{ .behavior = "string", .method = "startsWith", .export_name = "text.startsWith" },
+    .{ .behavior = "string", .method = "endsWith", .export_name = "text.endsWith" },
+    .{ .behavior = "string", .method = "indexOf", .export_name = "text.indexOf" },
+    .{ .behavior = "string", .method = "lastIndexOf", .export_name = "text.lastIndexOf" },
+    .{ .behavior = "string", .method = "at", .export_name = "text.at" },
+    .{ .behavior = "string", .method = "charCodeAt", .export_name = "text.charCodeAt" },
+    .{ .behavior = "string", .method = "padStart", .export_name = "text.padStart" },
+    .{ .behavior = "string", .method = "padEnd", .export_name = "text.padEnd" },
+    .{ .behavior = "string", .method = "repeat", .export_name = "text.repeat" },
+    .{ .behavior = "string", .method = "replace", .export_name = "text.replace" },
+    .{ .behavior = "string", .method = "replaceAll", .export_name = "text.replaceAll" },
+    .{ .behavior = "string", .method = "fromCodepoint", .export_name = "text.fromCodepoint" },
+    .{ .behavior = "string", .method = "toUpper", .export_name = "text.toUpper" },
+    .{ .behavior = "string", .method = "toLower", .export_name = "text.toLower" },
 };
 
 /// The std-wasm function `behavior.method`'s `std:` cell names, or null.
@@ -3537,7 +3537,7 @@ const Emitter = struct {
             .type_ => |r| try self.registerInterfaceSigs(r.name, r.genericParams, try self.methodsWithDefaults(r)),
             .behavior => |i| for (i.methods) |m| {
                 try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
-                if (std.mem.eql(u8, i.name, "String") and m.body == null) if (methodFnCell(m)) |name| {
+                if (std.mem.eql(u8, i.name, "string") and m.body == null) if (methodFnCell(m)) |name| {
                     try self.registerStringFnCell(m, name, program);
                     continue;
                 };
@@ -4620,7 +4620,7 @@ const Emitter = struct {
     fn elemBoxOfTypeRef(self: *Emitter, t: ast.TypeRef) ElemBox {
         if (isUnknownTypeRef(t)) return .as_is;
         if (t == .array) return .arr;
-        if (t == .generic and std.mem.eql(u8, t.generic.name, "Array")) return .arr;
+        if (t == .generic and std.mem.eql(u8, t.generic.name, "array")) return .arr;
         if (primTestOf(t)) |pt| {
             const n = t.named;
             if (fieldCellOf(n) == .i64) return .unresolved;
@@ -5499,7 +5499,7 @@ const Emitter = struct {
             .named => |n| {
                 if (isScalarName(n) or std.mem.eql(u8, n, "bool")) return null;
                 if (std.mem.eql(u8, n, "unknown")) return .{ .ref = .unknown };
-                if (std.mem.eql(u8, n, "Bytes")) return .{ .ref = .bytes };
+                if (std.mem.eql(u8, n, "bytes")) return .{ .ref = .bytes };
                 const name = if (std.mem.eql(u8, n, "Self")) (self.self_type orelse self.sig_owner orelse return null) else n;
                 if (self.records.contains(name)) return .{ .ref = .{ .record = name } };
                 if (self.enums.get(name)) |vs| {
@@ -5512,7 +5512,7 @@ const Emitter = struct {
             .array => |inner| return .{ .ref = .{ .arr = self.gcElemOf(inner.*) } },
             .generic => |g| {
                 if (resultShapeOfTypeRef(t) != null) return .{ .ref = .result };
-                if (g.args.len == 1 and !g.is_builtin and std.mem.eql(u8, g.name, "Array"))
+                if (g.args.len == 1 and !g.is_builtin and std.mem.eql(u8, g.name, "array"))
                     return .{ .ref = .{ .arr = self.gcElemOf(g.args[0]) } };
                 // Decision 105 (144 B-128, B-142) — an iterator or a stream
                 // is a generator handle, its body run one item per `next`
@@ -5891,7 +5891,7 @@ const Emitter = struct {
         if (self.isArrayExpr(e)) if (self.gcElemRepr(e)) |er| return .{ .ref = .{ .arr = gcElemClassOf(er) } };
         if (self.optInfoOf(e)) |oi| if (self.gcOptPayload(oi)) |pr| return gcOptRepr(pr);
         if (e == .literal and e.literal.kind == .bytesLit) return .{ .ref = .bytes };
-        if (self.typeRefOf(e)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "Bytes")) return .{ .ref = .bytes };
+        if (self.typeRefOf(e)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "bytes")) return .{ .ref = .bytes };
         return null;
     }
 
@@ -6962,8 +6962,8 @@ const Emitter = struct {
             return;
         }
         if (value == .branch and value.branch.kind == .if_) return self.gcFail("an if boxed as an unknown");
-        if (self.typeRefOf(value)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "Bytes")) return self.gcFail("Bytes as an unknown");
-        if (value == .literal and value.literal.kind == .bytesLit) return self.gcFail("Bytes as an unknown");
+        if (self.typeRefOf(value)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "bytes")) return self.gcFail("bytes as an unknown");
+        if (value == .literal and value.literal.kind == .bytesLit) return self.gcFail("bytes as an unknown");
         const as_is = (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) or
             self.isUnknownExpr(value) or self.isTaggedValue(value) or self.gcIsUnknownRepr(value);
         const Kind = enum { i32_, f64_, bool_, str, ref };
@@ -7311,7 +7311,7 @@ const Emitter = struct {
             try self.lowerCoerced(callArg(cc, 0).?, br);
             return self.emit(self.builder().helper(.str_concat));
         }
-        if (!eq(u8, name, "toUtf8")) return self.gcFail("a Bytes method with no GC form");
+        if (!eq(u8, name, "toUtf8")) return self.gcFail("a bytes method with no GC form");
         // `Ok` holding the same buffer, or the `Error` the other targets write.
         const p = try self.gcTemp(br);
         const rti = self.gcTyIndex(.result);
@@ -9648,7 +9648,7 @@ const Emitter = struct {
     fn arrayElemRef(t: ast.TypeRef) ?ast.TypeRef {
         return switch (t) {
             .array => |el| el.*,
-            .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else null,
+            .generic => |g| if (std.mem.eql(u8, g.name, "array") and g.args.len == 1) g.args[0] else null,
             else => null,
         };
     }
@@ -9947,7 +9947,7 @@ const Emitter = struct {
             .optional => |e| blk: {
                 const inner = stdSpelling(e.*);
                 if (std.mem.eql(u8, inner, "string")) break :blk "?string";
-                if (std.mem.eql(u8, inner, "Bytes")) break :blk "?Bytes";
+                if (std.mem.eql(u8, inner, "bytes")) break :blk "?bytes";
                 if (std.mem.eql(u8, inner, "i32")) break :blk "?i32";
                 break :blk "another type";
             },
@@ -15523,7 +15523,7 @@ const Emitter = struct {
             return self.emitToFloatSlot();
         }
         if (self.wasmTypeOf(value).isFloat())
-            return self.refuse(value.getLoc(), "the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `Array<f64>`)", .{});
+            return self.refuse(value.getLoc(), "the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `f64[]`)", .{});
         try self.lowerCoerced(value, .i32);
     }
 
@@ -16113,7 +16113,7 @@ const Emitter = struct {
             const k: ?envMod.PrimKind = switch (tr) {
                 .named => |n| primKindOfName(n),
                 .array => .array,
-                .generic => |g| if (std.mem.eql(u8, g.name, "Array")) .array else null,
+                .generic => |g| if (std.mem.eql(u8, g.name, "array")) .array else null,
                 else => null,
             };
             if (k) |kk| return kk;
@@ -16145,7 +16145,7 @@ const Emitter = struct {
                     // .toArray()` through a namespace member, which inference
                     // records no lowering for): the array's methods.
                     .array => envMod.PrimKind.array,
-                    .generic => |g| if (std.mem.eql(u8, g.name, "Array")) envMod.PrimKind.array else return null,
+                    .generic => |g| if (std.mem.eql(u8, g.name, "array")) envMod.PrimKind.array else return null,
                     else => return null,
                 };
                 return if (primCallRes(k, cc) != null) k else null;
@@ -16273,7 +16273,7 @@ const Emitter = struct {
                 .optional => |inner| switch (inner.*) {
                     .named => |n| primKindOfName(n) orelse return null,
                     .array => .array,
-                    .generic => |g| if (std.mem.eql(u8, g.name, "Array")) .array else return null,
+                    .generic => |g| if (std.mem.eql(u8, g.name, "array")) .array else return null,
                     else => return null,
                 },
                 else => return null,
@@ -16523,13 +16523,13 @@ const Emitter = struct {
     /// array type in the copy (`primDefaultSelf`).
     fn primBehaviorKinds(name: []const u8) []const envMod.PrimKind {
         const eq = std.mem.eql;
-        if (eq(u8, name, "String")) return &.{.string};
-        if (eq(u8, name, "Bool")) return &.{.bool};
+        if (eq(u8, name, "string")) return &.{.string};
+        if (eq(u8, name, "bool")) return &.{.bool};
         // A numeric contract covers the kinds of the widths that implement
         // it (decision 617 (1), read from their `implement` clauses).
         const numeric = preludeCache.kindsReaching(name);
         if (numeric.len > 0) return numeric;
-        if (eq(u8, name, "Array")) return &.{.array};
+        if (eq(u8, name, "array")) return &.{.array};
         return &.{};
     }
 
@@ -16548,7 +16548,7 @@ const Emitter = struct {
             .float => "f64",
             .array => "i32",
             .bigint => "bigint",
-            .bytes => "Bytes",
+            .bytes => "bytes",
         };
     }
 
@@ -16639,7 +16639,7 @@ const Emitter = struct {
         try self.emit(.{ .call = sym });
         const res = sig.result orelse return;
         if (self.mode != .gc) return;
-        const export_name = stdMethodExport("String", cc.callee) orelse return;
+        const export_name = stdMethodExport("string", cc.callee) orelse return;
         if (stdLeaves.find(export_name) != null) return;
         const ex = gcStdSig(export_name) orelse return;
         try self.emitConvert(res, try stdRepr(ex.result));
@@ -17341,7 +17341,7 @@ const Emitter = struct {
     /// behavior: the string's own buffer, a `Bytes`' layout (both immutable).
     fn isBytesFromUtf8(self: *Emitter, cc: anytype) bool {
         const rn = receiverName(cc) orelse return false;
-        if (!std.mem.eql(u8, rn, "Bytes") or cc.args.len != 1 or cc.trailing.len != 0) return false;
+        if (!std.mem.eql(u8, rn, "bytes") or cc.args.len != 1 or cc.trailing.len != 0) return false;
         if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return false;
         return std.mem.eql(u8, cc.callee, "fromUtf8");
     }
@@ -17356,8 +17356,8 @@ const Emitter = struct {
         // Decision 442 (2) — every other method is std-wasm's, the function
         // `primitives.bp`'s `std:` cell names (`std_method_exports`), its
         // arguments as the declaration orders them.
-        const export_name = stdMethodExport("String", name) orelse
-            return self.refuseUnlessTemplate(self.call_loc, "`String.{s}` has no lowering on the wasm backend", .{name});
+        const export_name = stdMethodExport("string", name) orelse
+            return self.refuseUnlessTemplate(self.call_loc, "`string.{s}` has no lowering on the wasm backend", .{name});
         const ex = stdWasm.find(export_name).?;
         for (ex.params[1..], 0..) |t, k| {
             // In a GC module each argument is the value its parameter is
@@ -18207,7 +18207,7 @@ const Emitter = struct {
     fn isUnionArrayTypeRef(t: ast.TypeRef) bool {
         const elem: ast.TypeRef = switch (t) {
             .array => |inner| inner.*,
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return false,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else return false,
             else => return false,
         };
         return isUnknownTypeRef(elem);
@@ -18256,7 +18256,7 @@ const Emitter = struct {
         const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
-            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "array") or
                 std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")))
                 g.args[0]
             else
@@ -18319,7 +18319,7 @@ const Emitter = struct {
         const t = eagerTypeRef(self.typeRefOf(e) orelse return null);
         return switch (t) {
             .array => |inner| inner.*,
-            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "array") or
                 std.mem.eql(u8, g.name, "Iter") or std.mem.eql(u8, g.name, "AsyncIter")))
                 g.args[0]
             else
@@ -18498,7 +18498,7 @@ const Emitter = struct {
             },
             .array => |inner| return self.arrayTypeShape(inner.*),
             .generic => |g| {
-                if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]);
+                if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) return self.arrayTypeShape(g.args[0]);
                 if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) return self.resultTypeShape(g.args[0], g.args[1]);
                 // A generic record (`Queue<i32>`) carries its declaration too.
                 if (self.records.contains(g.name)) return "T";
@@ -18555,7 +18555,7 @@ const Emitter = struct {
         // printed it as a number.
         const nested: ?ast.TypeRef = switch (elem) {
             .array => |ie| ie.*,
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else null,
             else => null,
         };
         if (nested) |ie| if (scalarCode(ie)) |c| return try std.fmt.allocPrint(self.arena(), "[[{c}", .{c});
@@ -19460,7 +19460,7 @@ const Emitter = struct {
     fn typeConcrete(self: *Emitter, t: ast.TypeRef) bool {
         return switch (t) {
             // A type parameter of the body being lowered is an `anyref` here.
-            .named => |n| self.namesConcreteType(n) or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "Bytes") or std.mem.eql(u8, n, "bigint") or isGenericParamName(n, self.owner_tparams, self.fn_tparams),
+            .named => |n| self.namesConcreteType(n) or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "bytes") or std.mem.eql(u8, n, "bigint") or isGenericParamName(n, self.owner_tparams, self.fn_tparams),
             .array => |inner| self.typeConcrete(inner.*),
             .optional => |inner| self.typeConcrete(inner.*),
             .generic => |g| blk: {
@@ -20498,7 +20498,7 @@ const Emitter = struct {
         if (gps) |g| return self.gcErasedRepr(g, t);
         switch (eagerTypeRef(t)) {
             .named => |n| {
-                if (isScalarName(n) or std.mem.eql(u8, n, "bool") or std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "Bytes")) return self.reprOf(t);
+                if (isScalarName(n) or std.mem.eql(u8, n, "bool") or std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "bytes")) return self.reprOf(t);
                 const name = if (std.mem.eql(u8, n, "Self")) (self.self_type orelse self.sig_owner orelse return null) else n;
                 if (self.records.contains(name) or self.enums.contains(name)) return self.reprOf(t);
                 if (isGenericParamName(n, self.owner_tparams, self.fn_tparams)) return self.reprOf(t);
@@ -21499,7 +21499,7 @@ const Emitter = struct {
     /// / `bigint.parse(text)`, which inference names by the behavior.
     fn bigintAssoc(self: *Emitter, cc: anytype) ?BigintAssoc {
         const rn = receiverName(cc) orelse return null;
-        if (!std.mem.eql(u8, rn, "BigInt") or cc.args.len != 1 or cc.trailing.len != 0) return null;
+        if (!std.mem.eql(u8, rn, "bigint") or cc.args.len != 1 or cc.trailing.len != 0) return null;
         if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return null;
         if (std.mem.eql(u8, cc.callee, "of")) return .of;
         if (std.mem.eql(u8, cc.callee, "parse")) return .parse;
@@ -21630,7 +21630,7 @@ const Emitter = struct {
     fn primAssocHelper(self: *Emitter, cc: anytype) ?[]const u8 {
         const rn = receiverName(cc) orelse return null;
         if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return null;
-        if (std.mem.eql(u8, rn, "String") and std.mem.eql(u8, cc.callee, "fromCodepoint") and cc.args.len == 1 and cc.trailing.len == 0) return stdMethodExport("String", "fromCodepoint").?;
+        if (std.mem.eql(u8, rn, "string") and std.mem.eql(u8, cc.callee, "fromCodepoint") and cc.args.len == 1 and cc.trailing.len == 0) return stdMethodExport("string", "fromCodepoint").?;
         return null;
     }
 
@@ -22315,7 +22315,7 @@ const Emitter = struct {
                 // `p: Pair<T>` against an argument whose type says `Pair<string>`
                 // (`ctorTypeRef`, a local bound to one): `T` is what the
                 // argument's type argument at its place is.
-                if (t == .generic and !std.mem.eql(u8, t.generic.name, "Array")) {
+                if (t == .generic and !std.mem.eql(u8, t.generic.name, "array")) {
                     const at = self.typeRefOf(arg) orelse return null;
                     if (at != .generic or !std.mem.eql(u8, at.generic.name, t.generic.name) or at.generic.args.len != t.generic.args.len) return null;
                     for (t.generic.args, at.generic.args) |pa, aa| {
@@ -22328,7 +22328,7 @@ const Emitter = struct {
                 }
                 const elem: ast.TypeRef = switch (t) {
                     .array => |inner| inner.*,
-                    .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
+                    .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else return null,
                     else => unreachable,
                 };
                 // Decision 392 — `Array<@Async<T>>` (started tasks: the shape
@@ -22694,7 +22694,7 @@ const Emitter = struct {
         const pt = g.decl.params[0].typeRef;
         const inner: ast.TypeRef = switch (pt) {
             .array => |i| i.*,
-            .generic => |gg| if (std.mem.eql(u8, gg.name, "Array") and gg.args.len == 1) gg.args[0] else return null,
+            .generic => |gg| if (std.mem.eql(u8, gg.name, "array") and gg.args.len == 1) gg.args[0] else return null,
             else => return null,
         };
         if (inner != .named or !isGenericParamName(inner.named, g.decl.genericParams, &.{})) return null;
@@ -22855,12 +22855,12 @@ const Emitter = struct {
                     if (self.bigintAssoc(cc)) |which| if (which == .of) break :blk .{ .named = "bigint" };
                     // Decision 346 — `Bytes.fromUtf8(s)`, `slice` and `concat`
                     // answer a `Bytes`; `toUtf8` its `@Result<string, string>`.
-                    if (self.isBytesFromUtf8(cc)) break :blk .{ .named = "Bytes" };
+                    if (self.isBytesFromUtf8(cc)) break :blk .{ .named = "bytes" };
                     // Decision 319 — `x.toU64()` is a `u64`, so it prints and
                     // compares unsigned, and a conversion after it reads it so.
                     if (cc.receiver != null and cc.args.len == 0) if (intConversionType(cc.callee)) |tn| if (self.primKindAt(cc, c.loc)) |k| if (k == .int) break :blk .{ .named = tn };
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes) {
-                        if (std.mem.eql(u8, cc.callee, "slice") or std.mem.eql(u8, cc.callee, "concat")) break :blk .{ .named = "Bytes" };
+                        if (std.mem.eql(u8, cc.callee, "slice") or std.mem.eql(u8, cc.callee, "concat")) break :blk .{ .named = "bytes" };
                         if (std.mem.eql(u8, cc.callee, "length")) break :blk .{ .named = "i32" };
                         if (std.mem.eql(u8, cc.callee, "toUtf8")) {
                             const args = self.reg_arena.allocator().alloc(ast.TypeRef, 2) catch break :blk null;
@@ -23148,7 +23148,7 @@ const Emitter = struct {
     fn elemRecordOfTypeRef(self: *Emitter, t: ast.TypeRef) ?[]const u8 {
         const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
             .array => |inner| inner.*,
-            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "array") or
                 std.mem.eql(u8, g.name, "Iter")))
                 g.args[0]
             else
@@ -23762,7 +23762,7 @@ const Emitter = struct {
         if (mentionsGeneric(t, gps)) switch (eagerTypeRef(t)) {
             .named, .optional => return .{ .ref = .unknown },
             .array => return .{ .ref = .{ .arr = .any } },
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return .{ .ref = .{ .arr = .any } },
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) return .{ .ref = .{ .arr = .any } },
             else => {},
         };
         return self.reprOf(t);
@@ -23790,7 +23790,7 @@ const Emitter = struct {
         return switch (eagerTypeRef(t)) {
             .named, .optional => "U",
             .array => |inner| try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, inner.*)}),
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array"))
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array"))
                 try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, g.args[0])})
             else
                 self.gcFail("a generic field of a generic type"),
@@ -24500,7 +24500,7 @@ const Emitter = struct {
             .named => |n| isGenericParamName(n, generics, &.{}),
             .array => |inner| mentionsGeneric(inner.*, generics),
             .tuple_, .labeledTuple => mentionsGeneric(t, generics),
-            .generic => |g| g.args.len == 1 and std.mem.eql(u8, g.name, "Array") and mentionsGeneric(g.args[0], generics),
+            .generic => |g| g.args.len == 1 and std.mem.eql(u8, g.name, "array") and mentionsGeneric(g.args[0], generics),
             else => false,
         };
     }
@@ -27735,7 +27735,7 @@ const Emitter = struct {
     fn eqArrayElem(t: ast.TypeRef) ?ast.TypeRef {
         return switch (t) {
             .array => |inner| inner.*,
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else null,
             else => null,
         };
     }

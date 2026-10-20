@@ -67,15 +67,16 @@ const PrimErlangCall = struct {
     arity_branches: []const ast.ArityBranch = &.{},
 };
 
-/// Map a primitive `PrimKind` to its controller interface name in
-/// `primitives.bp`. The BEAM dispatcher only handles three kinds (`Array`,
-/// `String`, `Bool`); numeric methods are not yet lowered on BEAM (recorded as
-/// a backend limit, falls through to the value-receiver path).
+/// Map a primitive `PrimKind` to its member table in `primitives.bp` — the
+/// type's own name (decision 641). The BEAM dispatcher only handles three
+/// kinds (`array`, `string`, `bool`); numeric methods are not yet lowered on
+/// BEAM (recorded as a backend limit, falls through to the value-receiver
+/// path).
 fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
     return switch (k) {
-        .array => "Array",
-        .string => "String",
-        .bool => "Bool",
+        .array => "array",
+        .string => "string",
+        .bool => "bool",
         else => null,
     };
 }
@@ -87,14 +88,14 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
 /// `Integer`, `Number` for an integer).
 fn primIfaceChain(k: envMod.PrimKind) []const []const u8 {
     return switch (k) {
-        .array => &.{"Array"},
-        .string => &.{"String"},
-        .bool => &.{"Bool"},
+        .array => &.{"array"},
+        .string => &.{"string"},
+        .bool => &.{"bool"},
         .int, .float => prelude_cache.contractChainOfKind(k),
-        // Decision 332 — `bigint`'s own interface, outside the tower.
-        .bigint => &.{"BigInt"},
-        // Decision 346 — `Bytes`' own interface.
-        .bytes => &.{"Bytes"},
+        // Decision 332 — `bigint`'s own members, outside the tower.
+        .bigint => &.{"bigint"},
+        // Decision 346 — `bytes`' own members.
+        .bytes => &.{"bytes"},
     };
 }
 
@@ -262,7 +263,7 @@ fn recordNameOfReturn(t: ast.TypeRef) ?[]const u8 {
             if (g.args.len == 0) return null;
             const looks_through = (g.is_builtin and (std.mem.eql(u8, g.name, "Result") or
                 std.mem.eql(u8, g.name, "Future") or std.mem.eql(u8, g.name, "Option"))) or
-                std.mem.eql(u8, g.name, "Array");
+                std.mem.eql(u8, g.name, "array");
             return if (looks_through) recordNameOfReturn(g.args[0]) else null;
         },
         else => null,
@@ -3599,7 +3600,7 @@ const Emitter = struct {
                 return true;
             },
             .generic => |g| {
-                if (std.mem.eql(u8, g.name, "Array")) {
+                if (std.mem.eql(u8, g.name, "array")) {
                     try beamEmitter.writeTest(self.out, .is_list, fail, &.{s});
                     return true;
                 }
@@ -7900,8 +7901,10 @@ const Emitter = struct {
                 // call like `__Token__Color.Red(_inner: …)` resolves to a
                 // tagged tuple rather than the unresolved-method-call path.
                 const isSynthesisedTypeRecv = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
+                // Decision 641 — a primitive's static, called through the
+                // type's own lowercase name (`array.range(0, 3)`).
                 if (rn.len > 0 and rn.len <= 128 and
-                    (self.typeLike(rn) or isSynthesisedTypeRecv) and !self.reg_map.contains(rn))
+                    (self.typeLike(rn) or isSynthesisedTypeRecv or prelude_cache.isMemberTableStatic(rn, cc.callee)) and !self.reg_map.contains(rn))
                 {
                     // `Type.Variant(…)` — a PascalCase callee on a PascalCase
                     // type receiver is an enum variant constructor, not a module

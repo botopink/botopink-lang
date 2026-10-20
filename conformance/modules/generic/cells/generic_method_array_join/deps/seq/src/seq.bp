@@ -2,9 +2,9 @@
 //// answer, `toArray` hands the items back.
 
 pub type Seq<T>(
-    items: Array<T>,
+    items: array<T>,
 ) {
-    pub fn toArray(self: Self<T>) -> Array<T> {
+    pub fn toArray(self: Self<T>) -> array<T> {
         return self.items;
     }
 
@@ -17,6 +17,6 @@ pub type Seq<T>(
     }
 }
 
-pub fn of<T>(xs: Array<T>) -> Seq<T> {
+pub fn of<T>(xs: array<T>) -> Seq<T> {
     return Seq(items: xs);
 }

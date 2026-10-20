@@ -5,16 +5,16 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    print(String.fromCodepoint(65));
-    print(String.fromCodepoint(0) == String.fromCodepoint(0));
-    print(String.fromCodepoint(127) + String.fromCodepoint(128));
-    print(String.fromCodepoint(233) + String.fromCodepoint(8364));
-    print(String.fromCodepoint(2047) + String.fromCodepoint(2048));
-    print(String.fromCodepoint(55295) + String.fromCodepoint(57344));
-    print(String.fromCodepoint(65535) + String.fromCodepoint(65536));
-    print(String.fromCodepoint(127881));
-    print(String.fromCodepoint(1114111).charCodeAt(0));
-    val word = [104, 233, 108, 108, 111].map({ c -> String.fromCodepoint(c) });
+    print(string.fromCodepoint(65));
+    print(string.fromCodepoint(0) == string.fromCodepoint(0));
+    print(string.fromCodepoint(127) + string.fromCodepoint(128));
+    print(string.fromCodepoint(233) + string.fromCodepoint(8364));
+    print(string.fromCodepoint(2047) + string.fromCodepoint(2048));
+    print(string.fromCodepoint(55295) + string.fromCodepoint(57344));
+    print(string.fromCodepoint(65535) + string.fromCodepoint(65536));
+    print(string.fromCodepoint(127881));
+    print(string.fromCodepoint(1114111).charCodeAt(0));
+    val word = [104, 233, 108, 108, 111].map({ c -> string.fromCodepoint(c) });
     print(word.join(""));
-    print(String.fromCodepoint("é".charCodeAt(0)));
+    print(string.fromCodepoint("é".charCodeAt(0)));
 }

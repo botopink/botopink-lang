@@ -73,7 +73,7 @@ pub fn intInRange(lo: i32, hi: i32) -> i32 {
 // empty array — the call site should default with `?? …` rather
 // than panic. Uses a walk-up integer floor (no `Math.floor` import) so
 // the body stays self-contained.
-pub fn pick<T>(xs: Array<T>) -> ?T {
+pub fn pick<T>(xs: array<T>) -> ?T {
     val n = xs.length;
     if (n == 0) return null;
     // `float() * n` mixes f64 × i32 — inference promotes to f64.
@@ -84,7 +84,7 @@ pub fn pick<T>(xs: Array<T>) -> ?T {
 
 // Internal: integer floor of a non-negative `product` < `upper`. Walks
 // `start` up from 0 while `threshold (= start + 1)` still fits below
-// `product`. O(upper) — fine for the small `Array<T>` arities `pick`
+// `product`. O(upper) — fine for the small `array<T>` arities `pick`
 // targets in tests.
 fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
     if (start + 1 > upper) return start;
@@ -94,7 +94,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 
 // Fisher-Yates shuffle. Returns a fresh array whose elements are a
 // permutation of `xs`. The pure-bp shape was deferred (the deferral
-// note used to live here) because `Array<T>::at(i)` returns `?T` and
+// note used to live here) because `array<T>::at(i)` returns `?T` and
 // extracting T without a sentinel value of T is circular. Solution:
 // host-backed `pub declare fn shuffle<T>(xs)` — the host owns the
 // in-place swap; the bp side only declares the signature and the
@@ -121,7 +121,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
     .Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]"""),
     .Wasm(body: shuffleBody),
 )]
-pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
+pub declare fn shuffle<T>(xs: array<T>) -> array<T>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 //
@@ -176,7 +176,7 @@ test "random.pick from non-empty array returns a member" {
 }
 
 test "random.pick from empty array returns null" {
-    val empty: Array<i32> = [];
+    val empty: array<i32> = [];
     assert pick(empty) ?? 99 == 99;
 }
 
@@ -226,7 +226,7 @@ test "random.shuffle preserves the multiset (sum)" {
 }
 
 test "random.shuffle of an empty array is empty" {
-    val empty: Array<i32> = [];
+    val empty: array<i32> = [];
     assert shuffle(empty).length == 0;
 }
 
@@ -272,7 +272,7 @@ test "random.uuidV4 has the version 4 layout" {
 
 // `n` cryptographically-secure random bytes as a hex string of length
 // `2 * n` (each byte rendered as two lowercase hex chars). The hex shape
-// sidesteps the `Array<u8>` cross-backend representation gap — Node
+// sidesteps the `array<u8>` cross-backend representation gap — Node
 // `Buffer` and Erlang `binary()` don't share a bp-side type. Callers
 // that need bytes parse the hex back themselves.
 // Node: `require('crypto').randomBytes(n).toString('hex')`.
@@ -311,7 +311,7 @@ test "random.randomBytes(0) is empty" {
 // Selection shuffle: each step moves a uniformly drawn element of what is
 // left to the output — a uniform permutation, as the Node cell's
 // Fisher-Yates; the elements are moved as one-element slices, never read.
-fn shuffleBody<T>(xs: Array<T>) -> Array<T> {
+fn shuffleBody<T>(xs: array<T>) -> array<T> {
     var rest = xs;
     var out = xs.slice(0, 0);
     while (rest.length > 0) {
@@ -350,8 +350,8 @@ fn randomByte() -> i32 {
     return wholeOf((float() * 256.0).floor());
 }
 
-fn randomBytesOf(n: i32) -> Array<i32> {
-    var out: Array<i32> = [];
+fn randomBytesOf(n: i32) -> array<i32> {
+    var out: array<i32> = [];
     var i = 0;
     while (i < n) {
         out = out.append([randomByte()]);
@@ -364,12 +364,12 @@ fn hexDigit(n: i32) -> string {
     return "0123456789abcdef".at(n) ?? "";
 }
 
-fn hexOf(bytes: Array<i32>) -> string {
+fn hexOf(bytes: array<i32>) -> string {
     return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
 }
 
 // RFC 4648 §5 base64url, unpadded.
-fn base64UrlOf(bytes: Array<i32>) -> string {
+fn base64UrlOf(bytes: array<i32>) -> string {
     val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     var out = "";
     var g = 0;

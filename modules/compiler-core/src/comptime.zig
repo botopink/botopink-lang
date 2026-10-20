@@ -2166,7 +2166,7 @@ pub const decl_reflection_src =
     \\pub type __DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type __Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
-    \\pub type Asset(path: string, bytes: Bytes, size: i64, hash: string) {
+    \\pub type Asset(path: string, bytes: bytes, size: i64, hash: string) {
     \\    declare fn text(self: Self) -> string;
     \\}
     \\pub behavior Decorator {

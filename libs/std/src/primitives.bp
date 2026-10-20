@@ -487,15 +487,15 @@ fn u64IsOddBody(value: u64) -> bool {
 // Not a width of the tower above: a `bigint` mixes with no other integer type,
 // and crossing is written — `bigint.of(n)` / `bigint.parse(text)` in, `toI64()`
 // / `toF64()` out. The two associated functions are host primitives of
-// decision 262's form (`String.fromCodepoint`'s), written through the type's
+// decision 262's form (`string.fromCodepoint`'s), written through the type's
 // own name. commonJS patches the methods on `BigInt.prototype`, which the
 // tower patches too (an `i64` past 2^53 is a `BigInt`): each Node form here is
 // the tower's own text, so the two patches are one function whichever runs
 // last.
-behavior BigInt {
+pub type bigint {
     // `bigint.of(n)` — the `bigint` equal to `n`.
     #[compiler.external(.Erlang("$0"), .JavaScript("BigInt($0)"))]
-    fn of(n: i64) -> bigint;
+    declare fn of(n: i64) -> bigint;
 
     // `bigint.parse(text)` — the integer a decimal numeral spells: an optional
     // `+` or `-`, then the digits `0`–`9` and nothing else, of any length (the
@@ -505,18 +505,18 @@ behavior BigInt {
         .Erlang("""(fun(__S) -> __D = case __S of <<"-", __R/binary>> -> __R; <<"+", __R/binary>> -> __R; _ -> __S end, case (__D =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__D)) of true -> {ok, binary_to_integer(__S)}; false -> {error, <<"bigint.parse: ", 34, __S/binary, 34, " is not an integer">>} end end)($0)"""),
         .JavaScript("""((__s) => /^[+-]?[0-9]+$/.test(__s) ? { ok: BigInt(__s) } : { error: 'bigint.parse: "' + __s + '" is not an integer' })($0)"""),
     )]
-    fn parse(text: string) -> Result<bigint, string>;
+    declare fn parse(text: string) -> Result<bigint, string>;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    fn toString(self: Self) -> string;
+    declare fn toString(self: Self) -> string;
 
     // The `i64` equal to the value; past −2^63 … 2^63 − 1 an abort naming
-    // the value (decision 264's text, as `Integer.toI64`).
+    // the value (decision 264's text, as `toI64` of the integer widths).
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    fn toI64(self: Self) -> i64;
+    declare fn toI64(self: Self) -> i64;
 
     // The `f64` equal to the value; one between two `f64`s aborts, never
     // rounds (decision 319's conversions).
@@ -524,27 +524,27 @@ behavior BigInt {
         .Erlang("""(fun(__V) -> case abs(__V) =< ((1 bsl 1024) - (1 bsl 971)) of true -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    fn toF64(self: Self) -> f64;
+    declare fn toF64(self: Self) -> f64;
 }
 
-// ── Bytes (decision 346) ──────────────────────────────────────────────────────
+// ── bytes (decision 346) ──────────────────────────────────────────────────────
 // An immutable sequence of bytes: an Erlang binary on erlang and beam, a
 // `Uint8Array` on commonJS, on wasm a buffer laid out as a string is (the
-// address of its `u32` length, the bytes behind it). No literal is `Bytes`,
-// and nothing converts between `Bytes` and `string` but the two calls below:
-// `Bytes.fromUtf8(s)` in, `b.toUtf8()` out — an `Error` on bytes that are not
+// address of its `u32` length, the bytes behind it). No literal is `bytes`,
+// and nothing converts between `bytes` and `string` but the two calls below:
+// `bytes.fromUtf8(s)` in, `b.toUtf8()` out — an `Error` on bytes that are not
 // UTF-8. A binary payload (an upload, a download, an image, a socket read) is
-// `Bytes` where it enters, and a host cell takes and answers it as the
-// target holds it. `Bytes` never widens to `unknown` and no `is` tests it:
+// `bytes` where it enters, and a host cell takes and answers it as the
+// target holds it. `bytes` never widens to `unknown` and no `is` tests it:
 // erlang holds it and a `string` alike. `==` compares the bytes. commonJS
 // patches the methods on `Uint8Array.prototype`; `length` is the native
 // property, and `slice`'s Node templates cut with `subarray` (the patch
 // replaces native `slice`). Every index counts bytes. The associated function
 // is decision 262's form, written through the type's own name.
-behavior Bytes {
-    // `Bytes.fromUtf8(s)` — the UTF-8 bytes of `s`.
+pub type bytes {
+    // `bytes.fromUtf8(s)` — the UTF-8 bytes of `s`.
     #[compiler.external(.Erlang("$0"), .JavaScript("""(new TextEncoder().encode($0))"""))]
-    fn fromUtf8(s: string) -> Bytes;
+    declare fn fromUtf8(s: string) -> bytes;
 
     // The text the bytes spell in UTF-8; anything else (a byte no UTF-8
     // sequence starts with, a sequence cut short, an overlong form, a
@@ -554,23 +554,23 @@ behavior Bytes {
         .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)($0)"""),
         .JavaScript("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "Bytes.toUtf8: not valid UTF-8" })($0)"""),
     )]
-    fn toUtf8(self: Self) -> Result<string, string>;
+    declare fn toUtf8(self: Self) -> Result<string, string>;
 
     // The number of bytes.
     #[compiler.external(.Erlang("byte_size($0)"), .JavaScript("length"))]
-    fn length(self: Self) -> i32;
+    declare fn length(self: Self) -> i32;
 
     // The bytes of `self`, then those of `other`.
     #[compiler.external(
         .Erlang("<<($0)/binary, ($1)/binary>>"),
         .JavaScript("""((__a, __b) => { const __r = new Uint8Array(__a.length + __b.length); __r.set(__a, 0); __r.set(__b, __a.length); return __r; })($0, $1)"""),
     )]
-    fn concat(self: Self, other: Bytes) -> Bytes;
+    declare fn concat(self: Self, other: bytes) -> bytes;
 
-    // `Slice<Bytes>.slice` — `string`'s bounds (decision 139): a negative
+    // `Slice<bytes>.slice` — `string`'s bounds (decision 139): a negative
     // index counts from the end, both are clamped to the length, an end
     // before the start is empty, and an absent end is the length — `b[1..]`.
-    default fn slice(self: Self, start: i32, end: ?i32 = null) -> Bytes {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> bytes {
         if (end != null)
             return bytesSlice1(self, start, end)
         else
@@ -580,40 +580,53 @@ behavior Bytes {
 
 // ── boolean ───────────────────────────────────────────────────────────────────
 
-behavior Bool {
+pub type bool {
     #[compiler.external(.Erlang("erlang:atom_to_binary($0)"), .JavaScript("toString"))]
-    fn toString(self: Self) -> string;
+    declare fn toString(self: Self) -> string;
 
-    #[compiler.external(.Erlang("(not $0)"))]
-    default fn negate(self: Self) -> bool {
-        return !self;
-    }
+    #[compiler.external(.Erlang("(not $0)"), .JavaScript(body: boolNegateBody), .Wasm(body: boolNegateBody))]
+    declare fn negate(self: Self) -> bool;
 
-    default fn nor(self: Self, other: bool) -> bool {
+    fn nor(self: Self, other: bool) -> bool {
         return !(self || other);
     }
 
-    default fn nand(self: Self, other: bool) -> bool {
+    fn nand(self: Self, other: bool) -> bool {
         return !(self && other);
     }
 
-    default fn exclusiveOr(self: Self, other: bool) -> bool {
+    fn exclusiveOr(self: Self, other: bool) -> bool {
         return self != other;
     }
 
-    default fn exclusiveNor(self: Self, other: bool) -> bool {
+    fn exclusiveNor(self: Self, other: bool) -> bool {
         return self == other;
     }
+}
+
+// The botopink bodies of the members of `bool`, `string` and `array<T>` that
+// run on the host on one target and in botopink on the others (`body:`,
+// decision 610; 617 (3)).
+fn boolNegateBody(value: bool) -> bool {
+    return !value;
 }
 
 // ── string ────────────────────────────────────────────────────────────────────
 // `string` answers `Index<i32, string>` (`at`) and `Slice<string>` (`slice`) —
 // the two ambient behaviors of the compiler section below that make `s[1]` and `s[1..3]`
 // legal (decision 63, amended). The conformance is written here as a comment
-// and not as an `implement` clause because a `behavior` declaration carries no
-// `implement` clause in the grammar; see `libs/std/AGENTS.md`.
+// and not as an `implement` clause: a primitive type's `implement` clause names
+// the contract its methods are found through (617 (1)), and `Index` / `Slice`
+// are ambient behaviors the checker reads by rule; see `libs/std/AGENTS.md`.
+//
+// The primitive types are written lowercase and hold their own methods and
+// statics (decision 641): `string.fromCodepoint(65)` is `string`'s static, as
+// `array.range(0, 3)` is `array`'s and `bytes.fromUtf8(s)` `bytes`'. A member
+// is a `declare fn` with its host cells, or a `fn` with its botopink body; a
+// member one target runs on the host and another in botopink names a private
+// body (`body:`, decision 610).
 
-behavior String {
+pub type string {
     // Codepoints on every target (decision 320): erlang's `string:length/1`
     // counts grapheme clusters (`"e\u{301}"` is one there), so the erlang
     // form counts the binary's decoded codepoints.
@@ -622,7 +635,7 @@ behavior String {
         .JavaScript("length"),
         .Wasm(std: "text.length"),
     )]
-    fn length(self: Self) -> i32;
+    declare fn length(self: Self) -> i32;
 
     // `string:split/3` answers the whole string for an empty separator, while
     // JS `split("")` answers one element per character. The erlang form
@@ -633,31 +646,31 @@ behavior String {
         .JavaScript("split"),
         .Wasm(std: "text.split"),
     )]
-    fn split(self: Self, sep: string) -> string[];
+    declare fn split(self: Self, sep: string) -> string[];
 
     // Over all of Unicode on every target (decision 443): the full mappings
     // (`"ß"` is `"SS"`). std-wasm's, which answers OTP's where a JS engine
     // differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`) — commonJS maps
     // through its helper over std-wasm's table, not this binding (decision 521).
     #[compiler.external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(std: "text.toUpper"))]
-    fn toUpper(self: Self) -> string;
+    declare fn toUpper(self: Self) -> string;
 
     #[compiler.external(.Erlang("string:lowercase($0)"), .JavaScript("toLowerCase"), .Wasm(std: "text.toLower"))]
-    fn toLower(self: Self) -> string;
+    declare fn toLower(self: Self) -> string;
 
     #[compiler.external(
         .Erlang("(string:find($0, $1) =/= nomatch)"),
         .JavaScript("includes"),
         .Wasm(std: "text.contains"),
     )]
-    fn contains(self: Self, sub: string) -> bool;
+    declare fn contains(self: Self, sub: string) -> bool;
 
     #[compiler.external(
         .Erlang("(string:prefix($0, $1) =/= nomatch)"),
         .JavaScript("startsWith"),
         .Wasm(std: "text.startsWith"),
     )]
-    fn startsWith(self: Self, prefix: string) -> bool;
+    declare fn startsWith(self: Self, prefix: string) -> bool;
 
     // OTP has no `string:suffix/2`: the last `byte_size(suffix)` bytes are
     // compared with the suffix.
@@ -666,12 +679,12 @@ behavior String {
         .JavaScript("endsWith"),
         .Wasm(std: "text.endsWith"),
     )]
-    fn endsWith(self: Self, suffix: string) -> bool;
+    declare fn endsWith(self: Self, suffix: string) -> bool;
 
     // std-wasm's set on every target (441, 521): space, tab, LF, CR, VT, FF —
     // a no-break space stays; commonJS trims through its helper, not this one.
     #[compiler.external(.Erlang("string:trim($0)"), .JavaScript("trim"), .Wasm(std: "text.trim"))]
-    fn trim(self: Self) -> string;
+    declare fn trim(self: Self) -> string;
 
     // `string:trim/1` strips both ends; `/2` takes the direction.
     #[compiler.external(
@@ -679,10 +692,10 @@ behavior String {
         .JavaScript("trimStart"),
         .Wasm(std: "text.trimStart"),
     )]
-    fn trimStart(self: Self) -> string;
+    declare fn trimStart(self: Self) -> string;
 
     #[compiler.external(.Erlang("string:trim($0, trailing)"), .JavaScript("trimEnd"), .Wasm(std: "text.trimEnd"))]
-    fn trimEnd(self: Self) -> string;
+    declare fn trimEnd(self: Self) -> string;
 
     // Replaces the first occurrence, like JS `replace` with a string pattern.
     // `string:replace/3` returns an iolist, so it is flattened to a binary.
@@ -691,11 +704,11 @@ behavior String {
         .JavaScript("replace"),
         .Wasm(std: "text.replace"),
     )]
-    fn replace(self: Self, pattern: string, with: string) -> string;
+    declare fn replace(self: Self, pattern: string, with: string) -> string;
 
     // `Slice<string>.slice` — `end` is `?i32` so an open-ended `s[1..]` can
     // pass `null` in the second argument (there is no `Range` type to pass).
-    default fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
         if (end != null)
             return stringSlice1(self, start, end)
         else
@@ -722,7 +735,7 @@ behavior String {
         .JavaScript("charAt"),
         .Wasm(std: "text.at"),
     )]
-    fn at(self: Self, index: i32) -> ?string;
+    declare fn at(self: Self, index: i32) -> ?string;
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
@@ -735,14 +748,12 @@ behavior String {
         .JavaScript("indexOf"),
         .Wasm(std: "text.indexOf"),
     )]
-    fn indexOf(self: Self, sub: string) -> i32;
+    declare fn indexOf(self: Self, sub: string) -> i32;
 
-    #[compiler.external(.JavaScript("toString"))]
-    default fn toString(self: Self) -> string {
-        return self;
-    }
+    #[compiler.external(.JavaScript("toString"), .Erlang(body: stringToStringBody), .Wasm(body: stringToStringBody))]
+    declare fn toString(self: Self) -> string;
 
-    // `String.fromCodepoint(cp)` — the one-character string of the Unicode
+    // `string.fromCodepoint(cp)` — the one-character string of the Unicode
     // scalar value `cp` (decision 262), an associated host primitive (no
     // `self`): each backend renders the template at the call. A `cp` that is
     // no scalar value — negative, a surrogate (U+D800..U+DFFF) or past
@@ -755,7 +766,7 @@ behavior String {
         .JavaScript("""((__c) => { if (!(__c >= 0 && __c <= 1114111) || (__c >= 55296 && __c <= 57343)) throw new RangeError('String.fromCodepoint: ' + __c + ' is not a Unicode scalar value'); return String.fromCodePoint(__c); })($0)"""),
         .Wasm(std: "text.fromCodepoint"),
     )]
-    fn fromCodepoint(cp: i32) -> string;
+    declare fn fromCodepoint(cp: i32) -> string;
 
     // ── std-tail F7.string_ext additions ────────────────────────────────────
     // Each is wired to the Node prototype method on commonJS plus an Erlang
@@ -767,52 +778,52 @@ behavior String {
         .JavaScript("padStart"),
         .Wasm(std: "text.padStart"),
     )]
-    fn padStart(self: Self, length: i32, pad: string) -> string;
+    declare fn padStart(self: Self, length: i32, pad: string) -> string;
 
     #[compiler.external(
         .Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($0, $1, $2)"),
         .JavaScript("padEnd"),
         .Wasm(std: "text.padEnd"),
     )]
-    fn padEnd(self: Self, length: i32, pad: string) -> string;
+    declare fn padEnd(self: Self, length: i32, pad: string) -> string;
 
     #[compiler.external(.Erlang("binary:copy($0, $1)"), .JavaScript("repeat"), .Wasm(std: "text.repeat"))]
-    fn repeat(self: Self, times: i32) -> string;
+    declare fn repeat(self: Self, times: i32) -> string;
 
     #[compiler.external(
         .Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($0, $1, $2)"),
         .JavaScript("replaceAll"),
         .Wasm(std: "text.replaceAll"),
     )]
-    fn replaceAll(self: Self, pattern: string, with: string) -> string;
+    declare fn replaceAll(self: Self, pattern: string, with: string) -> string;
 
     #[compiler.external(
         .Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"),
         .JavaScript("(Array.from($0))"),
         .Wasm(std: "text.chars"),
     )]
-    fn chars(self: Self) -> string[];
+    declare fn chars(self: Self) -> string[];
 
     #[compiler.external(
         .Erlang("""binary:split($0, [<<"\r\n">>, <<"\n">>], [global])"""),
         .JavaScript("""$0.split(/\r?\n/)"""),
         .Wasm(std: "text.lines"),
     )]
-    fn lines(self: Self) -> string[];
+    declare fn lines(self: Self) -> string[];
 
     #[compiler.external(
         .Erlang("""[__W || __W <- binary:split($0, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]"""),
         .JavaScript("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)"""),
         .Wasm(std: "text.words"),
     )]
-    fn words(self: Self) -> string[];
+    declare fn words(self: Self) -> string[];
 
     // `\r\n` -> `\n`: the text as a unix host writes it. A lone `\r` stays.
     #[compiler.external(
         .Erlang("""binary:replace($0, <<"\r\n">>, <<"\n">>, [global])"""),
         .JavaScript("""$0.replaceAll("\r\n", "\n")"""),
     )]
-    fn normalizeNewlines(self: Self) -> string;
+    declare fn normalizeNewlines(self: Self) -> string;
 
     // The text without its trailing `\n` characters - only newlines, not
     // spaces or tabs (`trimEnd` takes all whitespace): whitespace inside or
@@ -821,7 +832,7 @@ behavior String {
         .Erlang("""re:replace($0, "\\n+\\z", "", [{return, binary}])"""),
         .JavaScript("""$0.replace(/\n+$/, "")"""),
     )]
-    fn trimTrailingNewlines(self: Self) -> string;
+    declare fn trimTrailingNewlines(self: Self) -> string;
 
     // The 1-based number of the first line (lines split on `\n`) where the
     // two texts differ, `0` when they are equal. A text that is a prefix of
@@ -830,14 +841,14 @@ behavior String {
         .Erlang("""(fun(__A, __B) -> (fun __F([__H | __T1], [__H | __T2], __N) -> __F(__T1, __T2, __N + 1); __F([], [], _) -> 0; __F(_, _, __N) -> __N + 1 end)(binary:split(__A, <<"\n">>, [global]), binary:split(__B, <<"\n">>, [global]), 0) end)($0, $1)"""),
         .JavaScript("""((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })($0, $1)"""),
     )]
-    fn firstDifferingLine(self: Self, other: string) -> i32;
+    declare fn firstDifferingLine(self: Self, other: string) -> i32;
 
-    // A template on a behavior method becomes a PROTOTYPE PATCH on commonJS
+    // A template on a primitive type's method becomes a PROTOTYPE PATCH on commonJS
     // (`String.prototype.charCodeAt = …`), so it must not name the method it
     // patches: `$0.charCodeAt($1)` called the patch it had just installed and
     // every `.charCodeAt(…)` in the program blew the stack, in any module that
-    // installed the `String` prelude for some other member (one `s.slice(…)`
-    // is enough). Native `codePointAt` is not a member of this behavior, so no
+    // installed the `string` prelude for some other member (one `s.slice(…)`
+    // is enough). Native `codePointAt` is not a member of this type, so no
     // patch ever replaces it, and it is what the `?? -1` was written for:
     // out of range it answers `undefined`, where `charCodeAt` answers `NaN`,
     // which `??` does not catch and `| 0` turned into `0`. It also answers the
@@ -847,7 +858,7 @@ behavior String {
         .JavaScript("""((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })($0, $1)"""),
         .Wasm(std: "text.charCodeAt"),
     )]
-    fn charCodeAt(self: Self, index: i32) -> i32;
+    declare fn charCodeAt(self: Self, index: i32) -> i32;
 
     // The last match is found over the bytes and answered in `indexOf`'s unit
     // (decisions 169, 320): the codepoints of the text before it.
@@ -856,7 +867,7 @@ behavior String {
         .JavaScript("lastIndexOf"),
         .Wasm(std: "text.lastIndexOf"),
     )]
-    fn lastIndexOf(self: Self, sub: string) -> i32;
+    declare fn lastIndexOf(self: Self, sub: string) -> i32;
 
     // The integer a decimal numeral spells: an optional `+` or `-`, then the
     // digits `0`–`9` and nothing else — the WHOLE string, so whitespace, a
@@ -871,7 +882,7 @@ behavior String {
     // The body calls a method on `self` only, and free cells for the rest —
     // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
     // that shape it.
-    default fn parseInt(self: Self) -> Result<i64, string> {
+    fn parseInt(self: Self) -> Result<i64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val digits = if (signed) stringSlice0(self, 1) else self;
         return if (stringIsDigits(digits))
@@ -888,7 +899,7 @@ behavior String {
     // the numeral rewritten as `<digits>.<digits>e<exponent>` (the one form
     // both hosts read), correctly rounded on both. A numeral too large for an
     // `f64` is an `Error`; one too small to tell from zero is `0.0`.
-    default fn parseFloat(self: Self) -> Result<f64, string> {
+    fn parseFloat(self: Self) -> Result<f64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val start = if (signed) 1 else 0;
         val lowerAt = self.indexOf("e");
@@ -932,6 +943,10 @@ behavior String {
     }
 }
 
+fn stringToStringBody(value: string) -> string {
+    return value;
+}
+
 // ── string slice arity dispatch ──────────────────────────────────────────────
 // Host helpers behind `default fn slice`; wasm's are std-wasm's
 // (`text.sliceFrom`, `text.sliceBetween`, a `null` end open). commonJS patches
@@ -957,22 +972,22 @@ declare fn stringSlice0(s: string, start: i32) -> string;
 )]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 
-// ── Bytes slice arity dispatch ───────────────────────────────────────────────
+// ── bytes slice arity dispatch ───────────────────────────────────────────────
 // The string pair's shape, over bytes: commonJS patches
-// `Uint8Array.prototype.slice` with `Bytes`' `default fn slice`, so the Node
+// `Uint8Array.prototype.slice` with `bytes`' `default fn slice`, so the Node
 // templates cut with `subarray` and copy. wasm lowers `slice` itself.
 
 #[compiler.external(
     .Erlang("""(fun(__B, __A) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, binary:part(__B, __S, __N - __S) end)($0, $1)"""),
     .JavaScript("""((__b, __a) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return new Uint8Array(__b.subarray(__s, __n)); })($0, $1)"""),
 )]
-declare fn bytesSlice0(b: Bytes, start: i32) -> Bytes;
+declare fn bytesSlice0(b: bytes, start: i32) -> bytes;
 
 #[compiler.external(
     .Erlang("""(fun(__B, __A, __E) -> __N = byte_size(__B), __S = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, binary:part(__B, __S, erlang:max(__F - __S, 0)) end)($0, $1, $2)"""),
     .JavaScript("""((__b, __a, __e) => { if (__a == null) __a = 0; const __n = __b.length; const __s = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return new Uint8Array(__b.subarray(__s, Math.max(__s, __f))); })($0, $1, $2)"""),
 )]
-declare fn bytesSlice1(b: Bytes, start: i32, end: ?i32) -> Bytes;
+declare fn bytesSlice1(b: bytes, start: i32, end: ?i32) -> bytes;
 
 // ── string numerals ──────────────────────────────────────────────────────────
 // Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
@@ -1033,17 +1048,18 @@ declare fn stringFloatRefused(text: string) -> Result<f64, string>;
 
 // ── array (eager collection) ──────────────────────────────────────
 // The eager indexed collection — implements the lazy `Iter<T>` (`next`)
-// and adds `length`/index + host-backed ops, with derived `default fn`.
+// and adds `length`/index + host-backed ops, with derived methods in botopink.
 
-// NOTE: conceptually `Array<T>` is an `Iter<T>` (it provides `next`), but the
+// NOTE: conceptually `array<T>` is an `Iter<T>` (it provides `next`), but the
 // parser puts generics after `extends` (`behavior N extends B <T>`), so a
 // generic-extends-generic clause doesn't parse yet — kept standalone for now.
 //
-// `Array<T>` answers `Index<i32, T>` (`at`) and `Slice<T[]>` (`slice`) — the two
+// `array<T>` answers `Index<i32, T>` (`at`) and `Slice<T[]>` (`slice`) — the two
 // ambient behaviors of the compiler section below that make `xs[0]` and `xs[0..2]` legal
-// (decision 63, amended). Written as a comment for the same reason as `String`
-// above: a `behavior` declaration carries no `implement` clause.
-behavior Array<T> {
+// (decision 63, amended). Written as a comment for the same reason as
+// `string`'s above. `length` is a property the language gives its values: a
+// primitive type's body declares it `val length: i32;`.
+pub type array<T> {
     // intrinsic length (builtin).
     val length: i32;
 
@@ -1056,17 +1072,17 @@ behavior Array<T> {
         .Erlang("(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)($0, $1)"),
         .JavaScript("at"),
     )]
-    fn at(self: Self<T>, index: i32) -> ?T;
+    declare fn at(self: Self<T>, index: i32) -> ?T;
 
     #[compiler.external(.Erlang("($0 ++ [$1])"), .JavaScript("push"))]
-    fn push(self: Self<T>, item: T) -> void;
+    declare fn push(self: Self<T>, item: T) -> void;
 
     #[compiler.external(.Erlang("lists:last($0)"), .JavaScript("pop"))]
-    fn pop(self: Self<T>) -> ?T;
+    declare fn pop(self: Self<T>) -> ?T;
 
     // `Slice<T[]>.slice` — `end` is `?i32` so an open-ended `xs[1..]` can pass
     // `null` in the second argument (there is no `Range` type to pass).
-    default fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
+    fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
         if (end != null)
             return arraySlice1(self, start, end)
         else
@@ -1077,7 +1093,7 @@ behavior Array<T> {
         .Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, $0)))"""),
         .JavaScript("join"),
     )]
-    fn join(self: Self<T>, sep: string) -> string;
+    declare fn join(self: Self<T>, sep: string) -> string;
 
     // `reverse` ANSWERS a reversed array and leaves the receiver alone, on
     // every target. Native `Array.prototype.reverse` reverses in place and
@@ -1088,13 +1104,13 @@ behavior Array<T> {
     // reader (ES2023; node 20, which is the floor CI installs), so the answer
     // is the same shape with no prototype patch and no helper.
     #[compiler.external(.Erlang("lists:reverse($0)"), .JavaScript("toReversed"))]
-    fn reverse(self: Self<T>) -> Self<T>;
+    declare fn reverse(self: Self<T>) -> Self<T>;
 
     #[compiler.external(
         .Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)"),
         .JavaScript("indexOf"),
     )]
-    fn indexOf(self: Self<T>, item: T) -> i32;
+    declare fn indexOf(self: Self<T>, item: T) -> i32;
 
     // The last index of `item`, `-1` when absent — `indexOf` from the other
     // end, with `indexOf`'s equality on every target. erlang and node answer
@@ -1102,20 +1118,18 @@ behavior Array<T> {
     #[compiler.external(
         .Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T], __Last) -> __F(__I + 1, __T, case (__H =:= __X) of true -> __I; false -> __Last end); __F(_, [], __Last) -> __Last end, __Find(0, __L, -1) end)($0, $1)"),
         .JavaScript("lastIndexOf"),
+        .Wasm(body: arrayLastIndexOfBody),
     )]
-    default fn lastIndexOf(self: Self<T>, item: T) -> i32 {
-        val fromEnd = self.reverse().indexOf(item);
-        return if (fromEnd == -1) -1 else self.length - 1 - fromEnd;
-    }
+    declare fn lastIndexOf(self: Self<T>, item: T) -> i32;
 
     #[compiler.external(.Erlang("lists:foreach($1, $0)"), .JavaScript("forEach"))]
-    fn forEach(self: Self<T>, action: fn(item: T)) -> void;
+    declare fn forEach(self: Self<T>, action: fn(item: T)) -> void;
 
     #[compiler.external(.Erlang("lists:map($1, $0)"), .JavaScript("map"))]
-    fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>;
+    declare fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
 
     #[compiler.external(.Erlang("lists:filter($1, $0)"), .JavaScript("filter"))]
-    fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
+    declare fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
 
     // `zip` pairs the receiver's items with `other`'s by index, truncating to
     // the shorter array. Template form: erlang uses `lists:zipwith` with a
@@ -1126,7 +1140,7 @@ behavior Array<T> {
         .Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($0, length($1)), lists:sublist($1, length($0)))"),
         .JavaScript("$0.map((__x, __i) => [__x, ($1)[__i]]).slice(0, Math.min($0.length, ($1).length))"),
     )]
-    fn zip<U>(self: Self<T>, other: Array<U>) -> Array<#(T, U)>;
+    declare fn zip<U>(self: Self<T>, other: array<U>) -> array<#(T, U)>;
 
     // ── producers (associated — no receiver) ──
     // Pure botopink (no host backing): the host `lists:seq`/`duplicate` have the
@@ -1141,61 +1155,42 @@ behavior Array<T> {
     // as a one-line IIFE, where a `//` would swallow the rest of the block.)
     #[compiler.external(
         .JavaScript("((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))($0, $1)"),
+        .Erlang(body: arrayRangeBody),
+        .Wasm(body: arrayRangeBody),
     )]
-    fn range(start: i32, stop: i32) -> Array<i32> {
-        return if (stop - start <= 0)
-            []
-        else if (stop - start == 1)
-            [start]
-        else {
-            val count = stop - start;
-            val low = Array.range(start, start + count / 2);
-            val high = Array.range(start + count / 2, stop);
-            low.append(high);
-        };
-    }
+    declare fn range(start: i32, stop: i32) -> array<i32>;
 
     #[compiler.external(
         .JavaScript("((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))($0, $1)"),
+        .Erlang(body: arrayRepeatBody),
+        .Wasm(body: arrayRepeatBody),
     )]
-    fn repeat<E>(value: E, times: i32) -> Array<E> {
-        return if (times <= 0) [] else {
-            val half = Array.repeat(value, times / 2);
-            if (times % 2 == 0)
-                half.append(half)
-            else
-                half.append(half).append([value]);
-        };
-    }
+    declare fn repeat<E>(value: E, times: i32) -> array<E>;
 
     // ── derived ops (default implementations over the primitives) ──
-    #[compiler.external(.Erlang("($0 =:= [])"))]
-    default fn isEmpty(self: Self<T>) -> bool {
-        return self.length == 0;
-    }
+    #[compiler.external(.Erlang("($0 =:= [])"), .JavaScript(body: arrayIsEmptyBody), .Wasm(body: arrayIsEmptyBody))]
+    declare fn isEmpty(self: Self<T>) -> bool;
 
-    #[compiler.external(.Erlang("lists:member($1, $0)"))]
-    default fn contains(self: Self<T>, x: T) -> bool {
-        return self.indexOf(x) != -1;
-    }
+    #[compiler.external(.Erlang("lists:member($1, $0)"), .JavaScript(body: arrayContainsBody), .Wasm(body: arrayContainsBody))]
+    declare fn contains(self: Self<T>, x: T) -> bool;
 
-    default fn first(self: Self<T>) -> ?T {
+    fn first(self: Self<T>) -> ?T {
         return self.at(0);
     }
 
-    default fn rest(self: Self<T>) -> Self<T> {
+    fn rest(self: Self<T>) -> Self<T> {
         return self.slice(1, self.length);
     }
 
-    default fn take(self: Self<T>, n: i32) -> Self<T> {
+    fn take(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(0, n);
     }
 
-    default fn drop(self: Self<T>, n: i32) -> Self<T> {
+    fn drop(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(n, self.length);
     }
 
-    default fn fold<A>(
+    fn fold<A>(
         self: Self<T>,
         initial: A,
         f: fn(acc: A, item: T) -> A,
@@ -1207,40 +1202,30 @@ behavior Array<T> {
         return acc;
     }
 
-    #[compiler.external(.JavaScript("find"))]
-    default fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T {
-        return self.filter(pred).at(0);
-    }
+    #[compiler.external(.JavaScript("find"), .Erlang(body: arrayFindBody), .Wasm(body: arrayFindBody))]
+    declare fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T;
 
-    default fn count(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
+    fn count(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         return self.filter(pred).length;
     }
 
-    default fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length == self.length;
     }
 
-    default fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length != 0;
     }
 
-    #[compiler.external(.Erlang("($0 ++ $1)"), .JavaScript("concat"))]
-    default fn append(self: Self<T>, other: Self<T>) -> Self<T> {
-        var out = self.slice(0, self.length);
-        other.forEach({ y -> out.push(y) });
-        return out;
-    }
+    #[compiler.external(.Erlang("($0 ++ $1)"), .JavaScript("concat"), .Wasm(body: arrayAppendBody))]
+    declare fn append(self: Self<T>, other: Self<T>) -> Self<T>;
 
-    #[compiler.external(.Erlang("[$1 | $0]"))]
-    default fn prepend(self: Self<T>, item: T) -> Self<T> {
-        var out = [item];
-        self.forEach({ x -> out.push(x) });
-        return out;
-    }
+    #[compiler.external(.Erlang("[$1 | $0]"), .JavaScript(body: arrayPrependBody), .Wasm(body: arrayPrependBody))]
+    declare fn prepend(self: Self<T>, item: T) -> Self<T>;
 
     // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
     // copy goes through `append` rather than a nested `forEach`.
-    default fn flatten<E>(self: Self<Array<E>>) -> Array<E> {
+    fn flatten<E>(self: Self<array<E>>) -> array<E> {
         var out: E[] = [];
         self.forEach({ inner ->
             out = out.append(inner);
@@ -1248,15 +1233,10 @@ behavior Array<T> {
         return out;
     }
 
-    #[compiler.external(.JavaScript("flatMap"))]
-    default fn flatMap<U>(
-        self: Self<T>,
-        transform: fn(item: T) -> U,
-    ) -> Array<U> {
-        return self.map(transform).flatten();
-    }
+    #[compiler.external(.JavaScript("flatMap"), .Erlang(body: arrayFlatMapBody), .Wasm(body: arrayFlatMapBody))]
+    declare fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
 
-    default fn toList(self: Self<T>) -> Self<T> {
+    fn toList(self: Self<T>) -> Self<T> {
         return self;
     }
 
@@ -1265,22 +1245,22 @@ behavior Array<T> {
     // (different camelCase name, identical semantics — chosen to mirror the
     // Node Array prototype). The originals stay so existing callers don't
     // break.
-    default fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.any(pred);
     }
 
-    default fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.all(pred);
     }
 
-    default fn flat<E>(self: Self<Array<E>>) -> Array<E> {
+    fn flat<E>(self: Self<array<E>>) -> array<E> {
         return self.flatten();
     }
 
     // First index where `pred` holds, or -1 when no element matches. Pure
     // botopink — recurses over indices through a fold that captures the
     // first hit (`-1` is preserved once set).
-    default fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
+    fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         var out = -1;
         var i = 0;
         self.forEach({ x ->
@@ -1291,17 +1271,17 @@ behavior Array<T> {
     }
 
     // Build a fresh array of `length` copies of `value` — equivalent to
-    // `Array.repeat(value, self.length)`, but the receiver-method form
+    // `array.repeat(value, self.length)`, but the receiver-method form
     // matches the JS prototype signature callers expect.
-    default fn fill<E>(self: Self<T>, value: E) -> Array<E> {
-        return Array.repeat(value, self.length);
+    fn fill<E>(self: Self<T>, value: E) -> array<E> {
+        return array.repeat(value, self.length);
     }
 
     // Partition the array into consecutive chunks of `n` elements; the last
     // chunk may be shorter when `self.length` is not divisible by `n`.
     // Negative or zero `n` returns an empty array (no infinite loop).
-    default fn chunked(self: Self<T>, n: i32) -> Array<Self<T>> {
-        var out: Array<Self<T>> = [];
+    fn chunked(self: Self<T>, n: i32) -> array<Self<T>> {
+        var out: array<Self<T>> = [];
         if (n <= 0) return out;
         val len = self.length;
         for (0..len) { k ->
@@ -1313,8 +1293,8 @@ behavior Array<T> {
     // Sliding window of length `n` over the array. Returns one window per
     // valid start offset (`self.length - n + 1` windows). Negative or zero
     // `n`, or `n > self.length`, returns an empty array.
-    default fn sliding(self: Self<T>, n: i32) -> Array<Self<T>> {
-        var out: Array<Self<T>> = [];
+    fn sliding(self: Self<T>, n: i32) -> array<Self<T>> {
+        var out: array<Self<T>> = [];
         if (n <= 0) return out;
         val windows = self.length - n + 1;
         if (windows <= 0) return out;
@@ -1328,13 +1308,65 @@ behavior Array<T> {
     // order (decision 217): `[1, 2, 1, 3, 2].unique()` is `[1, 2, 3]` on every
     // target. Values compare with `==` (decision 210), so records by value —
     // not `contains`, which answers the host's identity on commonJS.
-    default fn unique(self: Self<T>) -> Self<T> {
+    fn unique(self: Self<T>) -> Self<T> {
         var out: T[] = [];
         self.forEach({ x ->
             if (!out.any({ y -> y == x })) out = out.append([x])
         });
         return out;
     }
+}
+
+fn arrayLastIndexOfBody<T>(value: array<T>, item: T) -> i32 {
+    val fromEnd = value.reverse().indexOf(item);
+    return if (fromEnd == -1) -1 else value.length - 1 - fromEnd;
+}
+
+fn arrayRangeBody(start: i32, stop: i32) -> array<i32> {
+    return if (stop - start <= 0) [] else if (stop - start == 1) [start] else {
+        val count = stop - start;
+        val low = array.range(start, start + count / 2);
+        val high = array.range(start + count / 2, stop);
+        low.append(high);
+    };
+}
+
+fn arrayRepeatBody<E>(value: E, times: i32) -> array<E> {
+    return if (times <= 0) [] else {
+        val half = array.repeat(value, times / 2);
+        if (times % 2 == 0)
+            half.append(half)
+        else
+            half.append(half).append([value]);
+    };
+}
+
+fn arrayIsEmptyBody<T>(value: array<T>) -> bool {
+    return value.length == 0;
+}
+
+fn arrayContainsBody<T>(value: array<T>, x: T) -> bool {
+    return value.indexOf(x) != -1;
+}
+
+fn arrayFindBody<T>(value: array<T>, pred: fn(item: T) -> bool) -> ?T {
+    return value.filter(pred).at(0);
+}
+
+fn arrayAppendBody<T>(value: array<T>, other: array<T>) -> array<T> {
+    var out = value.slice(0, value.length);
+    other.forEach({ y -> out.push(y) });
+    return out;
+}
+
+fn arrayPrependBody<T>(value: array<T>, item: T) -> array<T> {
+    var out = [item];
+    value.forEach({ x -> out.push(x) });
+    return out;
+}
+
+fn arrayFlatMapBody<T, U>(value: array<T>, transform: fn(item: T) -> U) -> array<U> {
+    return value.map(transform).flatten();
 }
 
 // ── array slice arity dispatch ───────────────────────────────────────────────
@@ -1348,16 +1380,16 @@ behavior Array<T> {
     .Erlang("lists:nthtail($1, $0)"),
     .JavaScript("""((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })($0, $1)"""),
 )]
-declare fn arraySlice0<T>(xs: Array<T>, start: i32) -> Array<T>;
+declare fn arraySlice0<T>(xs: array<T>, start: i32) -> array<T>;
 
 #[compiler.external(
     .Erlang("lists:sublist($0, ($1) + 1, (($2) - ($1)))"),
     .JavaScript("""((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })($0, $1, $2)"""),
 )]
-declare fn arraySlice1<T>(xs: Array<T>, start: i32, end: ?i32) -> Array<T>;
+declare fn arraySlice1<T>(xs: array<T>, start: i32, end: ?i32) -> array<T>;
 
 // ── the wasm bodies (front 164 s3) ───────────────────────────────────────────
-// The `String` methods that take a botopink body on `--target wasm`
+// The `string` methods that take a botopink body on `--target wasm`
 // (decisions 565, 566), each a private `text<Name>OnWasm` over three byte
 // leaves of the `.wat` text module. Nothing binds them yet: a method's wasm
 // cell stays `std: "text.<name>"` until its `fn:` cell lands (s3 P1-d, after
@@ -1855,10 +1887,10 @@ pub behavior Closeable {
 // single `V`; the tuple stays a checker special case.
 //
 // `libs/std` answers both: `Dict<K, V>` carries `Index<K, V>` on its
-// declaration; `Array<T>` (`Index<i32, T>`, `Slice<T[]>`) and `string`
+// declaration; `array<T>` (`Index<i32, T>`, `Slice<T[]>`) and `string`
 // (`Index<i32, string>`, `Slice<string>`) answer them from the primitive
-// registry in `primitives.bp`, which is a `behavior` and cannot spell an
-// `implement` clause today — the conformance is named in a comment there.
+// types in `primitives.bp`, whose `implement` clause names the contract their
+// methods are found through — the conformance is named in a comment there.
 
 pub behavior Index<K, V> {
     fn at(self: Self<K, V>, key: K) -> ?V;
@@ -2122,7 +2154,7 @@ pub type SourceLocation(
 //   path    — the path as written, relative to the `botopink.json` of the
 //             package that wrote it (a path passed through a `comptime`
 //             parameter: the caller's package). No absolute path, no `..`.
-//   bytes   — the file's bytes (`Bytes`, decision 346).
+//   bytes   — the file's bytes (`bytes`, decision 346).
 //   size    — the number of bytes (`i64`, decision 538).
 //   hash    — the SHA-256 of the bytes, 64 lowercase hex digits.
 //
@@ -2139,7 +2171,7 @@ pub type SourceLocation(
 // `decl_reflection_src`; keep the two in sync.
 pub type Asset(
     path: string,
-    bytes: Bytes,
+    bytes: bytes,
     size: i64,
     hash: string,
 ) {
@@ -2190,7 +2222,7 @@ pub type __Decl__Annotation(
 
 // Every type name below (`Param.typeName`, `Field.typeName`,
 // `Method.returnType`, `Decl.returnType`) is the type as the source spells it:
-// `string`, `Array<string>`, `string[]`, `?i32`, `fn(i32) -> i32`,
+// `string`, `array<string>`, `string[]`, `?i32`, `fn(i32) -> i32`,
 // `#(string, string)`, `Async<Element>` — never a bare head, never empty for a
 // written type (a missing return type is `""`).
 

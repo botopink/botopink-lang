@@ -994,13 +994,13 @@ test "js: iterator fromList yields array items" {
     // by RI1 (§1I). A `@Iter<T>` is infallible, so a plain fn iterates it
     // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\iter fn fromList<T>(xs: Array<T>) -> Iter<T> {
+        \\iter fn fromList<T>(xs: array<T>) -> Iter<T> {
         \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: Iter<T>) -> Array<T> {
+        \\fn toList<T>(iter: Iter<T>) -> array<T> {
         \\    var out = [];
         \\    for (iter) { item ->
         \\        out.push(item);
@@ -1022,7 +1022,7 @@ test "js: a tuple element's optional read by the nullish default" {
     // (decision 330). `== null` uses loose equality so an `undefined` none
     // (from `Array.at`) matches.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
+        \\fn firstAndRest(xs: array<i32>) -> #(array<i32>, ?i32) {
         \\    val head = xs.at(0);
         \\    val rest = xs.slice(1, xs.length);
         \\    return #(rest, head);
@@ -1136,8 +1136,8 @@ test "js: stdlib associated fn namespace injected" {
     // object is emitted at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
-        \\    print(Array.range(0, 3).length);
-        \\    print(Array.repeat("x", 2).join(","));
+        \\    print(array.range(0, 3).length);
+        \\    print(array.repeat("x", 2).join(","));
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -1499,7 +1499,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
 test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn component(syntax decl: unknown) -> void {
-        \\    var args: Array<string> = [];
+        \\    var args: array<string> = [];
         \\    compiler.fields(decl).forEach({ f ->
         \\        var valKey = "";
         \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
@@ -1524,8 +1524,8 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\    name: string,
         \\)
         \\
-        \\fn collect(xs: Array<i32>) -> Array<string> {
-        \\    var out: Array<string> = [];
+        \\fn collect(xs: array<i32>) -> array<string> {
+        \\    var out: array<string> = [];
         \\    out.push("start");
         \\    xs.forEach({ x ->
         \\        val doubled = x * 2;

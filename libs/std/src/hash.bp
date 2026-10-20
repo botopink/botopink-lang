@@ -422,7 +422,7 @@ test "hash.contentHash of the empty string is djb2's seed, not empty" {
 
 test "hash.contentHash folds a code point above U+FFFF once (decision 260)" {
     // djb2([127881]) = 5381 · 33 + 127881 = 305454 = 0x4a92e.
-    assert contentHash(String.fromCodepoint(127881)) == "4a92e";
+    assert contentHash(string.fromCodepoint(127881)) == "4a92e";
 }
 
 test "hash.strongHash of the empty string is the truncated empty SHA-256" {
@@ -520,7 +520,7 @@ test "hash.fingerprint answers a different name for different contents" {
 // lowers, so a 32-bit word is a whole `f64` in [0, 2^32), its bit
 // operations exact arithmetic (`wrap32`, `rotr32`, `mix`, `bits32`); a
 // 64-bit SHA-512 word is two of them. A word is stored in an
-// `Array<i32>` as two 16-bit halves, since a float in an array keeps only
+// `array<i32>` as two 16-bit halves, since a float in an array keeps only
 // its `f32`; a constant is the hex its standard prints. A byte is an `i32` in 0..255; a string's bytes are its UTF-8.
 
 fn sha256Body(data: string) -> string {
@@ -587,7 +587,7 @@ fn pbkdf2DeriveBody(
     val inner = padOf(key, 54);
     val outer = padOf(key, 92);
     val s = utf8Of(salt);
-    var out: Array<i32> = [];
+    var out: array<i32> = [];
     var block = 1;
     while (out.length < length) {
         val index = [
@@ -612,8 +612,8 @@ fn pbkdf2DeriveBody(
 
 // ── bytes and text ──
 
-fn utf8Of(s: string) -> Array<i32> {
-    val parts: Array<Array<i32>> = s
+fn utf8Of(s: string) -> array<i32> {
+    val parts: array<array<i32>> = s
         .chars()
         .map({ c ->
             utf8Bytes(c.charCodeAt(0))
@@ -621,7 +621,7 @@ fn utf8Of(s: string) -> Array<i32> {
     return parts.flatten();
 }
 
-fn utf8Bytes(cp: i32) -> Array<i32> {
+fn utf8Bytes(cp: i32) -> array<i32> {
     if (cp < 128) return [cp];
     if (cp < 2048) return [192 + cp / 64, 128 + cp % 64];
     if (cp < 65536)
@@ -638,12 +638,12 @@ fn hexDigit(n: i32) -> string {
     return "0123456789abcdef".at(n) ?? "";
 }
 
-fn hexOf(bytes: Array<i32>) -> string {
+fn hexOf(bytes: array<i32>) -> string {
     return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
 }
 
 // RFC 4648 base64: §5's alphabet when `url`, `=` padding when `pad`.
-fn base64Of(bytes: Array<i32>, url: bool, pad: bool) -> string {
+fn base64Of(bytes: array<i32>, url: bool, pad: bool) -> string {
     val alphabet = if (url)
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
     else
@@ -658,7 +658,7 @@ fn base64Of(bytes: Array<i32>, url: bool, pad: bool) -> string {
 }
 
 fn base64Group(
-    bytes: Array<i32>,
+    bytes: array<i32>,
     g: i32,
     alphabet: string,
     pad: bool,
@@ -683,9 +683,9 @@ fn base64Group(
     return c0 + c1 + c2 + c3;
 }
 
-// `n` zero bytes, by doubling (`Array.repeat` and `Array.range` recurse once
+// `n` zero bytes, by doubling (`array.repeat` and `array.range` recurse once
 // per element).
-fn zeroBytes(n: i32) -> Array<i32> {
+fn zeroBytes(n: i32) -> array<i32> {
     var zeros = [0];
     while (zeros.length < n) {
         zeros = zeros.append(zeros);
@@ -707,7 +707,7 @@ fn xorByte(a: i32, b: i32) -> i32 {
     return r;
 }
 
-fn xorBytes(a: Array<i32>, b: Array<i32>) -> Array<i32> {
+fn xorBytes(a: array<i32>, b: array<i32>) -> array<i32> {
     return a.zip(b).map({ p -> xorByte(p._0, p._1) });
 }
 
@@ -793,18 +793,18 @@ fn lowerHalf(w: f64) -> i32 {
 }
 
 // Word `i` of a halves array.
-fn wordOf(h: Array<i32>, i: i32) -> f64 {
+fn wordOf(h: array<i32>, i: i32) -> f64 {
     return h.at(2 * i) ?? 0 * 65536.0 + h.at(2 * i + 1) ?? 0 * 1.0;
 }
 
-fn wordBE(m: Array<i32>, i: i32) -> f64 {
+fn wordBE(m: array<i32>, i: i32) -> f64 {
     return m.at(i) ?? 0 * 16777216.0
         + m.at(i + 1) ?? 0 * 65536.0
         + m.at(i + 2) ?? 0 * 256.0
         + m.at(i + 3) ?? 0 * 1.0;
 }
 
-fn wordLE(m: Array<i32>, i: i32) -> f64 {
+fn wordLE(m: array<i32>, i: i32) -> f64 {
     return m.at(i + 3) ?? 0 * 16777216.0
         + m.at(i + 2) ?? 0 * 65536.0
         + m.at(i + 1) ?? 0 * 256.0
@@ -825,8 +825,8 @@ fn hexValue(w: string, start: i32, count: i32) -> f64 {
 }
 
 // Space-separated hex words of `digits` (8 or 16) digits as 16-bit halves.
-fn halvesOf(text: string, digits: i32) -> Array<i32> {
-    var out: Array<i32> = [];
+fn halvesOf(text: string, digits: i32) -> array<i32> {
+    var out: array<i32> = [];
     var at = 0;
     while (at < text.length) {
         val v = hexValue(text, at, 8);
@@ -837,14 +837,14 @@ fn halvesOf(text: string, digits: i32) -> Array<i32> {
 }
 
 // Halves to bytes, each word big-endian.
-fn bytesBE(h: Array<i32>) -> Array<i32> {
-    val parts: Array<Array<i32>> = h.map({ x -> [x / 256, x % 256] });
+fn bytesBE(h: array<i32>) -> array<i32> {
+    val parts: array<array<i32>> = h.map({ x -> [x / 256, x % 256] });
     return parts.flatten();
 }
 
 // Halves to bytes, each word little-endian (MD5).
-fn bytesLE(h: Array<i32>) -> Array<i32> {
-    var out: Array<i32> = [];
+fn bytesLE(h: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
     var i = 0;
     while (i < h.length) {
         val upper = h.at(i) ?? 0;
@@ -858,11 +858,11 @@ fn bytesLE(h: Array<i32>) -> Array<i32> {
 // The message, `0x80`, zeros, and its length in bits in the last
 // `lengthBytes` bytes of a `block`-byte block.
 fn padded(
-    msg: Array<i32>,
+    msg: array<i32>,
     block: i32,
     lengthBytes: i32,
     bigEndian: bool,
-) -> Array<i32> {
+) -> array<i32> {
     val bits = msg.length * 8;
     val zeros = (block - (msg.length + 1 + lengthBytes) % block) % block;
     val be = [
@@ -881,31 +881,31 @@ fn padded(
 // ── HMAC ──
 
 // The key as HMAC's 64-byte block: hashed when longer, zero-padded.
-fn hmacKeyBlock(key: Array<i32>) -> Array<i32> {
+fn hmacKeyBlock(key: array<i32>) -> array<i32> {
     val short = if (key.length > 64) sha256Bytes(key) else key;
     return short.append(zeroBytes(64 - short.length));
 }
 
-fn hmacSha256Bytes(block: Array<i32>, msg: Array<i32>) -> Array<i32> {
+fn hmacSha256Bytes(block: array<i32>, msg: array<i32>) -> array<i32> {
     return hmacWithPads(padOf(block, 54), padOf(block, 92), msg);
 }
 
 // The key block with every byte xored with `pad` (0x36 inner, 0x5c outer).
-fn padOf(block: Array<i32>, pad: i32) -> Array<i32> {
+fn padOf(block: array<i32>, pad: i32) -> array<i32> {
     return block.map({ b -> xorByte(b, pad) });
 }
 
 fn hmacWithPads(
-    inner: Array<i32>,
-    outer: Array<i32>,
-    msg: Array<i32>,
-) -> Array<i32> {
+    inner: array<i32>,
+    outer: array<i32>,
+    msg: array<i32>,
+) -> array<i32> {
     return sha256Bytes(outer.append(sha256Bytes(inner.append(msg))));
 }
 
 // ── SHA-256 ──
 
-fn sha256Bytes(msg: Array<i32>) -> Array<i32> {
+fn sha256Bytes(msg: array<i32>) -> array<i32> {
     val m = padded(msg, 64, 8, true);
     val k = sha256Constants();
     var h = halvesOf(sha256Initial(), 8);
@@ -917,7 +917,7 @@ fn sha256Bytes(msg: Array<i32>) -> Array<i32> {
     return bytesBE(h);
 }
 
-fn sha256Block(h: Array<i32>, m: Array<i32>, at: i32, k: string) -> Array<i32> {
+fn sha256Block(h: array<i32>, m: array<i32>, at: i32, k: string) -> array<i32> {
     var a = wordOf(h, 0);
     var b = wordOf(h, 1);
     var c = wordOf(h, 2);
@@ -1027,7 +1027,7 @@ fn sha256Block(h: Array<i32>, m: Array<i32>, at: i32, k: string) -> Array<i32> {
 
 // ── SHA-1 ──
 
-fn sha1Bytes(msg: Array<i32>) -> Array<i32> {
+fn sha1Bytes(msg: array<i32>) -> array<i32> {
     val m = padded(msg, 64, 8, true);
     var h = halvesOf("67452301 efcdab89 98badcfe 10325476 c3d2e1f0", 8);
     var at = 0;
@@ -1038,7 +1038,7 @@ fn sha1Bytes(msg: Array<i32>) -> Array<i32> {
     return bytesBE(h);
 }
 
-fn sha1Block(h: Array<i32>, m: Array<i32>, at: i32) -> Array<i32> {
+fn sha1Block(h: array<i32>, m: array<i32>, at: i32) -> array<i32> {
     var a = wordOf(h, 0);
     var b = wordOf(h, 1);
     var c = wordOf(h, 2);
@@ -1117,7 +1117,7 @@ fn sha1Block(h: Array<i32>, m: Array<i32>, at: i32) -> Array<i32> {
 
 // ── MD5 ──
 
-fn md5Bytes(msg: Array<i32>) -> Array<i32> {
+fn md5Bytes(msg: array<i32>) -> array<i32> {
     val m = padded(msg, 64, 8, false);
     val k = md5Constants();
     // 2^(32 − s) for each round's four left-rotation amounts s.
@@ -1149,12 +1149,12 @@ fn md5Bytes(msg: Array<i32>) -> Array<i32> {
 }
 
 fn md5Block(
-    h: Array<i32>,
-    m: Array<i32>,
+    h: array<i32>,
+    m: array<i32>,
     at: i32,
     k: string,
-    shifts: Array<i32>,
-) -> Array<i32> {
+    shifts: array<i32>,
+) -> array<i32> {
     var a = wordOf(h, 0);
     var b = wordOf(h, 1);
     var c = wordOf(h, 2);
@@ -1204,7 +1204,7 @@ fn md5Block(
 
 // ── SHA-512 ──
 
-fn sha512Bytes(msg: Array<i32>) -> Array<i32> {
+fn sha512Bytes(msg: array<i32>) -> array<i32> {
     val m = padded(msg, 128, 16, true);
     val k = sha512Constants();
     var h = halvesOf(sha512Initial(), 16);
@@ -1216,7 +1216,7 @@ fn sha512Bytes(msg: Array<i32>) -> Array<i32> {
     return bytesBE(h);
 }
 
-fn sha512Block(h: Array<i32>, m: Array<i32>, at: i32, k: string) -> Array<i32> {
+fn sha512Block(h: array<i32>, m: array<i32>, at: i32, k: string) -> array<i32> {
     var ah = wordOf(h, 0);
     var al = wordOf(h, 1);
     var bh = wordOf(h, 2);

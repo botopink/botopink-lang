@@ -36,7 +36,7 @@ function __bp_str_index_of(s, sub) {
     return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
 }
 
-// behavior String
+// behavior string
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)

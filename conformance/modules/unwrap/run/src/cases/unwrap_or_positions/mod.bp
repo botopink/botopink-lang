@@ -12,9 +12,9 @@ import {io.terminal.print} from "std";
 
 type R(v: string)
 
-type Box(items: Array<R>, sizes: Array<i32>) {
+type Box(items: array<R>, sizes: array<i32>) {
     pub fn firstV(self: Self) -> string {
-        val hit: Array<R> = self.items.filter({ r -> r.v != "" });
+        val hit: array<R> = self.items.filter({ r -> r.v != "" });
         return (hit.at(0) ?? R(v: "none")).v;
     }
 
@@ -44,22 +44,22 @@ type Box(items: Array<R>, sizes: Array<i32>) {
     }
 }
 
-fn pick(xs: Array<R>, flag: bool) -> string {
+fn pick(xs: array<R>, flag: bool) -> string {
     val r = if (flag) {
         xs.at(0) ?? R(v: "d");
     } else R(v: "e");
     return (xs.at(1) ?? r).v;
 }
 
-fn nested(xs: Array<i32>, ys: Array<i32>) -> i32 {
+fn nested(xs: array<i32>, ys: array<i32>) -> i32 {
     return xs.at(5) ?? (ys.at(0) ?? 9);
 }
 
-fn negated(xs: Array<i32>) -> i32 {
+fn negated(xs: array<i32>) -> i32 {
     return -(xs.at(0) ?? 1);
 }
 
-fn inverted(flags: Array<bool>) -> bool {
+fn inverted(flags: array<bool>) -> bool {
     return !(flags.at(0) ?? false);
 }
 

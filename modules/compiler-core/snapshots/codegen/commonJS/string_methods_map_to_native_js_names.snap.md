@@ -125,7 +125,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior String
+// behavior string
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)

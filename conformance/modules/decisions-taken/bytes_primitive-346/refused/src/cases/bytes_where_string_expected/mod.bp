@@ -8,6 +8,6 @@ fn shout(s: string) -> string {
 }
 
 pub fn main() -> void {
-    val b = Bytes.fromUtf8("a");
+    val b = bytes.fromUtf8("a");
     print(shout(b));
 }

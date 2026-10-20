@@ -10,7 +10,7 @@
 
 // ── Dict<K, V> ──────────────────────────────────────────────────────────────
 // `Dict` (was `dict`) — Gleam-inspired — a `type Dict<K, V>` wrapping an
-// association list `pairs: Array<#(K, V)>` for full backend portability
+// association list `pairs: array<#(K, V)>` for full backend portability
 // (no host-backing). O(n) read; camelCase convention.
 //
 // Instance operations are `self`-methods on the record; `empty` is a
@@ -28,7 +28,7 @@
 // one method name.
 
 pub type Dict<K, V>(
-    pairs: Array<#(K, V)>,
+    pairs: array<#(K, V)>,
 ) implement Index<K, V>, Display {
     // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
     // key or value quoted, anything else in its own text. `K` and `V` are
@@ -63,11 +63,11 @@ pub type Dict<K, V>(
         return self.pairs.length == 0;
     }
 
-    pub fn keys(self: Self<K, V>) -> Array<K> {
+    pub fn keys(self: Self<K, V>) -> array<K> {
         return self.pairs.map({ p -> p._0 });
     }
 
-    pub fn values(self: Self<K, V>) -> Array<V> {
+    pub fn values(self: Self<K, V>) -> array<V> {
         return self.pairs.map({ p -> p._1 });
     }
 
@@ -121,7 +121,7 @@ pub type Dict<K, V>(
     // The dict of `entries`, inserted in order (decision 174): a key that
     // repeats keeps its LAST value, at the place of that last entry — what a
     // chain of `insert` answers. `Dict.ofEntries([])` is `Dict.empty()`.
-    pub fn ofEntries(entries: Array<#(K, V)>) -> Dict<K, V> {
+    pub fn ofEntries(entries: array<#(K, V)>) -> Dict<K, V> {
         var out: Dict<K, V> = Dict(pairs: []);
         entries.forEach({ e ->
             out = out.insert(e._0, e._1);
@@ -163,7 +163,7 @@ test "dict ofEntries keeps the last value of a repeated key, as insert does" {
 }
 
 test "dict ofEntries of no entries is the empty dict, and takes any key type" {
-    val none: Array<#(string, i32)> = [];
+    val none: array<#(string, i32)> = [];
     assert Dict.ofEntries(none).isEmpty();
     val byNumber = Dict.ofEntries([#(1, "one"), #(2, "two")]);
     assert byNumber.at(2) ?? "" == "two";
@@ -261,7 +261,7 @@ test "dict empty boundary: size 0, at misses" {
 
 // ── Set<T> ──────────────────────────────────────────────────────────────────
 // `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
-// `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
+// `array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
 // membership by `==` over `any` (decision 210: records by value on every
 // target; `indexOf` is the host's identity on commonJS and wasm).
 //
@@ -270,7 +270,7 @@ test "dict empty boundary: size 0, at misses" {
 // naming note: `new`/`set` are keyword tokens — the constructor is `empty`.
 
 pub type Set<T>(
-    items: Array<T>,
+    items: array<T>,
 ) {
     pub fn contains(self: Self<T>, x: T) -> bool {
         return self.items.any({ y -> y == x });
@@ -284,7 +284,7 @@ pub type Set<T>(
         return self.items.length == 0;
     }
 
-    pub fn toList(self: Self<T>) -> Array<T> {
+    pub fn toList(self: Self<T>) -> array<T> {
         return self.items;
     }
 
@@ -319,7 +319,7 @@ pub type Set<T>(
         return Set(items: []);
     }
 
-    pub fn fromList(xs: Array<T>) -> Set<T> {
+    pub fn fromList(xs: array<T>) -> Set<T> {
         var out: Set<T> = Set(items: []);
         xs.forEach({ x ->
             out = out.insert(x);
@@ -404,7 +404,7 @@ test "set empty boundary: size 0, contains misses, toList empty" {
 }
 
 // ── Queue<T> ────────────────────────────────────────────────────────────────
-// `Queue` (was `queue`) — Gleam-inspired — a `type Queue<T>` wrapping an `Array<T>`
+// `Queue` (was `queue`) — Gleam-inspired — a `type Queue<T>` wrapping an `array<T>`
 // (front at index 0). Pure botopink — no host backing. O(n) enqueue (copy),
 // O(1) peek.
 //
@@ -415,7 +415,7 @@ test "set empty boundary: size 0, contains misses, toList empty" {
 // the constructor is `empty`.
 
 pub type Queue<T>(
-    items: Array<T>,
+    items: array<T>,
 ) {
     pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
@@ -439,7 +439,7 @@ pub type Queue<T>(
         return self.items.at(0);
     }
 
-    pub fn toList(self: Self<T>) -> Array<T> {
+    pub fn toList(self: Self<T>) -> array<T> {
         return self.items;
     }
 
@@ -447,7 +447,7 @@ pub type Queue<T>(
         return Queue(items: []);
     }
 
-    pub fn fromList(xs: Array<T>) -> Queue<T> {
+    pub fn fromList(xs: array<T>) -> Queue<T> {
         return Queue(items: xs);
     }
 }
@@ -656,7 +656,7 @@ function __bp_text(v, s) {
 
 function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
 
-// behavior Array
+// behavior array
 //   length: i32
 //   fn at(...)
 //   fn push(...)
@@ -823,7 +823,7 @@ Array.prototype.unique = function() {
 
 // `Dict` (was `dict`) — Gleam-inspired — a `type Dict<K, V>` wrapping an
 
-// association list `pairs: Array<#(K, V)>` for full backend portability
+// association list `pairs: array<#(K, V)>` for full backend portability
 
 // (no host-backing). O(n) read; camelCase convention.
 
@@ -979,7 +979,7 @@ function shown(x, __bp_ty_T) {
 
 // `Set` (was `sets`) — Gleam-inspired — a `type Set<T>` wrapping a deduplicated
 
-// `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
+// `array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
 
 // membership by `==` over `any` (decision 210: records by value on every
 
@@ -1063,7 +1063,7 @@ exports.Set = Set;
 
 // ── Queue<T> ────────────────────────────────────────────────────────────────
 
-// `Queue` (was `queue`) — Gleam-inspired — a `type Queue<T>` wrapping an `Array<T>`
+// `Queue` (was `queue`) — Gleam-inspired — a `type Queue<T>` wrapping an `array<T>`
 
 // (front at index 0). Pure botopink — no host backing. O(n) enqueue (copy),
 
@@ -1198,15 +1198,15 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Dict, shown, Set, Queue
 ----- TYPESCRIPT TYPEDEF -- std/collections.d.ts
 ```typescript
 export declare class Dict<K, V> {
-    readonly pairs: Array<[K, V]>;
-    constructor(pairs: Array<[K, V]>);
+    readonly pairs: [K, V][];
+    constructor(pairs: [K, V][]);
     display(): string;
     at(key: K): V | null;
     hasKey(key: K): boolean;
     size(): number;
     isEmpty(): boolean;
-    keys(): Array<K>;
-    values(): Array<V>;
+    keys(): K[];
+    values(): V[];
     insert(key: K, value: V): Dict<K, V>;
     bump(key: K, by: V): Dict<K, V>;
     delete(key: K): Dict<K, V>;
@@ -1214,40 +1214,40 @@ export declare class Dict<K, V> {
     fold<A>(initial: A, f: (acc: A, key: K, value: V) => A): A;
     mapValues<W>(f: (value: V) => W): Dict<K, W>;
     empty(): Dict<K, V>;
-    ofEntries(entries: Array<[K, V]>): Dict<K, V>;
+    ofEntries(entries: [K, V][]): Dict<K, V>;
 }
 
 
 
 
 export declare class Set<T> {
-    readonly items: Array<T>;
-    constructor(items: Array<T>);
+    readonly items: T[];
+    constructor(items: T[]);
     contains(x: T): boolean;
     size(): number;
     isEmpty(): boolean;
-    toList(): Array<T>;
+    toList(): T[];
     insert(x: T): Set<T>;
     delete(x: T): Set<T>;
     union(other: Set<T>): Set<T>;
     intersection(other: Set<T>): Set<T>;
     difference(other: Set<T>): Set<T>;
     empty(): Set<T>;
-    fromList(xs: Array<T>): Set<T>;
+    fromList(xs: T[]): Set<T>;
 }
 
 
 export declare class Queue<T> {
-    readonly items: Array<T>;
-    constructor(items: Array<T>);
+    readonly items: T[];
+    constructor(items: T[]);
     size(): number;
     isEmpty(): boolean;
     enqueue(item: T): Queue<T>;
     dequeue(): [Queue<T>, T | null];
     peek(): T | null;
-    toList(): Array<T>;
+    toList(): T[];
     empty(): Queue<T>;
-    fromList(xs: Array<T>): Queue<T>;
+    fromList(xs: T[]): Queue<T>;
 }
 
 

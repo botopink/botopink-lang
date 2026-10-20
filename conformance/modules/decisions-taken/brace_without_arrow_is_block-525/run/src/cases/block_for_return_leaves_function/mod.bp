@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-fn firstAbove(xs: Array<i32>, limit: i32) -> i32 {
+fn firstAbove(xs: array<i32>, limit: i32) -> i32 {
     val found = {
         for (xs) { x ->
             if (x > limit) return x * 100;
@@ -14,7 +14,7 @@ fn firstAbove(xs: Array<i32>, limit: i32) -> i32 {
     return found * 10;
 }
 
-fn labelOf(xs: Array<string>) -> string {
+fn labelOf(xs: array<string>) -> string {
     val hit = {
         for (xs) { s ->
             if (s != "a") return "[" + s + "]";

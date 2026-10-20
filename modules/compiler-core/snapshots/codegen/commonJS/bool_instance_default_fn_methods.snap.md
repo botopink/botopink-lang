@@ -69,7 +69,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// behavior Bool
+// behavior bool
 //   fn toString(...)
 //   default fn negate(...)
 //   default fn nor(...)

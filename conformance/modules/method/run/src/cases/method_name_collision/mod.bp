@@ -28,23 +28,23 @@ import {cases.method_name_collision.shapes.queryOf, cases.method_name_collision.
 import {io.terminal.print} from "std";
 
 pub type Bag<T>(
-    items: Array<T>,
+    items: array<T>,
 ) {
-    pub fn unwrap(self: Self<T>) -> Array<T> {
+    pub fn unwrap(self: Self<T>) -> array<T> {
         return self.items;
     }
 }
 
 pub type Bucket<K, V>(
     key: K,
-    items: Array<V>,
+    items: array<V>,
 ) {
-    pub fn unwrap(self: Self<K, V>) -> Array<V> {
+    pub fn unwrap(self: Self<K, V>) -> array<V> {
         return self.items;
     }
 }
 
-pub fn bagOf<T>(xs: Array<T>) -> Bag<T> {
+pub fn bagOf<T>(xs: array<T>) -> Bag<T> {
     return Bag(items: xs);
 }
 

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn pick(xs: Array<string>) -> string {
+fn pick(xs: array<string>) -> string {
     var first = "";
     var last = "";
     var i = 0;
@@ -11,7 +11,7 @@ fn pick(xs: Array<string>) -> string {
     };
     return first + "-" + last;
 }
-fn weigh(xs: Array<i32>) -> i32 {
+fn weigh(xs: array<i32>) -> i32 {
     var total = 0;
     for (0..xs.length) { i ->
         total = total + (xs[i] ?? 0) * (i + 1);

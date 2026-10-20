@@ -30,10 +30,10 @@ fn expectDts(src: []const u8, present: []const []const u8, absent: []const []con
     };
 }
 
-test ".d.ts: Bytes is a Uint8Array" {
+test ".d.ts: bytes is a Uint8Array" {
     try expectDts(
-        \\pub fn size(b: Bytes) -> Bytes { return b; }
-    , &.{"size(b: Uint8Array): Uint8Array"}, &.{": Bytes"});
+        \\pub fn size(b: bytes) -> bytes { return b; }
+    , &.{"size(b: Uint8Array): Uint8Array"}, &.{": bytes"});
 }
 
 test ".d.ts: Children is an array" {

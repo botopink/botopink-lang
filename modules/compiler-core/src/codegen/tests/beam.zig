@@ -565,20 +565,20 @@ test "beam: a library's field read is its closure's alone, whatever its consumer
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
     \\pub fn main() -> void {
-    \\    val b = Bytes.fromUtf8("héllo");
+    \\    val b = bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
     \\    print(b.slice(1, 2).toUtf8().isError());
-    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    val j = bytes.fromUtf8("ab").concat(bytes.fromUtf8("cd"));
     \\    print(j[2..].toUtf8().unwrapOr("?"));
-    \\    print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j == bytes.fromUtf8("abcd"));
     \\}
     \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
-test "beam: decision 346 ---- Bytes is a binary, its methods std's templates" {
+test "beam: decision 346 ---- bytes is a binary, its methods std's templates" {
     try h.assertBeamRunLog(std.testing.allocator, bytes_src, bytes_log, &.{});
 }
 

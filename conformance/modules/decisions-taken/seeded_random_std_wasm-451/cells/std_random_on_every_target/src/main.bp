@@ -24,7 +24,7 @@ pub fn main() -> void {
     print(ys.length);
     print(ys.fold(0, { acc, y -> acc + y }));
     print([1, 2, 3, 4, 5].all({ x -> ys.contains(x) }));
-    val empty: Array<i32> = [];
+    val empty: array<i32> = [];
     print(io.random.shuffle(empty).length);
     val words = io.random.shuffle(["a", "b", "c"]);
     print(words.contains("a") && words.contains("b") && words.contains("c"));

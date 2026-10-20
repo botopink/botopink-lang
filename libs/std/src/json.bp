@@ -84,13 +84,13 @@ pub declare fn unquote(literal: string) -> Result<string, HostError>;
 // A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
 // number's text, `true`/`false`/`null`, or another writer's output). No
 // escaping happens here.
-pub fn array(items: Array<string>) -> string {
+pub fn array(items: array<string>) -> string {
     return ["[", items.join(","), "]"].join("");
 }
 
 // A JSON object of `fields` in the given order: each key goes through
 // `quote`, each value is ALREADY encoded (as for `array`).
-pub fn object(fields: Array<#(string, string)>) -> string {
+pub fn object(fields: array<#(string, string)>) -> string {
     val members = fields.map({ f -> [quote(f._0), ":", f._1].join("") });
     return ["{", members.join(","), "}"].join("");
 }
@@ -132,8 +132,8 @@ pub type Json {
     Bool(value: bool),
     Num(value: f64),
     Str(value: string),
-    Arr(items: Array<Json>),
-    Obj(members: Array<#(string, Json)>),
+    Arr(items: array<Json>),
+    Obj(members: array<#(string, Json)>),
 
     // ── 1.0.11-beta front 97: reading a decoded value ────────────────────────
     // The readers every consumer of `decode` wrote for itself. None throws and
@@ -162,7 +162,7 @@ pub type Json {
     }
 
     // An object's members in document order; `[]` for any other kind.
-    pub fn members(self: Self) -> Array<#(string, Json)> {
+    pub fn members(self: Self) -> array<#(string, Json)> {
         return case self {
             Obj(members: found) -> found;
             _ -> [];
@@ -189,7 +189,7 @@ pub type Json {
     }
 
     // An array's items in order; `[]` for any other kind.
-    pub fn items(self: Self) -> Array<Json> {
+    pub fn items(self: Self) -> array<Json> {
         return case self {
             Arr(items: found) -> found;
             _ -> [];
@@ -204,7 +204,7 @@ type Parsed(value: Json, next: i32)
 type ParsedText(text: string, next: i32)
 
 // The document's code points and their texts, index for index.
-type Doc(cps: Array<i32>, chs: Array<string>)
+type Doc(cps: array<i32>, chs: array<string>)
 
 pub fn decode(s: string) -> Result<Json, string> {
     val doc = Doc(cps: codePointsOf(s), chs: textsOf(s));
@@ -227,19 +227,19 @@ pub fn decode(s: string) -> Result<Json, string> {
     .Erlang("""unicode:characters_to_list($0, utf8)"""),
     .Wasm(body: codePointsOfBody),
 )]
-declare fn codePointsOf(s: string) -> Array<i32>;
+declare fn codePointsOf(s: string) -> array<i32>;
 
 #[compiler.external(
     .JavaScript("""Array.from($0)"""),
     .Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"""),
     .Wasm(body: textsOfBody),
 )]
-declare fn textsOf(s: string) -> Array<string>;
+declare fn textsOf(s: string) -> array<string>;
 
 // ── the wasm bodies (decision 238) ───────────────────────────────────────────
 // wasm has no host JSON, so the cells above name these private bodies with
 // `#[compiler.external(.Wasm(fn: …))]`; they answer what the Node cell answers, text
-// built from code points with `String.fromCodepoint` (decision 262). `parse`
+// built from code points with `string.fromCodepoint` (decision 262). `parse`
 // and `stringify` have no wasm body (`decisions-pending.md` 05w-j), so STD-001
 // refuses an import of `json` on wasm until they have one. On wasm `unquote` reads its
 // literal with `decode`, which refuses an unpaired `\u` surrogate escape that
@@ -288,14 +288,14 @@ fn notAString() -> HostError {
 }
 
 fn codepointTextBody(cp: i32) -> string {
-    return String.fromCodepoint(cp);
+    return string.fromCodepoint(cp);
 }
 
-fn codePointsOfBody(s: string) -> Array<i32> {
+fn codePointsOfBody(s: string) -> array<i32> {
     return s.chars().map({ c -> c.charCodeAt(0) });
 }
 
-fn textsOfBody(s: string) -> Array<string> {
+fn textsOfBody(s: string) -> array<string> {
     return s.chars();
 }
 
@@ -400,7 +400,7 @@ fn readWord(doc: Doc, i: i32, word: string) -> Result<i32, string> {
 // `have` says `value` holds a finished value to place.
 fn readValue(doc: Doc, start: i32) -> Result<Parsed, string> {
     var open: ?Open = null;
-    var children: Array<#(string, Json)> = [];
+    var children: array<#(string, Json)> = [];
     var name = "";
     var value = Json.Null;
     var have = false;
@@ -491,7 +491,7 @@ fn readValue(doc: Doc, start: i32) -> Result<Parsed, string> {
 // is 123), the member name it is read under in its parent (`""` in an array
 // or at the top), the children its parent had read before it, and the
 // container that holds it.
-type Open(opener: i32, label: string, siblings: Array<#(string, Json)>, outer: ?Open)
+type Open(opener: i32, label: string, siblings: array<#(string, Json)>, outer: ?Open)
 
 // The code point that closes the container `open` opens: `]` for `[`, `}`
 // for `{`.
@@ -507,7 +507,7 @@ fn emptyOf(open: i32) -> Json {
 }
 
 // The container `open` opens, holding `children` in document order.
-fn containerOf(open: i32, children: Array<#(string, Json)>) -> Json {
+fn containerOf(open: i32, children: array<#(string, Json)>) -> Json {
     if (open == 91) return Json.Arr(items: children.map({ e -> e._1 }));
     return Json.Obj(members: children);
 }
@@ -536,7 +536,7 @@ fn nameProblem(r: Result<ParsedText, string>) -> string {
 fn readName(
     doc: Doc,
     i: i32,
-    seen: Array<#(string, Json)>,
+    seen: array<#(string, Json)>,
 ) -> Result<ParsedText, string> {
     if (cpAt(doc, i) != 34)
         throw problemAt(doc, i, "expected a member name (a string)");
@@ -774,7 +774,7 @@ fn exponentFrom(doc: Doc, i: i32) -> ParsedText {
 // value is representable. An exponent past `f64`'s range is an overflow
 // (`ok == false`); a value below half the least subnormal is `0.0`.
 //
-// Big integers are `Array<i32>` of 15-bit limbs, least significant first, so
+// Big integers are `array<i32>` of 15-bit limbs, least significant first, so
 // every product and carry stays below 2^31 on every target, and an integer
 // quotient is spelled `(a - a % b) / b` (exact on commonJS, where `/` is a
 // float division).
@@ -794,7 +794,7 @@ fn numeralValue(
     e1: i32,
 ) -> Conv {
     // The significant digits, leading zeros dropped, and the decimal exponent.
-    var digits: Array<i32> = [];
+    var digits: array<i32> = [];
     var e10 = 0;
     var k = w0;
     while (k < f1) {
@@ -846,7 +846,7 @@ fn exponentValue(doc: Doc, f1: i32, e1: i32) -> i32 {
 }
 
 // At most 15 digits and |e10| ≤ 22: both operands exact, one rounding.
-fn fastPath(digits: Array<i32>, nd: i32, e10: i32) -> f64 {
+fn fastPath(digits: array<i32>, nd: i32, e10: i32) -> f64 {
     var m = 0.0;
     var i = 0;
     while (i < nd) {
@@ -889,14 +889,14 @@ fn digitFloat(d: i32) -> f64 {
 }
 
 // The exact path: `num / den`, rounded to 53 bits (or to the subnormal grid).
-fn slowPath(digits: Array<i32>, nd: i32, e10: i32) -> Conv {
-    var num: Array<i32> = [];
+fn slowPath(digits: array<i32>, nd: i32, e10: i32) -> Conv {
+    var num: array<i32> = [];
     var i = 0;
     while (i < nd) {
         num = bnMulAdd(num, 10, digits.at(i) ?? 0);
         i = i + 1;
     }
-    var den: Array<i32> = [1];
+    var den: array<i32> = [1];
     if (e10 >= 0)
         num = bnMulPow10(num, e10)
     else
@@ -968,8 +968,8 @@ fn scaleBy2(q: f64, e: i32) -> f64 {
 // ── big integers: 15-bit limbs, least significant first, no leading zero ──
 
 // `a · m + add`, with `m` and `add` below 2^15.
-fn bnMulAdd(a: Array<i32>, m: i32, add: i32) -> Array<i32> {
-    var out: Array<i32> = [];
+fn bnMulAdd(a: array<i32>, m: i32, add: i32) -> array<i32> {
+    var out: array<i32> = [];
     var carry = add;
     for (a) { limb ->
         val t = limb * m + carry;
@@ -986,7 +986,7 @@ fn bnMulAdd(a: Array<i32>, m: i32, add: i32) -> Array<i32> {
 }
 
 // `a · 10^n`, four decimal digits a step.
-fn bnMulPow10(a: Array<i32>, n: i32) -> Array<i32> {
+fn bnMulPow10(a: array<i32>, n: i32) -> array<i32> {
     var out = a;
     var k = n;
     while (k >= 4) {
@@ -1001,7 +1001,7 @@ fn bnMulPow10(a: Array<i32>, n: i32) -> Array<i32> {
 }
 
 // Without its most significant zero limbs.
-fn bnNorm(a: Array<i32>) -> Array<i32> {
+fn bnNorm(a: array<i32>) -> array<i32> {
     var n = a.length;
     while (n > 0 && (a.at(n - 1) ?? 0) == 0) {
         n = n - 1;
@@ -1010,7 +1010,7 @@ fn bnNorm(a: Array<i32>) -> Array<i32> {
 }
 
 // The number of bits of `a` (0 for zero).
-fn bnBitLen(a: Array<i32>) -> i32 {
+fn bnBitLen(a: array<i32>) -> i32 {
     val n = a.length;
     if (n == 0) return 0 else {
         var top = a.at(n - 1) ?? 0;
@@ -1024,7 +1024,7 @@ fn bnBitLen(a: Array<i32>) -> i32 {
 }
 
 // -1, 0 or 1 as `a` is below, equal to or above `b`.
-fn bnCmp(a: Array<i32>, b: Array<i32>) -> i32 {
+fn bnCmp(a: array<i32>, b: array<i32>) -> i32 {
     if (a.length != b.length) return if (a.length < b.length) -1 else 1 else {
         var i = a.length - 1;
         var r = 0;
@@ -1039,8 +1039,8 @@ fn bnCmp(a: Array<i32>, b: Array<i32>) -> i32 {
 }
 
 // `a - b`, `a ≥ b`.
-fn bnSub(a: Array<i32>, b: Array<i32>) -> Array<i32> {
-    var out: Array<i32> = [];
+fn bnSub(a: array<i32>, b: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
     var borrow = 0;
     var i = 0;
     while (i < a.length) {
@@ -1057,7 +1057,7 @@ fn bnSub(a: Array<i32>, b: Array<i32>) -> Array<i32> {
 }
 
 // `a · 2^s`, `s ≥ 0`.
-fn bnShl(a: Array<i32>, s: i32) -> Array<i32> {
+fn bnShl(a: array<i32>, s: i32) -> array<i32> {
     if (a.length == 0 || s == 0) return a else {
         val r = s % 15;
         val limbs = (s - r) / 15;
@@ -1067,7 +1067,7 @@ fn bnShl(a: Array<i32>, s: i32) -> Array<i32> {
             mul = mul * 2;
             j = j + 1;
         }
-        var out: Array<i32> = [];
+        var out: array<i32> = [];
         var z = 0;
         while (z < limbs) {
             out.push(0);
@@ -1086,8 +1086,8 @@ fn bnShl(a: Array<i32>, s: i32) -> Array<i32> {
 }
 
 // `floor(a / 2)`.
-fn bnShr1(a: Array<i32>) -> Array<i32> {
-    var out: Array<i32> = [];
+fn bnShr1(a: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
     var i = 0;
     while (i < a.length) {
         val limb = a.at(i) ?? 0;
@@ -1215,7 +1215,7 @@ fn jsonEq(a: Json, b: Json) -> bool {
     };
 }
 
-fn itemsEq(xs: Array<Json>, ys: Array<Json>) -> bool {
+fn itemsEq(xs: array<Json>, ys: array<Json>) -> bool {
     if (xs.length != ys.length) return false else {
         var same = true;
         var i = 0;
@@ -1228,7 +1228,7 @@ fn itemsEq(xs: Array<Json>, ys: Array<Json>) -> bool {
     }
 }
 
-fn membersEq(xs: Array<#(string, Json)>, ys: Array<#(string, Json)>) -> bool {
+fn membersEq(xs: array<#(string, Json)>, ys: array<#(string, Json)>) -> bool {
     if (xs.length != ys.length) return false else {
         var same = true;
         var i = 0;
@@ -1594,7 +1594,7 @@ test "json.decode reads escape.scriptJson's output as the same value" {
 
 // One value of each variant, in declaration order: `Null`, `Bool`, `Num`,
 // `Str`, `Arr`, `Obj`.
-fn everyKind() -> Array<Json> {
+fn everyKind() -> array<Json> {
     return [
         Json.Null,
         Json.Bool(value: true),

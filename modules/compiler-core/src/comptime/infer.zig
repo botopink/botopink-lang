@@ -811,7 +811,8 @@ fn refuseTypesNamedLikeLiterals(env: *Env, program: ast.Program) InferError!void
             .type_ => |t| .{ t.name, t.loc, "type" },
             // An alias's `loc` is its `type` keyword: the name follows it.
             .typeAlias => |a| .{ a.name, ast.Loc{ .line = a.loc.line, .col = a.loc.col + "type ".len, .expansion = a.loc.expansion }, "type" },
-            .behavior => |b| .{ b.name, b.nameLoc, "behavior" },
+            // Decision 641 — std's primitive type's own member table.
+            .behavior => |b| if (b.primitiveType) continue else .{ b.name, b.nameLoc, "behavior" },
             else => continue,
         };
         const taken = for (literal_type_names) |n| {
@@ -849,7 +850,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
-        if (decl == .behavior) takeNameFromPrelude(env, decl.behavior.name);
+        if (decl == .behavior and !decl.behavior.primitiveType) takeNameFromPrelude(env, decl.behavior.name);
         try registerTypeDecl(env, decl);
     }
     try registerExtensions(env, program);
@@ -1086,7 +1087,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
-        if (decl == .behavior) takeNameFromPrelude(env, decl.behavior.name);
+        if (decl == .behavior and !decl.behavior.primitiveType) takeNameFromPrelude(env, decl.behavior.name);
         try registerTypeDecl(env, decl);
     }
     try registerExtensions(env, program);
@@ -1521,7 +1522,7 @@ fn writeSigType(w: *std.Io.Writer, t: ast.TypeRef, s: SigScope, depth: u8) std.I
                 try w.writeAll("syntax ");
                 return writeSigType(w, g.args[0], s, depth);
             }
-            if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or std.mem.eql(u8, g.name, "array"))) {
+            if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) {
                 try writeSigType(w, g.args[0], s, depth);
                 return w.writeAll("[]");
             }
@@ -1862,6 +1863,9 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
             try inferBehaviorDefaultBodies(env, d);
+            // Decision 641 — a primitive type's member table binds no name:
+            // `string` stays the type `registerBuiltins` bound.
+            if (d.primitiveType) return null;
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
         },
         // Handled in `inferProgramTyped` — each import name is looked up in env.
@@ -4968,12 +4972,12 @@ fn isIdentText(s: []const u8) bool {
     return true;
 }
 
-/// The type `Self` spells in a primitive behavior a `std:` cell may bind
-/// (decision 440 (3)): a `String`'s is `string`, a `Float`'s `f64` — the
+/// The type `Self` spells in a primitive's member table a `std:` cell may
+/// bind (decision 440 (3)): `string`'s is `string`, a `Float`'s `f64` — the
 /// carrier a wasm program holds any float in. Null elsewhere: a `Self` there
 /// is no type a std-wasm function takes.
 fn selfSpelling(behavior: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, behavior, "String")) return "string";
+    if (std.mem.eql(u8, behavior, "string")) return "string";
     if (std.mem.eql(u8, behavior, "Float")) return "f64";
     return null;
 }
@@ -5103,7 +5107,7 @@ fn refuseUnboundIn(env: *Env, name: []const u8, gps: []const ast.GenericParam, p
             .{ diagnostics.type_parameter_unbound, name, gp.name },
         ), try std.fmt.allocPrint(
             env.arena,
-            "Bind `{s}` by a parameter: `comptime t: type<{s}>` when the caller names the type, a parameter whose type carries it (`items: Array<{s}>`, `self: Self<Array<{s}>>`, `f: fn({s}) -> R`); or write `unknown` where no type is meant (decision 668).",
+            "Bind `{s}` by a parameter: `comptime t: type<{s}>` when the caller names the type, a parameter whose type carries it (`items: array<{s}>`, `self: Self<array<{s}>>`, `f: fn({s}) -> R`); or write `unknown` where no type is meant (decision 668).",
             .{ gp.name, gp.name, gp.name, gp.name, gp.name },
         ));
     }
@@ -5266,14 +5270,11 @@ fn checkProgramImplementations(env: *Env, program: ast.Program) InferError!void 
 /// string;` inside `pub type i32 implement Signed { … }`). An implementation
 /// on a behavior's member is refused at the annotation, `external-on-behavior`.
 /// What `prelude_cache.foldWidthMembers` read back onto a contract is the
-/// types' (`BehaviorMethod.folded`). `String`, `Array`, `Bool`, `BigInt` and
-/// `Bytes` — std's and a program's extending them — keep theirs until decision
-/// 641 dissolves them into their types.
+/// types', and so is a primitive type's member table (decision 641:
+/// `pub type string { … }`, `BehaviorDecl.primitiveType`) — the type's own
+/// host code, written on the type.
 fn refuseExternalOnBehavior(env: *Env, b: ast.BehaviorDecl, m: ast.BehaviorMethod) InferError!void {
-    if (m.folded or m.implementations.len == 0) return;
-    for ([_][]const u8{ "String", "Array", "Bool", "BigInt", "Bytes" }) |kept| {
-        if (std.mem.eql(u8, b.name, kept)) return;
-    }
+    if (m.folded or m.implementations.len == 0 or b.primitiveType) return;
     const impl = m.implementations[0];
     return implError(env, impl.loc orelse m.nameLoc, try std.fmt.allocPrint(
         env.arena,
@@ -5283,7 +5284,7 @@ fn refuseExternalOnBehavior(env: *Env, b: ast.BehaviorDecl, m: ast.BehaviorMetho
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as
-/// written (`Self` as `self_ty` spells it), `string[]`, `?string`, `?Bytes`, `?i32`
+/// written (`Self` as `self_ty` spells it), `string[]`, `?string`, `?bytes`, `?i32`
 /// and `@Result<i64 | f64 | T, string>` as std-wasm's types spell them
 /// (`std_wasm.Type`), anything else `another type`.
 fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
@@ -5293,8 +5294,8 @@ fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
         .optional => |e| blk: {
             const inner = spelledType(e.*, self_ty);
             if (std.mem.eql(u8, inner, "string")) break :blk "?string";
-            // Decision 346 — `Bytes`' codecs answer one when the text is one.
-            if (std.mem.eql(u8, inner, "Bytes")) break :blk "?Bytes";
+            // Decision 346 — `bytes`' codecs answer one when the text is one.
+            if (std.mem.eql(u8, inner, "bytes")) break :blk "?bytes";
             if (std.mem.eql(u8, inner, "i32")) break :blk "?i32";
             break :blk "another type";
         },
@@ -7277,7 +7278,7 @@ fn metaFieldShape(env: *Env, own: []const ast.DeclKind, module: []const u8, tr: 
         .generic => |g| {
             // Decision 308 — a `Type.Field<T>`, rebuilt as its `.name`.
             if (!g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Type__Field") or std.mem.eql(u8, g.name, "Type.Field"))) return .field_key;
-            if (g.is_builtin or !std.mem.eql(u8, g.name, "Array") or g.args.len != 1) return null;
+            if (g.is_builtin or !std.mem.eql(u8, g.name, "array") or g.args.len != 1) return null;
             const s = (try metaFieldShape(env, own, module, g.args[0])) orelse return null;
             const p = try env.arena.create(typedMeta.Shape);
             p.* = s;
@@ -8972,7 +8973,7 @@ fn stmtsUseName(stmts: []const ast.Stmt, name: []const u8) bool {
 
 fn isArrayType(t: *T.Type) bool {
     const d = t.deref();
-    return d.* == .named and (std.mem.eql(u8, d.named.name, "array") or std.mem.eql(u8, d.named.name, "Array"));
+    return d.* == .named and std.mem.eql(u8, d.named.name, "array");
 }
 
 /// Decision 148 — the `val f = { … }` statements of a block whose every later
@@ -12296,7 +12297,7 @@ fn genericSpelling(env: *Env, t: *T.Type, depth: usize) InferError![]const u8 {
         },
         .named => |n| {
             if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "?{s}", .{try genericSpelling(env, n.args[0], depth + 1)});
-            if ((std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "Array")) and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try genericSpelling(env, n.args[0], depth + 1)});
             if (n.args.len == 0) return n.name;
             var buf: std.ArrayListUnmanaged(u8) = .empty;
             try buf.appendSlice(env.arena, n.name);
@@ -12746,33 +12747,36 @@ fn checkDeclaredArguments(
 }
 
 /// Decision 332 — the primitive a call's receiver names as a type, when it
-/// names one with associated functions (`bigint`; decision 346's `Bytes`) and
+/// names one with associated functions (`bigint`; decision 346's `bytes`) and
 /// no binding shadows it.
 fn primitiveStaticReceiver(env: *Env, recv: ast.Expr) ?[]const u8 {
     if (recv != .identifier or recv.identifier.kind != .ident) return null;
     const name = recv.identifier.kind.ident;
-    if (!std.mem.eql(u8, name, "bigint") and !std.mem.eql(u8, name, "Bytes")) return null;
-    // `registerBuiltins` binds each primitive's name to its type; a local
-    // binding of the name holds a value of another type.
+    if (!std.mem.eql(u8, name, "bigint") and !std.mem.eql(u8, name, "bytes")) return null;
+    // `registerBuiltins` binds each primitive's name to its type; a binding
+    // of the name — a local, a parameter (`val bytes = b;`, decision 641's
+    // lowercase names are ordinary ones) — shadows it, whatever its type.
+    if (env.boundInBody(name)) return null;
     if (env.lookup(name)) |t| if (!t.deref().isNamed(name)) return null;
     return name;
 }
 
-/// Decision 332 — `bigint.of(n)` / `bigint.parse(text)`: the associated host
-/// primitives of `primitives.bp`'s `behavior BigInt` (decision 262's form,
-/// `String.fromCodepoint`'s), called through the type's own name. Each
-/// argument is inferred against its parameter (so `bigint.of(5)` reads `5`
-/// as the `i64` it is passed as), and the backends read `BigInt.of(…)`
-/// through the index channel — the call every one of them renders from its
-/// template. A name `BigInt` does not declare is refused at the call.
+/// Decision 332 — `bigint.of(n)` / `bigint.parse(text)`: the statics of
+/// `primitives.bp`'s `pub type bigint { … }` (decision 262's form,
+/// `string.fromCodepoint`'s; 641: the type holds them), called through the
+/// type's own name. Each argument is inferred against its parameter (so
+/// `bigint.of(5)` reads `5` as the `i64` it is passed as), and the backends
+/// read the call through the type's member table (`bigint.of(…)`), the call
+/// every one of them renders from its template. A name the type does not
+/// declare is refused at the call.
 fn inferPrimitiveStaticCall(env: *Env, call: anytype, recv: *ast.Expr, loc: ast.Loc) InferError!TypedExpr {
     const owner = recv.identifier.kind.ident;
     const iface = primitiveInterfaceName(owner) orelse unreachable;
     const key = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ iface, call.callee });
     const fnTy = env.lookup(key) orelse {
         const msg = try std.fmt.allocPrint(env.arena, "`{s}` has no associated function `{s}`", .{ owner, call.callee });
-        const hint = if (std.mem.eql(u8, owner, "Bytes"))
-            "`Bytes`' associated function is `Bytes.fromUtf8(s)` (`primitives.bp`, decision 346); its methods are called on a value (`b.length()`)."
+        const hint = if (std.mem.eql(u8, owner, "bytes"))
+            "`bytes`' associated function is `bytes.fromUtf8(s)` (`primitives.bp`, decision 346); its methods are called on a value (`b.length()`)."
         else
             "`bigint`'s associated functions are `bigint.of(n)` and `bigint.parse(text)` (`primitives.bp`, decision 332); its methods are called on a value (`x.toString()`).";
         env.lastError = TypeError.custom(msg, hint).withLoc(loc);
@@ -14388,17 +14392,15 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // iff T ~ U` for free. The generic parameter is mandatory; a type
             // only the expansion knows is an ordinary fn generic
             // (`fn yaml<T>(…) -> @Expr<T>`), resolved via `genericMap` above.
-            // `Array<T>` is the canonical spelling of the array type `T[]` —
-            // normalise it so annotations unify with array-literal inference
-            // (`[1, 2]` infers as named "array").
+            // `array<T>` is the array type `T[]` (decision 641): a named type
+            // with one arg, as array-literal inference writes it (`[1, 2]`
+            // infers as named "array").
             // `@ExprCustom<T>` is the marker spelling of the carrier struct
             // `CustomExpr<T>` (`{ code: Expr<T>, ast: CustomNode }`) — normalise
             // it so a template fn's `-> @ExprCustom<T>` return unifies with the
             // `q.custom(…)` value the body produces (exactly as `@Expr` ↔ the
             // `Expr` interface).
-            const name = if (std.mem.eql(u8, b.name, "Array"))
-                "array"
-            else if (b.is_builtin and std.mem.eql(u8, b.name, ast.expr_custom_type_name))
+            const name = if (b.is_builtin and std.mem.eql(u8, b.name, ast.expr_custom_type_name))
                 "CustomExpr"
             else
                 b.name;
@@ -15087,8 +15089,8 @@ fn bindPatternNamesForSubject(
                 // `string` alike.
                 if (unifyMod.mentionsBytes(tested) or unifyMod.mentionsBytes(subjectType)) {
                     env.lastError = TypeError.custom(
-                        diagnostics.bytes_type_test ++ ": a type pattern does not test `Bytes`",
-                        "`Bytes`' type is static (decision 346): a value typed `Bytes` is one, and nothing else is.",
+                        diagnostics.bytes_type_test ++ ": a type pattern does not test `bytes`",
+                        "`bytes`' type is static (decision 346): a value typed `bytes` is one, and nothing else is.",
                     );
                     return error.TypeError;
                 }
@@ -16038,8 +16040,7 @@ fn warnAlwaysFalseIs(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: as
     // value's own type; `unknown` is always true.
     if (std.mem.indexOfScalar(u8, tname, '.') != null) return;
     if (eq(u8, tname, ast.unknown_type_name)) return;
-    const tested_head = if (eq(u8, tname, "Array")) "array" else tname;
-    if (eq(u8, tested_head, vname)) return;
+    if (eq(u8, tname, vname)) return;
     const numeric = struct {
         fn of(n: []const u8) bool {
             const nums = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize", "f32", "f64" };
@@ -16047,11 +16048,11 @@ fn warnAlwaysFalseIs(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: as
             return false;
         }
     }.of;
-    if (numeric(vname) and numeric(tested_head)) return;
+    if (numeric(vname) and numeric(tname)) return;
     // A tested name the module knows nothing about is the unknown-name
     // diagnostic's business, not this one's.
-    const t_known = numeric(tested_head) or env.lookupTypeDef(tested_head) != null or
-        eq(u8, tested_head, "string") or eq(u8, tested_head, "bool") or eq(u8, tested_head, "array");
+    const t_known = numeric(tname) or env.lookupTypeDef(tname) != null or
+        eq(u8, tname, "string") or eq(u8, tname, "bool") or eq(u8, tname, "array");
     if (!t_known) return;
     const rendered = try snapshotMod.typeNameOf(env.arena, v);
     const msg = try std.fmt.allocPrint(env.arena, "this `is {s}` test is always false: the value's type is `{s}`", .{ tname, rendered });
@@ -16292,7 +16293,7 @@ fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) I
 pub const scalar_type_names = [_][]const u8{
     "i8",       "u8",     "i16",   "u16", "i32",  "u32",    "i64",  "u64",
     "isize",    "usize",  "f32",   "f64", "bool", "string", "void", "v128",
-    "noreturn", "bigint", "Bytes",
+    "noreturn", "bigint", "bytes",
 };
 
 /// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
@@ -17495,7 +17496,7 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
     return switch (lit.kind) {
         .stringLit => |s| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = s } } },
         // Decisions 519, 520 — a `Bytes` build constant (never written).
-        .bytesLit => |b| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("Bytes"), .kind = .{ .bytesLit = b } } },
+        .bytesLit => |b| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("bytes"), .kind = .{ .bytesLit = b } } },
         .stringTemplate => |t| {
             // Desugar `"a ${x} b"` into the concatenation chain `"a " + x + " b"`
             // (same semantics as written-out string `+`, incl. coercion). The
@@ -17897,10 +17898,10 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     try env.instanceLowerings.put(loc, .{ .prim = k });
                     outType = try env.namedType("i32");
                 }
-                // `b.length` on a `Bytes` is its byte count, as `b.length()` is:
+                // `b.length` on a `bytes` is its byte count, as `b.length()` is:
                 // the primitive kind makes erlang and beam lower it to
                 // `byte_size/1`, never a text length.
-                else if (std.mem.eql(u8, recvNamed.name, "Bytes") and std.mem.eql(u8, ia.member, "length")) {
+                else if (std.mem.eql(u8, recvNamed.name, "bytes") and std.mem.eql(u8, ia.member, "length")) {
                     try env.instanceLowerings.put(loc, .{ .prim = .bytes });
                     outType = try env.namedType("i32");
                 }
@@ -18099,11 +18100,11 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     // answer across the targets. The backends without a native comparison of
     // two byte sequences read the `==` from the operator's lowering.
     switch (binop.op) {
-        .eq, .ne => if (lhsTyped.getType().deref().isNamed("Bytes") or rhsTyped.getType().deref().isNamed("Bytes")) {
+        .eq, .ne => if (lhsTyped.getType().deref().isNamed("bytes") or rhsTyped.getType().deref().isNamed("bytes")) {
             try env.instanceLowerings.put(loc, .{ .prim = .bytes });
         },
         .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte => for ([_]TypedExpr{ lhsTyped, rhsTyped }, [_]ast.Expr{ binop.lhs.*, binop.rhs.* }) |t, e| {
-            if (!t.getType().deref().isNamed("Bytes")) continue;
+            if (!t.getType().deref().isNamed("bytes")) continue;
             const sym: []const u8 = switch (binop.op) {
                 .add => "+",
                 .sub => "-",
@@ -18117,10 +18118,10 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             };
             // A string template's holes are joined with `+` (`inferLiteralExpr`).
             const msg = if (binop.op == .add)
-                "`Bytes` is no text to join with `+` or a string template"
+                "`bytes` is no text to join with `+` or a string template"
             else
-                try std.fmt.allocPrint(env.arena, "`Bytes` takes no `{s}`", .{sym});
-            env.lastError = TypeError.custom(msg, "`Bytes` answers `==` and `!=` alone (decision 346): join two with `a.concat(b)`, read one as text with `b.toUtf8()`.").withLoc(e.getLoc());
+                try std.fmt.allocPrint(env.arena, "`bytes` takes no `{s}`", .{sym});
+            env.lastError = TypeError.custom(msg, "`bytes` answers `==` and `!=` alone (decision 346): join two with `a.concat(b)`, read one as text with `b.toUtf8()`.").withLoc(e.getLoc());
             return error.TypeError;
         },
         else => {},
@@ -19820,7 +19821,7 @@ fn resolveAnnotationAt(env: *Env, ref: ast.TypeRef, valueLoc: ast.Loc, typeLoc: 
 }
 
 fn refuseUnknownName(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
-    if (std.mem.eql(u8, name, "Self") or std.mem.eql(u8, name, "Array") or std.mem.eql(u8, name, ast.unknown_type_name) or std.mem.eql(u8, name, ast.inline_type_name)) return;
+    if (std.mem.eql(u8, name, "Self") or std.mem.eql(u8, name, ast.unknown_type_name) or std.mem.eql(u8, name, ast.inline_type_name)) return;
     if (std.mem.indexOfScalar(u8, name, '.') != null or std.mem.indexOf(u8, name, "__") != null) return;
     if (env.fnGenericMap) |gm| if (gm.contains(name)) return;
     if (env.methodGenericMap) |gm| if (gm.contains(name)) return;
@@ -21692,32 +21693,28 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     }
 }
 
-/// The behavior of `primitives.bp` a primitive type's methods are found in
-/// first. A width is a type (decision 617 (1)): its contract is the
+/// The member table of `primitives.bp` a primitive type's methods are found
+/// in first. A width is a type (decision 617 (1)): its contract is the
 /// `implement` clause of its `pub type i32 implement Signed { … }`, read from
 /// the text (`prelude_cache.primitiveContract`). `string`, `bool`, `array`,
-/// `bigint` and `Bytes` keep their own behaviors until decision 641 dissolves
-/// them into their types.
+/// `bigint` and `bytes` hold their own methods (decision 641): the table is
+/// the type's own name (`prelude_cache.dissolvedTypesAsMemberTables`).
 fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
     if (preludeCache.primitiveContract(typeName)) |c| return c;
-    const map = [_]struct { t: []const u8, i: []const u8 }{
-        .{ .t = "array", .i = "Array" },
-        .{ .t = "bool", .i = "Bool" },
-        .{ .t = "string", .i = "String" },
-        .{ .t = "bigint", .i = "BigInt" },
-        .{ .t = "Bytes", .i = "Bytes" },
-    };
-    for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.i;
+    for (owned_member_types) |t| if (std.mem.eql(u8, typeName, t)) return t;
     return null;
 }
 
-/// The primitive a controller interface of `primitives.bp` is the behavior
-/// of (`String` → `string`), the inverse of `primitiveInterfaceName` for the
-/// primitives that keep a behavior of their own. A contract the widths share
-/// (`Signed`, `Float`) is no one type's: null.
+/// Decision 641 — the primitive types that hold their own members, each
+/// table under the type's name.
+const owned_member_types = [_][]const u8{ "array", "bool", "string", "bigint", "bytes" };
+
+/// The primitive a member table of `primitives.bp` is the table of (`string`
+/// → `string`), the inverse of `primitiveInterfaceName` for the primitives
+/// that hold their own members. A contract the widths share (`Signed`,
+/// `Float`) is no one type's: null.
 fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
-    const prims = [_][]const u8{ "array", "bool", "string", "bigint", "Bytes" };
-    for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
+    for (owned_member_types) |p| if (std.mem.eql(u8, p, iface)) return p;
     return null;
 }
 
@@ -22943,7 +22940,7 @@ fn callOnPureReceiver(c: ast.CallExprOf(.untyped), typed: TypedExpr) bool {
     const recv = typed.call.kind.call.receiver orelse return false;
     const d = recv.getType().deref();
     if (d.* != .named) return false;
-    const pure = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "Array", "array", "Dict", "Set", "bigint", "decimal" };
+    const pure = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "array", "Dict", "Set", "bigint", "decimal" };
     for (pure) |n| if (std.mem.eql(u8, n, d.named.name)) return true;
     return false;
 }
@@ -24812,12 +24809,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             ).withLoc(loc);
                             return error.TypeError;
                         }
-                        // Decision 346 — nor `Bytes`, which erlang and beam
+                        // Decision 346 — nor `bytes`, which erlang and beam
                         // hold as a `string` is held (a binary).
-                        if (typeRefMentions(tested, "Bytes") or (typedArgs.len == 1 and unifyMod.mentionsBytes(typedArgs[0].value.getType()))) {
+                        if (typeRefMentions(tested, "bytes") or (typedArgs.len == 1 and unifyMod.mentionsBytes(typedArgs[0].value.getType()))) {
                             env.lastError = TypeError.custom(
-                                diagnostics.bytes_type_test ++ ": `is` does not test `Bytes`",
-                                "`Bytes`' type is static (decision 346): a value typed `Bytes` is one, and nothing else is.",
+                                diagnostics.bytes_type_test ++ ": `is` does not test `bytes`",
+                                "`bytes`' type is static (decision 346): a value typed `bytes` is one, and nothing else is.",
                             ).withLoc(loc);
                             return error.TypeError;
                         }
@@ -24878,7 +24875,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // associated call (`Array.range(0, 3)`) fell through to a
                     // fresh var, and the method on its result (`.map`) recorded
                     // no lowering — erlang's `'__bp_prim_map'` run-time helper.
-                    const behaviorName = env.assocInterfaceDecls.contains(recvName) and !env.isVal(recvName);
+                    // Decision 641 — a primitive's table is named like its
+                    // type (`array.range`); a local of that name shadows it.
+                    const shadowedTable = preludeCache.isMemberTable(recvName) and env.boundInBody(recvName);
+                    const behaviorName = env.assocInterfaceDecls.contains(recvName) and !env.isVal(recvName) and !shadowedTable;
                     if (env.lookup(recvName) == null or behaviorName) {
                         const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recvName, call.callee });
                         if (env.lookup(qn)) |fnTy| {
@@ -25166,10 +25166,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // — `resolveReceiverCall` above only fires for bare-identifier
                 // receivers. This recovers the method's real return type so a
                 // `Queue<i32>` chain keeps tracking `?i32` through `.peek()`.
-                // Decision 346 — `Bytes` names a primitive and its behavior
-                // alike: a call on a `Bytes` value is the primitive's, below,
-                // never a behavior-typed receiver's.
-                if (nominalName(recvPtr.getType())) |tn| if (!std.mem.eql(u8, tn, "Bytes")) {
+                // Decision 641 — a primitive type's name names its member
+                // table too (`bytes`): a call on a primitive value is the
+                // primitive's, below, never a behavior-typed receiver's.
+                if (nominalName(recvPtr.getType())) |tn| if (primKindOfName(tn) == null) {
                     if (env.hasInherentMethod(tn, call.callee)) {
                         try recordInstanceCall(env, loc, tn);
                         return try makeMethodCall(env, recvPtr, call.callee, typedArgs, typedTrailing, loc);
@@ -27063,7 +27063,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             const elemExpected: ?*T.Type = blk: {
                 const want = (env.expectedType orelse break :blk null).deref();
                 if (want.* != .named) break :blk null;
-                if (!std.mem.eql(u8, want.named.name, "array") and !std.mem.eql(u8, want.named.name, "Array")) break :blk null;
+                if (!std.mem.eql(u8, want.named.name, "array")) break :blk null;
                 if (want.named.args.len != 1) break :blk null;
                 break :blk want.named.args[0];
             };

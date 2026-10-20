@@ -1,0 +1,9 @@
+//// Decision 641 — (b) for the names, and no contract with one implementor: every primitive type is written lowercase — `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bool`, `string`, `bigint`, `bytes`, `array<T>` — and a capitalised name is a contract shared by several types (`Number`, `Integer`, `Signed`, `Float`); `String`, `Bool`, `BigInt`, `Bytes` and `Array` dissolve into their types, which hold their methods and statics.
+
+import {io.terminal.print} from "std";
+
+// `String` is no contract and no type: `string` holds its statics. Refused
+// as an unknown name.
+pub fn main() -> void {
+    print(String.fromCodepoint(65));
+}

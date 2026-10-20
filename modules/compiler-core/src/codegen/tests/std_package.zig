@@ -212,7 +212,7 @@ test "js: std package ---- methods of a type answered by an imported module reso
 // RUNNING is the assertion: the entry module compiled fine, so a snapshot of it
 // showed nothing. `querystring.parse` is the shortest std entry point that
 // reaches the shim.
-test "erlang: std package ---- a String.slice default fn inside a std module" {
+test "erlang: std package ---- a string.slice default fn inside a std module" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {querystring} from "std";
         \\

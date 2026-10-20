@@ -14,14 +14,14 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Array_all', 2}, {'__bp_priv__Array_fold', 3}, {'__bp_priv__Array_range', 2}, {'__bp_priv__Array_repeat', 2}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__array_all', 2}, {'__bp_priv__array_fold', 3}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
 {labels, 86}.
 
-{function, 'Array_range', 2, 3}.
+{function, 'array_range', 2, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_range'}, 2}.
   {label, 3}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -63,10 +63,10 @@ import {io.terminal.print} from "std";
     {deallocate, 6}.
     return.
 
-{function, 'Array_repeat', 2, 5}.
+{function, 'array_repeat', 2, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_repeat'}, 2}.
   {label, 5}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -191,10 +191,10 @@ import {io.terminal.print} from "std";
   {label, 11}.
     {call_only, 0, {f, 9}}.
 
-{function, 'Array_fold', 3, 57}.
+{function, 'array_fold', 3, 57}.
   {label, 56}.
     {line, [{location, "test@main.erl", 6}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_fold'}, 3}.
+    {func_info, {atom, test@main}, {atom, 'array_fold'}, 3}.
   {label, 57}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -214,10 +214,10 @@ import {io.terminal.print} from "std";
     {deallocate, 4}.
     return.
 
-{function, 'Array_all', 2, 66}.
+{function, 'array_all', 2, 66}.
   {label, 65}.
     {line, [{location, "test@main.erl", 7}]}.
-    {func_info, {atom, test@main}, {atom, 'Array_all'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'array_all'}, 2}.
   {label, 66}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -239,31 +239,31 @@ import {io.terminal.print} from "std";
     {deallocate, 2}.
     return.
 
-{function, '__bp_priv__Array_all', 2, 77}.
+{function, '__bp_priv__array_all', 2, 77}.
   {label, 76}.
     {line, [{location, "test@main.erl", 9}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_all'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_all'}, 2}.
   {label, 77}.
     {call_only, 2, {f, 66}}.
 
-{function, '__bp_priv__Array_fold', 3, 79}.
+{function, '__bp_priv__array_fold', 3, 79}.
   {label, 78}.
     {line, [{location, "test@main.erl", 10}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_fold'}, 3}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_fold'}, 3}.
   {label, 79}.
     {call_only, 3, {f, 57}}.
 
-{function, '__bp_priv__Array_range', 2, 81}.
+{function, '__bp_priv__array_range', 2, 81}.
   {label, 80}.
     {line, [{location, "test@main.erl", 11}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_range'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_range'}, 2}.
   {label, 81}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__Array_repeat', 2, 83}.
+{function, '__bp_priv__array_repeat', 2, 83}.
   {label, 82}.
     {line, [{location, "test@main.erl", 12}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Array_repeat'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__array_repeat'}, 2}.
   {label, 83}.
     {call_only, 2, {f, 5}}.
 

@@ -931,6 +931,22 @@ are called as written, also where the program imports `io.process` (which declar
 `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `bytes`, `bool`,
 `void`. Their methods are declared in `libs/std/src/primitives.bp`.
 
+Every primitive type is written lowercase — `i32` … `f64`, `bool`, `string`,
+`bigint`, `bytes`, `array<T>` — and a capitalised name is a contract several
+types share (decision 641): `Number`, `Integer`, `Signed`, `Float`. `string`,
+`bool`, `bigint`, `bytes` and `array<T>` hold their own methods and statics,
+declared in std's prelude as `pub type string { … }` and its siblings; a static
+is called through the type's name — `string.fromCodepoint(65)`,
+`array.range(0, 3)`, `array.repeat(x, 3)`, `bytes.fromUtf8(s)`, `bigint.of(n)` —,
+and host code lives on the type, `#[compiler.external(…)] declare fn
+fromCodepoint(cp: i32) -> string;`, never on a behavior. `T[]` stays the
+spelling of `array<T>`. `String`, `Bool`, `BigInt`, `Bytes` and `Array` name
+nothing: `String.fromCodepoint(65)` is an unknown name.
+
+<!-- example: modules/decisions-taken/primitive_types_lowercase-641/cells/primitive_static_on_type -->
+
+<!-- example: modules/decisions-taken/primitive_types_lowercase-641/cells/primitive_contract_dissolved -->
+
 The widths are types (decision 617 (1)): std's prelude declares `pub type i32
 implement Signed`, `i64` likewise, `u32` and `u64` `implement Integer`, `f32`
 and `f64` `implement Float`. A capitalised name there is a contract several

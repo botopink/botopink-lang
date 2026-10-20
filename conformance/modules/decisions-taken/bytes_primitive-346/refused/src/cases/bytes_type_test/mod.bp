@@ -3,8 +3,8 @@
 
 import {io.terminal.print} from "std";
 
-fn check(v: string | Bytes) -> bool {
-    return v is Bytes;
+fn check(v: string | bytes) -> bool {
+    return v is bytes;
 }
 
 pub fn main() -> void {

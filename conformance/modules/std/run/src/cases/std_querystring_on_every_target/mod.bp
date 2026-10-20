@@ -6,7 +6,7 @@
 
 import {querystring, io.terminal.print} from "std";
 
-fn show(r: Result<Array<#(string, string)>, string>) -> string {
+fn show(r: Result<array<#(string, string)>, string>) -> string {
     return if (r.isError())
         "error"
     else

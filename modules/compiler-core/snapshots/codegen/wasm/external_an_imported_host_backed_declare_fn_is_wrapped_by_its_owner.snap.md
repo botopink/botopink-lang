@@ -4,7 +4,7 @@
 pub declare fn hostKey(v: i32) -> string;
 
 #[compiler.external(.JavaScript("$0.length"), .Erlang("erlang:length($0)"))]
-pub declare fn hostLen(xs: Array<string>) -> i32;
+pub declare fn hostLen(xs: array<string>) -> i32;
 
 #[compiler.external(.JavaScript("console.log($0)"))]
 pub declare fn nodeOnly(s: string) -> void;

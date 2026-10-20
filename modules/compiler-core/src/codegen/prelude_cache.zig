@@ -272,7 +272,7 @@ pub fn widthMember(width: []const u8, method: []const u8) ?ast.BehaviorMethod {
 /// written as the type, the member's annotations and host cells kept. The
 /// checker and every backend read the prelude through this.
 pub fn withWidthMembers(alloc: std.mem.Allocator, written: ast.Program) !ast.Program {
-    const program = try foldWidthMembers(alloc, written);
+    const program = try foldWidthMembers(alloc, try dissolvedTypesAsMemberTables(alloc, written));
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     for (program.decls) |d| {
         if (d != .type_ or !d.type_.isPrimitive) continue;
@@ -310,6 +310,144 @@ pub fn withWidthMembers(alloc: std.mem.Allocator, written: ast.Program) !ast.Pro
     var out = program;
     out.decls = try std.mem.concat(alloc, ast.DeclKind, &.{ program.decls, extra.items });
     return out;
+}
+
+/// Decision 641 — each primitive type of `program` that implements no
+/// contract (`pub type string { … }`, `bool`, `bigint`, `bytes`,
+/// `array<T>`) held as its member table: the `BehaviorDecl` of the type's own
+/// name (`string`) the checker and every backend find a primitive's methods
+/// and statics in (`BehaviorDecl.primitiveType`), its properties
+/// (`val length: i32;`) the table's fields. A `declare fn` with its cells is
+/// a member with those implementations; a `fn` with a body is a member with
+/// that body. A member one target runs in botopink (`.Wasm(body: f)`,
+/// decision 610) is the member whose body is `f`'s and whose cells are the
+/// others — `f`'s first parameter is the receiver (read as the member's
+/// `self`), and its other parameters the member's. A program never names the table: it names
+/// the type.
+pub fn dissolvedTypesAsMemberTables(alloc: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var any = false;
+    for (program.decls) |d| if (d == .type_ and d.type_.isPrimitive and d.type_.implement.len == 0) {
+        any = true;
+        break;
+    };
+    if (!any) return program;
+    const out_decls = try alloc.dupe(ast.DeclKind, program.decls);
+    for (out_decls) |*d| {
+        if (d.* != .type_ or !d.type_.isPrimitive or d.type_.implement.len != 0) continue;
+        const t = d.type_;
+        const methods = try alloc.alloc(ast.BehaviorMethod, t.methods.len);
+        for (t.methods, methods) |m, *out| {
+            out.* = m;
+            out.is_declare = false;
+            out.is_default = m.body != null;
+            var bodies: usize = 0;
+            for (m.implementations) |im| {
+                if (im.cell != null and im.cell.?.kind == .body) bodies += 1;
+            }
+            if (bodies == 0) continue;
+            var kept: std.ArrayListUnmanaged(ast.Implementation) = .empty;
+            var body_fn: ?[]const u8 = null;
+            for (m.implementations) |im| {
+                if (im.cell) |c| if (c.kind == .body) {
+                    body_fn = c.value;
+                    continue;
+                };
+                try kept.append(alloc, im);
+            }
+            out.implementations = kept.items;
+            out.annotations = try withoutBodyCells(alloc, m.annotations);
+            const f = for (program.decls) |fd| {
+                if (fd == .@"fn" and std.mem.eql(u8, fd.@"fn".name, body_fn.?)) break fd.@"fn";
+            } else return error.PreludeBodyMissing;
+            // The function's receiver is its first parameter (`value`); the
+            // member's is `self`.
+            const takes_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
+            out.body = if (takes_self and f.params.len > 0 and !std.mem.eql(u8, f.params[0].name, "self"))
+                try @import("../comptime/template_eval.zig").renameIdentifier(alloc, f.body, f.params[0].name, "self")
+            else
+                f.body;
+            out.is_default = true;
+        }
+        d.* = .{ .behavior = .{
+            .name = t.name,
+            .docComment = t.docComment,
+            .comment = t.comment,
+            .moduleComment = t.moduleComment,
+            .annotations = t.annotations,
+            .genericParams = t.genericParams,
+            .fields = t.properties,
+            .methods = methods,
+            .bodyComments = t.bodyComments,
+            .nameLoc = t.loc,
+            .primitiveType = true,
+        } };
+    }
+    var out = program;
+    out.decls = out_decls;
+    return out;
+}
+
+/// Decision 641 — the primitive types that hold their own members, each table
+/// under the type's own name (`dissolvedTypesAsMemberTables`). A static is
+/// called through that name, lowercase like the type: `string.fromCodepoint(65)`,
+/// `array.range(0, 3)`, `bytes.fromUtf8(s)`, `bigint.of(n)`.
+pub const member_table_names = [_][]const u8{ "string", "bool", "bigint", "bytes", "array" };
+
+/// True when `name` is one of `member_table_names`.
+pub fn isMemberTable(name: []const u8) bool {
+    for (member_table_names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+/// True when `name` is a primitive type holding its own members and its
+/// table declares the static `method` (no `self`): `array.range`.
+pub fn isMemberTableStatic(name: []const u8, method: []const u8) bool {
+    if (!isMemberTable(name)) return false;
+    const prog = primitives() orelse return false;
+    for (prog.decls) |d| if (d == .behavior and d.behavior.primitiveType and std.mem.eql(u8, d.behavior.name, name)) {
+        for (d.behavior.methods) |m| if (std.mem.eql(u8, m.name, method)) {
+            return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
+        };
+    };
+    return false;
+}
+
+/// `annotations` with each `.T(body: f)` source left out of an
+/// `#[compiler.external(…)]` (`dissolvedTypesAsMemberTables`: the body is the
+/// member's own).
+fn withoutBodyCells(alloc: std.mem.Allocator, annotations: []ast.Annotation) ![]ast.Annotation {
+    const out = try alloc.dupe(ast.Annotation, annotations);
+    for (out) |*a| {
+        var args: std.ArrayListUnmanaged([]const u8) = .empty;
+        var src: std.ArrayListUnmanaged([]const u8) = .empty;
+        var labels: std.ArrayListUnmanaged([]const u8) = .empty;
+        var locs: std.ArrayListUnmanaged(ast.Loc) = .empty;
+        var dropped = false;
+        for (a.args, 0..) |arg, i| {
+            if (isBodySource(arg)) {
+                dropped = true;
+                continue;
+            }
+            try args.append(alloc, arg);
+            if (a.source_args) |sa| if (i < sa.len) try src.append(alloc, sa[i]);
+            if (i < a.labels.len) try labels.append(alloc, a.labels[i]);
+            if (i < a.argLocs.len) try locs.append(alloc, a.argLocs[i]);
+        }
+        if (!dropped) continue;
+        a.args = args.items;
+        if (a.source_args != null) a.source_args = src.items;
+        if (a.labels.len > 0) a.labels = labels.items;
+        if (a.argLocs.len > 0) a.argLocs = locs.items;
+    }
+    return out;
+}
+
+/// True for a source argument written `.T(body: f)`.
+fn isBodySource(arg: []const u8) bool {
+    const open = std.mem.indexOfScalar(u8, arg, '(') orelse return false;
+    const inner = std.mem.trimStart(u8, arg[open + 1 ..], " \t\n");
+    return std.mem.startsWith(u8, inner, "body") and std.mem.indexOfScalar(u8, inner, ':') != null and
+        std.mem.indexOfScalar(u8, inner, '"') == null;
 }
 
 fn selfAs(r: ast.TypeRef, name: []const u8) ast.TypeRef {
@@ -356,7 +494,7 @@ pub fn foldWidthMembers(alloc: std.mem.Allocator, program: ast.Program) !ast.Pro
     var out_decls = try alloc.dupe(ast.DeclKind, program.decls);
     var folded_any = false;
     for (out_decls, 0..) |d, bi| {
-        if (d != .behavior) continue;
+        if (d != .behavior or d.behavior.primitiveType) continue;
         const b = d.behavior;
         var methods: ?[]ast.BehaviorMethod = null;
         for (b.methods, 0..) |m, mi| {

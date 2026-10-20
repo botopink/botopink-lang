@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
-    var out: Array<i32> = [];
+    var out: array<i32> = [];
     var taking = true;
     items.forEach({ x ->
         if (taking) {
@@ -38,7 +38,7 @@ import {io.terminal.print} from "std";
       "return_type": "i32[]",
       "body": [
         {
-          "source": "var out: Array<i32> = [];"
+          "source": "var out: array<i32> = [];"
         },
         {
           "source": "var taking = true;"

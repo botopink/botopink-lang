@@ -15,7 +15,7 @@
 
 import {async, io.terminal.print} from "std";
 
-type Batch(task: Async<Result<Array<string>, string>>)
+type Batch(task: Async<Result<array<string>, string>>)
 
 async fn fetchUser(id: i32) -> Async<Result<string, string>> {
     if (id <= 0) throw "user " + id.toString() + " does not exist";
@@ -36,7 +36,7 @@ fn launch(a: i32, b: i32) -> Batch {
     return Batch(task: all);
 }
 
-fn show(r: Result<Array<string>, string>) -> void {
+fn show(r: Result<array<string>, string>) -> void {
     case r {
         Ok(names) -> print("ok " + names.join(","));
         Error(e) -> print("error " + e);

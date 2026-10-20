@@ -49,22 +49,31 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
     // method on one of its locals was the bare local call — `unwrapOr(F, D)`,
     // undefined — or a run-time dispatch shim. The body's declared types give
     // each local its kind: `stringSlice0`'s `-> string`, `Array.at`'s `-> ?T`.
-    // The program's own `behavior String` extends std's (01-checker), so its
-    // body reaches std's `startsWith` and `self` is the primitive `string`.
+    // The program's own contracts are implemented for `string` and `array<T>`
+    // (decision 799), so their bodies reach std's `startsWith` and `at`, and
+    // `self` is the primitive.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\behavior String {
+        \\behavior Shout {
+        \\    fn slice(self: Self, start: i32, end: ?i32 = null) -> string;
+        \\
         \\    default fn tailShout(self: Self) -> string {
-        \\        val tail = stringSlice0(self, 1);
+        \\        val tail = self.slice(1);
         \\        return if (tail.startsWith("+")) tail.toUpper() else tail;
         \\    }
         \\}
         \\
-        \\behavior Array<T> {
+        \\StringShout implement Shout for string {};
+        \\
+        \\behavior FirstOr<T> {
+        \\    fn at(self: Self<T>, index: i32) -> ?T;
+        \\
         \\    default fn firstOr(self: Self<T>, d: T) -> T {
         \\        val f = self.at(0);
         \\        return f ?? d;
         \\    }
         \\}
+        \\
+        \\ArrFirstOr<T> implement FirstOr<T> for array<T> {};
         \\
         \\pub fn main() -> void {
         \\    print("a+b".tailShout());
@@ -78,7 +87,7 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
     , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)" });
 }
 
-test "erlang: Array.unique keeps each value's first occurrence" {
+test "erlang: array.unique keeps each value's first occurrence" {
     // C-35: the prelude body is lowered with the kinds its declared types give
     // its locals (`var out: T[]`). Decision 217: every duplicate goes, not only
     // a consecutive one.
@@ -359,20 +368,20 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
     \\pub fn main() -> void {
-    \\    val b = Bytes.fromUtf8("héllo");
+    \\    val b = bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
     \\    print(b.slice(1, 2).toUtf8().isError());
-    \\    val j = Bytes.fromUtf8("ab").concat(Bytes.fromUtf8("cd"));
+    \\    val j = bytes.fromUtf8("ab").concat(bytes.fromUtf8("cd"));
     \\    print(j[2..].toUtf8().unwrapOr("?"));
-    \\    print(j == Bytes.fromUtf8("abcd"));
+    \\    print(j == bytes.fromUtf8("abcd"));
     \\}
     \\
     \\import {io.terminal.print} from "std";
 ;
 const bytes_log = "6\né\ntrue\ncd\ntrue\n";
 
-test "erlang: decision 346 ---- Bytes is a binary, its methods std's templates" {
+test "erlang: decision 346 ---- bytes is a binary, its methods std's templates" {
     try h.assertErlangRunLog(std.testing.allocator, bytes_src, bytes_log, &.{"byte_size("});
 }
 

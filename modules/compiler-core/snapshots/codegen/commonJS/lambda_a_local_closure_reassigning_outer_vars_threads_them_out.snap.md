@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn render(words: Array<string>) -> string {
+fn render(words: array<string>) -> string {
     var out = "";
     var count = 0;
     val emit: fn(string) -> void = { w ->

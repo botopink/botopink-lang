@@ -111,13 +111,13 @@ pub fn hexDecode(s: string) -> Result<string, EncodingError> {
     }
 }
 
-// ── the `Bytes` bridges (decision 346) ───────────────────────────────────────
-// The codecs above over `Bytes`, lossless: an encoder answers the text of the
+// ── the `bytes` bridges (decision 346) ───────────────────────────────────────
+// The codecs above over `bytes`, lossless: an encoder answers the text of the
 // bytes as they are, a decoder the bytes the text spells — with the text
 // codecs' rules (the Node cell's base64: trailing `=` optional, no length of
 // the form 4k + 1, zero bits after the last whole byte; hex either case, an
 // even length) and their `Error` texts. On wasm and at comptime std-wasm
-// answers (`encoding.zig`); a decoder's cell answers `?Bytes`, absent for text
+// answers (`encoding.zig`); a decoder's cell answers `?bytes`, absent for text
 // that is not one, and the public function makes it the `Error`.
 
 // Standard base64 (RFC 4648 §4) of `b`, with `=` padding.
@@ -126,11 +126,11 @@ pub fn hexDecode(s: string) -> Result<string, EncodingError> {
     .Erlang("base64:encode($0)"),
     .Wasm(std: "encoding.base64EncodeBytes"),
 )]
-pub declare fn base64EncodeBytes(b: Bytes) -> string;
+pub declare fn base64EncodeBytes(b: bytes) -> string;
 
 // The bytes the base64 text `s` spells; anything `base64Decode` refuses is
 // the same `Error`.
-pub fn base64DecodeBytes(s: string) -> Result<Bytes, EncodingError> {
+pub fn base64DecodeBytes(s: string) -> Result<bytes, EncodingError> {
     val b = base64BytesOf(s);
     if (b == null) throw EncodingError.NotBase64;
     return b;
@@ -141,7 +141,7 @@ pub fn base64DecodeBytes(s: string) -> Result<Bytes, EncodingError> {
     .Erlang("""(fun(__S) -> __T = string:trim(__S, trailing, [61]), __N = byte_size(__T), case (__N rem 4 =/= 1) andalso lists:all(fun(__C) -> ((__C >= 65) andalso (__C =< 90)) orelse ((__C >= 97) andalso (__C =< 122)) orelse ((__C >= 48) andalso (__C =< 57)) orelse (__C =:= 43) orelse (__C =:= 47) end, binary_to_list(__T)) of false -> undefined; true -> __P = <<__T/binary, (binary:copy(<<61>>, (4 - __N rem 4) rem 4))/binary>>, __B = base64:decode(__P), case base64:encode(__B) =:= __P of true -> __B; false -> undefined end end end)($0)"""),
     .Wasm(std: "encoding.base64DecodeBytes"),
 )]
-declare fn base64BytesOf(s: string) -> ?Bytes;
+declare fn base64BytesOf(s: string) -> ?bytes;
 
 // Lowercase hex of `b`: the bytes `0x68 0x69` are `6869`.
 #[compiler.external(
@@ -149,11 +149,11 @@ declare fn base64BytesOf(s: string) -> ?Bytes;
     .Erlang("""string:lowercase(binary:encode_hex($0))"""),
     .Wasm(std: "encoding.hexEncodeBytes"),
 )]
-pub declare fn hexEncodeBytes(b: Bytes) -> string;
+pub declare fn hexEncodeBytes(b: bytes) -> string;
 
 // The bytes the hex text `s` spells, either case; an odd length or a non-hex
 // digit is `hexDecode`'s `Error`.
-pub fn hexDecodeBytes(s: string) -> Result<Bytes, EncodingError> {
+pub fn hexDecodeBytes(s: string) -> Result<bytes, EncodingError> {
     val b = hexBytesOf(s);
     if (b == null) throw EncodingError.NotHex;
     return b;
@@ -164,7 +164,7 @@ pub fn hexDecodeBytes(s: string) -> Result<Bytes, EncodingError> {
     .Erlang("""(fun(__H) -> case (byte_size(__H) rem 2 =:= 0) andalso lists:all(fun(__C) -> ((__C >= 48) andalso (__C =< 57)) orelse ((__C >= 65) andalso (__C =< 70)) orelse ((__C >= 97) andalso (__C =< 102)) end, binary_to_list(__H)) of true -> binary:decode_hex(__H); false -> undefined end end)($0)"""),
     .Wasm(std: "encoding.hexDecodeBytes"),
 )]
-declare fn hexBytesOf(s: string) -> ?Bytes;
+declare fn hexBytesOf(s: string) -> ?bytes;
 
 // RFC 3986 percent-encoding of a component: every byte of the UTF-8 form
 // outside the unreserved set `A-Z a-z 0-9 - . _ ~` becomes `%XX`, uppercase.
@@ -199,7 +199,7 @@ pub fn percentDecode(s: string) -> Result<string, EncodingError> {
 // `percentEncode(name)=percentEncode(value)`, joined with `&`.
 // `querystring.stringify` writes the same text and refuses a control
 // character, which this does not.
-pub fn formStringify(pairs: Array<#(string, string)>) -> string {
+pub fn formStringify(pairs: array<#(string, string)>) -> string {
     return pairs
         .map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") })
         .join("&");
@@ -212,7 +212,7 @@ pub fn formStringify(pairs: Array<#(string, string)>) -> string {
 // throw, and a malformed pair is still a pair. Empty fields (`a=1&&b=2`)
 // are dropped. `querystring.parseForm` is the refusing reader: a malformed
 // escape or a control character is its `Error`, not a raw field.
-pub fn formParse(q: string) -> Array<#(string, string)> {
+pub fn formParse(q: string) -> array<#(string, string)> {
     val fields = q.split("&").filter({ f -> f != "" });
     return fields.map({ f -> formField(f) });
 }
@@ -237,7 +237,7 @@ fn formDecode(s: string) -> string {
 // answer what the Node cell answers: a string's bytes are its UTF-8, a decoded
 // byte string is read back as Node's `toString('utf8')` reads it (WHATWG UTF-8:
 // each maximal ill-formed subsequence one U+FFFD), and the text is built from
-// code points with `String.fromCodepoint` (decision 262).
+// code points with `string.fromCodepoint` (decision 262).
 
 fn base64EncodeBody(s: string) -> string {
     return base64Text(utf8Of(s));
@@ -263,7 +263,7 @@ fn base64DecodeBody(b: string) -> Result<string, HostError> {
         n = n - 1;
     }
     if (n % 4 == 1) throw refused("not base64");
-    var sextets: Array<i32> = [];
+    var sextets: array<i32> = [];
     var i = 0;
     while (i < n) {
         val v = base64Value(cs.at(i) ?? "");
@@ -274,7 +274,7 @@ fn base64DecodeBody(b: string) -> Result<string, HostError> {
     val last = sextets.at(n - 1) ?? 0;
     if (n % 4 == 2 && last % 16 != 0) throw refused("not base64");
     if (n % 4 == 3 && last % 4 != 0) throw refused("not base64");
-    var bytes: Array<i32> = [];
+    var bytes: array<i32> = [];
     var g = 0;
     while (g < n) {
         val s0 = sextets.at(g) ?? 0;
@@ -296,7 +296,7 @@ fn hexEncodeBody(s: string) -> string {
 fn hexDecodeBody(s: string) -> Result<string, HostError> {
     val cs = s.chars();
     if (cs.length % 2 != 0) throw refused("not hex");
-    var bytes: Array<i32> = [];
+    var bytes: array<i32> = [];
     var i = 0;
     while (i < cs.length) {
         val hi = hexValue(cs.at(i) ?? "");
@@ -332,7 +332,7 @@ fn percentEncodeBody(s: string) -> string {
 // nothing past U+10FFFF) — anything else is the `Error`. Other text passes.
 fn percentDecodeBody(s: string) -> Result<string, HostError> {
     val cs = s.chars();
-    var out: Array<string> = [];
+    var out: array<string> = [];
     var i = 0;
     while (i < cs.length) {
         val c = cs.at(i) ?? "";
@@ -343,7 +343,7 @@ fn percentDecodeBody(s: string) -> Result<string, HostError> {
             val b = escapedByte(cs, i);
             if (b < 0) throw refused("not percent-encoded");
             if (b < 128) {
-                out.push(String.fromCodepoint(b));
+                out.push(string.fromCodepoint(b));
                 i = i + 3;
             } else {
                 val len = if (b >= 192 && b < 224)
@@ -377,7 +377,7 @@ fn percentDecodeBody(s: string) -> Result<string, HostError> {
                     65536;
                 if (cp < least || cp > 1114111 || (cp >= 55296 && cp <= 57343))
                     throw refused("not percent-encoded");
-                out.push(String.fromCodepoint(cp));
+                out.push(string.fromCodepoint(cp));
                 i = i + 3 * len;
             }
         }
@@ -387,7 +387,7 @@ fn percentDecodeBody(s: string) -> Result<string, HostError> {
 
 // The byte `%XX` at index `i` spells, or -1 when `i` holds no `%` followed by
 // two hex digits.
-fn escapedByte(cs: Array<string>, i: i32) -> i32 {
+fn escapedByte(cs: array<string>, i: i32) -> i32 {
     if (cs.at(i) ?? "" != "%") return -1;
     val hi = hexValue(cs.at(i + 1) ?? "");
     val lo = hexValue(cs.at(i + 2) ?? "");
@@ -407,8 +407,8 @@ fn isUnreserved(cp: i32) -> bool {
 
 // ── bytes and text ──
 
-fn utf8Of(s: string) -> Array<i32> {
-    val parts: Array<Array<i32>> = s
+fn utf8Of(s: string) -> array<i32> {
+    val parts: array<array<i32>> = s
         .chars()
         .map({ c ->
             utf8Bytes(c.charCodeAt(0))
@@ -416,7 +416,7 @@ fn utf8Of(s: string) -> Array<i32> {
     return parts.flatten();
 }
 
-fn utf8Bytes(cp: i32) -> Array<i32> {
+fn utf8Bytes(cp: i32) -> array<i32> {
     if (cp < 128) return [cp];
     if (cp < 2048) return [192 + cp / 64, 128 + cp % 64];
     if (cp < 65536)
@@ -433,8 +433,8 @@ fn utf8Bytes(cp: i32) -> Array<i32> {
 // `toString('utf8')`) reads them: a byte that cannot start a sequence, a
 // sequence cut short, an overlong or surrogate form, and a sequence past
 // U+10FFFF each answer U+FFFD for their maximal ill-formed subsequence.
-fn textOfUtf8(bytes: Array<i32>) -> string {
-    var out: Array<string> = [];
+fn textOfUtf8(bytes: array<i32>) -> string {
+    var out: array<string> = [];
     var need = 0;
     var seen = 0;
     var cp = 0;
@@ -444,7 +444,7 @@ fn textOfUtf8(bytes: Array<i32>) -> string {
     while (i < bytes.length) {
         val b = bytes.at(i) ?? 0;
         if (need == 0) {
-            if (b < 128) out.push(String.fromCodepoint(b)) else if (b >= 194
+            if (b < 128) out.push(string.fromCodepoint(b)) else if (b >= 194
                 && b <= 223) {
                 need = 1;
                 cp = b - 192;
@@ -458,7 +458,7 @@ fn textOfUtf8(bytes: Array<i32>) -> string {
                 if (b == 244) upper = 143;
                 need = 3;
                 cp = b - 240;
-            } else out.push(String.fromCodepoint(65533));
+            } else out.push(string.fromCodepoint(65533));
             i = i + 1;
         } else if (b < lower || b > upper) {
             need = 0;
@@ -466,14 +466,14 @@ fn textOfUtf8(bytes: Array<i32>) -> string {
             cp = 0;
             lower = 128;
             upper = 191;
-            out.push(String.fromCodepoint(65533));
+            out.push(string.fromCodepoint(65533));
         } else {
             lower = 128;
             upper = 191;
             cp = cp * 64 + (b - 128);
             seen = seen + 1;
             if (seen == need) {
-                out.push(String.fromCodepoint(cp));
+                out.push(string.fromCodepoint(cp));
                 need = 0;
                 seen = 0;
                 cp = 0;
@@ -481,13 +481,13 @@ fn textOfUtf8(bytes: Array<i32>) -> string {
             i = i + 1;
         }
     }
-    if (need != 0) out.push(String.fromCodepoint(65533));
+    if (need != 0) out.push(string.fromCodepoint(65533));
     return out.join("");
 }
 
-fn base64Text(bytes: Array<i32>) -> string {
+fn base64Text(bytes: array<i32>) -> string {
     val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    var out: Array<string> = [];
+    var out: array<string> = [];
     var g = 0;
     while (g < bytes.length) {
         val n = bytes.length - g;

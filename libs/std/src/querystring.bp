@@ -96,8 +96,8 @@ fn decodeFields(
     fields: string[],
     i: i32,
     form: bool,
-    acc: Array<#(string, string)>,
-) -> Result<Array<#(string, string)>, string> {
+    acc: array<#(string, string)>,
+) -> Result<array<#(string, string)>, string> {
     if (i >= fields.length) return acc;
     val pair = try decodeField(fields.at(i) ?? "", form);
     return try decodeFields(fields, i + 1, form, acc.append([pair]));
@@ -106,9 +106,9 @@ fn decodeFields(
 fn decodeBody(
     body: string,
     form: bool,
-) -> Result<Array<#(string, string)>, string> {
+) -> Result<array<#(string, string)>, string> {
     val fields = body.split("&").filter({ chunk -> chunk != "" });
-    val none: Array<#(string, string)> = [];
+    val none: array<#(string, string)> = [];
     return try decodeFields(fields, 0, form, none);
 }
 
@@ -118,14 +118,14 @@ fn decodeBody(
 // the caller). `+` is a `+` here — `parseForm` is the flavour that reads it
 // as a space. A malformed escape, a non-UTF-8 escape sequence or a control
 // character is an `Error`.
-pub fn parse(query: string) -> Result<Array<#(string, string)>, string> {
+pub fn parse(query: string) -> Result<array<#(string, string)>, string> {
     return try decodeBody(stripPrefix(query), false);
 }
 
 // Parse an `application/x-www-form-urlencoded` body: `parse`'s rules with
 // `+` read as a space before decoding. A form body is not a URL, so a
 // leading `?` is data, not stripped.
-pub fn parseForm(body: string) -> Result<Array<#(string, string)>, string> {
+pub fn parseForm(body: string) -> Result<array<#(string, string)>, string> {
     return try decodeBody(body, true);
 }
 
@@ -144,7 +144,7 @@ fn hasControl(s: string) -> bool {
 // reads back through `parse` and `parseForm` alike), joined with `&`. Empty
 // input is `""`; there is no leading `?`. A control character in a name or a
 // value is an `Error` — `parse` would refuse the text it became.
-pub fn stringify(pairs: Array<#(string, string)>) -> Result<string, string> {
+pub fn stringify(pairs: array<#(string, string)>) -> Result<string, string> {
     val bad = pairs.filter({ p -> hasControl(p._0) || hasControl(p._1) });
     if (bad.length > 0) throw "querystring.stringify: a control character";
     return pairs
@@ -154,8 +154,8 @@ pub fn stringify(pairs: Array<#(string, string)>) -> Result<string, string> {
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
-fn pairsOf(r: Result<Array<#(string, string)>, string>) -> string {
-    val none: Array<#(string, string)> = [];
+fn pairsOf(r: Result<array<#(string, string)>, string>) -> string {
+    val none: array<#(string, string)> = [];
     return r.unwrapOr(none).map({ p -> [p._0, "=>", p._1].join("") }).join("|");
 }
 
@@ -244,7 +244,7 @@ test "querystring.stringify percent-encodes names and values" {
     assert stringify([#("a b", "c;d"), #("k=x", "&+%")]).unwrapOr("?")
         == "a%20b=c%3Bd&k%3Dx=%26%2B%25";
     assert stringify([#("-._~", "")]).unwrapOr("?") == "-._~=";
-    val none: Array<#(string, string)> = [];
+    val none: array<#(string, string)> = [];
     assert stringify(none).unwrapOr("?") == "";
 }
 

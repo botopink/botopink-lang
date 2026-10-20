@@ -928,7 +928,7 @@ test "infer: inherent record method is always available" {
 test "infer: an if whose branches end in assignments of different types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
-        \\    var out: Array<i32> = [];
+        \\    var out: array<i32> = [];
         \\    var taking = true;
         \\    items.forEach({ x ->
         \\        if (taking) {

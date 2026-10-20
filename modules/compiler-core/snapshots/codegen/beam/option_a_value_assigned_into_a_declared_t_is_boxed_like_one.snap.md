@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-type Box(items: Array<i32>) {
+type Box(items: array<i32>) {
     fn total(self: Self) -> i32 {
         var sum = 0;
         self.items.forEach({ n -> sum = sum + n });
         return sum;
     }
     fn isBig(self: Self) -> bool { return self.items.length > 1; }
-    fn doubled(self: Self) -> Array<i32> { return self.items.map({ n -> n * 2 }); }
+    fn doubled(self: Self) -> array<i32> { return self.items.map({ n -> n * 2 }); }
     fn label(self: Self) -> string { return "box"; }
 }
 fn main() -> void {

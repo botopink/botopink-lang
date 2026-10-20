@@ -13,7 +13,7 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__Bool_exclusiveOr', 2}, {'__bp_priv__Bool_nand', 2}, {'__bp_priv__Bool_nor', 2}, {'__bp_priv__main', 0}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {'__bp_priv__bool_exclusiveOr', 2}, {'__bp_priv__bool_nand', 2}, {'__bp_priv__bool_nor', 2}, {'__bp_priv__main', 0}]}.
 {attributes, []}.
 {labels, 62}.
 
@@ -80,10 +80,10 @@ import {io.terminal.print} from "std";
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, 'Bool_nor', 2, 39}.
+{function, 'bool_nor', 2, 39}.
   {label, 38}.
     {line, [{location, "test@main.erl", 4}]}.
-    {func_info, {atom, test@main}, {atom, 'Bool_nor'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'bool_nor'}, 2}.
   {label, 39}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -104,10 +104,10 @@ import {io.terminal.print} from "std";
     {deallocate, 2}.
     return.
 
-{function, 'Bool_nand', 2, 41}.
+{function, 'bool_nand', 2, 41}.
   {label, 40}.
     {line, [{location, "test@main.erl", 5}]}.
-    {func_info, {atom, test@main}, {atom, 'Bool_nand'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'bool_nand'}, 2}.
   {label, 41}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -128,10 +128,10 @@ import {io.terminal.print} from "std";
     {deallocate, 2}.
     return.
 
-{function, 'Bool_exclusiveOr', 2, 43}.
+{function, 'bool_exclusiveOr', 2, 43}.
   {label, 42}.
     {line, [{location, "test@main.erl", 6}]}.
-    {func_info, {atom, test@main}, {atom, 'Bool_exclusiveOr'}, 2}.
+    {func_info, {atom, test@main}, {atom, 'bool_exclusiveOr'}, 2}.
   {label, 43}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -146,24 +146,24 @@ import {io.terminal.print} from "std";
     {deallocate, 2}.
     return.
 
-{function, '__bp_priv__Bool_exclusiveOr', 2, 55}.
+{function, '__bp_priv__bool_exclusiveOr', 2, 55}.
   {label, 54}.
     {line, [{location, "test@main.erl", 7}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_exclusiveOr'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__bool_exclusiveOr'}, 2}.
   {label, 55}.
     {call_only, 2, {f, 43}}.
 
-{function, '__bp_priv__Bool_nand', 2, 57}.
+{function, '__bp_priv__bool_nand', 2, 57}.
   {label, 56}.
     {line, [{location, "test@main.erl", 8}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_nand'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__bool_nand'}, 2}.
   {label, 57}.
     {call_only, 2, {f, 41}}.
 
-{function, '__bp_priv__Bool_nor', 2, 59}.
+{function, '__bp_priv__bool_nor', 2, 59}.
   {label, 58}.
     {line, [{location, "test@main.erl", 9}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__Bool_nor'}, 2}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__bool_nor'}, 2}.
   {label, 59}.
     {call_only, 2, {f, 39}}.
 

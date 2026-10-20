@@ -366,11 +366,11 @@ fn sliceAt(source: []const u8, range: proto.Range) []const u8 {
 /// methods that reproduce R2–R6.
 const member_source =
     \\pub type Query(
-    \\    items: Array<i32>) {
+    \\    items: array<i32>) {
     \\    pub fn reverse(self: Self) -> Query {
     \\        return Query(items: self.items.reverse());
     \\    }
-    \\    pub fn all(self: Self) -> Array<i32> {
+    \\    pub fn all(self: Self) -> array<i32> {
     \\        return self.items;
     \\    }
     \\    pub fn each(self: Self) -> void {
@@ -456,18 +456,18 @@ test "definition: self.field jumps to the field declaration (R4)" {
 /// `libs/erika/src/erika.bp` actually declares them.
 const generic_source =
     \\pub type Query<T>(
-    \\    items: Array<T>) {
+    \\    items: array<T>) {
     \\    pub fn reverse(self: Self<T>) -> Query<T> {
     \\        return Query(items: self.items.reverse());
     \\    }
-    \\    pub fn all(self: Self<T>) -> Array<T> {
+    \\    pub fn all(self: Self<T>) -> array<T> {
     \\        return self.items;
     \\    }
     \\}
     \\val q = Query(items: [1, 2, 3]);
 ;
 
-test "definition: generic record — builtin method on Array<T> field jumps to primitives (R2 generic)" {
+test "definition: generic record — builtin method on array<T> field jumps to primitives (R2 generic)" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa, generic_source);
     defer c.deinit(gpa);
@@ -488,7 +488,7 @@ test "definition: generic record — builtin method on Array<T> field jumps to p
     try std.testing.expectEqualStrings("reverse", sliceAt(td.?.builtin.source, td.?.builtin.range));
 }
 
-test "definition: generic record — self.field on Array<T> field jumps to the field decl (R4 generic)" {
+test "definition: generic record — self.field on array<T> field jumps to the field decl (R4 generic)" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa, generic_source);
     defer c.deinit(gpa);

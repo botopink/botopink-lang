@@ -9,7 +9,7 @@ fn first3() -> string {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'__bp_priv__String_slice', 3}, {'__bp_priv__first3', 0}]}.
+{exports, [{'__bp_priv__string_slice', 3}, {'__bp_priv__first3', 0}]}.
 {attributes, []}.
 {labels, 50}.
 
@@ -27,10 +27,10 @@ fn first3() -> string {
     {move, {integer, 0}, {x, 1}}.
     {call_last, 3, {f, 5}, 1}.
 
-{function, 'String_slice', 3, 5}.
+{function, 'string_slice', 3, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, 'String_slice'}, 3}.
+    {func_info, {atom, test@main}, {atom, 'string_slice'}, 3}.
   {label, 5}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -47,10 +47,10 @@ fn first3() -> string {
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 30}, 3}.
 
-{function, '__bp_priv__String_slice', 3, 47}.
+{function, '__bp_priv__string_slice', 3, 47}.
   {label, 46}.
     {line, [{location, "test@main.erl", 3}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__String_slice'}, 3}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__string_slice'}, 3}.
   {label, 47}.
     {call_only, 3, {f, 5}}.
 

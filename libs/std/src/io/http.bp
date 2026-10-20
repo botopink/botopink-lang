@@ -75,7 +75,7 @@ pub type Request(
     method: Method,
     url: string,
     headers: Header[] = [],
-    body: ?Bytes = null,
+    body: ?bytes = null,
 )
 
 // Every way a `fetch` fails (decision 623).
@@ -106,7 +106,7 @@ pub type HttpError {
     .JavaScript("""((__m, __u, __n, __v, __hb, __b) => globalThis.fetch(__u, { method: __m, headers: Object.fromEntries(__n.map((__k, __i) => [__k, __v[__i]])), body: (__hb && __m !== "GET" && __m !== "HEAD") ? __b : undefined }).then(__r => __r.text().then(__t => ({ status: __r.status, body: __t }))))($0, $1, $2, $3, $4, $5)""", result: true),
     .Erlang("""(fun(__M, __U, __Ns, __Vs, __Hb, __B) -> application:ensure_all_started(inets), application:ensure_all_started(ssl), __Hs = lists:zipwith(fun(__N, __V) -> {binary_to_list(__N), binary_to_list(__V)} end, __Ns, __Vs), __A = list_to_atom(string:lowercase(binary_to_list(__M))), __Rq = case __Hb andalso lists:member(__A, [post, put, patch]) of true -> __Ct = case [__C || {__K, __C} <- __Hs, string:lowercase(__K) =:= "content-type"] of [__C1 | _] -> __C1; [] -> "application/octet-stream" end, {binary_to_list(__U), __Hs, __Ct, __B}; false -> {binary_to_list(__U), __Hs} end, case httpc:request(__A, __Rq, [], []) of {ok, {{_, __Code, _}, _, __Rb}} -> {ok, #{status => __Code, body => iolist_to_binary(__Rb)}}; {error, __R} -> {error, __R} end end)($0, $1, $2, $3, $4, $5)""", result: true),
 )]
-declare fn fetchHost(method: string, url: string, names: string[], values: string[], hasBody: bool, body: Bytes) -> Async<Result<Response, HostError>>;
+declare fn fetchHost(method: string, url: string, names: string[], values: string[], hasBody: bool, body: bytes) -> Async<Result<Response, HostError>>;
 
 // A host text that names a timeout is `Timeout`, any other `Network`.
 fn hostFailure(e: HostError) -> HttpError {
@@ -124,7 +124,7 @@ pub async fn fetch(req: Request) -> Async<Result<Response, HttpError>> {
     val names = req.headers.map({ h -> h.name });
     val values = req.headers.map({ h -> h.value });
     val r = await fetchHost(req.method.verb(), req.url, names, values, req.body
-        != null, req.body ?? Bytes.fromUtf8(""));
+        != null, req.body ?? bytes.fromUtf8(""));
     return case r {
         Ok(resp) -> resp;
         Error(e) -> throw hostFailure(e);
