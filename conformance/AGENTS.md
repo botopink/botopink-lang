@@ -496,7 +496,7 @@ because commonJS emits `Dict(5)` without `new` for an imported record constructo
 namespace declaring the same name — `04-js`'s row),
 `modules/decisions-taken/aliased_imports_from_two_sources-170/refused/src/cases/std_namespace_signature_names_shadowed_type` (a namespace call whose signature names the
 shadowed std type) and `modules/own/cells/own_type_beside_std_type_import` (a type of this module beside an
-aliased import of a same-named type is `import-name-collision`, question B-23-a). Each
+aliased import of a same-named std type — refused then, two types since decision 603's std half). Each
 was accepted wrongly or refused with the wrong type by the parent binary.
 Decision 310 (144 B-23) turns `modules/decisions-taken/aliased_same_named_types-310/run/src/cases/import_two_types_one_name` and
 `modules/decisions-taken/aliased_same_named_types-310/cells/import_same_type_name_two_packages_one_aliased` into accept cells and adds

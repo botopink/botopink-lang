@@ -363,9 +363,8 @@ two as well (`import {collections.Dict as D} from "std";` beside `import
 {kit.Dict as KitDict};`).
 Without an alias the second item binds the name again (`import-name-collision`,
 decision 170); a type this module declares beside an aliased import of a
-same-named type is two types (decision 603), the alias the other module's type here
-(a std type's alias is not one: `own_type_beside_std_type_import` stays
-refused). An activation cannot be
+same-named type is two types (decision 603), the alias the other module's type here,
+a std type's included (`own_type_beside_std_type_import`). An activation cannot be
 renamed (`import-alias-on-activation`). A leaf that names a folder is a namespace of
 its submodules (decision 110): after `import {io} from "std"`, `io.fs.readText(p)`
 calls `io/fs`'s `readText` — only the modules the program reaches are imported —

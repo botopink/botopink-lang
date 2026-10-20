@@ -3312,7 +3312,9 @@ const local_module_marker: []const u8 = "\x00local";
 /// module (`Env.renamedTypeImports`). A name this module declares itself
 /// counts as one of the two (decision 603): a type of this module beside an
 /// aliased import of a same-named type is two types, the import held under its
-/// alias. An un-aliased import beside it, and an un-aliased pair (decision 170),
+/// alias — a std leaf too (put in `Env.renamedTypeImports` here, registered by
+/// `infer.preRegisterStdImportAliases`). An un-aliased import beside it, and an
+/// un-aliased pair (decision 170),
 /// stay `import-name-collision` — `noteExplicitTypeNames` refuses both.
 fn contestedTypeNames(
     env: *envMod.Env,
@@ -3350,10 +3352,20 @@ fn contestedTypeNames(
             for (u.imports) |imp| {
                 if (!imp.isQualified()) continue;
                 const name = imp.leaf();
-                if (locals.contains(name)) continue;
                 const path = try std.mem.concat(env.arena, u8, &.{ "std/", try imp.prefixPath(env.arena) });
                 const d = (typeDeclRegistry.get(path) orelse continue).get(name) orelse continue;
                 if (d != .type_) continue;
+                // Decision 603 — beside a type of this module the aliased std
+                // item is the one held under its alias
+                // (`infer.preRegisterStdImportAliases`); un-aliased, it stays
+                // `import-name-collision` (`noteExplicitTypeNames`).
+                if (locals.contains(name)) {
+                    if (imp.alias) |al| if (!std.mem.eql(u8, al, name)) {
+                        try out.put(env.arena, name, {});
+                        try env.renamedTypeImports.put(env.arena, al, .{ .name = name, .module = path });
+                    };
+                    continue;
+                }
                 const gop = try first.getOrPut(env.arena, name);
                 if (!gop.found_existing) {
                     gop.value_ptr.* = path;

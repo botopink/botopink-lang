@@ -264,6 +264,12 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                         else => continue,
                     };
                     if (!std.mem.eql(u8, type_name, leaf)) continue;
+                    // Decision 603 — registered under its alias already
+                    // (`preRegisterStdImportAliases`).
+                    if (imp.alias) |al| if (env.renamedTypeImports.contains(al)) {
+                        bound_type = true;
+                        break;
+                    };
                     // The types its fields and methods name come along as
                     // types only, as for a leaf import of the program's own
                     // module (`registerImportedTypeClosure`).
@@ -368,6 +374,20 @@ pub fn preRegisterStdImportAliases(env: *Env, program: ast.Program) InferError!v
                     else => continue,
                 };
                 if (!std.mem.eql(u8, type_name, imp.leaf())) continue;
+                // Decision 603 — beside this module's type of the name the
+                // alias is std's type's identity here, as decision 310's
+                // renamed import: registered under it, its signatures with it.
+                if (env.renamedTypeImports.contains(al) and d == .type_) {
+                    var module_decls = std.StringHashMap(ast.DeclKind).init(env.arena);
+                    for (decls) |md| switch (md) {
+                        .type_ => |t| try module_decls.put(t.name, md),
+                        .typeAlias => |a| try module_decls.put(a.name, md),
+                        else => {},
+                    };
+                    registerImportedTypeClosure(env, module_decls, d) catch |err| return locateInStd(env, err, mod_name, imp);
+                    registerRenamedImportedType(env, d.type_, al) catch |err| return locateInStd(env, err, mod_name, imp);
+                    break;
+                }
                 try registerImportedTypeAlias(env, d, al, imp.loc);
                 break;
             };
@@ -416,16 +436,16 @@ fn locateInStd(env: *Env, err: InferError, mod_name: []const u8, imp: ast.Import
 /// `env.explicitTypeNames`, before any std import is marked.
 ///
 /// Types are nominal by name in the checker, so one module holds one type of
-/// a name: a `type Dict(…)` beside `import {collections.Dict as D} from
-/// "std"`, two un-aliased imports of two modules' `Policy` (decision 170), a
+/// a name: a `type Dict(…)` beside `import {collections.Dict} from "std"`,
+/// two un-aliased imports of two modules' `Policy` (decision 170), a
 /// type of this module beside an un-aliased import of a same-named type.
 /// Each used to resolve silently to whichever registered
 /// last; the second source is `import-name-collision` at its import item,
 /// naming both. Two imported types of one declared name each under an alias
 /// (`import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`, or one
 /// of them un-aliased) are two types (decision 310), and so is an aliased
-/// import beside a type of this module (decision 603): the alias is the type's
-/// identity here (`Env.renamedTypeImports`). (Two functions of one name under
+/// import beside a type of this module (decision 603), a std type's included:
+/// the alias is the type's identity here (`Env.renamedTypeImports`). (Two functions of one name under
 /// two aliases are legal too — a function is bound by its local name.)
 fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
     // Declared name → where it comes from (a module path, or "" for this module).
@@ -452,6 +472,9 @@ fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
                     // in under its declared name.
                     if (!imp.isQualified()) continue;
                     if (!stdModuleDeclaresType(env, prefix, leaf)) continue;
+                    // Decision 603 — held under its alias beside this
+                    // module's type of the name: two types.
+                    if (imp.alias) |al| if (env.renamedTypeImports.contains(al)) continue;
                     try noteTypeSource(env, &sources, leaf, .{ .label = try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}) }, imp);
                     continue;
                 }

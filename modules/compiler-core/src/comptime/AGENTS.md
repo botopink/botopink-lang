@@ -2354,16 +2354,16 @@ Types are nominal by name in the checker, so one module holds one type of a name
 `noteExplicitTypeNames` (both program entries, before any import is marked) collects the names this
 module declares (`type`, a type alias, `behavior`) or imports by name from a module that is not std
 (the item's leaf — `import {kit.store.Dict as OwnDict}` names `Dict`) into `Env.explicitTypeNames`,
-and refuses a second SOURCE of one type name — a `type Dict(…)` beside `import {collections.Dict as
-D} from "std"`, an un-aliased import beside a same-named type of this module — as `import-name-collision` at the second import item, naming both (each used to resolve
-silently to whichever registered last; `modules/own/cells/own_type_beside_std_type_import`). Two FUNCTIONS of
+and refuses a second SOURCE of one type name — a `type Dict(…)` beside `import {collections.Dict}
+from "std"`, an un-aliased import beside a same-named type of this module — as `import-name-collision` at the second import item, naming both (each used to resolve
+silently to whichever registered last). Two FUNCTIONS of
 one name under two aliases stay legal: a function is bound by its local name.
 
 **Decision 310 — two imported types of one declared name are two types.** `comptime.zig`
 `contestedTypeNames` finds the declared names two type import items of the module resolve to in
 two different modules — a std leaf (`collections.Dict [as D]`) counts and keeps its declared name,
 so only the other module's aliased item is renamed (a name the module declares itself is left out:
-decision 603: a name the module declares itself counts as the other source, so its aliased import is renamed too; a std leaf beside a declared type stays refused); `resolveImports` registers each ALIASED item of such a name under its alias
+decision 603: a name the module declares itself counts as the other source, so its aliased import is renamed too — a std leaf included: `import {collections.Dict as D} from "std"` beside `type Dict(…)` puts `D` in `Env.renamedTypeImports` (module `std/collections`) and `infer.preRegisterStdImportAliases` registers std's declaration under it in place of decision 110's checker alias, `modules/own/cells/own_type_beside_std_type_import`); `resolveImports` registers each ALIASED item of such a name under its alias
 (`Env.renamedTypeImports`, `infer.registerRenamedImportedType` → `type_identity.zig` `renameDecl`:
 the declaration named the alias, printed as declared, its own name in its signatures renamed), binds
 no checker alias, and renames the types of every value it imports from another module
