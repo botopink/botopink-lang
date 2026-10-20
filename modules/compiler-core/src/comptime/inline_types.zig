@@ -236,7 +236,7 @@ test "inline types: a parameter's inline type becomes a record of the module, an
         \\fn link(props: type(href: string, label: string = "x")) -> string {
         \\    return props.href;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = link(href: "/a");
         \\}
     ;

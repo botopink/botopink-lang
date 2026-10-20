@@ -25,7 +25,7 @@ fn nickname(present: bool) -> ?string {
     return if (present) "bo" else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(primary(true)?.(1) ?? backup(true)?.(1) ?? -1);
     print(primary(false)?.(1) ?? backup(true)?.(1) ?? -1);
     print(primary(false)?.(1) ?? backup(false)?.(1) ?? -1);

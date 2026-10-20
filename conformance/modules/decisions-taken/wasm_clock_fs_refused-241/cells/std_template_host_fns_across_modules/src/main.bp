@@ -17,7 +17,7 @@ import {io, io.terminal.print} from "std";
 import {io.fs, io.os} from "std";
 import {encoding, hash, json, regex} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(fs.exists("/"));
     print(io.fs.exists("/"));
     print(fs.exists("/no/such/path/for/c03"));

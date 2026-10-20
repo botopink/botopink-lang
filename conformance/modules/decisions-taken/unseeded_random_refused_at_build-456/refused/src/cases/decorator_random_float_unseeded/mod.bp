@@ -7,7 +7,7 @@
 
 import {io, compiler, io.terminal.print} from "std";
 
-fn drawn(syntax decl: unknown) {
+fn drawn(syntax decl: unknown) -> void {
     val x = io.random.float();
     @emit("pub fn label() -> string { return \""
         + compiler.name(decl)!
@@ -17,6 +17,6 @@ fn drawn(syntax decl: unknown) {
 #[drawn]
 type Point(x: i32, y: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(label());
 }

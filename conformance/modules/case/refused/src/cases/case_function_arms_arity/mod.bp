@@ -15,7 +15,7 @@ fn two(x: string, y: string) -> string {
     return x + y;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val g = case Mode.Two {
         One -> one;
         Two -> two;

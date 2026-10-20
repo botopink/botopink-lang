@@ -32,7 +32,7 @@ fn welcome(g: Greeter) -> string {
     return g.greet("param");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val g = makeGreeter();
     print(g.greet("local"));
     val a: Greeter = makeGreeter();

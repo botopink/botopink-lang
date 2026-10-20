@@ -5,7 +5,7 @@
 
 import {io.terminal.print, failure.panic} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val text = "boom";
     print("before");
     panic(text);

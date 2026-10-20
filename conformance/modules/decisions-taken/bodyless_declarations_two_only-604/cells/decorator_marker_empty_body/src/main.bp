@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-fn registered(syntax decl: unknown) {}
+fn registered(syntax decl: unknown) -> void {}
 
 #[registered]
 pub fn first() -> i32 {
@@ -15,7 +15,7 @@ pub fn second() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: registered).map({ d -> d.name }).join(","));
     print(first() + second());
 }

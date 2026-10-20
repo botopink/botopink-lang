@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var total = 0;
     [1, 2, 3].forEach({ x ->
         total = total + x;

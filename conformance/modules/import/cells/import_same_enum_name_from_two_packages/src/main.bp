@@ -10,7 +10,7 @@ import {stop, blink, describe} from "traffic";
 import {quiet, loud, level.level} from "audio";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(stop()));
     print(describe(blink(3)));
     print(level(quiet()));

@@ -2,11 +2,11 @@
 ```botopink
 type Contador(
     n: i32) {
-    fn atual(self: Self) {
+    fn atual(self: Self) -> i32 {
         return self.n;
     }
 }
-fn main() {
+fn main() -> void {
     val c = Contador(5);
     print(c.atual());
 }

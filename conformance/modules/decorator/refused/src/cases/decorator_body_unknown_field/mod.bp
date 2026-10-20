@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-fn tagged(syntax decl: unknown) {
+fn tagged(syntax decl: unknown) -> void {
     val n = decl.nope;
 }
 
@@ -15,6 +15,6 @@ fn work() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(work());
 }

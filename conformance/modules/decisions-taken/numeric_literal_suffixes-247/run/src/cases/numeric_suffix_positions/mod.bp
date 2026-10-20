@@ -72,7 +72,7 @@ type Level {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val stamp = stat(1577836900000l);
     case stamp {
         Ok(s) if s.mtime > 1577836800000l -> print("after");

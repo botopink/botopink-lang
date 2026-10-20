@@ -13,7 +13,7 @@ fn nextDelay(attempt: i32) -> i32 {
     return attempt;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Card(title: "card").heading());
     print(policyDelay(2));
     print(nextDelay(2));

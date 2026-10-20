@@ -30,7 +30,7 @@ pub fn query(syntax q: string, syntax decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-pub fn repository(syntax decl: unknown) {
+pub fn repository(syntax decl: unknown) -> void {
     var lines: string[] = [];
     for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);

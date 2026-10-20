@@ -4,6 +4,6 @@
 
 import {io.terminal.print} from "std";
 
-fn main() {
+fn main() -> void {
     print("x".fooBar());
 }

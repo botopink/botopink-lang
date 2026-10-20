@@ -8,6 +8,6 @@ fn col(props: type(n: i32), n: i32) -> i32 {
     return props.n + n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(0);
 }

@@ -9,6 +9,6 @@ fn sign(n: i32) -> string {
     return r;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sign(-3));
 }

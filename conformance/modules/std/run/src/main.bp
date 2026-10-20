@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.std_default_fn_in_a_std_module.runCase();
     cases.std_encoding_on_every_target.runCase();
     cases.std_import.runCase();

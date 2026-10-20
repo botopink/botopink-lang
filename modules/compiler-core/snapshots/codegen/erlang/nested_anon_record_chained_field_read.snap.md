@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val start = 5;
     val end = 9;
     val span = #(start, end);

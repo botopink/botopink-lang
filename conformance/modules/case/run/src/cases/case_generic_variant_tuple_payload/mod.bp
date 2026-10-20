@@ -16,7 +16,7 @@ fn sumPair(m: Maybe<#(i32, i32)>) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(sumPair(Maybe.Some(value: #(2, 3))));
     print(sumPair(Maybe.None));
 }

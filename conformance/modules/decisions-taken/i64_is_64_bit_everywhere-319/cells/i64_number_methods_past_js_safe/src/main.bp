@@ -10,7 +10,7 @@ fn grow(a: i64, b: i64) -> i64 {
     return a + b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val safe = 9007199254740991l;
     val big = grow(safe, 2l);
     val neg = grow(-safe, -4l);

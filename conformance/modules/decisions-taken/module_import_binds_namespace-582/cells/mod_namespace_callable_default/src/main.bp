@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 mod double;
 
-pub fn main() {
+pub fn main() -> void {
     print(double(4));
     val f = double;
     print(f(5));

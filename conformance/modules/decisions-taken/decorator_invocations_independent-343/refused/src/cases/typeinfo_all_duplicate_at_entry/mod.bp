@@ -6,7 +6,7 @@
 
 import {failure.panic, io.terminal.print} from "std";
 
-fn command(syntax decl: unknown, comptime name: string) {
+fn command(syntax decl: unknown, comptime name: string) -> void {
     decl.setMeta("command", name);
 }
 
@@ -45,7 +45,7 @@ fn uniqueCommands(entries: Declared<unknown>[]) -> i32 {
     return seen.length;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val count = comptime uniqueCommands(@TypeInfo.all(with: command));
     print(count);
 }

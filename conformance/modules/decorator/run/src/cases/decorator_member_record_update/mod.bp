@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn flatten(syntax decl: unknown) {
+fn flatten(syntax decl: unknown) -> void {
     compiler.addMember(
         "pub fn flat(self: Self) -> "
             + compiler.name(decl)!
@@ -27,7 +27,7 @@ fn flatten(syntax decl: unknown) {
 #[flatten]
 type Point(x: i32, y: i32, z: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Point(x: 1, y: 2, z: 3).flat());
     print(Point.rebuilt(Point(x: 1, y: 2, z: 3), 9));
 }

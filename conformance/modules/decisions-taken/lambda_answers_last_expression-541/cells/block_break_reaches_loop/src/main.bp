@@ -30,7 +30,7 @@ fn sumUntilThree(xs: i32[]) -> i32 {
     return s;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(firstBig([1, 2, 3, 4]));
     print(sumUntilThree([1, 2, 3, 4, 5]));
 }

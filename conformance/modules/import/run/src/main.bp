@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.import_behavior_named_like_prelude.runCase();
     cases.import_capitalised_fn.runCase();
     cases.import_nested_module_namespace.runCase();

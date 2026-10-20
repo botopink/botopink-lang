@@ -8,6 +8,6 @@ fn f() -> i32 {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(f());
 }

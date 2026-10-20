@@ -31,7 +31,7 @@ pub type Registry(entries: unknown[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val order: unknown = Orders(total: 9);
     val user: unknown = Users(count: 2);
     val r = Registry(entries: [order, user, user]);

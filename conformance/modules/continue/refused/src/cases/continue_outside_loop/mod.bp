@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val n = 1;
     if (n == 1) { continue; }
     print(n);

@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 import {collections} from "std";
 
-fn main() {
+fn main() -> void {
     val x = collections.collapse(true);
 }
 

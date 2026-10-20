@@ -79,7 +79,7 @@ fn one() -> Result<i32, string> {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val greet = member @`greet`;
     print(greet(Greeter(id: "g1"), "ana"));
     val run = shape @`built`;

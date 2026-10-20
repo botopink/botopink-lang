@@ -4,6 +4,6 @@
 import {compiler} from "std";
 
 #[compiler.external(node, "console.log($0)")]
-declare fn hostLog(msg: string);
+declare fn hostLog(msg: string) -> void;
 
-pub fn main() { hostLog("hi"); }
+pub fn main() -> void { hostLog("hi"); }

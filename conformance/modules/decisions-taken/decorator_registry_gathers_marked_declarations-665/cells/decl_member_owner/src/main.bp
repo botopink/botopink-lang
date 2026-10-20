@@ -8,7 +8,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn register(syntax decl: unknown) {
+fn register(syntax decl: unknown) -> void {
     val owner = compiler.owner(decl)!;
     val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;
     @emit(
@@ -25,7 +25,7 @@ fn register(syntax decl: unknown) {
     @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
 }
 
-fn topLevel(syntax decl: unknown) {
+fn topLevel(syntax decl: unknown) -> void {
     val owner = compiler.owner(decl)?.name ?? "null";
     @emit("val top_" + compiler.name(decl)! + " = \"" + owner + "\";");
     @emit("pub fn top_"
@@ -64,7 +64,7 @@ fn helper() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(reg_Users_findText());
     print(reg_Orders_findText());
     print(reg_Orders_totalText());

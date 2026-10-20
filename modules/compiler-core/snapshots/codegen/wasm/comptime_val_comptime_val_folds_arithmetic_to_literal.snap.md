@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val result = comptime 10 + 20;
-fn main() {
+fn main() -> void {
     print(result);
 }
 

@@ -7,7 +7,7 @@
 import {collections, io.terminal.print} from "std";
 import {collections.Dict as D} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val d = collections.Dict.empty().insert("k", 7).insert("j", 1);
     print(d.size());
     print(d.at("k") ?? 0);

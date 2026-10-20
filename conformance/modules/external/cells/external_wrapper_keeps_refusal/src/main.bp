@@ -16,6 +16,6 @@ fn linkStatus() -> string {
     return otpRelease();
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("up");
 }

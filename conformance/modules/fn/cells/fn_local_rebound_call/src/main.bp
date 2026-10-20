@@ -46,7 +46,7 @@ fn siblings() -> i32 {
     return total;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a: unknown = one;
     val b: unknown = two;
     print(narrowed([a, b], [b]));

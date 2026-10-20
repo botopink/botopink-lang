@@ -1058,7 +1058,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn getMapping(syntax decl: unknown, comptime path: string, comptime verb: string) {
+        \\fn getMapping(syntax decl: unknown, comptime path: string, comptime verb: string) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
         \\import {compiler, compiler.DeclKind} from "std";
@@ -1138,7 +1138,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn audit(syntax decl: unknown) {
+        \\fn audit(syntax decl: unknown) -> void {
         \\    @emit("pub val seen = 1;");
         \\}
     );

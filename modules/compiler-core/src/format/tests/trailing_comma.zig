@@ -21,21 +21,21 @@ fn bothSpellings(open: []const u8, openWithoutComma: []const u8, closed: []const
 
 test "format: trailing comma ---- call arguments" {
     try bothSpellings(
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(
         \\        1,
         \\        2,
         \\    );
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(
         \\        1,
         \\        2
         \\    );
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(1, 2);
         \\}
     );
@@ -65,21 +65,21 @@ test "format: trailing comma ---- parameters" {
 
 test "format: trailing comma ---- arrays" {
     try bothSpellings(
-        \\fn f() {
+        \\fn f() -> void {
         \\    val xs = [
         \\        1,
         \\        2,
         \\    ];
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val xs = [
         \\        1,
         \\        2
         \\    ];
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val xs = [1, 2];
         \\}
     );
@@ -87,21 +87,21 @@ test "format: trailing comma ---- arrays" {
 
 test "format: trailing comma ---- tuples" {
     try bothSpellings(
-        \\fn f() {
+        \\fn f() -> void {
         \\    val t = #(
         \\        1,
         \\        2,
         \\    );
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val t = #(
         \\        1,
         \\        2
         \\    );
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val t = #(1, 2);
         \\}
     );
@@ -183,16 +183,16 @@ test "format: trailing comma ---- annotations" {
         \\    a,
         \\    b,
         \\]
-        \\fn f() {}
+        \\fn f() -> void {}
     ,
         \\#[
         \\    a,
         \\    b
         \\]
-        \\fn f() {}
+        \\fn f() -> void {}
     ,
         \\#[a, b]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
 }
 

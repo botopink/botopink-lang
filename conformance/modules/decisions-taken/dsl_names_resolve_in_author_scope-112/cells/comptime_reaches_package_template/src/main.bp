@@ -17,7 +17,7 @@ pub val label = comptime ready();
 
 pub val whole = comptime badges @`done`;
 
-pub fn main() {
+pub fn main() -> void {
     print(label);
     print(whole.label);
     print(whole.size);

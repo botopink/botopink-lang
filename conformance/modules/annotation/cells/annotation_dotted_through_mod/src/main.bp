@@ -10,6 +10,6 @@ fn Marked() -> string {
     return "a";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Marked());
 }

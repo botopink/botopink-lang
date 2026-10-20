@@ -30,7 +30,7 @@ fn make(n: i32) -> Holder {
     return Holder(t: t, r: r, s: s);
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print("ok " + v.toString());
         Error(e) -> print("error " + e);
@@ -48,6 +48,6 @@ async fn run() -> Async<void> {
     show(await k.s);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

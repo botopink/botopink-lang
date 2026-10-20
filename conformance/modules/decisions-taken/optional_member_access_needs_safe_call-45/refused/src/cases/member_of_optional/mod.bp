@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val rs: #(a: i32, b: string)[] = [#(1, "x")];
     print(rs.at(0).b);
 }

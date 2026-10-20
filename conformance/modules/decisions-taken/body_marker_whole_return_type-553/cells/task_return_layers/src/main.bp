@@ -29,7 +29,7 @@ fn layerTask(t: Async<Result<i32, string>>) -> Async<Result<i32, string>> {
     return t;
 }
 
-fn show(label: string, r: Result<i32, string>) {
+fn show(label: string, r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print(label + " ok " + v.toString());
         Error(e) -> print(label + " error " + e);
@@ -43,6 +43,6 @@ async fn run() -> Async<void> {
     show("task", await layerTask(layerValue(3)));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

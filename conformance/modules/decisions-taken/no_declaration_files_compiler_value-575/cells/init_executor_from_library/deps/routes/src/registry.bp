@@ -6,7 +6,7 @@ import {compiler} from "std";
 
 var table: string[] = [];
 
-fn remember(path: string, name: string) {
+fn remember(path: string, name: string) -> void {
     table.push(path + " -> " + name);
 }
 
@@ -14,7 +14,7 @@ pub fn routes() -> string[] {
     return table;
 }
 
-pub fn route(syntax decl: unknown, comptime path: string) {
+pub fn route(syntax decl: unknown, comptime path: string) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> remember(path, name) });
 }

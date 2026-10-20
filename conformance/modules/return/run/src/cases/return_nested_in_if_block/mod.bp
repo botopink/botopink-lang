@@ -45,7 +45,7 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(5));
     print(pick(1));
     print(deep(3));

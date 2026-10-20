@@ -5,13 +5,13 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Tags(list: string[])
 
-fn tag<T>(syntax decl: T) {
+fn tag<T>(syntax decl: T) -> void {
     compiler.setMeta(Tags(list: ["a", "b"]));
 }
 
 #[tag]
 pub type Item(id: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print((comptime compiler.typeInfo(Item).meta(Tags)?.list ?? []).join(","));
 }

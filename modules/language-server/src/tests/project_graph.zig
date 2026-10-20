@@ -196,9 +196,9 @@ test "project graph: a .botopinkbuild/deps link wins over the walk-up (decision 
     const files = [_][2][]const u8{
         // `ws/libs` is a walk-up root of `ws/app`.
         .{ "lsp-graph-deps-link/ws/libs/b37lib/botopink.json", pkg },
-        .{ "lsp-graph-deps-link/ws/libs/b37lib/src/lib.bp", "pub fn fromWalkUp() {}\n" },
+        .{ "lsp-graph-deps-link/ws/libs/b37lib/src/lib.bp", "pub fn fromWalkUp() -> void {}\n" },
         .{ "lsp-graph-deps-link/linked/b37lib/botopink.json", pkg },
-        .{ "lsp-graph-deps-link/linked/b37lib/src/lib.bp", "pub fn fromLink() {}\n" },
+        .{ "lsp-graph-deps-link/linked/b37lib/src/lib.bp", "pub fn fromLink() -> void {}\n" },
         .{ "lsp-graph-deps-link/ws/app/botopink.json", "{ \"name\": \"app\", \"src\": \"src/\", \"dependencies\": { \"b37lib\": { \"git\": \"https://example.invalid/b37lib.git\" } } }" },
         .{ "lsp-graph-deps-link/ws/app/src/main.bp", "val x = 1;\n" },
     };

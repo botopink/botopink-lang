@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = "a👍bX👍c";
     print(t[-2]);
     print(t[4..]);

@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.defer_block_end_reverse_order.runCase();
     cases.defer_in_loop_break_continue.runCase();
     cases.defer_panic_attempt_catches.runCase();

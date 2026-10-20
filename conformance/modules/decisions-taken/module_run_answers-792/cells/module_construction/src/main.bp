@@ -4,7 +4,7 @@
 
 import {compiler.Module, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val m = Module(name: "fine", path: "src/cases/fine/mod.bp", target: .Node);
     print(m.path);
 }

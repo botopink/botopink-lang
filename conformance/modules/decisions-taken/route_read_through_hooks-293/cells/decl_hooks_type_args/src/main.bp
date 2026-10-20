@@ -7,7 +7,7 @@ pub mod pages;
 import {pages.Post, pages.HookArgs};
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val uses: string[] = comptime compiler.typeInfo(Post).meta(HookArgs)?.uses ?? [];
     print(uses.join(" "));
 }

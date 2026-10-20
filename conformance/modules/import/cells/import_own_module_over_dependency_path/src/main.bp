@@ -12,7 +12,7 @@ import {app.page.title};
 import {other} from "site";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(title());
     print(other());
 }

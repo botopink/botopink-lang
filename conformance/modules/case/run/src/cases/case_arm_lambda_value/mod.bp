@@ -27,7 +27,7 @@ fn pick(m: Mode) -> fn(item: string) -> string {
     return g;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(Mode.Mark(suffix: "?"))("a"));
     print(pick(Mode.Same)("b"));
 }

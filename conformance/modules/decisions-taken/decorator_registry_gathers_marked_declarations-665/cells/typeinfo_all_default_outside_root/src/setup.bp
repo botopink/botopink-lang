@@ -3,6 +3,6 @@
 
 import {boot} from "frame";
 
-pub fn start() {
+pub fn start() -> void {
     boot();
 }

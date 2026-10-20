@@ -29,7 +29,7 @@ import {cases.type_name_collision.parser.Outcome, cases.type_name_collision.pars
 import {cases.type_name_collision.net.netOutcome};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     // The field axis, through each module's own fn.
     print(parserOutcome().tag);
     print(netOutcome().tag);

@@ -14,7 +14,7 @@ fn first(ts: Tok[]) -> Tok {
     return ts[0] ?? .Bold;
 }
 
-fn main() {
+fn main() -> void {
     val t: Tok = comptime first(
         [.Pad.All.8, .Bold],
     ); // written as Tok.Pad.All.8

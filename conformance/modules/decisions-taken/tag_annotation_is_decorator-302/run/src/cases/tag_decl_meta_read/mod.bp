@@ -8,6 +8,6 @@ pub mod tags;
 import {cases.tag_decl_meta_read.tags.markup, cases.tag_decl_meta_read.tags.hydrated};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(markup @`<section #[hydrated]>hi</section>`);
 }

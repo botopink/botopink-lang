@@ -9,4 +9,4 @@ import {io.terminal.print} from "std";
 behavior Named { fn name(self: Self) -> string; }
 type P(x: i32)
 implement Named for P { fn name(self: Self) -> string { return "p"; } }
-pub fn main() { print(P(x: 1).name()); }
+pub fn main() -> void { print(P(x: 1).name()); }

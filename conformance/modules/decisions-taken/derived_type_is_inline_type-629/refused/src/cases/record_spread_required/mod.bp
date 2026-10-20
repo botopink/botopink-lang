@@ -11,7 +11,7 @@ val Patch = Type.partial(Pessoa);
 
 val Full = Type.required(Patch);
 
-pub fn main() {
+pub fn main() -> void {
     val f = Full(nome: "Ana", idade: 3);
     val p = Pessoa(..f);
     print(p.idade);

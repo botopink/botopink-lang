@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.meta_expr_field_literal.runCase();
     cases.meta_expr_param_plain_field.runCase();
 }

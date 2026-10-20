@@ -3,7 +3,7 @@
 
 import {decimal.Decimal, decimal.Rounding, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val one = Decimal(unscaled: 1n, scale: 0);
     val zero = Decimal(unscaled: 0n, scale: 2);
     print("before");

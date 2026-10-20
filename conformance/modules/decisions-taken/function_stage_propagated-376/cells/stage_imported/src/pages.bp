@@ -9,7 +9,7 @@ import {ui};
 import {ui.label};
 import {compiler} from "std";
 
-fn stage(syntax decl: unknown) {
+fn stage(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .hooks(decl)

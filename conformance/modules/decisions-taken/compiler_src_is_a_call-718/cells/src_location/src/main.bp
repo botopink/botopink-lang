@@ -7,7 +7,7 @@ fn where() -> SourceLocation {
     return comptime compiler.src();
 }
 
-pub fn main() {
+pub fn main() -> void {
     val loc = where();
     print(
         loc.file,

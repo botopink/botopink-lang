@@ -5,7 +5,7 @@
 
 import {io, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val atBuild = comptime io.random.seededFloat();
     print(atBuild);
 }

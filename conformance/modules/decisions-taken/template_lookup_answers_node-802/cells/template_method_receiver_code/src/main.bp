@@ -22,7 +22,7 @@ fn pick(first: Db, second: Db, useFirst: bool) -> Db {
     return if (useFirst) first else second;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val primary = Db(name: "main");
     val replica = Db(name: "replica");
     val id = "7";

@@ -5,7 +5,7 @@
 
 import {encoding, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val pixel = @embed("assets/pixel.bin");
     val b = pixel.bytes;
     print(pixel.size);

@@ -6,7 +6,7 @@
 
 import {io, compiler, io.terminal.print} from "std";
 
-fn drawn(syntax decl: unknown) {
+fn drawn(syntax decl: unknown) -> void {
     io.random.seed(42);
     val x = io.random.seededFloat();
     @emit("pub fn label() -> string { return \""
@@ -17,6 +17,6 @@ fn drawn(syntax decl: unknown) {
 #[drawn]
 type Point(x: i32, y: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(label());
 }

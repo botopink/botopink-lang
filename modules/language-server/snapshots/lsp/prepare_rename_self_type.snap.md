@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn method(self: Self) { return 0; }
+fn method(self: Self) -> i32 { return 0; }
                  ↑
 ```
 

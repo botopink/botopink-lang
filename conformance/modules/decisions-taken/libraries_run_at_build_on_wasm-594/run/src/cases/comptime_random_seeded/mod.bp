@@ -14,7 +14,7 @@ fn draws(s: i32) -> string {
     return a.toString() + " " + b.toString() + " " + again.toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val atBuild = comptime draws(42);
     print(atBuild);
     val other = comptime draws(0 - 7);

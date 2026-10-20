@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val rows = [[1, 2], [3, 4]];
     print(rows);
     print(rows[1]);

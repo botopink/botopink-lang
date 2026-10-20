@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.string_char_code_after_slice.runCase();
     cases.string_char_code_non_ascii.runCase();
     cases.string_code_points_every_width.runCase();

@@ -32,7 +32,7 @@ fn shown(s: Shape) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     // A record constructor, written out of declared order.
     val p = Point(y: 2, x: 1);
     print(p.x);

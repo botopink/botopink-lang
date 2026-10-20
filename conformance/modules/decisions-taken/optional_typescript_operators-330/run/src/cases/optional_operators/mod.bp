@@ -18,7 +18,7 @@ fn numbers(present: bool) -> ?i32[] {
     return if (present) [10, 20] else null;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     // `?.[i]`: the index read through the optional, absent when it is.
     print(numbers(true)?.[1] ?? 0);
     print(numbers(true)?.[5] ?? -1);

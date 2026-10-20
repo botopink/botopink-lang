@@ -10,13 +10,13 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]
-declare fn say(line: string);
+declare fn say(line: string) -> void;
 
-fn sayBody(line: string) {
+fn sayBody(line: string) -> void {
     print(line);
 }
 
-pub fn module(syntax decl: unknown) {
+pub fn module(syntax decl: unknown) -> void {
     compiler.setMeta(ModuleRole(kind: "module"));
 }
 
@@ -25,13 +25,13 @@ pub fn db() -> string {
     return "db up";
 }
 
-fn boot(comptime modules: Declared<unknown>[]) {
+fn boot(comptime modules: Declared<unknown>[]) -> void {
     for (modules) { d ->
         if (d.value is fn() -> string) say("starting " + d.name);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     boot(@TypeInfo.all(with: module));
 }
 

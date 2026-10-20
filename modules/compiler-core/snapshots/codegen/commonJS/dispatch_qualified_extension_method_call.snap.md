@@ -1,15 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Swimmer = behavior {
-    fn swim(self: Self);
+    fn swim(self: Self) -> i32;
 }
 type Pato(id: i32)
 val PatoNada = implement Swimmer for Pato {
-    fn swim(self: Self) {
+    fn swim(self: Self) -> i32 {
         return self.id;
     }
 }
-fn main() {
+fn main() -> void {
     val donald = Pato(3);
     print(PatoNada.swim(donald));
 }

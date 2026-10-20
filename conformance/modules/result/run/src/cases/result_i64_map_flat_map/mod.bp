@@ -14,7 +14,7 @@ fn halfWide(n: i64) -> Result<i64, string> {
     return n / 2l;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ok = wide("abcd");
     print(ok.map({ n -> n * 3l }).unwrapOr(0l));
     print(ok.flatMap({ n -> halfWide(n) }).unwrapOr(-1l));

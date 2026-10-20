@@ -35,7 +35,7 @@ pub fn quad(x: i32) -> i32 {
     return twice(twice(x));
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(quad(3));
 }
 

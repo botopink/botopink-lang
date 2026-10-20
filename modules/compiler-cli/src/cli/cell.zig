@@ -95,7 +95,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 const MAIN_BP =
     \\import {io.terminal.print} from "std";
     \\
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    print("hello");
     \\}
     \\

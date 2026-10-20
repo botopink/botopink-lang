@@ -52,7 +52,7 @@ fn kind(v: unknown) -> string {
     return "other";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(titleOf(RecipeTitle(title: "Feijoada")));
     val brief = RecipeBrief(title: "Moqueca");
     print(brief.servings);

@@ -27,7 +27,7 @@ fn firstTwo(s: Slice<i32[]>) -> i32[] {
     return s.slice(0, 2);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val r = Registry(names: ["ana", "bo"]);
     print(lookup(r, "bo"));
     print(lookup(r, "zz"));

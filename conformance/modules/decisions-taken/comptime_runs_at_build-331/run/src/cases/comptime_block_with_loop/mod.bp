@@ -16,7 +16,7 @@ fn two() -> i32 {
     return 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = comptime two();
     print(a);
     val d = comptime {

@@ -6,7 +6,7 @@ pub mod shop;
 import {cases.two_modules_one_type_name.shop.a.aLabel, cases.two_modules_one_type_name.shop.b.bLabel};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(aLabel(2));
     print(bLabel(2));
 }

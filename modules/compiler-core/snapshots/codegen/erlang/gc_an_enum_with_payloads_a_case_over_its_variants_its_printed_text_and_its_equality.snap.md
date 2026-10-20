@@ -22,7 +22,7 @@ fn name(s: Shape) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a = Shape.Circle(r: 2);
     val b = Shape.Rect(w: 3, h: 4);
     print(area(a));

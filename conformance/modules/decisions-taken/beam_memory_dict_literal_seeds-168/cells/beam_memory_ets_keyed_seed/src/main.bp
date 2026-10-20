@@ -8,6 +8,6 @@ import {collections.Dict, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
 
-pub fn main() {
+pub fn main() -> void {
     print(counts.at("a"));
 }

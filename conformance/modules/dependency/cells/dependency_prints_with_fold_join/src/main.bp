@@ -4,6 +4,6 @@
 import {residue} from "strip";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("hello");
 }

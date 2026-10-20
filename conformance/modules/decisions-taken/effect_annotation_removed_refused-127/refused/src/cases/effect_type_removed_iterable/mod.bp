@@ -10,4 +10,4 @@ import {io.terminal.print} from "std";
 
 fn total(xs: @Iterable<i32>) -> i32 { return 0; }
 
-pub fn main() { print(total([1, 2])); }
+pub fn main() -> void { print(total([1, 2])); }

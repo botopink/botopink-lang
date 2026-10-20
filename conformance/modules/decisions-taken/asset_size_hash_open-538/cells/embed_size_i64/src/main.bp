@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 val hello = @embed("assets/hello.txt");
 
-pub fn main() {
+pub fn main() -> void {
     val n: i64 = hello.size;
     print(n);
     print(n + 3000000000);

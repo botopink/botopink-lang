@@ -10,7 +10,7 @@ fn tail() -> i32[] {
     return [30, 40];
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val rest = [3, 4];
     val list = [1, 2, ..rest];
     print(list.length);

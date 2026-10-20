@@ -28,7 +28,7 @@ fn withBase(x: i32, f: fn() -> i32) -> i32 {
     return x + f();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b = Box(base: 1);
     print(b.run { -> 10 });
     print(b.through { m -> m + 5 });

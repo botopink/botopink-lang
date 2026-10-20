@@ -39,7 +39,7 @@ type Entry(key: string)
 
 type Table(rows: Entry[])
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val es = [Entry(key: "abc"), Entry(key: "de")];
 
     // The optional printed whole: present, it is the record's own text.

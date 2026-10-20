@@ -33,7 +33,7 @@ fn twoLabels(xs: i32[], ys: i32[], zs: i32[]) -> i32 {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(whileUnderLabel([1, 2, 3]));
     print(twoLabels([1, 2], [1, 2], [1, 2, 3]));
 }

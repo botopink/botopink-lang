@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn spelled(syntax decl: unknown) {
+fn spelled(syntax decl: unknown) -> void {
     compiler.addMember("spell", fn(x: string) -> string {
         return compiler.name(x)!;
     });
@@ -13,6 +13,6 @@ fn spelled(syntax decl: unknown) {
 #[spelled]
 pub type Users(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Users.spell("anything"));
 }

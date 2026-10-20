@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val x: ?i32 = 42;
     if (x) { n -> print(n); };
 }

@@ -53,7 +53,7 @@ test "infer: generic record Pair<A, B>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Pair = type <A, B>(first: A, second: B);
         \\val p = Pair(first: 42, second: "hello");
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(p);
         \\}
         \\
@@ -128,7 +128,7 @@ test "infer: generic fn ---- two calls with different types in same scope" {
         \\fn identity<T>(x: T) -> T {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = identity(42);
         \\    val b: string = identity("hi");
         \\}
@@ -140,7 +140,7 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
         \\fn identity<T>(x: T) -> T {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = identity;
         \\    val g = identity;
         \\    val a: i32 = f(1);
@@ -153,7 +153,7 @@ test "infer: generic interface Container<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Container = behavior <T> {
         \\    fn fetch(self: Self<T>) -> T;
-        \\    fn store(self: Self<T>, value: T);
+        \\    fn store(self: Self<T>, value: T) -> void;
         \\}
     );
 }
@@ -163,7 +163,7 @@ test "infer: @Expr builtin type ---- declaration with bounded return typechecks"
         \\pub fn identity(syntax template: string) -> string {
         \\    return template;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("ok");
         \\}
         \\
@@ -182,7 +182,7 @@ test "infer: generic record ---- per-use instantiation does not collapse" {
         \\    return Box(first: p.second, second: p.first);
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = Box(first: 1, second: "one");
         \\    val s = swap(b);
         \\    val n: i32 = s.second;
@@ -195,7 +195,7 @@ test "infer error: generic record ---- instantiated field type still checks" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type Box<A, B>(first: A, second: B)
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = Box(first: 1, second: "one");
         \\    val bad: i32 = b.second;
         \\}
@@ -210,7 +210,7 @@ test "infer: net-new ---- generic record at two concrete types" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Box<T>(item: T)
         \\fn unbox<T>(b: Box<T>) -> T { return b.item; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = unbox(Box(item: 7));
         \\    val s: string = unbox(Box(item: "hi"));
         \\}
@@ -243,7 +243,7 @@ test "infer: net-new ---- recursion through a generic data type" {
 test "infer: net-new ---- generic return inferred from the type token" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn make<T>(comptime t: type<T>) -> T { panic("not implemented"); }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val n: i32 = make(i32);
         \\    val s: string = make(string);
         \\}
@@ -304,7 +304,7 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = Pair2.first(Pair2.of(1, "one"));
         \\    val b: bool = Pair2.first(Pair2.of(true, 9));
         \\}
@@ -320,7 +320,7 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
 // second hop sees `.generic`, and the whole expression fails to type.
 test "infer: generic-inference-finalize ---- chained map().filter() propagates element type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [1, 2, 3];
         \\    val out = xs.map({ x -> x + 1 }).filter({ y -> y > 0 });
         \\    val n: i32 = out.length;
@@ -338,7 +338,7 @@ test "infer: generic-inference-finalize ---- empty<K,V>(K, V) meets the annotate
         \\fn empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V> {
         \\    return Dict(pairs: []);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d: Dict<string, i32> = empty(string, i32);
         \\}
     );
@@ -363,7 +363,7 @@ test "infer: generic-inference-finalize ---- linq join builds tuple element type
         \\    });
         \\    return acc;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val people = [Person(id: 1, name: "Ada")];
         \\    val orders = [Order(personId: 1, product: "book")];
         \\    val pairs = crossJoin(people, orders, { p, o -> p.id == o.personId });

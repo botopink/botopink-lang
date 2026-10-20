@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 import {dict.Dict} from "std";
 
-fn main() {
+fn main() -> void {
     val n = 1;
 }
 

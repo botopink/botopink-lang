@@ -7,6 +7,6 @@ fn sum(..values: i32[]) -> i32 {
     return values.length();
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sum(values: 1));
 }

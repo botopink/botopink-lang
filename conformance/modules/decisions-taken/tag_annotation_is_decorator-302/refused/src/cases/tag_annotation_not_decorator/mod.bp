@@ -6,6 +6,6 @@ pub mod tags;
 import {cases.tag_annotation_not_decorator.tags.markup, cases.tag_annotation_not_decorator.tags.shout};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<div #[shout]>hi</div>`);
 }

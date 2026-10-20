@@ -11,7 +11,7 @@ fn stepText(s: YieldStep<i32>) -> string {
     };
     return t;
 }
-pub fn main() {
+pub fn main() -> void {
     val it = two();
     print(stepText(it.next()));
     print(stepText(it.next()));

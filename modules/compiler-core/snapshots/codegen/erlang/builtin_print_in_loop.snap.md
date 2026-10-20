@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn countdown(n: i32) {
+fn countdown(n: i32) -> void {
     for (0..n) { i ->
         print(n - i);
     };
 }
-fn main() {
+fn main() -> void {
     countdown(3);
 }
 

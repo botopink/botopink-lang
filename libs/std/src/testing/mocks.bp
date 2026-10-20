@@ -242,7 +242,7 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // statement is only legal as the last statement in a block; and the body cannot
 // call sibling fns — only this one is lowered into the decorator eval script —
 // so the return-type default is inlined rather than factored out.
-pub fn mock(syntax decl: unknown) {
+pub fn mock(syntax decl: unknown) -> void {
     var q = "";
     compiler
         .annotations(decl)

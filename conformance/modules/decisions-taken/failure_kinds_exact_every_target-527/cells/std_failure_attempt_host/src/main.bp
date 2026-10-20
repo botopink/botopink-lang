@@ -26,14 +26,14 @@ declare fn raiseExit() -> i32;
 )]
 declare fn raiseReason(n: i32) -> i32;
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(failure.attempt({ -> raiseError() }));
     show(failure.attempt({ -> raiseThrow() }));
     show(failure.attempt({ -> raiseExit() }));

@@ -11,6 +11,6 @@ fn render() -> string {
 
 pub default nope;
 
-pub fn main() {
+pub fn main() -> void {
     print(render());
 }

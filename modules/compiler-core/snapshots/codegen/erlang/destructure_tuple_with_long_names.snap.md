@@ -3,7 +3,7 @@
 fn get_coordinates() -> #(f64, f64) {
     return #(0.0, 0.0);
 }
-fn extract_coordinates() {
+fn extract_coordinates() -> void {
     val #(longitude, latitude) = get_coordinates();
 }
 ```

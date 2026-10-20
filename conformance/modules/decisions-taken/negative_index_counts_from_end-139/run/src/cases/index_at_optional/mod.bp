@@ -22,7 +22,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d = Dict.empty().insert("a", 1);
     print(d.at("a"));
     print(d.at("zz"));

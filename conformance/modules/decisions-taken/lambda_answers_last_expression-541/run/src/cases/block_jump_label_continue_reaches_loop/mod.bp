@@ -31,7 +31,7 @@ fn countUntilFive(xs: i32[], ys: i32[]) -> i32 {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(sumSkippingRows([1, 2, 3], [1, 2, 3]));
     print(countUntilFive([1, 2, 3], [1, 2, 3]));
 }

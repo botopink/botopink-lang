@@ -10,7 +10,7 @@ fn show(r: #(city: string, pop: i32)) -> i32 {
     return r.pop;
 }
 
-fn main() {
+fn main() -> void {
     val row = load();
     print(row.name);
     print(row.pop + 1);

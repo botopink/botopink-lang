@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 
 type D(name: string, age: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val d = D(name: "a", age: 320);
     val s = case d.age {
         3 {

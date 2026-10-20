@@ -11,6 +11,6 @@ fn sameType<T>(v: unknown, sample: T) -> bool {
     return v is T;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sameType(Users(count: 1), Users(count: 2)));
 }

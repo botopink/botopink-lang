@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val greeting = "hello";
     val assert "hello" = greeting catch throw "not hello";
+    return;
 }
 ```
 
@@ -13,7 +14,8 @@ fn f() {
 
 f() ->
     Greeting = <<"hello">>,
-    case Greeting of <<"hello">> -> Greeting; _ -> erlang:throw(<<"not hello">>) end.
+    case Greeting of <<"hello">> -> Greeting; _ -> {error, <<"not hello">>} end,
+    {ok, undefined}.
 
 '__bp_priv__f'() -> f().
 ```

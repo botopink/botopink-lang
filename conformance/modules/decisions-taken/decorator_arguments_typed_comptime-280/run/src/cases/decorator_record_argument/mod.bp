@@ -10,7 +10,7 @@ type Cache<T>(name: string)
 fn cacheable<A, T>(
     syntax decl: fn(a: A) -> T,
     comptime cache: Cache<T>,
-) {
+) -> void {
     compiler.setMeta(Cacheable(cache: cache.name));
 }
 
@@ -21,7 +21,7 @@ fn byCategory(c: string) -> Product[] {
     return [Product(name: c)];
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(byCategory).meta(Cacheable)?.cache ?? "none");
     print(byCategory("tea")[0]?.name ?? "none");
 }

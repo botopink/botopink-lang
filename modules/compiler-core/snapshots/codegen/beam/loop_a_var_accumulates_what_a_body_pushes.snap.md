@@ -7,7 +7,7 @@ fn doubles(arr: i32[]) -> i32[] {
     };
     return out;
 }
-fn main() {
+fn main() -> void {
     print(doubles([1, 2, 3]));
 }
 

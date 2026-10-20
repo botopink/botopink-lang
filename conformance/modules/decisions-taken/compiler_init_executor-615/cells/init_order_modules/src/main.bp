@@ -19,7 +19,7 @@ pub fn own() -> string {
     return "own";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(names());
     print(first() + " " + second() + " " + own());
 }

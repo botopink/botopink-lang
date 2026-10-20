@@ -17,7 +17,7 @@ fn passwordsMatch(a: Signup) -> bool {
 #[check(passwordsMatch)]
 pub type Signup(password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(Signup(password: "a", confirm: "b").validate().length);
     print(Violation(code: 7).code);
 }

@@ -50,7 +50,7 @@ fn shapeOf(t: Token.Shape) -> string {
     return out;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(shapeName(Block(size: 2)));
     print(shapeName(Vec(x: 1)));
     print(shapeName(Vec(x: 0)));

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn column(syntax decl: unknown, comptime name: string) { }
-fn describe(syntax decl: unknown, comptime label: string) {
+fn column(syntax decl: unknown, comptime name: string) -> void { }
+fn describe(syntax decl: unknown, comptime label: string) -> void {
     var out = compiler.name(decl)! + "[" + label + "]";
     for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     for (compiler.fields(decl)) { f ->

@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn component(syntax decl: unknown) {
+fn component(syntax decl: unknown) -> void {
     compiler.addMember("pub fn describe() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
@@ -12,6 +12,6 @@ fn component(syntax decl: unknown) {
 #[component]
 pub type Box(n: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: component).length);
 }

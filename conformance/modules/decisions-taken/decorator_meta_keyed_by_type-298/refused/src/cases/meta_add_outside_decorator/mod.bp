@@ -6,17 +6,17 @@ import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
-fn record(d: unknown) {
+fn record(d: unknown) -> void {
     compiler.addMeta(Entity(table: "cities"));
 }
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     record(decl);
 }
 
 #[entity]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).metaAll(Entity).length);
 }

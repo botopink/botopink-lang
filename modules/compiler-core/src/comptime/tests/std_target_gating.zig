@@ -35,7 +35,7 @@ test "STD-001: a call of std/io/process.pid from wasm target reds at the call" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {io.process, io.terminal.print} from \"std\";\nfn main() {\n    print(process.pid());\n}\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process, io.terminal.print} from \"std\";\nfn main() -> void {\n    print(process.pid());\n}\n" }},
         io,
         test_scratch.path(io, "comptime/std_target_gating_wasm"),
         "wasm",

@@ -10,7 +10,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn themed(syntax decl: unknown) {
+fn themed(syntax decl: unknown) -> void {
     val t = use context(themeContext);
 }
 
@@ -19,6 +19,6 @@ component fn Label() -> Component<Element> {
     return Element(text: "");
 }
 
-pub fn main() {
+pub fn main() -> void {
     Label();
 }

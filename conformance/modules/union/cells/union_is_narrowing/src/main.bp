@@ -10,7 +10,7 @@ fn read(raw: unknown) -> string {
     return "not a string";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(1)); // an integer
     print(describe("a")); // a string
     print(read("text")); // text

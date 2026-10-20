@@ -2,7 +2,7 @@
 //// module that writes it imports `io.fs`: without the import the call is a build error, located
 //// at the call, that says which import to add.
 
-pub fn main() {
+pub fn main() -> void {
     val a = @embed("assets/a.txt");
     a.open();
 }

@@ -21,7 +21,7 @@ pub type Hole {
     Slot,
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = .Circle;
     print(0);
 }

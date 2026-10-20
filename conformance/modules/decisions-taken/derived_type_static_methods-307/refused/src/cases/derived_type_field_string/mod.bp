@@ -10,4 +10,4 @@ type Recipe(
 
 pub val RecipeTitle = Type.pick(Recipe, "title");
 
-pub fn main() {}
+pub fn main() -> void {}

@@ -5,7 +5,7 @@ pub type Module(name: string, lifecycle: string, make: fn() -> string)
 
 var entries: Module[] = [];
 
-pub fn add(m: Module) {
+pub fn add(m: Module) -> void {
     entries.push(m);
 }
 

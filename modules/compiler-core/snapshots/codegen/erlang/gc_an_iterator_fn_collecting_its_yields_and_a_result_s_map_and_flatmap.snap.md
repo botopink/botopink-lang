@@ -13,7 +13,7 @@ fn parse(s: string) -> Result<i32, string> {
     return s.length();
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (evens(7)) { v -> print(v); }
     print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
     print(parse("").map({ n -> n * 10 }).unwrapOr(-1));

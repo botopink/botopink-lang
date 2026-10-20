@@ -23,7 +23,7 @@ fn countBoth<T>(comptime t: type<T>, xs: unknown[]) -> i32 {
     return countOf(t, xs) + withTokens(t, xs);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val o: unknown = Orders(total: 9);
     val u: unknown = Users(count: 2);
     val t: unknown = Token(id: 4);

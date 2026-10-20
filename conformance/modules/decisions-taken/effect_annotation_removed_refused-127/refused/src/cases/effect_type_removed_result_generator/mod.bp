@@ -8,4 +8,4 @@ fn upto(n: i32) -> @ResultGenerator<i32, string> {
     while (i < n) { yield i; i = i + 1; }
 }
 
-pub fn main() { upto(2); }
+pub fn main() -> void { upto(2); }

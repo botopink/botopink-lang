@@ -167,7 +167,7 @@ test "parser: pub default mod parses at any module top level" {
 
 test "parser: mod in fn body is a parse error" {
     try h.expectParseFails(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  mod nested;
         \\}
     );
@@ -182,7 +182,7 @@ test "parser: delegate ---- val form is removed-delegate" {
 
 test "parser: delegate ---- shorthand simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\declare fn log(message: string);
+        \\declare fn log(message: string) -> void;
     );
 }
 

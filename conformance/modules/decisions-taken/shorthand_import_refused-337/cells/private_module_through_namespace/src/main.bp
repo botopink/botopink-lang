@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 mod geo;
 
-pub fn main() {
+pub fn main() -> void {
     print(geo.plane.origin());
 }

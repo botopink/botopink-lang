@@ -3,7 +3,7 @@
 import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 // Emits a declaration — a declaration's channel, not a tag's.
-pub fn withEmit(syntax decl: unknown) {
+pub fn withEmit(syntax decl: unknown) -> void {
     @emit("pub fn extra() -> i32 { return 1; }");
 }
 

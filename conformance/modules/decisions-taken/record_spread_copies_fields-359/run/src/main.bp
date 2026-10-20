@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.record_spread.runCase();
     cases.record_spread_across_modules.runCase();
     cases.record_spread_call_source.runCase();

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val top = comptime compiler.src();
-fn main() {
+fn main() -> void {
     print(top.file, top.line, top.column);
     print(top.fnName == "");
 }

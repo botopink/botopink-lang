@@ -18,7 +18,7 @@ fn yes() -> bool {
     return true;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val g = greet;
     print(g());
     val again = g;

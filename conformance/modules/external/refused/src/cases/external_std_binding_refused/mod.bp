@@ -7,6 +7,6 @@ import {compiler, io.terminal.print} from "std";
 )]
 pub declare fn contentHash(value: string) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(contentHash("a"));
 }

@@ -12,7 +12,7 @@ fn div(a: bigint, b: bigint) -> bigint {
     return a / b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(rem(7n, 2n));
     print(div(7n, 2n));
     print(div(7n, 0n));

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val fs = [1.5, 2.5];
     print(fs[0]);
     print(fs.at(0));

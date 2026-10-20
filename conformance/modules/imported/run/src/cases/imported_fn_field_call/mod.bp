@@ -15,7 +15,7 @@ fn emit(out: ChunkWriter, x: string) -> string {
     return out.write(x);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val w = writer("> ");
     print(w.write("a"));
     print(emit(w, "b"));

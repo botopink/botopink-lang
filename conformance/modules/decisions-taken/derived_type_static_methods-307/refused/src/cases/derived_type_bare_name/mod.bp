@@ -5,4 +5,4 @@ type Recipe(title: string)
 
 pub val Patch = partial(Recipe);
 
-pub fn main() {}
+pub fn main() -> void {}

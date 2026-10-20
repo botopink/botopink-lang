@@ -26,7 +26,7 @@ fn sum(acc: i32, n: i32) -> i32 {
     return sum(n: n - 1, acc: acc + n);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val p = P(y: "a", x: 1);
     print(p.x);
     print(diff(b: 1, a: 10));

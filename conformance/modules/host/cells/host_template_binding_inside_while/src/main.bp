@@ -10,7 +10,7 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("begin __Loop = $0 + 1, __Loop end"))]
 declare fn bump(n: i32) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     var i = 0;
     var total = 0;
     while (i < 3) {

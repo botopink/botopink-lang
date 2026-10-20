@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 
 type User(name: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a: i32 = describe(Box(value: 2), 0);
     val b: User = describe(User, User(name: "bo"));
     val c: string = d(string, "s");

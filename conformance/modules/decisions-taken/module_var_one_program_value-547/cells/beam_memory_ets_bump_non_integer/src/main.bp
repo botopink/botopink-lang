@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets)]
 var total: f64 = 0.0;
 
-pub fn main() {
+pub fn main() -> void {
     total += 1.5;
     print(total);
 }

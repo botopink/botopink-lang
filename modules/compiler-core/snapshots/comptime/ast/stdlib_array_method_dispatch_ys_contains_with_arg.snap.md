@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val ys = [1, 2, 3];
     val found = ys.contains(2);
 }

@@ -8,6 +8,6 @@ fn parse() -> Result<i32, string> {
     return Ok(1);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(parse().isOk());
 }

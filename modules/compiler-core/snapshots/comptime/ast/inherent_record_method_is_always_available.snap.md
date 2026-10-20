@@ -2,7 +2,7 @@
 ```botopink
 type Pato(
     id: i32) {
-    fn quack(self: Self) {
+    fn quack(self: Self) -> i32 {
         return self.id;
     }
 }
@@ -29,7 +29,7 @@ val noise = donald.quack();
               "type": "Self"
             }
           ],
-          "return_type": "void"
+          "return_type": "i32"
         }
       ]
     },

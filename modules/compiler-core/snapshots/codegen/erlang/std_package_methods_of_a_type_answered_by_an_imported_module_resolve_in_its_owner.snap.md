@@ -1097,7 +1097,7 @@ array_slice(Self, Start, End) ->
 ```botopink
 import {collections.Dict} from "std";
 
-fn main() {
+fn main() -> void {
     val d = Dict.empty().insert("a", 1);
     print(d.at("a") ?? 0);
     print(d.insert("b", 2).size());

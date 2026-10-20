@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn shout<T>(comptime value: T) {
+pub fn shout<T>(comptime value: T) -> void {
     var count = value;
     print(count.toUpper());
 }

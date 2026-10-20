@@ -8,7 +8,7 @@
 
 import {io, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val r = io.random.float();
     print(r >= 0.0 && r < 1.0);
     val unseeded = io.random.seededFloat();

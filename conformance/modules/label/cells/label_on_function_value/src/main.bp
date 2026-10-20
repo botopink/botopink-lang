@@ -13,6 +13,6 @@ fn apply(f: fn(i32, string) -> string) -> string {
     return f(n: 1, s: "x");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(apply(describe));
 }

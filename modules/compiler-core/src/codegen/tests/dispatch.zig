@@ -17,11 +17,11 @@ const h = @import("helpers.zig");
 test "js: implement ---- attaches methods to prototype" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Printable {
-        \\    fn print(self: Self);
+        \\    fn print(self: Self) -> string;
         \\}
         \\type Person(name: string)
         \\val PersonPrintable = implement Printable for Person {
-        \\    fn print(self: Self) {
+        \\    fn print(self: Self) -> string {
         \\        return self.name;
         \\    }
         \\}
@@ -32,11 +32,11 @@ test "js: dispatch ---- inherent record method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Contador(
         \\    n: i32) {
-        \\    fn atual(self: Self) {
+        \\    fn atual(self: Self) -> i32 {
         \\        return self.n;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = Contador(5);
         \\    print(c.atual());
         \\}
@@ -51,7 +51,7 @@ test "js: dispatch ---- string contains lowers to native includes" {
     // method of the same name (`Set.contains`) keeps its own dispatch — see the
     // inherent-record-method case above.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val hw = "hello world";
         \\    print(hw.contains("world"));
         \\}
@@ -66,7 +66,7 @@ test "js: dispatch ---- string startsWith lowers to native startsWith" {
     // with a `=/= nomatch` test (the `primCmpAgainstNomatch` shape in
     // `beam_asm.zig`).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val hw = "hello world";
         \\    print(hw.startsWith("hello"));
         \\}
@@ -78,15 +78,15 @@ test "js: dispatch ---- string startsWith lowers to native startsWith" {
 test "js: dispatch ---- auto-applied extension method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
@@ -98,15 +98,15 @@ test "js: dispatch ---- auto-applied extension method call" {
 test "js: dispatch ---- qualified extension method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val donald = Pato(3);
         \\    print(PatoNada.swim(donald));
         \\}
@@ -126,14 +126,14 @@ test "js: dispatch ---- multi-module implement on an imported record" {
         .{ .path = "", .source =
         \\import {pond.Pato};
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
@@ -149,18 +149,18 @@ test "js: dispatch ---- multi-module extension activated via star import" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "pond", .source =
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\pub type Pato(id: i32)
         \\pub val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
         },
         .{ .path = "", .source =
         \\import {pond.Pato, pond.PatoNada*};
-        \\fn main() {
+        \\fn main() -> void {
         \\    val donald = Pato(2);
         \\    print(donald.swim());
         \\}
@@ -231,7 +231,7 @@ test "js: dispatch ---- a method on an imported enum, an imported associated fn 
         },
         .{ .path = "", .source =
         \\import {geometry.Counter, geometry.Shape, geometry.make};
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c: Counter = Counter.zero();
         \\    print(c.bump());
         \\    print(Shape.Square(side: 4).area());
@@ -272,7 +272,7 @@ test "js: interface ---- a default fn calls members of the implementing record" 
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
         \\    print(m.cents);
         \\}
@@ -310,7 +310,7 @@ test "js: interface ---- a generic record adopts defaults through an extends cha
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Bag(items: []).isEmpty());
         \\    print(Bag(items: [1]).isEmpty());
         \\    print(Bag(items: [1, 2]).twiceSize());
@@ -333,7 +333,7 @@ test "js: interface ---- a redeclared primitive interface keeps its host members
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val n: i32 = 50;
         \\    print(n.clampTo(0, 10));
         \\}
@@ -346,7 +346,7 @@ test "js: interface ---- emits comment" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Drawable = behavior {
         \\    val color: string;
-        \\    fn draw(self: Self);
+        \\    fn draw(self: Self) -> void;
         \\}
     );
 }
@@ -375,7 +375,7 @@ test "js: import ---- a call to an imported fn names its module" {
             \\    return twice(twice(x));
             \\}
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    print(quad(3));
             \\}
             \\
@@ -442,7 +442,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
         .{ .path = "shape", .source = shape },
         .{ .path = "main", .source =
         \\import {shape.cell, shape.Cell};
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val c = cell(3);
         \\    print(c.set(5));
         \\    print(c.value);
@@ -455,7 +455,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
         .{ .path = "shape", .source = shape },
         .{ .path = "main", .source =
         \\import {shape.cell};
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(cell(3).set(5));
         \\}
         \\
@@ -478,7 +478,7 @@ test "js: record ---- a field of function type is called like a method" {
         \\    return Cell(value: v, set: { next -> next + v });
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val c = mk(5);
         \\    print(c.value);
         \\    print(c.set(9));
@@ -504,7 +504,7 @@ test "js: record ---- a field of function type is called like a method" {
 test "js: dispatch ---- a string method on a lambda's parameter renames too" {
     const src =
         \\type Item(name: string)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val names = ["box", "cup", "axe"];
         \\    print(names.filter({ s -> s.contains("x") }).join(","));
         \\    val items = [Item(name: "box"), Item(name: "cup"), Item(name: "axe")];

@@ -27,7 +27,7 @@ fn show(r: Req) -> string {
     return r.path();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val m = Msg.Get(url: "/a");
     print(m.path());
     print(show(m));

@@ -8,7 +8,7 @@
 
 import {io, io.terminal.print} from "std";
 
-fn tagged(syntax decl: unknown) {
+fn tagged(syntax decl: unknown) -> void {
     io.random.seed(7);
     val n = decl.nope;
 }
@@ -18,6 +18,6 @@ fn work() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(work());
 }

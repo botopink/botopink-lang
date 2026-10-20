@@ -28,6 +28,6 @@ pub mod two;
 import {one.parse};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(parse("x"));
 }

@@ -9,7 +9,7 @@ fn find(key: string) -> ?string {
     return if (key == "a") "found" else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val lengths = ["a", "a"].map({ k -> find(k)!.length() });
     print(lengths.length());
     print(lengths.at(1) ?? -1);

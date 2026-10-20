@@ -478,7 +478,7 @@ fn helper(x: i32) -> i32 {
 
 val secret = 21;
 
-fn main() {
+fn main() -> void {
     print("main ran");
 }
 

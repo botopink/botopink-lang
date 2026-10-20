@@ -20,7 +20,7 @@ type Rows(items: string[], title: string) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs: i32[] = [1, 2, 3];
     print(xs.length);
     val r = Rows(items: ["a", "b"], title: "four");

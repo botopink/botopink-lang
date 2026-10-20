@@ -425,7 +425,7 @@ test "std namespace: a folder leaf and a module's type reach the one-dot forms" 
     const arena = arena_state.allocator();
     const src =
         \\import {io, collections} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = io.fs.exists("/");
         \\    val d = collections.Dict.empty();
         \\    val o = collections.lt();
@@ -450,7 +450,7 @@ test "std namespace: a module's type constructor called through the namespace is
     const arena = arena_state.allocator();
     const src =
         \\import {io.clock} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d = clock.Duration(millis: 7);
         \\}
     ;

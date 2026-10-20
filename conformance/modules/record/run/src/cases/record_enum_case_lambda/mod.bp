@@ -21,7 +21,7 @@ fn area(b: Box) -> i32 {
     return twice(b.w * b.h);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(sides(Shape.Circle));
     print(sides(Shape.Square));
     print(sides(Shape.Triangle));

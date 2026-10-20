@@ -53,7 +53,7 @@ export declare class Meter {
 ```botopink
 import { hostlib.Meter };
 
-pub fn main() {
+pub fn main() -> void {
     print(Meter(base: 40).plus(2));
 }
 

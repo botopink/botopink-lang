@@ -12,7 +12,7 @@ fn check(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn walk(name: string, it: Iter<Result<i32, string>>) {
+fn walk(name: string, it: Iter<Result<i32, string>>) -> void {
     for (it) { r ->
         case r {
             Ok(v) -> print(name + " ok " + v.toString());
@@ -22,7 +22,7 @@ fn walk(name: string, it: Iter<Result<i32, string>>) {
     print(name + " done");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val checked = iter for ([1, -2, 3]) { x ->
         yield try check(x);
     };

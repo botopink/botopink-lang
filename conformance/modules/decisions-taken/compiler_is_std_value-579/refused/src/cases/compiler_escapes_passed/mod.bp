@@ -4,15 +4,15 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn report(at: unknown) {}
+fn report(at: unknown) -> void {}
 
-fn mark(syntax decl: unknown) {
+fn mark(syntax decl: unknown) -> void {
     report(compiler);
 }
 
 #[mark]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "a").name);
 }

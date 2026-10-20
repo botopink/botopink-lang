@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var n: i32 = 2147483646;
     n += 1;
     print(n);

@@ -27,7 +27,7 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
         \\    }
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("abc".twiceLength());
         \\    print("".twiceLength());
         \\    print("xy".firstChar());
@@ -58,7 +58,7 @@ test "js: primitive behavior default fn ---- return and throw build the @Result"
         \\    }
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("ab".nonEmpty().isOk());
         \\    print("".nonEmpty().isError());
         \\    print(case "ab".nonEmpty() {
@@ -97,7 +97,7 @@ test "js: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\fn zero() -> f64 {
         \\    return 0.0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val z = zero();
         \\    val nan = z / z;
         \\    print(nan == nan);
@@ -134,7 +134,7 @@ test "js: a library's enum class is its closure's alone, whatever its consumer d
 // formatter `@print` shares: erlang, beam and wasm's text.
 test "js: f64 text ---- a template hole, toString and a string + keep the decimal part" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val five = 5.0;
         \\    print("${5.0}");
         \\    print(5.0.toString());
@@ -178,7 +178,7 @@ test "js: template hole ---- a record, an array and a tuple are written as @prin
     try h.assertJsRunLog(std.testing.allocator,
         \\type Point(x: i32, y: i32)
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val p = Point(x: 1, y: 2);
         \\    val xs = [1, 2, 3];
         \\    val t = #(1, "a");
@@ -204,7 +204,7 @@ test "js: f64 text ---- __bp_f64 answers std-wasm's shortFloat" {
     defer src.deinit(gpa);
     var want: std.ArrayListUnmanaged(u8) = .empty;
     defer want.deinit(gpa);
-    try src.appendSlice(gpa, "import {io.terminal.print} from \"std\";\npub fn main() {\n");
+    try src.appendSlice(gpa, "import {io.terminal.print} from \"std\";\npub fn main() -> void {\n");
     var prng = std.Random.DefaultPrng.init(521);
     const r = prng.random();
     var n: usize = 0;
@@ -227,7 +227,7 @@ test "js: f64 text ---- __bp_f64 answers std-wasm's shortFloat" {
 test "js: trim ---- std-wasm's whitespace set, a NBSP stays" {
     try h.assertJsRunLog(
         std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("[" + "\u{a0}x\u{a0} ".trim() + "]");
         \\    print("[" + " \t\n\r\u{b}\u{c}x\u{2003}\t ".trim() + "]");
         \\    print("[" + "\u{a0} x ".trimStart() + "]");
@@ -250,7 +250,7 @@ test "js: case mapping ---- toUpper and toLower answer std-wasm's text" {
     const arena = arena_state.allocator();
     var src: std.ArrayListUnmanaged(u8) = .empty;
     var want: std.ArrayListUnmanaged(u8) = .empty;
-    try src.appendSlice(arena, "import {io.terminal.print} from \"std\";\npub fn main() {\n");
+    try src.appendSlice(arena, "import {io.terminal.print} from \"std\";\npub fn main() -> void {\n");
     for ([_]stdWasm.text.Case{ .upper, .lower }) |case| {
         // Every code point that maps under `case`, in runs of 64.
         var word: std.ArrayListUnmanaged(u8) = .empty;
@@ -304,7 +304,7 @@ test "js: f64 text ---- a record's and a variant's float field" {
         \\    Dot,
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(Pt(x: 1.0, n: 3, ys: [2.0]));
         \\    print([Shape.Circle(r: 2.0), Shape.Dot]);
         \\}
@@ -320,7 +320,7 @@ test "js: f64 text ---- a record's and a variant's float field" {
 // Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    val b = Bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
@@ -354,7 +354,7 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
         \\fn find(k: i32) -> ?Val {
         \\    return if (k == 1) Val.Text(s: "abc") else null;
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(find(1)?.str().length() ?? -1);
         \\    print(find(0)?.str().length() ?? -1);
         \\}
@@ -373,7 +373,7 @@ test "js: decision 330 ---- a method after recv?.m() over an enum method stays u
 test "js: decision 521 ---- trim and toLower through ?. are std-wasm's, guarded" {
     try h.assertJsRunLog(
         std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val o: ?string = "\u{a0}ΟΔΟΣ ";
         \\    val none: ?string = null;
         \\    print("[" + (o?.trim() ?? "-") + "]");
@@ -405,7 +405,7 @@ test "commonJS: a labelled break leaves the outer loop from a case arm of an inn
         \\    return s;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(sumBeforeTwo([1, 2], [1, 2, 3]));
         \\}
         \\
@@ -427,7 +427,7 @@ test "commonJS: a bare return in a yielding case arm ends the generator" {
         \\    yield 9;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    for (items(0)) { v -> print(v); }
         \\    for (items(1)) { v -> print(v); }
         \\}
@@ -453,7 +453,7 @@ test "commonJS: a labelled continue starts the outer loop's next round from a ca
         \\    return s;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(run([1, 2], [1, 2, 3]));
         \\}
         \\

@@ -4,7 +4,7 @@ pub fn greet(name: string) -> string {
     return "Hello, " + name;
 }
 val msg = greet("world");
-fn main() {
+fn main() -> void {
     print(msg);
 }
 

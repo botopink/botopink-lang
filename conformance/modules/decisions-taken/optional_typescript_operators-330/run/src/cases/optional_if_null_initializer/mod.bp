@@ -17,7 +17,7 @@ fn half(c: bool) -> ?f64 {
     return if (c) 0.5 else null;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val words = ["alpha", "be"];
     val n: ?i32 = if (words.length() > 5) 3 else null;
     val z: ?i32 = if (words.length() > 1) 0 else null;

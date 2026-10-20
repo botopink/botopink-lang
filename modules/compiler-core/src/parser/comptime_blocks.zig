@@ -102,7 +102,7 @@ const Expander = struct {
 
     fn lower(x: *Expander, block: ast.ComptimeBlockDecl, k: usize) Error!Pair {
         const name = try std.fmt.allocPrint(x.alloc, "{s}{d}", .{ decorator_prefix, k });
-        const text = try std.fmt.allocPrint(x.alloc, "fn {s}(syntax {s}: unknown) {{}}\n#[{s}]\nval {s}_at = 0;\n", .{ name, handle_name, name, name });
+        const text = try std.fmt.allocPrint(x.alloc, "fn {s}(syntax {s}: unknown) -> void {{}}\n#[{s}]\nval {s}_at = 0;\n", .{ name, handle_name, name, name });
         var lx = Lexer.init(text);
         const tokens = try lx.scanAll(x.alloc);
         var p = Parser.init(tokens);

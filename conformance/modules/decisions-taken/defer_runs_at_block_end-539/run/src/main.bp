@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.ambient_behavior_parameter.runCase();
     cases.defer_in_value_branch.runCase();
     cases.defer_inner_panic_runs_once.runCase();

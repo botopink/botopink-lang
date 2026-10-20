@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn hello() { return 1; }
+fn hello() -> i32 { return 1; }
  ↑
 ```
 

@@ -9,7 +9,7 @@ val short = comptime 2 + 3;
 
 val long = comptime { 2 + 3 };
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(short == long);
     val n = comptime 3 * 4;
     val m = comptime { 3 * 4 };

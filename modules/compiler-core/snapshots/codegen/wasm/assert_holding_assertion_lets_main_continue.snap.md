@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     assert 1 + 1 == 2, "arithmetic";
     print("after");
 }

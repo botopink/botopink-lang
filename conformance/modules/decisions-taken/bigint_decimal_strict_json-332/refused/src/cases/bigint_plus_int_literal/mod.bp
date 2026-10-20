@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x = 2n + 1;
     print(x);
 }

@@ -16,7 +16,7 @@ fn page<P>(
     syntax decl: fn(route: Route<P>) -> View,
     comptime seg: string,
     comptime paths: ?fn() -> P[] = null,
-) {
+) -> void {
     compiler.setMeta(Page(seg: seg));
 }
 
@@ -29,7 +29,7 @@ fn blog(route: Route<BlogParams>) -> View {
     return View(html: route.params.slug);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(blog(Route(params: BlogParams(slug: "a"))).html);
 }
 

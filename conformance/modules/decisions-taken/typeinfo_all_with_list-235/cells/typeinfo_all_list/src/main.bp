@@ -7,21 +7,21 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn service(syntax decl: unknown) {
+fn service(syntax decl: unknown) -> void {
     compiler.setMeta(Service(role: "service"));
     compiler.addMember("pub fn make() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
 }
 
-fn repository(syntax decl: unknown) {
+fn repository(syntax decl: unknown) -> void {
     compiler.setMeta(Store(store: "sql"));
     compiler.addMember("pub fn make() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
 }
 
-fn audited(syntax decl: unknown) {
+fn audited(syntax decl: unknown) -> void {
     compiler.setMeta(Audited(audit: "yes"));
 }
 
@@ -35,7 +35,7 @@ type Orders(table: string)
 #[audited]
 type Billing(rate: i32)
 
-pub fn main() {
+pub fn main() -> void {
     for (@TypeInfo.all(with: [repository, service], member: "make")) { d ->
         var meta: string[] = [];
         for (d.metaAll(Service)) { m ->

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val s = "abcdef";
     val mid = s.slice(1, 5);
     print(mid.len);

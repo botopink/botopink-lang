@@ -9,7 +9,7 @@ fn mk(v: i32) -> Cell {
     return Cell(value: v, set: { next -> next + v });
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = mk(5);
     print(c.value);
     print(c.set(9));

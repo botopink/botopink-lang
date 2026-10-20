@@ -24,7 +24,7 @@ test "js: a @Result's methods lower inline (decision 330: no `result` namespace)
         \\    return n;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = parse(21).map({ x -> x * 2 });
         \\    print(r.unwrapOr(0));
         \\}
@@ -47,7 +47,7 @@ test "js: std package ---- a dotted path and a group bind leaves of std modules"
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d: Dict<string, i32> = Dict.empty();
         \\    print(d.insert("a", 1).size());
         \\    print(rank(reverse(gt())));
@@ -67,7 +67,7 @@ test "js: std package ---- env template externals resolve through the module obj
     try h.assertJsRunLog(std.testing.allocator,
         \\import {io.env} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    env.write("BOTOPINK_F8_ENV", "hi");
         \\    print(env.read("BOTOPINK_F8_ENV"));
         \\    env.clear("BOTOPINK_F8_ENV");
@@ -97,7 +97,7 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
         \\#[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
         \\declare fn otpSqrt(x: f64) -> f64;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(math.ceil(1.2));
         \\    print(otpSqrt(16.0));
         \\}
@@ -127,7 +127,7 @@ test "erlang: std package ---- a qualified std host call reaches its owner's wra
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {erlang} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(erlang.node());
         \\}
         \\
@@ -150,7 +150,7 @@ test "js: std package ---- order enum module with type export" {
         \\    return s;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(collections.toInt(collections.lt()));
         \\    print(describe(collections.reverse(collections.lt())));
         \\}
@@ -187,7 +187,7 @@ test "js: std package ---- methods of a type answered by an imported module reso
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {collections.Dict} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d = Dict.empty().insert("a", 1);
         \\    print(d.at("a") ?? 0);
         \\    print(d.insert("b", 2).size());
@@ -216,7 +216,7 @@ test "erlang: std package ---- a String.slice default fn inside a std module" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {querystring} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
         \\}
         \\

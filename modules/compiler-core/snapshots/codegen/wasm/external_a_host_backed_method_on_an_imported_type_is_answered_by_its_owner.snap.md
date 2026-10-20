@@ -24,7 +24,7 @@ import {compiler} from "std";
 ```botopink
 import { hostlib.Meter };
 
-pub fn main() {
+pub fn main() -> void {
     print(Meter(base: 40).plus(2));
 }
 

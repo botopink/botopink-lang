@@ -11,7 +11,7 @@ fn render(words: Array<string>) -> string {
     for (words) { w -> emit(w); };
     return out + " " + count.toString();
 }
-fn main() {
+fn main() -> void {
     print(render(["a", "b"]));
 }
 

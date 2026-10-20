@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn check(x: i32) {
+fn check(x: i32) -> void {
     if (x > 0) {
         print("positive");
     } else {
         print("non-positive");
     }
 }
-fn main() {
+fn main() -> void {
     check(1);
     check(-1);
 }

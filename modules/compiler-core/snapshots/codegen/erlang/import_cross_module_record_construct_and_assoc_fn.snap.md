@@ -54,7 +54,7 @@ ok(Body) ->
 ```botopink
 import {http.Response, http.App};
 
-fn main() {
+fn main() -> void {
     val r = Response.ok("hi");
     print(r.body);
     val a = App(8080, "/");

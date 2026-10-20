@@ -36,7 +36,7 @@ fn describe(r: Result<string, string>) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val failed = load(-1);
     print(failed.isError());
     print(describe(failed));

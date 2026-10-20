@@ -31,7 +31,7 @@ fn one(c: bool) -> i32 {
     return r;
 }
 
-fn main() {
+fn main() -> void {
     one(true);
     one(false);
     pick(0);

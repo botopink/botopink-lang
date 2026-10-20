@@ -4,7 +4,7 @@ val result = comptime {
     val x = 10;
     x * 2
 };
-fn main() {
+fn main() -> void {
     print(result);
 }
 

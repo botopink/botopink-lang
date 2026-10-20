@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 pub mod shapes;
 
-pub fn main() {
+pub fn main() -> void {
     val b = shapes.Box<i32>.make("x");
     print(b.value);
 }

@@ -24,14 +24,14 @@ fn viaIfBranch(c: bool) -> i32 {
     return 2;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(failure.attempt({ -> viaArm(0) }));
     show(failure.attempt({ -> viaArm(1) }));
     show(failure.attempt({ -> viaIfBranch(true) }));

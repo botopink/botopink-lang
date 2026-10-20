@@ -27,12 +27,12 @@ fn describe(n: i32) -> string {
 }
 
 // 4) val assert — fatal if it does not match
-fn mustPort() {
+fn mustPort() -> void {
     val assert Ok(p) = port(443);
     print(p);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(portOrDefault(0)); // 8080
     print(doubled(21).unwrapOr(0)); // 42
     print(describe(0)); // no port

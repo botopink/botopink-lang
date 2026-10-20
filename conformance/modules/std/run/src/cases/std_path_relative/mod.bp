@@ -6,7 +6,7 @@
 
 import {path, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(path.relative("/a/b/c", "/a/d"));
     print(path.relative("/a/b", "/a/b/c/d"));
     print(path.relative("/x/y/z", "/p"));

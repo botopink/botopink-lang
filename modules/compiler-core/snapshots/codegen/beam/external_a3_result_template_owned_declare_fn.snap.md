@@ -6,7 +6,7 @@
 )]
 pub declare fn parseInt(s: string) -> Result<i32, string>;
 
-fn main() {
+fn main() -> void {
     val r = parseInt("42");
     print(r.unwrapOr(-1));
 }

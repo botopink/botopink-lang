@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val `two
     lines` = 1;
     print(1);

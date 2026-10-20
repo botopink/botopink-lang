@@ -4,7 +4,7 @@ fn greet(name: string, greeting: string = "hello") -> string {
     return greeting + ", " + name + "!";
 }
 
-fn main() {
+fn main() -> void {
     print(greet("world")); // hello, world!  — `greeting` takes its default
     print(greet("world", "hi")); // hi, world!
 }

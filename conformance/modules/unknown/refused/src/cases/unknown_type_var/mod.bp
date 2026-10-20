@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var m: Bogus = 1;
     print(1);
 }

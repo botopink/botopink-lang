@@ -29,7 +29,7 @@ fn describe(t: Target, s: Shape) -> string {
     return "t=${t} s=${s}";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = Target.Top;
     print("${t}");
     print("at ${Target.Bottom}!");

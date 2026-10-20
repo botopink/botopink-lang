@@ -8,14 +8,14 @@ fn check<T>(
     syntax decl: T,
     comptime message: string,
     comptime at: ?Type.Field<T> = null,
-) {
+) -> void {
     compiler.setMeta(Check(message: message));
 }
 
 #[check("must match", at = .confirm)]
 type Account(password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }
 

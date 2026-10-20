@@ -51,6 +51,6 @@ async fn run() -> Async<void> {
     print(await returned(1));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

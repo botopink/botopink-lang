@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.enum_implements_behavior.runCase();
     cases.enum_payload_value_prints.runCase();
     cases.enum_section_expected_type.runCase();

@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 type Port(number: i32 = 80, host: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(Port(host: "a").number);
 }

@@ -70,7 +70,7 @@ fn writeProject(io: std.Io, comptime case: []const u8) !void {
         .{ .rel = "deps/markup/botopink.json", .data = "{\"name\": \"markup\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"root.bp\", \"files\": [\"root.bp\", \"markup.bp\"]}" },
         .{ .rel = "deps/markup/src/root.bp", .data = "pub default mod markup;\n" },
         .{ .rel = "deps/markup/src/markup.bp", .data = MARKUP },
-        .{ .rel = "src/main.bp", .data = "pub mod components;\nimport {components.Card};\n\npub fn main() {}\n" },
+        .{ .rel = "src/main.bp", .data = "pub mod components;\nimport {components.Card};\n\npub fn main() -> void {}\n" },
         .{ .rel = "src/components/mod.bp", .data = "pub mod Card;\npub mod Broken;\npub mod Bang;\n" },
         .{ .rel = "src/components/Card.bpp", .data = CARD },
         .{ .rel = "src/components/Broken.bpp", .data = BROKEN },

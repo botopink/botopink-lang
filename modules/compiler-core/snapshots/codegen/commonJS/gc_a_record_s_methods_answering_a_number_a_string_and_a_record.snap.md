@@ -15,7 +15,7 @@ type Counter(n: i32, label: string) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = Counter(n: 4, label: "ctr");
     print(c.bump());
     print(c.name());

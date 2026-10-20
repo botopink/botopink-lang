@@ -17,7 +17,7 @@ fn size(items: i32[]) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(warm(Color.Red)); // true
     print(warm(Color.Blue)); // false
     print(size([])); // empty

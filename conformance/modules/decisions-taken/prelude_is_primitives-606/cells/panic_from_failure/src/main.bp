@@ -9,7 +9,7 @@ fn half(n: i32) -> i32 {
     return n / 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(half(8));
     case attempt({ -> half(3) }) {
         Ok(v) -> print("ok", v);

@@ -36,7 +36,7 @@ fn rows() -> Result<Array<#(string, string)>, string> {
     return xs;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = #(1, [7].at(5));
     print(t);
     print(t._1);

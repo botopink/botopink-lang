@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 type Op(name: string, run: fn(x: i32) -> i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ops = [
         Op(name: "inc", run: { x -> x + 1 }),
         Op(name: "dbl", run: { x -> x * 2 }),

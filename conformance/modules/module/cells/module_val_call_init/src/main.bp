@@ -15,7 +15,7 @@ fn count() -> i32 {
     return t.length;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(count());
     print(t.at(1) ?? "?");
     print(half(3.7));

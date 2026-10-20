@@ -13,6 +13,6 @@ fn registry() -> i32 {
 #[compiler.beamMemory(.Ets)]
 var seeded: i32 = registry();
 
-pub fn main() {
+pub fn main() -> void {
     print(seeded);
 }

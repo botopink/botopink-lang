@@ -21,7 +21,7 @@ fn atomState<T>(comptime source: Atom<T> | type<T>, fallback: T) -> T {
 
 val currentUser = Atom(key: "currentUser", initial: User(name: "ana"));
 
-pub fn main() {
+pub fn main() -> void {
     print(atomKey(currentUser));
     print(atomKey(User));
     print(atomKey<User>(currentUser));

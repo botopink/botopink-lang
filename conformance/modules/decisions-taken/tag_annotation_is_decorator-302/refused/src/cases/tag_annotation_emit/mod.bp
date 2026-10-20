@@ -6,6 +6,6 @@ pub mod tags;
 import {cases.tag_annotation_emit.tags.markup, cases.tag_annotation_emit.tags.withEmit};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<div #[withEmit]>hi</div>`);
 }

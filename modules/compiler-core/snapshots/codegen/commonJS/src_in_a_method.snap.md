@@ -5,7 +5,7 @@ type Stub(n: i32) {
         return comptime compiler.src();
     }
 }
-fn main() {
+fn main() -> void {
     val loc = Stub(n: 1).where();
     print(loc.file, loc.line, loc.column, loc.fnName);
 }

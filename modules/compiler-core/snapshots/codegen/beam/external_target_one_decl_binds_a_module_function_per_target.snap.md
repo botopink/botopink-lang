@@ -3,7 +3,7 @@
 #[compiler.external(.Erlang("filename:dirname($0)"), .JavaScript("""require("node:path").dirname($0)"""))]
 pub declare fn dirname(p: string) -> string;
 
-fn main() {
+fn main() -> void {
     print(dirname("/tmp/notes.txt"));
 }
 

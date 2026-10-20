@@ -7,10 +7,10 @@ import {compiler} from "std";
 
 pub type Mark(text: string)
 
-fn mark(comptime text: string) {
+fn mark(comptime text: string) -> void {
     compiler.setMeta(Mark(text: text));
 }
 
-pub fn main() {
+pub fn main() -> void {
     mark("x");
 }

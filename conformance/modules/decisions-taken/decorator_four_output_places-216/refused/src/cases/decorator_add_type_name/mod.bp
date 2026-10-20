@@ -4,13 +4,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     compiler.addType("columns", compiler.buildType("(id: string)"));
 }
 
 #[entity]
 type City(id: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(id: 1).id);
 }

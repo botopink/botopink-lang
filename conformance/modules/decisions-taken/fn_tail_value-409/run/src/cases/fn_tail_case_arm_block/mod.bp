@@ -30,7 +30,7 @@ fn pick(n: i32) -> fn(x: i32) -> i32 {
     f
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(classify(0));
     print(classify(-3));
     print(classify(4));

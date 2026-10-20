@@ -8,6 +8,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("math:sqrt($0)"), .Beam("math", "sqrt"))]
 declare fn root(x: f64) -> f64;
 
-pub fn main() {
+pub fn main() -> void {
     print(root(16.0));
 }

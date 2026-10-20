@@ -28,7 +28,7 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
     var src: std.ArrayListUnmanaged(u8) = .empty;
     defer src.deinit(alloc);
     try src.appendSlice(alloc,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val s = " ab ";
         \\    print([1, 1, 2].unique());
         \\
@@ -66,7 +66,7 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\    }
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("a+b".tailShout());
         \\    print("ab".tailShout());
         \\    print([1, 2].firstOr(9));
@@ -83,7 +83,7 @@ test "erlang: Array.unique keeps each value's first occurrence" {
     // its locals (`var out: T[]`). Decision 217: every duplicate goes, not only
     // a consecutive one.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print([1, 2, 1, 3, 2].unique());
         \\    print([4].unique());
         \\    val none: i32[] = [];
@@ -101,7 +101,7 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
     // same bytes under any locale (`modules/string/run/src/cases/string_literal_unicode_escape` run
     // with `LANG=C` is the measurement; this harness has the host's locale).
     try h.assertErlangRunLog(std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("é", "\u{1F600}");
         \\}
         \\
@@ -127,7 +127,7 @@ test "erlang: true and false inside a tuple pattern are matched, not bound" {
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(tag(#(false, 1)));
         \\    print(tag(#(true, 2)));
         \\    print(first(#(false, 7, 8)));
@@ -160,7 +160,7 @@ test "erlang: a record's constructor pattern carries the record's own tag" {
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(f(Point(x: 0, y: 5)));
         \\    print(f(Point(x: 3, y: 0)));
         \\    print(onAxis(Point(x: 0, y: 5)));
@@ -186,7 +186,7 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(parse(0).unwrapOr(-1));
         \\    print(parse(1).unwrapOr(-2));
         \\    print(parse(2).unwrapOr(-3));
@@ -208,7 +208,7 @@ test "erlang: a fn in a generic record's field is applied when called through th
         \\    return s + "!";
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val h = Box(value: shout);
         \\    print(h.value("b"));
         \\    val lam = Box(value: { s -> s + "?" });
@@ -230,7 +230,7 @@ test "erlang: a list pattern that is a spread alone binds the whole list" {
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(describe([1, 2, 3]));
         \\    print(describe([]));
         \\    val assert [..every] = [4, 5];
@@ -268,7 +268,7 @@ test "erlang: a block reassigning an enclosing `var` answers it beside its value
         \\    return found * 100 + seen;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(firstOver([1, 7, 3], 5));
         \\    print(firstOver([1, 2], 5));
         \\}
@@ -305,7 +305,7 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\import {collections} from "std";
         \\import {items.Queue, items.describe};
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(describe(Queue(label: "crowded", size: 2)));
         \\    print(collections.toInt(collections.lt()));
         \\}
@@ -319,7 +319,7 @@ test "erlang: a record imported by name beside a std module declaring the same n
         \\import {items.Queue, items.describe};
         \\import {collections} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(describe(Queue(label: "after", size: 3)));
         \\    print(collections.toInt(collections.gt()));
         \\}
@@ -347,7 +347,7 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
         \\val _c = Box(n: 5);
         \\val _d = double(_c.get());
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(_d);
         \\}
         \\
@@ -358,7 +358,7 @@ test "erlang: a `_`-prefixed module-level val is a binding its readers see, not 
 // Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    val b = Bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
@@ -397,7 +397,7 @@ test "erlang: a defer reads a var a value case's arm reassigns before it panics"
         \\    return r;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val r = failure.attempt({ -> work(0) });
         \\    print("done");
         \\}
@@ -418,7 +418,7 @@ test "erlang: a defer body that rebinds a var leaves its group unbound" {
         \\    return n;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(f());
         \\}
         \\
@@ -440,7 +440,7 @@ test "erlang: a bare return in a yielding case arm ends the generator" {
         \\    yield 9;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    for (items(0)) { v -> print(v); }
         \\    for (items(1)) { v -> print(v); }
         \\}
@@ -465,7 +465,7 @@ test "erlang: a labelled break leaves the outer loop from an inner one" {
         \\    return s;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(sumBeforeTwo([1, 2], [1, 2, 3]));
         \\}
         \\
@@ -490,7 +490,7 @@ test "erlang: a labelled continue starts the outer loop's next round from a case
         \\    return s;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(run([1, 2], [1, 2, 3]));
         \\}
         \\

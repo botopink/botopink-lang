@@ -11,6 +11,6 @@ fn tanBody(x: i32) -> f64 {
     return 0.0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(tanOf(0.0));
 }

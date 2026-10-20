@@ -9,4 +9,4 @@ component fn state(initial: i32) -> Component<i32> { return initial; }
 
 val c = use state(0);
 
-pub fn main() { print(c); }
+pub fn main() -> void { print(c); }

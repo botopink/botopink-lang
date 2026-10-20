@@ -9,7 +9,7 @@ fn nameOf(decl: unknown) -> string {
     return decl.nope;
 }
 
-fn tagged(syntax decl: unknown) {
+fn tagged(syntax decl: unknown) -> void {
     val n = nameOf(decl);
 }
 
@@ -18,6 +18,6 @@ fn work() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(work());
 }

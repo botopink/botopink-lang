@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     print(String.fromCodepoint(55296));
     print("after");

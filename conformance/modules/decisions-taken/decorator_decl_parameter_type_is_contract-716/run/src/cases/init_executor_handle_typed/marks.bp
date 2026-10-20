@@ -4,7 +4,7 @@ import {cases.init_executor_handle_typed.registry.add};
 import {cases.init_executor_handle_typed.registry.Module};
 import {compiler} from "std";
 
-pub fn module(syntax decl: fn() -> string, comptime lifecycle: string) {
+pub fn module(syntax decl: fn() -> string, comptime lifecycle: string) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> add(Module(name: name, lifecycle: lifecycle, make: decl)) });
 }

@@ -5,7 +5,7 @@ pub mod geo;
 import {geo.shapes};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(shapes.area(2));
     val f = shapes;
 }

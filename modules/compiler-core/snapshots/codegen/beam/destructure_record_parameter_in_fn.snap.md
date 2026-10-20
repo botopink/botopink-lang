@@ -5,7 +5,7 @@ fn greet({ name, .. }: Person) -> string {
     print(name);
     return name;
 }
-fn main() {
+fn main() -> void {
     greet(Person(name: "Ana", age: 30));
 }
 

@@ -26,7 +26,7 @@ fn tenth(x: i32) -> Result<i32, string> {
     if (x > 1) return x * 10 else throw "too small";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [1, 2, 3];
 
     print(xs.map({ x -> if (x > 1) x * 10 else x }).join(","));

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn increment() {
+fn increment() -> void {
     var count = 0;
     count += 1;
 }

@@ -7,6 +7,6 @@ import {bpp, io.terminal.print} from "std";
 #[bpp.style]
 pub val sheet = "";
 
-pub fn main() {
+pub fn main() -> void {
     print(sheet);
 }

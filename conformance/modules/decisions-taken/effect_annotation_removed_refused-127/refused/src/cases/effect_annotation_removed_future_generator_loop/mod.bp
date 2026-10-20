@@ -5,7 +5,7 @@
 
 fn tick(n: i32) -> Async<i32> { return n; }
 
-pub fn main() {
+pub fn main() -> void {
     var n = 0;
     val s = #[@futureGenerator] loop {
         n = n + 1;

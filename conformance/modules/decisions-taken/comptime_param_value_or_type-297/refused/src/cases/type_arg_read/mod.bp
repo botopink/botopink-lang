@@ -13,6 +13,6 @@ fn peek<T>(comptime s: Box<T> | type<T>) -> string {
     return "v";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(peek(Box(value: "x")));
 }

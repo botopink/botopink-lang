@@ -4,6 +4,6 @@ fn greet(name: string) -> string {
     return "Hello, " + name + "!";
 }
 
-fn main() {
+fn main() -> void {
     print(greet("world")); // Hello, world!
 }

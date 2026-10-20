@@ -34,7 +34,7 @@ fn css(syntax q: string) -> string {
 
 val color = "red";
 
-pub fn main() {
+pub fn main() -> void {
     print(css @`
         color: ${color};
         margin: ${missing};

@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val a = @block { 1 + 2 };
     print(a);
 }

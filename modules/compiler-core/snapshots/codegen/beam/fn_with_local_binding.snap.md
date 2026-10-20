@@ -5,7 +5,7 @@ fn double(x: i32) -> i32 {
     return result;
 }
 val output = double(10);
-fn main() {
+fn main() -> void {
     print(output);
 }
 

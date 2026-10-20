@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val double: fn(i32) -> i32 = { n -> n * 2 };
     val xs = [1, 2, 3, 4];
 

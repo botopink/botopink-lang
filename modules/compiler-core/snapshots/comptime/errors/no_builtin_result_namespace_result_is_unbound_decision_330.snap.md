@@ -3,7 +3,7 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn main() {
+fn main() -> void {
     val x = result.collapse(parse(1));
 }
 

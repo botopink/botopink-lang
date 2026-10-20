@@ -18,7 +18,7 @@ type MathOps {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(MathOps.double(21));
     print(MathOps.first([7, 8], 0));
     print(MathOps.quadruple(5));

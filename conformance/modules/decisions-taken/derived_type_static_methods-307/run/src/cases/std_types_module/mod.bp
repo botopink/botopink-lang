@@ -3,6 +3,6 @@
 
 import {types.Type, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("types");
 }

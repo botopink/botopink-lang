@@ -9,7 +9,7 @@
 
 import {testing.asserts, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(asserts.errorText(asserts.deepEquals([1, 2], [1, 2])).length);
     print(asserts.errorText(asserts.deepEquals([1, 2], [2, 1])));
 }

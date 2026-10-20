@@ -15,6 +15,6 @@ fn mixed() -> string {
     return n + clock.nowMillis().toString();
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(mixed());
 }

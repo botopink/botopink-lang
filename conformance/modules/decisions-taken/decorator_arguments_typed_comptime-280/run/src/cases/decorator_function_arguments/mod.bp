@@ -23,7 +23,7 @@ fn page<P, D>(
     comptime seg: string,
     comptime paths: ?fn() -> #(P, D)[] = null,
     comptime head: ?fn(p: P, d: D) -> Head = null,
-) {
+) -> void {
     compiler.setMeta(Page(seg: seg));
 }
 
@@ -41,7 +41,7 @@ fn postHead(p: BlogParams, d: Post) -> Head {
     return Head(title: d.title + " /" + p.slug);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(blogPage).meta(Page)?.seg ?? "none");
     for (allPosts()) { pair ->
         print(blogPage(Route(params: pair._0, data: pair._1)).html);

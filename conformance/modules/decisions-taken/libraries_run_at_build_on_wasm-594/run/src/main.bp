@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.comptime_random_seeded.runCase();
     cases.comptime_std_host_function.runCase();
     cases.decorator_host_cells.runCase();

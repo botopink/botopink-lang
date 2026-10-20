@@ -35,7 +35,7 @@ test "prepareRename: keyword is not renameable" {
 test "prepareRename: fn keyword rejected" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn hello() { return 1; }
+        \\fn hello() -> i32 { return 1; }
     ;
 
     const cursor = h.pos(0, 1);
@@ -61,7 +61,7 @@ test "prepareRename: null literal rejected" {
 test "prepareRename: Self rejected" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn method(self: Self) { return 0; }
+        \\fn method(self: Self) -> i32 { return 0; }
     ;
 
     const cursor = h.pos(0, 17);

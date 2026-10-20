@@ -20,7 +20,7 @@ fn plain(link: Link) -> string {
     return link.href;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(a(AnchorProps(href: "/home", lang: "pt")));
     print(a(AnchorProps(href: "/about")));
     print(IdOnly(id: "main").id ?? "-");

@@ -7,12 +7,12 @@ fn fetchName() -> Result<string, UserError> {
 fn fetchAge() -> Result<i32, UserError> {
     throw UserError(msg: "age missing");
 }
-fn loadUser() {
+fn loadUser() -> void {
     val name = try fetchName() catch "anonymous";
     val age = try fetchAge() catch 0;
     print(name, age);
 }
-fn main() {
+fn main() -> void {
     loadUser();
 }
 

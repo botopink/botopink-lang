@@ -9,11 +9,11 @@ type Span(range: #(i32, i32), label: string)
 
 type Sort<T>(by: Type.Field<T>, keys: Type.Field<T>[])
 
-fn span(syntax decl: unknown, comptime start: i32, comptime end: i32) {
+fn span(syntax decl: unknown, comptime start: i32, comptime end: i32) -> void {
     compiler.setMeta(Span(range: #(start, end), label: compiler.name(decl)!));
 }
 
-fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) {
+fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) -> void {
     compiler.setMeta(Sort(by: by, keys: [by]));
 }
 
@@ -21,7 +21,7 @@ fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) {
 #[sort(.pages)]
 type Book(title: string, pages: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val s = comptime compiler.typeInfo(Book).meta(Span);
     print(s?.label ?? "none");
     val r = s?.range ?? #(0, 0);

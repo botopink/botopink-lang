@@ -93,7 +93,7 @@ test "a decorator's and a function's comptime parameters are unwrapped, a templa
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn setting(syntax decl: unknown, comptime key: string) {}
+        \\fn setting(syntax decl: unknown, comptime key: string) -> void {}
         \\fn scale(comptime n: i32, x: i32) -> i32 { return x * n; }
         \\fn sql(syntax q: string) -> string { return q; }
         \\type Kit { fn pick(comptime t: anytype) -> i32 { return 1; } }

@@ -34,7 +34,7 @@ fn describe(syntax q: string) -> string {
     return compiler.build("\"" + text + "\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe @`City`);
     print(describe @`Person`);
     print(describe @`Named`);

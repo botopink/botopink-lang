@@ -14,7 +14,7 @@ pub fn code(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q));
 }
 
-pub fn main() {
+pub fn main() -> void {
     val boxes = [Box(w: 2, h: 3)];
     val widths = code @`boxes.map({ r -> r.w })`;
     val depths = code @`boxes.map({ r -> r.d })`;

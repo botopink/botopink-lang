@@ -7,7 +7,7 @@ fn neg(x: i32) -> i32 {
     return -x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val min = neg(2147483647) - 1;
     print(min);
     print(neg(-2147483647));

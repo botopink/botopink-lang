@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 mod text;
 mod user;
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(text.splitPath("a/b"));
     print(text.join(text.Pair(a: "x", b: "y")));
     print(user.run());

@@ -12,7 +12,7 @@
 
 import {querystring, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val pairs = querystring.parse("?n=caf%C3%A9&x=a%20b").unwrapOr([]);
     print(pairs.length);
     print((pairs.at(1) ?? #("", ""))._1);

@@ -14,7 +14,7 @@ type Token {
     Bold,
 }
 
-fn main() {
+fn main() -> void {
     val t: Token = .Color.Red.500;
     print(
         case t {

@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn job(syntax decl: unknown) {
+fn job(syntax decl: unknown) -> void {
     compiler.setMeta(Job(kind: "job"));
 }
 
@@ -20,7 +20,7 @@ pub fn greet(name: string) -> string {
     return "hi " + name;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val all: Declared<unknown>[] = @TypeInfo.all(with: job);
     for (all) { d ->
         print(d.name + " " + d.module + " " + d.returnTypeName);

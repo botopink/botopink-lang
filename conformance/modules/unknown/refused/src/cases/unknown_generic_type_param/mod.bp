@@ -7,6 +7,6 @@ fn size(m: Bogus<i32, i32>) -> i32 {
     return 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

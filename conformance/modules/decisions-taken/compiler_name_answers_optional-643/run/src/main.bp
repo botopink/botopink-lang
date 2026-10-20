@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.compiler_name_of_lambda.runCase();
     cases.template_name_answers_optional.runCase();
 }

@@ -9,7 +9,7 @@ type Tree<T> {
     Node(left: Tree<T>, right: Tree<T>),
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(identity(3)); // 3
     print(Tree.Leaf(value: "a")); // Tree.Leaf(value: "a")
 }

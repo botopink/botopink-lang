@@ -10,7 +10,7 @@ fn slug(post: ?Post) -> string {
     return post?.params.at("slug") ?? "none";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val params: Dict<string, string> = Dict.empty().insert("slug", "hello");
     print(slug(Post(title: "t", params: params)));
     print(slug(null));

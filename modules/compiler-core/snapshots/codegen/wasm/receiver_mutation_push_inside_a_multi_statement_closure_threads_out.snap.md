@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn component(syntax decl: unknown) {
+pub fn component(syntax decl: unknown) -> void {
     var args: Array<string> = [];
     compiler.fields(decl).forEach({ f ->
         var valKey = "";
@@ -17,7 +17,7 @@ pub fn component(syntax decl: unknown) {
 
 val port = "port";
 
-fn value(syntax decl: unknown, comptime key: string) { }
+fn value(syntax decl: unknown, comptime key: string) -> void { }
 
 #[component]
 type Service(
@@ -36,7 +36,7 @@ fn collect(xs: Array<i32>) -> Array<string> {
     return out;
 }
 
-fn main() {
+fn main() -> void {
     print(wireService());
     print(collect([1, 2, 3]).join(","));
 }

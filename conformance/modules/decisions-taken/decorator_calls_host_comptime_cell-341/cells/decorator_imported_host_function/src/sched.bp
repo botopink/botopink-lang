@@ -14,7 +14,7 @@ fn wrapBody(value: string) -> string {
     return "<" + value + ">";
 }
 
-pub fn stamped(syntax decl: unknown) {
+pub fn stamped(syntax decl: unknown) -> void {
     @emit(
         "pub fn stamp() -> string { return \""
             + wrap(compiler.name(decl)!)

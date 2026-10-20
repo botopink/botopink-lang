@@ -6,6 +6,6 @@ fn link(
     return props.label + " <" + props.href + ">";
 }
 
-fn main() {
+fn main() -> void {
     print(link(href: "/a", label: "A")); // A </a>
 }

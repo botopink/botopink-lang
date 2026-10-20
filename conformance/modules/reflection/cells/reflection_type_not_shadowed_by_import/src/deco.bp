@@ -5,7 +5,7 @@
 import {model.Param, model.Field};
 import {compiler} from "std";
 
-pub fn described(syntax decl: unknown) {
+pub fn described(syntax decl: unknown) -> void {
     var names = "";
     for (compiler.methods(decl)) { m ->
         for (m.params) { p ->

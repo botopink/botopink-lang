@@ -11,7 +11,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val ws = ["alpha"];
     val w = ws.at(0);
     if (w) { print("truthy"); }

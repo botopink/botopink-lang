@@ -11,11 +11,11 @@ fn inRecord<T>(r: T) -> string {
     return "r=${r}";
 }
 
-fn printRecord<T>(r: T) {
+fn printRecord<T>(r: T) -> void {
     print(r);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(inRecord(Pt(x: 4.0)));
     printRecord(Pt(x: 2.5));
 }

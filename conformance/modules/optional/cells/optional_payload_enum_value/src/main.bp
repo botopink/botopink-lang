@@ -19,7 +19,7 @@ fn show(q: ?Place) -> ?Place {
     return q;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val p: ?Place = Place.There(n: 2);
     print(p);
     val h: ?Place = Place.Here;

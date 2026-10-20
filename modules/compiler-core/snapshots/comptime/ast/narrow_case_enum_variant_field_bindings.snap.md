@@ -12,7 +12,7 @@ fn area(s: Shape) -> f64 {
         Point -> 0.0;
     };
 }
-fn main() {
+fn main() -> void {
     print(area(Shape.Circle(2.0)));
 }
 

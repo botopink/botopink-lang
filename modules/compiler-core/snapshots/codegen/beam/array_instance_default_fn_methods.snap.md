@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val xs = [1, 2, 3];
     print(xs.prepend(0).join(","));
     print(xs.fold(0, { a, x -> a + x }));

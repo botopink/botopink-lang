@@ -7,6 +7,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("x.y($0)"), .Erlang("x:y($0)"), .Wasm(std: hash.contentHash))]
 pub declare fn digest(s: string) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(digest("a"));
 }

@@ -57,6 +57,6 @@ test ".d.ts: a payload-less variant of a generic enum names no class type parame
 
 test ".d.ts: a compiler-spliced record named by a signature is declared private" {
     try expectDts(
-        \\pub fn show(all: Declared<unknown>[]) { }
+        \\pub fn show(all: Declared<unknown>[]) -> void { }
     , &.{ "declare class Declared<T>", "declare class DeclaredMeta", "export {};" }, &.{"export declare class Declared"});
 }

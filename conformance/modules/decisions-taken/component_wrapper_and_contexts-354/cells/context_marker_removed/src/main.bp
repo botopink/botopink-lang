@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 type Element(count: i32) implement @Context<Element>
 
-pub fn main() {
+pub fn main() -> void {
     print(Element(count: 1).count);
 }

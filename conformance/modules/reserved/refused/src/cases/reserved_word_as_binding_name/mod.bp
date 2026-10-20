@@ -2,6 +2,6 @@
 //// i32 = 1;` is `reserved-word-as-name` at the name, naming the word, as a
 //// field or a parameter already is (`language-gaps.md` T9).
 
-pub fn main() {
+pub fn main() -> void {
     val unknown: i32 = 1;
 }

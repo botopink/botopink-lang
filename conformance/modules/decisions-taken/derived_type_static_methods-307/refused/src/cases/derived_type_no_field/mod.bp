@@ -9,4 +9,4 @@ type Recipe(
 
 pub val Nothing = Type.pick(Recipe);
 
-pub fn main() {}
+pub fn main() -> void {}

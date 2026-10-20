@@ -3,7 +3,7 @@
 import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 // Gives the annotated declaration a member — a type's channel, not a tag's.
-pub fn withMember<T>(syntax decl: T) {
+pub fn withMember<T>(syntax decl: T) -> void {
     compiler.addMember("extra", fn(self: T) -> i32 {
         return 1;
     });

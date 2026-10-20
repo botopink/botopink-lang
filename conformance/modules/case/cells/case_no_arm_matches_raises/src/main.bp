@@ -25,7 +25,7 @@ fn area(s: Shape) -> i32 {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     print(area(shapeNamed("Square")));
     print("after");

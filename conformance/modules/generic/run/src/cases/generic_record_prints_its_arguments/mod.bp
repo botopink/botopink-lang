@@ -20,7 +20,7 @@ fn wrap<T>(v: T) -> B<T> {
     return B(v: v);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Q(items: [7]));
     print(Q(items: ["a", "b"]));
     print(Q(items: [true]));

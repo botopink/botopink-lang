@@ -8,7 +8,7 @@ pub behavior Model {
     fn make() -> Self;
 }
 
-pub fn entity(syntax decl: Model, comptime table: string) {
+pub fn entity(syntax decl: Model, comptime table: string) -> void {
     compiler.setMeta(Entity(table: table));
 }
 

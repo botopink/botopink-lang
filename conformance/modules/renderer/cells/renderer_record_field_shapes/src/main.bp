@@ -17,7 +17,7 @@ fn label(raw: string) -> string {
     return "[" + raw + "]";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val v: ElementView<Node> = ElementView(
         tagOf: { e -> e.tag },
         isVoid: { t -> t == "br" },

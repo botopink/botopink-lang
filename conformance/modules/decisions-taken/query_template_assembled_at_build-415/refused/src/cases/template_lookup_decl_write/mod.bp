@@ -17,6 +17,6 @@ fn stamp(syntax q: string) -> string {
     return compiler.build("\"" + compiler.name(decl)! + "\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(stamp @`User`);
 }

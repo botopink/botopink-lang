@@ -4,6 +4,6 @@
 
 import {io.terminal} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     terminal.print("x");
 }

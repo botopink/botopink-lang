@@ -10,7 +10,7 @@ fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
     });
     return out;
 }
-fn main() {
+fn main() -> void {
     print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
 }
 

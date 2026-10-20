@@ -6,7 +6,7 @@ fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
     val set: fn(i32) -> i32 = { n -> return n * 2; };
     return #(value, set);
 }
-fn main() {
+fn main() -> void {
     val c = mk();
     print(c.value);
     print(c.set(9));

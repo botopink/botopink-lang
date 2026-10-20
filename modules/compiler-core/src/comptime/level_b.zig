@@ -815,7 +815,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
     const modules = [_]Module{
         .{ .path = "looks/root", .package = "looks", .source = "pub default mod looks;\n" },
         .{ .path = "looks/looks", .package = "looks", .source =
-        \\pub fn theme(syntax decl: unknown) {
+        \\pub fn theme(syntax decl: unknown) -> void {
         \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\
@@ -837,7 +837,7 @@ test "level B: a package expanding a template that reads the catalogue is never 
         .{ .path = "main", .source =
         \\import {mid.shown} from "middle";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(shown());
         \\}
         \\
@@ -874,7 +874,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "frame/root", .package = "frame", .source =
-        \\pub fn m(syntax decl: unknown) {
+        \\pub fn m(syntax decl: unknown) -> void {
         \\    decl.setMeta("role", compiler.name(decl)!);
         \\}
         \\
@@ -883,7 +883,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
         \\    return 0;
         \\}
         \\
-        \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+        \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
         \\    print(modules.length.toString());
         \\}
         \\
@@ -899,7 +899,7 @@ test "level B: a package declaring a catalogue default is stored and read back w
         \\    return 1;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    boot();
         \\}
         \\
@@ -941,7 +941,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
     const build_root = h.buildRootPathFromSrc(io, @src());
     const modules = [_]Module{
         .{ .path = "cat/cat", .package = "cat", .source =
-        \\pub fn listed(syntax decl: unknown) {
+        \\pub fn listed(syntax decl: unknown) -> void {
         \\    decl.setMeta("named", compiler.name(decl)!);
         \\}
         \\
@@ -957,7 +957,7 @@ test "level B: a package that reads @TypeInfo.all is never stored" {
         \\import {compiler} from "std";
         },
         .{ .path = "main", .source =
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("main");
         \\}
         \\

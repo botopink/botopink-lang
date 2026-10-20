@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn registered(syntax decl: unknown) {
+fn registered(syntax decl: unknown) -> void {
     compiler.init({ ->
         for (["a"]) { s ->
             print(compiler.typeInfo(s));
@@ -19,4 +19,4 @@ pub fn home() -> string {
     return "home";
 }
 
-pub fn main() {}
+pub fn main() -> void {}

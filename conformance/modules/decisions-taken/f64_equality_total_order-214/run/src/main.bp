@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.f64_equality_total_order.runCase();
     cases.integer_never_negative_zero.runCase();
 }

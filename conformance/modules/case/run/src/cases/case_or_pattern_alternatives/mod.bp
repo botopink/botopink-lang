@@ -85,7 +85,7 @@ fn mixed(n: i32) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(late(Card.A));
     print(late(Card.B));
     print(late(Card.C));

@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn wide(syntax decl: unknown) {
+fn wide(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .fields(decl)
@@ -259,6 +259,6 @@ fn wide(syntax decl: unknown) {
 #[wide]
 type Doc(name: string, size: i32, note: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Doc.widths());
 }

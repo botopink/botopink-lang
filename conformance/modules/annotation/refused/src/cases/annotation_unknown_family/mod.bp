@@ -8,4 +8,4 @@ import {io.terminal.print} from "std";
 #[@TotallyMadeUp.Nonsense(whatever: 42)]
 var hits: i32 = 0;
 
-pub fn main() { print(hits); }
+pub fn main() -> void { print(hits); }

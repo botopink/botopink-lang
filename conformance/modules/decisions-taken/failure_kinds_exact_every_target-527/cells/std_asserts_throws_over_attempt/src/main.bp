@@ -20,12 +20,12 @@ fn label(n: i32) -> string {
     return "n" + n.toString();
 }
 
-fn shown(r: Result<void, string>) {
+fn shown(r: Result<void, string>) -> void {
     val text = asserts.errorText(r);
     print(if (text == "") "Ok" else text);
 }
 
-pub fn main() {
+pub fn main() -> void {
     shown(asserts.throws({ -> label(-1) }));
     shown(asserts.throws({ -> label(1) }));
     shown(asserts.throws({ -> raiseBoom() }));

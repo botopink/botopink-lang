@@ -17,7 +17,7 @@ type Border {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val x = .Color.Red.500;
     print("unreachable");
 }

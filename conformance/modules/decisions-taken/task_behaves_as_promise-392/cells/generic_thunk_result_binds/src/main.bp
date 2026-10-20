@@ -26,6 +26,6 @@ async fn run() -> Async<void> {
     print("attempt " + r.unwrapOr("-"));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

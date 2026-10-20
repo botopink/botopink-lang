@@ -8,7 +8,7 @@ pub type Shape { Circle(radius: i32), Dot }
 
 pub type Mark(text: string)
 
-fn shaped(syntax decl: unknown, comptime shape: Shape) {
+fn shaped(syntax decl: unknown, comptime shape: Shape) -> void {
     compiler.setMeta(Mark(text: "shaped"));
 }
 
@@ -18,7 +18,7 @@ type Plot(id: i32)
 #[shaped(.Dot)]
 type Spot(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(Plot).meta(Mark)?.text ?? "none");
     print(comptime compiler.typeInfo(Spot).meta(Mark)?.text ?? "none");
 }

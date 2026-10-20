@@ -7,7 +7,7 @@ pub mod pages;
 import {pages.padAll, pages.agora, pages.campos, pages.titulo, pages.cabecalho, pages.twice, pages.nomes, pages.raiz, pages.depois, pages.Staged};
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     show(comptime compiler.typeInfo(padAll).meta(Staged));
     show(comptime compiler.typeInfo(agora).meta(Staged));
     show(comptime compiler.typeInfo(campos).meta(Staged));
@@ -23,7 +23,7 @@ pub fn main() {
     print(raiz());
 }
 
-fn show(staged: ?Staged) {
+fn show(staged: ?Staged) -> void {
     if (staged) {
         s ->
         print(s.name + ": " + s.stages.join(" "));

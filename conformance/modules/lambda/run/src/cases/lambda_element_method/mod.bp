@@ -25,7 +25,7 @@ import {io.terminal.print} from "std";
 
 type Item(name: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val names = ["box", "cup", "axe"];
 
     print("box".contains("x"));

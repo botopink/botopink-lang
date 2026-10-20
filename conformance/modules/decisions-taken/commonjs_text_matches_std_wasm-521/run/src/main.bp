@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.float_text_at_run_time.runCase();
     cases.float_text_everywhere.runCase();
     cases.generic_float_text.runCase();

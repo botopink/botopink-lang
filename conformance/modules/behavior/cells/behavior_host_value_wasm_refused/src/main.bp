@@ -26,6 +26,6 @@ fn greeter() -> Greeter {
     return makeGreeter("hey");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(shout(greeter()));
 }

@@ -10,6 +10,6 @@ pub fn markup(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q) + "\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(markup("<p>hi</p>"));
 }

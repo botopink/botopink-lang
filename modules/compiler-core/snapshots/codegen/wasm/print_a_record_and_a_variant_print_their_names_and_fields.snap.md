@@ -2,7 +2,7 @@
 ```botopink
 type Point(x: i32, y: i32)
 type Shape { Square(side: i32), Nothing }
-fn main() {
+fn main() -> void {
     print("hi");
     print([1, 2]);
     print(#(1, "a"));

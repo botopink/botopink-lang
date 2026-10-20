@@ -11,7 +11,7 @@ type Bag(items: string[]) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = Bag.of("p", "q");
     print(b.items.length);
 }

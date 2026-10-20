@@ -6,8 +6,9 @@ val Invoice = type(
     fn total(self: Self) -> f64 {
         return self.subtotal + self.subtotal * self.taxRate;
     }
-    fn validate(self: Self) {
+    fn validate(self: Self) -> Result<void, string> {
         throw "invalid invoice";
+        return;
     }
 }
 ```
@@ -63,7 +64,17 @@ val Invoice = type(
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"invalid invoice">>}, {x, 0}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
+    return.
+    {move, {atom, undefined}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
+    return.
 
 {function, '__bp_get', 2, 10}.
   {label, 9}.

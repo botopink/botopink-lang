@@ -5,6 +5,6 @@ pub mod pages;
 import {pages.`not-found`, pages.`not-found`.Props};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(`not-found`(Props(path: "/missing")));
 }

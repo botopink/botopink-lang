@@ -9,9 +9,9 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]
-declare fn say(line: string);
+declare fn say(line: string) -> void;
 
-fn sayBody(line: string) {
+fn sayBody(line: string) -> void {
     print(line);
 }
 
@@ -19,12 +19,12 @@ val VERBOSE = false;
 
 val PREFIX = "> ";
 
-fn show(comptime lines: string[]) {
+fn show(comptime lines: string[]) -> void {
     for (lines) { line ->
         if (VERBOSE) say("verbose: " + line) else say(PREFIX + line);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(["a", "b"]);
 }

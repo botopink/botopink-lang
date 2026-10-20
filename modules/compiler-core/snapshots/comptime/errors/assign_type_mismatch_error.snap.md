@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn f() {
+fn f() -> void {
     var x = 0;
     x = "oops";
 }

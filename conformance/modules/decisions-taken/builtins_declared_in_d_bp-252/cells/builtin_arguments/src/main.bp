@@ -4,6 +4,6 @@
 
 import {failure.panic} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     panic("first", "second");
 }

@@ -7,14 +7,14 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Where(pkg: string, std: bool, module: string)
 
-fn where(syntax decl: unknown) {
+fn where(syntax decl: unknown) -> void {
     compiler.setMeta(Where(pkg: compiler.package, std: compiler.isStd, module: compiler.module));
 }
 
 #[where]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     val w = comptime compiler.typeInfo(City).meta(Where)!;
     print("[" + w.pkg + "] " + w.std.toString() + " " + w.module);
 }

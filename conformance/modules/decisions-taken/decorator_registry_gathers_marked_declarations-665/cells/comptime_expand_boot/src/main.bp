@@ -23,7 +23,7 @@ pub fn db() -> string {
     return "db up";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("boot");
     boot();
     print("done");

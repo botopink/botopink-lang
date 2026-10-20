@@ -15,6 +15,6 @@ fn shout(syntax q: string) -> string {
     return q;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

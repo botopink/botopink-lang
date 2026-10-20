@@ -41,7 +41,7 @@ fn refusal(e: fs.FsError) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     fs.mkdir("walkroot");
     fs.mkdir("walkroot/app");
     fs.mkdir("walkroot/app/blog");

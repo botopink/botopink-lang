@@ -7,7 +7,7 @@ type Maybe<T> {
     None,
 }
 
-pub fn main() {
+pub fn main() -> void {
     val x: unknown = Maybe.Some(value: 1);
     val y = case x {
         .Some(v) { "some" }

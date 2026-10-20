@@ -31,7 +31,7 @@ fn find(kind: i32) -> ?Val {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = find(0);
     print(b?.str() ?? "none");
     print(find(0)?.plus(2) ?? -1);

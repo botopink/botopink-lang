@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.optional_enum_method_call.runCase();
     cases.optional_float_function_value.runCase();
     cases.optional_if_null_initializer.runCase();

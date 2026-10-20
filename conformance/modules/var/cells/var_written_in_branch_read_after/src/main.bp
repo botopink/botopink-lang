@@ -109,7 +109,7 @@ fn binderNamedLikeVal(c: Cell) -> i32 {
     return n + kids.length;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(caseArms([1, 2, 3, 2, 1]));
     print(ifReturn(3));
     print(ifReturn(7));

@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(42.toString());
     print(42.toString().length);
     print(1.5.toString());

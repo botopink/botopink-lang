@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var contador = 0;
     val dobros = iter loop {
         contador = contador + 1;

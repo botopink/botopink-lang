@@ -11,6 +11,6 @@ fn Card(..card: CardProps, ..icon: IconProps) -> string {
     return card.title;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Card(title: "a", name: "b"));
 }

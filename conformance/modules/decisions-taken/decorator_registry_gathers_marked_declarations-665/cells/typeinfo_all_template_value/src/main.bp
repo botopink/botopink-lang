@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn mark(syntax decl: unknown) {
+pub fn mark(syntax decl: unknown) -> void {
     compiler.setMeta(Mark(name: compiler.name(decl)!));
 }
 
@@ -19,7 +19,7 @@ pub fn job() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first @`x`);
 }
 

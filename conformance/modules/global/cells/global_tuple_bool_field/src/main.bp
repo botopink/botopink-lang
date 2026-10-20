@@ -11,7 +11,7 @@ val a = 3;
 
 val t = #(a, flag, off);
 
-fn main() {
+fn main() -> void {
     print(t.flag);
     print(t.2);
     print(t.a);

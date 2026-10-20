@@ -8,6 +8,6 @@ type MathOps() {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(MathOps().double(4)); // 8
 }

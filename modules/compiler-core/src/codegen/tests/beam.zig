@@ -23,7 +23,7 @@ test "beam: a list pattern binds every element and its spread's tail" {
         \\        [first, _, ..rest] -> "many " + first.toString() + " +" + rest.length.toString();
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe([]));
         \\    print(describe([7]));
         \\    print(describe([2, 5]));
@@ -57,7 +57,7 @@ test "beam: a number in a list pattern is a test of that element" {
         \\        [a, _, ..rest] -> a + sum(rest);
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(sum([]));
         \\    print(sum([7]));
         \\    print(sum([1, 5]));
@@ -92,7 +92,7 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
         \\    };
         \\    return f;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(scaleBy(3)(10));
         \\}
         \\
@@ -138,7 +138,7 @@ test "beam: a type adopts its behavior's default fns as methods of its module" {
         \\fn show(x: Shape) -> i32 {
         \\    return x.twice();
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Sq(s: 3).twice());
         \\    print(Sq(s: 3).label());
         \\    print(Rect(w: 2, h: 5).twice());
@@ -171,7 +171,7 @@ test "beam: ?. on an absent tuple element answers absent before the label is rea
         \\fn rows() -> #(a: i32, b: string)[] {
         \\    return [#(1, "x"), #(2, "y")];
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val es: #(a: i32, b: string)[] = [];
         \\    print(es.at(0)?.b ?? "none");
         \\    print(es.at(3)?.a ?? 0);
@@ -204,7 +204,7 @@ test "beam: -x is the unary minus, so -0.0 is negative zero" {
         \\fn negi(x: i32) -> i32 {
         \\    return -x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val z = 0.0;
         \\    print(-z);
         \\    print(z * -1.0);
@@ -236,7 +236,7 @@ test "beam: a bare break in a for's body ends the loop" {
     // throws `{'__bp_break', V}` and the call site answers `V`
     // (`guardLoopBreak`).
     try h.assertBeamRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var doubled = 0;
         \\    var visited = 0;
         \\    for ([1, 2, 3]) { x ->
@@ -283,7 +283,7 @@ test "beam: the keyword form's method is a template compiled at build time" {
         \\declare fn biggest(a: i32, b: i32) -> i32;
         \\#[compiler.external(.Erlang("erlang:min($0, $1)"))]
         \\pub declare fn smallest(a: i32, b: i32) -> i32;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(biggest(1, 2));
         \\    print(smallest(9, 4));
         \\}
@@ -302,7 +302,7 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
     try h.assertBeamRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
         \\declare fn moduleNamed() -> bool;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(moduleNamed());
         \\}
         \\
@@ -318,10 +318,10 @@ test "beam: a refused template's reason outlives the emitter that refused it" {
 
 test "beam: unknown ---- `is`, type arms and `==` answer by value" {
     try h.assertBeamRunLog(std.testing.allocator,
-        \\fn show(x: unknown) {
+        \\fn show(x: unknown) -> void {
         \\  case x { i32 { n -> print(n) } f64 { f -> print(f) } _ { print("other") } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  val a: unknown = 2.0;
         \\  val c: unknown = 2.5;
         \\  print(a == 2, a != 2, c == 2);
@@ -344,7 +344,7 @@ test "beam: case ---- `A...B` inside a tuple pattern, and with a binder" {
         \\fn grade(n: i32) -> string {
         \\  return case n { 1...9 { d -> "digit " + d.toString() } 10...99 { "two" } _ { "other" } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(grade(0), grade(1), grade(9), grade(10), grade(99), grade(100));
         \\  val t = #(5, "x");
         \\  case t { #(1...3, _) { print("low") } #(4...6, s) { print("mid " + s) } _ { print("hi") } };
@@ -368,7 +368,7 @@ test "beam: case ---- true and false inside a tuple pattern are matched, not bou
         \\        #(true, n, ..) { n }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(tag(#(false, 1)));
         \\    print(tag(#(true, 2)));
         \\    print(first(#(false, 7, 8)));
@@ -395,7 +395,7 @@ test "beam: case ---- a record's constructor pattern tests the record's own tag"
         \\        _ { "off" }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(f(Point(x: 0, y: 5)));
         \\    print(f(Point(x: 3, y: 0)));
         \\    print(onAxis(Point(x: 0, y: 5)));
@@ -409,7 +409,7 @@ test "beam: case ---- a record's constructor pattern tests the record's own tag"
 
 test "beam: case ---- a tuple under `..` bounds the arity from below" {
     try h.assertBeamRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val t = #(4, 5, 6);
         \\  case t { #(a, ..) { print(a) } };
         \\}
@@ -447,7 +447,7 @@ test "beam: is ---- §4.1 × §4.2, one mark per value (a tuple type tests each 
         \\    }
         \\    return text;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(marks(values().map({ v -> v is i32 })));
         \\    print(marks(values().map({ v -> v is i8 })));
         \\    print(marks(values().map({ v -> v is f64 })));
@@ -485,7 +485,7 @@ test "beam: an entry point sets standard_io to unicode before anything prints" {
     // string_literal_unicode_escape` run with `LANG=C` is the measurement; this
     // harness has the host's locale).
     try h.assertBeamRunLog(std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("é", "\u{1F600}");
         \\}
         \\
@@ -517,7 +517,7 @@ test "beam: a loop closure does not capture the register of an earlier `??`" {
         \\    }
         \\    return out;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(joined(["<", "|", "|", ">"], ["a", "b", "c"]));
         \\}
         \\
@@ -546,7 +546,7 @@ test "beam: a member call through a library's default handle is a call into the 
         .{ .path = "", .source =
         \\import {qlib} from "qlib";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(qlib.make(5));
         \\}
         \\
@@ -564,7 +564,7 @@ test "beam: a library's field read is its closure's alone, whatever its consumer
 // Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    val b = Bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
@@ -612,7 +612,7 @@ test "beam: a literal table of 1100 nested records assembles (144 B-89)" {
         \\    return out;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(table().length);
         \\}
         \\

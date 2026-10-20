@@ -16,7 +16,7 @@ pub fn where(syntax value: unknown) -> anyvalue {
     return compiler.build("whereAt(\"" + at.file + "\", " + at.line.toString() + ")");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val ok = where(1 + 2);
     print(ok.toString());
 }

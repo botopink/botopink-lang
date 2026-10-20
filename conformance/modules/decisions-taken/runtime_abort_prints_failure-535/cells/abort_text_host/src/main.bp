@@ -11,7 +11,7 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
 declare fn explode() -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     print(explode());
     print("after");

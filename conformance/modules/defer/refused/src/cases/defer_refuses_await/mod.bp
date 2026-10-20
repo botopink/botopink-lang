@@ -7,6 +7,6 @@ pub async fn f() -> Async<i32> {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreachable");
 }

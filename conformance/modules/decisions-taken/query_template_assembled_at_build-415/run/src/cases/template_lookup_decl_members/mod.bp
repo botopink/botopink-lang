@@ -43,7 +43,7 @@ fn shape(syntax q: string) -> string {
     return compiler.build("\"" + text + "\"");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(shape @`Color`);
     print(shape @`Counter`);
     print(shape @`scale`);

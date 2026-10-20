@@ -8,7 +8,7 @@ import {greeting} from "boot/greet";
 import {label.describe};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(greeting);
     print(describe());
 }

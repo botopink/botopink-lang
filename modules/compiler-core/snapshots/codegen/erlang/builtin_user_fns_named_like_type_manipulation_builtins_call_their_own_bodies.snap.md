@@ -5,7 +5,7 @@ fn omit(n: i32) -> i32 { return n + 2; }
 fn partial(n: i32) -> i32 { return n + 3; }
 fn mergeRecords(a: i32, b: i32) -> i32 { return a + b; }
 fn mapFields(n: i32) -> i32 { return n * 2; }
-fn main() {
+fn main() -> void {
     print(pick(1));
     print(omit(1));
     print(partial(1));

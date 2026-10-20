@@ -2,6 +2,6 @@
 
 import {compiler} from "std";
 
-pub fn stamped(syntax decl: unknown) {
+pub fn stamped(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }

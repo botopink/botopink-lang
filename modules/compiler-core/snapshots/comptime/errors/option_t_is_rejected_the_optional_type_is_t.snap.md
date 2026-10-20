@@ -2,7 +2,7 @@
 fn takeOption(x: @Option<i32>) -> i32 {
     return x.unwrapOr(0);
 }
-fn main() {
+fn main() -> void {
     print(takeOption(3));
 }
 

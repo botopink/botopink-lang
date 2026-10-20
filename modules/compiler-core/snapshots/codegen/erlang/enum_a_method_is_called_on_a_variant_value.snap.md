@@ -12,7 +12,7 @@ pub type Shape {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Shape.Square(side: 4).area());
     print(Shape.Circle(radius: 2).area());
 }

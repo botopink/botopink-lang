@@ -34,7 +34,7 @@ fn swap(p: Pair<i32, string>) -> Pair<string, i32> {
     return #(p.1, p.0);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val n: Id = double(21);
     print(n);
     val ids: Ids = [1, 2, 3];

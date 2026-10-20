@@ -16,4 +16,4 @@ fn count(xs: string[]) -> i32 {
     return acc;
 }
 
-pub fn main() { print(count(["a"])); }
+pub fn main() -> void { print(count(["a"])); }

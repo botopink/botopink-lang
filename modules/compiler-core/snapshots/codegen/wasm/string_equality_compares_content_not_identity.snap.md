@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val left = "fo" + "o";
     val same = left == "foo";
     val diff = "foo" == "bar";

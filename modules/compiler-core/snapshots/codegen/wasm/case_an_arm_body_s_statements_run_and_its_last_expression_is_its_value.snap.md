@@ -4,7 +4,7 @@ type Shape {
     Circle(radius: i32),
     Rect(width: i32, height: i32),
 }
-fn main() {
+fn main() -> void {
     val s = Shape.Circle(radius: 3);
     case s {
         Circle(r) { print("circle"); }

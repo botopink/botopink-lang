@@ -11,7 +11,7 @@ fn greet(p: Person) -> string {
     return "hi " + p.name;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val p = Point(x: 1, y: 2);
     print(sum(p));
     print(p);

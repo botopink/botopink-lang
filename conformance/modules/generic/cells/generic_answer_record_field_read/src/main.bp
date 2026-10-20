@@ -18,7 +18,7 @@ fn pick<T>(a: T, b: T, takeA: bool) -> T {
     return b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val ps = [Post(title: "a", n: 7), Post(title: "b", n: 8)];
     val r = firstOf(ps, { p -> p.n > 7 });
     print(r?.n);

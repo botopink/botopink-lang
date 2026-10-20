@@ -1,9 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string, age: i32)
-fn f() {
+fn f() -> Result<void, string> {
     val r = Person(name: "ann", age: 30);
     val assert Person(name, age) = r catch throw "is not person";
+    return;
 }
 ```
 
@@ -19,8 +20,10 @@ fn f() {
     (local $__mem0 i32)
     (local $r i32)
     (local $__assert_0 i32)
+    (local $_res0 i32)
     (local $name i32)
     (local $age i32)
+    (local $_res1 i32)
     i32.const 12
     call $__alloc
     local.set $__mem0
@@ -56,9 +59,17 @@ fn f() {
     i32.eqz
     (if
       (then
+    i32.const 8
+    call $__alloc
+    local.set $_res0
+    local.get $_res0
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res0
     i32.const 288
-    drop
-    unreachable
+    i32.store offset=4 ;; payload
+    local.get $_res0
+    return
       )
     )
     local.get $__assert_0
@@ -67,7 +78,17 @@ fn f() {
     local.get $__assert_0
     i32.load offset=4 ;; .age
     local.set $age
+    i32.const 8
+    call $__alloc
+    local.set $_res1
+    local.get $_res1
     i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res1
+    i32.const 0
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)

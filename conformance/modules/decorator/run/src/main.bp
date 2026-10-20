@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.decorator_calls_imported_function.runCase();
     cases.decorator_calls_module_function.runCase();
     cases.decorator_emitted_proxies_dispatch.runCase();

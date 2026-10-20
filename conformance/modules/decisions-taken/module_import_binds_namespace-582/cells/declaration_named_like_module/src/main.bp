@@ -10,6 +10,6 @@ fn config() -> string {
     return "local";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(config());
 }

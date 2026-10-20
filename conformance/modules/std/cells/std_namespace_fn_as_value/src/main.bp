@@ -9,7 +9,7 @@ fn apply(f: fn(s: string) -> string, v: string) -> string {
     return f(v);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(apply(path.basename, "/a/b/c.txt"));
     print(apply(path.extname, "/a/b/c.txt"));
     print(path.dirname("/a/b/c.txt"));

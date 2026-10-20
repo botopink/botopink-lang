@@ -7,6 +7,6 @@ pub mod config;
 import {splitPath};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(splitPath("a/b"));
 }

@@ -18,7 +18,7 @@ behavior Pick<A> {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Scale.by(2, 3));
     print(Scale.by(2));
     print(Scale.by(factor: 4, x: 5));

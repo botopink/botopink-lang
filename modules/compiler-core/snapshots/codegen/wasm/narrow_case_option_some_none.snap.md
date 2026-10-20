@@ -7,7 +7,7 @@ fn describe(opt: Opt) -> string {
         Some(v) -> "value: " + v;
     };
 }
-fn main() {
+fn main() -> void {
     print(describe(Opt.Some(value: 42)));
     print(describe(Opt.None));
 }

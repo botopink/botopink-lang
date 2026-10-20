@@ -13,6 +13,6 @@ fn arm(n: i32) -> i32 {
     return v;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(arm(0));
 }

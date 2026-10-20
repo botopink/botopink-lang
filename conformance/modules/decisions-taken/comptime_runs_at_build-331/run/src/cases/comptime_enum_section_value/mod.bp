@@ -50,7 +50,7 @@ fn padX() -> Tok {
     return .Pad.X.2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val one = comptime name(.Pad.All.8);
     print(one);
     val many = comptime names([.Pad.All.4, .Bold, Tok.Pad.X.2]);

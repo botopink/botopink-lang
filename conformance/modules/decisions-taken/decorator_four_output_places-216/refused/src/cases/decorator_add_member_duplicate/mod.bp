@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn sized<T>(syntax decl: T) {
+fn sized<T>(syntax decl: T) -> void {
     compiler.addMember("size", fn(self: T) -> i32 {
         return 0;
     });
@@ -16,6 +16,6 @@ type Box(n: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Box(n: 1).size());
 }

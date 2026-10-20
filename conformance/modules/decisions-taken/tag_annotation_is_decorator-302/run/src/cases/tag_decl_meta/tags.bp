@@ -8,7 +8,7 @@ pub type ClassName(names: string[])
 // One annotation for a tag and a declaration: it records a `ClassName`
 // through `decl` — on an element with the tag's `id` attribute, on a
 // component with the component function's name.
-pub fn cls(syntax decl: unknown, comptime name: string) {
+pub fn cls(syntax decl: unknown, comptime name: string) -> void {
     if (compiler.kind(decl) == DeclKind.Element)
         compiler.addMeta(ClassName(names: [name, compiler.attr(decl, "id") ?? "none"]))
     else if (compiler.kind(decl) == DeclKind.Component)

@@ -6,7 +6,7 @@
 import shapesdsl, {area as surface} from "shapesdsl";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x = shapesdsl @`surface(4, 5)`;
     print(x);
 }

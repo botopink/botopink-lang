@@ -13,7 +13,7 @@ fn last(syntax q: string) -> string {
     return compiler.name(q)!;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(named @`count`);
     print(named @`user.email`);
     print(named @`1 + 2`);

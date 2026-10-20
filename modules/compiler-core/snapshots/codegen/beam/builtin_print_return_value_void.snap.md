@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn log(msg: string) {
+fn log(msg: string) -> void {
     print(msg);
 }
-fn main() {
+fn main() -> void {
     log("started");
     val x = 42;
     log("done");

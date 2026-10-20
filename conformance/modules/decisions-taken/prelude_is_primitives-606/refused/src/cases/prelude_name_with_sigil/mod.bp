@@ -6,6 +6,6 @@ fn parse(s: string) -> @Result<i32, string> {
     throw "not one";
 }
 
-pub fn main() {
+pub fn main() -> void {
     parse("1");
 }

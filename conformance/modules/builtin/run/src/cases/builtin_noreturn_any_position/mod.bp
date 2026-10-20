@@ -20,7 +20,7 @@ fn twice(x: i32) -> i32 {
     return x * 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a: i32 = stub(1);
     val b: string = name(2);
     val c: i32 = if (a > 0) a else panic("not implemented");

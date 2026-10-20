@@ -7,6 +7,6 @@ pub type Clock() {
     pub declare fn ticks() -> i32;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Clock.ticks());
 }

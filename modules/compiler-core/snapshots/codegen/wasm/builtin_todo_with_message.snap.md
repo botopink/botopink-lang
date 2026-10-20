@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn notImplemented() {
+fn notImplemented() -> void {
     panic("implement this function");
 }
 

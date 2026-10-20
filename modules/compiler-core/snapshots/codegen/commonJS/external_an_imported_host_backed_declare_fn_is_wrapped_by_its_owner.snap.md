@@ -56,7 +56,7 @@ export declare function nodeOnly(s: string): void;
 ```botopink
 import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
 
-pub fn main() {
+pub fn main() -> void {
     print(hostKey(42));
     print(hostLen(["a", "b"]));
 }

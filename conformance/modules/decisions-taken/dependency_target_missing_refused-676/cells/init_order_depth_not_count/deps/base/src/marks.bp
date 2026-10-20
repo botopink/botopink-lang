@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn mark(syntax decl: unknown) {
+pub fn mark(syntax decl: unknown) -> void {
     val name = compiler.name(decl);
     compiler.init({ -> print("base " + name) });
 }

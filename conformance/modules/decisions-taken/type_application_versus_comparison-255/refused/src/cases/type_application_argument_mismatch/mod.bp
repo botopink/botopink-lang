@@ -10,7 +10,7 @@ type Box<T>(value: T) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = Box<i32>.make("x");
     print(b.value);
 }

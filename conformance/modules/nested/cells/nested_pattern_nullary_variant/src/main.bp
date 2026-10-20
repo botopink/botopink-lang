@@ -79,7 +79,7 @@ fn modeBinder(j: Job) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(fetch(0)));
     print(describe(fetch(1)));
     print(describe(fetch(2)));

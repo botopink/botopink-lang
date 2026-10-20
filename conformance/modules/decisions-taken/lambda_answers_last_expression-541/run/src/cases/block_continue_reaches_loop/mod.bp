@@ -27,7 +27,7 @@ fn countOdd(xs: i32[]) -> i32 {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(sumSkippingFives([1, 5, 2, 5, 3]));
     print(countOdd([1, 2, 3, 4, 5]));
 }

@@ -18,7 +18,7 @@ fn parsed(text: string) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(d("0.1").add(d("0.2")).toString());
     print(d("1.00").sub(d("0.005")).toString());
     print(d("-1.5").mul(d("2.25")).toString());

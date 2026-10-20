@@ -10,6 +10,6 @@ component fn total() -> Component<i32> {
     return ctx.total;
 }
 
-pub fn main() {
+pub fn main() -> void {
     total();
 }

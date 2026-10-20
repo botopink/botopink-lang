@@ -3,7 +3,7 @@
 
 import {io.clock, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     print(clock.toCivil(253402300800000l).year);
     print("after");

@@ -9,7 +9,7 @@ fn classify(n: i32) -> string {
     print(result);
     return result;
 }
-fn main() {
+fn main() -> void {
     classify(0);
     classify(1);
     classify(7);

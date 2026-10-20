@@ -24,7 +24,7 @@ fn kind(v: unknown) -> string {
     return "other";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val x = APolicy(ms: 5);
     val y: BPolicy = BPolicy(name: "n");
     print(x);

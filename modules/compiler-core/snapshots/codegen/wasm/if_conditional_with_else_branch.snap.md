@@ -3,7 +3,7 @@
 fn describe(n: i32) -> string {
     return if (n > 0) "positive" else "non-positive";
 }
-fn main() {
+fn main() -> void {
     print(describe(5));
     print(describe(-3));
 }

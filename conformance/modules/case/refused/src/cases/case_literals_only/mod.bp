@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x = 4;
     val y = case x {
         0 { "zero" }

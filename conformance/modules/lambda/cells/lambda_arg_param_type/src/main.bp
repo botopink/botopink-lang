@@ -14,7 +14,7 @@ pub fn countWhere(xs: string[], gone: fn(name: string) -> bool) -> i32 {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val prefix = "a";
     print(countWhere(["ab", "ba", "ac"], { n -> n.startsWith(prefix) }));
     print(countWhere(["ab", "ba", "ac"], { n -> n.endsWith("a") }));

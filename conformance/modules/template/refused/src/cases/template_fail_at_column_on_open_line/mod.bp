@@ -14,7 +14,7 @@ fn markup(syntax t: string) -> i32 {
     return compiler.build(text.length().toString());
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<p>bang!</p>
 `);
 }

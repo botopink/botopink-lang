@@ -18,7 +18,7 @@ fn weigh(xs: Array<i32>) -> i32 {
     };
     return total;
 }
-fn main() {
+fn main() -> void {
     print(pick(["a", "b", "c"]));
     print(weigh([10, 20, 30]));
 }

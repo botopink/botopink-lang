@@ -8,6 +8,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("Math.max($0, $1)", true))]
 declare fn biggest(a: i32, b: i32) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(biggest(1, 2));
 }

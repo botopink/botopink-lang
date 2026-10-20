@@ -12,7 +12,7 @@ fn second<T>(xs: T[]) -> ?T {
     return xs.at(1);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first([4, 5]) ?? 0);
     print(second(["a", "b"]) ?? "");
     print(first([]) ?? 9);

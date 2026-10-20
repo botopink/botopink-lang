@@ -14,6 +14,6 @@ fn other(x: i32) -> i32 {
 
 pub default other;
 
-pub fn main() {
+pub fn main() -> void {
     print(other(1));
 }

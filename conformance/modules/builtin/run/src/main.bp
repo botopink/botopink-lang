@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.builtin_noreturn_any_position.runCase();
     cases.builtin_print_todo.runCase();
 }

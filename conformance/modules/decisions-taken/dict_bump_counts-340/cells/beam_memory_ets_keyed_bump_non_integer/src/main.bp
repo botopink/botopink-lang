@@ -8,7 +8,7 @@ import {collections.Dict, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var totals: Dict<string, f64> = Dict.empty();
 
-pub fn main() {
+pub fn main() -> void {
     totals = totals.bump("a", 1.5);
     print(totals.at("a"));
 }

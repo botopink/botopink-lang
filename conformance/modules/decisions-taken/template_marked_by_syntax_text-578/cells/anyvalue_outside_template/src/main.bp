@@ -8,6 +8,6 @@ fn show(x: anyvalue) -> string {
     return "x";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(show(1));
 }

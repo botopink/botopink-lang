@@ -8,7 +8,7 @@ fn classify(day: i32) -> string {
     print(kind);
     return kind;
 }
-fn main() {
+fn main() -> void {
     classify(3);
     classify(6);
     classify(7);

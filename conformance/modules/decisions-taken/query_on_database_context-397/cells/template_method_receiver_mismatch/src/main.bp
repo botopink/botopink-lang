@@ -15,7 +15,7 @@ fn tag(syntax self: Named, syntax q: string) -> string {
     return code @`${said} + ${self}.name()`;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val r = Robot(serial: 7);
     print(r.tag @`vip`);
 }

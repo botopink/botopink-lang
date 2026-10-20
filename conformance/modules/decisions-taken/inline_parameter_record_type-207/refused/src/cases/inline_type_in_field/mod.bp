@@ -5,6 +5,6 @@ import {io.terminal.print} from "std";
 
 type Card(link: type(href: string))
 
-pub fn main() {
+pub fn main() -> void {
     print(0);
 }

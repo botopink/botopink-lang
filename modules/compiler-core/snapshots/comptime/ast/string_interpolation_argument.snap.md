@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn greet(name: string) {
+fn greet(name: string) -> void {
     print("Hello, " + name + "!");
 }
 

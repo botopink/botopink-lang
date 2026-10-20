@@ -12,7 +12,7 @@ import {cases.default_anonymous.m.page};
 import {cases.default_anonymous.m.double.reportName, cases.default_anonymous.m.page.reportPage};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(double(4));
     print(twice(5));
     print(page());

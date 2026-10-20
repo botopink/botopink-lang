@@ -10,7 +10,7 @@ pub mod tok;
 import {cases.comptime_imported_section_path.tok.Tok, cases.comptime_imported_section_path.tok.defaultPad, cases.comptime_imported_section_path.tok.label};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime label(defaultPad()));
     print(comptime label(Tok.Hover([.Pad.All.4, .Bold])));
     val t: Tok = comptime defaultPad();

@@ -191,7 +191,7 @@ fn ifPlainValue(b: bool) -> string {
     return show(v);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(blockArms(Shape.Circle(r: 1)));
     print(blockArms(Shape.Label(text: "b")));
     print(lambdaArms(1));

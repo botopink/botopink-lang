@@ -11,7 +11,7 @@ fn nameOf(v: Person | Vec) -> string {
     };
 }
 
-fn main() {
+fn main() -> void {
     val u: unknown = Vec(name: "Ana", age: 30);
     print(u is Vec);
     print(u is Person);

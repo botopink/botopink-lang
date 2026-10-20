@@ -5,11 +5,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn route(syntax decl: unknown, path: string) {
+fn route(syntax decl: unknown, path: string) -> void {
     compiler.setMeta(Route(path: path));
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }
 

@@ -7,7 +7,7 @@ pub mod geometry;
 import {area, perimeter as around} from "geometry";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(area(3, 4));
     print(around(3, 4));
 }

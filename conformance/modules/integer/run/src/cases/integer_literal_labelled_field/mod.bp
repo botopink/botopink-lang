@@ -16,7 +16,7 @@ fn width(lo: i32, hi: i64) -> i64 {
     return hi - 1000;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val e = Event(name: "a", ts: 0);
     print(e.ts);
     val s = Span(from0: 5, until: 9);

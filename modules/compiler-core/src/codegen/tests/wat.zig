@@ -30,7 +30,7 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read in
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "héllo, 日本";
         \\    print(s.length());
         \\    print("".length());
@@ -79,7 +79,7 @@ test "wat: front 164 s2 P4 ---- tasks and their frames are GC structs" {
         \\    };
         \\    print(await b);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    run();
         \\}
         \\
@@ -114,7 +114,7 @@ test "wat: front 164 s2 ---- a tuple in a type parameter's slot, and a structura
         \\fn id<T>(x: T) -> T {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Box(value: #(1, 2)));
         \\    print(id(#(3, "x")));
         \\    print(Pair(left: #(1, "a"), right: [1, 2]) == Pair(left: #(1, "a"), right: [1, 2]));
@@ -161,7 +161,7 @@ test "wat: front 164 s3 ---- the byte leaves and fromCodepoint answer in a GC mo
         \\declare fn byteSlice(s: string, a: i32, b: i32) -> string;
         \\#[compiler.external(.Wasm(std: "text.fromCodepoint"))]
         \\declare fn fromCodepoint(cp: i32) -> string;
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "aé日😀";
         \\    print(byteLength(s));
         \\    print(byteLength(""));
@@ -251,7 +251,7 @@ test "wat: front 164 s3 P1-b ---- a String method bound by fn: runs its private 
         \\    out.push(s);
         \\    return out;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hi";
         \\    print(s.shout());
         \\    print(s.shout().length());
@@ -304,7 +304,7 @@ test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC modu
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
-        \\fn main() {
+        \\fn main() -> void {
         \\    val lo: i64 = -9223372036854775807 - 1;
         \\    val hi: i64 = 9223372036854775807;
         \\    val big: u64 = 18446744073709551615;
@@ -364,7 +364,7 @@ test "wat: front 164 s3 ---- the Bytes leaves answer in a GC module" {
         \\declare fn bytesAt(b: Bytes, i: i32) -> i32;
         \\#[compiler.external(.Wasm(std: "bytes.ofWords"))]
         \\declare fn bytesOfWords(w: Array<i32>) -> Bytes;
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = bytesOfWords([104, 105, 256 + 33]);
         \\    print(bytesLength(b));
         \\    print(bytesAt(b, 0));
@@ -402,7 +402,7 @@ test "wat: front 164 s3 ---- random.* leaves name the prelude's state and entrop
         \\declare fn randomSeed(s: i32) -> void;
         \\#[compiler.external(.Wasm(std: "random.seededFloat"))]
         \\declare fn randomSeededFloat() -> f64;
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = randomFloat();
         \\    print(f >= 0.0 && f < 1.0);
         \\    val u = randomSeededFloat();
@@ -449,7 +449,7 @@ test "wat: record construct two fields" {
 
 test "wat: tuple construct then destructure" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val t = #(10, 20);
         \\    val #(a, b) = t;
         \\    print(a + b);
@@ -514,7 +514,7 @@ test "wat: string slice copies bytes into a new buffer" {
 // read that `null` as `0` and trapped until `00 · 05-wasm` made it the end.
 test "wat: string slice without end arg slices to source length" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hello";
         \\    val tail = s.slice(2);
         \\    print(tail.len);
@@ -526,7 +526,7 @@ test "wat: string slice without end arg slices to source length" {
 
 test "wat: string len participates in arithmetic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hello";
         \\    print(s.len + 1);
         \\}
@@ -537,7 +537,7 @@ test "wat: string len participates in arithmetic" {
 
 test "wat: string slice result length is readable" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "abcdef";
         \\    val mid = s.slice(1, 5);
         \\    print(mid.len);
@@ -602,7 +602,7 @@ test "wat: record returned then field read on call result" {
 test "wat: record field access by name loads at declared offset" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type R(a: i32, b: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = R(a: 7, b: 11);
         \\    print(r.b);
         \\}
@@ -629,7 +629,7 @@ test "wat: optional chaining on record null returns zero" {
 // `r.kind` lowers to `i32.load offset=4` (slot 1, not the legacy stub).
 test "wat: anon record let-bound then field read by name" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val code = 7;
         \\    val kind = 11;
         \\    val r = #(code, kind);
@@ -646,7 +646,7 @@ test "wat: anon record let-bound then field read by name" {
 // `i32.load` chain instead of the legacy `i32.const 0` stub.
 test "wat: nested anon record chained field read" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val start = 5;
         \\    val end = 9;
         \\    val span = #(start, end);
@@ -672,7 +672,7 @@ test "wat: nested anon record chained field read" {
 // F2.1 — Optional local initialised to null, equality test against null.
 test "wat: optional local equals null" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x: ?i32 = null;
         \\    if (x == null) {
         \\        print(1);
@@ -696,7 +696,7 @@ test "wat: optional fn return null path" {
         \\        return null;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(choose(false)?.kind);
         \\}
         \\
@@ -715,7 +715,7 @@ test "wat: optional fn return present path with optional chaining" {
         \\        return null;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(choose(true)?.kind);
         \\}
         \\
@@ -727,7 +727,7 @@ test "wat: optional fn return present path with optional chaining" {
 test "wat: optional branch on equality and chained deref" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type R(kind: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = R(kind: 11);
         \\    val maybe: ?R = r;
         \\    if (maybe == null) {
@@ -750,7 +750,7 @@ test "wat: optional branch on equality and chained deref" {
 // F3.1 — concat of two literals via `+`.
 test "wat: string concat of two literals" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hi " + "there";
         \\    print(s.len);
         \\}
@@ -764,7 +764,7 @@ test "wat: string concat of two literals" {
 // RUN LOG `1` then `0`, on all four backends.
 test "wat: string equality compares content not identity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val left = "fo" + "o";
         \\    val same = left == "foo";
         \\    val diff = "foo" == "bar";
@@ -787,7 +787,7 @@ test "wat: string equality compares content not identity" {
 // F3.3 — slice with both bounds.
 test "wat: string slice both bounds" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hello";
         \\    val mid = s.slice(1, 4);
         \\    print(mid.len);
@@ -800,7 +800,7 @@ test "wat: string slice both bounds" {
 // F3.4 — length of a runtime concat (composes with `+`).
 test "wat: string length after concat" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "ab" + "cdef";
         \\    print(s.len);
         \\}
@@ -814,7 +814,7 @@ test "wat: string length after concat" {
 // RUN LOG `42`; beam's is empty while string `+` is arithmetic (04-beam B3).
 test "wat: string equality drives if branch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "ye" + "s";
         \\    if (s == "yes") {
         \\        print(42);
@@ -834,7 +834,7 @@ test "wat: string equality drives if branch" {
 // F4.1 — `[1, 2, 3].len` → 3.
 test "wat: list literal len reads length prefix" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [1, 2, 3];
         \\    print(xs.len);
         \\}
@@ -846,7 +846,7 @@ test "wat: list literal len reads length prefix" {
 // F4.2 — `[].len` → 0.
 test "wat: empty list literal len is zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs: i32[] = [];
         \\    print(xs.len);
         \\}
@@ -858,7 +858,7 @@ test "wat: empty list literal len is zero" {
 // F4.3 — list literal of strings (each element is a heap pointer).
 test "wat: list literal of strings len" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val labels = ["a", "bb", "ccc"];
         \\    print(labels.len);
         \\}
@@ -871,7 +871,7 @@ test "wat: list literal of strings len" {
 test "wat: list literal of records len" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type P(x: i32, y: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
         \\    print(pts.len);
         \\}
@@ -896,7 +896,7 @@ test "wat: try catch on result with default fallback" {
         \\        return 42;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val v = try maybeFail(false) catch -1;
         \\    print(v);
         \\}
@@ -915,7 +915,7 @@ test "wat: try catch returns handler value on error" {
         \\        return 42;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val v = try maybeFail(true) catch -1;
         \\    print(v);
         \\}
@@ -938,7 +938,7 @@ test "wat: try propagation in result fn" {
         \\    val v = try inner(should_fail);
         \\    return v + 1;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = try outer(false) catch -1;
         \\    print(r);
         \\    val r2 = try outer(true) catch -1;
@@ -968,7 +968,7 @@ test "wat: case ---- a variant pattern written as a dotted path" {
         \\    Circle(radius: i32),
         \\    Rect(width: i32, height: i32),
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = Shape.Circle(radius: 7);
         \\    case c {
         \\        Shape.Circle(r) { print(r); }
@@ -995,7 +995,7 @@ test "wat: case ---- the dot-shorthand variant pattern" {
         \\    Circle(radius: i32),
         \\    Rect(width: i32, height: i32),
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = Shape.Circle(radius: 7);
         \\    case c {
         \\        .Circle(r) { print(r); }
@@ -1018,7 +1018,7 @@ test "wat: case ---- an arm body's statements run and its last expression is its
         \\    Circle(radius: i32),
         \\    Rect(width: i32, height: i32),
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = Shape.Circle(radius: 3);
         \\    case s {
         \\        Circle(r) { print("circle"); }
@@ -1035,7 +1035,7 @@ test "wat: case ---- an arm body's statements run and its last expression is its
 // unbound`) and beam's log was empty, until 02 and 03 took their halves.
 test "wat: case ---- a one-parameter arm binder binds the matched value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val v = 7;
         \\    case v {
         \\        0 { print("zero"); }
@@ -1060,7 +1060,7 @@ test "wat: case ---- a failing guard falls through to the next arm" {
         \\        _ -> "negative";
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(classify(5));
         \\    print(classify(0));
         \\    print(classify(-3));
@@ -1109,7 +1109,7 @@ test "wat: case ---- a failing guard falls through to the next arm" {
 // separator).
 test "wat: index ---- an array element, a string character and a slice" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [10, 20, 30];
         \\    val i = 1;
         \\    print(xs[0]);
@@ -1133,7 +1133,7 @@ test "wat: index ---- an array element, a string character and a slice" {
 // print the atom `undefined` — C-18's row, theirs.
 test "wat: index ---- an index past the end answers zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [10, 20, 30];
         \\    print(xs[9]);
         \\}
@@ -1149,7 +1149,7 @@ test "wat: index ---- an index past the end answers zero" {
 // over a `?f32` box) printed `1069547520` for `1.5`.
 test "wat: index ---- a float array element is reinterpreted, not read as bits" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val fs = [1.5, 2.5];
         \\    print(fs[0]);
         \\    print(fs.at(0));
@@ -1173,7 +1173,7 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
 // `String_slice/3` comes out with unresolved labels.
 test "wat: index ---- a nested index, a slice's length and a tuple element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val rows = [[1, 2], [3, 4]];
         \\    print(rows);
         \\    print(rows[1]);
@@ -1211,7 +1211,7 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
 // reached into.
 test "wat: index ---- a string slice's length" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "hello";
         \\    print(s[1..3].length);
         \\}
@@ -1228,7 +1228,7 @@ test "wat: index ---- a string slice's length" {
 // other backends' baselines of this program are their own fixtures'.
 test "wat: loop ---- a search leaves its answer in a var and ends at break" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var k = 0;
         \\    var r = 0;
         \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
@@ -1255,7 +1255,7 @@ test "wat: loop ---- a search leaves its answer in a var and ends at break" {
 // tuple through its own equality.
 test "wat: tuple ---- equality compares elements, and labels take no part" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = #(1, "a");
         \\    val b = #(1, "a");
         \\    print(a == b);
@@ -1305,7 +1305,7 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
         \\    val pop = 12;
         \\    return #(name, pop);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val t = #(#(1, 2), "x");
         \\    print(t.1);
         \\    print(t.0.1);
@@ -1338,7 +1338,7 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 // `conformance/modules/primitive/refused/src/cases/primitive_method_undeclared`).
 test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("aB".toUpper());
         \\    print("aB".toLower());
         \\}
@@ -1363,7 +1363,7 @@ test "wat: print ---- a record and a variant print their names and fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
         \\type Shape { Square(side: i32), Nothing }
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("hi");
         \\    print([1, 2]);
         \\    print(#(1, "a"));
@@ -1418,7 +1418,7 @@ test "wat: option ---- a value assigned into a declared `?T` is boxed like one" 
         \\    fn doubled(self: Self) -> Array<i32> { return self.items.map({ n -> n * 2 }); }
         \\    fn label(self: Self) -> string { return "box"; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    var seen = 0;
         \\    [1, 2].forEach({ n -> seen = n });
         \\    print(seen);
@@ -1471,7 +1471,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
         \\    val set: fn(i32) -> i32 = { n -> return n * 2; };
         \\    return #(value, set);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = mk();
         \\    print(c.value);
         \\    print(c.set(9));
@@ -1507,7 +1507,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // `conformance/modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/string_at` is the cross-backend half.
 test "wat: prim method ---- String.at answers a one-character string, and null out of range" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "abc";
         \\    print(s.at(0));
         \\    print(s.at(2));
@@ -1543,7 +1543,7 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
         \\    if (n == 0) { return acc; };
         \\    return sumTo(n - 1, acc + n);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(count(1000000, 0));
         \\    print(sumTo(1000, 0));
         \\}
@@ -1561,7 +1561,7 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
 // does; an empty pattern matches before every byte.
 test "wat: prim method ---- the String and Float members step 6's audit lowered" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = 2.5;
         \\    print(f.toString());
         \\    val g = 5.0;
@@ -1611,7 +1611,7 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 // `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
 test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("a b\tc\n d".words());
         \\    print("a\nb\r\nc\r".lines());
         \\    print([3, 1, 1, 3].unique());
@@ -1651,21 +1651,21 @@ test "wat: prim method ---- the methods that trapped lower: lines, words, unique
 test "wat: prim method ---- unique over records, flatMap over a scalar and flatten over scalars are refused at the call" {
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\type P(x: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    print([P(x: 1), P(x: 1)].unique().length);
         \\}
         \\
         \\import {io.terminal.print} from "std";
     , "`unique` on the wasm backend compares", 3, 30);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    print([1, 2].flatMap({ x -> x + 1 }));
         \\}
         \\
         \\import {io.terminal.print} from "std";
     , "`flatMap` on the wasm backend: nothing shows that its function answers an array", 2, 18);
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    print([1, 2].flatten());
         \\}
         \\
@@ -1682,7 +1682,7 @@ test "wat: prim method ---- unique over records, flatMap over a scalar and flatt
 // an `f64` / `i64` `Ok` held in its cell.
 test "wat: prim method ---- a prelude default's host helpers are std-wasm's, its @Result read whole" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("12".parseInt().unwrapOr(0l));
         \\    print("-2.5e-1".parseFloat().unwrapOr(0.0));
         \\    print("1.".parseFloat().isError());
@@ -1703,7 +1703,7 @@ test "wat: prim method ---- a prelude default's host helpers are std-wasm's, its
 // the last slot down.
 test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches from the end" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var xs = [1, 2, 3];
         \\    val p = xs.pop();
         \\    print(p);
@@ -1744,7 +1744,7 @@ test "wat: unknown ---- a type parameter's slot matched out of an unknown is an 
         \\        _ { -2 }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x: unknown = 1;
         \\    print(innerLength(x));
         \\    val s: unknown = Maybe.Some(value: "abc");
@@ -1777,7 +1777,7 @@ test "wat: unknown ---- a field read on a guard-narrowed type parameter's slot" 
         \\        _ { -2 }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s: unknown = Maybe.Some(value: "abc");
         \\    print(innerLength(s));
         \\}
@@ -1796,7 +1796,7 @@ test "wat: slice ---- a null end, written or at run time, is the end" {
         \\fn cut(s: string, end: ?i32) -> string {
         \\    return s.slice(1, end);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("abcdef".slice(2, null));
         \\    print([1, 2, 3, 4].slice(1, null));
         \\    print(cut("abcdef", 3));
@@ -1845,7 +1845,7 @@ test "wat: case ---- a tuple pattern tests its literals and binds its elements" 
         \\        #(#(a, _), s) { s + "!" + a.toString() }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(classify(#(0, "a")));
         \\    print(classify(#(7, "x")));
         \\    print(classify(#(7, "y")));
@@ -1904,7 +1904,7 @@ test "wat: case ---- `..` skips the rest and a bool literal in a tuple pattern i
         \\        #(a, ..) { a }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(first(#(4, 5, 6)));
         \\    print(width(Shape.Rect(w: 4, h: 5)));
         \\    print(width(Shape.Circle(radius: 1)));
@@ -1950,7 +1950,7 @@ test "wat: case ---- a type pattern is chosen by the value" {
         \\        _ { "other" }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(kind(1));
         \\    print(kind("a"));
         \\    print(kind(true));
@@ -1991,7 +1991,7 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
         \\        [..] -> -1;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(head([]));
         \\    print(head(["x"]));
         \\    print(head(["x", "y", "z"]));
@@ -2027,7 +2027,7 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
 // (`scopeRestore`). The RUN LOG is commonJS's.
 test "wat: scope ---- a lambda's binding shadows the outer one only inside it" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val k = 5;
         \\    [1].forEach({ e ->
         \\        val k = "lambda";
@@ -2069,7 +2069,7 @@ test "wat: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\fn zero() -> f64 {
         \\    return 0.0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val z = zero();
         \\    val nan = z / z;
         \\    print(nan == nan);
@@ -2112,7 +2112,7 @@ test "wat: behavior ---- a primitive method on a default's result inside an adop
         \\        return self.s * self.s;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Sq(s: 3).label());
         \\}
         \\
@@ -2136,7 +2136,7 @@ test "wat: behavior ---- a program's default fn on a primitive behavior is calle
         \\        return self + self;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("hi".shout());
         \\    val n: i32 = 21;
         \\    print(n.twice());
@@ -2160,7 +2160,7 @@ test "wat: behavior ---- a program's default fn on Array<T> is called with its e
         \\        return [x, x];
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print([1, 2].tag());
         \\    print([1].pairUp(7));
         \\    print(["a"].pairUp("b"));
@@ -2185,7 +2185,7 @@ test "wat: function value ---- a lambda in a generic field that nothing types is
         \\fn keep<T>(b: Box<T>) -> Box<T> {
         \\    return b;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val esc = keep(Box(value: { s -> s + "%" }));
         \\    val ef = esc.value;
         \\    print(ef("x"));
@@ -2211,7 +2211,7 @@ test "wat: function value ---- a lambda in a generic field that nothing types is
 test "wat: refusal ---- is over a type with no descriptor is refused at the test" {
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\type Color { Red, Green }
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val c: unknown = 1;
         \\    print(c is Color);
         \\}
@@ -2224,7 +2224,7 @@ test "wat: refusal ---- is over a type with no descriptor is refused at the test
 // runs it. (commonJS emits `__emit("x")` and dies at run time — `04-js`'s row.)
 test "wat: refusal ---- a comptime-only builtin in a program body is refused" {
     try h.assertWasmRefusedAt(std.testing.allocator,
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    @emit("x");
         \\}
     , "`@emit` is a comptime-only builtin", 2, 5);
@@ -2239,7 +2239,7 @@ test "wat: refusal ---- pop on a call's result is refused, pop on a record field
         \\fn xs() -> Array<i32> {
         \\    return [1, 2];
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(xs().pop());
         \\}
         \\
@@ -2247,7 +2247,7 @@ test "wat: refusal ---- pop on a call's result is refused, pop on a record field
     , "`pop` on the wasm backend rebinds its receiver", 5, 16);
     try h.assertWasmRunLog(std.testing.allocator,
         \\type Stack(items: Array<i32>)
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val s = Stack(items: [1, 2, 3]);
         \\    print(s.items.pop());
         \\    print(s.items);
@@ -2286,7 +2286,7 @@ test "wat: refusal ---- dispatch by value over an all-unit enum implementer is r
         \\fn show(n: Named) -> string {
         \\    return n.name();
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(show(P(x: 1)));
         \\    print(show(Color.Red));
         \\}
@@ -2302,17 +2302,17 @@ test "wat: refusal ---- dispatch by value over an all-unit enum implementer is r
 test "wat: behavior ---- a method with no return dispatched by value as a body's tail" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\behavior Shuttable {
-        \\    fn shut(self: Self);
+        \\    fn shut(self: Self) -> void;
         \\}
         \\type Door(name: string) implement Shuttable {
-        \\    fn shut(self: Self) {
+        \\    fn shut(self: Self) -> void {
         \\        print("shut " + self.name);
         \\    }
         \\}
-        \\fn doShut(c: Shuttable) {
+        \\fn doShut(c: Shuttable) -> void {
         \\    c.shut();
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    doShut(Door(name: "front"));
         \\}
         \\
@@ -2333,7 +2333,7 @@ test "wat: refusal ---- is over a type parameter specialises the generic fn per 
         \\    if (x is string) return "q";
         \\    return "n";
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(shown(1));
         \\    print(shown("s"));
         \\    print(shown(true));
@@ -2364,7 +2364,7 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
         \\        return "Box(" + shown(self.value) + ")";
         \\    }
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(Box(value: 1));
         \\}
         \\
@@ -2392,7 +2392,7 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
         \\}
         \\#[compiler.external(.Wasm(wasi: .RandomF64))]
         \\declare fn draw() -> f64;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(down(2.75) == 2.0);
         \\    print(plus(40, 2));
         \\    print(below(1.0, 2.0));
@@ -2421,7 +2421,7 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
 test "wat: std-wasm ---- seed and seededFloat draw the sidecar's Mulberry32 stream" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\import {io} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    val before = io.random.seededFloat();
         \\    print(before >= 0.0 && before < 1.0);
         \\    io.random.seed(42);
@@ -2450,7 +2450,7 @@ test "wat: an integer if-expression inside a float function" {
         \\    val big = if (d > 9) d >= 10 else false;
         \\    return if (big) d * 1.0 else 0.0 - d;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(digitOf(55) == 0.0 - 7.0);
         \\    print(digitOf(102) == 15.0);
         \\}
@@ -2470,21 +2470,21 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Wasm(op: "f64.flor"))]
         \\declare fn down(x: f64) -> f64;
-        \\fn main() { print(down(1.5)); }
+        \\fn main() -> void { print(down(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "`f64.flor` is not a wasm numeric instruction", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Wasm(op: "f64.min"))]
         \\declare fn least(x: f64) -> f64;
-        \\fn main() { print(least(1.5)); }
+        \\fn main() -> void { print(least(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "`f64.min` is `(f64, f64) -> f64`", 1, 3);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Wasm(op: "f64.lt"))]
         \\declare fn below(a: f64, b: f64) -> f64;
-        \\fn main() { print(below(1.0, 2.0)); }
+        \\fn main() -> void { print(below(1.0, 2.0)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "`f64.lt` is `(f64, f64) -> bool`", 1, 3);
@@ -2492,7 +2492,7 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\#[compiler.external(.Wasm(body: greetBdy))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string) -> string { return name; }
-        \\fn main() { print(greet("x")); }
+        \\fn main() -> void { print(greet("x")); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "unbound variable 'greetBdy'", 1, 33);
@@ -2500,7 +2500,7 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\#[compiler.external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\pub fn greetBody(name: string) -> string { return name; }
-        \\fn main() { print(greet("x")); }
+        \\fn main() -> void { print(greet("x")); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "`greetBody` is `pub`", 1, 27);
@@ -2508,21 +2508,21 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\#[compiler.external(.Wasm(body: greetBody))]
         \\declare fn greet(name: string) -> string;
         \\fn greetBody(name: string, n: i32) -> string { return name; }
-        \\fn main() { print(greet("x")); }
+        \\fn main() -> void { print(greet("x")); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "must take the same parameter types in the same order", 1, 27);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Wasm(wasi: .ClockTimeGet))]
         \\declare fn now() -> f64;
-        \\fn main() { print(now()); }
+        \\fn main() -> void { print(now()); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "unbound variable 'ClockTimeGet'", 1, 33);
     try h.assertWasmRefusedAt(std.testing.allocator,
         \\#[compiler.external(.Wasm("""(f64.floor $0)"""))]
         \\declare fn down(x: f64) -> f64;
-        \\fn main() { print(down(1.5)); }
+        \\fn main() -> void { print(down(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
     , "is none of the four cells", 1, 3);
@@ -2788,7 +2788,7 @@ test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's tab
 test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm's" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\import {hash} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(hash.contentHash("Point"));
         \\    print("[" + " \t\na b\r ".trim() + "]");
         \\    print("[" + " a ".trimStart() + "]");
@@ -2812,11 +2812,11 @@ test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm
 // failed validation, `UndefinedCall`), and an empty `fn` is called.
 test "wat: fn ---- an empty body is emitted and called, never taken for a declare fn" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {}
+        \\fn main() -> void {}
     , "");
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn nothing() {}
-        \\fn main() {
+        \\fn nothing() -> void {}
+        \\fn main() -> void {
         \\    nothing();
         \\    print("after");
         \\}
@@ -2840,7 +2840,7 @@ test "wat: fn ---- an empty body is emitted and called, never taken for a declar
 test "wat: std ---- testing.mocks imports on wasm, its unbound host cells unlowered (decision 531)" {
     var outputs = try codegen.generateWith(std.testing.allocator, &.{.{ .path = "", .source =
         \\import {testing.mocks} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(0);
         \\}
         \\
@@ -2866,7 +2866,7 @@ test "wat: std ---- testing.mocks imports on wasm, its unbound host cells unlowe
 // answers `οδος`), the unconditional full mappings (`ß` → `SS`).
 test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("straße é ǆ ﬁ".toUpper());
         \\    print("ΟΔΟΣ ÉCOLE".toLower());
         \\}
@@ -2889,7 +2889,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     try h.assertJsRefusedAt(a,
         \\#[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digest(x: string) -> string;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(digest("Point"));
         \\}
         \\
@@ -2898,7 +2898,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     try h.assertStdModuleRefusedAt(a,
         \\#[compiler.external(.JavaScript("Math.floor($0)"), .Wasm(std: "math.floorOf"))]
         \\declare fn floorOf(x: f64) -> f64;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(floorOf(2.5));
         \\}
         \\
@@ -2907,7 +2907,7 @@ test "wat: std-wasm ---- a std: cell is std's alone, and inside std it names an 
     try h.assertStdModuleRefusedAt(a,
         \\#[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
         \\declare fn digestOf(x: i32) -> string;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(digestOf(7));
         \\}
         \\
@@ -2941,7 +2941,7 @@ test "wat: print ---- a float prints std-wasm's text, as erlang does (decision 4
         \\fn id(x: f64) -> f64 {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(1e21);
         \\    print(1.7976931348623157e308);
         \\    print(5e-324);
@@ -2982,7 +2982,7 @@ test "wat: print ---- a float prints std-wasm's text, as erlang does (decision 4
 // `-2147483648` at exit 0. Up to the edge the answer is the number.
 test "wat: arithmetic ---- an integer that leaves its width traps instead of wrapping" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val big: i32 = 2147483647;
         \\    print(big - 1);
         \\    print(-big);
@@ -3020,7 +3020,7 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
         \\fn mixed() -> #(?i32, ?string, ?bool, ?f64, ?P) {
         \\    return #([7].at(0), ["s"].at(3), [true].at(0), [1.5].at(0), [P(n: 2)].at(0));
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val t = #(1, [7].at(5));
         \\    print(t);
         \\    print(t._1 ?? 4);
@@ -3056,7 +3056,7 @@ test "wat: the nullish default ---- the answer keeps the payload's tuple shape" 
         \\    if (xs.length > 5) throw "too many";
         \\    return xs;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val rs = rows().unwrapOr([]);
         \\    print(rs);
         \\    print((rs.at(1) ?? #("", ""))._1);
@@ -3102,7 +3102,7 @@ test "wat: case ---- a `_` and a nested variant in a payload pattern" {
         \\        Two(_, _) -> 0;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(widthOf(Shape.Rect(4, 5)));
         \\    print(widthOf(Shape.Circle(3)));
         \\    print(leftWidth(Pair.Two(Shape.Rect(9, 1), Shape.Dot)));
@@ -3130,7 +3130,7 @@ test "wat: case ---- a `_` and a nested variant in a payload pattern" {
 // checked `+ - *` now read the bits unsigned; past either end still traps.
 test "wat: arithmetic ---- a `u64` past 2^63 is unsigned in its `i64` carrier" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val w: u64 = 10000000000000000000;
         \\    val v: u64 = 3000000000000000000;
         \\    val m: u64 = 18446744073709551615;
@@ -3170,7 +3170,7 @@ test "wat: arithmetic ---- a `u64` past 2^63 is unsigned in its `i64` carrier" {
 // and `0xFFFF_FFFF_FFFF_FFFFul` folded to a `256` placeholder.
 test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prints unsigned" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val top = 18446744073709551615ul;
         \\    val hex = 0xFFFF_FFFF_FFFF_FFFFul;
         \\    val sum = 18446744073709551614ul + 1ul;
@@ -3196,7 +3196,7 @@ test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prin
 
 test "wat: print ---- @println lowers as @print does, with its newline" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("a", 1);
         \\}
         \\
@@ -3209,7 +3209,7 @@ test "wat: print ---- @println lowers as @print does, with its newline" {
 // so `s + "!"` was invalid wasm and an array element was refused.
 test "wat: template ---- a lone float hole is a string, as a val, an element and an operand" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = "${5.5}";
         \\    print(s + "!");
         \\    val xs: string[] = ["${2.5}", "a"];
@@ -3237,7 +3237,7 @@ test "wat: print ---- a bool element of a module-level tuple prints true / false
         \\val off = false;
         \\val a = 3;
         \\val t = #(a, flag, off);
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(t.flag);
         \\    print(t.2);
         \\    print(t.0);
@@ -3273,7 +3273,7 @@ test "wat: a package template's answer is its library's record, its field read a
         .{ .path = "", .source =
         \\import shelf from "shelf";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val built = shelf @`built`;
         \\    print(built.text);
         \\    print(built.size.toString());
@@ -3287,7 +3287,7 @@ test "wat: a package template's answer is its library's record, its field read a
 // Decision 346 — `Bytes` on this backend: in and out of text, length, slice,
 // concat, `==`, and the `Error` of bytes that are not UTF-8.
 const bytes_src =
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    val b = Bytes.fromUtf8("héllo");
     \\    print(b.length());
     \\    print(b.slice(1, 3).toUtf8().unwrapOr("?"));
@@ -3334,7 +3334,7 @@ test "wat: decision 330 ---- recv?.m() over a record's or an all-unit enum's met
         \\    if (c == 0) return null;
         \\    return C.Red;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(p(true)?.twice() ?? -1);
         \\    print(p(false)?.twice() ?? -1);
         \\    print(col(1)?.n() ?? -1);
@@ -3367,7 +3367,7 @@ fn wasmNeedsOfSource(allocator: Allocator, src: []const u8) !bpAst.WasmNeeds {
 test "wat: needs ---- std/failure linked and attempt never called asks for nothing" {
     const needs = try wasmNeedsOfSource(std.testing.allocator,
         \\import {failure} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("no attempt");
         \\}
         \\
@@ -3382,7 +3382,7 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
 test "wat: needs ---- a call of attempt asks for Exceptions" {
     const needs = try wasmNeedsOfSource(std.testing.allocator,
         \\import {failure} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = failure.attempt({ -> 6 * 7 });
         \\    print("done");
         \\}
@@ -3611,7 +3611,7 @@ test "wat: gc ---- a record, its fields, a nested record and its structural equa
         \\    return "hi " + p.name;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val p = Point(x: 1, y: 2);
         \\    print(sum(p));
         \\    print(p);
@@ -3646,7 +3646,7 @@ test "wat: gc ---- a record's methods answering a number, a string and a record"
         \\    }
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val c = Counter(n: 4, label: "ctr");
         \\    print(c.bump());
         \\    print(c.name());
@@ -3683,7 +3683,7 @@ test "wat: gc ---- an enum with payloads, a case over its variants, its printed 
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val a = Shape.Circle(r: 2);
         \\    val b = Shape.Rect(w: 3, h: 4);
         \\    print(area(a));
@@ -3727,7 +3727,7 @@ test "wat: gc ---- an enum with float payloads inside a record, an all-unit enum
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(area(Shape.Square(side: 2.0)));
         \\    print(area(Shape.Circle(radius: 1.0)));
         \\    val it = Item(shape: Shape.Square(side: 3.0), color: Color.Green, label: "x");
@@ -3755,7 +3755,7 @@ test "wat: gc ---- arrays: a literal, an index, a loop, push, length and equalit
         \\    return best;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val xs = [3, 1, 2];
         \\    print(xs);
         \\    print(total(xs));
@@ -3784,7 +3784,7 @@ test "wat: gc ---- arrays: a literal, an index, a loop, push, length and equalit
 
 test "wat: gc ---- arrays: the operations that were std-wasm's, now the module's" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val xs = [3, 1, 2];
         \\    print(xs.reverse());
         \\    print(xs.slice(1));
@@ -3820,7 +3820,7 @@ test "wat: gc ---- tuples: their elements, their printed text, an array of them 
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Pair(a: i32, b: string)
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val t = #(1, "x", 2.5, true);
         \\    print(t);
         \\    print(t.0);
@@ -3860,7 +3860,7 @@ test "wat: gc ---- optionals: at, null, a boxed scalar, ??, a narrowing binding 
         \\    return o ?? -1;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val xs = [7, 8];
         \\    print(xs.at(1));
         \\    print(xs.at(5));
@@ -3899,7 +3899,7 @@ test "wat: gc ---- optionals: a field read through ?. and an optional record fie
         \\    return u?.age;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val a = User(name: "ann", age: 3, next: null);
         \\    val b = User(name: "bob", age: 4, next: a);
         \\    print(nameOf(a));
@@ -3937,7 +3937,7 @@ test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(half(4));
         \\    print(half(3));
         \\    print(twice(8));
@@ -3955,7 +3955,7 @@ test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr
 
 test "wat: gc ---- Bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val b = Bytes.fromUtf8("hello");
         \\    print(b.length());
         \\    print(b.slice(1, 3).length());
@@ -3983,7 +3983,7 @@ test "wat: gc ---- assert and panic messages, a folded comptime string val" {
         \\    return n;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(GREETING);
         \\    print(check(3));
         \\    if (check(1) < 0) {
@@ -4000,7 +4000,7 @@ test "wat: gc ---- a linked module no function of the program names does not kee
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {collections} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("x");
         \\}
         \\
@@ -4070,7 +4070,7 @@ test "wat: gc ---- an empty array arm, a case of its own type, try over a tuple,
         \\    };
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(label("ab", true));
         \\    print(label("", false));
         \\    print("abc".contains("b"));
@@ -4179,7 +4179,7 @@ test "wat: gc ---- an unknown boxed by its value, its is tests, narrowing, equal
         \\    return "other";
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(describe(3));
         \\    print(describe("a"));
         \\    print(describe(true));
@@ -4223,7 +4223,7 @@ test "wat: gc ---- a generic record and enum as one struct per declaration, boxe
         \\    return x;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val b = Box(value: 41);
         \\    print(b.value + 1);
         \\    print(b.get());
@@ -4240,7 +4240,7 @@ test "wat: gc ---- a generic record and enum as one struct per declaration, boxe
 
 test "wat: gc ---- unique, flatten, chunked, sliding, zip and the array walks with a closure written at the call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val xs = [3, 1, 3, 2, 1];
         \\    print(xs.unique());
         \\    print(["a", "b", "a"].unique());
@@ -4274,7 +4274,7 @@ test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and 
         \\    return s.length();
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    for (evens(7)) { v -> print(v); }
         \\    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
         \\    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));

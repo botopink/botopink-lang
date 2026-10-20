@@ -14,7 +14,7 @@ fn label(n: i32) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(label(1));
     print(label(2));
     val k = case label(1) {

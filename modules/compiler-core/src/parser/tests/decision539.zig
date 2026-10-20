@@ -17,7 +17,7 @@ test "decision 539: `defer` marks the statement, a block is a block expression" 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const program = try parse(arena.allocator(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    defer print("a");
         \\    defer { print("b"); }
         \\    print("c");
@@ -36,7 +36,7 @@ test "decision 539: a deferred statement at the end answers no tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const program = try parse(arena.allocator(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    defer print("a")
         \\}
         \\

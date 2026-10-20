@@ -6,6 +6,6 @@
 import {distance} from "beamkit";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("distance " + distance(3, 10).toString());
 }

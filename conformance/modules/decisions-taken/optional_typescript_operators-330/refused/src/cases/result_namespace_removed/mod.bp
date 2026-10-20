@@ -9,6 +9,6 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(result.isOk(parse(1)));
 }

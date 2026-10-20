@@ -5,11 +5,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn serverOnly(syntax decl: unknown) {
+fn serverOnly(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }
 
-fn check(syntax decl: unknown) {
+fn check(syntax decl: unknown) -> void {
     compiler
         .annotations(decl)
         .forEach({ a ->
@@ -24,6 +24,6 @@ fn Page() -> string {
     return "p";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Page());
 }

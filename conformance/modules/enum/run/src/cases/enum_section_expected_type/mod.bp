@@ -53,7 +53,7 @@ fn pickBorder() -> Border {
 
 type Boxed(tone: Token, weight: i32 = 7)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t: Token = .Color.Red.500;
     val b: Border = .Color.Red.500;
     val ts: Array<Token> = [.Color.Red.100];

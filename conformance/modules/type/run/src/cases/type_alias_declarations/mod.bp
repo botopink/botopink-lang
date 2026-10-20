@@ -12,6 +12,6 @@ fn swap(p: Pair<Id, string>) -> Pair<string, Id> {
     return #(p.1, p.0);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(swap(#(1, "a"))); // #("a", 1)
 }

@@ -10,7 +10,7 @@ pub fn refer(syntax q: string) -> string {
     };
 }
 val s = refer @`greeting`;
-fn main() {
+fn main() -> void {
     print(s);
 }
 import {compiler} from "std";

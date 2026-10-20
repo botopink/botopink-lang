@@ -12,7 +12,7 @@ fn tick() -> i32 {
     return 1;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(schedule());
     print(tick());
 }

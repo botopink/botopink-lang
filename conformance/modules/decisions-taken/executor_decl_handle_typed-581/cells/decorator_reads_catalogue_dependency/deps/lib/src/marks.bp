@@ -2,11 +2,11 @@
 
 import {compiler} from "std";
 
-pub fn seen(syntax decl: unknown) {
+pub fn seen(syntax decl: unknown) -> void {
     compiler.setMeta(Seen(named: compiler.name(decl)!));
 }
 
-pub fn counted(syntax decl: unknown) {
+pub fn counted(syntax decl: unknown) -> void {
     val n = @TypeInfo.all(with: seen).length;
     compiler.setMeta(Counted(named: compiler.name(decl)!, seen: n));
 }

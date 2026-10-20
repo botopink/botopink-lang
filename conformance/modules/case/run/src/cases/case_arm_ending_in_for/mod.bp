@@ -47,7 +47,7 @@ fn tagged(n: i32) -> string[] {
     return out;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(flatten([Node.Many(vs: [1, 2]), Node.One(v: 5), Node.Many(vs: [])]));
     print(tagged(1));
     print(tagged(2));

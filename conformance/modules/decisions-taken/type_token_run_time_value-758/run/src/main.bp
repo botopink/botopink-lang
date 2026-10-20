@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.type_token_handed_on_run_time.runCase();
     cases.type_token_run_time_value.runCase();
     cases.type_token_imported_type.runCase();

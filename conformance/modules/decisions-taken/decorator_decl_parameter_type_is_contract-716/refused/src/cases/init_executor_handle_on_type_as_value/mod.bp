@@ -16,7 +16,7 @@ pub type Users() {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (all()) { e ->
         print(e.name + " " + e.make());
     }

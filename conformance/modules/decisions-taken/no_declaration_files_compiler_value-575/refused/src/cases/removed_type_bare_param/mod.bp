@@ -7,6 +7,6 @@ fn keep<T>(comptime t: type T, value: T) -> T {
     return value;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(keep(i32, 1));
 }

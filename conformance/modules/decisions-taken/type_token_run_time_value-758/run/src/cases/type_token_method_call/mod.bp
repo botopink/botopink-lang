@@ -27,7 +27,7 @@ pub type Cache(entries: unknown[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val row: unknown = Row(id: 7);
     val col: unknown = Col(name: "c");
     val c = Cache(entries: [col, row, row]);

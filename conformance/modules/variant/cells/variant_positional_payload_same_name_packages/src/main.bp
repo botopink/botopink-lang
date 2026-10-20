@@ -21,7 +21,7 @@ fn tokenCount(t: Token) -> i32 {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(nodeText(makeNode("hello")));
     print(tokenCount(makeToken(7)));
 }

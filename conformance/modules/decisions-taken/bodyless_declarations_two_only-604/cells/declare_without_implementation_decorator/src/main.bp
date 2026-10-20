@@ -4,8 +4,8 @@
 
 import {io.terminal.print} from "std";
 
-declare fn registered(syntax decl: unknown);
+declare fn registered(syntax decl: unknown) -> void;
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

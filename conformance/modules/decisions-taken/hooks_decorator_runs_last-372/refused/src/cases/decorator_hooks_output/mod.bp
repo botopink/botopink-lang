@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn graph<T>(syntax decl: T) {
+fn graph<T>(syntax decl: T) -> void {
     val count = compiler.hooks(decl).length;
     compiler.setMeta(Graph(count: count));
     compiler.addMember("extra", fn() -> i32 {
@@ -16,7 +16,7 @@ fn graph<T>(syntax decl: T) {
 #[graph]
 pub type Account(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(Account(name: "a").name);
 }
 

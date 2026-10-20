@@ -8,6 +8,6 @@ type Box(n: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Box(n: 1).add(b: 2));
 }

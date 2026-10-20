@@ -16,7 +16,7 @@ fn power(base: bigint, times: i32) -> bigint {
     return x;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val two: bigint = 2n;
     val top = power(two, 101);
     print(top);

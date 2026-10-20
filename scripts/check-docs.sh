@@ -168,17 +168,17 @@ self_test() {
     local root="$work/self/conformance" doc="$work/self/doc.md" out expected
     mkdir -p "$root/modules/there/src" "$root/modules/bare/src" "$root/test" "$root/modules/m/cases/c/src"
     echo '{ "name": "c", "version": "0.0.1", "src": "src/" }' >"$root/modules/m/cases/c/botopink.json"
-    echo 'pub fn main() {}' >"$root/modules/m/cases/c/src/main.bp"
+    echo 'pub fn main() -> void {}' >"$root/modules/m/cases/c/src/main.bp"
     echo '> the case text' >"$root/modules/m/cases/c/docs.md"
     mkdir -p "$root/modules/n/run/src/cases/k"
     echo '{ "name": "n-run" }' >"$root/modules/n/run/botopink.json"
-    echo 'pub fn run() {}' >"$root/modules/n/run/src/cases/k/mod.bp"
+    echo 'pub fn run() -> void {}' >"$root/modules/n/run/src/cases/k/mod.bp"
     echo '> the packaged case text' >"$root/modules/n/run/src/cases/k/docs.md"
     echo '{ "name": "there", "version": "0.0.1", "src": "src/" }' >"$root/modules/there/botopink.json"
-    echo 'pub fn main() {}' >"$root/modules/there/src/main.bp"
+    echo 'pub fn main() -> void {}' >"$root/modules/there/src/main.bp"
     echo '> the reference text' >"$root/modules/there/docs.md"
     echo '{ "name": "bare", "version": "0.0.1", "src": "src/" }' >"$root/modules/bare/botopink.json"
-    echo 'pub fn main() {}' >"$root/modules/bare/src/main.bp"
+    echo 'pub fn main() -> void {}' >"$root/modules/bare/src/main.bp"
     : >"$root/modules/bare/docs.md"
     echo 'test "t" { assert true; }' >"$root/test/suite.bp"
     cat >"$doc" <<'MD'
@@ -187,7 +187,7 @@ self_test() {
 <!-- example: test/suite.bp -->
 <!-- example: modules/bare -->
 ```botopink
-fn f() {}
+fn f() -> void {}
 ```
 <!-- docs-check: body -->
 <!-- example: -->

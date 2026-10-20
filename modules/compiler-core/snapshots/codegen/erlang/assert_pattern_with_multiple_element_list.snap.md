@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val numbers = [1, 2, 3];
     val assert [1, 2, 3] = numbers catch throw "not matching";
+    return;
 }
 ```
 
@@ -13,7 +14,8 @@ fn f() {
 
 f() ->
     Numbers = [1, 2, 3],
-    case Numbers of [1, 2, 3] -> Numbers; _ -> erlang:throw(<<"not matching">>) end.
+    case Numbers of [1, 2, 3] -> Numbers; _ -> {error, <<"not matching">>} end,
+    {ok, undefined}.
 
 '__bp_priv__f'() -> f().
 ```

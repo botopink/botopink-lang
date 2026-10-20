@@ -16,7 +16,7 @@ fn twice(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q) + " * 2");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(shout @`hello`);
     print(twice @`21`);
     print(shout @`a\n "b" ${c} \``);

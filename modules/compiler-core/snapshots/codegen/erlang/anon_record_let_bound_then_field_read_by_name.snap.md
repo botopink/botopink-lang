@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val code = 7;
     val kind = 11;
     val r = #(code, kind);

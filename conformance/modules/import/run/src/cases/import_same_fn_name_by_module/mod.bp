@@ -18,7 +18,7 @@ import {cases.import_same_fn_name_by_module.routes.blogTitle};
 import {cases.import_same_fn_name_by_module.app.blog.page};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(title());
     print(blogTitle());
     print(page.title());

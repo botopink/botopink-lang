@@ -9,6 +9,6 @@ fn scale(x: i32, comptime n: i32 = 3) -> i32 {
     return x * n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(scale(2));
 }

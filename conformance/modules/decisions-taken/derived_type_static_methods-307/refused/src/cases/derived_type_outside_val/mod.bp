@@ -8,6 +8,6 @@ type Recipe(
     description: ?string,
 )
 
-pub fn main() {
+pub fn main() -> void {
     val Patch = Type.partial(Recipe);
 }

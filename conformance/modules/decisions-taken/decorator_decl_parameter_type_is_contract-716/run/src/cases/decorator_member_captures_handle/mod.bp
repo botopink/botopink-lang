@@ -8,7 +8,7 @@ pub behavior Titled {
     fn title() -> string;
 }
 
-fn named(syntax decl: Titled) {
+fn named(syntax decl: Titled) -> void {
     compiler.addMember("typeName", fn() -> string {
         return decl.title();
     });
@@ -21,6 +21,6 @@ pub type Signup(password: string, confirm: string) implement Titled {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Signup.typeName());
 }

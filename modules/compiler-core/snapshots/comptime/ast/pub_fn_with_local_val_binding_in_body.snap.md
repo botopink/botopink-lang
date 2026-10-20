@@ -6,7 +6,7 @@ pub fn compute(x: i32) -> i32 {
     return doubled;
 }
 val result = compute(21);
-fn main() {
+fn main() -> void {
     print(result);
 }
 

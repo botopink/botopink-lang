@@ -27,7 +27,7 @@ fn both(p: bool, q: bool) -> bool {
     return p && q;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d = Dict<string, unknown>.empty();
     print(d.size());
     val e = Dict<string, i32>.empty().insert("a", 1).insert("b", 2);

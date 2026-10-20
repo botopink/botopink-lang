@@ -12,7 +12,7 @@ fn check<T>(
     comptime rule: ?fn(v: T) -> bool = null,
     comptime at: ?Type.Field<T> = null,
     comptime code: Code = .Custom,
-) {
+) -> void {
     if (compiler.kind(decl) == DeclKind.Fn
         && compiler.returnType(decl) != "bool")
         compiler.fail("#[check] without `rule` annotates an `fn(x) -> bool`", at: decl);
@@ -26,7 +26,7 @@ fn bad(a: Account) -> string {
     return a.password;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }
 

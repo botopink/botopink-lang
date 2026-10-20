@@ -8,7 +8,7 @@
 import {collections.lt as stdLt, collections.reverse as stdReverse, collections.toInt, io.terminal.print} from "std";
 import {lt as kitLt, reverse as kitReverse} from "kit";
 
-pub fn main() {
+pub fn main() -> void {
     print(kitLt(1, 2));
     print(toInt(stdLt()));
     print(kitReverse(1, 2, 3));

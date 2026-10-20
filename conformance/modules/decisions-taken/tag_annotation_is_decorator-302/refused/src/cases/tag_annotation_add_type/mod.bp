@@ -6,6 +6,6 @@ pub mod tags;
 import {cases.tag_annotation_add_type.tags.markup, cases.tag_annotation_add_type.tags.withType};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<div #[withType]>hi</div>`);
 }

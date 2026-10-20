@@ -8,7 +8,7 @@ pub default mod markup;
 pub mod style;
 
 /// A decorator that refuses what it annotates, naming it and its kind.
-pub fn named(syntax decl: unknown) {
+pub fn named(syntax decl: unknown) -> void {
     val kind = if (compiler.kind(decl) == DeclKind.Fn)
         "a function"
     else

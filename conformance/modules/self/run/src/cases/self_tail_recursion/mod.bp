@@ -32,7 +32,7 @@ fn depth(n: i32) -> i32 {
     return 1 + depth(n - 1);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val bound = 20000;
     print(sumDown(bound, 0));
     print(depth(100));

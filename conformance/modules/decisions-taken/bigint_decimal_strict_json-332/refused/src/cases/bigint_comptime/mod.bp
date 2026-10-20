@@ -5,6 +5,6 @@ import {io.terminal.print} from "std";
 
 val squared = comptime 99999999999999999999n * 99999999999999999999n;
 
-pub fn main() {
+pub fn main() -> void {
     print(squared);
 }

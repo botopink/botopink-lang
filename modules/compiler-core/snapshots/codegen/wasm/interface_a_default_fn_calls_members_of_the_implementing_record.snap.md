@@ -21,7 +21,7 @@ type Money(
     }
 }
 
-fn main() {
+fn main() -> void {
     val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
     print(m.cents);
 }

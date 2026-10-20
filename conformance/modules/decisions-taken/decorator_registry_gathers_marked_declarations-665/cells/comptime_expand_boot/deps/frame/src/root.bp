@@ -12,21 +12,21 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]
-declare fn say(line: string);
+declare fn say(line: string) -> void;
 
-fn sayBody(line: string) {
+fn sayBody(line: string) -> void {
     print(line);
 }
 
-pub fn module(syntax decl: unknown, comptime order: i32) {
+pub fn module(syntax decl: unknown, comptime order: i32) -> void {
     decl.setMeta("order", order.toString());
 }
 
-fn start(m: unknown) {
+fn start(m: unknown) -> void {
     if (m is fn() -> string) say(m());
 }
 
-pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: module)) {
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: module)) -> void {
     for (1...modules.length) { rank ->
         for (modules) { d ->
             if (d.meta.any({ m -> m.key == "order" && m.value == rank.toString() })) {

@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val o: ?string = "\u{a0}ΟΔΟΣ\u{a0} ";
     val none: ?string = null;
     print("[" + (o?.trim() ?? "-") + "]");

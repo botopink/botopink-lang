@@ -179,7 +179,7 @@ export declare function make(): Counter;
 ----- SOURCE CODE -- main.bp
 ```botopink
 import {geometry.Counter, geometry.Shape, geometry.make};
-fn main() {
+fn main() -> void {
     val c: Counter = Counter.zero();
     print(c.bump());
     print(Shape.Square(side: 4).area());

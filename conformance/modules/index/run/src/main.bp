@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.index_and_slice_sugar.runCase();
     cases.index_tuple_literal.runCase();
 }

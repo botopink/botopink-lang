@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.generator_body_lazy.runCase();
     cases.generator_captured_var_shared.runCase();
     cases.generator_defer_lazy.runCase();

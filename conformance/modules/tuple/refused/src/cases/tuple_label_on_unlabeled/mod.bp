@@ -6,6 +6,6 @@ fn load() -> #(string, i32) {
     return #("SP", 12);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(load().pop);
 }

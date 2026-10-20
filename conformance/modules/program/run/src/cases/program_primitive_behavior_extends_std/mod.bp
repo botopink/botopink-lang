@@ -25,7 +25,7 @@ behavior Number {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("a+b".tailShout());
     print("ab".tailShout());
     print("abc".twiceLen());

@@ -9,4 +9,4 @@ type Recipe(
 
 pub var Patch = Type.partial(Recipe);
 
-pub fn main() {}
+pub fn main() -> void {}

@@ -6,6 +6,6 @@ fn make(x: i32) -> Bogus<i32, i32> {
     return make(x);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

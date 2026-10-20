@@ -7,6 +7,6 @@ fn load(path: string) -> Asset {
     return @embed(path);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(load("assets/x.txt").size);
 }

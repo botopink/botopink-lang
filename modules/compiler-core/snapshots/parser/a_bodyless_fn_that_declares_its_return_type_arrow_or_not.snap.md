@@ -141,7 +141,9 @@
             "default": null
           }
         ],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": []
       }

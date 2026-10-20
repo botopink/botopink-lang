@@ -13,6 +13,6 @@ type Filter(minAge: i32) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Filter(minAge: 7).names());
 }

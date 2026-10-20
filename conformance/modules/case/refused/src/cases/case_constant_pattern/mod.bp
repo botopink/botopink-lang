@@ -4,7 +4,7 @@ import {io.terminal.print} from "std";
 
 val MAX = 10;
 
-pub fn main() {
+pub fn main() -> void {
     val x = 3;
     val y = case x {
         MAX { "max" }

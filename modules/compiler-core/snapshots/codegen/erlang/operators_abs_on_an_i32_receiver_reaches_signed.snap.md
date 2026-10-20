@@ -3,7 +3,7 @@
 fn mag(n: i32) -> i32 {
     return n.abs();
 }
-fn main() {
+fn main() -> void {
     print(mag(-7));
 }
 

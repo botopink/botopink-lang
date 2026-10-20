@@ -7,6 +7,6 @@ pub mod shapes;
 import {shapes.area};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(area(3));
 }

@@ -20,7 +20,7 @@ iter fn firstNegative(xs: i32[]) -> Iter<i32> {
     }
 }
 
-fn main() {
+fn main() -> void {
     for (fibonacci(10)) { n ->
         print(n);
     } // an ordinary function may iterate

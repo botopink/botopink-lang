@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.behavior_across_modules.runCase();
     cases.behavior_array_of_implementers.runCase();
     cases.behavior_declaration.runCase();

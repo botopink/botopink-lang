@@ -116,7 +116,7 @@ test "completion: prefix with no match returns empty" {
 test "completion: fn binding has Function kind" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn identity(x: i32) { return x; }
+        \\fn identity(x: i32) -> i32 { return x; }
     ;
 
     var c = try h.compile(gpa, source);
@@ -758,7 +758,7 @@ fn freeItems(gpa: std.mem.Allocator, items: []const proto.CompletionItem) void {
 test "completion: decorator body lists params/locals/closure binder (R1)" {
     const gpa = std.testing.allocator;
     const source =
-        \\pub fn component(syntax decl: unknown) {
+        \\pub fn component(syntax decl: unknown) -> void {
         \\    var args = "";
         \\    items.forEach({ f ->
         \\        log(args);
@@ -808,7 +808,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // real `#[service]` emits against `from \"<lib>\"` symbols the LSP compiled
     // without. The spliced re-analysis fails; completion must still degrade.
     const source =
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    @emit("val __wired = unresolvedRuntimeSymbol();");
         \\}
         \\

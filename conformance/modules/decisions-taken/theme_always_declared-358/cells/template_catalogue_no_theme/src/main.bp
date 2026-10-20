@@ -5,6 +5,6 @@
 import looks from "looks";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(looks @`page`);
 }

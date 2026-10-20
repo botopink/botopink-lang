@@ -17,7 +17,7 @@ pub fn third() -> i32 {
     return 3;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(first).meta(Mark)?.lifecycle ?? "none");
     print(comptime compiler.typeInfo(third).meta(Mark)?.lifecycle ?? "none");
 }

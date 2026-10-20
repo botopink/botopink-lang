@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(isEven(10));
     print(isOdd(10));
     print(isEven(7));

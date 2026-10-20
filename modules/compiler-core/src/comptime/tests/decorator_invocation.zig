@@ -63,7 +63,7 @@ fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, ne
 
 test "decorator invocation: body accepts a record" {
     try assertAccepts(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
         \\#[service]
@@ -75,11 +75,11 @@ test "decorator invocation: body accepts a record" {
 
 test "decorator invocation: body rejects wrong placement (fn instead of record)" {
     try assertRejects(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
         \\#[service]
-        \\fn notARecord() { }
+        \\fn notARecord() -> void { }
         \\
         \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a type with fields");
@@ -87,12 +87,12 @@ test "decorator invocation: body rejects wrong placement (fn instead of record)"
 
 test "decorator invocation: rejection points at the annotation" {
     try assertRejectsAt(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl, span: Span(0, 1, 1)); }
         \\}
         \\
         \\#[service]
-        \\fn notARecord() { }
+        \\fn notARecord() -> void { }
         \\
         \\import {compiler, compiler.Span, compiler.DeclKind} from "std";
     , "must annotate a type with fields", .{ 5, 3 });
@@ -104,7 +104,7 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
     // the evaluator refuses it (01-checker's decorator-body row): the
     // checker's unknown method, located at the call in the body.
     try assertRejectsAt(@src(),
-        \\fn check(syntax decl: unknown) {
+        \\fn check(syntax decl: unknown) -> void {
         \\    val n = compiler.name(decl)!;
         \\    val x = n.frobnicate(1, 2);
         \\}
@@ -122,7 +122,7 @@ test "decorator invocation: a raise in another module's decorator body names the
     // — `deco.bp` (`@src().file` of a module the driver gave no `srcPath`),
     // line 3, column 5 —, and the annotation is the `called from` line.
     const deco =
-        \\pub fn check(syntax decl: unknown) {
+        \\pub fn check(syntax decl: unknown) -> void {
         \\    val n = compiler.name(decl)!;
         \\    panic("boom " + n);
         \\}
@@ -167,8 +167,8 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
     // external term); the body reads every part back and emits it, and the reply
     // is byte-identical on the BEAM and the wat runtime.
     const src =
-        \\fn column(syntax decl: unknown, comptime name: string) { }
-        \\fn describe(syntax decl: unknown, comptime label: string) {
+        \\fn column(syntax decl: unknown, comptime name: string) -> void { }
+        \\fn describe(syntax decl: unknown, comptime label: string) -> void {
         \\    var out = compiler.name(decl)! + "[" + label + "]";
         \\    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
         \\    for (compiler.fields(decl)) { f ->
@@ -248,7 +248,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
     // a plain `<<"…">>` truncates to its low byte. The wat runtime decodes the
     // same lexeme in `wat.zig`'s `literalBytes`; both replies must agree.
     const src =
-        \\fn smile(syntax decl: unknown, comptime mark: string) {
+        \\fn smile(syntax decl: unknown, comptime mark: string) -> void {
         \\    val s = "<\u{263A}\u{e7}\u{1F600}>";
         \\    @emit("pub val smiled" + compiler.name(decl)! + " = \"" + s + mark + "\";");
         \\}
@@ -273,7 +273,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
 
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
-        \\fn getMapping(syntax decl: unknown, comptime path: string) {
+        \\fn getMapping(syntax decl: unknown, comptime path: string) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
         \\behavior Routes {
@@ -287,7 +287,7 @@ test "decorator invocation: method placement accepted" {
 
 test "decorator invocation: method decorator rejects a record" {
     try assertRejects(@src(),
-        \\fn getMapping(syntax decl: unknown, comptime path: string) {
+        \\fn getMapping(syntax decl: unknown, comptime path: string) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
         \\#[getMapping("/x")]
@@ -299,7 +299,7 @@ test "decorator invocation: method decorator rejects a record" {
 
 test "decorator invocation: body reads the reflected name" {
     try assertRejects(@src(),
-        \\fn named(syntax decl: unknown) {
+        \\fn named(syntax decl: unknown) -> void {
         \\    if (compiler.name(decl)! == "Bad") { compiler.fail("the name Bad is reserved", at: decl); }
         \\}
         \\#[named]
@@ -313,11 +313,11 @@ test "decorator invocation: @compilerError rejects wrong placement" {
     // The generic compile-time error builtin — no `@Decl` handle needed — also
     // surfaces as a scoped rejection when the body runs.
     try assertRejects(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
-        \\fn notARecord() { }
+        \\fn notARecord() -> void { }
         \\
         \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a type with fields");
@@ -325,7 +325,7 @@ test "decorator invocation: @compilerError rejects wrong placement" {
 
 test "decorator invocation: @compilerError body accepts the right placement" {
     try assertAccepts(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
@@ -339,7 +339,7 @@ test "decorator invocation: decl.variants tells an enum-shaped type from a recor
     // `DeclKind.Type` covers both shapes; `decl.variants` is empty for a record
     // and lists the variant names of an enum.
     try assertRejects(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); };
         \\    if (compiler.variants(decl).length > 0) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
@@ -352,7 +352,7 @@ test "decorator invocation: decl.variants tells an enum-shaped type from a recor
 
 test "decorator invocation: decl.variants is empty on a record" {
     try assertAccepts(@src(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); };
         \\    if (compiler.variants(decl).length > 0) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
@@ -371,7 +371,7 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
-        \\fn singleton(syntax decl: unknown) {
+        \\fn singleton(syntax decl: unknown) -> void {
         \\    @emit("pub val wiredMarker = 99;");
         \\}
         \\#[singleton]
@@ -400,7 +400,7 @@ test "decorator invocation: the body runs on the wat runtime for every target (d
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
-        \\fn singleton(syntax decl: unknown) {
+        \\fn singleton(syntax decl: unknown) -> void {
         \\    @emit("pub val wiredMarker = 99;");
         \\}
         \\#[singleton]
@@ -429,7 +429,7 @@ test "decorator invocation: a body may reference an @emit'd declaration" {
     // calls an `@emit`ed factory — with body-first inference this failed as an
     // unbound variable (the regression that blocked `@emit` under `botopink test`).
     try assertAccepts(@src(),
-        \\fn gen(syntax decl: unknown) {
+        \\fn gen(syntax decl: unknown) -> void {
         \\    @emit("pub fn makeThing() -> i32 { return 7; }");
         \\}
         \\#[gen]
@@ -442,7 +442,7 @@ test "decorator invocation: interface-level marker runs over the interface" {
     // A marker on an interface reflects with `kind == Interface` and runs its body
     // (previously interface-level markers were silently skipped).
     try assertRejects(@src(),
-        \\fn onlyRecords(syntax decl: unknown) {
+        \\fn onlyRecords(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) == DeclKind.Behavior) { compiler.fail("marker is not allowed on a behavior", at: decl); }
         \\}
         \\#[onlyRecords]
@@ -456,7 +456,7 @@ test "decorator invocation: mock-style synthesis from an interface compiles" {
     // A mocking-lib shape: reflect an interface's methods, emit a record that
     // implements it plus a factory, then use the factory — all in one compile.
     try assertAccepts(@src(),
-        \\fn mock(syntax decl: unknown) {
+        \\fn mock(syntax decl: unknown) -> void {
         \\    var methods = "";
         \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "  fn " + m.name + "(self: Self) -> i32 { return 0; }\n";
@@ -492,7 +492,7 @@ test "decorator invocation: a helper of another module builds that module's reco
     ;
     const src =
         \\import {seg.parseSeg};
-        \\fn page(syntax decl: unknown) {
+        \\fn page(syntax decl: unknown) -> void {
         \\    val s = parseSeg(compiler.name(decl)!);
         \\    @emit("pub fn seen" + compiler.name(decl)! + "() -> string { return \"" + s.shout() + s.size.toString() + "\"; }");
         \\}
@@ -528,7 +528,7 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
         \\fn bangBody(value: string) -> string {
         \\    return value + "!";
         \\}
-        \\fn labelled(syntax decl: unknown) {
+        \\fn labelled(syntax decl: unknown) -> void {
         \\    @emit("pub fn label() -> string { return \"" + bang(compiler.name(decl)!) + hash.contentHash(compiler.name(decl)!) + "\"; }");
         \\}
         \\#[labelled]
@@ -559,7 +559,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     const calls = 60;
     var body: std.ArrayListUnmanaged(u8) = .empty;
     defer body.deinit(alloc);
-    try body.appendSlice(alloc, "import {compiler} from \"std\";\nfn big(syntax decl: unknown) {\n");
+    try body.appendSlice(alloc, "import {compiler} from \"std\";\nfn big(syntax decl: unknown) -> void {\n");
     var k: usize = 0;
     while (k < 250) : (k += 1) try body.print(alloc, "    if (compiler.name(decl)! == \"never{d}\") {{ compiler.fail(\"message {d}\", at: decl); }}\n", .{ k, k });
     try body.appendSlice(alloc, "}\n");

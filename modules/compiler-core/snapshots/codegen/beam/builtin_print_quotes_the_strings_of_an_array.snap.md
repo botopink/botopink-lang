@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val words = ["plain", "say \"hi\"", "back\\slash", "two\nlines"];
     print(words);
     print("top", words);

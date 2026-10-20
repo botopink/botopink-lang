@@ -20,7 +20,7 @@ fn nested() -> i32 {
     };
     return outer * 10 + inner;
 }
-fn main() {
+fn main() -> void {
     print(firstSquareOver(20));
     print(nested());
 }

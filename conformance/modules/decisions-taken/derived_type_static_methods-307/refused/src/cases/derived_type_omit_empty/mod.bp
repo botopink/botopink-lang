@@ -9,4 +9,4 @@ type Recipe(
 
 pub val Empty = Type.omit(Recipe, .title, .description);
 
-pub fn main() {}
+pub fn main() -> void {}

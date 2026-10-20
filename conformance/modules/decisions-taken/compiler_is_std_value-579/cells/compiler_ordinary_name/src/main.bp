@@ -10,7 +10,7 @@ fn describe(compiler: string) -> string {
     return "built by " + compiler;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val compiler = "zig";
     val tool = Tool(compiler: compiler);
     print(describe(tool.compiler) + ", " + compiler.toUpper());

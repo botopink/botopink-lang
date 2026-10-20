@@ -6,7 +6,7 @@ fn double(n: i32) -> i32 {
     return n * 2;
 }
 
-fn main() {
+fn main() -> void {
     val r = double(21);
 }
 ```

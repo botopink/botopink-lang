@@ -14,6 +14,6 @@ async fn Page() -> Async<Element> {
     return Element(count: c);
 }
 
-pub fn main() {
+pub fn main() -> void {
     Page();
 }

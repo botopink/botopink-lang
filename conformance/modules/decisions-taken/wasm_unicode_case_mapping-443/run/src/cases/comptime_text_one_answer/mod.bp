@@ -16,7 +16,7 @@ fn id(x: f64) -> f64 {
     return x;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val five = comptime "${5.0}";
     print(five);
     val fiveText = comptime 5.0.toString();

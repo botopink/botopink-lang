@@ -11,7 +11,7 @@ fn shout(s: string) -> string {
     return s.toUpper();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(shout(twice @`ef`));
     print("a--b".split(twice @`-`).join("+"));
 }

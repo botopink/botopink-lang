@@ -9,7 +9,7 @@ behavior Pairish<A, B> {
     }
 }
 
-fn main() {
+fn main() -> void {
     val p = Pairish.of(1, "one");
     print(Pairish.first(p));
 }

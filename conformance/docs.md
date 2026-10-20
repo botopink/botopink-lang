@@ -861,7 +861,7 @@ an early `return` stays (`fn sign(n: i32) -> i32 { if (n < 0) return -1; n }`), 
 x;` stays valid. With `;` it is a statement, and a body with `-> R` then needs a `return` — `fn
 semi(x: i32) -> i32 { x + 1; }` is refused at `-> i32` as above. A braced `if` / `case` / loop at the
 end is a statement, never the tail. The tail is checked against `-> R` at the expression; in a body
-answering nothing (no `-> R`, or `-> void`), a tail of another type is refused at it.
+answering nothing (`-> void`), a tail of another type is refused at it.
 `botopink format` neither adds nor removes the tail's missing `;`, and prints a body of one tail on
 one line when it fits:
 
@@ -895,7 +895,7 @@ the `T` as `return value;` is:
 
 <!-- example: modules/decisions-taken/fn_tail_value-409/run/src/cases/fn_tail_result -->
 
-An empty body is a function that does nothing: `pub fn main() {}` builds and runs, printing
+An empty body is a function that does nothing: `pub fn main() -> void {}` builds and runs, printing
 nothing, and a call of a `fn` written `{}` runs and answers nothing, on every target:
 
 <!-- example: modules/fn/run/src/cases/fn_empty_main -->
@@ -1965,7 +1965,8 @@ A lambda's parameters take the types of the position it is passed to or the
 i32 = { x -> x + 1 };`. The typed function expression `fn(x: T, …) -> R { … }`
 is legal in every position (decision 408) — a `val`, a `var`, an argument, a
 return and the member a decorator hands to `compiler.addMember(name, fn…)` alike;
-every parameter typed or none, and no `-> R` answers nothing. Where the
+every parameter typed or none, and with a parameter typed the `-> R` written
+(`-> void` when it answers nothing, decision 622). Where the
 position has a type, the written types are checked against it — `val f: fn(x:
 i32) -> i32 = fn(x: string) -> i32 { … };` is refused at the expression; with
 none, the written types are the function's:
@@ -4124,7 +4125,7 @@ the outputs a decorator's only (`compiler-output-outside-decorator`):
 | an associated type | `compiler.addType("Columns", compiler.buildType(…))` — a type built from its fields, never from record text (decisions 625 (3), 629 (1)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the run-time registry | `compiler.init({ -> themes.set(decl); })` — the decorator registers its own declaration (decision 665) | the registry, read by the program at run time |
 
-A marker is a decorator with an empty body (decision 604): `fn registered(syntax decl: unknown) {}`
+A marker is a decorator with an empty body (decision 604): `fn registered(syntax decl: unknown) -> void {}`
 annotates declarations and runs nothing:
 
 <!-- example: modules/decisions-taken/bodyless_declarations_two_only-604/cells/decorator_marker_empty_body -->
@@ -4550,7 +4551,7 @@ at init, before `main`. No `comptime` default is a catalogue query: a framework'
 registry.modules()) -> App`, called `rakun.boot();` from anywhere (decision 664).
 
 **A decorator names the behavior its declarations implement** (decision 716).
-`pub fn module(syntax decl: Module) { … }`, `Module` a `behavior`:
+`pub fn module(syntax decl: Module) -> void { … }`, `Module` a `behavior`:
 `#[module]` on a type that does not `implement Module` is refused at the
 annotation, naming the type and the behavior (`` `#[module]` needs a type
 implementing `Module` — `City` does not ``). The annotation is the opt-in:

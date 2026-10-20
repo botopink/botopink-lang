@@ -32,7 +32,7 @@ pub type Prelude()
 
 // The markup's unfold target: the template function `html """…"""` a `.bpp`
 // file's markup becomes.
-pub fn html(syntax decl: unknown) {
+pub fn html(syntax decl: unknown) -> void {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `"
@@ -53,7 +53,7 @@ pub fn html(syntax decl: unknown) {
 
 // The style section's unfold target: the template function the section
 // between `--- style ---` and `---` becomes (`use <style> """…""";`).
-pub fn style(syntax decl: unknown) {
+pub fn style(syntax decl: unknown) -> void {
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail(
             "#[bpp.style] annotates the template function a .bpp file's style section unfolds onto — `"
@@ -75,7 +75,7 @@ pub fn style(syntax decl: unknown) {
 // The markup's prelude (decision 589): each item marked where it is declared
 // — a `val`, a `fn` or a `type` — is one name a `.bpp` file's markup sees
 // without importing it.
-pub fn htmlPrelude(syntax decl: unknown) {
+pub fn htmlPrelude(syntax decl: unknown) -> void {
     val kind = compiler.kind(decl);
     if (kind != DeclKind.Val && kind != DeclKind.Fn && kind != DeclKind.Type)
         compiler.fail(
@@ -88,7 +88,7 @@ pub fn htmlPrelude(syntax decl: unknown) {
 
 // The style section's prelude: the marker `val` of the module whose imports
 // a `.bpp` file's style section resolves through.
-pub fn stylePrelude(syntax decl: unknown) {
+pub fn stylePrelude(syntax decl: unknown) -> void {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail(
             "#[bpp.stylePrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `"

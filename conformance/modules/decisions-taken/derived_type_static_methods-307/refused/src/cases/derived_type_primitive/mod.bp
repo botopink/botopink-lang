@@ -4,4 +4,4 @@ import {types.Type} from "std";
 
 pub val MaybeInt = Type.partial(i32);
 
-pub fn main() {}
+pub fn main() -> void {}

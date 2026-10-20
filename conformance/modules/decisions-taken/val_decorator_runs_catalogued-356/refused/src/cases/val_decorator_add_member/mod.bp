@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn helper<T>(syntax decl: T) {
+fn helper<T>(syntax decl: T) -> void {
     compiler.addMember("extra", fn() -> i32 {
         return 1;
     });
@@ -12,6 +12,6 @@ fn helper<T>(syntax decl: T) {
 #[helper]
 pub val limit = 2;
 
-pub fn main() {
+pub fn main() -> void {
     print(limit);
 }

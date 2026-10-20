@@ -8,6 +8,6 @@ fn register(name: string) -> i32 {
 val _registered = register("Greeter"); // runs at module load, once
 val port = 8000 + 80; // read as many times as you like
 
-fn main() {
+fn main() -> void {
     print(port);
 }

@@ -9,7 +9,7 @@ fn rows() -> #(a: i32, b: string)[] {
     return [#(1, "x"), #(2, "y")];
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val rs = rows();
     print(rs.at(0)?.b ?? "none");
     print(rs.at(1)?.a ?? 0);

@@ -19,7 +19,7 @@ import {cases.behavior_across_modules.web.home};
 import {cases.behavior_across_modules.pages.about, cases.behavior_across_modules.pages.held};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val renderer: PageRenderer = { req, out -> req.path() + " " + out.tag };
     print(render(renderer, home()));
     print(about());

@@ -56,7 +56,7 @@ fn query(syntax q: string, syntax decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-fn repository(syntax decl: unknown) {
+fn repository(syntax decl: unknown) -> void {
     var lines: string[] = [];
     for (compiler.methods(decl)) { m ->
         val found = m.meta(Query);
@@ -84,7 +84,7 @@ fn repository(syntax decl: unknown) {
 
 pub type Audit(level: i32)
 
-fn audited(syntax decl: unknown, comptime level: i32) {
+fn audited(syntax decl: unknown, comptime level: i32) -> void {
     compiler.setMeta(Audit(level: level));
 }
 
@@ -109,7 +109,7 @@ fn logout(user: string) -> string {
     return user + " out";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val statements: string[] = comptime compiler
         .typeInfo(Users)
         .meta(Repository)?.statements ?? [];

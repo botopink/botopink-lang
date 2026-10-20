@@ -6,6 +6,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(wasi: "RandomF64"))]
 pub declare fn draw() -> f64;
 
-pub fn main() {
+pub fn main() -> void {
     print(draw() < 1.0);
 }

@@ -6,6 +6,6 @@
 import {items.Queue, items.describe};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Queue(label: "demo", size: 0)));
 }

@@ -13,7 +13,7 @@ fn parse(s: string) -> Result<i32, string> {
     return s.length;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(total(parse("ab"), parse("abc")).unwrapOr(-1)); // 5
     print(total(parse("ab"), parse("")).unwrapOr(-1)); // -1
 }

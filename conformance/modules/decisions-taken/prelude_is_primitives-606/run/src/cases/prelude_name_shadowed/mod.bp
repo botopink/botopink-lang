@@ -17,7 +17,7 @@ fn chore() -> Async {
     return Async(title: "dishes", done: false);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val r = best();
     print(r.value, r.note);
     print(chore().title);

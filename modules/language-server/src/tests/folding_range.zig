@@ -69,7 +69,7 @@ test "foldingRange: struct with methods" {
     const source =
         \\type Counter(
         \\    _count: i32 = 0) {
-        \\    fn increment(self: Self) {
+        \\    fn increment(self: Self) -> void {
         \\        self._count += 1;
         \\    }
         \\}

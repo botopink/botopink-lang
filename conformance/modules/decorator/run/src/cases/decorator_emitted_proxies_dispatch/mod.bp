@@ -15,7 +15,7 @@ fn guard(label: string) -> i32 {
     return label.length();
 }
 
-fn proxied(syntax decl: unknown) {
+fn proxied(syntax decl: unknown) -> void {
     var methods: string[] = [];
     compiler
         .methods(decl)
@@ -55,7 +55,7 @@ type Runbook(id: i32) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(LedgerSec(inner: Ledger(id: 1)).status());
     print(RunbookSec(inner: Runbook(id: 2)).read());
 }

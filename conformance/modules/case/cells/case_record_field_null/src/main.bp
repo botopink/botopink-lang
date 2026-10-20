@@ -72,7 +72,7 @@ fn flag(f: Flag) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Box(label: null, n: 1)));
     print(describe(Box(label: "x", n: 2)));
     print(positional(Box(label: null, n: 1)));

@@ -15,6 +15,6 @@ declare fn later(n: i32) -> Async<Result<i32, failure.HostError>>;
 #[compiler.external(.JavaScript("Math.abs($0)", result: false), .Erlang("abs($0)", result: false))]
 declare fn magnitude(n: i32) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print("checked");
 }

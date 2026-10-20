@@ -6,7 +6,7 @@ pub mod ui;
 import {cases.inline_type_across_modules.ui.link, cases.inline_type_across_modules.ui.home};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(home());
     print(link(href: "/a", label: "A"));
 }

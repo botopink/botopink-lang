@@ -13,7 +13,7 @@ type Shape {
     Dot,
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Box(value: 1, tag: "t"));
     print(Box(value: "s", tag: "u"));
     print(Label(tag: "big", size: 3));

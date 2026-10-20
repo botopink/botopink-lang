@@ -53,7 +53,7 @@ fn describe(r: Result<string, string>) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val reader = Reader(limit: 3);
     print(describe(reader.read("abc")));
     print(describe(reader.read("")));

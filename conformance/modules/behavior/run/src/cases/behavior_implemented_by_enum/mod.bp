@@ -33,7 +33,7 @@ fn describe(r: Req) -> string {
     return r.path() + " " + r.weight().toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Route.Home.path());
     print(Route.Page(slug: "a").path());
     print(describe(Route.Page(slug: "b")));

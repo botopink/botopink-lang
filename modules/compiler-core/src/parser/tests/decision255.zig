@@ -145,7 +145,7 @@ test "decision 255: a comparison stays a comparison" {
 
 test "decision 255: botopink format prints a type application back" {
     try expectFormatsBack(
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val d = Dict<string, unknown>.empty();
         \\    val b = Box<i32>.make(7).get();
         \\    val o = Opt<i32>.None;
@@ -157,7 +157,7 @@ test "decision 255: botopink format prints a type application back" {
     );
     // A chain too long for one line keeps the `<…>` on the root's line.
     try expectFormatsBack(
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val e = Dict<string, i32>
         \\        .empty()
         \\        .insert("aaaaaaaaaaaaaaaaaaaaaa", 1)
@@ -186,7 +186,7 @@ test "decision 255: botopink format prints comptime <expr> back as written" {
     try expectFormatsBack(
         \\val top = comptime 2 + 3;
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val d: Dict<string, unknown> = comptime Dict.empty();
         \\    val b = comptime { 3 * 4 };
         \\}

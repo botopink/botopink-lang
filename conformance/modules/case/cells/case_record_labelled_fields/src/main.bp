@@ -99,7 +99,7 @@ fn guarded(d: Dog) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val rex = Dog(name: "rex", breed: "lab", age: 3);
     val max = Dog(name: "max", breed: "pug");
     print(show(rex));

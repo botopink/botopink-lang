@@ -9,6 +9,6 @@ behavior Scale {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Scale.by(factor: 3));
 }

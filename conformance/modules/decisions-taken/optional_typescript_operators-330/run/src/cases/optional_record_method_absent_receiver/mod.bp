@@ -48,7 +48,7 @@ fn col(c: i32) -> ?C {
     return C.Green;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(p(true)?.twice());
     print(p(true)?.half() ?? -1.0);
     print(p(false)?.half() ?? -1.0);

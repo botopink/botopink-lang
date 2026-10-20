@@ -15,7 +15,7 @@ pub fn shout(syntax q: string) -> string {
 
 val s = shout @` hello big world `;
 
-fn main() {
+fn main() -> void {
     print(s);
 }
 import {compiler} from "std";

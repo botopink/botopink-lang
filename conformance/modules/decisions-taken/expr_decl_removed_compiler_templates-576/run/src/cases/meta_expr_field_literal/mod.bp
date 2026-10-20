@@ -6,13 +6,13 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Check(message: string)
 
-fn check(syntax decl: unknown) {
+fn check(syntax decl: unknown) -> void {
     compiler.addMeta(Check(message: "fixed"));
 }
 
 #[check]
 type Signup(handle: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(Signup).metaAll(Check).length);
 }

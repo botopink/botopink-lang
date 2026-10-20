@@ -13,7 +13,7 @@ fn className(rules: string) -> string {
     return "e_" + hash.contentHash(rules);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val atBuild = comptime hash.contentHash("hello");
     print(atBuild);
     val leaf = comptime contentHash("héllo €");

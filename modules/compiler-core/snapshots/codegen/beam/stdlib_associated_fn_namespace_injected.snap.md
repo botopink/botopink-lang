@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     print(Array.range(0, 3).length);
     print(Array.repeat("x", 2).join(","));
 }

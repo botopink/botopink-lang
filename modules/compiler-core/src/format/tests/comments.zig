@@ -9,7 +9,7 @@ const h = @import("helpers.zig");
 
 test "format: todo ---- simple" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    todo;
         \\}
     );
@@ -17,7 +17,7 @@ test "format: todo ---- simple" {
 
 test "format: todo ---- with message" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    panic("todo with a label");
         \\}
         \\
@@ -28,7 +28,7 @@ test "format: todo ---- with message" {
 test "format: comments ---- single line before fn" {
     try h.assertFormatLossless(std.testing.allocator,
         \\// one
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -38,7 +38,7 @@ test "format: comments ---- multiple lines before fn" {
     try h.assertFormatLossless(std.testing.allocator,
         \\// one
         \\// two
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -46,7 +46,7 @@ test "format: comments ---- multiple lines before fn" {
 
 test "format: comments ---- inside function" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    // Hello
         \\    // world
         \\    1;
@@ -56,7 +56,7 @@ test "format: comments ---- inside function" {
 
 test "format: comments ---- between statements" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    // Hello
         \\    1;
         \\    // world
@@ -67,7 +67,7 @@ test "format: comments ---- between statements" {
 
 test "format: comments ---- between statements of a case arm block" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = case 1 {
         \\        1 {
         \\            val a = 1;
@@ -91,7 +91,7 @@ test "format: comments ---- after a block's bare tail" {
         \\}
     );
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = case 1 {
         \\        1 {
         \\            val a = 1;
@@ -108,7 +108,7 @@ test "format: comments ---- after a block's bare tail" {
 
 test "format: comments ---- trailing after function" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    x;
         \\}
         \\// Hello world
@@ -118,7 +118,7 @@ test "format: comments ---- trailing after function" {
 
 test "format: comments ---- inside list" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        // One
         \\        1,
@@ -131,7 +131,7 @@ test "format: comments ---- inside list" {
 
 test "format: comments ---- inside call" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    one(
         \\        // One
         \\        1,
@@ -145,7 +145,7 @@ test "format: comments ---- inside call" {
 test "format: doc comment ---- before fn" {
     try h.assertFormatLossless(std.testing.allocator,
         \\/// This is a documented function
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -188,7 +188,7 @@ test "format: doc comments ---- module level" {
         \\//// Two
         \\//// Three
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val x = 1;
         \\
         \\    x;
@@ -198,8 +198,8 @@ test "format: doc comments ---- module level" {
 
 test "format: comments ---- at end of anonymous fn" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
-        \\    fn() {
+        \\fn main() -> void {
+        \\    fn() -> void {
         \\        1;
         \\        // a final comment
         \\
@@ -212,7 +212,7 @@ test "format: comments ---- at end of anonymous fn" {
 
 test "format: comments ---- multiline inside case block" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    case list {
         \\        [] -> acc;
         \\        [_, ..rest] -> rest |> do_len(acc + 1);
@@ -225,7 +225,7 @@ test "format: comments ---- multiline inside case block" {
 
 test "format: todo ---- with message and comment" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    panic("wibble");
         \\}
         \\
@@ -272,7 +272,7 @@ test "format: comments ---- an empty module comment line has no trailing space" 
         \\////
         \\//// More.
         \\
-        \\fn main() {}
+        \\fn main() -> void {}
     );
 }
 

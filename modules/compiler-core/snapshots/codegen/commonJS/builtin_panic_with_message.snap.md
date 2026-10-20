@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fail() {
+fn fail() -> void {
     panic("something went wrong");
 }
 

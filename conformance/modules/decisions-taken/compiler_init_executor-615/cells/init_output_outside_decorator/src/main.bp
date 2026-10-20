@@ -5,10 +5,10 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn setup(comptime text: string) {
+fn setup(comptime text: string) -> void {
     compiler.init({ -> print(text) });
 }
 
-pub fn main() {
+pub fn main() -> void {
     setup("x");
 }

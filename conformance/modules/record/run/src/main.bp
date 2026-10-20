@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.record_construct_read.runCase();
     cases.record_empty.runCase();
     cases.record_enum_case_lambda.runCase();

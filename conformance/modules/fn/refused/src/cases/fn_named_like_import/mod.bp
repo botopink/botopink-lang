@@ -9,6 +9,6 @@ fn basename(n: i32) -> i32 {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(basename(2));
 }

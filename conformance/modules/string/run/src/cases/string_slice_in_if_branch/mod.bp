@@ -20,7 +20,7 @@ fn label(n: i32) -> string {
     return if (n > 1) "${n} items" else "one item";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(page("/"));
     print(page("/about"));
     print(rest([1, 2, 3], true));

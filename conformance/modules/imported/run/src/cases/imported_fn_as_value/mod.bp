@@ -12,7 +12,7 @@ fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
     return f(x);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val f = twice;
     print(f(2));
     print(apply(twice, 3));

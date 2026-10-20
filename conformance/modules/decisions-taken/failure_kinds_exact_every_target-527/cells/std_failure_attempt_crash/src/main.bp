@@ -25,14 +25,14 @@ fn area(s: Shape) -> i32 {
     };
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(failure.attempt({ -> area(shapeNamed("Square")) }));
     print("after");
 }

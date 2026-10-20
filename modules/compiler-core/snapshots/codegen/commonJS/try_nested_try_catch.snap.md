@@ -13,7 +13,7 @@ fn process() -> i32 {
     print(a, b);
     return a + b;
 }
-fn main() {
+fn main() -> void {
     print(process());
 }
 

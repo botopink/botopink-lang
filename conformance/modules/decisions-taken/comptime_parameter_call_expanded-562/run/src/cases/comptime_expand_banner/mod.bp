@@ -10,19 +10,19 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]
-declare fn say(line: string);
+declare fn say(line: string) -> void;
 
-fn sayBody(line: string) {
+fn sayBody(line: string) -> void {
     print(line);
 }
 
-fn banner(comptime rows: i32) {
+fn banner(comptime rows: i32) -> void {
     for (1...rows) { row ->
         say("row " + row.toString() + " of " + rows.toString());
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     banner(3);
     banner(1);
 }

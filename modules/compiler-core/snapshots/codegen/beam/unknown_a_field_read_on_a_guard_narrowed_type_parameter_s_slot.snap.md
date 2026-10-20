@@ -11,7 +11,7 @@ fn innerLength(b: unknown) -> i32 {
         _ { -2 }
     };
 }
-fn main() {
+fn main() -> void {
     val s: unknown = Maybe.Some(value: "abc");
     print(innerLength(s));
 }

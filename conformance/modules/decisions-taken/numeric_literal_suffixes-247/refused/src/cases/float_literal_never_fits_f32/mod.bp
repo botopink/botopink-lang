@@ -7,6 +7,6 @@ fn small(v: f32) -> f32 {
     return v;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(small(1.5));
 }

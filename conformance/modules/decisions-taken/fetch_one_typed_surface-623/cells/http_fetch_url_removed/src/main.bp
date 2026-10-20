@@ -8,6 +8,6 @@ async fn probe(url: string) -> Async<Result<i32, http.HttpError>> {
     return resp.status;
 }
 
-pub fn main() {
+pub fn main() -> void {
     probe("https://example.com");
 }

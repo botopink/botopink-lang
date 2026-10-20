@@ -7,4 +7,4 @@ import {io.terminal.print} from "std";
 
 fn connect(host: string, port: i32 = 80) -> string { return host; }
 
-pub fn main() { print(connect()); }
+pub fn main() -> void { print(connect()); }

@@ -13,4 +13,4 @@ fn Widget() -> Element {
     return Element(count: c);
 }
 
-pub fn main() { print(Widget().count); }
+pub fn main() -> void { print(Widget().count); }

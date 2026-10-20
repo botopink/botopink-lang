@@ -16,7 +16,7 @@ fn apply(p: shapes.Pt, f: fn(shapes.Pt, i32) -> shapes.Pt) -> shapes.Pt {
     return f(p, 5);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val o: shapes.Pt = shapes.origin();
     print(moved(o));
     print(shapes.Pt(x: 3, y: 4).x);

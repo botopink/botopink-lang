@@ -13,4 +13,4 @@ component fn Counter() -> Component<Element> {
     return Element(count: count);
 }
 
-pub fn main() { print(Counter().count); }
+pub fn main() -> void { print(Counter().count); }

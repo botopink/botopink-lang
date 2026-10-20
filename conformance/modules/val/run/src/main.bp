@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.val_annotated.runCase();
     cases.val_assert_ok.runCase();
     cases.val_assert_record_pattern.runCase();

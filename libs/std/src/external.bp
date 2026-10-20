@@ -94,7 +94,7 @@ pub type Implementation {
 
 // The host sources of the annotated `declare fn`, one `Implementation` per
 // target.
-pub fn external(syntax decl: unknown, comptime ..sources: Implementation[]) {
+pub fn external(syntax decl: unknown, comptime ..sources: Implementation[]) -> void {
     for (sources) { s ->
         compiler.implement(s);
     }

@@ -17,7 +17,7 @@ fn hello(g: Greeter) -> string {
     return g.greet() + "!";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(header(City.Columns(name: "nome", people: "gente")));
     val other: Town.Columns = Town.Columns(name: "n", people: "p");
     print(header(other));

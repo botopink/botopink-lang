@@ -12,7 +12,7 @@
 import {collections, io.terminal.print} from "std";
 import {report.report} from "kit";
 
-pub fn main() {
+pub fn main() -> void {
     print(report());
     print(collections.toInt(collections.lt()));
 }

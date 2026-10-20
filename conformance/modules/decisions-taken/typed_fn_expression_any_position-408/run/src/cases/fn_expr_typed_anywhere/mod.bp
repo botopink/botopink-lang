@@ -15,7 +15,7 @@ fn adder(n: i32) -> fn(x: i32) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val inc = fn(x: i32) -> i32 {
         return x + 1;
     };
@@ -40,7 +40,7 @@ pub fn runCase() {
         return x + 100;
     };
     print(g(1));
-    val say = fn(s: string) {
+    val say = fn(s: string) -> void {
         print(s);
     };
     say("hi");

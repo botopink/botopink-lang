@@ -7,6 +7,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("Math.floor($0)", host: .Wasi))]
 declare fn floorOf(x: f64) -> f64;
 
-pub fn main() {
+pub fn main() -> void {
     print(floorOf(2.5));
 }

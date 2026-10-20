@@ -53,7 +53,7 @@ fn session() -> Result<void, fs.FsError> {
     return;
 }
 
-pub fn main() {
+pub fn main() -> void {
     case session() {
         Ok(_) -> print("done");
         Error(_) -> print("failed");

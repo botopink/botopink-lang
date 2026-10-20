@@ -8,6 +8,6 @@ fn magnitude(x: f64) -> f64 {
     return x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(magnitude(-2.5));
 }

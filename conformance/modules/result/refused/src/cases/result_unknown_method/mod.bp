@@ -10,6 +10,6 @@ fn half(n: i32) -> Result<i32, string> {
     throw "odd";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(half(4).get());
 }

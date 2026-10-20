@@ -1210,7 +1210,7 @@ test "infer: a receiver's own method named like a template method of the scope i
         \\fn greet(syntax self: Visitor, syntax q: string) -> string {
         \\    return compiler.build(compiler.text(self) + ".who");
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val g = Greeter(who: "Ana");
         \\    print(g.greet("hello"));
         \\    print(g.greet @`hello`);
@@ -1241,7 +1241,7 @@ test "infer: a behavior method the receiver's type adopts, named like a template
         \\fn wave(w: Waves) -> string {
         \\    return w.greet @`hi`;
         \\}
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(Waver(name: "Ana").greet "hello");
         \\    print(wave(Waver(name: "Bia")));
         \\}
@@ -1260,7 +1260,7 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     const src =
         \\fn shout(syntax q: string) -> string { return q; }
         \\fn run(shout: fn(string) -> string) -> string { return shout("x"); }
-        \\pub fn main() { print(shout @`a`); print(run({ s -> s })); }
+        \\pub fn main() -> void { print(shout @`a`); print(run({ s -> s })); }
         \\
         \\import {io.terminal.print} from "std";
     ;
@@ -1277,7 +1277,7 @@ test "infer: template-call-unexpanded ---- the backstop refuses a template call 
     try std.testing.expectError(error.TypeError, inferMod.refuseUnexpandedTemplateCalls(&env, program));
     const te = env.lastError.?;
     try std.testing.expectEqual(@as(usize, 3), te.loc.?.line);
-    try std.testing.expectEqual(@as(usize, 23), te.loc.?.col);
+    try std.testing.expectEqual(@as(usize, 31), te.loc.?.col);
     const msg = try te.message(std.testing.allocator);
     defer std.testing.allocator.free(msg);
     try std.testing.expectEqualStrings("template-call-unexpanded: `shout \"…\"` calls a template function here, where the compiler does not expand it", msg);
@@ -1301,7 +1301,7 @@ test "templates: a raise in another module's template body names the body's file
     ;
     const src =
         \\import {tpl.shout};
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(shout @`hi`);
         \\}
         \\

@@ -25,7 +25,7 @@ test "js: case ---- number literal patterns" {
         \\    print(result);
         \\    return result;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    classify(0);
         \\    classify(1);
         \\    classify(7);
@@ -46,7 +46,7 @@ test "js: case ---- string literal patterns" {
         \\    print(msg);
         \\    return msg;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    greet("en");
         \\    greet("pt");
         \\    greet("fr");
@@ -66,7 +66,7 @@ test "js: case ---- or patterns with numbers" {
         \\    print(kind);
         \\    return kind;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    classify(3);
         \\    classify(6);
         \\    classify(7);
@@ -86,7 +86,7 @@ test "js: if ---- simple conditional in fn body" {
         \\    print(r);
         \\    return r;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    sign(5);
         \\    sign(-3);
         \\}
@@ -100,7 +100,7 @@ test "js: if ---- conditional with else branch" {
         \\fn describe(n: i32) -> string {
         \\    return if (n > 0) "positive" else "non-positive";
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(5));
         \\    print(describe(-3));
         \\}
@@ -137,7 +137,7 @@ test "js: try ---- with inline catch handler" {
         \\    print(r);
         \\    return r;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(safe());
         \\}
         \\
@@ -160,7 +160,7 @@ test "js: case ---- list patterns empty, single, spread" {
 
 test "js: loop ---- side-effect print in iterator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
         \\    for (messages) { msg ->
         \\        print(msg);
@@ -195,7 +195,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
         \\    };
         \\    return total;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(pick(["a", "b", "c"]));
         \\    print(weigh([10, 20, 30]));
         \\}
@@ -229,7 +229,7 @@ test "js: loop ---- a condition loop repeats while its condition holds and threa
         \\    };
         \\    return sum;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(count(4));
         \\    print(count(0));
         \\    print(evens(6));
@@ -264,7 +264,7 @@ test "js: loop ---- an unconditioned loop ends at break and a break leaves only 
         \\    };
         \\    return outer * 10 + inner;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(firstSquareOver(20));
         \\    print(nested());
         \\}
@@ -288,7 +288,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
         \\    for (words) { w -> emit(w); };
         \\    return out + " " + count.toString();
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(render(["a", "b"]));
         \\}
         \\
@@ -298,7 +298,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
 
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    for (0..10) { i ->
         \\        print(i);
         \\    };
@@ -319,7 +319,7 @@ test "js: loop ---- side-effect over range" {
 // 460]`, where commonJS answers `[115, 287.5, 460]`).
 test "js: loop ---- a var pushed to in a loop body (add tax)" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val precosBrutos = [100, 250, 400];
         \\    var precosComTaxa = [];
         \\    for (precosBrutos) { valor ->
@@ -335,7 +335,7 @@ test "js: loop ---- a var pushed to in a loop body (add tax)" {
 
 test "js: loop ---- a conditional push keeps some items" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val precosBrutos = [100, 250, 400];
         \\    var apenasGrandes = [];
         \\    for (precosBrutos) { valor ->
@@ -352,7 +352,7 @@ test "js: loop ---- a conditional push keeps some items" {
 
 test "js: loop ---- map is the collecting form" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val ids = [10, 20, 30];
         \\    val dobrados = ids.map({ id -> id * 2 });
         \\    print(dobrados);
@@ -364,7 +364,7 @@ test "js: loop ---- map is the collecting form" {
 
 test "js: loop ---- even numbers pushed from a range loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    var processamento = [];
         \\    for (0..10) { i ->
         \\        if (i % 2 == 0) {
@@ -420,13 +420,13 @@ test "js: case ---- written variant path, arm value and whole-value binder" {
         \\    Circle(radius: i32),
         \\    Rect(width: i32, height: i32),
         \\}
-        \\fn show(s: Shape) {
+        \\fn show(s: Shape) -> void {
         \\    case s {
         \\        Shape.Circle(r) { print(r); }
         \\        _ { v -> print(v); }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    show(Shape.Circle(radius: 2));
         \\    show(Shape.Rect(width: 1, height: 2));
         \\}
@@ -498,7 +498,7 @@ test "js: case ---- type-test, tuple, range, labelled and nested arms" {
         \\        _ { 0 }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(sign(5));
         \\    print(sign(-1));
         \\    print(pair(#(0, "z")));
@@ -567,7 +567,7 @@ test "js: case ---- nested case in block arm" {
 // `break` and leaves its answer in a `var` (decision 105: no loop has a value).
 test "js: loop ---- a loop over an array literal, and a break out of one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    for ([1, 2, 3]) { x -> print(x); };
         \\    var first = 0;
         \\    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
@@ -589,7 +589,7 @@ test "js: loop ---- a search ends at break with its answer in a var" {
         \\    };
         \\    return found;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(find([5, 8, 15, 20]));
         \\}
         \\
@@ -602,7 +602,7 @@ test "js: loop ---- a condition loop's answer is read from a var" {
     // finds lives in a `var` the body reassigns before its bare `break`, and
     // a loop that ends without finding one leaves the `var` as it was.
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var k = 0;
         \\    var r = 0;
         \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
@@ -622,7 +622,7 @@ test "js: loop ---- a condition loop's answer is read from a var" {
 
 test "js: loop ---- a condition loop's answer in a var, on every backend" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    var i = 0;
         \\    var found = 0;
         \\    while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
@@ -664,7 +664,7 @@ test "js: loop ---- a var accumulates what a body pushes" {
         \\    };
         \\    return out;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(doubles([1, 2, 3]));
         \\}
         \\
@@ -678,7 +678,7 @@ test "js: if ---- with else branch" {
         \\    val result = if (n < 0) -n else n;
         \\    return result;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(abs(-5));
         \\    print(abs(3));
         \\}
@@ -700,7 +700,7 @@ test "js: if ---- null-check binding" {
 
 test "js: case ---- multiple subjects" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn process(a: i32, b: i32) {
+        \\fn process(a: i32, b: i32) -> void {
         \\    case a, b {
         \\        0, 0 -> null;
         \\        _, _ -> null;
@@ -766,7 +766,7 @@ test "js: try ---- nested try catch" {
         \\    print(a, b);
         \\    return a + b;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(process());
         \\}
         \\
@@ -791,8 +791,9 @@ test "js: try ---- catch tail on method call" {
 
 test "js: throw ---- string literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn fail() {
+        \\fn fail() -> Result<void, string> {
         \\    throw "something went wrong";
+        \\    return;
         \\}
     );
 }
@@ -818,10 +819,11 @@ test "js: throw ---- bare throw inside try catch is rejected" {
 test "js: throw ---- record constructor" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type AppError(code: i32, msg: string)
-        \\fn validate(x: i32) {
+        \\fn validate(x: i32) -> Result<void, AppError> {
         \\    if (x < 0) {
         \\        throw AppError(code: 400, msg: "negative");
         \\    };
+        \\    return;
         \\}
     );
 }
@@ -891,7 +893,7 @@ test "js: throw ---- inside case arm" {
         \\        Fail -> throw "failed";
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(check(Status.Ok).isOk());
         \\    print(check(Status.Fail).isOk());
         \\}
@@ -913,7 +915,7 @@ test "js: try ---- catch preserves surrounding bindings" {
         \\    print(prefix, data, suffix);
         \\    return prefix + data + suffix;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(process());
         \\}
         \\
@@ -929,7 +931,7 @@ test "js: throw ---- inside loop body" {
         \\    };
         \\    return items;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(validate(2).isOk());
         \\}
         \\
@@ -946,12 +948,12 @@ test "js: try ---- multiple catch with different fallbacks" {
         \\fn fetchAge() -> Result<i32, UserError> {
         \\    throw UserError(msg: "age missing");
         \\}
-        \\fn loadUser() {
+        \\fn loadUser() -> void {
         \\    val name = try fetchName() catch "anonymous";
         \\    val age = try fetchAge() catch 0;
         \\    print(name, age);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    loadUser();
         \\}
         \\
@@ -1088,8 +1090,8 @@ test "erlang: case ---- a variant pattern written with its path matches the bare
     // the bare token `.None`, which is `syntax error before: '.'`.
     try h.assertErlangRunLog(std.testing.allocator,
         \\type Maybe { Some(v: i32), None }
-        \\fn show(m: Maybe) { case m { .Some(v) { print(v) } .None { print(0) } }; }
-        \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
+        \\fn show(m: Maybe) -> void { case m { .Some(v) { print(v) } .None { print(0) } }; }
+        \\fn main() -> void { show(Maybe.None); show(Maybe.Some(v: 7)); }
         \\
         \\import {io.terminal.print} from "std";
     , "0\n7\n", &.{ "{test@main@@Maybe__v__some, V} ->", "test@main@@Maybe__v__none ->" });
@@ -1101,8 +1103,8 @@ test "erlang: case ---- a one-parameter arm binds the whole subject" {
     // (`variable 'V' is unbound`). The name is now an alias on the clause
     // pattern, and on a wildcard it *is* the pattern.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn show(n: i32) { case n { 0 { print("zero") } _ { v -> print(v) } }; }
-        \\fn main() { show(4); show(0); }
+        \\fn show(n: i32) -> void { case n { 0 { print("zero") } _ { v -> print(v) } }; }
+        \\fn main() -> void { show(4); show(0); }
         \\
         \\import {io.terminal.print} from "std";
     , "4\nzero\n", &.{"        V ->"});
@@ -1113,8 +1115,8 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
     // alias binds the subject without evaluating it twice.
     try h.assertErlangRunLog(std.testing.allocator,
         \\type Maybe { Some(v: i32), None }
-        \\fn show(m: Maybe) { case m { .Some(v) { w -> print(v) } .None { print(0) } }; }
-        \\fn main() { show(Maybe.Some(v: 7)); }
+        \\fn show(m: Maybe) -> void { case m { .Some(v) { w -> print(v) } .None { print(0) } }; }
+        \\fn main() -> void { show(Maybe.Some(v: 7)); }
         \\
         \\import {io.terminal.print} from "std";
     , "7\n", &.{"W = {test@main@@Maybe__v__some, V} ->"});
@@ -1138,7 +1140,7 @@ test "erlang: case ---- a tuple pattern is the bare tuple, with no variant tag" 
     // variant with no name — `{'', 0, S}`, which no constructor builds — so every
     // tuple arm died with `{case_clause,{0,5}}`.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val p = #(0, 5);
         \\  case p { #(0, s) { print(s) } #(n, _) { print(n) } };
         \\}
@@ -1154,7 +1156,7 @@ test "erlang: case ---- `..` writes the fields the pattern does not name" {
     // The declared arity comes from `variant_fields`.
     try h.assertErlangRunLog(std.testing.allocator,
         \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
-        \\fn main() {
+        \\fn main() -> void {
         \\  case Shape.Rect(width: 5, height: 9) { Rect(width: w, ..) { print(w) } Circle(..) { print(0) } };
         \\  case Shape.Circle(radius: 1) { Rect(width: w, ..) { print(w) } Circle(..) { print(0) } };
         \\}
@@ -1169,7 +1171,7 @@ test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed ar
     // a fresh variable, the shape becomes a guard, and the named element is an
     // `element/2` read the body opens with.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val t = #(4, 5, 6);
         \\  case t { #(a, ..) { print(a) } };
         \\}
@@ -1185,10 +1187,10 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
     // is a clause guard on the variable the arm keeps — by value since step 2
     // (§4.1: a number with no fractional part, in range).
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn show(v: i32 | string) {
+        \\fn show(v: i32 | string) -> void {
         \\  case v { i32 { print("int") } string { print("str") } };
         \\}
-        \\fn main() { show(3); show("abcd"); }
+        \\fn main() -> void { show(3); show("abcd"); }
         \\
         \\import {io.terminal.print} from "std";
     , "int\nstr\n", &.{ "I32 when erlang:is_number(I32), (I32 == erlang:trunc(I32))", "String when erlang:is_binary(String) ->" });
@@ -1207,7 +1209,7 @@ test "beam: case ---- an inclusive range is two is_ge tests (decision 53)" {
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn n(x: i32) -> i32 { return case x { 1...3 { 1 } 4...6 { 2 } _ { 0 } }; }
         \\fn s(x: string) -> i32 { return case x { "b"..."d" { 1 } _ { 0 } }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(n(0)); print(n(1)); print(n(3)); print(n(4)); print(n(6)); print(n(7));
         \\  print(s("a")); print(s("b")); print(s("d")); print(s("e"));
         \\}
@@ -1226,7 +1228,7 @@ test "beam: case ---- a tuple pattern is the bare tuple, element by element" {
         \\  return case p { #(0, s) { "zero " + s } #(n, "x") { "x " + n.toString() } #(_, s) { s } };
         \\}
         \\fn first(t: #(i32, i32, i32)) -> i32 { return case t { #(a, ..) { a } }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(classify(#(0, "a"))); print(classify(#(7, "x"))); print(classify(#(7, "y")));
         \\  print(first(#(4, 5, 6)));
         \\}
@@ -1246,7 +1248,7 @@ test "beam: case ---- `..` and labels read the declared variant" {
         \\fn kind(s: Shape) -> string {
         \\  return case s { .Rect(width: w, height: h) when (w == h) { "square" } .Rect(..) { "rect" } .Circle(..) { "circle" } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(width(Shape.Rect(width: 5, height: 9))); print(width(Shape.Circle(radius: 1)));
         \\  print(five(Shape.Rect(width: 5, height: 9))); print(five(Shape.Rect(width: 6, height: 9)));
         \\  print(kind(Shape.Rect(width: 2, height: 2))); print(kind(Shape.Rect(width: 2, height: 3))); print(kind(Shape.Circle(radius: 2)));
@@ -1265,7 +1267,7 @@ test "beam: case ---- a primitive type or a bool literal is a test, not a binder
         \\fn sign(x: i32) -> string {
         \\  return case x { i32 when (x > 0) { "positive" } i32 when (x < 0) { "negative" } _ { "zero" } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(kind(3)); print(kind("abcd")); print(yesNo(true)); print(yesNo(false));
         \\  print(sign(3)); print(sign(-3)); print(sign(0));
         \\}
@@ -1282,7 +1284,7 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
     try h.assertBeamRunLog(std.testing.allocator,
         \\type Shape { Rect(width: i32, height: i32), Dot }
         \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(shown(Shape.Rect(height: 2, width: 5)));
         \\  print(shown(Shape.Rect(width: 5, height: 2)));
         \\  print(shown(Shape.Rect(5, 2)));
@@ -1299,7 +1301,7 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
 // (handed over by `01-std-lib-enablement`, 2026-09-25).
 test "erlang: a non-ASCII string literal is its UTF-8 bytes" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val a = "ç";
         \\  val b = "\u{e7}";
         \\  print(a == b);
@@ -1315,7 +1317,7 @@ test "erlang: a non-ASCII string literal is its UTF-8 bytes" {
 
 test "beam: a non-ASCII string literal is its UTF-8 bytes" {
     try h.assertBeamRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val a = "ç";
         \\  val b = "\u{e7}";
         \\  print(a == b);
@@ -1354,7 +1356,7 @@ test "erlang: a return inside a loop's body leaves the function" {
         \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
         \\  return acc;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(firstUnder(12, 10));
         \\  print(find([4, 5, 6], 6));
         \\  print(find([4, 5, 6], 9));
@@ -1384,7 +1386,7 @@ test "beam: a return inside a loop's body leaves the function" {
         \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
         \\  return acc;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(firstUnder(12, 10));
         \\  print(find([4, 5, 6], 6));
         \\  print(find([4, 5, 6], 9));
@@ -1407,7 +1409,7 @@ test "erlang: a @Result/@Option op does not capture the program's own names" {
         \\type Conf(name: string, port: i32)
         \\fn load(n: i32) -> Result<i32, string> { if (n < 0) { throw "neg"; }; return n; }
         \\fn conf(n: i32) -> Result<Conf, string> { if (n < 0) { throw "neg"; }; return Conf(name: "a", port: n); }
-        \\fn main() {
+        \\fn main() -> void {
         \\  val v = load(5);
         \\  print(v.unwrapOr(1));
         \\  val r = 7;
@@ -1434,7 +1436,7 @@ test "erlang: a top-level fn named as a value is its fun" {
         \\fn inc(x: i32) -> i32 { return x + 1; }
         \\fn apply(f: fn() -> i32) -> i32 { return f(); }
         \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(apply(one));
         \\  print(apply1(inc, 4));
         \\  val g = inc;
@@ -1452,7 +1454,7 @@ test "beam: a top-level fn named as a value is its fun" {
         \\fn inc(x: i32) -> i32 { return x + 1; }
         \\fn apply(f: fn() -> i32) -> i32 { return f(); }
         \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(apply(one));
         \\  print(apply1(inc, 4));
         \\  val g = inc;
@@ -1472,7 +1474,7 @@ test "erlang: a bare break at a generator's own level ends it" {
         \\iter fn ends() -> Iter<i32> { yield 1; break; yield 2; }
         \\iter fn upto(n: i32) -> Iter<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
         \\fn digits(g: Iter<i32>) -> string { var acc = ""; for (g) { x -> acc = acc + x.toString(); }; return acc; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(digits(ends()));
         \\  print(digits(upto(3)));
         \\  print(digits(upto(1)));
@@ -1488,7 +1490,7 @@ test "erlang: a bare break at a generator's own level ends it" {
 test "erlang: x is Enum.Variant tests that variant" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub type Token { Text(v: string), Num(n: i32), Eof }
-        \\fn main() {
+        \\fn main() -> void {
         \\  val x: Token = Token.Text(v: "hi");
         \\  val y: Token = Token.Eof;
         \\  print(x is Token.Text);
@@ -1505,7 +1507,7 @@ test "erlang: x is Enum.Variant tests that variant" {
 test "beam: x is Enum.Variant tests that variant" {
     try h.assertBeamRunLog(std.testing.allocator,
         \\pub type Token { Text(v: string), Num(n: i32), Eof }
-        \\fn main() {
+        \\fn main() -> void {
         \\  val x: Token = Token.Text(v: "hi");
         \\  val y: Token = Token.Eof;
         \\  print(x is Token.Text);
@@ -1526,7 +1528,7 @@ test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
         \\fn pick(which: bool) -> fn(x: i32) -> i32 { return { x -> if (which) { x } else { 0 - x } }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(adder(3)(4));
         \\  print(pick(false)(5));
         \\  print(adder(10)(adder(1)(2)));
@@ -1543,7 +1545,7 @@ test "beam: calling the result of a call applies it (`calleeExpr`)" {
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
         \\fn twice(n: i32) -> i32 { return adder(n)(n); }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(adder(3)(4));
         \\  print(adder(10)(adder(1)(2)));
         \\  print(twice(4));
@@ -1562,7 +1564,7 @@ test "erlang: an enum variant's labelled payload claims its declared slot" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\type Shape { Rect(width: i32, height: i32), Dot }
         \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(shown(Shape.Rect(height: 2, width: 5)));
         \\  print(shown(Shape.Rect(width: 5, height: 2)));
         \\  print(shown(Shape.Rect(5, 2)));
@@ -1582,7 +1584,7 @@ test "beam: a lambda whose body is an if, a case or a try answers its value" {
         \\fn tenth(x: i32) -> Result<i32, string> {
         \\    if (x > 1) { return x * 10; } else { throw "too small"; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  val xs = [1, 2, 3];
         \\  print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
         \\  print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
@@ -1604,7 +1606,7 @@ test "beam: a synth helper a type's module reached first is the file module's to
         \\    fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); }
         \\}
         \\fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }
-        \\fn main() { print(Row(cells: ["abc"]).widest()); print(firstOf(["ab"])); }
+        \\fn main() -> void { print(Row(cells: ["abc"]).widest()); print(firstOf(["ab"])); }
         \\
         \\import {io.terminal.print} from "std";
     , "3\n2\n", &.{});
@@ -1620,7 +1622,7 @@ test "beam: the module body runs once, in declaration order, before main" {
         \\fn note(tag: string) -> i32 { print(tag); return 1; }
         \\val first = note("first");
         \\val _second = note("second");
-        \\fn main() { print("main"); print(first); print(first); }
+        \\fn main() -> void { print("main"); print(first); print(first); }
         \\
         \\import {io.terminal.print} from "std";
     , "first\nsecond\nmain\n1\n1\n", &.{ "{extfunc, persistent_term, get, 2}", "{extfunc, persistent_term, put, 2}" });
@@ -1645,7 +1647,7 @@ test "beam: is and == read numbers by value only where decision 8 says so" {
         \\        _ { "other" }
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: unknown = 3.0;
         \\    print(describe(a));
         \\    val b: unknown = 2.5;
@@ -1688,7 +1690,7 @@ test "beam: is and == read numbers by value only where decision 8 says so" {
 // their own baselines in their own commits.
 test "js: generator loop ---- a var captured by an annotated loop is its state" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var n = 0;
         \\    val g = iter loop {
         \\        n = n + 1;
@@ -1711,7 +1713,7 @@ test "js: generator loop ---- break v inside a for ends the whole generator" {
         \\        yield 0;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    for (firstOver([1, 5, 9, 12], 4)) { v -> print(v); };
         \\}
         \\
@@ -1739,7 +1741,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
         \\    print(sum);
         \\    return sum;
         \\}
-        \\fn main() { total(3); }
+        \\fn main() -> void { total(3); }
         \\
         \\import {io.terminal.print} from "std";
     , "12\n");
@@ -1747,7 +1749,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
 
 test "js: range ---- a...b includes its end" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    for (1..4) { i -> print(i); };
         \\    for (1...4) { i -> print(i); };
         \\}
@@ -1764,7 +1766,7 @@ test "js: range ---- a...b includes its end" {
 
 test "erlang: loop ---- a condition loop's answer comes back in the var it reassigned" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  var i = 0;
         \\  var found = 0;
         \\  while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
@@ -1778,7 +1780,7 @@ test "erlang: loop ---- a condition loop's answer comes back in the var it reass
 
 test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  var k = 0;
         \\  var r = 0;
         \\  loop { k = k + 1; if (k > 2) { r = k; break; }; };
@@ -1806,7 +1808,7 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\  var i = 0;
         \\  while (i < n) { yield i; i = i + 1; };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  var acc = "";
         \\  for (nums(3)) { x -> acc = acc + x.toString(); };
         \\  print(acc);
@@ -1824,7 +1826,7 @@ test "erlang: generator ---- a bare-yield body is a generator too" {
     // other (144 B-134).
     try h.assertErlangRunLog(std.testing.allocator,
         \\iter fn two() -> Iter<i32> { yield 1; yield 2; }
-        \\fn main() {
+        \\fn main() -> void {
         \\  var a = "";
         \\  for (two()) { x -> a = a + x.toString(); };
         \\  print(a);
@@ -1855,7 +1857,7 @@ test "js: lambda ---- an expression body is the lambda's value" {
         \\fn tenth(x: i32) -> Result<i32, string> {
         \\    if (x > 1) { return x * 10; } else { throw "too small"; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [1, 2, 3];
         \\    print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
         \\    print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
@@ -1882,7 +1884,7 @@ test "js: lambda ---- a tail if whose branches return stays a statement" {
         \\fn pick(xs: i32[]) -> i32[] {
         \\    return xs.map({ x -> if (x > 1) { return x * 10; } else { return 0; } });
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(pick([1, 2, 3]).join(","));
         \\}
         \\
@@ -1912,7 +1914,7 @@ test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
         \\    if (n == 0) return acc;
         \\    return sumDown(n - 1, acc + n);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(sumDown(20000, 0));
         \\}
         \\
@@ -1941,7 +1943,7 @@ test "js: self tail call ---- one inside the function's own loop is labelled" {
         \\    };
         \\    return n;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(firstUnder(9000, 10));
         \\}
         \\
@@ -1965,7 +1967,7 @@ test "js: self tail call ---- a closure over a parameter keeps the recursion" {
         \\    val xs = [1, 2].map({ x -> x * n });
         \\    return tally(n - 1, acc + xs.length());
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(tally(3, 0));
         \\}
         \\
@@ -1988,7 +1990,7 @@ test "js: self tail call ---- a `??` IIFE reading a parameter keeps the loop" {
         \\    val s = xs.at(i) ?? "";
         \\    return count(xs, i + 1, acc + s.length);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(count(["ab", "c", "def"], 0, 0));
         \\}
         \\
@@ -2011,7 +2013,7 @@ test "js: self tail call ---- a closure inside an IIFE keeps the recursion" {
         \\    val xs = [1, 2].at(0) ?? [1, 2].map({ x -> x * n }).length;
         \\    return tally(n - 1, acc + xs);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(tally(3, 0));
         \\}
         \\
@@ -2032,10 +2034,10 @@ test "erlang: unknown ---- `is`, type arms and `==` answer by value" {
     // `A = 2.0`, no box. D3 (§2.3): with an `unknown` operand `==` / `!=` are
     // erlang's by-value `==` / `/=`; two typed operands keep `=:=`.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn show(x: unknown) {
+        \\fn show(x: unknown) -> void {
         \\  case x { i32 { n -> print(n) } f64 { f -> print(f) } _ { print("other") } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  val a: unknown = 2.0;
         \\  val c: unknown = 2.5;
         \\  print(a == 2, a != 2, c == 2);
@@ -2069,7 +2071,7 @@ test "erlang: case ---- `A...B` matches both bounds, through guards" {
         \\fn grade(n: i32) -> string {
         \\  return case n { 1...9 { d -> "digit " + d.toString() } 10...99 { "two" } _ { "other" } };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\  print(grade(0), grade(1), grade(9), grade(10), grade(99), grade(100));
         \\  val t = #(5, "x");
         \\  case t { #(1...3, _) { print("low") } #(4...6, s) { print("mid " + s) } _ { print("hi") } };
@@ -2114,7 +2116,7 @@ test "js: throw ---- in a case arm bound, passed and in statement position" {
         \\    }
         \\    return 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(bound(Value.Num(1)).unwrapOr(-1));
         \\    print(bound(Value.Text("z")).isError());
         \\    print(argument(Value.Num(3)).unwrapOr(-1));
@@ -2151,7 +2153,7 @@ test "erlang: a throw in a case arm bound, passed and in statement position" {
         \\    }
         \\    return 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(bound(Value.Num(1)).unwrapOr(-1));
         \\    print(bound(Value.Text("z")).isError());
         \\    print(argument(Value.Num(3)).unwrapOr(-1));
@@ -2188,7 +2190,7 @@ test "beam: a throw in a case arm bound, passed and in statement position" {
         \\    }
         \\    return 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(bound(Value.Num(1)).unwrapOr(-1));
         \\    print(bound(Value.Text("z")).isError());
         \\    print(argument(Value.Num(3)).unwrapOr(-1));

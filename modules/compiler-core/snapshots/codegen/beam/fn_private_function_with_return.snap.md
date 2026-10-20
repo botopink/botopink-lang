@@ -4,7 +4,7 @@ fn double(x: i32) -> i32 {
     return x * 2;
 }
 val result = double(5);
-fn main() {
+fn main() -> void {
     print(result);
 }
 

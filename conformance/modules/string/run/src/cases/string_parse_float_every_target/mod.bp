@@ -11,7 +11,7 @@ fn parsed(s: string) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(parsed("1.5"));
     print(parsed("-2.5e-1"));
     print(parsed("+12.5E1"));

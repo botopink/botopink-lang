@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x: i64 = 2n;
     print(x);
 }

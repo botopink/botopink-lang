@@ -8,7 +8,7 @@ fn total(label: string, ..values: i32[]) -> string {
     return label + ": " + sum.toString();
 }
 
-fn main() {
+fn main() -> void {
     print(total("none")); // none: 0
     print(total("three", 1, 2, 3)); // three: 6
 }

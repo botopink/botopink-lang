@@ -6,7 +6,7 @@ pub fn html(syntax template: string) -> string {
 val page = html @`
 <p>world</p>
 `;
-fn main() {
+fn main() -> void {
     print(page);
 }
 

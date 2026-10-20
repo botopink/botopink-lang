@@ -56,7 +56,7 @@ test "format: behavior ---- one field" {
 test "format: behavior ---- abstract method" {
     try h.assertFormat(std.testing.allocator,
         \\behavior Drawable {
-        \\    fn draw(self: Self);
+        \\    fn draw(self: Self) -> void;
         \\}
     );
 }
@@ -66,9 +66,9 @@ test "format: behavior ---- full Drawable (field + abstract + default method)" {
         \\behavior Drawable {
         \\    val color: string;
         \\
-        \\    fn draw(self: Self);
+        \\    fn draw(self: Self) -> void;
         \\
-        \\    default fn log(self: Self) {
+        \\    default fn log(self: Self) -> void {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
         \\}
@@ -78,9 +78,9 @@ test "format: behavior ---- full Drawable (field + abstract + default method)" {
 test "format: behavior ---- multiple abstract methods" {
     try h.assertFormat(std.testing.allocator,
         \\behavior Canvas {
-        \\    fn clear(self: Self);
-        \\    fn drawLine(self: Self, x1: i32, y1: i32);
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
+        \\    fn clear(self: Self) -> void;
+        \\    fn drawLine(self: Self, x1: i32, y1: i32) -> void;
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string) -> void;
         \\}
     );
 }
@@ -122,7 +122,7 @@ test "format: type (enum) ---- with payload variant" {
 test "format: implement ---- single interface" {
     try h.assertFormat(std.testing.allocator,
         \\val CircleDrawing = implement Drawable for Circle {
-        \\    fn draw(self: Self) {}
+        \\    fn draw(self: Self) -> void {}
         \\};
     );
 }
@@ -130,12 +130,12 @@ test "format: implement ---- single interface" {
 test "format: implement ---- two interfaces with qualified methods" {
     try h.assertFormat(std.testing.allocator,
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
-        \\    fn UsbCharger.Connect(self: Self) {
+        \\    fn UsbCharger.Connect(self: Self) -> void {
         \\        Console.WriteLine(
         \\            "Connected via USB. Battery level: " + self.batteryLevel,
         \\        );
         \\    }
-        \\    fn SolarCharger.Connect(self: Self) {
+        \\    fn SolarCharger.Connect(self: Self) -> void {
         \\        Console.WriteLine(
         \\            "Connected via Solar Panel. Battery level: " + self.batteryLevel,
         \\        );
@@ -147,7 +147,7 @@ test "format: implement ---- two interfaces with qualified methods" {
 test "format: implement ---- shorthand named" {
     try h.assertFormat(std.testing.allocator,
         \\PatoNada implement Nada for Pato {
-        \\    fn swim(self: Self) {}
+        \\    fn swim(self: Self) -> void {}
         \\};
     );
 }
@@ -155,7 +155,7 @@ test "format: implement ---- shorthand named" {
 test "format: implement ---- shorthand named pub" {
     try h.assertFormat(std.testing.allocator,
         \\pub PatoNada implement Nada for Pato {
-        \\    fn swim(self: Self) {}
+        \\    fn swim(self: Self) -> void {}
         \\};
     );
 }
@@ -163,7 +163,7 @@ test "format: implement ---- shorthand named pub" {
 test "format: extend ---- shorthand named" {
     try h.assertFormat(std.testing.allocator,
         \\PatoExtra extend Pato {
-        \\    fn quack(self: Self) {}
+        \\    fn quack(self: Self) -> void {}
         \\};
     );
 }
@@ -171,7 +171,7 @@ test "format: extend ---- shorthand named" {
 test "format: extend ---- explicit named" {
     try h.assertFormat(std.testing.allocator,
         \\val PatoExtra = extend Pato {
-        \\    fn quack(self: Self) {}
+        \\    fn quack(self: Self) -> void {}
         \\};
     );
 }
@@ -252,7 +252,7 @@ test "format: generic ---- nested ?T in @Result" {
 
 test "format: pub fn ---- comptime param with generic constraint" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn run(comptime ctx: Component<string>) {
+        \\pub fn run(comptime ctx: Component<string>) -> void {
         \\    todo;
         \\}
     );
@@ -260,7 +260,7 @@ test "format: pub fn ---- comptime param with generic constraint" {
 
 test "format: fn statement ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main(one: string, two: string, three: string) {
+        \\fn main(one: string, two: string, three: string) -> void {
         \\    null;
         \\}
     );
@@ -268,7 +268,7 @@ test "format: fn statement ---- simple" {
 
 test "format: fn statement ---- discarded parameter" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main(_discarded: string) {
+        \\fn main(_discarded: string) -> void {
         \\    null;
         \\}
     );
@@ -284,7 +284,7 @@ test "format: fn statement ---- with return type" {
 
 test "format: fn statement ---- trailing comment" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\    // Done
         \\}
@@ -293,7 +293,7 @@ test "format: fn statement ---- trailing comment" {
 
 test "format: let ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = 1;
         \\    null;
         \\}
@@ -302,7 +302,7 @@ test "format: let ---- simple" {
 
 test "format: let ---- block value" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = {
         \\        1;
         \\        2
@@ -314,7 +314,7 @@ test "format: let ---- block value" {
 
 test "format: let ---- case value" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val y = case x {
         \\        1 -> 1;
         \\        _ -> 0;
@@ -326,7 +326,7 @@ test "format: let ---- case value" {
 
 test "format: let ---- fn value" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = fn(x) {
         \\        x;
         \\    };
@@ -337,7 +337,7 @@ test "format: let ---- fn value" {
 
 test "format: empty lines ---- single between statements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1;
         \\
         \\    2;
@@ -347,7 +347,7 @@ test "format: empty lines ---- single between statements" {
 
 test "format: empty lines ---- between comments" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    // one
         \\
         \\    // two
@@ -632,7 +632,7 @@ test "format: declarations ---- a parameter default and fn-type parameter names 
     try h.assertFormat(std.testing.allocator,
         \\behavior Seq<T> {
         \\    fn slice(self: Self, start: i32, end: i32 = null) -> Self;
-        \\    fn forEach(self: Self, action: fn(item: T));
+        \\    fn forEach(self: Self, action: fn(item: T)) -> void;
         \\    fn fold<A>(self: Self, initial: A, f: fn(acc: A, item: T) -> A) -> A;
         \\}
     );
@@ -895,7 +895,7 @@ test "format: fn ---- a signature with no return type breaks on the body's brace
         \\    firstParameter: i32,
         \\    secondParameter: string,
         \\    third: bool,
-        \\) {
+        \\) -> void {
         \\    print(secondParameter);
         \\}
         \\
@@ -1014,7 +1014,7 @@ test "format: declare fn ---- unannotated generics, discard param and generic re
         \\
         \\pub declare fn getContext<T>(comptime _: anytype) -> Holder<T, unknown>;
         \\
-        \\declare fn marker(syntax decl: unknown);
+        \\declare fn marker(syntax decl: unknown) -> void;
     );
 }
 
@@ -1027,7 +1027,7 @@ test "format: behavior ---- val members keep their full type" {
         \\    val parent: ?Decl;
         \\    val pick: (i32 | string)[];
         \\
-        \\    fn fail(self: Self, message: string);
+        \\    fn fail(self: Self, message: string) -> void;
         \\}
     );
 }
@@ -1142,19 +1142,19 @@ test "format: template annotation ---- idempotent and lossless beside a decorato
     try h.assertIdempotent(std.testing.allocator,
         \\#[mark]
         \\#[sql "a ${b} c"]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
     );
     try h.assertLossless(std.testing.allocator,
         \\#[mark]
         \\#[sql """x ${b}"""]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
     );
 }
 
 test "format: template annotation ---- inside a list stays in the list" {
     try h.assertFormat(std.testing.allocator,
         \\#[mark, sql "a ${b}"]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
     );
     try h.assertFormat(std.testing.allocator,
         \\#[
@@ -1163,11 +1163,11 @@ test "format: template annotation ---- inside a list stays in the list" {
         \\        x ${b}
         \\    """,
         \\]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
     );
     try h.assertIdempotent(std.testing.allocator,
         \\#[mark, sql "a ${b}"]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
     );
 }
 
@@ -1177,27 +1177,27 @@ test "format: annotations ---- two blocks and one list on a function" {
     try h.assertFormat(std.testing.allocator,
         \\#[a]
         \\#[b]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     try h.assertFormat(std.testing.allocator,
         \\#[a, b]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     try h.assertFormat(std.testing.allocator,
         \\#[a, b]
         \\#[c]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     try h.assertFormatAs(std.testing.allocator,
         \\#[a,
         \\  b,]
-        \\fn f() {}
+        \\fn f() -> void {}
     ,
         \\#[
         \\    a,
         \\    b,
         \\]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
 }
 
@@ -1245,19 +1245,19 @@ test "format: annotations ---- round trips, idempotent, lossless, order kept" {
     const sources = [_][]const u8{
         \\#[a]
         \\#[b]
-        \\fn f() {}
+        \\fn f() -> void {}
         ,
         \\#[a, b]
-        \\fn f() {}
+        \\fn f() -> void {}
         ,
         \\#[compiler.external(.JavaScript("mixBody", inline: true), .Erlang("mixBody", inline: true))]
-        \\fn mix() {}
+        \\fn mix() -> void {}
         \\
         \\import {compiler} from "std";
         ,
         \\#[mark, sql "a ${b}"]
         \\#[check("m", rule)]
-        \\fn f(b: string) {}
+        \\fn f(b: string) -> void {}
         ,
         \\#[a, b]
         \\#[c]
@@ -1266,7 +1266,7 @@ test "format: annotations ---- round trips, idempotent, lossless, order kept" {
         \\type U(n: i32) {
         \\    #[a]
         \\    #[b, c]
-        \\    pub fn m(self: Self) {}
+        \\    pub fn m(self: Self) -> void {}
         \\}
     };
     for (sources) |src| {
@@ -1282,7 +1282,7 @@ test "format: annotations ---- a comment between blocks and inside an open list 
         \\#[a]
         \\// between
         \\#[b]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     try h.assertFormat(std.testing.allocator,
         \\#[
@@ -1292,12 +1292,12 @@ test "format: annotations ---- a comment between blocks and inside an open list 
         \\    b,
         \\    // last
         \\]
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     try h.assertFormat(std.testing.allocator,
         \\#[a]
         \\// before the function
-        \\fn f() {}
+        \\fn f() -> void {}
     );
     const src =
         \\#[a]
@@ -1309,7 +1309,7 @@ test "format: annotations ---- a comment between blocks and inside an open list 
         \\    // end
         \\]
         \\// after
-        \\fn f() {}
+        \\fn f() -> void {}
     ;
     try h.assertFormat(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);
@@ -1336,7 +1336,7 @@ test "format: fn ---- a tail keeps no `;`, a statement keeps its `;`" {
         \\    n
         \\}
         \\
-        \\fn log(x: i32) { print(x) }
+        \\fn log(x: i32) -> void { print(x) }
         \\
         \\fn semi(x: i32) -> i32 {
         \\    x + 1;
@@ -1389,7 +1389,7 @@ test "format: type ---- a method's tail" {
 
 test "format: fn expression ---- typed in every position, its tail as written" {
     const src =
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val inc = fn(x: i32) -> i32 { x + 1 };
         \\    var half = fn(x: i32) -> i32 {
         \\        if (x < 0) return 0;

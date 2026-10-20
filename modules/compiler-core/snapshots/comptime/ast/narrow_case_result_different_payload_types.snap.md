@@ -6,7 +6,7 @@ fn fetchUser(id: i32) -> Result<User, AppError> {
     if (id == 0) { throw AppError.NotFound; };
     return User(name: "alice");
 }
-fn main() {
+fn main() -> void {
     val r = fetchUser(1);
     case r {
         Ok(u) -> print(u.name);

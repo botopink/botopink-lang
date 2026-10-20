@@ -10,13 +10,13 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(syntax decl: Module) {
+pub fn module(syntax decl: Module) -> void {
     compiler.init({ -> print(decl.make().start()) });
 }
 
 #[module]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "Recife").name);
 }

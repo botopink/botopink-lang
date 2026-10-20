@@ -15,4 +15,4 @@ fn total(n: i32) -> Result<i32, string> {
     return acc;
 }
 
-pub fn main() { print(try total(3) catch 0); }
+pub fn main() -> void { print(try total(3) catch 0); }

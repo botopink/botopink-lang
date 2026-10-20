@@ -28,6 +28,6 @@ comptime {
     runCase("err");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
 }

@@ -17,6 +17,6 @@ behavior Probe {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("up");
 }

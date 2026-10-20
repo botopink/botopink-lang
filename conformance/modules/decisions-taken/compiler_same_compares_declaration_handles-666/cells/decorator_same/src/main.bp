@@ -21,7 +21,7 @@ fn SameName() -> string {
     return "b";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val aliased: string[] = comptime compiler.typeInfo(Aliased).meta(Check)?.ids ?? [];
     print(aliased.join(" "));
     val sameName: string[] = comptime compiler.typeInfo(SameName).meta(Check)?.ids ?? [];

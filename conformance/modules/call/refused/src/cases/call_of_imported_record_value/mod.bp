@@ -7,6 +7,6 @@ pub mod config;
 import {cases.call_of_imported_record_value.config.settings};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(settings().name);
 }

@@ -5,11 +5,11 @@ fn parse(s: string) -> Result<i32, string> {
     return 42;
 }
 
-fn load() {
+fn load() -> void {
     val assert Ok(n) = parse("42");
     print(n);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     load(); // 42
 }

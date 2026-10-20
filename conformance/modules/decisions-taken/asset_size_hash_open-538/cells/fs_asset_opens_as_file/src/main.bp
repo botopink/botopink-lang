@@ -37,6 +37,6 @@ async fn run() -> Async<void> {
     fs.rm("poem-copy.txt");
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val precosBrutos = [100, 250, 400];
     var precosComTaxa = [];
     for (precosBrutos) { valor ->

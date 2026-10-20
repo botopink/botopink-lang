@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val zero = 0.0;
     print(1.0 / zero);
     print(0.0 - 1.0 / zero);

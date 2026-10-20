@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn f(a: i32, b: unknown, c: never) { }
+fn f(a: i32, b: unknown, c: never) -> void { }
 ```
 
 ----- SEMANTIC TOKENS
@@ -12,6 +12,7 @@ fn f(a: i32, b: unknown, c: never) { }
   (0,16) +7  type [defaultLibrary]  "unknown"
   (0,25) +1  parameter  "c"
   (0,28) +5  variable  "never"
+  (0,38) +4  type [defaultLibrary]  "void"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 2 9 0
   0 3 1 4 1
@@ -21,3 +22,4 @@ fn f(a: i32, b: unknown, c: never) { }
   0 3 7 0 4
   0 9 1 6 0
   0 3 5 7 0
+  0 10 4 0 4

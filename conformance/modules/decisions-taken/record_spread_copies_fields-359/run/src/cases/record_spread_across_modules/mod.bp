@@ -13,7 +13,7 @@ import {types.Type, io.terminal.print} from "std";
 
 val SoEmail = Type.pick(Cadastro, .email);
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = Contato(email: "ana@a");
     print(completar(c, "Ana"));
     print(Pessoa(..c, nome: "Bia", idade: 41));

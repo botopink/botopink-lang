@@ -15,7 +15,7 @@ fn textToCss(t: Token.Text) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(textToCss(.Bold)); // font-weight:bold
     print(textToCss(.Italic)); // font-style:italic
 }

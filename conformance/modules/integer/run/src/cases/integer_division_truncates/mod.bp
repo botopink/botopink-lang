@@ -18,7 +18,7 @@ fn ratio(x: f64, y: f64) -> f64 {
     return x / y;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(half(7));
     print(half(-7));
     print(7 / 2);

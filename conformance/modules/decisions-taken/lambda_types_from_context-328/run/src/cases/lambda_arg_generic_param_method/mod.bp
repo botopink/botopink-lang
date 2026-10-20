@@ -18,7 +18,7 @@ pub fn register<Rq, Ch>(name: string, entry: fn(req: Rq, chain: Ch) -> string) -
     return "registered " + name;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(register("first", { req, chain -> chain.next(req) }));
     print(Chain(index: 2).next("direct"));
 }

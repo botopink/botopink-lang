@@ -14,7 +14,7 @@ fn show<T>(x: T) -> string {
     return "${x}";
 }
 
-fn printIt<T>(x: T) {
+fn printIt<T>(x: T) -> void {
     print(x);
 }
 
@@ -36,7 +36,7 @@ fn handOn<T>(x: T) -> string {
     return show(x);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(show(4.0));
     printIt(4.0);
     print(plus(4.0));

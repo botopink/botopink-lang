@@ -16,7 +16,7 @@ fn describe(r: Result<i32, Failure>) -> string {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val caught = comptime describe(failure.attempt({ -> explode() }));
     val answered = comptime describe(failure.attempt({ -> 6 * 7 }));
     print(caught);

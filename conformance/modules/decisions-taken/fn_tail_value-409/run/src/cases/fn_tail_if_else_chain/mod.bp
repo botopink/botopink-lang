@@ -10,7 +10,7 @@ fn grade(score: i32) -> string {
 
 fn abs(n: i32) -> i32 { if (n < 0) -n else n }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(grade(95));
     print(grade(75));
     print(grade(55));

@@ -14,7 +14,7 @@ import {io.terminal.print} from "std";
 
 type Num(value: f64)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val least: f64 = 5e-324;
     print(least > 0.0);
     print(least / 2.0 == 0.0);

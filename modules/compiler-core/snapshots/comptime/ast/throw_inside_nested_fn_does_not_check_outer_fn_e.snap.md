@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn outer() -> Result<i32, string> {
-    val cb: fn() -> Result<void, i32> = fn() {
+    val cb: fn() -> Result<void, i32> = fn() -> Result<void, i32> {
         throw 404;
     };
     throw "outer error";
@@ -20,7 +20,7 @@ fn outer() -> Result<i32, string> {
       "return_type": "Result<i32,string>",
       "body": [
         {
-          "source": "val cb: fn() -> Result<void, i32> = fn() {"
+          "source": "val cb: fn() -> Result<void, i32> = fn() -> Result<void, i32> {"
         },
         {
           "source": "throw \"outer error\";"

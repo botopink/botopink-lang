@@ -3,4 +3,4 @@
 
 mod Card;
 
-pub fn main() {}
+pub fn main() -> void {}

@@ -2,7 +2,7 @@
 ```botopink
 val Container = behavior <T> {
     fn fetch(self: Self<T>) -> T;
-    fn store(self: Self<T>, value: T);
+    fn store(self: Self<T>, value: T) -> void;
 }
 ```
 

@@ -4,14 +4,14 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn mark(syntax decl: unknown) {
+fn mark(syntax decl: unknown) -> void {
     compiler.setMeta(Mark(seen: true));
 }
 
 #[mark]
 var count = 1;
 
-pub fn main() {
+pub fn main() -> void {
     print(count);
 }
 

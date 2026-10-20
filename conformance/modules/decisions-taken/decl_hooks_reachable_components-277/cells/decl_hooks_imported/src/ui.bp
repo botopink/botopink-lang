@@ -8,7 +8,7 @@ pub type Element(text: string) implement Renderable
 
 // A marker: it reads nothing, and a decorator that reads `decl.hooks` finds
 // it among a hook's annotations.
-pub fn tracked(syntax decl: unknown) {
+pub fn tracked(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }
 

@@ -9,7 +9,7 @@ import {collections, io.terminal.print} from "std";
 
 type Dict(initialMs: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d = Dict(initialMs: 5);
     print(d.initialMs);
     print(collections.toInt(collections.lt()));

@@ -66,6 +66,6 @@ async fn scenario() -> Async<void> {
     await childScenario();
 }
 
-pub fn main() {
+pub fn main() -> void {
     scenario();
 }

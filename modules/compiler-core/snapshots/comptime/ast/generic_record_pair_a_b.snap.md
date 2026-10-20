@@ -2,7 +2,7 @@
 ```botopink
 val Pair = type <A, B>(first: A, second: B);
 val p = Pair(first: 42, second: "hello");
-fn main() {
+fn main() -> void {
     print(p);
 }
 

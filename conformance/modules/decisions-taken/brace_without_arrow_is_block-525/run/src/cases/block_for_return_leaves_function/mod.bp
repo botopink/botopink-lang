@@ -24,7 +24,7 @@ fn labelOf(xs: Array<string>) -> string {
     return "<" + hit + ">";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(firstAbove([1, 7, 9], 5));
     print(firstAbove([1, 2], 5));
     print(labelOf(["a", "abc", "abcd"]));

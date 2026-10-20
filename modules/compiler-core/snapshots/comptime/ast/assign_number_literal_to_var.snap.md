@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> void {
     var x = 0;
     x = 10;
 }

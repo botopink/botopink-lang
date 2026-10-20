@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Drawable = behavior {
-    fn draw(self: Self);
+    fn draw(self: Self) -> void;
 };
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
-    fn draw(self: Self) {
+    fn draw(self: Self) -> void {
         panic("not implemented");
     }
 };

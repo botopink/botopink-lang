@@ -56,7 +56,7 @@ fn text(r: Result<string, string>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(label("ab", true));
     print(label("", false));
     print("abc".contains("b"));

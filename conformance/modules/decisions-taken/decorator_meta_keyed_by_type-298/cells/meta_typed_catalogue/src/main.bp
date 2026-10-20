@@ -14,7 +14,7 @@ import {orm.entity};
 import {orm.describe};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val all = @TypeInfo.all(with: entity);
     for (all) { d ->
         val e = d.meta(Entity);

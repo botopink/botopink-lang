@@ -75,11 +75,11 @@ project() {
 
 MAIN_OK='import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("hello");
 }
 '
-BROKEN='pub fn f() {
+BROKEN='pub fn f() -> void {
     noSuchFunction();
 }
 '
@@ -98,10 +98,10 @@ expect_out "unbound variable 'noSuchFunction'" "renders the type error"
 # ── C2 — no stale artifact survives a failed build ───────────────────────────
 echo "==> C2 a failed rebuild leaves no stale artifact for run"
 P="$(project c2)"
-printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print("stale build v1");\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("stale build v1");\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "v1 build"
-printf 'pub fn main() {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() -> void {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 1 "broken rebuild"
 [[ ! -e "$P/out/main.js" ]] && ok "out/main.js removed" || fail "out/main.js from v1 survived the failed build"
@@ -138,7 +138,7 @@ expect_code 0 "build with both"
 # output after the comptime session is freed, and printed none of them.
 echo "==> build and test print the checker warning check prints"
 P="$(project warn)"
-printf 'import {io.terminal.print} from "std";\npub fn main() {\n    var out = [];\n    print("x");\n}\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    var out = [];\n    print("x");\n}\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$P/src/main.bp"
 WARN='`out` is born with no element type'
 run "$P" check
 expect_code 0 "check with a warning"
@@ -158,7 +158,7 @@ fi
 
 echo "==> check and build print a type error's hint under its excerpt"
 P="$(project hint)"
-printf '#[compiler.beamMemory(.PersistentTerm)]\nvar version: i32 = 101;\n\npub fn main() {\n    version = 102;\n}\n' >"$P/src/main.bp"
+printf '#[compiler.beamMemory(.PersistentTerm)]\nvar version: i32 = 101;\n\npub fn main() -> void {\n    version = 102;\n}\n' >"$P/src/main.bp"
 run "$P" check
 expect_code 1 "check of a PersistentTerm write"
 expect_out "= hint: " "check prints the type error's hint"
@@ -187,7 +187,7 @@ for tool in node erl erlc escript wasmtime; do
 done
 for target in commonJS erlang beam wasm; do
   P="$(project exec-$target "$target")"
-  printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
   # With the real runtimes on PATH: nothing is executed, so nothing is cached.
   run "$P" build
   expect_code 0 "build --target $target"
@@ -261,7 +261,7 @@ expect_out "and \`erl\` on PATH is OTP 29" "test names the refused release"
 # release check (decision 228), before anything is compiled.
 echo "==> the OTP release: comptime spawns no erl on any target; an erlang build is refused by its release check"
 P="$(project otp-comptime)"
-printf '%s\n' 'import {compiler, io.terminal.print} from "std";' '' 'pub fn twice(syntax q: string) -> i32 {' '    return compiler.build((compiler.text(q).length * 2).toString());' '}' '' 'pub fn main() {' '    print(twice @`abcd`);' '}' >"$P/src/main.bp"
+printf '%s\n' 'import {compiler, io.terminal.print} from "std";' '' 'pub fn twice(syntax q: string) -> i32 {' '    return compiler.build((compiler.text(q).length * 2).toString());' '}' '' 'pub fn main() -> void {' '    print(twice @`abcd`);' '}' >"$P/src/main.bp"
 mkdir -p "$WORK/otp29rec"; : >"$WORK/otp29rec.log"
 printf '#!/bin/sh\necho "erl $*" >>"%s"\nprintf 29\n' "$WORK/otp29rec.log" >"$WORK/otp29rec/erl"
 chmod +x "$WORK/otp29rec/erl"
@@ -323,7 +323,7 @@ expect_out "botopink.json:1:" "located at the name"
 # one `erlc` refuses — the build must fail and name the refusal.
 echo "==> build --target erlang refuses emitted erlang the OTP compiler rejects"
 P="$(project erlcrefused erlang)"
-printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() -> void {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 1 "build --target erlang of a module erlc rejects"
 expect_out "erlcrefused@main.erl:" "names the refused module"
@@ -350,14 +350,14 @@ printf '{ "name": "erlcachelib", "entry": "root.bp", "files": ["root.bp"] }\n' >
 printf 'pub fn word() -> string {\n    return "one";\n}\n' >"$WORK/erlcache-lib/src/root.bp"
 P="$(project erlcache erlang)"
 printf '{ "name": "erlcache", "target": "erlang", "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$P/botopink.json"
-printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() {\n    print(word());\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word());\n}\n' >"$P/src/main.bp"
 markers() { { find "$1/.botopinkbuild/cache/code" -name "*.beam" 2>/dev/null || true; } | wc -l | tr -d " "; }
 ( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a program over a dependency failed"
 m1="$(markers "$P")"
 [[ "$m1" -gt 0 ]] && ok "the dependency's modules are kept under .botopinkbuild/cache/code/ ($m1 entr(ies))" || fail "no entry was written under $P/.botopinkbuild/cache/code"
 ( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
 [[ "$(markers "$P")" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new entries ($(markers "$P") vs $m1)"
-printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() {\n    print(word() + "!");\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word() + "!");\n}\n' >"$P/src/main.bp"
 ( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed project source builds" || fail "the changed project build failed"
 [[ "$(markers "$P")" == "$m1" ]] && ok "the project's own module is never stored" || fail "the project's own module was stored ($(markers "$P") vs $m1)"
 rm -rf "$P/.botopinkbuild"
@@ -372,7 +372,7 @@ expect_code 0 "clean"
 [[ ! -e "$P/.botopinkbuild" ]] && ok "clean leaves no .botopinkbuild/" || fail "clean left $P/.botopinkbuild"
 [[ "$(user_cache_files)" -eq 0 ]] && ok "no file under HOME/.cache/botopink after clean" || fail "files remain under the user cache"
 P="$(project erlcacherefused erlang)"
-printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() -> void {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 for i in 1 2; do
   set +e
   OUT="$(cd "$P" && bp_isolated build 2>&1)"
@@ -391,7 +391,7 @@ WS="$WORK/wscache"
 rm -rf "$WS"; mkdir -p "$WS/modules/wsapp/src"
 printf '{ "name": "wscache", "version": "0.1.0", "workspaces": ["modules/*"], "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$WS/botopink.json"
 printf '{ "name": "wsapp", "target": "erlang" }\n' >"$WS/modules/wsapp/botopink.json"
-printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() {\n    print(word());\n}\n' >"$WS/modules/wsapp/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word());\n}\n' >"$WS/modules/wsapp/src/main.bp"
 ( cd "$WS/modules/wsapp" && bp_isolated build >/dev/null 2>&1 ) && ok "a member builds" || fail "the workspace member's erlang build failed"
 [[ "$(markers "$WS")" -gt 0 ]] && ok "its dependency's modules are under the workspace root's .botopinkbuild/cache/code/" || fail "no entry under $WS/.botopinkbuild/cache/code"
 [[ ! -e "$WS/modules/wsapp/.botopinkbuild/cache" ]] && ok "none under the member's own .botopinkbuild/" || fail "the member kept a cache of its own"
@@ -446,7 +446,7 @@ fi
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
 P="$(project c6)"
-printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() -> void {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
 for cmd in build check test; do
   run "$P" "$cmd"
   expect_code 1 "$cmd on a lex error"
@@ -456,7 +456,7 @@ done
 
 echo "==> C7 a parse error renders with file, line and excerpt on build/check/test"
 P="$(project c7)"
-printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() -> void {\n    print((1);\n}\n' >"$P/src/main.bp"
 for cmd in build check test; do
   run "$P" "$cmd"
   expect_code 1 "$cmd on a parse error"
@@ -467,8 +467,8 @@ done
 echo "==> C6/C7 lex, parse and type errors in three modules are all located in one run"
 P="$(project c67)"
 printf 'pub mod lexbad;\npub mod parsebad;\npub mod typebad;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
-printf 'pub fn g() {\n    print("abc);\n}\n' >"$P/src/lexbad.bp"
-printf 'pub fn h() {\n    print((1);\n}\n' >"$P/src/parsebad.bp"
+printf 'pub fn g() -> void {\n    print("abc);\n}\n' >"$P/src/lexbad.bp"
+printf 'pub fn h() -> void {\n    print((1);\n}\n' >"$P/src/parsebad.bp"
 printf '%s' "$BROKEN" >"$P/src/typebad.bp"
 for cmd in build check test; do
   run "$P" "$cmd"
@@ -709,7 +709,7 @@ done
 echo "==> a dependency's .mjs sidecar ships inside --out and the build runs"
 P="$(project sidecar)"
 printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependencies": { "sidelib": { "git": "https://example.invalid/sidelib.git" } } }\n' >"$P/botopink.json"
-printf 'import {io.terminal.print} from "std";\nimport { greet } from "sidelib";\n\npub fn main() {\n    print(greet());\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport { greet } from "sidelib";\n\npub fn main() -> void {\n    print(greet());\n}\n' >"$P/src/main.bp"
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
 # Authored relative to the lib's own build output, like a library's `../../src/<lib>.mjs`.
@@ -770,13 +770,13 @@ expect_code 0 "format --check passes the markup as written"
 
 echo "==> C9 format and format --check fail on unlexable or unparseable source"
 P="$(project c9)"
-printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() -> void {\n    print((1);\n}\n' >"$P/src/main.bp"
 run "$P" format --check
 expect_code 1 "format --check on a parse error"
 expect_out "src/main.bp:2:" "format --check locates the parse error"
 run "$P" format
 expect_code 1 "format on a parse error"
-printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() -> void {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
 run "$P" format --check
 expect_code 1 "format --check on a lex error"
 
@@ -793,11 +793,11 @@ printf '%s' "$MAIN_OK" >"$P/src/main.bp"
 mkdir -p "$P/test" "$P/examples/nested/src" "$P/cells/bad/src" "$P/cells/bad/snapshot/output" "$P/.botopinkbuild" "$P/node_modules/dep"
 printf 'test "t" {\n    assert 1 == 1;\n}\n' >"$P/test/main_test.bp"
 printf '{ "name": "nested", "version": "0.1.0", "target": "commonJS" }\n' >"$P/examples/nested/botopink.json"
-printf 'pub fn f() {\n  print("x");\n}\n' >"$P/examples/nested/src/main.bp"   # two-space indent: not canonical
+printf 'pub fn f() -> void {\n  print("x");\n}\n' >"$P/examples/nested/src/main.bp"   # two-space indent: not canonical
 printf 'pub fn g( {\n' >"$P/cells/bad/src/main.bp"                              # refused on purpose …
 printf 'botopink-cell 1\nrefused error: this token cannot appear here\nat src/main.bp:1:10\n' >"$P/cells/bad/snapshot/output/main.snap"   # … every target: the fixture
-printf 'pub fn h() {\n  print("y");\n}\n' >"$P/.botopinkbuild/scratch.bp"
-printf 'pub fn h() {\n  print("y");\n}\n' >"$P/node_modules/dep/dep.bp"
+printf 'pub fn h() -> void {\n  print("y");\n}\n' >"$P/.botopinkbuild/scratch.bp"
+printf 'pub fn h() -> void {\n  print("y");\n}\n' >"$P/node_modules/dep/dep.bp"
 before="$(cd "$P" && find . -type f | sort | xargs cat | cksum)"
 run "$P" format --check
 expect_code 1 "format --check with one non-canonical file in a nested project"
@@ -932,7 +932,7 @@ cat >"$WS/examples/acme-app/botopink.json" <<'JSON'
 { "name": "acme-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",
   "dependencies": { "acme": { "workspace": true } } }
 JSON
-printf 'import {io.terminal.print} from "std";\nimport { core } from "acme";\n\npub fn main() {\n    print(core());\n}\n' >"$WS/examples/acme-app/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport { core } from "acme";\n\npub fn main() -> void {\n    print(core());\n}\n' >"$WS/examples/acme-app/src/main.bp"
 
 run "$WS/modules/acme-web" build
 expect_code 0 "build of a member depending on a sibling"
@@ -985,7 +985,7 @@ mkdir -p "$WORK/pathlib/src"
 printf '{ "name": "pathlib", "files": ["pathlib.bp"] }\n' >"$WORK/pathlib/botopink.json"
 printf 'pub fn answer() -> i32 {\n    return 7;\n}\n' >"$WORK/pathlib/src/pathlib.bp"
 printf '{ "name": "pathdep", "version": "0.1.0", "target": "commonJS", "dependencies": { "pathlib": { "path": "../pathlib" } } }\n' >"$P/botopink.json"
-printf 'import {io.terminal.print} from "std";\nimport { answer } from "pathlib";\n\npub fn main() {\n    print(answer());\n}\n' >"$P/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport { answer } from "pathlib";\n\npub fn main() -> void {\n    print(answer());\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "build with a path dependency (no library root involved)"
 
@@ -1031,7 +1031,7 @@ if have git && have node && [[ -x "$BPMP" ]]; then
   subdir_app() {
     local dir; dir="$(project "$1")"
     printf '{ "name": "%s", "version": "0.1.0", "target": "commonJS",\n  "dependencies": %s }\n' "$1" "$2" >"$dir/botopink.json"
-    printf 'import {io.terminal.print} from "std";\nimport { webValue } from "web";\n\npub fn main() {\n    print(webValue());\n}\n' >"$dir/src/main.bp"
+    printf 'import {io.terminal.print} from "std";\nimport { webValue } from "web";\n\npub fn main() -> void {\n    print(webValue());\n}\n' >"$dir/src/main.bp"
     echo "$dir"
   }
   # checkouts <bpmp home> — how many checkouts the store holds.
@@ -1117,7 +1117,7 @@ if have node && [[ -x "$BPMP" ]]; then
   kit_app() {
     mkdir -p "$1/src"
     printf '{ "name": "%s", "version": "0.1.0", "target": "commonJS", "dependencies": %s }\n' "$(basename "$1")" "$2" >"$1/botopink.json"
-    printf 'import {io.terminal.print} from "std";\nimport { kitValue } from "kitlib";\n\npub fn main() {\n    print(kitValue());\n}\n' >"$1/src/main.bp"
+    printf 'import {io.terminal.print} from "std";\nimport { kitValue } from "kitlib";\n\npub fn main() -> void {\n    print(kitValue());\n}\n' >"$1/src/main.bp"
   }
   KITDEP='{ "kitlib": { "git": "https://example.invalid/kitlib.git", "branch": "feat" } }'
   # bpmp_link <dir> [args…] — `bpmp link` in <dir>; $OUT / $CODE as `run`.
@@ -1197,7 +1197,7 @@ JSON
 sidecar_app() { # <dir> <dependency-json>
   mkdir -p "$1/src"
   printf '{ "name": "side-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",\n  "dependencies": { "side": %s } }\n' "$2" >"$1/botopink.json"
-  printf 'import {io.terminal.print} from "std";\nimport { mark } from "side";\n\npub fn main() {\n    print(mark());\n}\n' >"$1/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\nimport { mark } from "side";\n\npub fn main() -> void {\n    print(mark());\n}\n' >"$1/src/main.bp"
 }
 
 SWS="$WORK/sidews"; rm -rf "$SWS"
@@ -1276,7 +1276,7 @@ TAPP="$WORK/transapp"; rm -rf "$TAPP"; mkdir -p "$TAPP/src"
 # Decision 676: `mid` inherits its workspace's `commonJS` alone, so the app
 # that declares it declares no other target.
 printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "targets": ["commonJS"], "entry": "main.bp",\n  "dependencies": { "mid": { "path": "%s" } } }\n' "$TWS/modules/mid" >"$TAPP/botopink.json"
-printf 'import {io.terminal.print} from "std";\nimport { midMark } from "mid";\n\npub fn main() {\n    print(midMark());\n}\n' >"$TAPP/src/main.bp"
+printf 'import {io.terminal.print} from "std";\nimport { midMark } from "mid";\n\npub fn main() -> void {\n    print(midMark());\n}\n' >"$TAPP/src/main.bp"
 run "$TAPP" build
 expect_code 0 "build with a sidecar two dependencies away"
 if [[ -f "$TAPP/out/side/side.mjs" ]]; then
@@ -1338,7 +1338,7 @@ if have erl && have erlc; then
   P="$(project manymods erlang)"
   {
     for i in $(seq 0 1199); do echo "pub mod m$i;"; done
-    printf 'import {io.terminal.print} from "std";\nimport {m7.value7};\n\npub fn main() {\n    print(value7());\n}\n'
+    printf 'import {io.terminal.print} from "std";\nimport {m7.value7};\n\npub fn main() -> void {\n    print(value7());\n}\n'
   } >"$P/src/main.bp"
   # `value<N>`, not `f<N>`: `f32` / `f64` name primitive types, refused as a
   # module-level function name (primitive-type-name-taken).
@@ -1382,7 +1382,7 @@ if have node && have erl && have erlc && have wasmtime; then
 
   # A mismatch: a candidate beside the accepted file, the difference, exit 1.
   ACCEPTED="$(cat "$CELLS/prints/snapshot/output/main.snap")"
-  printf 'import {io.terminal.print} from "std";\npub mod text;\nimport {text.label};\n\npub fn main() {\n    print(label(55));\n    print("finished");\n}\n' >"$CELLS/prints/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub mod text;\nimport {text.label};\n\npub fn main() -> void {\n    print(label(55));\n    print("finished");\n}\n' >"$CELLS/prints/src/main.bp"
   run "$CELLS" cell check prints
   expect_code 1 "cell check on a cell whose answer changed"
   expect_out "candidate prints/snapshot/output/main.snap.new" "names the candidate"
@@ -1510,7 +1510,7 @@ if have node && have erl && have erlc && have wasmtime; then
   rm "$CELLS/prints/targets"
   # Refused, but not on a host binding: no target compiles an unbound name.
   mkdir -p "$CELLS/another_reason/src"
-  printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print(nowhere);\n}\n' >"$CELLS/another_reason/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print(nowhere);\n}\n' >"$CELLS/another_reason/src/main.bp"
   printf '{ "name": "another_reason", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }\n' >"$CELLS/another_reason/botopink.json"
   run "$CELLS" cell check another_reason
   expect_code 1 "a narrowing whose excluded target refuses for another reason"
@@ -1518,7 +1518,7 @@ if have node && have erl && have erlc && have wasmtime; then
   # Decision 167: BEAM storage stands a narrowing on commonJS and wasm, and
   # never excuses beam, which binds it.
   mkdir -p "$CELLS/beam_memory/src"
-  printf 'import {io.terminal.print} from "std";\n#[compiler.beamMemory(.ProcessDict)]\nvar seen: i32 = 0;\n\npub fn main() {\n    seen = 1;\n    print("ok");\n}\n' >"$CELLS/beam_memory/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\n#[compiler.beamMemory(.ProcessDict)]\nvar seen: i32 = 0;\n\npub fn main() -> void {\n    seen = 1;\n    print("ok");\n}\n' >"$CELLS/beam_memory/src/main.bp"
   printf '{ "name": "beam_memory", "version": "0.0.1", "src": "src/", "targets": ["erlang"] }\n' >"$CELLS/beam_memory/botopink.json"
   run "$CELLS" cell check beam_memory
   expect_code 1 "a #[compiler.beamMemory(…)] narrowing that leaves beam out"
@@ -1527,7 +1527,7 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_no_out 'wasm: excluded' "wasm's refusal stands the narrowing"
   # A cell is a project like any other: no manifest, no cell (decision 475).
   mkdir -p "$CELLS/no_manifest/src"
-  printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print("x");\n}\n' >"$CELLS/no_manifest/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("x");\n}\n' >"$CELLS/no_manifest/src/main.bp"
   run "$CELLS" cell check no_manifest
   expect_code 1 "a cell without botopink.json"
   expect_out "a cell holds botopink.json — its own manifest" "names the missing manifest"
@@ -1537,7 +1537,7 @@ if have node && have erl && have erlc && have wasmtime; then
   # exactly; a label that changes or disappears is a red, never overwritten.
   mkdir -p "$CELLS/labelled/src" "$CELLS/labelled/snapshot/output"
   printf '{ "name": "labelled", "version": "0.0.1", "src": "src/" }\n' >"$CELLS/labelled/botopink.json"
-  printf 'import {io.terminal.print} from "std";\npub fn main() {\n    val x = 3;\n    val y = case x {\n        0 { "zero" }\n        n { "other" }\n    };\n    print(y);\n}\n' >"$CELLS/labelled/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    val x = 3;\n    val y = case x {\n        0 { "zero" }\n        n { "other" }\n    };\n    print(y);\n}\n' >"$CELLS/labelled/src/main.bp"
   LABELLED='botopink-cell 1\nrefused error[case-bare-name-arm]: a name alone is not a pattern\nat src/main.bp:6:9\n'
   printf "${LABELLED}label use _ { n -> … } to bind the matched value\n" >"$CELLS/labelled/snapshot/output/main.snap"
   run "$CELLS" cell check labelled
@@ -1556,7 +1556,7 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_out "+ label use _ { n -> … } to bind the matched value" "the unclaimed label is shown"
   rm "$CELLS/labelled/snapshot/output/main.snap.new"
   # The caret now carries no label: a claimed one disappears.
-  printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print(nowhere);\n}\n' >"$CELLS/labelled/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print(nowhere);\n}\n' >"$CELLS/labelled/src/main.bp"
   printf "botopink-cell 1\nrefused error: unbound variable 'nowhere'\nat src/main.bp:2:12\nlabel not in scope\n" >"$CELLS/labelled/snapshot/output/main.snap"
   run "$CELLS" cell check labelled
   expect_code 1 "a label that disappears"
@@ -1581,7 +1581,7 @@ if have node && have erl && have erlc && have wasmtime; then
   printf '{ "name": "kitlib", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp"] }\n' >"$PD/lib/botopink.json"
   printf 'pub fn answer() -> i32 {\n    return 7;\n}\n' >"$PD/lib/src/root.bp"
   printf '{ "name": "needs", "version": "0.0.1", "src": "src/", "dependencies": { "kitlib": { "path": "../../lib" } } }\n' >"$PD/cells/needs/botopink.json"
-  printf 'import {io.terminal.print} from "std";\nimport { answer } from "kitlib";\n\npub fn main() {\n    print(answer());\n}\n' >"$PD/cells/needs/src/main.bp"
+  printf 'import {io.terminal.print} from "std";\nimport { answer } from "kitlib";\n\npub fn main() -> void {\n    print(answer());\n}\n' >"$PD/cells/needs/src/main.bp"
   printf 'botopink-cell 1\nout 7\n' >"$PD/cells/needs/snapshot/output/main.snap"
   run "$PD/elsewhere" cell check ../cells
   expect_code 0 "a cell's path dependency resolves against the cell, from another directory"
@@ -1600,7 +1600,7 @@ if have node && have erl && have erlc && have wasmtime; then
   for n in 01 02 03 04 05 06 07 08 09 10 11 12; do
     mkdir -p "$MANY/c$n/src" "$MANY/c$n/snapshot/output"
     printf '{ "name": "c%s", "version": "0.0.1", "src": "src/" }\n' "$n" >"$MANY/c$n/botopink.json"
-    printf 'import {io.terminal.print} from "std";\npub fn main() {\n    print(%s);\n}\n' "$((10#$n))" >"$MANY/c$n/src/main.bp"
+    printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print(%s);\n}\n' "$((10#$n))" >"$MANY/c$n/src/main.bp"
     printf 'botopink-cell 1\nout %s\n' "$((10#$n))" >"$MANY/c$n/snapshot/output/main.snap"
   done
   run "$WORK" cell check many_cells
@@ -1715,7 +1715,7 @@ comptime {
     print("printed at build");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("run");
 }
 BP

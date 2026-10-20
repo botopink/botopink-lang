@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     var i = 0;
     var found = 0;
     while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };

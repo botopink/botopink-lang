@@ -14,4 +14,4 @@ async fn name(id: i32) -> Async<string> {
     return u;
 }
 
-pub fn main() { name(1); }
+pub fn main() -> void { name(1); }

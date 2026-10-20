@@ -7,11 +7,11 @@ import {collections.Dict, io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.empty();
 
-fn bump(key: string) {
+fn bump(key: string) -> void {
     counts = counts.insert(key, counts.size());
 }
 
-pub fn main() {
+pub fn main() -> void {
     bump("a");
     print(counts.at("a"));
 }

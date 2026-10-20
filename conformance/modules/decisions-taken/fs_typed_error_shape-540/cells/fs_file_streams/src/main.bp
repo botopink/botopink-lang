@@ -72,6 +72,6 @@ async fn run() -> Async<void> {
     fs.rm("bad.txt");
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

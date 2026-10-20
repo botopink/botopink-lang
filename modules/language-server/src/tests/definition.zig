@@ -30,7 +30,7 @@ test "definition: cursor on val usage jumps to declaration" {
 test "definition: cursor on fn call jumps to fn declaration" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn f(a: i32) { return a; }
+        \\fn f(a: i32) -> i32 { return a; }
         \\val r = f(1);
     ;
 
@@ -260,7 +260,7 @@ test "definition: local declaration preferred over imported" {
 
 const r1_source =
     \\val decl = 99;
-    \\pub fn component(syntax decl: unknown) {
+    \\pub fn component(syntax decl: unknown) -> void {
     \\    var args = "";
     \\    items.forEach({ f ->
     \\        use(decl, args, f);
@@ -373,7 +373,7 @@ const member_source =
     \\    pub fn all(self: Self) -> Array<i32> {
     \\        return self.items;
     \\    }
-    \\    pub fn each(self: Self) {
+    \\    pub fn each(self: Self) -> void {
     \\        var sink = [];
     \\        self.items.forEach({ x -> sink = sink.append([x]); });
     \\    }
@@ -710,7 +710,7 @@ test "definition: a member through the namespace a `mod` binds jumps into its mo
     const main_src =
         \\pub mod config;
         \\mod text;
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(config.label("x"));
         \\    print(text.split.splitPath("a/b"));
         \\}
@@ -720,7 +720,7 @@ test "definition: a member through the namespace a `mod` binds jumps into its mo
     const others = [_]engine.ModuleSource{
         .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\n" },
         .{ .uri = "file:///p/src/text/mod.bp", .source = "pub mod split;\n" },
-        .{ .uri = "file:///p/src/text/split.bp", .source = "fn hidden() {}\npub fn splitPath(p: string) -> string {\n    return p;\n}\n" },
+        .{ .uri = "file:///p/src/text/split.bp", .source = "fn hidden() -> void {}\npub fn splitPath(p: string) -> string {\n    return p;\n}\n" },
     };
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -744,12 +744,12 @@ test "completion: after the namespace a `mod` binds, the module's pub declaratio
     const gpa = std.testing.allocator;
     const main_src =
         \\pub mod config;
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    config.
         \\}
     ;
     const others = [_]engine.ModuleSource{
-        .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\nfn hidden() {}\npub type Pair(a: i32)\n" },
+        .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\nfn hidden() -> void {}\npub type Pair(a: i32)\n" },
     };
     const items = (try engine.modNamespaceCompletion(gpa, main_src, h.pos(2, 11), &others)) orelse return error.NoCompletion;
     defer {

@@ -10,7 +10,7 @@ fn save(n: i32) -> Result<void, string> {
     return;
 }
 
-fn saveBoth(a: i32, b: i32) {
+fn saveBoth(a: i32, b: i32) -> void {
     try {
         try save(a);
         try save(b)
@@ -18,7 +18,7 @@ fn saveBoth(a: i32, b: i32) {
     print("done");
 }
 
-pub fn main() {
+pub fn main() -> void {
     saveBoth(1, 2);
     saveBoth(-1, 2);
 }

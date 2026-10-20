@@ -7,7 +7,7 @@ fn getName() -> Result<string, UserError> {
 fn getAge() -> Result<i32, UserError> {
     throw UserError(msg: "missing");
 }
-fn loadUser() {
+fn loadUser() -> void {
     val name = try getName() catch "anon";
     val age = try getAge() catch 0;
 }

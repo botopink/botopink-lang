@@ -11,13 +11,13 @@ fn one() -> i32 {
     return 1;
 }
 
-fn hooked(syntax decl: unknown) {
+fn hooked(syntax decl: unknown) -> void {
     compiler.setMeta(Hook(run: one));
 }
 
 #[hooked]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).metaAll(Hook).length);
 }

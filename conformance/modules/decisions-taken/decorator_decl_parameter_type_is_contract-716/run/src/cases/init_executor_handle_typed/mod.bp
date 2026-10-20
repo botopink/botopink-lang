@@ -22,7 +22,7 @@ fn about() -> string {
     return "about " + home();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     for (all()) { m ->
         print(m.name + " " + m.lifecycle + " " + m.make());
     }

@@ -22,7 +22,7 @@ fn sumPorts(xs: i32[]) -> Result<i32, string> {
 }
 
 // carry on past the error: a case, in any function
-fn printPorts(xs: i32[]) {
+fn printPorts(xs: i32[]) -> void {
     for (ports(xs)) { r ->
         case r {
             Ok(p) -> print(p);
@@ -31,7 +31,7 @@ fn printPorts(xs: i32[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     printPorts([80, 0, 443]); // 80, then error: not a port: 0
     print(sumPorts([80, 443]).unwrapOr(-1)); // 523
     print(sumPorts([80, 0, 443]).unwrapOr(-1)); // -1

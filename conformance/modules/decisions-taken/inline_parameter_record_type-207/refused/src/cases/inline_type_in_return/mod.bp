@@ -7,6 +7,6 @@ fn make() -> type(href: string) {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(0);
 }

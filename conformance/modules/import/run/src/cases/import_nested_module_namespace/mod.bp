@@ -7,6 +7,6 @@ import {io.terminal.print} from "std";
 mod store;
 mod report;
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(report.summary());
 }

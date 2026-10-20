@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn fail() {
+fn fail() -> Result<void, string> {
     throw "something went wrong";
+    return;
 }
 ```
 
@@ -11,7 +12,12 @@ fn fail() {
 -export(['__bp_priv__fail'/0]).
 
 fail() ->
-    erlang:throw(<<"something went wrong">>).
+    try
+        erlang:throw({'__bp_try', {error, <<"something went wrong">>}}),
+        {ok, undefined}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
 
 '__bp_priv__fail'() -> fail().
 ```

@@ -63,7 +63,7 @@ fn inverted(flags: Array<bool>) -> bool {
     return !(flags.at(0) ?? false);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b = Box(items: [R(v: ""), R(v: "a")], sizes: [4, 5]);
     print(b.firstV());
     print(Box(items: [], sizes: []).firstV());

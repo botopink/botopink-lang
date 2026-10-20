@@ -381,7 +381,7 @@ import {functions} from "std";
     call $__arr_join_any
     return
   )
-  (func $main (export "main") (result i32)
+  (func $main (export "main")
     (local $double (ref null $closure))
     (local $addOne (ref null $closure))
     (local $shout (ref null $closure))
@@ -464,7 +464,6 @@ import {functions} from "std";
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     call $__print_i32
-    i32.const 0
   )
   (func $compose__B_i32__C_i32 (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
     i32.const 7
@@ -733,7 +732,6 @@ import {functions} from "std";
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
-    drop
   )
   (func $__arr_join_any (param $xs (ref null $arr_any)) (param $sep (ref null $str)) (result (ref null $str))
     (local $n i32)

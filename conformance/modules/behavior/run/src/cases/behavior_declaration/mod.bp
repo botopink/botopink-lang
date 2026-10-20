@@ -1,15 +1,15 @@
 import {io.terminal.print} from "std";
 
 behavior Printable {
-    fn print(self: Self);
+    fn print(self: Self) -> void;
 }
 
 type Person(name: string) implement Printable {
-    fn print(self: Self) {
+    fn print(self: Self) -> void {
         print(self.name);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     Person(name: "ana").print(); // ana
 }

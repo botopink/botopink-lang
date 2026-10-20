@@ -17,7 +17,7 @@ type Scaler(base: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(paramNames());
     print(Scaler(base: 2).scale(3));
     print(labelOf(Param(key: "k", weight: 1)).label);

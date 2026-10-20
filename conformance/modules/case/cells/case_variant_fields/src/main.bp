@@ -12,6 +12,6 @@ fn area(shape: Shape) -> f64 {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(area(Shape.Square(side: 2.0))); // 4.0
 }

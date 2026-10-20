@@ -35,7 +35,7 @@ iter fn asIs() -> Iter<Result<i32, string>> {
     yield 3;
 }
 
-fn walk(name: string, it: Iter<Result<i32, string>>) {
+fn walk(name: string, it: Iter<Result<i32, string>>) -> void {
     for (it) { r ->
         case r {
             Ok(v) -> print(name + " ok " + v.toString());
@@ -45,7 +45,7 @@ fn walk(name: string, it: Iter<Result<i32, string>>) {
     print(name + " done");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     walk("try", checked([1, -2, 3]));
     walk("throw", upTo(2));
     walk("as-is", asIs());

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn main() {
+pub fn main() -> void {
     val b = Bytes.fromUtf8("hello");
     print(b.length());
     print(b.slice(1, 3).length());

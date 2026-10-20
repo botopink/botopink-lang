@@ -9,6 +9,6 @@ pub fn page(
     comptime route: string,
     comptime revalidate: ?Duration = null,
     comptime dynamicParams: bool = true,
-) {
+) -> void {
     compiler.setMeta(PageSettings(route: route, revalidateMillis: revalidate?.millis, dynamicParams: dynamicParams));
 }

@@ -27,7 +27,7 @@ fn maker(present: bool) -> ?fn(i32) -> Point {
     return if (present) f else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(counter(true)?.(6) ?? -1);
     print(counter(true)?.(5) ?? -1);
     print(counter(false)?.(5) ?? -1);

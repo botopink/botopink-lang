@@ -1,11 +1,11 @@
 import {io.terminal.print} from "std";
 
-fn work() {
+fn work() -> void {
     var f = "a";
     defer print("close " + f);
     f = "b";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     work();
 }

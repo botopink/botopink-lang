@@ -4,7 +4,7 @@ fn isString(x: ?string) -> x is string {
     if (x) { s -> return true; };
     return false;
 }
-fn main() {
+fn main() -> void {
     print(isString("hello"));
     print(isString(null));
 }

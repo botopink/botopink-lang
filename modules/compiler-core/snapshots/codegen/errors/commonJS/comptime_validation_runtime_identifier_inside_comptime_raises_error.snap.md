@@ -2,7 +2,7 @@
 ```botopink
 val greeting = "hi";
 val msg = comptime { greeting };
-fn main() {
+fn main() -> void {
     print(msg);
 }
 

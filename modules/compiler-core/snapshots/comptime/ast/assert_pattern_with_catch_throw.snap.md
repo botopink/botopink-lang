@@ -1,9 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string, age: i32)
-fn f() {
+fn f() -> Result<void, string> {
     val r = Person(name: "ann", age: 30);
     val assert Person(name, age) = r catch throw "is not person";
+    return;
 }
 ```
 
@@ -24,13 +25,16 @@ fn f() {
       "name": "f",
       "is_pub": false,
       "params": [],
-      "return_type": "void",
+      "return_type": "Result<void,string>",
       "body": [
         {
           "source": "val r = Person(name: \"ann\", age: 30);"
         },
         {
           "source": "val assert Person(name, age) = r catch throw \"is not person\";"
+        },
+        {
+          "source": "return;"
         }
       ]
     }

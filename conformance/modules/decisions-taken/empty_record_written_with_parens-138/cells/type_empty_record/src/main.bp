@@ -19,7 +19,7 @@ fn describe(m: Marker) -> string {
     return "marker";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val ops = MathOps();
     print(ops.double(21));
     print(ops.name());

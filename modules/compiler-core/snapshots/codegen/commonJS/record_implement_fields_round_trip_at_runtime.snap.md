@@ -4,7 +4,7 @@ val E = type(tag: string, n: i32) implement Renderable
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
-fn main() {
+fn main() -> void {
     print(mk().n);
 }
 

@@ -17,7 +17,7 @@ fn locate(n: i32) -> Result<Point, i32> {
     return Point(x: n, y: n + 1);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(check(81));
     print(check(-1));
     print(locate(2));

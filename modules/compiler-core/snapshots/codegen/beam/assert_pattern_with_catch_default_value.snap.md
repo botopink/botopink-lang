@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string, age: i32)
-fn f() {
+fn f() -> void {
     val r = Person(name: "ann", age: 30);
     val assert Person(name, age) = r catch Person(name: "bob", age: 12);
 }

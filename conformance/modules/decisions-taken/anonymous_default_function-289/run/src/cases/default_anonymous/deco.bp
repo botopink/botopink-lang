@@ -3,13 +3,13 @@
 
 import {compiler} from "std";
 
-pub fn named(syntax decl: unknown) {
+pub fn named(syntax decl: unknown) -> void {
     @emit("pub fn doubleName() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");
 }
 
-pub fn page(syntax decl: unknown) {
+pub fn page(syntax decl: unknown) -> void {
     @emit("pub fn pageName() -> string { return \""
         + compiler.name(decl)!
         + "\"; }");

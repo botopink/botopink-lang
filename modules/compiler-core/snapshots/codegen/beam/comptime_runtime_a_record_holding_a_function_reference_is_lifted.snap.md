@@ -6,7 +6,7 @@ fn two() -> i32 {
     return 2;
 }
 
-fn main() {
+fn main() -> void {
     val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
     print(op.name);
     print(op.run());

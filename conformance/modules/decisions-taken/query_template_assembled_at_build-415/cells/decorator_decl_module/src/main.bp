@@ -12,7 +12,7 @@ import {io.terminal.print, compiler} from "std";
 #[located]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).meta(Origin)?.module ?? "none");
     print(comptime compiler.typeInfo(User).meta(Origin)?.module ?? "none");
 }

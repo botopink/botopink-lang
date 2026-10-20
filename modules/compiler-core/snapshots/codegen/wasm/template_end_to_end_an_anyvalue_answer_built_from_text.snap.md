@@ -3,7 +3,7 @@
 pub fn port(syntax q: string) -> anyvalue {
     return compiler.build("8080");
 }
-fn main() {
+fn main() -> void {
     val p = port @`x` + 1;
     print(p);
 }

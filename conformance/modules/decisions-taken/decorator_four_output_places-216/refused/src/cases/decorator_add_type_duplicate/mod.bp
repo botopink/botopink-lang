@@ -4,11 +4,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 
-fn table(syntax decl: unknown) {
+fn table(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(name: string)"));
 }
 
@@ -16,6 +16,6 @@ fn table(syntax decl: unknown) {
 #[table]
 type City(id: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(id: 1).id);
 }

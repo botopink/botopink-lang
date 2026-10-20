@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     fn inner(x: i32) -> i32 { return x + 1; }
     print(inner(1).toString());
 }

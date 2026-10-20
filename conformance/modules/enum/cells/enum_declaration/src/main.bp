@@ -7,7 +7,7 @@ type Shape {
     Square(side: f64),
 }
 
-fn main() {
+fn main() -> void {
     val c = Color.Red;
     val s = Shape.Circle(radius: 2.0);
     print(

@@ -39,7 +39,7 @@ fn show(r: Result<i32, PortError>) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(show(serverPort(80))); // port 81
     print(show(serverPort(0))); // zero
     print(show(serverPort(70000))); // too big: 70000

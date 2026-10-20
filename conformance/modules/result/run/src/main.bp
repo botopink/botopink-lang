@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.result_four_ways.runCase();
     cases.result_i64_map_flat_map.runCase();
     cases.result_method_throw.runCase();

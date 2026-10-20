@@ -11,7 +11,7 @@ import {io.terminal.print} from "std";
 
 type Color { Red, Green }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ts: Array<i32> = [1, 2];
     val x: ?i32 = ts[0];
     print(x);

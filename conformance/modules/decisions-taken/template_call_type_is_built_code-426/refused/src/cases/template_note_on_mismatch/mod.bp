@@ -11,7 +11,7 @@ fn rows(syntax q: string) -> unknown {
     return compiler.build("[\"a\", \"b\"]");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val one: string = rows @`select name`;
     print(one);
 }

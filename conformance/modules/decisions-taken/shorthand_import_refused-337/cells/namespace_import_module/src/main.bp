@@ -12,7 +12,7 @@ fn sign(s: string) -> string {
     return "local " + s;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val token = jwt.sign("a");
     print(token);
     print(jwt.verify(token));

@@ -3,6 +3,6 @@
 import {items.Queue, items.describe} from "shelf";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Queue(label: "plain", size: 1)));
 }

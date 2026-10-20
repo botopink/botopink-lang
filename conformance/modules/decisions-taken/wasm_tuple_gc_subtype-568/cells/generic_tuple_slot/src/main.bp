@@ -14,7 +14,7 @@ fn wrap<T>(x: T) -> Box<T> {
     return Box(value: x);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val t = id(#(4, 5));
     print(t._0 + t._1);
     val u = id(#("x", 2.5));

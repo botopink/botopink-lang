@@ -23,7 +23,7 @@ fn okOf(s: string) -> Result<string, string> {
     return s;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(ident("a"));
     print(ident(true));
     print(ident(7));

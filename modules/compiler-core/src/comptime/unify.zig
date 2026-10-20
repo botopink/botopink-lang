@@ -8,6 +8,7 @@ const T = @import("./types.zig");
 const Env = @import("env.zig").Env;
 const TypeError = @import("error.zig").TypeError;
 const diagnostics = @import("diagnostics.zig");
+const ast = @import("../ast.zig");
 
 pub const UnifyError = error{ TypeError, OutOfMemory };
 
@@ -181,6 +182,12 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
                     return error.TypeError;
                 }
                 if (na.args.len != nb.args.len) {
+                    // Decision 280 (2) — a decorator's handle `@Decl<T>` carries
+                    // its pattern `T`, which the reflection type `__Decl` its
+                    // members are declared on (`decl_reflection_src`) does not:
+                    // one handle either way, so a typed member (`fail(self: Self,
+                    // …) -> void`, decision 622) takes a patterned handle.
+                    if (std.mem.eql(u8, na.name, ast.decl_type_name) and (na.args.len == 0 or nb.args.len == 0)) return;
                     env.lastError = TypeError.typeMismatch(ta, tb);
                     return error.TypeError;
                 }

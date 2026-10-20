@@ -14,7 +14,7 @@ fn greet(name: string = twice @`na`) -> string {
     return "hi " + name;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Conf().label);
     print(Conf(size: 2).label + Conf(label: "own").label);
     print(greet());

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val File = "main.bp";
     val Fn = "main";
     val names = #(File, Fn);

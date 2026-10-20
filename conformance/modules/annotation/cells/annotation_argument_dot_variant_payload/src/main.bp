@@ -11,6 +11,6 @@ pub fn first() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(first).meta(Mark)?.lifecycle ?? "none");
 }

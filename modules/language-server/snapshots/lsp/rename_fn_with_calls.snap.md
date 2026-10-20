@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn f(a: i32) { return a; }
+fn f(a: i32) -> i32 { return a; }
    ↑
 val r = f(1);
 ```

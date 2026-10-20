@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn main() {
+fn main() -> void {
     val answer = 42;
     val assert 42 = answer catch fallback;
     print(answer);

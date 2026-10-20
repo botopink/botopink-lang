@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn service(syntax decl: unknown) {
+fn service(syntax decl: unknown) -> void {
     compiler.setMeta(Service(role: "service"));
 }
 
@@ -12,7 +12,7 @@ pub fn mailer() -> string {
     return "mailer";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: [service, service]).length);
 }
 

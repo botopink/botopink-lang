@@ -18,7 +18,7 @@ fn faz() -> Pessoa {
     return Pessoa(nome: "Ana", idade: 3);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val p = Pessoa(nome: diz("n"), ..faz());
     print(p);
     val q = Pessoa(..faz(), nome: diz("m"));

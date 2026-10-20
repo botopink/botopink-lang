@@ -7,7 +7,7 @@ type Pessoa(nome: string, idade: i32)
 
 val PessoaPatch = Type.partial(Pessoa);
 
-pub fn main() {
+pub fn main() -> void {
     val patch = PessoaPatch(nome: "Ana", idade: null);
     val p = Pessoa(..patch, idade: 3);
     print(p.nome);

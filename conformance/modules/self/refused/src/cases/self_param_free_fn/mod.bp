@@ -12,6 +12,6 @@ pub fn twice(self: Box, k: i32) -> i32 {
     return self.n * k;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(twice(Box(n: 3), 2));
 }

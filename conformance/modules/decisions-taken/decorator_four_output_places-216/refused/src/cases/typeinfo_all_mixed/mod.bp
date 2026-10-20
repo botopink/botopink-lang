@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn tagged(syntax decl: unknown) {
+fn tagged(syntax decl: unknown) -> void {
     compiler.setMeta(Tagged(tag: compiler.name(decl)!));
 }
 
@@ -15,7 +15,7 @@ pub fn job() -> string {
 #[tagged]
 pub type Box(n: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: tagged).length);
 }
 

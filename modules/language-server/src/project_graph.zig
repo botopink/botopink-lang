@@ -770,7 +770,7 @@ test "resolve: a refused manifest is a Problem on it — the array form, and a p
     try writeFileP(io, test_scratch.path(io, "pg-bad/meta/app/botopink.json"),
         \\{ "name": "app", "dependencies": ["acme"] }
     );
-    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/app/src/main.bp"), "pub fn main() {}");
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/app/src/main.bp"), "pub fn main() -> void {}");
 
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();
@@ -802,7 +802,7 @@ test "resolve: a manifest named std outside the bundled libs/std is a Problem on
     try writeFileP(io, test_scratch.path(io, "pg-std-name/app/botopink.json"),
         \\{ "name": "std", "version": "0.0.1" }
     );
-    try writeFileP(io, test_scratch.path(io, "pg-std-name/app/src/main.bp"), "pub fn main() {}");
+    try writeFileP(io, test_scratch.path(io, "pg-std-name/app/src/main.bp"), "pub fn main() -> void {}");
 
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();

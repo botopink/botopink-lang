@@ -22,6 +22,6 @@ component fn App() -> Component<Element> {
     return first;
 }
 
-pub fn main() {
+pub fn main() -> void {
     App();
 }

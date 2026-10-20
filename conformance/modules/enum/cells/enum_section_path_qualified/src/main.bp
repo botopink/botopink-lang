@@ -18,7 +18,7 @@ type Border {
     }
 }
 
-fn main() {
+fn main() -> void {
     val a = Token.Color.Red.500; // Token
     val b = Border.Color.Red.500; // Border
     print(a == Token.Color.Red.500); // true

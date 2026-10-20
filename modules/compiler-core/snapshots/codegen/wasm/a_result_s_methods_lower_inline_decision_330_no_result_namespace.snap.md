@@ -5,7 +5,7 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-fn main() {
+fn main() -> void {
     val r = parse(21).map({ x -> x * 2 });
     print(r.unwrapOr(0));
 }

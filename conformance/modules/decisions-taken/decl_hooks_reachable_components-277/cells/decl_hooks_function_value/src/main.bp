@@ -7,7 +7,7 @@ pub mod pages;
 import {pages.Page, pages.Graph};
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val pageNodes: string[] = comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? [];
     print(pageNodes.join(" "));
 }

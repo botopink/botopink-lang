@@ -4,7 +4,7 @@
 
 import {url.Url as U, url.parse, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(hostOf(parse("https://example.com:8080/docs")));
     print(sameHost(parse("http://a.org/x"), parse("https://a.org/y")));
 }

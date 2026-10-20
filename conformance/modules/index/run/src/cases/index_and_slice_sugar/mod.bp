@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [10, 20, 30];
     val first: ?i32 = xs[0]; // xs.at(0)
     val none: ?i32 = xs[9]; // null — absent has one spelling

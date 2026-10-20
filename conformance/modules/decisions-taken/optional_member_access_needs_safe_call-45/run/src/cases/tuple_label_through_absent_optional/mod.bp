@@ -14,7 +14,7 @@ fn flags() -> #(x: f64, ok: bool)[] {
     return [#(1.5, false)];
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val es: #(a: i32, b: string)[] = [];
     print(es.at(0)?.b ?? "none");
     print(es.at(3)?.a ?? 0);

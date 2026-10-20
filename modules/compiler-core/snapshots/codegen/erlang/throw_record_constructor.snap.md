@@ -1,10 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type AppError(code: i32, msg: string)
-fn validate(x: i32) {
+fn validate(x: i32) -> Result<void, AppError> {
     if (x < 0) {
         throw AppError(code: 400, msg: "negative");
     };
+    return;
 }
 ```
 
@@ -18,8 +19,9 @@ fn validate(x: i32) {
 validate(X) ->
     case (X < 0) of
         true ->
-            erlang:throw({test@main@@AppError, 400, <<"negative">>});
-        _ -> ok
+            {error, {test@main@@AppError, 400, <<"negative">>}};
+        _ ->
+            {ok, undefined}
     end.
 
 '__bp_priv__validate'(A0) -> validate(A0).

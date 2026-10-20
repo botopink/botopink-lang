@@ -39,14 +39,14 @@ fn bound(s: string) -> Result<i32, HostError> {
     return sigResult(s);
 }
 
-fn show(r: Result<string, Failure>) {
+fn show(r: Result<string, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v);
         Error(f) -> print("Error " + f.kind);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(failure.attempt({ -> try raising("a") catch "fallback" }));
     show(failure.attempt({ -> try panicking("a") catch "fallback" }));
     show(failure.attempt({ -> try failing("a") catch "fallback" }));

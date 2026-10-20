@@ -536,7 +536,7 @@ fn testProgram(arena: std.mem.Allocator, program: ast.Program, src_file: []const
     if (tests.items.len == 0) return null;
     var src: std.ArrayListUnmanaged(u8) = .empty;
     try src.appendNTimes(arena, '\n', 1 << 20);
-    try src.appendSlice(arena, "fn main() {\n");
+    try src.appendSlice(arena, "fn main() -> void {\n");
     for (tests.items, 0..) |t, i| {
         const name = t.name orelse try std.fmt.allocPrint(arena, "test_{d}", .{i});
         try src.print(arena, "    @print(\"TEST {s}:{d} {s}\");\n", .{ src_file, t.loc.line, name });
@@ -3563,7 +3563,7 @@ const Emitter = struct {
                 for (m.params, 0..) |p, k| params[k] = self.reprOf(p.typeRef);
                 try self.fn_sigs.put(sym, .{
                     .params = params,
-                    .result = if (m.returnType != null or methodHasResult(body)) self.reprOfOpt(m.returnType) else null,
+                    .result = if (!ast.answersNothing(m.returnType) or methodHasResult(body)) self.reprOfOpt(m.returnType) else null,
                 });
                 if (m.returnType) |rt| {
                     if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
@@ -3718,7 +3718,7 @@ const Emitter = struct {
             for (m.params, 0..) |p, i| params[first + i] = self.memberRepr(p.typeRef);
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (m.returnType) |rt| self.memberRepr(rt) else if (methodHasResult(body)) .i32 else null,
+                .result = if (!ast.answersNothing(m.returnType)) self.memberRepr(m.returnType.?) else if (methodHasResult(body)) .i32 else null,
             });
             // A method's declared return type, under the symbol the call
             // emits. `typeRefOf` asks for it so the *reader* of a `?T` agrees
@@ -9330,7 +9330,7 @@ const Emitter = struct {
             // statement makes a task (`pub fn main() { run(); }`): the word
             // linear memory answered was the task's address, which nothing
             // reads; here the task is dropped for the `0`.
-            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and tail_type.?.ref == .task and !self.cur_result.isRef() and prologue != null and prologue.?.returnType == null;
+            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and tail_type.?.ref == .task and !self.cur_result.isRef() and prologue != null and ast.answersNothing(prologue.?.returnType);
             if (dropped_task) {
                 try self.emit(.drop);
                 try self.emit(self.zeroOf(self.cur_result));
@@ -10243,7 +10243,7 @@ const Emitter = struct {
         else
             null;
         defer self.cur_template = outer_template;
-        const has_result = m.returnType != null or methodHasResult(body);
+        const has_result = !ast.answersNothing(m.returnType) or methodHasResult(body);
         // Decision 392 — a method answering `@Async<T>` is a state machine
         // too, its body answering the `T`.
         const is_task = if (m.returnType) |rt| isTaskTypeRef(rt) else false;
@@ -10468,7 +10468,8 @@ const Emitter = struct {
     /// the annotation alone emits a void function whose `return <v>` leaves a
     /// value on the stack — and the call site then underflows.
     fn fnHasResult(f: ast.FnDecl) bool {
-        if (f.returnType != null) return true;
+        // Decision 622 — `-> void` answers nothing, as no return did.
+        if (!ast.answersNothing(f.returnType)) return true;
         return methodHasResult(f.body);
     }
 

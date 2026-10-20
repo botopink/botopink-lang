@@ -8,6 +8,6 @@ fn half(v: f64) -> f64 {
     return v / 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(half(5.0));
 }

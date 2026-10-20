@@ -171,13 +171,13 @@ test "declaresMain: read by the parser, not by lines" {
     var ar = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer ar.deinit();
     const a = ar.allocator();
-    try std.testing.expect(declaresMain(a, "fn main() {\n}\n"));
+    try std.testing.expect(declaresMain(a, "fn main() -> void {\n}\n"));
     try std.testing.expect(declaresMain(a, "import x;\npub fn main() -> i32 {\n  return 0;\n}\n"));
-    try std.testing.expect(declaresMain(a, "#[compiler.external(.Erlang(\"m:f()\"))] pub fn main() {\n}\n"));
+    try std.testing.expect(declaresMain(a, "#[compiler.external(.Erlang(\"m:f()\"))] pub fn main() -> void {\n}\n"));
     try std.testing.expect(!declaresMain(a, "test \"t\" {\n}\npub mod registry;\n"));
-    try std.testing.expect(!declaresMain(a, "fn mainly() {\n}\n"));
+    try std.testing.expect(!declaresMain(a, "fn mainly() -> void {\n}\n"));
     try std.testing.expect(!declaresMain(a, "val s = \"\"\"\nfn main() {\n}\n\"\"\";\n"));
-    try std.testing.expect(!declaresMain(a, "// a comment\n// fn main() {}\nfn other() {\n}\n"));
+    try std.testing.expect(!declaresMain(a, "// a comment\n// fn main() {}\nfn other() -> void {\n}\n"));
     // A source that does not parse is the build's to report.
     try std.testing.expect(declaresMain(a, "fn ( {{{"));
 }

@@ -487,7 +487,7 @@ pub fn reportOrphans(arena: std.mem.Allocator, count: usize) void {
 test "a type error's hint prints under its excerpt, as a parse error's" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
-    try renderLocatedHint(&aw.writer, "bad", "do this", "src/x.bp", "pub fn f() {\n  nope()\n}\n", 2, 3, 4);
+    try renderLocatedHint(&aw.writer, "bad", "do this", "src/x.bp", "pub fn f() -> void {\n  nope()\n}\n", 2, 3, 4);
     try std.testing.expectEqualStrings(
         \\error: bad
         \\ --> src/x.bp:2:3
@@ -504,7 +504,7 @@ test "a type error's hint prints under its excerpt, as a parse error's" {
 test "a raise at build prints its called-from lines under the excerpt, after the hint (decision 532)" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
-    try renderLocatedNotes(&aw.writer, "boom", "the body raised", &.{ "called from src/main.bp:9:3", "called from src/main.bp:12:1" }, "src/deco.bp", "pub fn check() {\n  @panic(\"x\")\n}\n", 2, 3, 1);
+    try renderLocatedNotes(&aw.writer, "boom", "the body raised", &.{ "called from src/main.bp:9:3", "called from src/main.bp:12:1" }, "src/deco.bp", "pub fn check() -> void {\n  @panic(\"x\")\n}\n", 2, 3, 1);
     try std.testing.expectEqualStrings(
         \\error: boom
         \\ --> src/deco.bp:2:3
@@ -521,14 +521,14 @@ test "a raise at build prints its called-from lines under the excerpt, after the
     // no hint: the gutter bar, then the calls
     var bare: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer bare.deinit();
-    try renderLocatedNotes(&bare.writer, "boom", null, &.{"called from src/main.bp:9:3"}, "src/deco.bp", "pub fn check() {\n  @panic(\"x\")\n}\n", 2, 3, 1);
+    try renderLocatedNotes(&bare.writer, "boom", null, &.{"called from src/main.bp:9:3"}, "src/deco.bp", "pub fn check() -> void {\n  @panic(\"x\")\n}\n", 2, 3, 1);
     try std.testing.expect(std.mem.indexOf(u8, bare.written(), "  |\n  = called from src/main.bp:9:3\n\n") != null);
 }
 
 test "renderLocated prints file, line, column, excerpt and caret" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
-    try renderLocated(&aw.writer, "unbound variable 'nope'", "src/broken.bp", "pub fn f() {\n  nope()\n}\n", 2, 3, 4);
+    try renderLocated(&aw.writer, "unbound variable 'nope'", "src/broken.bp", "pub fn f() -> void {\n  nope()\n}\n", 2, 3, 4);
     try std.testing.expectEqualStrings(
         \\error: unbound variable 'nope'
         \\ --> src/broken.bp:2:3
@@ -543,8 +543,8 @@ test "renderLocated prints file, line, column, excerpt and caret" {
 test "a lex or parse error is a located outcome, not a session failure" {
     const gpa = std.testing.allocator;
     var session = try bp.comptime_pipeline.compileTypesOnly(gpa, &.{
-        .{ .path = "lexbad", .source = "pub fn g() {\n    print(\"abc);\n}\n" },
-        .{ .path = "parsebad", .source = "pub fn h() {\n    print((1);\n}\n" },
+        .{ .path = "lexbad", .source = "pub fn g() -> void {\n    print(\"abc);\n}\n" },
+        .{ .path = "parsebad", .source = "pub fn h() -> void {\n    print((1);\n}\n" },
         .{ .path = "ok", .source = "pub fn f() -> i32 {\n    return 1;\n}\n" },
     }, null);
     defer session.deinit(gpa);

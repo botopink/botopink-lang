@@ -4,7 +4,7 @@ fn greet(x: ?string) -> string {
     if (x == null) { return "nobody"; };
     return "hello " + x;
 }
-fn main() {
+fn main() -> void {
     print(greet("world"));
     print(greet(null));
 }

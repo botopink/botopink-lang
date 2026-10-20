@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn trimmed<T>(syntax decl: T) {
+fn trimmed<T>(syntax decl: T) -> void {
     compiler.addMember("trimmedLength", fn(self: T) -> i32 {
         return 0;
     });
@@ -12,6 +12,6 @@ fn trimmed<T>(syntax decl: T) {
 
 pub type Signup(#[trimmed] name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

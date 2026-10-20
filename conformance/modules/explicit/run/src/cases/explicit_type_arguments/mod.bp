@@ -15,7 +15,7 @@ fn first<T>(xs: T[], fallback: T) -> T {
     return xs.at(0) ?? fallback;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Box<i32>(value: 1).get());
     val s: string = first<string>([], "none");
     print(s);

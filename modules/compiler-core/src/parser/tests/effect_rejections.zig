@@ -111,17 +111,17 @@ test "effect-annotation-removed — in a list with another annotation" {
 
 test "effect-annotation-removed — before a loop the fix-it is `iter` / `stream`" {
     try expectKindAt(
-        \\fn f() {
+        \\fn f() -> void {
         \\    val xs = #[@generator] loop { yield 1; break; };
         \\}
     , .effectAnnotationRemovedLoop, 2, 16);
     try expectKind(
-        \\fn f() {
+        \\fn f() -> void {
         \\    val xs = #[@futureGenerator] loop { yield 1; break; };
         \\}
     , .effectAnnotationRemovedLoop);
     try expectKind(
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    val ys = #[@resultGenerator] for (xs) { x -> yield x; };
         \\}
     , .effectAnnotationRemovedLoop);
@@ -185,7 +185,7 @@ test "the return is the effect — FnDecl.effect, and a factory has none" {
 
 test "`iter` / `stream` prefix the three loops, as a value and as an argument" {
     try expectParses(
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    val a = iter loop { yield 1; break 2; };
         \\    val b = iter while (true) { yield 1; break; };
         \\    val c = iter for (xs) { x -> yield x * 2; };

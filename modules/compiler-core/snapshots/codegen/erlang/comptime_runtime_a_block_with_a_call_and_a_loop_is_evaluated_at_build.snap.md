@@ -8,7 +8,7 @@ fn two() -> i32 {
     return 2;
 }
 
-fn main() {
+fn main() -> void {
     val a = comptime two();
     print(a);
     val d = comptime {

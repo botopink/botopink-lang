@@ -3,13 +3,13 @@
 
 import {io.terminal.print} from "std";
 
-fn walk(f: fn() -> Iter<i32>) {
+fn walk(f: fn() -> Iter<i32>) -> void {
     for (f()) { x ->
         print(x);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     walk({ ->
         iter loop {
             yield 1;

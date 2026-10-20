@@ -4,14 +4,14 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn route(syntax decl: unknown) {
+fn route(syntax decl: unknown) -> void {
     compiler.setMeta(Route(path: "/"));
 }
 
 #[route]
 pub fn home() -> string { return "home"; }
 
-pub fn main() {
+pub fn main() -> void {
     for (@TypeInfo.all(with: route)) { r ->
         val page: fn() -> string = r.value;
         print(page());

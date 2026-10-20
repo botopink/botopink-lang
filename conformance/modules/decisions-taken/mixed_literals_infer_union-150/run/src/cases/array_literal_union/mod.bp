@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [1, "a"];
     print(xs.length);
     val ys: (i32 | string)[] = [2, "b", 3];

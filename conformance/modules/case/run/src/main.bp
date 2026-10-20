@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.case_alternatives_and_arrays.runCase();
     cases.case_arm_block_comment.runCase();
     cases.case_arm_ending_in_for.runCase();

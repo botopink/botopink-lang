@@ -16,7 +16,7 @@ fn execute(comptime slug: string, input: i32) -> i32 {
     return output;
 }
 
-fn main() {
+fn main() -> void {
     val r1 = execute("calc", 10);
     val r2 = execute("noop", 42);
 }

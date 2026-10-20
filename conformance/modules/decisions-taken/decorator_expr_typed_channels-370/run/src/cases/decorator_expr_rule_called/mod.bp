@@ -12,7 +12,7 @@ fn check<T>(
     syntax decl: T,
     syntax message: string,
     syntax rule: fn(v: T) -> bool,
-) {
+) -> void {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
         return [Violation(field: "confirm", message: message)];
@@ -26,7 +26,7 @@ fn passwordsMatch(a: Signup) -> bool {
 #[check("the passwords differ", passwordsMatch)]
 pub type Signup(password: string, confirm: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ok = Signup(password: "abc", confirm: "abc").validate();
     print(ok.length);
     val bad = Signup(password: "abc", confirm: "abd").validate();

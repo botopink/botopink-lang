@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 import {collections.lt} from "std";
 
-fn main() {
+fn main() -> void {
     val a = collections.toInt(lt());
 }
 

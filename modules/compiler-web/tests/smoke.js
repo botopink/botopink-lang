@@ -33,7 +33,7 @@ fn greet(name: string) -> string {
   "hello, " + name
 }
 
-fn main() {
+fn main() -> void {
   print(greet("web"))
 }
 `;
@@ -43,13 +43,13 @@ fn greet(name: string) -> string {
     return "hello, " + name;
 }
 
-fn main() {
+fn main() -> void {
     print(greet("web"));
 }
 `;
 
 const BROKEN = `
-fn main() {
+fn main() -> void {
   val x = 
 }
 `;
@@ -59,7 +59,7 @@ pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
     return q.build("\\"" + q.text().toUpper() + "\\"");
 }
 
-pub fn describe(comptime decl: @Decl) {
+pub fn describe(comptime decl: @Decl) -> void {
     @emit("pub fn describe" + decl.name + "() -> string { return \\"" + decl.name + "\\"; }");
 }
 
@@ -68,7 +68,7 @@ type User(name: string)
 
 val s = shout "browser";
 
-fn main() {
+fn main() -> void {
     @print(s);
     @print(describeUser());
 }
@@ -138,7 +138,7 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   // Decision 519: the page's compiler is handed no reader — `@embed` is a
   // located refusal, never a read.
   compiler.reset();
-  compiler.addSource("main", 'import {io.terminal.print} from "std";\npub fn main() {\n    print(@embed("assets/logo.png").size);\n}\n');
+  compiler.addSource("main", 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print(@embed("assets/logo.png").size);\n}\n');
   const embed = compiler.compile("commonJS");
   assert(embed.status === 1 && String(embed.modules[0].diagnostic).includes("embed-no-reader") && String(embed.modules[0].diagnostic).includes("main.bp:3:11"), `@embed is refused in the page, located (${embed.modules[0].diagnostic})`);
 

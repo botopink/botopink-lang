@@ -1461,7 +1461,7 @@ test "orderByDependencies orders imported modules before importers" {
         .{ .path = "main", .source =
         \\import {geometry.area};
         \\import {shapes.describe};
-        \\fn main() {}
+        \\fn main() -> void {}
         },
         .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
         .{ .path = "shapes", .source =
@@ -1494,7 +1494,7 @@ test "checkImportResolution rejects importing an unexported symbol from a named 
 
     // main imports `geometry.area`, and `geometry` only exports `perimeter`.
     var mods = [_]Module{
-        .{ .path = "main", .source = "import {geometry.area};\nfn main() {}" },
+        .{ .path = "main", .source = "import {geometry.area};\nfn main() -> void {}" },
         .{ .path = "geometry", .source = "pub fn perimeter() -> i32 { return 1; }" },
     };
     const analysis = analyzeModules(sa, &mods);
@@ -1515,7 +1515,7 @@ test "checkImportResolution accepts a correct export and ignores lib/std imports
         \\import {geometry.area};
         \\import {Rakun} from "rakun";
         \\import {bool} from "std";
-        \\fn main() {}
+        \\fn main() -> void {}
         },
         .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
     };
@@ -1533,9 +1533,9 @@ test "checkImportSources rejects a `from` that names nothing, with its location"
     // program compiled and ran, having bound nothing.
     var mods = [_]Module{
         .{ .path = "main", .source =
-        \\fn helper() {}
+        \\fn helper() -> void {}
         \\import {area} from "geometry";
-        \\fn main() {}
+        \\fn main() -> void {}
         },
     };
     const files = [_][]const u8{"src/main.bp"};
@@ -1564,7 +1564,7 @@ test "checkImportSources accepts std, a declared dependency and a module of the 
         \\import {shapes.circle.name};
         \\import {Rakun} from "rakun";
         \\import {q} from "erika.query";
-        \\fn main() {}
+        \\fn main() -> void {}
         },
         .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
         .{ .path = "shapes/circle", .source = "pub fn name() -> string { return \"c\"; }" },
@@ -1663,7 +1663,7 @@ test "checkImportSources: a package wins its name over a module of the package n
         \\import {Level} from "log";
         \\import {Rakun} from "rakun";
         \\import {log.levelName};
-        \\fn main() {}
+        \\fn main() -> void {}
         },
         .{ .path = "log", .source = "pub fn levelName() -> i32 { return 1; }" },
         .{ .path = "rakun", .source = "pub fn other() -> i32 { return 1; }" },
@@ -1685,7 +1685,7 @@ test "checkImportSources is a no-op when the caller knows no dependency set" {
     const sa = arena.allocator();
 
     var mods = [_]Module{
-        .{ .path = "main", .source = "import {area} from \"geometry\";\nfn main() {}" },
+        .{ .path = "main", .source = "import {area} from \"geometry\";\nfn main() -> void {}" },
     };
     const files = [_][]const u8{"src/main.bp"};
     const analysis = analyzeModules(sa, &mods);
@@ -1700,7 +1700,7 @@ test "checkVisibility rejects an import crossing a private mod boundary" {
 
     // main(root) → shapes(pub) → helpers(private). Root imports helpers' symbol.
     var mods = [_]Module{
-        .{ .path = "main", .source = "import {shapes.helpers.secret};\nfn main() {}" },
+        .{ .path = "main", .source = "import {shapes.helpers.secret};\nfn main() -> void {}" },
         .{ .path = "shapes", .source = "pub fn describe() -> i32 { return 1; }" },
         .{ .path = "shapes/helpers", .source = "pub fn secret() -> i32 { return 42; }" },
     };
@@ -1724,7 +1724,7 @@ test "checkVisibility allows an import from within the private subtree" {
 
     // circle is a sibling of helpers inside shapes — within helpers' boundary.
     var mods = [_]Module{
-        .{ .path = "main", .source = "fn main() {}" },
+        .{ .path = "main", .source = "fn main() -> void {}" },
         .{ .path = "shapes", .source = "pub fn describe() -> i32 { return 1; }" },
         .{ .path = "shapes/circle", .source = "import {shapes.helpers.secret};\npub fn c() -> i32 { return secret(); }" },
         .{ .path = "shapes/helpers", .source = "pub fn secret() -> i32 { return 42; }" },
@@ -1765,7 +1765,7 @@ test "checkSources locates an unresolved import in a flat test module" {
     // The shape `botopink test` hands over: the package's resolved `src/`
     // modules first (no file, already checked), then the flat `test/` ones.
     var mods = [_]Module{
-        .{ .path = "main", .source = "mod geometry;\npub fn main() {}" },
+        .{ .path = "main", .source = "mod geometry;\npub fn main() -> void {}" },
         .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
         .{ .path = "x_test", .source =
         \\import {geometry.area};
@@ -1833,8 +1833,8 @@ test "every module under src is in the program, a `mod` path or not (decision 67
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/ambient.bp"), "pub fn ambient() -> i32 { return 2; }\n");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/dangling.bp"), "pub fn dangling() -> i32 { return 3; }\n");
     try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/jobs.bp"), "pub mod cleaner;\n");
-    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/cleaner.bp"), "pub fn clean() {}\n");
-    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/deep/mod.bp"), "pub fn deep() {}\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/cleaner.bp"), "pub fn clean() -> void {}\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/deep/mod.bp"), "pub fn deep() -> void {}\n");
 
     var da = std.heap.ArenaAllocator.init(gpa);
     defer da.deinit();

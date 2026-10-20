@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 pub type Marker {}
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

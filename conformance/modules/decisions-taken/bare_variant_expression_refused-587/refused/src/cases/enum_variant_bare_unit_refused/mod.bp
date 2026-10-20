@@ -13,7 +13,7 @@ pub type Kind {
     Other,
 }
 
-pub fn main() {
+pub fn main() -> void {
     val k: Kind = Element;
     print(0);
 }

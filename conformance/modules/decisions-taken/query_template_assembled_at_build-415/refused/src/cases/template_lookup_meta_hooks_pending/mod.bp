@@ -8,7 +8,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Count(uses: i32)
 
-fn graph(syntax decl: unknown) {
+fn graph(syntax decl: unknown) -> void {
     compiler.setMeta(Count(uses: compiler.hooks(decl).length));
 }
 
@@ -23,7 +23,7 @@ fn uses(syntax q: string) -> i32 {
     return compiler.build(c.uses.toString());
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(page());
     print(uses @`page`);
 }

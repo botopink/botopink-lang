@@ -14,11 +14,11 @@ type Dog(n: string) implement Named {
     }
 }
 
-fn show(x: Named) {
+fn show(x: Named) -> void {
     val s: i32 = x.name();
     print(s);
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(Dog(n: "rex"));
 }

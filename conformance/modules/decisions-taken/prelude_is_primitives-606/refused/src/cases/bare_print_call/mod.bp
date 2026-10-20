@@ -12,6 +12,6 @@ fn shout(line: string) -> string {
     return line;
 }
 
-pub fn main() {
+pub fn main() -> void {
     shout("hi");
 }

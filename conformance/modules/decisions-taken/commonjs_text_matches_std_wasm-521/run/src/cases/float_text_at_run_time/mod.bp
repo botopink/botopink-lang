@@ -7,7 +7,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val five = 5.0;
     print("${five}");
     print(1.0e21);

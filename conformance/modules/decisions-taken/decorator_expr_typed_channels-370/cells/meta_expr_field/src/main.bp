@@ -15,7 +15,7 @@ fn check<T>(
     syntax decl: T,
     syntax message: string,
     syntax rule: fn(v: T) -> bool,
-) {
+) -> void {
     compiler.addMeta(Check(message: message, rule: rule));
 }
 
@@ -46,7 +46,7 @@ fn violations(s: Signup) -> string[] {
     return out;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(calls);
     val ok = violations(Signup(handle: "ana", password: "abc", confirm: "abc"));
     print(ok.length);

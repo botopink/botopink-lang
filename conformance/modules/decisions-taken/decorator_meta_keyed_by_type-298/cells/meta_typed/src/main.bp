@@ -17,7 +17,7 @@ type Index(column: string, unique: bool, order: i32)
 
 type Other(note: string)
 
-fn entity(syntax decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) -> void {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.setMeta(
@@ -36,7 +36,7 @@ fn index(
     syntax decl: unknown,
     comptime column: string,
     comptime order: i32,
-) {
+) -> void {
     compiler.addMeta(
         Index(
             column: column,
@@ -58,7 +58,7 @@ fn levelName(l: Level) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val e = comptime compiler.typeInfo(City).meta(Entity);
     print(e?.table ?? "none");
     if (e) {

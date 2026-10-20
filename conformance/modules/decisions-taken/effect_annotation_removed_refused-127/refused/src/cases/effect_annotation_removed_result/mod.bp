@@ -12,4 +12,4 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-pub fn main() { print(try parse(1) catch 0); }
+pub fn main() -> void { print(try parse(1) catch 0); }

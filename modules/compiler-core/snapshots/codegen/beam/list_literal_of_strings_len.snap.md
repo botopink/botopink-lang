@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val labels = ["a", "bb", "ccc"];
     print(labels.len);
 }

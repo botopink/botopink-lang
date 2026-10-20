@@ -6,7 +6,7 @@ import {compiler, io.terminal.print} from "std";
 
 fn count() -> i32 { 1 }
 
-fn written(syntax decl: unknown) {
+fn written(syntax decl: unknown) -> void {
     compiler.init({ -> count() });
 }
 
@@ -15,6 +15,6 @@ pub fn home() -> string {
     return "home";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(home());
 }

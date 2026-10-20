@@ -24,7 +24,7 @@ fn campos2() -> string {
     return n + " " + ok;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(cabecalho());
     print(campos2());
 }

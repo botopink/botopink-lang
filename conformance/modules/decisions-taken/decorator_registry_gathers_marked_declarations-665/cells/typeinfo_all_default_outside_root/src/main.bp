@@ -6,6 +6,6 @@
 pub mod setup;
 import {setup.start};
 
-pub fn main() {
+pub fn main() -> void {
     start();
 }

@@ -333,8 +333,8 @@ test "mod tree: a root's child is top-level, a folder's nests; pub names" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const mods = [_]Module{
-        .{ .path = "main", .source = "pub mod config;\nmod mod1;\npub fn main() {}\n" },
-        .{ .path = "config", .source = "pub fn splitPath(p: string) -> string { return p; }\nfn hidden() {}\n" },
+        .{ .path = "main", .source = "pub mod config;\nmod mod1;\npub fn main() -> void {}\n" },
+        .{ .path = "config", .source = "pub fn splitPath(p: string) -> string { return p; }\nfn hidden() -> void {}\n" },
         .{ .path = "mod1", .source = "pub mod mod2;\n" },
         .{ .path = "mod1/mod2", .source = "pub type Pair(a: i32)\n" },
     };

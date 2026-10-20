@@ -13,7 +13,7 @@ import {io.terminal.print} from "std";
 
 type Status { Ready, Busy(count: i32), Down }
 
-pub fn main() {
+pub fn main() -> void {
     val s: Status = Status.Busy(count: 3);
     assert s is Status.Busy(count: n);
     print(n.toString());

@@ -4,7 +4,7 @@
 
 import {io.fs, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(fs.FsError.NotFound(path: "a.txt").message());
     print(fs.FsError.PermissionDenied(path: "b.txt").message());
     print(fs.FsError.IsDirectory(path: "c").message());

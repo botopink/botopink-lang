@@ -19,7 +19,7 @@ fn show(r: Result<i32, string>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(half(4));
     print(half(3));
     print(twice(8));

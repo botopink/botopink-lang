@@ -95,7 +95,7 @@ fn show(r: Result<i32, string>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(returnedExpression(Value.Num(4)).isError()); // false
     print(returnedExpression(Value.Text("a")).isError()); // true
     print(show(returnedExpression(Value.Num(4)))); // ok 8

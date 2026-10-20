@@ -38,7 +38,9 @@
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,
@@ -60,7 +62,9 @@
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": [
               {
                 "expr": {

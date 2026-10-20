@@ -12,7 +12,7 @@ fn firstId(ys: Y[]) -> i32 {
     return ys.at(0)?.id ?? 0;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ys = [Y(id: 7, name: "a")];
     print(ys.at(0)?.id ?? 0);
     print(ys.at(3)?.id ?? 0);

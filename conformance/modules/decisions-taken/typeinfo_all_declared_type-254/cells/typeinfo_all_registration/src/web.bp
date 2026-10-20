@@ -3,13 +3,13 @@
 
 import {compiler.DeclKind, compiler} from "std";
 
-pub fn route(syntax decl: unknown, comptime path: string) {
+pub fn route(syntax decl: unknown, comptime path: string) -> void {
     compiler.setMeta(Route(path: path));
     if (compiler.kind(decl) != DeclKind.Fn)
         compiler.fail("#[route] must annotate a function", at: decl);
 }
 
-pub fn component(syntax decl: unknown) {
+pub fn component(syntax decl: unknown) -> void {
     compiler.addMember(
         "pub fn describe() -> string { return \"component "
             + compiler.name(decl)!
@@ -17,7 +17,7 @@ pub fn component(syntax decl: unknown) {
     );
 }
 
-pub fn unused(syntax decl: unknown) {
+pub fn unused(syntax decl: unknown) -> void {
     compiler.setMeta(Unused(marked: true));
 }
 

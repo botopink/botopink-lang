@@ -11,7 +11,7 @@ fn origin() -> geo.plane.Point {
     return geo.plane.Point(x: 0, y: 0);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(geo.plane.distance(origin(), geo.plane.Point(x: 3, y: 4)));
     print(geo.name());
 }

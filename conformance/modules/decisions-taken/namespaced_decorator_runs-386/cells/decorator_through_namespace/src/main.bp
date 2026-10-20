@@ -9,7 +9,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Found(names: string)
 
-fn find(syntax decl: unknown) {
+fn find(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .annotations(decl)
@@ -36,7 +36,7 @@ fn NotMarked() -> string {
     return "n";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(Tagged).meta(markers.Tag)?.label ?? "none");
     print(comptime compiler.typeInfo(Marked).meta(Found)?.names ?? "none");
     print(comptime compiler.typeInfo(NotMarked).meta(Found)?.names ?? "none");

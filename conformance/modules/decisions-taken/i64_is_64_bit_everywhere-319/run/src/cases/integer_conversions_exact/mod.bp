@@ -11,7 +11,7 @@ fn grow(a: i64, b: i64) -> i64 {
     return a + b;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val small = 2147483647l;
     print(small.toI32());
     print(grow(-small, -1l).toI32());

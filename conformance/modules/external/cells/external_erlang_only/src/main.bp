@@ -19,6 +19,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("erlang:list_to_binary($0)"))]
 declare fn listToBinary(codes: i32[]) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(listToBinary([104, 105]));
 }

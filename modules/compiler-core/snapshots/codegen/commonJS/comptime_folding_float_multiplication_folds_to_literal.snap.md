@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val pi2 = comptime { 3.14 * 2.0 };
-fn main() {
+fn main() -> void {
     print(pi2);
 }
 

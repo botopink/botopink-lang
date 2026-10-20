@@ -3,10 +3,10 @@
 fn pairOf(a: i32, b: string) -> #(i32, string) {
     return #(a, b);
 }
-fn show(p: #(i32, string)) {
+fn show(p: #(i32, string)) -> void {
     print(p);
 }
-fn main() {
+fn main() -> void {
     print(#(true, 1));
     print(#(#(1, 2), "x"));
     print([#(1, 2), #(17, 1)]);

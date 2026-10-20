@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 // This is a comment
-fn main() {
+fn main() -> void {
     null;
 }
 ```

@@ -9,7 +9,7 @@ pub mod components;
 import {components.Card, components.Card.Props as CardProps, components.Card.twice};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(Card(CardProps(title: "ab")));
     print(twice(21));
 }

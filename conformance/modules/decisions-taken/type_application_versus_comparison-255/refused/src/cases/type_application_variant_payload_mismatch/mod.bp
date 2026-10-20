@@ -8,7 +8,7 @@ type Opt<T> {
     None,
 }
 
-pub fn main() {
+pub fn main() -> void {
     val s = Opt<i32>.Some("a");
     print(s == Opt<i32>.None);
 }

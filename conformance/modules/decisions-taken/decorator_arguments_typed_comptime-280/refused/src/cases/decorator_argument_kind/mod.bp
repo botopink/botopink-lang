@@ -4,11 +4,11 @@
 
 import {io.terminal.print} from "std";
 
-fn value(syntax decl: unknown, comptime key: string) {}
+fn value(syntax decl: unknown, comptime key: string) -> void {}
 
 #[value(42)]
 type A(x: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(A(x: 1).x);
 }

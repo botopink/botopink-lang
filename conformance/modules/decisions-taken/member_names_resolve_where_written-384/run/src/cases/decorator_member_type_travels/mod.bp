@@ -8,7 +8,7 @@ pub mod models;
 import {cases.decorator_member_type_travels.models.Signup};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val vs = Signup(password: "a", confirm: "b").validate();
     print(vs.length);
     for (vs) { v ->

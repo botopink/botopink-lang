@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(42.toString());
     val n = 7;
     print(n.toString());

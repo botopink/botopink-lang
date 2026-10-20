@@ -8,11 +8,11 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Check<T>(note: string)
 
-fn check<T>(syntax decl: T, comptime note: string) {
+fn check<T>(syntax decl: T, comptime note: string) -> void {
     compiler.addMeta(Check(note: note));
 }
 
-fn mark(syntax decl: unknown) {
+fn mark(syntax decl: unknown) -> void {
     if (compiler.name(decl)! == "")
         compiler.fail("a declaration has a name", at: decl);
 }
@@ -23,7 +23,7 @@ pub fn home() -> string {
     return "home";
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (@TypeInfo.all(with: mark)) { d ->
         print(d.metaAll(Check).length);
     }

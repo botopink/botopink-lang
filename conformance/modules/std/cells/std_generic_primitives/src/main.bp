@@ -1,7 +1,7 @@
 import {json, hash, async, io.clock, io.terminal.print} from "std";
 import {json.Json, async.RetryPolicy} from "std";
 
-fn main() {
+fn main() -> void {
     val port = "8080".parseInt(); // Ok(8080)
     val ratio = "2.5e-1".parseFloat(); // Ok(0.25)
     print(port.isOk() && ratio.isOk());

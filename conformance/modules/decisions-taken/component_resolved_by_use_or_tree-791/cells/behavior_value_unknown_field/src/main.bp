@@ -11,7 +11,7 @@ component fn Label() -> Component<View> {
     return View(text: "label");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = Label();
     print(c.zzz);
 }

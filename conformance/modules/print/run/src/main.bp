@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.print_bare_null.runCase();
     cases.print_formatter.runCase();
     cases.print_nested.runCase();

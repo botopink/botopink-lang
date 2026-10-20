@@ -9,7 +9,7 @@ pub type Box<T>(value: T)
 
 pub type Provides(name: string)
 
-fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) {
+fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) -> void {
     compiler.setMeta(Provides(name: compiler.name(decl)!));
 }
 
@@ -23,7 +23,7 @@ fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
     return source.value;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(greeting).meta(Provides)?.name ?? "none");
     print(greeting());
     print(orDefault(i32, 3));

@@ -19,7 +19,7 @@ fn grito(comptime s: string) -> string {
     return s.toUpper() + "!";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(campos("a,b,c").join("|"));
     print(campos("x").length());
     print(tamanho("abcd"));

@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.external_compiler_member.runCase();
     cases.prelude_name_shadowed.runCase();
     cases.print_from_io_terminal.runCase();

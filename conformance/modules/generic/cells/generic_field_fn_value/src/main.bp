@@ -38,7 +38,7 @@ fn make() -> Box<fn(s: string) -> string> {
     return Box(value: { s -> s + "#" });
 }
 
-pub fn main() {
+pub fn main() -> void {
     val h = Box(value: shout);
     val k = h.value;
     print(k("a"));

@@ -10,7 +10,7 @@ type Element(text: string) implement Renderable
 
 type BlogParams(slug: string, id: i32)
 
-fn args(syntax decl: unknown) {
+fn args(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .hooks(decl)

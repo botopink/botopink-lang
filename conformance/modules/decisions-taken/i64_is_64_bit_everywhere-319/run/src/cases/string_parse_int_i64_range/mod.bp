@@ -11,7 +11,7 @@ fn parsed(s: string) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(parsed("9007199254740991"));
     print(parsed("9007199254740992"));
     print(parsed("-9007199254740993"));

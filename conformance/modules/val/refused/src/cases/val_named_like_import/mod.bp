@@ -4,6 +4,6 @@ import {path.extname, io.terminal.print} from "std";
 
 val extname = ".txt";
 
-pub fn main() {
+pub fn main() -> void {
     print(extname);
 }

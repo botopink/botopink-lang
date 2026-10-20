@@ -16,4 +16,4 @@ async fn total() -> Async<i32> {
     return n;
 }
 
-pub fn main() { total(); }
+pub fn main() -> void { total(); }

@@ -18,7 +18,7 @@ fn aplicar(p: Pessoa, f: fn(Pessoa) -> Pessoa) -> Pessoa {
     return f(p);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ana = Pessoa(nome: "Ana", idade: 30);
     // A field's value in another constructor, spread or labelled.
     val equipe = Equipe(lider: Pessoa(..ana, idade: 31), vice: ana, titulo: "A");

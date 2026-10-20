@@ -44,7 +44,7 @@ fn shout(at: string) -> Result<string, string> {
     return at + "!";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val box = Box(run: shout);
     val many = box.array().run;
     print(many("hi").unwrapOr([]).length);

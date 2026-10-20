@@ -441,7 +441,7 @@ fn reads(w: string) -> i32 {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a = "alpha";
     val b = "bravo-x";
     val c = "charlie";

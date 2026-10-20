@@ -31,6 +31,6 @@ async fn scenario() -> Async<void> {
     print("still running");
 }
 
-pub fn main() {
+pub fn main() -> void {
     scenario();
 }

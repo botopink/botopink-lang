@@ -5,7 +5,7 @@ val Outer = type(inner: ?Inner)
 fn getValue(o: Outer) -> ?i32 {
     return o.inner?.value;
 }
-fn main() {
+fn main() -> void {
     val o = Outer(inner: Inner(value: 42));
     print(getValue(o));
 }

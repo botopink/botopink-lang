@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 type D(id: i32)
-fn main() {
+fn main() -> void {
     val d = D(id: 1);
     print(d.swim());
 }

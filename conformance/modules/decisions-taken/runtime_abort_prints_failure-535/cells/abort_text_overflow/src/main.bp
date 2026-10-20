@@ -14,14 +14,14 @@ fn divide(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     show(failure.attempt({ -> divide(-2147483647 - 1, -1) }));
     print(bump(2147483647));

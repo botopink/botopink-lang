@@ -2,7 +2,7 @@
 
 var entries: string[] = [];
 
-pub fn register(entry: string) {
+pub fn register(entry: string) -> void {
     entries.push(entry);
 }
 

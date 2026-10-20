@@ -18,7 +18,7 @@ val first = note("first");
 
 val _second = note("second");
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
     print(first);
     print(first);

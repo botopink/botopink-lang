@@ -10,7 +10,7 @@ type Big(n: u64, label: string)
 
 type Pair(left: Big, right: i64)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val top: u64 = 18446744073709551615;
     val half: u64 = 9223372036854775808;
     val b = Big(n: top, label: "top");

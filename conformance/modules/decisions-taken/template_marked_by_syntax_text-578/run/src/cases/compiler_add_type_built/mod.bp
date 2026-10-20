@@ -4,14 +4,14 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn columns(syntax decl: unknown) {
+fn columns(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(code: string, size: i32)"));
 }
 
 #[columns]
 pub type City(name: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = City.Columns(code: "x", size: 3);
     print(c.code + " " + c.size.toString());
 }

@@ -20,7 +20,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s = "hello";
     print(s.slice(1, 4));
     print(s.charCodeAt(0));

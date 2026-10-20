@@ -2,7 +2,7 @@
 fn takeOptional(x: @Optional<i32>) -> i32 {
     return x.unwrapOr(0);
 }
-fn main() {
+fn main() -> void {
     print(takeOptional(3));
 }
 

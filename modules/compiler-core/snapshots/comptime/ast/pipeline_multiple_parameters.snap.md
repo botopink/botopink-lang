@@ -3,7 +3,7 @@
 fn add(a: i32, b: i32) -> i32 { return a + b; }
 fn multiply(a: i32, b: i32) -> i32 { return a * b; }
 fn format(value: i32, prefix: string, suffix: string) -> string { return prefix + value + suffix; }
-fn main() {
+fn main() -> void {
     val result = 5 |> add(3) |> multiply(2) |> format("Result: ", " !");
 }
 ```

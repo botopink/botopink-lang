@@ -4,6 +4,6 @@ comptime {
     compiler.init({ -> print("counted init") });
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("counted main");
 }

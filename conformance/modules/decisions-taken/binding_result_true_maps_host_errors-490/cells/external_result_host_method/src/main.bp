@@ -23,7 +23,7 @@ type Meter(base: i32) {
     declare fn later(self: Self, n: i32) -> Async<Result<i32, HostError>>;
 }
 
-fn show(r: Result<i32, HostError>) {
+fn show(r: Result<i32, HostError>) -> void {
     case r {
         Ok(v) -> print("ok", v);
         Error(e) -> print("error", e.message, e.kind, e.name);
@@ -41,6 +41,6 @@ async fn run() -> Async<void> {
     print(a + b);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

@@ -8,7 +8,7 @@ fn names(syntax q: string) -> unknown[] {
     return compiler.build("[\"" + compiler.text(q) + "\"]");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val n: i32 = names @`cities`;
     print(n.toString());
 }

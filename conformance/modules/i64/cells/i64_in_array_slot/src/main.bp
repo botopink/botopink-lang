@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val a: i64 = 3000000000;
     val ys = [a, 1];
     print(ys);

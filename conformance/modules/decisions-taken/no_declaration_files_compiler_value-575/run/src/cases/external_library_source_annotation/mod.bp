@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn bif(syntax decl: unknown, comptime module: string) {
+fn bif(syntax decl: unknown, comptime module: string) -> void {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }
 
@@ -17,6 +17,6 @@ fn reverseBody(xs: i32[]) -> i32[] {
     return xs.reverse();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(backwards([1, 2, 3]));
 }

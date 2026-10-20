@@ -9,7 +9,7 @@ type Ctx(n: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = Ctx(n: 1);
     val n = c.resolve<string>(1);
     print(n);

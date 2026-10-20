@@ -6,13 +6,13 @@ import {compiler as c, io.terminal.print} from "std";
 
 pub type Named(name: string)
 
-fn named(syntax decl: unknown) {
+fn named(syntax decl: unknown) -> void {
     c.setMeta(Named(name: c.name(decl)! + " in " + c.module));
 }
 
 #[named]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime c.typeInfo(City).meta(Named)!.name);
 }

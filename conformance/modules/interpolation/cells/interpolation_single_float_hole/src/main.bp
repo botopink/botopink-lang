@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val s = "${5.0}";
     print(s + "!");
     val xs: string[] = ["${4.0}", "a"];

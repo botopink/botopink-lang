@@ -15,7 +15,7 @@ type Worker(id: i32) {
     }
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print("ok", v);
         Error(e) -> print("error", e);
@@ -29,6 +29,6 @@ async fn run() -> Async<void> {
     show(await later(-2));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

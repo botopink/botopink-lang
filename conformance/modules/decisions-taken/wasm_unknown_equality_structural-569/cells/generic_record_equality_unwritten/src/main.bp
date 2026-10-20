@@ -11,7 +11,7 @@ type Maybe<T> {
     None,
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Pair(left: 1, right: "x") == Pair(left: 1, right: "x"));
     print(Pair(left: 1, right: "x") == Pair(left: 2, right: "x"));
     print(Pair(left: 1, right: "x") != Pair(left: 1, right: "y"));

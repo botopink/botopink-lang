@@ -7,7 +7,7 @@ pub type Violation(field: string, message: string)
 pub fn check<T>(
     syntax decl: T,
     syntax rule: fn(v: T) -> bool,
-) {
+) -> void {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
         return [Violation(field: "confirm", message: "invalid")];

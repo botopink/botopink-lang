@@ -10,13 +10,13 @@ fn make(t: string) -> Entity {
     return Entity(table: t);
 }
 
-fn entity(syntax decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) -> void {
     compiler.setMeta(make(table));
 }
 
 #[entity("cities")]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

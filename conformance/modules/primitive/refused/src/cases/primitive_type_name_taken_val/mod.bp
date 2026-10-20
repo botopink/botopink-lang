@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 val i64 = 3;
 
-pub fn main() {
+pub fn main() -> void {
     print(i64);
 }

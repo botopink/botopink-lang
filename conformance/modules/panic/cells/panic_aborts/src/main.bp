@@ -10,7 +10,7 @@
 
 import {io.terminal.print, failure.panic} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     panic("boom");
     print("after");

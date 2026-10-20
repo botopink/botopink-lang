@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 import {collections: {Dict, emptyish}} from "std";
 
-fn main() {
+fn main() -> void {
     val n = 1;
 }
 

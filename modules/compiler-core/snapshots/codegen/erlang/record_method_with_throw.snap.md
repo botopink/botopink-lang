@@ -6,8 +6,9 @@ val Invoice = type(
     fn total(self: Self) -> f64 {
         return self.subtotal + self.subtotal * self.taxRate;
     }
-    fn validate(self: Self) {
+    fn validate(self: Self) -> Result<void, string> {
         throw "invalid invoice";
+        return;
     }
 }
 ```
@@ -28,7 +29,12 @@ total(Self) ->
     (erlang:element(2, Self) + (erlang:element(2, Self) * erlang:element(3, Self))).
 
 validate(Self) ->
-    erlang:throw(<<"invalid invoice">>).
+    try
+        erlang:throw({'__bp_try', {error, <<"invalid invoice">>}}),
+        {ok, undefined}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
 
 '__bp_get'(V, subtotal) -> erlang:element(2, V);
 '__bp_get'(V, taxRate) -> erlang:element(3, V).

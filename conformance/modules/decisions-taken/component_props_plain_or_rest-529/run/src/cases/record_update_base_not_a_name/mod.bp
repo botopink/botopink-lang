@@ -10,7 +10,7 @@ fn make() -> Inner {
     return Inner(v: 1, w: "a");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val i = Inner(..make(), w: "z");
     print(i.v);
 }

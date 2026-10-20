@@ -8,7 +8,7 @@ pub behavior Service {
     fn make() -> string;
 }
 
-pub fn service(syntax decl: Service) {
+pub fn service(syntax decl: Service) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> add(name + " " + decl.make()) });
 }

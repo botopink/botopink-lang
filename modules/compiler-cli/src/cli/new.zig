@@ -25,7 +25,7 @@ const MAIN_BP =
     \\    return "Hello, " + name + "!";
     \\}
     \\
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    print(greet("world"));
     \\}
     \\

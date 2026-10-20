@@ -2,7 +2,7 @@
 ```botopink
 type Pair(a: i32, b: string)
 
-pub fn main() {
+pub fn main() -> void {
     val t = #(1, "x", 2.5, true);
     print(t);
     print(t.0);

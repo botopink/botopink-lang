@@ -20,7 +20,7 @@ pub fn code(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q));
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val top = code @`headline(partner)`;
     val bottom = code @`footer(partner)`;
     print(top);

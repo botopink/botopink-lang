@@ -9,6 +9,6 @@ type Box(v: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Box(v: 2).v);
 }

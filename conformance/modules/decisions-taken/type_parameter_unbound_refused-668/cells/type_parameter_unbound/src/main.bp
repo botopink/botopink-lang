@@ -11,7 +11,7 @@ fn first<T>(r: Registry) -> ?T {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val r = Registry(names: []);
     val found: ?i32 = first(r);
     print(found == null);

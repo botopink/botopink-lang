@@ -21,7 +21,7 @@ fn describe(p: Dog | Cat) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Dog(name: "rex", breed: "lab")));
     print(describe(Cat(name: "tom", lives: 9)));
 }

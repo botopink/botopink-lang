@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.type_alias_declarations.runCase();
     cases.type_identity_print.runCase();
     cases.type_name_collision.runCase();

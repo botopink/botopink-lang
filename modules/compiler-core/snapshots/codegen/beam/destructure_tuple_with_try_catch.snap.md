@@ -4,8 +4,9 @@ type Error(msg: string)
 fn fetch() -> Result<#(i32, i32), Error> {
     throw Error(msg: "boom");
 }
-fn f() {
+fn f() -> Result<void, Error> {
     val #(a, b) = try fetch() catch throw Error(msg: "failed");
+    return;
 }
 ```
 
@@ -46,7 +47,11 @@ fn f() {
     {move, {literal, <<"failed">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Error}, {x, 0}]}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 3}.
+    return.
   {label, 7}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
@@ -58,7 +63,10 @@ fn f() {
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {atom, ok}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
 

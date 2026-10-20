@@ -7,7 +7,7 @@
 
 import {compiler.DeclKind, compiler, io.terminal.print} from "std";
 
-fn setting(syntax decl: unknown, comptime key: string) {
+fn setting(syntax decl: unknown, comptime key: string) -> void {
     if (compiler.kind(decl) != DeclKind.Val)
         compiler.fail("#[setting] annotates a val", at: decl);
     compiler.setMeta(Setting(key: key, declared: compiler.returnType(decl)));
@@ -19,7 +19,7 @@ pub val port: i32 = 8080;
 #[setting("host")]
 pub val host = "localhost";
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(port).meta(Setting)?.key ?? "none");
     print(comptime compiler.typeInfo(port).meta(Setting)?.declared ?? "none");
     print("[" + (comptime compiler.typeInfo(host).meta(Setting)?.declared ?? "none") + "]");

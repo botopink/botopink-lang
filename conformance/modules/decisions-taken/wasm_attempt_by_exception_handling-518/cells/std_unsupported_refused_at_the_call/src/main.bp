@@ -5,7 +5,7 @@
 
 import {erlang.node, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("imported");
     print(node());
 }

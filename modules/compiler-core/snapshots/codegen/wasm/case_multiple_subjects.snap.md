@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn process(a: i32, b: i32) {
+fn process(a: i32, b: i32) -> void {
     case a, b {
         0, 0 -> null;
         _, _ -> null;

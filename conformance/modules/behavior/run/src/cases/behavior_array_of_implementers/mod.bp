@@ -30,7 +30,7 @@ fn names(ps: Plugin[]) -> string {
     return ps.map({ p -> p.name() }).join(",");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ps: Array<Plugin> = [A(n: 1), B(s: "x")];
     ps.forEach({ p -> print(p.name()) });
     val qs: Plugin[] = [B(s: "y"), A(n: 2)];

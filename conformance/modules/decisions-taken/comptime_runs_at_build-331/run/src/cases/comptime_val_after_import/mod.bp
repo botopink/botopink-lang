@@ -17,7 +17,7 @@ val called = comptime two() * 10;
 
 val table: Dict<string, i32> = comptime Dict.empty().insert("k", 7);
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(short);
     print(called);
     print(table["k"] ?? 0);

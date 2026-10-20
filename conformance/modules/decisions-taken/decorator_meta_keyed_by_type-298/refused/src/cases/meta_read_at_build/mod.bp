@@ -6,11 +6,11 @@ import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     compiler.setMeta(Entity(table: "cities"));
 }
 
-fn audit(syntax decl: unknown) {
+fn audit(syntax decl: unknown) -> void {
     for (compiler.hooks(decl)) { h ->
         if (h.function.meta(Entity) == null)
             compiler.fail("no entity", at: decl);
@@ -23,6 +23,6 @@ fn home() -> string {
     return "home";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(home());
 }

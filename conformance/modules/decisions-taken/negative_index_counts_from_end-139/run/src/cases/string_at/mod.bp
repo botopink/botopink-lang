@@ -12,7 +12,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s = "abc";
     print(s.at(0));
     print(s.at(1));

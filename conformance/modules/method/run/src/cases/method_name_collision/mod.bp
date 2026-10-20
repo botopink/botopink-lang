@@ -48,7 +48,7 @@ pub fn bagOf<T>(xs: Array<T>) -> Bag<T> {
     return Bag(items: xs);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(queryOf([1, 2, 3]).toArray().length);
     print(groupOf("k", [1, 2]).toArray().length);
     print(bagOf([1, 2, 3, 4]).unwrap().length);

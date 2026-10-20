@@ -12,7 +12,7 @@ fn make() -> Canvas {
     return canvas();
 }
 
-pub fn main() {
+pub fn main() -> void {
     val c = make();
     print(c.count());
     print(c.origin.y);

@@ -52,7 +52,7 @@ fn skipTwo() -> i32 {
     return total;
 }
 
-fn early() {
+fn early() -> void {
     {
         print("inside");
         return;
@@ -60,7 +60,7 @@ fn early() {
     print("never");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(grade(9));
     print(grade(1));
     print(classify(0));

@@ -18,7 +18,7 @@ fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
     return f(n);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(other(1));
     print(pick(1));
     val f = other;

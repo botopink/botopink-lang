@@ -11,6 +11,6 @@ pub fn shout(syntax t: string) -> string {
     return compiler.build("\"" + s + "\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(shout @`hi`);
 }

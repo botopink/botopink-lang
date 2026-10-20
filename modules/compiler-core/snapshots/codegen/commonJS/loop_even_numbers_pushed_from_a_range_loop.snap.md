@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     var processamento = [];
     for (0..10) { i ->
         if (i % 2 == 0) {

@@ -26,6 +26,6 @@ fn load(open: bool) -> i32 {
     } catch 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(load(true));
 }

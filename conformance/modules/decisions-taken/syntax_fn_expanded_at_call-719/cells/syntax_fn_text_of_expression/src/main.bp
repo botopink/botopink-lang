@@ -5,7 +5,7 @@
 import {compiler} from "std";
 import {io.terminal.print} from "std";
 
-pub fn report(ok: bool, text: string) {
+pub fn report(ok: bool, text: string) -> void {
     if (ok) print("ok: " + text) else print("failed: " + text);
 }
 
@@ -17,7 +17,7 @@ pub fn expect(syntax condition: bool) -> anyvalue {
         + "\")");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a = 1;
     val b = 1;
     val c = 2;

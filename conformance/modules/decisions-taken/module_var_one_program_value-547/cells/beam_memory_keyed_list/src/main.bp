@@ -7,6 +7,6 @@ import {io.terminal.print} from "std";
 #[compiler.beamMemory(.Ets(keyed: true))]
 var names: string[] = [];
 
-pub fn main() {
+pub fn main() -> void {
     print(names.length);
 }

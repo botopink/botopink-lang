@@ -8,7 +8,7 @@ fn sub(a: i64, b: i64) -> i64 {
     return a - b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sub(-9223372036854775807l, 1l));
     print(sub(-9223372036854775807l, 2l));
     print("unreachable");

@@ -36,7 +36,7 @@ behavior Array<T> {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [1, 2, 3, 4];
     print(xs.second());
     print(xs.doubled());

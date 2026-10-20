@@ -12,7 +12,7 @@ fn area(r: shapes.Rect) -> i32 {
     return r.w * r.h;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(config.splitPath("a/b"));
     val f = config.splitPath;
     print(f("c/d"));

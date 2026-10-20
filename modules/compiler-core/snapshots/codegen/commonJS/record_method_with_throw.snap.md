@@ -6,8 +6,9 @@ val Invoice = type(
     fn total(self: Self) -> f64 {
         return self.subtotal + self.subtotal * self.taxRate;
     }
-    fn validate(self: Self) {
+    fn validate(self: Self) -> Result<void, string> {
         throw "invalid invoice";
+        return;
     }
 }
 ```
@@ -25,7 +26,8 @@ class Invoice {
     }
 
     validate() {
-        throw "invalid invoice";
+        return ({ error: "invalid invoice" });
+        return ({ ok: null });
     }
 }
 Invoice.prototype.__bp = "Invoice";

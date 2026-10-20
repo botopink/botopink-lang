@@ -7,6 +7,6 @@ import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("JSON.parse($0)", result: 1), .Erlang("json:decode($0)", result: 1))]
 declare fn jsParse(s: string) -> Result<i32, HostError>;
 
-pub fn main() {
+pub fn main() -> void {
     print(jsParse("1").isOk());
 }

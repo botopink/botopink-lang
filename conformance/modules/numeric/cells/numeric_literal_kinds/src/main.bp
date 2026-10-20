@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val ratio: f32 = 0.5f;
     val total: f64 = 10d;
     val big = 4_000_000_000ul;

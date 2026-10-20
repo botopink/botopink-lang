@@ -2887,7 +2887,7 @@ fn describe(o: Order) -> string {
     return s;
 }
 
-fn main() {
+fn main() -> void {
     print(collections.toInt(collections.lt()));
     print(describe(collections.reverse(collections.lt())));
 }

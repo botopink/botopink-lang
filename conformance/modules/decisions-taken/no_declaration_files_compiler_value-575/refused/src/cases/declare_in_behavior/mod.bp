@@ -7,6 +7,6 @@ behavior Greeter {
     declare fn greet(self: Self) -> string;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

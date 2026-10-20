@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn check(syntax decl: unknown) {
+fn check(syntax decl: unknown) -> void {
     val n = compiler.name(decl)!;
     val x = n.frobnicate(1, 2);
 }
@@ -14,6 +14,6 @@ fn check(syntax decl: unknown) {
 #[check]
 type A(x: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(A(x: 1).x);
 }

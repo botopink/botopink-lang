@@ -8,6 +8,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("String"), .Wasm(std: "hash.contentHash"))]
 declare fn digest(x: string) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(digest("Point"));
 }

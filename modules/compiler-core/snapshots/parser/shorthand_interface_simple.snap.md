@@ -20,7 +20,9 @@
             "annotations": [],
             "genericParams": [],
             "params": [],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,

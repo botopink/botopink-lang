@@ -21,7 +21,7 @@ iter fn naturals() -> Iter<i32> {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     for (counted()) { x ->
         print(x);
     }

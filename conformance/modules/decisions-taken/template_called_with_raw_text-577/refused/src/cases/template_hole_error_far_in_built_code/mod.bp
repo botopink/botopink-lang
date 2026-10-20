@@ -53,6 +53,6 @@ fn css(syntax q: string) -> string {
 
 val flag = true;
 
-pub fn main() {
+pub fn main() -> void {
     print(css @`margin: ${flag};`);
 }

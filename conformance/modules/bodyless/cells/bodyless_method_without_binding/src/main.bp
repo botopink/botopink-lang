@@ -11,6 +11,6 @@ pub type Repo() {
     pub declare fn find(self: Self) -> i32;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Repo().find());
 }

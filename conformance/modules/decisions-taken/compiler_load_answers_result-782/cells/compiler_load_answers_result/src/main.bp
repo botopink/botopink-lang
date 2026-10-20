@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val fine = comptime compiler.load("src/cases/fine.bp");
     print(fine.isOk());
     print(fine.isError());

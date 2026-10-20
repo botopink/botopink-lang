@@ -13,7 +13,7 @@ val cities = [
     City(name: "Nice", pop: 3),
 ];
 
-pub fn main() {
+pub fn main() -> void {
     print(of(cities)
         .where({ c -> c.pop >= 5 })
         .select({ c -> c.name })

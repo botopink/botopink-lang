@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val a = @embed("assets/../../embed_text_file/assets/greeting.txt");
     print(a.size);
 }

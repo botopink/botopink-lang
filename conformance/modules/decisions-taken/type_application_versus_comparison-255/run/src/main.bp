@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.comptime_expression_is_block.runCase();
     cases.type_application_static_member.runCase();
     cases.type_application_through_namespace.runCase();

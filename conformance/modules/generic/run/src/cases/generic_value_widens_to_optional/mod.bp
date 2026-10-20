@@ -14,7 +14,7 @@ fn pick<T>(v: T, keep: bool) -> ?T {
     return null;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(some(3) ?? 0);
     print(some("a") ?? "z");
     print(pick(7, true) ?? 0);

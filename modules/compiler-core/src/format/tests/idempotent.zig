@@ -11,8 +11,8 @@ test "format: idempotent ---- full Drawable interface" {
     try h.assertIdempotent(std.testing.allocator,
         \\val Drawable = behavior {
         \\    val color: string;
-        \\    fn draw(self: Self);
-        \\    default fn log(self: Self) {
+        \\    fn draw(self: Self) -> void;
+        \\    default fn log(self: Self) -> void {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
         \\};
@@ -40,7 +40,7 @@ test "format: idempotent ---- pub fn with comptime params" {
 
 test "format: idempotent ---- case with empty lines" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    case x {
         \\        1 -> 2;
         \\
@@ -54,7 +54,7 @@ test "format: idempotent ---- case with empty lines" {
 
 test "format: idempotent ---- pipeline with comments" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1
         \\    // 1
         \\    |> func1
@@ -66,7 +66,7 @@ test "format: idempotent ---- pipeline with comments" {
 
 test "format: idempotent ---- nested case expressions" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    case 1 {
         \\        1 -> case x {
         \\            1 -> 1;
@@ -82,8 +82,8 @@ test "format: idempotent ---- interface with default method" {
     try h.assertIdempotent(std.testing.allocator,
         \\val Drawable = behavior {
         \\    val color: string;
-        \\    fn draw(self: Self);
-        \\    default fn log(self: Self) {
+        \\    fn draw(self: Self) -> void;
+        \\    default fn log(self: Self) -> void {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
         \\};
@@ -103,7 +103,7 @@ test "format: idempotent ---- enum with payload variants" {
 
 test "format: idempotent ---- complex case with OR patterns" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    case n {
         \\        0 | 2 | 4 | 6 | 8 -> "even digit";
         \\        1 | 3 | 5 | 7 | 9 -> "odd digit";
@@ -115,7 +115,7 @@ test "format: idempotent ---- complex case with OR patterns" {
 
 test "format: idempotent ---- lambda with multiple trailing blocks" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    executar {
         \\        ok;
         \\    } erro: {
@@ -154,7 +154,7 @@ test "format: idempotent ---- a one-line lambda wider than the line" {
 
 test "format: idempotent ---- defer statement and block (decision 539)" {
     try h.assertIdempotent(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    defer print("a");
         \\    defer {
         \\        print("b");

@@ -10,7 +10,7 @@ import {shapes.Shape};
 import {shapes.Shape as Area};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(Shape.unit());
     print(Area.scaled(7));
 }

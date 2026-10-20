@@ -6,6 +6,6 @@ pub mod tags;
 import {cases.tag_annotation_add_member.tags.markup, cases.tag_annotation_add_member.tags.withMember};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<div #[withMember]>hi</div>`);
 }

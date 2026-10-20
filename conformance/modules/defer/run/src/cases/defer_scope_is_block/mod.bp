@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     {
         defer print("inner");
         print("in");

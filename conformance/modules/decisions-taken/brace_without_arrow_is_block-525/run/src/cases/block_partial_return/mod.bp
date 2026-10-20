@@ -12,7 +12,7 @@ fn pick(c: bool) -> i32 {
     return a * 10;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(true));
     print(pick(false));
 }

@@ -8,7 +8,7 @@ type Pessoa(nome: string, email: string, idade: i32 = 30)
 
 val Contato = Type.pick(Pessoa, .email);
 
-pub fn main() {
+pub fn main() -> void {
     val c = Contato(email: "c@a");
     val p = Pessoa(..c, idade: 3);
     print(p.email);

@@ -17,7 +17,7 @@ fn has(h: Hook) -> bool {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(has(Hook.Run(body: reverseBody)));
     print(has(Hook.Run(note: "none")));
 }

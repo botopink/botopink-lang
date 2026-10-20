@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.decorator_expr_message_runtime.runCase();
     cases.decorator_expr_rule_called.runCase();
 }

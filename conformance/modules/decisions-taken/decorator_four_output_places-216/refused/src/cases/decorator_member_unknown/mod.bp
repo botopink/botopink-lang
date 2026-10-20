@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     compiler.addMember(
         "pub fn fromName(n: string) -> "
             + compiler.name(decl)!
@@ -18,7 +18,7 @@ fn entity(syntax decl: unknown) {
 #[entity]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City.fromName("Recife").name);
     print(City.revisions().length);
 }

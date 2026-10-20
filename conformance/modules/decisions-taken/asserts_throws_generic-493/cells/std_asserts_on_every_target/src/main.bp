@@ -8,7 +8,7 @@
 
 import {testing.asserts, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(asserts.errorText(asserts.isTrue(false)));
     print(asserts.errorText(asserts.equals(1, 1)).length);
     print(asserts.errorText(asserts.approxEquals(1.0, 1.5, 0.1)));

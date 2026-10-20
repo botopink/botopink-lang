@@ -2,9 +2,9 @@
 //// refuses a tail of another type at the tail, as a free function does.
 
 type Counter(n: i32) {
-    fn bump(self: Self) { self.n + 1 }
+    fn bump(self: Self) -> void { self.n + 1 }
 }
 
-pub fn main() {
+pub fn main() -> void {
     Counter(n: 1).bump();
 }

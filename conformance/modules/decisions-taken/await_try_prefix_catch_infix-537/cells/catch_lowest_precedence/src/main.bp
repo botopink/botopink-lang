@@ -36,6 +36,6 @@ async fn run() -> Async<void> {
     print(await composed(-6));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

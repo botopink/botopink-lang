@@ -42,7 +42,7 @@ import {io.terminal.print} from "std";
 
 type Entry(key: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     // A `?Record` whose field is read — the shape that crashed commonJS.
     val es = [Entry(key: "abc")];
     val first = es.at(0);

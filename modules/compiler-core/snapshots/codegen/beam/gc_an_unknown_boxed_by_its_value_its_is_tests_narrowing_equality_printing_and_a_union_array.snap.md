@@ -22,7 +22,7 @@ fn show(x: unknown) -> string {
     return "other";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(3));
     print(describe("a"));
     print(describe(true));

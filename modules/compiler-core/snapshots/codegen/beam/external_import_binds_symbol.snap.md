@@ -3,7 +3,7 @@
 #[compiler.external(.Erlang("filename:extension($0)"), .JavaScript("""require("node:path").extname($0)"""))]
 pub declare fn extname(p: string) -> string;
 
-fn main() {
+fn main() -> void {
     print(extname("docs/readme.md"));
 }
 

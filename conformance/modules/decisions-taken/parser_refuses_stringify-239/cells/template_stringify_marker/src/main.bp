@@ -9,6 +9,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("String($stringify($0))"), .Erlang("iolist_to_binary($stringify($0))"))]
 declare fn show(x: i32) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(show(1));
 }

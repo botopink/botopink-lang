@@ -23,7 +23,7 @@ val _c = Box(n: 5);
 
 val _d = double(_c.get());
 
-pub fn main() {
+pub fn main() -> void {
     print(_c.get());
     print(_d);
     print(a.get());

@@ -63,28 +63,28 @@ pub behavior Compiler {
     // ── Reporting ─────────────────────────────────────────────────────────
     // An error at the argument or the declaration `at` holds (at `span`
     // inside it when given), else at `src`; the body goes on.
-    fn fail(self: Self, message: string, syntax at: ?unknown = null, span: ?Span = null);
+    fn fail(self: Self, message: string, syntax at: ?unknown = null, span: ?Span = null) -> void;
     // A note at the template's call site (decision 426 (4)).
-    fn note(self: Self, message: string);
+    fn note(self: Self, message: string) -> void;
 
     // ── The outputs (a decorator's only) ──────────────────────────────────
     // A typed meta value, one per type per declaration (decision 298).
-    fn setMeta<M>(self: Self, syntax value: M);
+    fn setMeta<M>(self: Self, syntax value: M) -> void;
     // A typed meta value that repeats (decision 298).
-    fn addMeta<M>(self: Self, syntax value: M);
+    fn addMeta<M>(self: Self, syntax value: M) -> void;
     // A member of the annotated type, a function written at the call
     // (decision 370 (2)).
-    fn addMember<F>(self: Self, name: string, syntax member: F);
+    fn addMember<F>(self: Self, name: string, syntax member: F) -> void;
     // An associated type of the annotated type (decision 216 (3)).
-    fn addType(self: Self, name: string, comptime source: string);
+    fn addType(self: Self, name: string, comptime source: string) -> void;
     // Run-time code compiled beside the annotated declaration, run once
     // before `main` in the program's init list: modules in dependency order,
     // declarations in source order, calls in order (decisions 575 (3), 615).
-    fn init(self: Self, syntax executor: fn());
+    fn init(self: Self, syntax executor: fn()) -> void;
     // A host source of the annotated `declare fn` (decision 575 (6)): one per
     // target (`implementation-twice`), never on a declaration with a body
     // (`implement-with-body`).
-    fn implement(self: Self, comptime source: Implementation);
+    fn implement(self: Self, comptime source: Implementation) -> void;
 
     // ── The reads of a `syntax` (decision 576 (2)) ─────────────────────────
     // The expression as written.
@@ -124,7 +124,7 @@ pub behavior Compiler {
     fn tagDecl(self: Self, kind: DeclKind, name: string, syntax attrs: unknown) -> unknown;
     fn annotate(self: Self, syntax d: unknown, at: Span) -> unknown;
     // The reference tree the language server reads, by call location.
-    fn custom(self: Self, ast: CustomNode);
+    fn custom(self: Self, ast: CustomNode) -> void;
 
     // ── A declaration handle's reads (decision 576 (3)) ───────────────────
     fn kind(self: Self, syntax d: unknown) -> DeclKind;
@@ -175,7 +175,7 @@ pub default declare val compiler: Compiler;
 // a `comptime`. `Build` and `Run` follow from what a body reads and are never
 // written — `#[compiler.stage(.Build)]` / `#[compiler.stage(.Run)]` are
 // refused at the argument (`infer.zig` `hostStage`).
-pub fn stage(syntax decl: unknown, comptime s: Stage) {}
+pub fn stage(syntax decl: unknown, comptime s: Stage) -> void {}
 
 // Where a module `var` lives on the BEAM (decisions 41, 43, 51):
 // `#[compiler.beamMemory(.Ets(keyed: true))] var hits: Dict<string, i32> = …;`.
@@ -188,7 +188,7 @@ pub type BeamMemory {
     PersistentTerm,
 }
 
-pub fn beamMemory(syntax decl: unknown, comptime m: BeamMemory) {}
+pub fn beamMemory(syntax decl: unknown, comptime m: BeamMemory) -> void {}
 
 // ── The typed AST `compiler.ast` builds code from (decision 625 (2)) ──────
 // One record per kind of expression a template answers, each with a field

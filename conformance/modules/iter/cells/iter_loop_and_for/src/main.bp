@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var count = 0;
     val doubles = iter loop {
         count = count + 1;

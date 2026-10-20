@@ -5,7 +5,7 @@ fn classify(x: ?i32) -> string {
     else if (x != 0) { return "nonzero: " + x; }
     else { return "null"; }
 }
-fn main() {
+fn main() -> void {
     print(classify(42));
     print(classify(null));
 }

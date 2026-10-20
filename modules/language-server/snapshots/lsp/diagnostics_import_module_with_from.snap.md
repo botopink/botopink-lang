@@ -2,7 +2,7 @@
 ```botopink
 import {area} from "geometry";
 
-pub fn main() {
+pub fn main() -> void {
     print(area(2));
 }
 

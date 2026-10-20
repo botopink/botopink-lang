@@ -10,7 +10,7 @@ pub mod tokens;
 import {cases.enum_section_leaf_beside_variant.tokens.Token, cases.enum_section_leaf_beside_variant.tokens.render, cases.enum_section_leaf_beside_variant.tokens.breakToCss};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(render(Token.After([Token.Plain])));
     print(render(Token.After(inner: [])));
     val b: Token = .After([Token.Plain, Token.Plain]);

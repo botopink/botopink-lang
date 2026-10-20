@@ -24,7 +24,7 @@ fn contatoDe(email: string) -> Contato {
     return Contato(email: email, idade: 20);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val bia = Pessoa(nome: "Bia", email: "bia@a", idade: 40);
     print(Pessoa(..bia.mais(1), nome: "Caio"));
     print(Pessoa(..Pessoa.padrao(), idade: 33));

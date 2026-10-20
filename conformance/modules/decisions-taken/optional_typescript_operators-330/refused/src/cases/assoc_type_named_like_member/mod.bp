@@ -12,6 +12,6 @@ pub type Shape {
     pub type Point(x: i32, y: i32)
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Shape.Point());
 }

@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val greeting = "hello";
     val assert "hello" = greeting catch throw "not hello";
+    return;
 }
 ```
 
@@ -10,7 +11,8 @@ fn f() {
 ```javascript
 function f() {
     const greeting = "hello";
-    (() => { const _match = greeting; if ((_match === "hello")) { return _match; } else { throw "not hello"; } })();
+    (() => { const _match = greeting; if ((_match === "hello")) { return _match; } else { return ({ error: "not hello" }); } })();
+    return ({ ok: null });
 }
 
 Object.defineProperty(exports, "__bp_priv__", { value: { f } });

@@ -3,7 +3,7 @@
 import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 // Gives the annotated declaration a type — a declaration's channel, not a tag's.
-pub fn withType(syntax decl: unknown) {
+pub fn withType(syntax decl: unknown) -> void {
     compiler.addType("Extra", compiler.buildType("pub type Extra(n: i32)"));
 }
 

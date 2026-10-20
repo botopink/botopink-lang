@@ -6,7 +6,7 @@ import {collections.Set, io.terminal.print} from "std";
 
 type Point(x: i32, y: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val s = Set.fromList([Point(x: 1, y: 1), Point(x: 1, y: 1), Point(x: 2, y: 2)]);
     print(s.size());
     print(s.contains(Point(x: 1, y: 1)));

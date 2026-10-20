@@ -1,6 +1,6 @@
 import {io.terminal.print, failure.panic} from "std";
 
-fn greet() {
+fn greet() -> void {
     print("hello");
 }
 
@@ -8,6 +8,6 @@ fn notReady() -> i32 {
     panic("not implemented");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     greet(); // hello
 }

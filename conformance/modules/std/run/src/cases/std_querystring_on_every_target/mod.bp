@@ -13,7 +13,7 @@ fn show(r: Result<Array<#(string, string)>, string>) -> string {
         r.unwrapOr([]).map({ p -> [p._0, "=", p._1].join("") }).join("|");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(show(querystring.parse("?n=caf%C3%A9&x=a%20b&e=&k")));
     print(show(querystring.parse("a=1&a=2&b=%F0%9F%8E%89")));
     print(show(querystring.parse("")));

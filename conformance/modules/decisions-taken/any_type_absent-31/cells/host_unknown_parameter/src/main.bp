@@ -6,7 +6,7 @@
 
 import {erlang, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val first = erlang.element(1, #(7, "x"));
     if (first is i32) print(first + 1);
     print(erlang.abs(-3));

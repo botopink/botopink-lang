@@ -22,6 +22,6 @@ fn titleOf(t: RecipeTitle) -> string {
     return t.title;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(titleOf(RecipeTitle(title: "soup"))); // soup
 }

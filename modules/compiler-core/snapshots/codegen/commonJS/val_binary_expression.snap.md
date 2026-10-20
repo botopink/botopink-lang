@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val sum = 1 + 2;
-fn main() {
+fn main() -> void {
     print(sum);
 }
 

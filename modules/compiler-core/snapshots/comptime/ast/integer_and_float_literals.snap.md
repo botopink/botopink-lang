@@ -2,7 +2,7 @@
 ```botopink
 val x = 42;
 val y = 3.14;
-fn main() {
+fn main() -> void {
     print(x, y);
 }
 

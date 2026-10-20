@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn labelled(syntax decl: unknown) {
+fn labelled(syntax decl: unknown) -> void {
     compiler.addMember("label", fn() -> string {
         return compiler.name(decl)!;
     });
@@ -13,6 +13,6 @@ fn labelled(syntax decl: unknown) {
 #[labelled]
 pub type Users(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Users.label());
 }

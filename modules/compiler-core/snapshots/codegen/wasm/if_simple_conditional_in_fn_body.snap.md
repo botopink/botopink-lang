@@ -5,7 +5,7 @@ fn sign(n: i32) -> string {
     print(r);
     return r;
 }
-fn main() {
+fn main() -> void {
     sign(5);
     sign(-3);
 }

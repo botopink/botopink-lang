@@ -25,6 +25,6 @@ type Users(n: i32) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Users(n: 1).find(2).toString());
 }

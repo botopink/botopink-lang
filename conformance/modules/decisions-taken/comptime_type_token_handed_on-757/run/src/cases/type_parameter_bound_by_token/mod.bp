@@ -8,7 +8,7 @@ fn failed<T>(comptime t: type<T>, message: string) -> Result<T, string> {
     throw message;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val r = failed(i32, "down");
     val n = r.unwrapOr(41) + 1;
     print(n);

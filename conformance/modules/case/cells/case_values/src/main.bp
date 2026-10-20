@@ -21,7 +21,7 @@ fn describe(s: Shape) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Shape.Circle(radius: 0)));
     print(describe(Shape.Circle(radius: 3)));
     print(describe(Shape.Rect(width: 2, height: 5)));

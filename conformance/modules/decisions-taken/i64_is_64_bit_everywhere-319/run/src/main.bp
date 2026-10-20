@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.integer_conversions_exact.runCase();
     cases.integer_literal_type_minimum.runCase();
     cases.string_parse_int_i64_range.runCase();

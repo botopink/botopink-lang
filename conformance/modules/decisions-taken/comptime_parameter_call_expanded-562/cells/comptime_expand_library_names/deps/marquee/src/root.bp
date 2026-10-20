@@ -11,7 +11,7 @@ fn shout(label: Label) -> string {
     return label.text.toUpper();
 }
 
-pub fn marquee(comptime title: string) {
+pub fn marquee(comptime title: string) -> void {
     val label: Label = Label(text: title);
     print(shout(label));
     print(path.relative("/" + label.text, "/" + label.text + "/docs"));

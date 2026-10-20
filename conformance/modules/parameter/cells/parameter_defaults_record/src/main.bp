@@ -6,7 +6,7 @@ type Port(host: string, number: i32 = 80) {
     }
 }
 
-fn main() {
+fn main() -> void {
     print(Port(host: "a").number); // 80
     print(Port(host: "a").show()); // a:80
 }

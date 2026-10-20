@@ -9,7 +9,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn shape(syntax decl: unknown) {
+fn shape(syntax decl: unknown) -> void {
     val fields = compiler
         .fields(decl)
         .map({ f -> f.name + ": " + f.typeName })
@@ -38,6 +38,6 @@ type Info(a: Array<string>, b: Array<#(string, string)>, c: string[], d: fn(x: i
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(shapeOfInfo());
 }

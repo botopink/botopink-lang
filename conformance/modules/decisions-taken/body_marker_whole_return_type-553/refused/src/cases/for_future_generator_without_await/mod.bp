@@ -19,6 +19,6 @@ async fn total() -> Async<i32> {
     return acc;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

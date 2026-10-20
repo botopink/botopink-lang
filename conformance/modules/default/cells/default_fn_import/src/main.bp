@@ -4,7 +4,7 @@ import {m.double};
 import {m.tree as Tree};
 import {io.terminal.print} from "std";
 
-fn main() {
+fn main() -> void {
     print(double(4)); // 8
     print(Tree(1)); // node(leaf)
 }

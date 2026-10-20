@@ -12,7 +12,7 @@ import {compiler, io.terminal.print} from "std";
 #[sorted(.name, order: .Desc)]
 type City(code: string, name: string, state: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
     print(columns.join(","));
     print(comptime compiler.typeInfo(City).meta(Sorted)?.sort ?? "none");

@@ -10,7 +10,7 @@ fn ageOf(u: ?User) -> ?i32 {
     return u?.age;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a = User(name: "ann", age: 3, next: null);
     val b = User(name: "bob", age: 4, next: a);
     print(nameOf(a));

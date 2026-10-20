@@ -7,7 +7,7 @@ fn classify(n: i32) -> string {
         _ -> "negative";
     };
 }
-fn main() {
+fn main() -> void {
     print(classify(5));
     print(classify(0));
     print(classify(-3));

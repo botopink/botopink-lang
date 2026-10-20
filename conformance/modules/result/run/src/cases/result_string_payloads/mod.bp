@@ -40,7 +40,7 @@ fn describe(r: Result<i32, string>) -> string {
     };
 }
 
-fn each(rs: Result<i32, string>[]) {
+fn each(rs: Result<i32, string>[]) -> void {
     for (rs) { x ->
         case x {
             Ok(v) -> print(v.toString());
@@ -49,7 +49,7 @@ fn each(rs: Result<i32, string>[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     case find(7) {
         Ok(u) -> print(u.name + " " + u.age.toString());
         Error(f) -> print(f.reason);
@@ -87,7 +87,7 @@ fn attempt(j: Job) -> Result<string, string> {
     return j.title + " " + n.toString();
 }
 
-fn jobs() {
+fn jobs() -> void {
     val done = Job(title: "build", outcome: check(2));
     val failed = Job(title: "test", outcome: check(-8));
     case done.outcome {

@@ -17,6 +17,6 @@ fn run() -> Result<i32, string> {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(run().isOk());
 }

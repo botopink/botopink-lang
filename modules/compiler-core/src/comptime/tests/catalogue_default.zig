@@ -9,7 +9,7 @@ const Module = @import("../../module.zig").Module;
 const h = @import("helpers.zig");
 
 const frame =
-    \\pub fn m(syntax decl: unknown) {
+    \\pub fn m(syntax decl: unknown) -> void {
     \\    decl.setMeta("role", compiler.name(decl)!);
     \\}
     \\
@@ -18,7 +18,7 @@ const frame =
     \\    return 0;
     \\}
     \\
-    \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+    \\pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
     \\    print(modules.length.toString());
     \\}
     \\
@@ -74,7 +74,7 @@ test "catalogue default: a module of the program analysed after the root is list
         \\    return 1;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    boot();
         \\}
         \\
@@ -112,7 +112,7 @@ test "catalogue default: a call outside the package's root is refused at the cal
         .{ .path = "setup", .source =
         \\import {boot} from "frame";
         \\
-        \\pub fn start() {
+        \\pub fn start() -> void {
         \\    boot();
         \\}
         \\
@@ -120,7 +120,7 @@ test "catalogue default: a call outside the package's root is refused at the cal
         .{ .path = "main", .root = true, .source =
         \\pub mod setup;
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("main");
         \\}
         \\

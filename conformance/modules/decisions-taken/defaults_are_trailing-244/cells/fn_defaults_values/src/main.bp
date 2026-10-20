@@ -20,7 +20,7 @@ type P(y: i32, x: i32 = 0) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(connect("h"));
     print(connect("h", 90));
     val p = P(y: 2);

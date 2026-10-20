@@ -21,4 +21,4 @@ async fn run() -> Async<void> {
     print(v);
 }
 
-pub fn main() { run(); }
+pub fn main() -> void { run(); }

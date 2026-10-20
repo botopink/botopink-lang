@@ -9,7 +9,7 @@ fn apply(f: fn(string) -> string, v: string) -> string {
     return f(v);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print((fn(s) {
         return s + "x";
     })("a"));

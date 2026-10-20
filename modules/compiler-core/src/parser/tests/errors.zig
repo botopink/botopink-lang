@@ -49,7 +49,7 @@ test "parser: anonymous extend rejected" {
 // lambda's, and a `use` after `use memo { -> return … }` parses.
 test "parser: lambda return does not end the enclosing static prefix" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn Counter() {
+        \\fn Counter() -> void {
         \\    val doubled = use memo { -> return 2; };
         \\    val c = use state(0);
         \\}
@@ -120,7 +120,7 @@ test "parser error: reserved word in expression" {
         \\
         \\
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val x = else;
         \\}
     );

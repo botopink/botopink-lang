@@ -7,7 +7,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Box(n: i32)
 
-fn boxed(syntax decl: unknown) {
+fn boxed(syntax decl: unknown) -> void {
     val box = Box(n: 1);
     compiler.addMember("size", fn() -> i32 {
         return box.n;
@@ -17,6 +17,6 @@ fn boxed(syntax decl: unknown) {
 #[boxed]
 pub type Users()
 
-pub fn main() {
+pub fn main() -> void {
     print(Users.size());
 }

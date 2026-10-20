@@ -7,7 +7,7 @@
 import {collections, io.terminal.print} from "std";
 import {items.Queue, items.describe} from "shelf";
 
-pub fn main() {
+pub fn main() -> void {
     val q = Queue(label: "crowded", size: 2);
     print(q.label);
     print(q.size);

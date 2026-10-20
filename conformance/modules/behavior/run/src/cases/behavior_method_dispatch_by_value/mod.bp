@@ -40,7 +40,7 @@ fn home() -> Request {
     return Page(route: "/home");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(describe(Page(route: "/about")));
     val r: Request = Api(version: 2);
     print(r.path());

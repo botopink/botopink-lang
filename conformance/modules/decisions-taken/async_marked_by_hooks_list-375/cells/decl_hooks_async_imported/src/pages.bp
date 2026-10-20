@@ -10,7 +10,7 @@ import {ui};
 import {ui.session as currentUser, ui.Element};
 import {compiler} from "std";
 
-fn graph(syntax decl: unknown) {
+fn graph(syntax decl: unknown) -> void {
     var nodes: string[] = [];
     compiler
         .hooks(decl)

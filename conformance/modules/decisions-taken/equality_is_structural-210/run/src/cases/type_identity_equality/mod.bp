@@ -12,6 +12,6 @@ type Person(name: string, age: i32)
 
 type Vec(name: string, age: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Person(name: "a", age: 1) == Vec(name: "a", age: 1));
 }

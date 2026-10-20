@@ -13,12 +13,12 @@ const moduleMod = @import("../../module.zig");
 const files = [_][2][]const u8{
     .{
         "src/cases/fine.bp",
-        \\pub fn main() {}
+        \\pub fn main() -> void {}
         \\
     },
     .{
         "src/cases/broken.bp",
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val n: i32 = "not a number";
         \\}
         \\
@@ -27,7 +27,7 @@ const files = [_][2][]const u8{
         "src/cases/self.bp",
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    try comptime compiler.load("src/cases/self.bp") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
@@ -64,7 +64,7 @@ test "decision 780: a loaded file's refusals are the answer, never a refusal of 
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
@@ -79,7 +79,7 @@ test "decision 780: a compiler handed no reader refuses the load, `load-no-reade
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
@@ -94,7 +94,7 @@ test "decision 780: a path that names no file of the package is `load-file-missi
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    try comptime compiler.load("src/cases/nothing.bp") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
@@ -109,7 +109,7 @@ test "decision 780 (5): a file that loads itself ends — its own load is refuse
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    try comptime compiler.load("src/cases/self.bp") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
@@ -124,11 +124,11 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
-        \\fn show(m: compiler.Module) {
+        \\fn show(m: compiler.Module) -> void {
         \\    print("${m.name} ${m.path} ${m.target}");
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val fine = comptime compiler.load("src/cases/fine.bp");
         \\    try fine catch { r -> print(r.diagnostics.length); r.module };
         \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> show(r.module); r.module };
@@ -191,7 +191,7 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
         \\    }
         \\}
         \\
-        \\pub fn main() {}
+        \\pub fn main() -> void {}
         \\
     ;
     const io = std.testing.io;
@@ -220,7 +220,7 @@ test "decision 787: a load no `run()` reaches stays out of the program" {
         \\    }
         \\}
         \\
-        \\pub fn main() {}
+        \\pub fn main() -> void {}
         \\
     ;
     const io = std.testing.io;

@@ -15,7 +15,7 @@ fn mark(
     comptime big: i64 = 1,
     comptime level: Level = .Low,
     comptime tags: string[] = ["a"],
-) {
+) -> void {
     compiler.setMeta(
         Mark(
             count: sizes.length,
@@ -33,12 +33,12 @@ type A(x: i32)
 #[mark([3], 40, tags: ["x", "y"])]
 type B(x: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(comptime compiler.typeInfo(A).meta(Mark));
     show(comptime compiler.typeInfo(B).meta(Mark));
 }
 
-fn show(mark: ?Mark) {
+fn show(mark: ?Mark) -> void {
     if (mark) {
         m ->
         print(m.count.toString() + "/" + m.sizes.join("+"));

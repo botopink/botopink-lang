@@ -1,11 +1,11 @@
 ----- SOURCE CODE
 val Drawable = behavior {
-    fn draw(self: Self);
-    fn erase(self: Self);
+    fn draw(self: Self) -> void;
+    fn erase(self: Self) -> void;
 };
 val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
-    fn draw(self: Self) {
+    fn draw(self: Self) -> void {
         print("draw");
     }
 };

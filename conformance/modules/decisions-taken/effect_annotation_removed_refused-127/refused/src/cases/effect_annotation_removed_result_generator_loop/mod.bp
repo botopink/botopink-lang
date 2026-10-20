@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var n = 0;
     val g = #[@resultGenerator] loop {
         n = n + 1;

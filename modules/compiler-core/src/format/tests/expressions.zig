@@ -10,7 +10,7 @@ const h = @import("helpers.zig");
 test "format: lambda ---- trailing no params" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    fn run() {
+        \\    fn run() -> void {
         \\        executar { -> ok };
         \\    }
         \\}
@@ -20,7 +20,7 @@ test "format: lambda ---- trailing no params" {
 test "format: lambda ---- named arg + trailing with params" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    fn run() {
+        \\    fn run() -> void {
         \\        calcular(fator: 2) { a, b -> a + b };
         \\    }
         \\}
@@ -30,7 +30,7 @@ test "format: lambda ---- named arg + trailing with params" {
 test "format: lambda ---- two trailing blocks second labeled" {
     try h.assertFormatLossless(std.testing.allocator,
         \\behavior Test {
-        \\    fn run() {
+        \\    fn run() -> void {
         \\        executar { -> ok } erro: { -> fail };
         \\    }
         \\}
@@ -39,8 +39,8 @@ test "format: lambda ---- two trailing blocks second labeled" {
 
 test "format: lambda ---- simple no params" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
-        \\    val f = fn() {
+        \\fn main() -> void {
+        \\    val f = fn() -> void {
         \\        x;
         \\    };
         \\}
@@ -49,7 +49,7 @@ test "format: lambda ---- simple no params" {
 
 test "format: lambda ---- with param" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = fn(x) {
         \\        x;
         \\    };
@@ -59,7 +59,7 @@ test "format: lambda ---- with param" {
 
 test "format: lambda ---- typed parameters and return (decision 370 (2))" {
     try h.assertFormat(std.testing.allocator,
-        \\fn check<T>(syntax decl: T) {
+        \\fn check<T>(syntax decl: T) -> void {
         \\    compiler.addMember("validate", fn(self: T, n: i32) -> string[] {
         \\        return [];
         \\    });
@@ -74,8 +74,8 @@ test "format: lambda ---- typed parameters and return (decision 370 (2))" {
 
 test "format: lambda ---- multi-statement body" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
-        \\    val f = fn() {
+        \\fn main() -> void {
+        \\    val f = fn() -> void {
         \\        1;
         \\        2;
         \\    };
@@ -85,7 +85,7 @@ test "format: lambda ---- multi-statement body" {
 
 test "format: lambda ---- case expression in body" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = fn(x) {
         \\        case x {
         \\            1 -> 1;
@@ -98,7 +98,7 @@ test "format: lambda ---- case expression in body" {
 
 test "format: call ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    run();
         \\}
     );
@@ -106,7 +106,7 @@ test "format: call ---- simple" {
 
 test "format: call ---- single argument" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    run(1);
         \\}
     );
@@ -114,7 +114,7 @@ test "format: call ---- single argument" {
 
 test "format: call ---- labeled argument" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    run(with: 1);
         \\}
     );
@@ -122,7 +122,7 @@ test "format: call ---- labeled argument" {
 
 test "format: call ---- constructor with labeled args" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    Person(name: "Al", is_cool: VeryTrue);
         \\}
     );
@@ -130,7 +130,7 @@ test "format: call ---- constructor with labeled args" {
 
 test "format: binary ---- logical and" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    True && False;
         \\}
     );
@@ -138,7 +138,7 @@ test "format: binary ---- logical and" {
 
 test "format: binary ---- logical or" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    True || False;
         \\}
     );
@@ -146,7 +146,7 @@ test "format: binary ---- logical or" {
 
 test "format: binary ---- comparison less than" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 < 1;
         \\}
     );
@@ -154,7 +154,7 @@ test "format: binary ---- comparison less than" {
 
 test "format: binary ---- comparison less than or equal" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 <= 1;
         \\}
     );
@@ -162,7 +162,7 @@ test "format: binary ---- comparison less than or equal" {
 
 test "format: binary ---- equality" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 == 1;
         \\}
     );
@@ -170,7 +170,7 @@ test "format: binary ---- equality" {
 
 test "format: binary ---- inequality" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 != 1;
         \\}
     );
@@ -178,7 +178,7 @@ test "format: binary ---- inequality" {
 
 test "format: binary ---- addition" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 + 1;
         \\}
     );
@@ -186,7 +186,7 @@ test "format: binary ---- addition" {
 
 test "format: binary ---- subtraction" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 - 1;
         \\}
     );
@@ -194,7 +194,7 @@ test "format: binary ---- subtraction" {
 
 test "format: binary ---- multiplication" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 * 1;
         \\}
     );
@@ -202,7 +202,7 @@ test "format: binary ---- multiplication" {
 
 test "format: binary ---- division" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 / 1;
         \\}
     );
@@ -210,7 +210,7 @@ test "format: binary ---- division" {
 
 test "format: binary ---- modulo" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1 % 1;
         \\}
     );
@@ -218,7 +218,7 @@ test "format: binary ---- modulo" {
 
 test "format: seq ---- multiple expressions" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1;
         \\    2;
         \\    3;
@@ -228,7 +228,7 @@ test "format: seq ---- multiple expressions" {
 
 test "format: seq ---- call then literal" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    first(1);
         \\    1;
         \\}
@@ -237,7 +237,7 @@ test "format: seq ---- call then literal" {
 
 test "format: access ---- simple field access" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    one.two;
         \\}
     );
@@ -245,7 +245,7 @@ test "format: access ---- simple field access" {
 
 test "format: access ---- chained field access" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    one.two.three.four;
         \\}
     );
@@ -253,7 +253,7 @@ test "format: access ---- chained field access" {
 
 test "format: access ---- tuple access" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    tup.0;
         \\}
     );
@@ -261,7 +261,7 @@ test "format: access ---- tuple access" {
 
 test "format: access ---- chained tuple access" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    tup.1.2;
         \\}
     );
@@ -269,7 +269,7 @@ test "format: access ---- chained tuple access" {
 
 test "format: panic ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    panic();
         \\}
         \\
@@ -279,7 +279,7 @@ test "format: panic ---- simple" {
 
 test "format: panic ---- with message" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    panic("panicking");
         \\}
         \\
@@ -289,7 +289,7 @@ test "format: panic ---- with message" {
 
 test "format: precedence ---- parentheses around addition" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    (1 + 2) * 3;
         \\}
     );
@@ -297,7 +297,7 @@ test "format: precedence ---- parentheses around addition" {
 
 test "format: precedence ---- multiplication on right" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    3 * (1 + 2);
         \\}
     );
@@ -305,7 +305,7 @@ test "format: precedence ---- multiplication on right" {
 
 test "format: precedence ---- logical or in parentheses" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    True != (a == b);
         \\}
     );
@@ -313,7 +313,7 @@ test "format: precedence ---- logical or in parentheses" {
 
 test "format: negation ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    !x;
         \\}
     );
@@ -321,7 +321,7 @@ test "format: negation ---- simple" {
 
 test "format: negation ---- block" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    !{
         \\        123;
         \\        x
@@ -332,7 +332,7 @@ test "format: negation ---- block" {
 
 test "format: block ---- one tail on one line, statements open (decision 525)" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = { 1 + 2 };
         \\    val b = {
         \\        val x = 4;
@@ -351,7 +351,7 @@ test "format: block ---- one tail on one line, statements open (decision 525)" {
 
 test "format: block ---- a trailing lambda without `->` gains it (decision 525)" {
     try h.assertFormatAs(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    xs.forEach { print("x"); };
         \\    xs.each {
         \\        val y = 1;
@@ -361,7 +361,7 @@ test "format: block ---- a trailing lambda without `->` gains it (decision 525)"
         \\
         \\import {io.terminal.print} from "std";
     ,
-        \\fn main() {
+        \\fn main() -> void {
         \\    xs.forEach { -> print("x"); };
         \\    xs.each { ->
         \\        val y = 1;
@@ -417,7 +417,7 @@ test "format: block ---- a `case` arm's last `break v;` becomes its tail (decisi
 
 test "format: lambda ---- a `;` after the last expression is kept (decision 541)" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    xs.forEach({ x -> g(x); });
         \\    val inc = { x -> x + 1 };
         \\}
@@ -476,7 +476,7 @@ test "format: block ---- the last `;` of a value `case` arm is dropped (decision
 
 test "format: pipeline ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1
         \\    |> really_long_variable_name
         \\    |> really_long_variable_name
@@ -487,7 +487,7 @@ test "format: pipeline ---- simple" {
 
 test "format: pipeline ---- in list" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        1
         \\        |> succ
@@ -501,7 +501,7 @@ test "format: pipeline ---- in list" {
 
 test "format: pipeline ---- with comments" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    1
         \\    // 1
         \\    |> func1
@@ -513,7 +513,7 @@ test "format: pipeline ---- with comments" {
 
 test "format: labeled args ---- with comments" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    Emulator(
         \\        // one
         \\        one: 1,
@@ -526,7 +526,7 @@ test "format: labeled args ---- with comments" {
 
 test "format: panic ---- with message and comment" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    panic("wibble");
         \\}
         \\
@@ -536,7 +536,7 @@ test "format: panic ---- with message and comment" {
 
 test "format: multiline string ---- as function argument" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    wibble(
         \\        wobble,
         \\        """
@@ -583,7 +583,7 @@ test "format: a parameterless lambda argument keeps its arrow" {
     // which the braces re-parse as a block — is unchanged. Two statements, so the
     // one-line rule does not take it.
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    throws({ ->
         \\        0;
         \\        1;
@@ -661,7 +661,7 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[], gen: AsyncIter<i32>) {
+        \\fn f(xs: i32[], gen: AsyncIter<i32>) -> void {
         \\    for :outer (xs) { x ->
         \\        if (x == 2) break :outer;
         \\    }
@@ -737,7 +737,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
 
 test "format: an empty loop body prints on one line and a body breaks" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    for (xs) { x -> }
         \\    while (true) { }
         \\    loop {
@@ -885,7 +885,7 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
     // The negative of the arm above: the desugaring is recognised by all four of
     // its parts, so an `if` that binds a name of its own is untouched.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(o: ?i32) {
+        \\fn f(o: ?i32) -> void {
         \\    if (o) {
         \\        n ->
         \\        print(n);
@@ -902,7 +902,7 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
 
 test "format: lambda ---- a parameterless lambda on one line stays on one line" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val g = { -> 3 + 4 };
         \\    print(g());
         \\}
@@ -913,7 +913,7 @@ test "format: lambda ---- a parameterless lambda on one line stays on one line" 
 
 test "format: lambda ---- the one-line form prints for a parameterless lambda argument" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val n = measureMillis({ -> 42 });
         \\}
     );
@@ -925,13 +925,13 @@ test "format: lambda ---- a trailing lambda with one value expression prints on 
     // after the value is kept as written (decision 409: the printer adds and
     // removes none).
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    h1 { -> "my blog" };
         \\    calcular(fator: 2) { a, b -> a + b };
         \\}
     );
     try h.assertFormatAs(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    h1 { ->
         \\        "my blog";
         \\    };
@@ -940,13 +940,13 @@ test "format: lambda ---- a trailing lambda with one value expression prints on 
         \\    };
         \\}
     ,
-        \\fn main() {
+        \\fn main() -> void {
         \\    h1 { -> "my blog"; };
         \\    h1 { -> "my blog" };
         \\}
     );
     try h.assertIdempotent(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    h1 { ->
         \\        "my blog";
         \\    };
@@ -957,7 +957,7 @@ test "format: lambda ---- a trailing lambda with one value expression prints on 
 test "format: lambda ---- a trailing lambda keeps the open form when it holds more than one value" {
     // Several statements, a binding, a jump: not one value expression.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    executar { ->
         \\        val a = 1;
         \\    };
@@ -971,13 +971,13 @@ test "format: lambda ---- a trailing lambda keeps the open form when it holds mo
 
 test "format: lambda ---- a trailing lambda whose one line would pass the width opens" {
     const src =
-        \\fn main() {
+        \\fn main() -> void {
         \\    executar { -> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb };
         \\}
     ;
     try h.assertIdempotent(std.testing.allocator, src);
     try h.assertFormatAs(std.testing.allocator, src,
-        \\fn main() {
+        \\fn main() -> void {
         \\    executar { ->
         \\        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         \\            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -990,7 +990,7 @@ test "format: lambda ---- a parameterless lambda whose body needs a line keeps t
     // The negative: the one-line rule tests the source's own line, so a body
     // that was written below the arrow stays below it, with or without params.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val g = { ->
         \\        val a = 1;
         \\        a + 2;
@@ -1005,7 +1005,7 @@ test "format: lambda ---- a parameterless lambda whose body needs a line keeps t
 
 test "format: lambda ---- an empty body stays inline" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val g = { next -> };
         \\    val h = { -> };
         \\}
@@ -1027,7 +1027,7 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
     // a trailing lambda's braces follow a callee, and a `case` arm's follow a
     // pattern. `fmtBody` already answers `{}` for an empty `fn` body.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn pick(n: i32) {
+        \\fn pick(n: i32) -> void {
         \\    case n {
         \\        1 {
         \\            print("one");
@@ -1047,7 +1047,7 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
 
 test "format: call ---- a lambda argument's body indents +4 and its brace lines up" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    xs.forEach({ x ->
         \\        print(x);
         \\        print(x + 1);
@@ -1062,7 +1062,7 @@ test "format: call ---- the lambda need not be the last argument" {
     // The rule is about the lambda's body, not its position: a first-argument
     // lambda hugs exactly as a last-argument one does.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    throws({ ->
         \\        0;
         \\        1;
@@ -1073,7 +1073,7 @@ test "format: call ---- the lambda need not be the last argument" {
 
 test "format: call ---- a lambda after a plain argument hugs, the argument stays flat" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn run(app: App) {
+        \\fn run(app: App) -> void {
         \\    val _port = serve(app.port, { method, path ->
         \\        dispatch(method, path);
         \\        done(method);
@@ -1084,7 +1084,7 @@ test "format: call ---- a lambda after a plain argument hugs, the argument stays
 
 test "format: call ---- nesting compounds by +4 a level, not +8" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn walk(decl: Decl) {
+        \\fn walk(decl: Decl) -> void {
         \\    decl.methods.forEach({ m ->
         \\        m.annotations.forEach({ a ->
         \\            print(a);
@@ -1101,7 +1101,7 @@ test "format: call ---- a lambda argument that fits on one line is not hugged" {
     // The negative: the hug is decided by whether the lambda's own printing
     // breaks, so a one-line lambda leaves the argument list grouped as before.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val ys = xs.map({ n -> n * 2 });
         \\}
     );
@@ -1112,7 +1112,7 @@ test "format: call ---- a comment on an argument still opens the list" {
     // open, one argument per line, and the hug does not reach them — a comment
     // has nowhere to go inside a flat `(a, b)`.
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    run(
         \\        // why
         \\        1,
@@ -1202,16 +1202,16 @@ test "format: method chain ---- a hand-broken chain that fits is joined (pure fu
 test "format: method chain ---- the boundary is exact: 80 columns stay, 81 break" {
     // The first `val` line is exactly 80 columns, the second 81.
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val n = a.bbbbbbbbbb().cccccccccc().dddddddddd().eeeeeeeeee().fffffffffff();
         \\}
     );
     try h.assertFormatAs(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val n = a.bbbbbbbbbb().cccccccccc().dddddddddd().eeeeeeeeee().ffffffffffff();
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val n = a
         \\        .bbbbbbbbbb()
         \\        .cccccccccc()
@@ -1224,7 +1224,7 @@ test "format: method chain ---- the boundary is exact: 80 columns stay, 81 break
 
 test "format: method chain ---- a single method call is not a chain" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val n = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb();
         \\}
     );
@@ -1232,7 +1232,7 @@ test "format: method chain ---- a single method call is not a chain" {
 
 test "format: method chain ---- a link whose lambda breaks opens the whole chain" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    xs
         \\        .map({ x -> x * 2 })
         \\        .forEach({ x ->
@@ -1256,7 +1256,7 @@ test "format: method chain ---- round trip is idempotent and lossless" {
         \\}
     );
     try h.assertIdempotent(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    xs
         \\        .map({ x -> x * 2 })
         \\        .forEach({ x ->
@@ -1280,7 +1280,7 @@ test "format: method chain ---- round trip is idempotent and lossless" {
 
 test "format: C-12 ---- a call that fits stays on one line, 80 columns exactly" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val entry = ThemeEntry(name: "--text-3xl--line-height", value: "calc(2)");
         \\}
     );
@@ -1288,7 +1288,7 @@ test "format: C-12 ---- a call that fits stays on one line, 80 columns exactly" 
 
 test "format: C-12 ---- an argument list past the width takes one argument per line" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val entry = ThemeEntry(
         \\        name: "--text-3xl--line-height",
         \\        value: "calc(2.25 / 1.875)",
@@ -1299,7 +1299,7 @@ test "format: C-12 ---- an argument list past the width takes one argument per l
 
 test "format: C-12 ---- the trailing comma keeps an argument list open, without it the list is joined (decisions 166, 345)" {
     const open =
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(
         \\        1,
         \\        2,
@@ -1308,14 +1308,14 @@ test "format: C-12 ---- the trailing comma keeps an argument list open, without 
     ;
     try h.assertFormatLossless(std.testing.allocator, open);
     try h.assertFormatAs(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(
         \\        1,
         \\        2
         \\    );
         \\}
     ,
-        \\fn f() {
+        \\fn f() -> void {
         \\    g(1, 2);
         \\}
     );
@@ -1336,7 +1336,7 @@ test "format: C-12 ---- a binary run breaks before every operator, +4" {
 
 test "format: C-12 ---- the binary breaks before the argument list inside it" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(doc: string, a: string) {
+        \\fn f(doc: string, a: string) -> void {
         \\    assert doc.indexOf(
         \\        "." + a + "{background-attachment:fixed;background-attachment:local}",
         \\    )
@@ -1387,7 +1387,7 @@ test "format: C-12 ---- a braced else stays outside the measured if" {
 
 test "format: C-12 ---- a tuple and a behavior literal break like an argument list" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val t = #(
         \\        "the first element is long enough",
         \\        "and the second one pushes it over",
@@ -1485,7 +1485,7 @@ test "format: record update ---- the spread argument prints `..base`, not a labe
     const src =
         \\type Cfg(name: string, revalidate: i32, tags: string[])
         \\
-        \\fn f(base: Cfg, holder: Holder) {
+        \\fn f(base: Cfg, holder: Holder) -> void {
         \\    val a = Cfg(..base);
         \\    val b = Cfg(..base, revalidate: 60);
         \\    val c = Cfg(revalidate: 60, ..base);
@@ -1500,7 +1500,7 @@ test "format: record update ---- the spread argument prints `..base`, not a labe
 
 test "format: record update ---- the spread stays a spread in the open argument list" {
     const src =
-        \\fn f(base: Cfg) {
+        \\fn f(base: Cfg) -> void {
         \\    val c = Cfg(
         \\        ..base,
         \\        name: "a name long enough to push the list past the width",
@@ -1513,7 +1513,7 @@ test "format: record update ---- the spread stays a spread in the open argument 
     // Written on one line, without the trailing comma, it stays on one line
     // whatever its width (decision 345).
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(base: Cfg) {
+        \\fn f(base: Cfg) -> void {
         \\    val c = Cfg(..base, name: "a name long enough to push the list past the width", revalidate: 60);
         \\}
     );
@@ -1521,7 +1521,7 @@ test "format: record update ---- the spread stays a spread in the open argument 
 
 test "format: record spread ---- `..src` prints as written, beside labels and ranges (decision 359)" {
     const src =
-        \\fn f(old: Pessoa, contato: Contato) {
+        \\fn f(old: Pessoa, contato: Contato) -> void {
         \\    val a = Pessoa(..old, nome: "Ana");
         \\    val b = Pessoa(..old, ..contato, nome: n);
         \\    val c = Pessoa(nome: "Zé", ..make(1));
@@ -1535,7 +1535,7 @@ test "format: record spread ---- `..src` prints as written, beside labels and ra
     try h.assertFormatLossless(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);
     const open =
-        \\fn f(old: Pessoa) {
+        \\fn f(old: Pessoa) -> void {
         \\    val c = Pessoa(
         \\        ..old,
         \\        nome: "a name long enough to push the list past the width",
@@ -1597,7 +1597,7 @@ test "format: catch ---- a region and its handler block print back (595)" {
 
 test "format: a label on continue prints as on break" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    for :outer (xs) { x ->
         \\        for (xs) { y ->
         \\            if (y == 2) continue :outer;

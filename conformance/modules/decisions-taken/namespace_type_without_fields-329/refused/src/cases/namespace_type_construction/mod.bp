@@ -9,7 +9,7 @@ type MathOps {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val ops = MathOps();
     print(MathOps.double(2));
 }

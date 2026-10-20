@@ -4,6 +4,6 @@ import {io.terminal.print} from "std";
 
 type Holder(m: Bogus<i32, i32>)
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

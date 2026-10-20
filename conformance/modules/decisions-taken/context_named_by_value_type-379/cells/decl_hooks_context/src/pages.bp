@@ -12,7 +12,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-fn contexts(syntax decl: unknown) {
+fn contexts(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .hooks(decl)

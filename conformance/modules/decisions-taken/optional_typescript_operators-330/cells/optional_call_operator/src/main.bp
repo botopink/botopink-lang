@@ -8,7 +8,7 @@ fn adder(present: bool) -> ?fn(i32) -> i32 {
     return if (present) add else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(adder(true)?.(41) ?? 0);
     print(adder(false)?.(41) ?? -3);
 }

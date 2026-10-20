@@ -72,7 +72,7 @@ fn digits(xs: Iter<i32>) -> i32 {
     return acc;
 }
 
-pub fn main() {
+pub fn main() -> void {
     // A method in the record's own body.
     print(digits(Box(items: [1, 2, 3]).each()));
 

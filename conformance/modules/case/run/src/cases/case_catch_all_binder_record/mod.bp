@@ -19,7 +19,7 @@ fn named(b: Box<i32>) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b = Box(value: 5, label: "box");
     print(named(b));
     print(named(Box(value: 3, label: "x")));

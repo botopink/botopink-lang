@@ -13,7 +13,7 @@ type Money(cents: i32) implement Display {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Money(cents: 5));
     print([Money(cents: 1), Money(cents: 2)]);
 }

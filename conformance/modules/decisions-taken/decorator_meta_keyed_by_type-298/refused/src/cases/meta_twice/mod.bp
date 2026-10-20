@@ -6,7 +6,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Entity(table: string)
 
-fn entity(syntax decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) -> void {
     compiler.setMeta(Entity(table: table));
 }
 
@@ -14,6 +14,6 @@ fn entity(syntax decl: unknown, comptime table: string) {
 #[entity("towns")]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

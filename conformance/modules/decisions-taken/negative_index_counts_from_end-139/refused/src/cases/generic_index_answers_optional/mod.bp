@@ -9,6 +9,6 @@ fn first<T>(xs: T[]) -> T {
     return xs[0];
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first([1, 2]));
 }

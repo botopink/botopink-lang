@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn mark(syntax decl: unknown) {
+fn mark(syntax decl: unknown) -> void {
     val kept = compiler;
     kept.fail("marked", at: decl);
 }
@@ -11,6 +11,6 @@ fn mark(syntax decl: unknown) {
 #[mark]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "a").name);
 }

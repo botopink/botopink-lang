@@ -19,7 +19,7 @@ fn half(n: i32) -> Result<i32, HostError> {
     return n / 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(describe(HostError(message: "ENOENT", kind: "host", name: .Error, detail: null)));
     case half(3) {
         Ok(v) -> print("ok", v);

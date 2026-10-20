@@ -10,7 +10,7 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(syntax decl: Module) {
+pub fn module(syntax decl: Module) -> void {
     compiler.setMeta(ModuleRole(role: "module"));
 }
 
@@ -25,7 +25,7 @@ pub type Users(n: i32) implement Module {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (@TypeInfo.all(with: module)) { d ->
         print(d.value.make().start());
     }

@@ -736,7 +736,7 @@ test "a member function: collected in order, its free names, rendered with each 
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn check<T>(syntax decl: T, syntax message: string, syntax rule: fn(v: T) -> bool) {
+        \\fn check<T>(syntax decl: T, syntax message: string, syntax rule: fn(v: T) -> bool) -> void {
         \\    val unused = 1;
         \\    compiler.addMember("validate", fn(self: T) -> Violation[] {
         \\        if (rule(self)) return [];
@@ -780,5 +780,5 @@ test "decision 669 — a member written as text: its free names renamed, its own
     var again: std.ArrayListUnmanaged(u8) = .empty;
     for (try freeNames(arena, try methodAsFunction(arena, renamed))) |n| try again.print(arena, "{s} ", .{n.name});
     try std.testing.expectEqualStrings("Bp__bp_tpl_rows__Row __bp_tpl_rows__width ", again.items);
-    try std.testing.expect(try parseSourceMember(arena, "pub fn a() {} pub fn b() {}") == null);
+    try std.testing.expect(try parseSourceMember(arena, "pub fn a() -> void {} pub fn b() -> void {}") == null);
 }

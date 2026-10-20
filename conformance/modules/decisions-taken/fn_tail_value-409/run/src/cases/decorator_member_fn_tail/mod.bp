@@ -3,13 +3,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn sized<T>(syntax decl: T) {
+fn sized<T>(syntax decl: T) -> void {
     compiler.addMember("size", fn(self: T) -> i32 { self.name.length + 1 });
 }
 
 #[sized]
 pub type Account(name: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Account(name: "abc").size());
 }

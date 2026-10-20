@@ -8,7 +8,7 @@ pub type Lifecycle {
     Manual,
 }
 
-pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) {
+pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) -> void {
     compiler.setMeta(
         Mark(
             lifecycle: case lifecycle {

@@ -19,7 +19,7 @@ fn floorBody(x: f64) -> f64 {
     return x - 0.5;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(floorOf(2.5));
     print(floorOf(-1.5));
 }

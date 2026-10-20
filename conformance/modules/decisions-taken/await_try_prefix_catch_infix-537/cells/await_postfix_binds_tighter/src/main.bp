@@ -25,6 +25,6 @@ async fn run() -> Async<void> {
     print(await tasks[1]!);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

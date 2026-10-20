@@ -5,7 +5,7 @@ pub type Probe(n: i32) {
     pub declare fn raw(self: Self) -> i32;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Probe(n: 1).raw());
 }
 

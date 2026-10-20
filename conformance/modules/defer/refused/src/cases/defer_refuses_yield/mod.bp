@@ -7,6 +7,6 @@ pub iter fn nums() -> Iter<i32> {
     yield 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreachable");
 }

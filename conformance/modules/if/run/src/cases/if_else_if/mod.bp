@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = true;
     val b = false;
     if (a && b) print("both") else if (a || b) print("either");

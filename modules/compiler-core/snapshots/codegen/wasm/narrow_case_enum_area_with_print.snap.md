@@ -7,7 +7,7 @@ fn area(s: Shape) -> f64 {
         Square(side) -> side * side;
     };
 }
-fn main() {
+fn main() -> void {
     print(area(Shape.Circle(2.0)));
     print(area(Shape.Square(3.0)));
 }

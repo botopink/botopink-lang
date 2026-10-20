@@ -8,7 +8,7 @@ pub fn mark(
     comptime loud: bool = false,
     comptime times: i32 = -1,
     comptime tail: string = ".",
-) {
+) -> void {
     val shown = if (loud) label.toUpper() else label;
     @emit(
         "pub fn "

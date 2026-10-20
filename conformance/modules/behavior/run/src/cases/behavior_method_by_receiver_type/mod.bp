@@ -46,7 +46,7 @@ fn open(disk: bool) -> Source {
     return Memory(prefix: "mem");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(read(Memory(prefix: "m")));
     print(read(Disk(root: "/d")));
     val s = open(true);

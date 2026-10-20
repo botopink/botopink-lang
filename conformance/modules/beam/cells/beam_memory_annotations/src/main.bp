@@ -20,7 +20,7 @@ var counts: Dict<string, i32> = Dict.empty();
 // #[compiler.beamMemory(.Ets)] val x: i32 = 0;
 //   error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `x` is a `val`
 
-pub fn main() {
+pub fn main() -> void {
     hits = hits + 1;
     print(hits); // 1
     print(buildVersion); // 101

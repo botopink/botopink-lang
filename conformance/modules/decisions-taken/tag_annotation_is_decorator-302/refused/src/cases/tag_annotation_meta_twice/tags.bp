@@ -4,7 +4,7 @@ import {compiler.DeclKind, compiler.Span, compiler} from "std";
 
 pub type Hydrate(level: i32)
 
-pub fn hydrate(syntax decl: unknown, comptime level: i32) {
+pub fn hydrate(syntax decl: unknown, comptime level: i32) -> void {
     compiler.setMeta(Hydrate(level: level));
 }
 

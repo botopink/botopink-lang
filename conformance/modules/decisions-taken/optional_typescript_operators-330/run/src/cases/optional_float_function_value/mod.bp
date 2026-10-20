@@ -25,7 +25,7 @@ fn wide(present: bool) -> ?fn(i64) -> i64 {
     return if (present) f else null;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val h = halver(true);
     if (h) {
         g ->

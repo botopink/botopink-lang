@@ -3,7 +3,7 @@
 fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
     panic("not implemented");
 }
-fn main() {
+fn main() -> void {
     val r = calc(2) { a, b ->
         return 0;
     };

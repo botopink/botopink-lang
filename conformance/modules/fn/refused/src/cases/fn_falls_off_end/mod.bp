@@ -9,6 +9,6 @@ fn f() -> i32 {
     val x = 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(f());
 }

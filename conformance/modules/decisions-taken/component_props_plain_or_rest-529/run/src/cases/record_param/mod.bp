@@ -20,7 +20,7 @@ fn Badge(count: i32, ..props: CardProps) -> string {
     return "${props.title}x${count}";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     // The fields by label, a default left out, the other parameter by label.
     print(Card(title: "a", suffix: "!"));
     print(Card(title: "b", featured: true, size: 3, suffix: "?"));

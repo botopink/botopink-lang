@@ -16,4 +16,4 @@ fn nested(n: i32) -> Result<Result<i32, string>, string> {
     return r;
 }
 
-pub fn main() { nested(1); }
+pub fn main() -> void { nested(1); }

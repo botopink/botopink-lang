@@ -31,7 +31,7 @@ pub type Bag(sep: string) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(total("none"));
     print(total("one", 4));
     print(total("three", 1, 2, 3));

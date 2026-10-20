@@ -10,7 +10,7 @@ fn scopeA1(s: string) -> string {
     return "a1-" + s;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val cfg = Cfg(scoper: scopeA1);
     print(cfg.scoper?.("x") ?? "none");
     print(Cfg().scoper == null);

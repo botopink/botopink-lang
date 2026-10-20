@@ -3,7 +3,7 @@
 fn negate(x: i32) -> i32 {
     return -x;
 }
-fn main() {
+fn main() -> void {
     print(negate(42));
 }
 

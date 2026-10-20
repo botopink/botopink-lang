@@ -22,7 +22,7 @@ fn make() -> Greeter {
     return Bob(name: "b");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(useIt(Bob(name: "a")));
     print(useIt(make()));
     print(useIt(hostGreeter()));

@@ -13,4 +13,4 @@ iter fn upto(n: i32) -> Iter<Result<i32, string>> {
     while (i < n) { yield i; i = i + 1; }
 }
 
-pub fn main() { for (upto(2)) { r -> print(r.unwrapOr(0)); } }
+pub fn main() -> void { for (upto(2)) { r -> print(r.unwrapOr(0)); } }

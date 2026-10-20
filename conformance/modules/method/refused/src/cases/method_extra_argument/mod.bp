@@ -7,4 +7,4 @@ type Jar(n: i32) {
     pub fn get(self: Self, name: string) -> string { return name; }
 }
 
-pub fn main() { print(Jar(n: 1).get("a", "b")); }
+pub fn main() -> void { print(Jar(n: 1).get("a", "b")); }

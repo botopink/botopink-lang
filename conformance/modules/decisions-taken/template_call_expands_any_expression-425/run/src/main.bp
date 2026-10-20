@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.template_destructuring_init.runCase();
     cases.template_in_argument.runCase();
     cases.template_in_case_arm.runCase();

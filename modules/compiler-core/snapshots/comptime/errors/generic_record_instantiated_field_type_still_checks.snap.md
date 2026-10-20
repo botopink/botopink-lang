@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 type Box<A, B>(first: A, second: B)
 
-fn main() {
+fn main() -> void {
     val b = Box(first: 1, second: "one");
     val bad: i32 = b.second;
 }

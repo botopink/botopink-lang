@@ -10,7 +10,7 @@ fn getC(o: ?Outer) -> i32 {
     };
     return 0;
 }
-fn main() {
+fn main() -> void {
     print(getC(Outer(b: Inner(c: 7))));
     print(getC(Outer(b: null)));
 }

@@ -17,6 +17,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("erlang:abs($0)"))]
 declare fn magnitude(n: i32) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(label(magnitude(0 - 7)));
 }

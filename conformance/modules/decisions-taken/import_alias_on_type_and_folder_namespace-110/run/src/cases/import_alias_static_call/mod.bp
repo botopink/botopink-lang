@@ -16,7 +16,7 @@ fn level(s: S) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(P.origin().sum());
     print(level(S.Dark));
     print(level(S.Custom(9)));

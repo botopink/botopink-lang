@@ -43,7 +43,7 @@ pub const Builtin = struct {
 /// Every `@name` builtin call the compiler implements.
 pub const table = [_]Builtin{
     // ── run time ──
-    .{ .name = "print", .signature = "print(..values: unknown[])", .held = .declaration },
+    .{ .name = "print", .signature = "print(..values: unknown[]) -> void", .held = .declaration },
     .{ .name = "panic", .signature = "panic(message: string = \"panic\") -> noreturn", .held = .declaration },
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
@@ -58,7 +58,7 @@ pub const table = [_]Builtin{
     .{ .name = "makeRecord", .signature = "makeRecord<R>(fields: RecordField[]) -> R", .held = .declaration, .comptime_only = true },
     .{ .name = "RecordKeys", .signature = "RecordKeys(comptime _: type) -> string[]", .held = .declaration, .comptime_only = true },
     .{ .name = "comptimeError", .signature = "comptimeError(comptime message: string) -> noreturn", .held = .own_rule, .comptime_only = true },
-    .{ .name = "emit", .signature = "emit(source: string)", .held = .declaration, .comptime_only = true },
+    .{ .name = "emit", .signature = "emit(source: string) -> void", .held = .declaration, .comptime_only = true },
     .{ .name = "compilerError", .signature = "compilerError(message: string) -> noreturn", .held = .declaration, .comptime_only = true },
     .{ .name = "expr", .signature = "expr<T>(comptime value: T) -> __Expr<T>", .held = .declaration, .comptime_only = true },
     .{ .name = "code", .signature = "code<T>(text: string) -> __Expr<T>", .held = .declaration, .comptime_only = true },
@@ -435,11 +435,11 @@ test "builtins: a changed signature is named with both spellings" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub declare fn emit(source: string);", "pub declare fn emit(source: string, again: bool);");
+    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub declare fn emit(source: string) -> void;", "pub declare fn emit(source: string, again: bool) -> void;");
     const items = try drift(a, &.{ changed, try stdFns(a) });
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("emit", items[0].signature.name);
-    try std.testing.expectEqualStrings("emit(source: string, again: bool)", items[0].signature.declared);
+    try std.testing.expectEqualStrings("emit(source: string, again: bool) -> void", items[0].signature.declared);
 }
 
 test "builtins: a declaration the compiler does not implement is named" {

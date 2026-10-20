@@ -34,7 +34,7 @@ fn fallback() -> Tok {
     return .Pad.All.8;
 }
 
-fn mark(syntax decl: unknown, comptime ..tokens: Tok[]) {
+fn mark(syntax decl: unknown, comptime ..tokens: Tok[]) -> void {
     compiler.setMeta(
         Mark(
             labels: tokens.map({ t -> label(t) }),
@@ -48,7 +48,7 @@ fn styled() -> string {
     return "styled";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val labels: string[] = comptime compiler.typeInfo(styled).meta(Mark)?.labels ?? [];
     print(labels.join(","));
     print(comptime compiler.typeInfo(styled).meta(Mark)?.fallback ?? "none");

@@ -8,7 +8,7 @@ fn parse(n: i32) -> Result<i32, string> {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val assert Ok(n) = parse(7) catch 0;
     print(n);
 }

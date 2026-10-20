@@ -6,7 +6,7 @@ fn describe(p: Point) -> i32 {
     print(x, y);
     return x;
 }
-fn main() {
+fn main() -> void {
     describe(Point(x: 3, y: 4));
 }
 

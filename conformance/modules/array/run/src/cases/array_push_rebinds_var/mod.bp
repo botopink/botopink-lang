@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 var xs: string[] = [];
 
-fn add(s: string) {
+fn add(s: string) -> void {
     xs.push(s);
 }
 
@@ -14,7 +14,7 @@ fn all() -> string[] {
     return xs;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     add("a");
     val before = all();
     add("b");

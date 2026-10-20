@@ -7,7 +7,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val k = 5;
     [1].forEach({ e ->
         val k = "l";

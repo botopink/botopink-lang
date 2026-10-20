@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print("ok", v);
         Error(e) -> print("error", e);
@@ -21,6 +21,6 @@ async fn run() -> Async<void> {
     show(await failing(1));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

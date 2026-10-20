@@ -1283,7 +1283,7 @@ export declare function reverse(o: Order): Order;
 ```botopink
 import {collections} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("x");
 }
 

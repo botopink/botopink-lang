@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.imported_enum_field.runCase();
     cases.imported_fn_as_value.runCase();
     cases.imported_fn_field_call.runCase();

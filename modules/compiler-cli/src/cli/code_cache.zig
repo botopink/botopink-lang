@@ -480,7 +480,7 @@ test "closureKey: moves with a byte of the package, a dependency's key, the targ
     try cwd.createDirPath(io, try std.fs.path.join(a, &.{ pkg, "src" }));
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "botopink.json" }), .data = "{ \"name\": \"pkg\" }" });
     const main_bp = try std.fs.path.join(a, &.{ pkg, "src", "main.bp" });
-    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() {}\n" });
+    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() -> void {}\n" });
     var err: ?manifest.Located = null;
     const m = try manifest.parse(a, "{ \"name\": \"pkg\" }", "botopink.json", &err);
 
@@ -495,10 +495,10 @@ test "closureKey: moves with a byte of the package, a dependency's key, the targ
     const dep2: DepKey = .{ .name = "lib", .key = @splat('b') };
     try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep2}, erl, "c1"))));
     // One byte of a source.
-    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() {} \n" });
+    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() -> void {} \n" });
     try testing.expect(!std.mem.eql(u8, &k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1"))));
     // Something outside the package's files does not move it.
-    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() {}\n" });
+    try cwd.writeFile(io, .{ .sub_path = main_bp, .data = "pub fn main() -> void {}\n" });
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "docs.md" }), .data = "x" });
     try testing.expectEqualStrings(&k0, &(try closureKeyWith(a, io, pkg, m, &.{dep}, erl, "c1")));
 }
@@ -515,7 +515,7 @@ test "closureKey: the effective manifest — what a member inherits moves it, it
     try cwd.createDirPath(io, try std.fs.path.join(a, &.{ pkg, "src" }));
     const text = "{ \"name\": \"pkg\" }";
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "botopink.json" }), .data = text });
-    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "src", "root.bp" }), .data = "pub fn f() {}\n" });
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ pkg, "src", "root.bp" }), .data = "pub fn f() -> void {}\n" });
     var err: ?manifest.Located = null;
     const m = try manifest.parse(a, text, "botopink.json", &err);
     const erl: EntryTarget = .{ .target = .erlang };

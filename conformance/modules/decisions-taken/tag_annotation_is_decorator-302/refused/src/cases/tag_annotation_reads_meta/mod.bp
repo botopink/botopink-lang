@@ -9,12 +9,12 @@ import {compiler.DeclKind, compiler.Span, compiler, io.terminal.print} from "std
 
 pub type Level(n: i32)
 
-pub fn level(syntax decl: unknown, comptime n: i32) {
+pub fn level(syntax decl: unknown, comptime n: i32) -> void {
     compiler.setMeta(Level(n: n));
 }
 
 // Reads the meta the earlier annotation recorded on the same tag.
-pub fn checked(syntax decl: unknown) {
+pub fn checked(syntax decl: unknown) -> void {
     if (compiler.meta<Level>(decl) == null) compiler.fail("no level", at: decl);
 }
 
@@ -31,6 +31,6 @@ pub fn markup(syntax q: string) -> string {
     return compiler.meta<Level>(twice)?.n ?? 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(markup @`<div #[level(2)] #[checked]>hi</div>`);
 }

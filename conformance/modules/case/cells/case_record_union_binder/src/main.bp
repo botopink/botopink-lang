@@ -35,7 +35,7 @@ fn guarded(p: DogB | CatB) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val rex = DogB(name: "rex", age: 3, tags: ["a", "b"]);
     print(describe(rex));
     print(describe(CatB(name: "tom", owner: null)));

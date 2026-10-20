@@ -13,7 +13,7 @@ type Shape {
     Circle(radius: i32),
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Shape.Circle(radius: 2));
     val c = Shape.Circle(radius: 3);
     print(c);

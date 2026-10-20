@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn tag(syntax decl: unknown) {
+fn tag(syntax decl: unknown) -> void {
     compiler.setMeta(Tag(seen: true));
 }
 
@@ -16,7 +16,7 @@ pub fn twice() -> i32 {
     return 4;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: tag).length);
 }
 

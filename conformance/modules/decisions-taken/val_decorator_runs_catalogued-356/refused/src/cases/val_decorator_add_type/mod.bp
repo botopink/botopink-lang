@@ -3,13 +3,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn helper(syntax decl: unknown) {
+fn helper(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 
 #[helper]
 pub val limit = 2;
 
-pub fn main() {
+pub fn main() -> void {
     print(limit);
 }

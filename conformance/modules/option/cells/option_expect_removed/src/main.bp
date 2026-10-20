@@ -13,7 +13,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val xs = [1, 2, 3];
     val v = xs.at(9).expect(0);
     print(v);

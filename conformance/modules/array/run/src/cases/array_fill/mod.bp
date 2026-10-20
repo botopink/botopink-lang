@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print([1, 2].fill(0));
     print([1, 2, 3].fill("z"));
     print(["a"].fill(true));

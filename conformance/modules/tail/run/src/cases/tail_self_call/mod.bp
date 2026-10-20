@@ -23,7 +23,7 @@ fn sumTo(n: i32, acc: i32) -> i32 {
     return sumTo(n - 1, acc + n);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(count(10000, 0));
     print(count(100000, 0));
     print(count(1000000, 0));

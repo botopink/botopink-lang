@@ -20,7 +20,7 @@ fn Badge() -> string {
     return "badge";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(markup @`<div id="x" #[cls("a")]>hi</div>`);
     print(markup @`<Badge #[cls("c")]>new</Badge>`);
     print(Badge());

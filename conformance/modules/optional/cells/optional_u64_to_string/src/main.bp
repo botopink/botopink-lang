@@ -12,7 +12,7 @@ fn find(found: bool) -> ?u64 {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val o = find(true);
     print(o);
     print(find(false));

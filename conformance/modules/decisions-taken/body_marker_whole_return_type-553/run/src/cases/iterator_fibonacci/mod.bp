@@ -40,7 +40,7 @@ fn line(it: Iter<i32>) -> string {
     return acc;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(line(fibonacci(10)));
     print(line(firstNegative([3, 1, -4, 5, -9])));
     print(line(firstNegative([2, 7])));

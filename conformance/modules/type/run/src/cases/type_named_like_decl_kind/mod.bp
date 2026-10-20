@@ -17,7 +17,7 @@ fn depth(e: Element) -> i32 {
     return most + 1;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val tree = Element(tag: "a", children: [Element(tag: "b", children: [])]);
     print(depth(tree));
     val f = Field(name: "outer", inner: Field(name: "inner", inner: null));

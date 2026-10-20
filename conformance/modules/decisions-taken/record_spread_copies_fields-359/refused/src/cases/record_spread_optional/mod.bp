@@ -10,7 +10,7 @@ fn achar(nome: string) -> ?Pessoa {
     return if (nome == "Ana") Pessoa(nome: "Ana", idade: 3) else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val talvez = achar("Ana");
     val p = Pessoa(..talvez, idade: 4);
     print(p.nome);

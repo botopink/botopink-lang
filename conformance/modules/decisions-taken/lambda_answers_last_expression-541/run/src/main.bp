@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.block_continue_reaches_loop.runCase();
     cases.block_jump_label_continue_nested_shapes.runCase();
     cases.block_jump_label_continue_reaches_loop.runCase();

@@ -9,7 +9,7 @@ import {pad.pad as padTo};
 import {tag, pair} from "tags";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(padTo("7"));
     print(padTo("7", 2));
     print(padTo("7", fill: "0"));

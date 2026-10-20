@@ -8,13 +8,13 @@
 
 import {io.terminal.print} from "std";
 
-fn mark(syntax decl: unknown, comptime n: i32) {
+fn mark(syntax decl: unknown, comptime n: i32) -> void {
     @emit("pub fn markedWith() -> i32 { return " + n.toString() + "; }");
 }
 
 #[mark(-20)]
 type Account(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print((markedWith() + 25).toString());
 }

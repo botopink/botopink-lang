@@ -480,7 +480,7 @@ test "typed meta calls, in body order; the string form and a member's body are n
     const lexer = @import("../lexer.zig");
     const parser = @import("../parser.zig");
     var lx = lexer.Lexer.init(
-        \\fn d(syntax decl: unknown, syntax m: string) {
+        \\fn d(syntax decl: unknown, syntax m: string) -> void {
         \\    decl.setMeta("key", "value");
         \\    compiler.setMeta(Entity(table: "a"));
         \\    if (compiler.name(decl)! == "") { compiler.addMeta(Index(column: "x")); }

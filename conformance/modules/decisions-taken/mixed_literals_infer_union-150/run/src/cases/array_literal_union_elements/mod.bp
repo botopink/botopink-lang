@@ -22,7 +22,7 @@ fn mixed() -> (i32 | string)[] {
     return [5, "xy"];
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [3, "abcd"];
     print(xs);
     print(xs[0]);

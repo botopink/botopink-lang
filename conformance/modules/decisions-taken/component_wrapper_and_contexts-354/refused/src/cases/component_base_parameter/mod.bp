@@ -8,6 +8,6 @@ component fn Widget() -> Component<Element, Element> {
     return Element(count: 1);
 }
 
-pub fn main() {
+pub fn main() -> void {
     Widget();
 }

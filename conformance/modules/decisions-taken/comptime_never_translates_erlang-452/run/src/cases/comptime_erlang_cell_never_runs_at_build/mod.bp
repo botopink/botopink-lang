@@ -23,7 +23,7 @@ fn tagBody(value: string) -> string {
     return value + ":fn";
 }
 
-fn tagged(syntax decl: unknown) {
+fn tagged(syntax decl: unknown) -> void {
     @emit("pub fn summary() -> string { return \""
         + tag(compiler.name(decl)!)
         + "\"; }");
@@ -32,6 +32,6 @@ fn tagged(syntax decl: unknown) {
 #[tagged]
 type Point(x: i32, y: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(summary());
 }

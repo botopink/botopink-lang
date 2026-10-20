@@ -8,6 +8,6 @@ fn apply(f: fn(..) -> i32) -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(apply({ -> 2 }));
 }

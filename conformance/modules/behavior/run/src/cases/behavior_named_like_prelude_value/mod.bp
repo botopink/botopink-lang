@@ -13,7 +13,7 @@ pub behavior Any {
     fn label(self: Self) -> string;
 }
 
-pub fn widget(syntax decl: Component) {
+pub fn widget(syntax decl: Component) -> void {
     compiler.setMeta(Widget(kind: "widget"));
 }
 
@@ -36,7 +36,7 @@ fn name(a: Any) -> string {
     return a.label();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val card = Card(title: "hi");
     print(show(card));
     print(name(card));

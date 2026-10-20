@@ -6,7 +6,7 @@ pub mod components;
 import {components.Header, components.First, components.Later};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(Header());
     print(First());
     print(Later());

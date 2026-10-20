@@ -8,7 +8,7 @@ pub mod web;
 import {web.Request, web.Response, web.hostRequest};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val req = hostRequest();
     print(req.header("Cookie"));
     print(Response(status: 200).header("Server"));

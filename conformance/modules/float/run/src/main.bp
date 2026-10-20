@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.float_literal_spellings.runCase();
     cases.float_record_field.runCase();
     cases.float_slot_keeps_f64.runCase();

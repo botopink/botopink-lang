@@ -14,7 +14,7 @@ fn check<T>(
     comptime rule: ?fn(v: T) -> bool = null,
     comptime at: ?Type.Field<T> = null,
     comptime code: Code = .Custom,
-) {
+) -> void {
     compiler.setMeta(Check(message: message));
 }
 
@@ -25,7 +25,7 @@ fn env(name: string) -> string {
 #[check(env("MSG"))]
 type Account(password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }
 

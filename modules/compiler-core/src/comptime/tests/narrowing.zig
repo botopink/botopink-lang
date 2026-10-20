@@ -29,7 +29,7 @@ test "infer: narrow ---- if null check record field access" {
         \\    };
         \\    return "no user";
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(greet(User(name: "alice")));
         \\}
         \\
@@ -47,7 +47,7 @@ test "infer: narrow ---- if null check bool" {
         \\    };
         \\    return false;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(and(true, true));
         \\}
         \\
@@ -67,7 +67,7 @@ test "infer: narrow ---- if null check chained" {
         \\    };
         \\    return 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(getC(Outer(b: Inner(c: 7))));
         \\    print(getC(Outer(b: null)));
         \\}
@@ -91,7 +91,7 @@ test "infer: narrow ---- case result ok err" {
         \\        Err(e) -> "error: " + e;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(handle(5));
         \\}
         \\
@@ -107,7 +107,7 @@ test "infer: narrow ---- case result different payload types" {
         \\    if (id == 0) { throw AppError.NotFound; };
         \\    return User(name: "alice");
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = fetchUser(1);
         \\    case r {
         \\        Ok(u) -> print(u.name);
@@ -138,7 +138,7 @@ test "infer: narrow ---- case enum variant field bindings" {
         \\        Point -> 0.0;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(area(Shape.Circle(2.0)));
         \\}
         \\
@@ -156,7 +156,7 @@ test "infer: narrow ---- case enum nested variant access" {
         \\        Fail -> "failed";
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
         \\}
         \\
@@ -193,7 +193,7 @@ test "infer: narrow ---- case guard bound identifier" {
         \\        _ -> "zero";
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(5));
         \\}
         \\
@@ -215,7 +215,7 @@ test "infer: narrow ---- case guard variant field" {
         \\        Error(code) -> "error " + code;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(handle(Response.Data(200, "hi")));
         \\    print(handle(Response.Error(500)));
         \\}
@@ -242,7 +242,7 @@ test "infer: narrow ---- early return guard clause" {
         \\    if (x == null) { return "nobody"; };
         \\    return "hello " + x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(greet("world"));
         \\    print(greet(null));
         \\}
@@ -258,7 +258,7 @@ test "infer: narrow ---- type guard basic" {
         \\fn isPositive(n: i32) -> n is i32 {
         \\    return n > 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isPositive(5));
         \\}
         \\
@@ -272,7 +272,7 @@ test "infer: narrow ---- type guard narrowing in if" {
         \\    if (x) { s -> return true; };
         \\    return false;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isString("hello"));
         \\    print(isString(null));
         \\}
@@ -298,7 +298,7 @@ test "infer: narrow ---- and condition field access" {
         \\    };
         \\    return "light or none";
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(Box(weight: 20)));
         \\}
         \\
@@ -327,7 +327,7 @@ test "infer: narrow ---- else if chain with null checks" {
         \\    else if (x != 0) { return "nonzero: " + x; }
         \\    else { return "null"; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(classify(42));
         \\    print(classify(null));
         \\}
@@ -363,7 +363,7 @@ test "infer: narrow ---- a guard call is a bool" {
         \\fn isPositive(n: i32) -> n is i32 {
         \\    return n > 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b: bool = isPositive(5);
         \\    print(b);
         \\}
@@ -377,7 +377,7 @@ test "infer: narrow ---- a guard narrows the argument in the then-branch" {
         \\fn isStr(y: ?string) -> y is string {
         \\    return y != null;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val y: ?string = "a";
         \\    if (isStr(y)) {
         \\        val s: string = y;
@@ -404,7 +404,7 @@ test "infer error: narrow ---- an unbound name in a pattern assert reds" {
     // so this compiled and only aborted at run time (beam printed
     // `{unresolved_identifier, answer}`).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val assert 42 = answer catch 0;
         \\    print("unreachable");
         \\}
@@ -415,7 +415,7 @@ test "infer error: narrow ---- an unbound name in a pattern assert reds" {
 
 test "infer error: narrow ---- a pattern assert handler is checked too" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val answer = 42;
         \\    val assert 42 = answer catch fallback;
         \\    print(answer);

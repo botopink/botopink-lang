@@ -27,6 +27,6 @@ async fn run() -> Async<void> {
     print(await viaCase(2));
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

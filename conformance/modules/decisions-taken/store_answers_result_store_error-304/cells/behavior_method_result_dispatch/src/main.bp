@@ -49,7 +49,7 @@ fn readTwice(store: KeyValueStore, key: string) -> string {
     return describe(store.getTwice(key));
 }
 
-pub fn main() {
+pub fn main() -> void {
     val memory = Memory(prefix: "m:");
     val layered = Layered(inner: memory);
     print(read(memory, "a"));

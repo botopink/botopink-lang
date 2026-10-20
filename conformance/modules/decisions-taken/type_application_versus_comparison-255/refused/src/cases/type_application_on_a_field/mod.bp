@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 type Box<T>(value: T)
 
-pub fn main() {
+pub fn main() -> void {
     val v = Box<i32>.value;
     print(v);
 }

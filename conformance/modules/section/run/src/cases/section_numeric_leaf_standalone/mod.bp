@@ -30,7 +30,7 @@ fn describe(t: Tok) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val n: Tok.Percent = .50;
     print(isHalf(n));
     print(isHalf(.100));

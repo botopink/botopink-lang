@@ -11,7 +11,7 @@ fn wrap(s: string) -> string {
     return "[" + s + "]";
 }
 
-fn tag(syntax decl: unknown) {
+fn tag(syntax decl: unknown) -> void {
     @emit(
         "pub fn tagged() -> string { return \""
             + wrap(shout(compiler.name(decl)!))
@@ -24,6 +24,6 @@ fn tick() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(tagged());
 }

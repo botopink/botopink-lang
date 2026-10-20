@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn floorOp(syntax decl: unknown) {
+fn floorOp(syntax decl: unknown) -> void {
     compiler.implement(Implementation.Wasm(op: "f64.floor"));
 }
 
@@ -14,6 +14,6 @@ fn floorOp(syntax decl: unknown) {
 #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
 declare fn floor(x: f64) -> f64;
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(floor(2.5).toString());
 }

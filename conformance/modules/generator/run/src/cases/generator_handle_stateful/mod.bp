@@ -18,7 +18,7 @@ iter fn computed() -> Iter<i32> {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = literals();
     for (a) { x ->
         print(x);

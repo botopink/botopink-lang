@@ -57,7 +57,7 @@ type Report(db: Memory) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val g = Greeter(who: "Ana");
     print(g.shout @`hello`);
     print(g.shape @`

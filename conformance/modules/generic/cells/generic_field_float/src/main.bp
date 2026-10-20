@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 
 type Box<T>(value: T)
 
-pub fn main() {
+pub fn main() -> void {
     val b = Box(value: 1.5);
     print(b.value);
 }

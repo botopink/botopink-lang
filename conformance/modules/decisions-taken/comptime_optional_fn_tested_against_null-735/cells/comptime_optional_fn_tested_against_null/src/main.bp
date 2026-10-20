@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn check(syntax decl: unknown, comptime message: string, comptime rule: ?fn(v: i32) -> bool = null) {
+fn check(syntax decl: unknown, comptime message: string, comptime rule: ?fn(v: i32) -> bool = null) -> void {
     if (rule == null)
         compiler.init({ -> print(compiler.name(decl) + ": " + message + ", by itself") })
     else
@@ -30,7 +30,7 @@ fn describe(comptime rule: ?fn(v: i32) -> bool) -> string {
     return "a rule";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(null));
     print(describe(positive));
 }

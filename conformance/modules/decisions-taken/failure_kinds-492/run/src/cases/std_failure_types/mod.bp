@@ -4,7 +4,7 @@
 
 import {failure, failure.HostErrorName, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val h = failure.HostError(message: "ENOENT", kind: "host", name: HostErrorName.Error, detail: null);
     print(h.message);
     print(h.kind);

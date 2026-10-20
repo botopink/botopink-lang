@@ -15,7 +15,7 @@ pub fn local() -> string {
     return "main local";
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (@TypeInfo.all(with: m)) { d ->
         val run = d.value;
         val said = if (run is fn() -> string) run() else "?";

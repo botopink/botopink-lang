@@ -9,6 +9,6 @@ fn shout(syntax q: string) -> string {
 
 val g: fn() -> string = { -> shout @`x` };
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(g());
 }

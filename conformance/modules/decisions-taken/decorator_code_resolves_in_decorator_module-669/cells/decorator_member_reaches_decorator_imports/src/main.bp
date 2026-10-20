@@ -9,7 +9,7 @@ import {checks.counted};
 #[counted("items")]
 pub type Basket(size: i32)
 
-pub fn main() {
+pub fn main() -> void {
     Basket(size: 3).report();
     Basket(size: 0).report();
 }

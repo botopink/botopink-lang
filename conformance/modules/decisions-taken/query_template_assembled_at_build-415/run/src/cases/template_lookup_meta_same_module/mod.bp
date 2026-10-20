@@ -23,14 +23,14 @@ fn report() -> string {
     return tableOf @`User`;
 }
 
-fn entity(syntax decl: unknown, comptime name: string) {
+fn entity(syntax decl: unknown, comptime name: string) -> void {
     compiler.setMeta(Table(name: name));
 }
 
 #[entity("users")]
 type User(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(early);
     print(report());
 }

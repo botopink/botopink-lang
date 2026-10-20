@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.record_structural_equality.runCase();
     cases.type_identity_equality.runCase();
 }

@@ -4,7 +4,7 @@
 
 import {escape, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(escape.html("<a href=\"x\">&"));
     print(escape.attribute("it's \"q\""));
     print(escape.unescapeHtml("&lt;b&gt; &amp;amp;"));

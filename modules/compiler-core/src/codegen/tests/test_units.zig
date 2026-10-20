@@ -19,7 +19,7 @@ const main_src =
     \\    return helper(x);
     \\}
     \\
-    \\fn main() {
+    \\fn main() -> void {
     \\    print(twice(secret));
     \\}
     \\

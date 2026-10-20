@@ -17,7 +17,7 @@ import {io.terminal.print} from "std";
 
 type Pin(n: i32, at: Target = .Bottom)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = Anchor(href: "/x");
     print(a);
     print(a.target);

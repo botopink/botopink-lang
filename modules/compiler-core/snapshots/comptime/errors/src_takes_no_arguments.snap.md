@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn main() {
+fn main() -> void {
     val loc = @src(1);
 }
 

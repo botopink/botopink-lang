@@ -5,7 +5,7 @@ type Level { Low, High }
 fn index<T>(
     syntax decl: T,
     comptime ..fields: Type.Field<T>[],
-) {
+) -> void {
     compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
 }
 
@@ -13,7 +13,7 @@ fn mark(
     syntax decl: unknown,
     comptime sizes: i32[],
     comptime level: Level = .Low,
-) {
+) -> void {
     compiler.setMeta(
         Mark(
             sizes: sizes.length,
@@ -26,7 +26,7 @@ fn mark(
 #[mark([1, 2], level: .High)]
 type City(code: string, name: string, state: string)
 
-fn main() {
+fn main() -> void {
     val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
     print(columns.join(",")); // state,name
     print(comptime compiler.typeInfo(City).meta(Mark)?.sizes ?? 0); // 2

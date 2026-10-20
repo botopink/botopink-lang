@@ -50,7 +50,7 @@ fn sum(p: Point) -> i32 {
     return p.x + p.y;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sum(hostPoint()));
     print(hostPoint().x);
 

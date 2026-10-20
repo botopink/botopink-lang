@@ -14,6 +14,6 @@ iter fn items() -> Iter<i32> {
     yield x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (items()) { v -> print(v); }
 }

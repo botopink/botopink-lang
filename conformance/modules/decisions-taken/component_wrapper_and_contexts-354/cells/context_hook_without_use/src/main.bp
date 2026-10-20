@@ -14,6 +14,6 @@ component fn Label() -> Component<Element> {
     return Element(text: "");
 }
 
-pub fn main() {
+pub fn main() -> void {
     Label();
 }

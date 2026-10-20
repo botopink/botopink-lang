@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var acc = 1;
     {
         acc = acc + 5;

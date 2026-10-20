@@ -7,6 +7,6 @@ pub fn f() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(f());
 }

@@ -38,7 +38,7 @@ fn borderName(b: Border) -> string {
     return s;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = Token.Color.Red.500;
     val b = Border.Color.Red.100;
 

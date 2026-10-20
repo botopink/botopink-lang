@@ -14,7 +14,7 @@ type Money(cents: i32) implement Display {
     }
 }
 
-fn main() {
+fn main() -> void {
     print([1, 2]); // [1, 2]
     print(#(1, "a")); // #(1, "a")
     print(Point(x: 1, y: 2)); // Point(x: 1, y: 2)

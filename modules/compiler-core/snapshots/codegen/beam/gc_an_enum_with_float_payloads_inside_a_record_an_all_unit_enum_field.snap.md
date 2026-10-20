@@ -24,7 +24,7 @@ fn warm(c: Color) -> bool {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(area(Shape.Square(side: 2.0)));
     print(area(Shape.Circle(radius: 1.0)));
     val it = Item(shape: Shape.Square(side: 3.0), color: Color.Green, label: "x");

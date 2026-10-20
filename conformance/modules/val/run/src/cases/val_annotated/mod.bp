@@ -4,7 +4,7 @@ val count: i32 = 42;
 
 val names: string[] = ["alice", "bob"];
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(count); // 42
     print(names); // ["alice", "bob"]
 }

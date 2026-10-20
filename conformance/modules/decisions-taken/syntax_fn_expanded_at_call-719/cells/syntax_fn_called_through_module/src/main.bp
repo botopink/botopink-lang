@@ -10,7 +10,7 @@ fn render(name: string) -> string {
     return "<p>" + name + "</p>";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val ok = probe.matches(render("page"));
     print(ok.toString());
 }

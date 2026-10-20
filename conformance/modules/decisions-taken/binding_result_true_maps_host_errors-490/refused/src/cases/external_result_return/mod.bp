@@ -10,6 +10,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
 declare fn jsParse(s: string) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(jsParse("1"));
 }

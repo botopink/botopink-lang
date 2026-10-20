@@ -19,7 +19,7 @@ fn weight(s: Size) -> i32 {
     };
 }
 
-fn main() {
+fn main() -> void {
     val sq = Square(side: 3);
     print(sq.area());
     print(weight(Size.Large(n: 5)) + weight(Size.Small));

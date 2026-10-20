@@ -14,7 +14,7 @@ fn three() -> i32 {
     return 3;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val fs: Dict<string, fn() -> i32> = comptime {
         var d: Dict<string, fn() -> i32> = Dict.empty();
         d = d.insert("two", two);

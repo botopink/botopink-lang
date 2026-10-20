@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn maker<T>(syntax decl: T) {
+fn maker<T>(syntax decl: T) -> void {
     compiler.addMember("code", fn(self: T) -> i32 {
         return self.nope;
     });
@@ -13,6 +13,6 @@ fn maker<T>(syntax decl: T) {
 #[maker]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "a").code());
 }

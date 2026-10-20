@@ -8,6 +8,6 @@ import {io.terminal.print, compiler} from "std";
 #[compiler.beamMemroy(.Ets)]
 var hits: i32 = 0;
 
-pub fn main() {
+pub fn main() -> void {
     print(hits);
 }

@@ -9,7 +9,7 @@ type Op(name: string, run: fn(x: i32) -> i32)
 
 fn apply(op: Op, v: i32) -> i32 { op.run(v) }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val inc = Op(name: "inc", run: fn(x: i32) -> i32 { x + 1 });
     val dbl = Op(name: "dbl", run: fn(x: i32) -> i32 {
         return x * 2;

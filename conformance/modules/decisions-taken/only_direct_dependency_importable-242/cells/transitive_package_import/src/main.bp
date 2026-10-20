@@ -7,6 +7,6 @@
 import {greet} from "core";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(greet());
 }

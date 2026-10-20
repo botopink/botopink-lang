@@ -81,7 +81,7 @@ fn shapeName(v: Block | Vec) -> string {
     return out;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(tokenCss(.Layout.Block));
     print(tokenCss(.Layout.Inline));
     print(tokenCss(.Layout.Size.Large));

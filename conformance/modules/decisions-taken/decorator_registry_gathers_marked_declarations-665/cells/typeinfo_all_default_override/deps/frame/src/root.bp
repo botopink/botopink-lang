@@ -4,11 +4,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn m(syntax decl: unknown) {
+pub fn m(syntax decl: unknown) -> void {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
-pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
     print(modules.length.toString());
 }
 

@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val firstTwo: fn(xs: i32[]) -> Iter<i32> = { iter xs ->
         var n = 0;
         for (xs) { x ->

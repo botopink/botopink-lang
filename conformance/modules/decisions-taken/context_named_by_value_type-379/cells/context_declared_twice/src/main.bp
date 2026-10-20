@@ -10,6 +10,6 @@ pub val themeContext = comptime createContext(Theme(mode: "light"));
 
 pub val otherTheme = comptime createContext(Theme(mode: "dark"));
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

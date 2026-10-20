@@ -20,7 +20,7 @@ fn verdict(r: Result<void, string>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Box.make(count: 3, label: "b="));
     print(describe(s: "a=", n: 1));
     print(helper.describe(s: "c=", n: 4));

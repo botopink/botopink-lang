@@ -9,7 +9,7 @@ type Box<T>(value: T) {
     }
 }
 
-fn main() {
+fn main() -> void {
     val b: Box<string> = Box(value: 1).map({ x -> "one" });
     print(b.get());
 }

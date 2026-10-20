@@ -3,11 +3,11 @@
 
 import {io.terminal.print} from "std";
 
-fn nothing() {}
+fn nothing() -> void {}
 
-fn ignore(n: i32) {}
+fn ignore(n: i32) -> void {}
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("before");
     nothing();
     ignore(7);

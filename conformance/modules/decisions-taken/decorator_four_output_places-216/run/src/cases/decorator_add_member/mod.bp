@@ -7,7 +7,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     var names: string[] = [];
     compiler.fields(decl).forEach({ f -> names.push(f.name) });
     compiler.addMember(
@@ -20,7 +20,7 @@ fn entity(syntax decl: unknown) {
     );
 }
 
-fn label(syntax decl: unknown) {
+fn label(syntax decl: unknown) -> void {
     compiler.addMember(
         "pub fn "
             + compiler.name(decl)!
@@ -37,7 +37,7 @@ type City(#[label] name: string, size: i32) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(City.columns());
     print(City(name: "Recife", size: 3).bigger(2).describe());
     print(City.nameLabel());

@@ -61,7 +61,7 @@ fn after(flag: bool) -> i32 {
     return n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(true));
     print(pick(false));
     print(loops());

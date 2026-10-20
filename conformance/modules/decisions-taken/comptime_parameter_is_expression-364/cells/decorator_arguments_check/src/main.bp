@@ -18,7 +18,7 @@ fn check<T>(
     comptime rule: ?fn(v: T) -> bool = null,
     comptime at: ?Type.Field<T> = null,
     comptime code: Code = .Custom,
-) {
+) -> void {
     if (compiler.kind(decl) == DeclKind.Fn) {
         if (compiler.returnType(decl) != "bool")
             compiler.fail("#[check] without `rule` annotates an `fn(x) -> bool`", at: decl);
@@ -47,7 +47,7 @@ fn passwordNotHandle(a: Account) -> bool {
     return !a.password.contains(a.handle);
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (comptime compiler.typeInfo(Account).metaAll(Check)) { c ->
         print(c.message + " (" + c.kind + ")");
     }

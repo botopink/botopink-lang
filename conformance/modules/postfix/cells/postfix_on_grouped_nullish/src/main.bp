@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val d = #(1, 2);
     val none: #(i32, i32)[] = [];
     print((none.at(0) ?? d)._1);

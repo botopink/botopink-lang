@@ -9,7 +9,7 @@ pub type Meter(base: i32) {
     }
 }
 
-fn main() {
+fn main() -> void {
     val m = Meter(base: 3);
     print(m.plus(4)); // 7 on every backend that has a host
     print(m.twice()); // 6

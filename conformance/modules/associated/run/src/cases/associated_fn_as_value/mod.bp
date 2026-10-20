@@ -41,7 +41,7 @@ fn applyTag(s: string, f: fn(string) -> Tag) -> Tag {
     return f(s);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(apply(1, Box.wrap).n);
     val w = Box.wrap;
     print(w(10).n);

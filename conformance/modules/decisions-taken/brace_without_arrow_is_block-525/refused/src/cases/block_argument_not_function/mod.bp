@@ -7,6 +7,6 @@ fn apply(f: fn(n: i32) -> i32, x: i32) -> i32 {
     return f(x);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(apply({ 3 }, 2));
 }

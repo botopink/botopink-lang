@@ -14,7 +14,7 @@ pub val big = comptime wide(4500000000l);
 
 pub val totalContext = comptime createContext(7l);
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(big);
     print(comptime wide(3l) + 1l);
 }

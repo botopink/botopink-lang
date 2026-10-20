@@ -8,7 +8,7 @@ type Doc(
     }
 }
 
-fn main() {
+fn main() -> void {
     val d = Doc(title: "hi");
     print(d.print());
 }

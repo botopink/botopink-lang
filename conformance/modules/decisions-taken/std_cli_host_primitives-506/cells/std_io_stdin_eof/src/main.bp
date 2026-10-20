@@ -21,6 +21,6 @@ async fn scenario() -> Async<void> {
     print(show(await stdin.readChunk()));
 }
 
-pub fn main() {
+pub fn main() -> void {
     scenario();
 }

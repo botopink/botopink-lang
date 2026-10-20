@@ -8,7 +8,7 @@ pub mod `report-pages`;
 import {cases.backtick_name_module_segment.`report-pages`.`not-found`.code};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(`my-utils`.triple(4));
     print(code());
 }

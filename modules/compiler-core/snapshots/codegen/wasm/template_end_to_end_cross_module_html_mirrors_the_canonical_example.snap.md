@@ -25,7 +25,7 @@ val page = html @`<div>
   <p>world</p>
   <Page1/>
 </div>`;
-fn main() {
+fn main() -> void {
     print(page);
 }
 

@@ -17,7 +17,7 @@ fn show(o: ?i32) -> i32 {
     return o ?? -1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val xs = [7, 8];
     print(xs.at(1));
     print(xs.at(5));

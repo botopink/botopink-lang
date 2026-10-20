@@ -10,7 +10,7 @@ fn none(s: Signup) -> Violation[] {
     return [];
 }
 
-fn check<T>(syntax decl: T, comptime rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, comptime rule: fn(v: T) -> bool) -> void {
     compiler.addMember("validate", none);
 }
 
@@ -21,6 +21,6 @@ fn passwordsMatch(a: Signup) -> bool {
 #[check(passwordsMatch)]
 pub type Signup(password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

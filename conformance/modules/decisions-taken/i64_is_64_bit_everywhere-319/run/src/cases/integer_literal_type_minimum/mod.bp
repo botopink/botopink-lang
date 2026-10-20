@@ -11,7 +11,7 @@ fn safe(value: i64) -> bool {
     return value <= 9007199254740991 && value >= -9007199254740991;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a: i8 = -128;
     val b: i16 = -32768;
     val c: i32 = -2147483648;

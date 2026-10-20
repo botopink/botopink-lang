@@ -9,7 +9,7 @@ type Tag {
     Label(t: i32, w: i32),
 }
 
-pub fn main() {
+pub fn main() -> void {
     val Label(t, w) = Tag.Label(t: 2, w: 5);
     print(t + w);
 }

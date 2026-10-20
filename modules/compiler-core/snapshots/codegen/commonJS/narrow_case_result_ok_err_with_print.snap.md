@@ -4,7 +4,7 @@ fn fetch(ok: bool) -> Result<string, string> {
     if (ok) { return "data"; };
     throw "fail";
 }
-fn main() {
+fn main() -> void {
     val r1 = fetch(true);
     val msg1 = case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
     print(msg1);

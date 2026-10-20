@@ -17,7 +17,7 @@ fn listed(syntax q: string) -> unknown[] {
     return compiler.build("[\"" + compiler.text(q) + "\"]");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val names = data @`names`;
     val n = data @`count`;
     print(names.join(","));

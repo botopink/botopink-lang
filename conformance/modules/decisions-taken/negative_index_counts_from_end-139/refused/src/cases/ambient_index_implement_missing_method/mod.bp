@@ -10,6 +10,6 @@ type Registry(names: string[]) implement Index<string, i32> {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Registry(names: ["ana", "bo"]).find("bo"));
 }

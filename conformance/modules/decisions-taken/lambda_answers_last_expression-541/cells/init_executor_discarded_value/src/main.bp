@@ -9,7 +9,7 @@ fn reg(name: string) -> i32 {
     return 0;
 }
 
-fn registered(syntax decl: unknown) {
+fn registered(syntax decl: unknown) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> reg(name); });
 }
@@ -19,6 +19,6 @@ pub fn home() -> string {
     return "home";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(home());
 }

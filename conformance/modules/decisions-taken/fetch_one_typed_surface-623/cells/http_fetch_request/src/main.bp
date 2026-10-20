@@ -19,7 +19,7 @@ fn describe(e: http.HttpError) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val get = http.Request(method: .Get, url: "https://example.com/a");
     print(get.method.verb() + " " + get.url);
     print(get.headers.length.toString());

@@ -5,7 +5,7 @@ import {io.terminal.print} from "std";
 
 type Pair<A, B>(a: A, b: B)
 
-pub fn main() {
+pub fn main() -> void {
     val p = Pair<i32>(a: 1, b: 2);
     print(p.a);
 }

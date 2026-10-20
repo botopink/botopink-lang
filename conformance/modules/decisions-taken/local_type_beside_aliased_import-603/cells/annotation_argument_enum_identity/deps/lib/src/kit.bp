@@ -21,7 +21,7 @@ pub fn word(lifecycle: Lifecycle) -> string {
 }
 
 /// Records `lifecycle` under `name`; what `#[m]`'s executor calls.
-pub fn record(name: string, lifecycle: Lifecycle) {
+pub fn record(name: string, lifecycle: Lifecycle) -> void {
     seen.push(name + " " + word(lifecycle));
 }
 
@@ -30,7 +30,7 @@ pub fn recorded() -> string[] {
     return seen;
 }
 
-pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) {
+pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) -> void {
     val manual = if (lifecycle == Lifecycle.Manual)
         "is manual"
     else

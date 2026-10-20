@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn m(syntax decl: unknown) {
+pub fn m(syntax decl: unknown) -> void {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 
@@ -14,7 +14,7 @@ pub fn frameCore() -> string {
     return "frame core";
 }
 
-fn show(all: Declared<unknown>[]) {
+fn show(all: Declared<unknown>[]) -> void {
     for (all) { d ->
         val run = d.value;
         val said = if (run is fn() -> string) run() else "?";
@@ -24,7 +24,7 @@ fn show(all: Declared<unknown>[]) {
     }
 }
 
-pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) {
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
     show(modules);
 }
 

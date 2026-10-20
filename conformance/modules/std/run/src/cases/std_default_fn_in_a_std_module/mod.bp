@@ -27,7 +27,7 @@
 
 import {querystring, path, url, collections.Queue, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
     print(path.extname("dir/report.tar.gz"));
     print(url.parse("https://example.com/a?b=1").host);

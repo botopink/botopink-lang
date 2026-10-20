@@ -4,7 +4,7 @@ val desc = case 42 {
     0 -> "zero";
     _ -> "nonzero";
 };
-fn main() {
+fn main() -> void {
     print(desc);
 }
 

@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.generator_levels.runCase();
     cases.generator_result_items_lazy.runCase();
     cases.iterator_factory.runCase();

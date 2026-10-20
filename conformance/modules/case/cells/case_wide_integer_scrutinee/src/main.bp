@@ -107,7 +107,7 @@ fn pairMixed(a: f64, n: i32, c: i64) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(bandU64(4ul));
     print(bandU64(9000000000ul));
     print(bandU64(9223372036854775808ul));

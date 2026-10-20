@@ -4,6 +4,6 @@
 import {io.terminal.print} from "std";
 pub mod phase;
 
-pub fn main() {
+pub fn main() -> void {
     print(phase.describe(.Slow));
 }

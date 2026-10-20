@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.decorator_member_fn_tail.runCase();
     cases.fn_expr_tail_value.runCase();
     cases.fn_tail_after_loop_return.runCase();

@@ -22,7 +22,7 @@ fn area(s: `Shape kind`) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val p: `my point` = `my point`(x: 3, y: 4);
     print(p.`sum of`());
     print(p);

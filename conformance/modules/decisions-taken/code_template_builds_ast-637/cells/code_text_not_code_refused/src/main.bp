@@ -9,6 +9,6 @@ fn first(syntax q: string) -> anyvalue {
     return code @`${name}[0]`;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first @`word`);
 }

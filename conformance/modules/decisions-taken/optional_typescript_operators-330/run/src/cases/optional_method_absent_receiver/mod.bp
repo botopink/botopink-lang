@@ -9,7 +9,7 @@ fn find(key: string) -> ?string {
     return if (key == "a") "found" else null;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val absent = find("b");
     val present = find("a");
     print(absent?.length() ?? -1);

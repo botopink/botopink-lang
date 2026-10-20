@@ -14,6 +14,6 @@ iter fn bad(n: i32) -> Iter<i32> {
     yield w;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(1);
 }

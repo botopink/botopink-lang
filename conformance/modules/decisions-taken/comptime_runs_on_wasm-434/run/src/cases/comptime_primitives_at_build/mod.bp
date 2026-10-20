@@ -85,7 +85,7 @@ fn divs() -> string {
         + ((0 - 7) % 3).toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val i = comptime ints();
     print(i);
     print(i == ints());

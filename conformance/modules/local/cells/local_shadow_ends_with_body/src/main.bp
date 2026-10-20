@@ -20,7 +20,7 @@ fn second() -> string {
     return p("x");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first());
     print(second());
 }

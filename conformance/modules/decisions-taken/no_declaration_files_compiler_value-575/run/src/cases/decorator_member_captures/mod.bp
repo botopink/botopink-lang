@@ -8,7 +8,7 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
-fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) -> void {
     val field = compiler.name(decl)!;
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
@@ -23,7 +23,7 @@ fn passwordsMatch(a: Signup) -> bool {
 #[check(passwordsMatch)]
 pub type Signup(password: string, confirm: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Signup(password: "a", confirm: "a").validate().length);
     Signup(password: "a", confirm: "b")
         .validate()

@@ -11,7 +11,7 @@ test "signature_help: cursor after opening paren shows first param" {
 
     // Bindings from the last successful compilation (definition only).
     const bindings_source =
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
     ;
     var c = try h.compile(gpa, bindings_source);
     defer c.deinit(gpa);
@@ -22,7 +22,7 @@ test "signature_help: cursor after opening paren shows first param" {
 
     // Current source (incomplete) — real editing scenario.
     const source =
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
         \\val r = add(
     ;
     // col 12 = depois do '(' em "val r = add("
@@ -39,7 +39,7 @@ test "signature_help: cursor after comma shows second param" {
 
     // Bindings from the last successful compilation.
     const bindings_source =
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
     ;
     var c = try h.compile(gpa, bindings_source);
     defer c.deinit(gpa);
@@ -50,7 +50,7 @@ test "signature_help: cursor after comma shows second param" {
 
     // Current source (incomplete): user typed first argument and comma.
     const source =
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
         \\val r = add(1,
     ;
     // col 14 = after comma in "val r = add(1," → active_param=1
@@ -92,7 +92,7 @@ test "signature_help: zero-param function" {
 
     // Bindings from the last successful compilation.
     const bindings_source =
-        \\fn greet() { return 42; }
+        \\fn greet() -> i32 { return 42; }
     ;
     var c = try h.compile(gpa, bindings_source);
     defer c.deinit(gpa);
@@ -103,7 +103,7 @@ test "signature_help: zero-param function" {
 
     // Current source (incomplete): user just typed `greet(`.
     const source =
-        \\fn greet() { return 42; }
+        \\fn greet() -> i32 { return 42; }
         \\val r = greet(
     ;
     // col 14 = depois do '(' em "val r = greet("
@@ -158,7 +158,7 @@ test "signature_help: same-typed params get distinct, locatable labels" {
 
     // Bindings from the last successful compilation (definition only).
     const bindings_source =
-        \\fn compute(n: i32, m: i32) { return n; }
+        \\fn compute(n: i32, m: i32) -> i32 { return n; }
     ;
     var c = try h.compile(gpa, bindings_source);
     defer c.deinit(gpa);
@@ -169,7 +169,7 @@ test "signature_help: same-typed params get distinct, locatable labels" {
 
     // Current source (incomplete) — user just typed `compute(`.
     const source =
-        \\fn compute(n: i32, m: i32) { return n; }
+        \\fn compute(n: i32, m: i32) -> i32 { return n; }
         \\val r = compute(
     ;
     // col 16 = depois do '(' em "val r = compute("

@@ -17,7 +17,7 @@ fn drain(start: Array<i32>) -> i32 {
     return sum;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var xs = [1, 2, 3];
     val last = xs.pop();
     print(last);

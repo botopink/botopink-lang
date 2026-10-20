@@ -8,7 +8,7 @@ fn describe(r: Result_) -> string {
         Fail -> "failed";
     };
 }
-fn main() {
+fn main() -> void {
     print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
 }
 

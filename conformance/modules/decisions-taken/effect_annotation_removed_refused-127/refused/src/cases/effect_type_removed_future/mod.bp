@@ -9,4 +9,4 @@ fn fetch(n: i32) -> @Future<i32, string> {
     return n;
 }
 
-pub fn main() { fetch(1); }
+pub fn main() -> void { fetch(1); }

@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 #[compiler.beamMemory(.PersistentTerm)]
 var version: i32 = 101;
 
-pub fn main() {
+pub fn main() -> void {
     version = 102;
     print(version);
 }

@@ -8,7 +8,7 @@ mod store;
 import {cases.template_method_not_in_scope.store.Memory};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val mem = Memory(prefix: "m:");
     print(mem.read @`a`);
 }

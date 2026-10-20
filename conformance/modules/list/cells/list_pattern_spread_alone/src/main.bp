@@ -13,7 +13,7 @@ fn describe(xs: i32[]) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe([1, 2, 3]));
     print(describe([]));
     val assert [..every] = [4, 5];

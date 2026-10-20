@@ -24,7 +24,7 @@ fn sum(it: Iter<i32>) -> i32 {
     return total;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var n = 0;
     val doubled = iter loop {
         n = n + 1;

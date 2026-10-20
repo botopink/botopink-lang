@@ -36,7 +36,7 @@ fn launch(a: i32, b: i32) -> Batch {
     return Batch(task: all);
 }
 
-fn show(r: Result<Array<string>, string>) {
+fn show(r: Result<Array<string>, string>) -> void {
     case r {
         Ok(names) -> print("ok " + names.join(","));
         Error(e) -> print("error " + e);
@@ -50,6 +50,6 @@ async fn run() -> Async<void> {
     show(await bad.task);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

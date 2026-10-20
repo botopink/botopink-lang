@@ -1059,7 +1059,7 @@ behavior Array<T> {
     fn at(self: Self<T>, index: i32) -> ?T;
 
     #[compiler.external(.Erlang("($0 ++ [$1])"), .JavaScript("push"))]
-    fn push(self: Self<T>, item: T);
+    fn push(self: Self<T>, item: T) -> void;
 
     #[compiler.external(.Erlang("lists:last($0)"), .JavaScript("pop"))]
     fn pop(self: Self<T>) -> ?T;
@@ -1109,7 +1109,7 @@ behavior Array<T> {
     }
 
     #[compiler.external(.Erlang("lists:foreach($1, $0)"), .JavaScript("forEach"))]
-    fn forEach(self: Self<T>, action: fn(item: T));
+    fn forEach(self: Self<T>, action: fn(item: T)) -> void;
 
     #[compiler.external(.Erlang("lists:map($1, $0)"), .JavaScript("map"))]
     fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>;
@@ -1828,7 +1828,7 @@ pub behavior Display {
 // (`comptime.zig` `isAmbientBehavior`).
 
 pub behavior Closeable {
-    fn close(self: Self);
+    fn close(self: Self) -> void;
 }
 
 // ── index / slice (decision 63, amended) ─────────────────────────────────────
@@ -1920,7 +1920,7 @@ pub behavior Component<R> extends Async {
 // code) make of it.
 
 pub behavior Annotation {
-    default fn checkAnnotation(self: Self, syntax decl: unknown) {}
+    default fn checkAnnotation(self: Self, syntax decl: unknown) -> void {}
 }
 
 // ── builtin functions (decision 252) ────────────────────────────────────────
@@ -1990,7 +1990,7 @@ pub declare fn comptimeError(comptime message: string) -> noreturn;
 // decorator can build wiring (singletons, a DI graph, a router table) as
 // ordinary code. May be called any number of times; each call appends.
 // COMPTIME-ONLY.
-pub declare fn emit(source: string);
+pub declare fn emit(source: string) -> void;
 
 // `@compilerError(message)` — a decorator or template body rejects the
 // declaration it runs over with `message`. COMPTIME-ONLY.

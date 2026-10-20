@@ -7,7 +7,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d: Dict<string, unknown> = comptime Dict.empty();
     val e: Dict<string, unknown> = comptime { Dict.empty() };
     print(d.size() == e.size());

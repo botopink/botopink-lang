@@ -16,7 +16,7 @@ fn kind(v: unknown) -> string {
     return "other";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d: D<string, i32> = D.empty().insert("k", 7);
     print(d.size());
     print(ms(KitDict(initialMs: 5)));

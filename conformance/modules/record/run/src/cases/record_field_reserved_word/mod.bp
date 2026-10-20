@@ -43,7 +43,7 @@ fn leafClass(n: Node) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = Tag(class: "btn", id: 1);
     print(t.class);
     print(spread(t));

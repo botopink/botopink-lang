@@ -8,7 +8,7 @@ fn div(a: f64, b: f64) -> f64 {
     return a / b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(div(7.0, 2.0));
     print(div(7.0, 0.0));
     print("after");

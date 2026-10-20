@@ -29,7 +29,7 @@ fn kind(v: unknown) -> string {
     return "other";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(light(Light.Blink(times: 3)));
     print(light(stop()));
     print(sound(Sound.High(db: 70)));

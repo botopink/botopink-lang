@@ -4,7 +4,7 @@ fn multiply(comptime factor: i32, x: i32) -> i32 {
     return x * factor;
 }
 
-fn main() {
+fn main() -> void {
     val double = multiply(2, 21);
     val triple = multiply(3, 21);
     val doubleAgain = multiply(2, 10);

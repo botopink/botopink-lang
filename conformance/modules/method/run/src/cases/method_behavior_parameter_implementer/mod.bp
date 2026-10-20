@@ -32,7 +32,7 @@ type Sheet(items: string[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s = Styled(rule: "color: red");
     val sheet = Sheet
         .of(Prop(name: "gap", value: "1rem"))

@@ -9,7 +9,7 @@ import {cases.decorator_meta_import.models.City as Town};
 import {cases.decorator_meta_import.orm.Entity};
 import {io.terminal.print, compiler} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
     print(comptime compiler.typeInfo(Town).meta(Entity)?.table ?? "none");
     print(comptime compiler.typeInfo(Town).name);

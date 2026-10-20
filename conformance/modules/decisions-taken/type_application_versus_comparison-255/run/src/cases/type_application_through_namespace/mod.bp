@@ -9,7 +9,7 @@ import {collections, io.terminal.print} from "std";
 
 pub mod shapes;
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d = collections.Dict<string, unknown>.empty();
     print(d.size());
     val e = collections.Dict<string, i32>.empty().insert("a", 1).insert("b", 2);

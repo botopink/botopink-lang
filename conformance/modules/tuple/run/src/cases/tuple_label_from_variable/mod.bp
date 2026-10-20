@@ -10,6 +10,6 @@ fn read() -> i32 {
     return inner.value; // same element as inner.0
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(read()); // 1
 }

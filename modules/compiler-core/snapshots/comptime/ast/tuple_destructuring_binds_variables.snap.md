@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn extract() {
+fn extract() -> void {
     val #(first, second) = #(1, "hello");
 }
 ```

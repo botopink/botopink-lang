@@ -7,6 +7,6 @@ fn two(a: type(x: i32), b: type(y: i32)) -> i32 {
     return a.x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(0);
 }

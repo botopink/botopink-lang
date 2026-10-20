@@ -23,7 +23,7 @@ fn printStat(p: string) -> void {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     fs.writeText("five.txt", "12345");
     printStat("five.txt");
     print(fs.stat(".").isOk());

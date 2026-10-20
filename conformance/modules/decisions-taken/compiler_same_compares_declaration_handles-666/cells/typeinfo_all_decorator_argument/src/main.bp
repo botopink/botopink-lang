@@ -4,11 +4,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn route(syntax decl: unknown, comptime path: string) {
+fn route(syntax decl: unknown, comptime path: string) -> void {
     compiler.setMeta(Route(path: path));
 }
 
-fn job(syntax decl: unknown) {
+fn job(syntax decl: unknown) -> void {
     compiler.setMeta(Job(kind: "job"));
 }
 
@@ -22,7 +22,7 @@ pub fn sweep() -> string {
     return "sweep";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: route).length);
     print(@TypeInfo.all(with: job)[0]?.name ?? "none");
     print(@TypeInfo.all(with: [route, job]).map({ d -> d.name }).join(","));

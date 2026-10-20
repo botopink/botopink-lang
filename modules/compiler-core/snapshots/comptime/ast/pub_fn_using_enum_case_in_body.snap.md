@@ -18,7 +18,7 @@ pub fn label(d: Direction) -> string {
     return result;
 }
 val n = label(Direction.North);
-fn main() {
+fn main() -> void {
     print(n);
 }
 

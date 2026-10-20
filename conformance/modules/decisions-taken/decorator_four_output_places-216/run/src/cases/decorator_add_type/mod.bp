@@ -7,7 +7,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown) {
+fn entity(syntax decl: unknown) -> void {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
     compiler.addType("Columns", compiler.buildType("("
@@ -40,7 +40,7 @@ fn sizeOf(c: City) -> City.Size {
     return if (c.people > 100) City.Size.Large else City.Size.Small;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val mine: City.Columns = City.Columns(name: "nome", people: "gente");
     print(header(mine));
     print(header(City.columns()));

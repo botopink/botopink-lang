@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(String.fromCodepoint(65));
     print(String.fromCodepoint(0) == String.fromCodepoint(0));
     print(String.fromCodepoint(127) + String.fromCodepoint(128));

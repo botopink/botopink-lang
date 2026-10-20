@@ -2238,14 +2238,14 @@ pub const decl_reflection_src =
     \\    owner: ?Declared<unknown>,
     \\    package: string) {
     \\    declare fn attr(self: Self, name: string) -> ?string;
-    \\    declare fn fail(self: Self, message: string);
-    \\    declare fn failAt(self: Self, span: __Span, message: string);
-    \\    declare fn addMember(self: Self, source: string);
-    \\    declare fn setMeta(self: Self, key: string, value: string);
-    \\    declare fn addMeta<T>(self: Self, value: T);
-    \\    declare fn addType(self: Self, name: string, source: string);
-    \\    declare fn compile(self: Self, executor: fn());
-    \\    declare fn implement(self: Self, source: Implementation);
+    \\    declare fn fail(self: Self, message: string) -> void;
+    \\    declare fn failAt(self: Self, span: __Span, message: string) -> void;
+    \\    declare fn addMember(self: Self, source: string) -> void;
+    \\    declare fn setMeta(self: Self, key: string, value: string) -> void;
+    \\    declare fn addMeta<T>(self: Self, value: T) -> void;
+    \\    declare fn addType(self: Self, name: string, source: string) -> void;
+    \\    declare fn compile(self: Self, executor: fn()) -> void;
+    \\    declare fn implement(self: Self, source: Implementation) -> void;
     \\}
     \\pub type __Source(file: string, line: i32, col: i32)
     \\pub type __ExprContext(source: __Source, text: string, multiline: bool)

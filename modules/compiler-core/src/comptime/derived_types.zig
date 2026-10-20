@@ -525,7 +525,7 @@ test "derived types: the refusals are located" {
         .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nval P = Type.pick(R, .b);", .line = 3, .col = 22 },
         .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nval P = Type.merge(R, R);", .line = 3, .col = 23 },
         .{ .src = "import {types.Type} from \"std\";\ntype E { A, B }\nval P = Type.partial(E);", .line = 3, .col = 22 },
-        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nfn f() { val P = Type.partial(R); }", .line = 3, .col = 23 },
+        .{ .src = "import {types.Type} from \"std\";\ntype R(a: i32)\nfn f() -> void { val P = Type.partial(R); }", .line = 3, .col = 31 },
         .{ .src = "import {types.Type as T} from \"std\";\ntype R(a: i32)\nval P = T.omit(R, .a);", .line = 3, .col = 11 },
     };
     for (cases) |cs| {

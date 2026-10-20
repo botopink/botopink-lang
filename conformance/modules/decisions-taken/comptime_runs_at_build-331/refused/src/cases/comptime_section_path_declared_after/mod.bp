@@ -24,7 +24,7 @@ fn label(t: Tok) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime label(later()));
 }
 

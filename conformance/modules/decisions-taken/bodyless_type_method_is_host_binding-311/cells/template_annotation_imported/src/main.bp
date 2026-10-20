@@ -13,7 +13,7 @@ fn logout(u: string) -> string {
     return u;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val statements: string[] = comptime compiler.typeInfo(Users).meta(Repository)?.statements ?? [];
     print(statements.join(" | "));
     print(comptime compiler.typeInfo(logout).meta(Query)!.sql);

@@ -23,7 +23,7 @@ import {io.stdin, compiler};
 // per module (a binary with `~ts`, any other value with `~p`); on wasm the call is lowered by
 // the backend until its cell is written (164 s3).
 #[compiler.external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
-pub declare fn print(..values: unknown[]);
+pub declare fn print(..values: unknown[]) -> void;
 
 // The error of `setRaw`.
 pub type TerminalError {

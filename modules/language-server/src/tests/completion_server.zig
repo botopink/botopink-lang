@@ -106,7 +106,7 @@ test "completion (server): a half-typed line still completes" {
 test "completion (server): a failing @emit keeps the module's declarations" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    @emit("val __wired = unresolvedRuntimeSymbol();");
         \\}
         \\
@@ -153,7 +153,7 @@ test "completion (server): a val declared below the cursor is not offered" {
 test "completion (server): decorator body lists its locals" {
     const gpa = std.testing.allocator;
     const source =
-        \\pub fn component(syntax decl: unknown) {
+        \\pub fn component(syntax decl: unknown) -> void {
         \\    var args = "";
         \\    items.forEach({ f ->
         \\        log(args);

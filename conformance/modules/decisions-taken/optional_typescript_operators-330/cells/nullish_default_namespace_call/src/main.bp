@@ -11,7 +11,7 @@ fn find(key: string) -> ?string {
     return if (key == "a") "found" else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(find("a") ?? path.basename("/srv/data.txt"));
     print(find("b") ?? path.basename("/srv/data.txt"));
     print((find("b") ?? path.dirname("/srv/data.txt")).length());

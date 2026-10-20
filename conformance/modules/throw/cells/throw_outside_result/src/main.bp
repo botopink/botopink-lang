@@ -4,4 +4,4 @@ import {io.terminal.print} from "std";
 
 fn parse(s: string) -> i32 { throw "boom"; }
 
-pub fn main() { print(parse("a")); }
+pub fn main() -> void { print(parse("a")); }

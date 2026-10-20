@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 type Node(v: i32, next: ?Node)
 
-pub fn main() {
+pub fn main() -> void {
     var x: ?Node = Node(v: 1, next: null);
     if (x != null) {
         x = x.next;

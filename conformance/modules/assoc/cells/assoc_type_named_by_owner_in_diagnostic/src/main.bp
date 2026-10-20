@@ -4,14 +4,14 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn columns(syntax decl: unknown) {
+fn columns(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(id: string)"));
 }
 
 #[columns]
 type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     val c = City.Columns(id: "a");
     print(c.nope);
 }

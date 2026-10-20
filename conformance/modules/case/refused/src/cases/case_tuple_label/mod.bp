@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val row: #(name: string, pop: i32) = #("SP", 12);
     val y = case row {
         #(name: n, ..) { n }

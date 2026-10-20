@@ -14,7 +14,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [1, 2, 3];
     val rev = xs.reverse();
     print(rev.join(","));

@@ -29,7 +29,7 @@ fn pick(m: Mode) -> fn(x: string) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(Mode.Plain(label: "t"))("a"));
     print(pick(Mode.Loud)("b"));
 }

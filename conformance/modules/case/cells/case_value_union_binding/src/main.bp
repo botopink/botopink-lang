@@ -20,7 +20,7 @@ fn describe(s: Shape) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Shape.Circle(r: 4)));
     print(describe(Shape.Label(text: "hi")));
 }

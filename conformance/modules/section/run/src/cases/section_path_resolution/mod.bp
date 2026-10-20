@@ -77,7 +77,7 @@ fn textOf(t: Token.Text) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b: Token.Layout.Break = .Zeta;
     print(breakName(b));
     val h: Token = .Color.Hex("#abc");

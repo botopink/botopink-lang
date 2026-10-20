@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn run(f: fn(i32) -> string) {
+fn run(f: fn(i32) -> string) -> void {
     panic("not implemented");
 }
-fn main() {
+fn main() -> void {
     run { x ->
         return "done";
     };

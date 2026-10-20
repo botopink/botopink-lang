@@ -22,7 +22,7 @@ fn pelaAlias(c: C) -> P {
     return P(..c, nome: "Bia", idade: 41);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = C(email: "ana@a", telefone: "1");
     print(completa(c, "Ana"));
     print(pelaAlias(c));

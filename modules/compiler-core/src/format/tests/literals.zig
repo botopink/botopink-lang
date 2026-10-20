@@ -9,7 +9,7 @@ const h = @import("helpers.zig");
 
 test "format: tuple ---- empty" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #();
         \\}
     );
@@ -17,7 +17,7 @@ test "format: tuple ---- empty" {
 
 test "format: tuple ---- single element" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1);
         \\}
     );
@@ -25,7 +25,7 @@ test "format: tuple ---- single element" {
 
 test "format: tuple ---- two elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1, 2);
         \\}
     );
@@ -33,7 +33,7 @@ test "format: tuple ---- two elements" {
 
 test "format: tuple ---- three elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1, 2, 3);
         \\}
     );
@@ -41,7 +41,7 @@ test "format: tuple ---- three elements" {
 
 test "format: int ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    1;
         \\}
     );
@@ -49,7 +49,7 @@ test "format: int ---- simple" {
 
 test "format: int ---- with underscores" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    121_234_345_989_000;
         \\}
     );
@@ -57,7 +57,7 @@ test "format: int ---- with underscores" {
 
 test "format: int ---- negative" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    -12_928_347_925;
         \\}
     );
@@ -65,7 +65,7 @@ test "format: int ---- negative" {
 
 test "format: float ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0;
         \\}
     );
@@ -73,7 +73,7 @@ test "format: float ---- simple" {
 
 test "format: float ---- negative" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    -1.0;
         \\}
     );
@@ -81,7 +81,7 @@ test "format: float ---- negative" {
 
 test "format: float ---- with decimals" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    9999.6666;
         \\}
     );
@@ -89,7 +89,7 @@ test "format: float ---- with decimals" {
 
 test "format: float ---- scientific notation" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0e1;
         \\}
     );
@@ -97,7 +97,7 @@ test "format: float ---- scientific notation" {
 
 test "format: float ---- negative exponent" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0e-1;
         \\}
     );
@@ -105,7 +105,7 @@ test "format: float ---- negative exponent" {
 
 test "format: string ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    "Hello";
         \\}
     );
@@ -113,7 +113,7 @@ test "format: string ---- simple" {
 
 test "format: string ---- escape sequences" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    "\\n\\t";
         \\}
     );
@@ -121,7 +121,7 @@ test "format: string ---- escape sequences" {
 
 test "format: list ---- empty" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [];
         \\}
     );
@@ -129,7 +129,7 @@ test "format: list ---- empty" {
 
 test "format: list ---- single element" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1];
         \\}
     );
@@ -137,7 +137,7 @@ test "format: list ---- single element" {
 
 test "format: list ---- multiple elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1, 2, 3];
         \\}
     );
@@ -145,7 +145,7 @@ test "format: list ---- multiple elements" {
 
 test "format: list ---- with spread" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1, 2, 3, ..x];
         \\}
     );
@@ -153,7 +153,7 @@ test "format: list ---- with spread" {
 
 test "format: list ---- nested lists" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        really_long_variable_name,
         \\        really_long_variable_name,
@@ -167,7 +167,7 @@ test "format: list ---- nested lists" {
 
 test "format: list ---- comments inside" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        // First!
         \\        // First?
@@ -182,7 +182,7 @@ test "format: list ---- comments inside" {
 
 test "format: list ---- trailing comments" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        1,
         \\        2,
@@ -197,7 +197,7 @@ test "format: list ---- trailing comments" {
 // while every group was pinned.
 test "format: list ---- a list past the width breaks one element per line" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        100,
         \\        200,
@@ -226,7 +226,7 @@ test "format: list ---- a list past the width breaks one element per line" {
 
 test "format: list ---- a list of strings past the width breaks the same way" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        "one",
         \\        "two",
@@ -247,7 +247,7 @@ test "format: list ---- a list of strings past the width breaks the same way" {
 
 test "format: tuple destruct ---- val binding" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val #(a, b) = #(1, 2);
         \\}
     );
@@ -255,7 +255,7 @@ test "format: tuple destruct ---- val binding" {
 
 test "format: tuple destruct ---- var binding" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var #(x, y) = #(10, 20);
         \\}
     );
@@ -271,7 +271,7 @@ test "format: tuple destruct ---- function parameter" {
 
 test "format: tuple destruct ---- long variable names" {
     try h.assertFormat(std.testing.allocator,
-        \\fn extract_coordinates() {
+        \\fn extract_coordinates() -> void {
         \\    val #(longitude, latitude) = get_coordinates();
         \\}
     );
@@ -279,7 +279,7 @@ test "format: tuple destruct ---- long variable names" {
 
 test "format: tuple destruct ---- with try-catch" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val #(a, b) = try fetch() catch throw Error(msg: "failed");
         \\}
     );
@@ -348,7 +348,7 @@ test "format: line string ---- normalizes to triple quotes" {
 
 test "format: tuple literal ---- round-trip" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val cfg = #(8080, true);
         \\}
     );
@@ -356,7 +356,7 @@ test "format: tuple literal ---- round-trip" {
 
 test "format: interface literal ---- basic" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val decl = @Decl(kind: "Record", name: "Service");
         \\}
     );
@@ -364,7 +364,7 @@ test "format: interface literal ---- basic" {
 
 test "format: interface literal ---- multiple fields" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val decl = @Decl(kind: "Record", name: "Service", fields: [], methods: []);
         \\}
     );
@@ -372,7 +372,7 @@ test "format: interface literal ---- multiple fields" {
 
 test "format: interface literal ---- with array" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val decl = @Decl(
         \\        kind: "Record",
         \\        name: "Service",
@@ -384,7 +384,7 @@ test "format: interface literal ---- with array" {
 
 test "format: a string holding a quote keeps its triple fences" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = parse("""{"a":1}""");
         \\}
     );

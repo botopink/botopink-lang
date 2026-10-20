@@ -5,13 +5,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn columns(syntax decl: unknown) {
+fn columns(syntax decl: unknown) -> void {
     compiler.addType("Columns", compiler.buildType("(id: Missing)"));
 }
 
 #[columns]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "a").name);
 }

@@ -8,7 +8,7 @@
 import {counter} from "tally";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     counter.bump();
     print(counter.bump());
 }

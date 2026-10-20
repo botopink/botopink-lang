@@ -15,7 +15,7 @@ fn parsed(n: i32) -> Result<i64, string> {
     throw "negative";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a: i64 = delay(1) ?? 0;
     print(a);
     print(delay(0) ?? 0 + 1);

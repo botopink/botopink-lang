@@ -10,7 +10,7 @@ fn total(rows: i32[][]) -> i32 {
     return rows.flatten().fold(0, { acc, x -> acc + x });
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print([[1, 2], [], [3]].flatten());
     print([["a"], ["b", "c"]].flat());
     val rows = [[1], [2, 3]];

@@ -35,14 +35,14 @@ iter fn thrown(xs: i32[]) -> Iter<Result<i32, string>> {
     }
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print(v);
         Error(e) -> print("error: " + e);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     for (parsed()) { r ->
         show(r);
     }

@@ -3,7 +3,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val empty: Dict<string, f64> = Dict.empty();
     val floats = empty.insert("a", 1.5).insert("b", 0.25);
     print(floats.at("a"), floats.at("b"), floats.at("c"));

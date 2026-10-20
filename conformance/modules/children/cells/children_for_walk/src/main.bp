@@ -15,6 +15,6 @@ pub fn render(e: El) -> string {
     return "<" + e.tag + ">" + inner + "</" + e.tag + ">";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(render(El(tag: "a", children: [El(tag: "b", children: []), El(tag: "c", children: [])])));
 }

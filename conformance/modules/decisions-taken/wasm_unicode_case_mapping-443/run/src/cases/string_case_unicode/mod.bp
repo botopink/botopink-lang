@@ -9,7 +9,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("é".toUpper());
     print("straße".toUpper());
     print("ÉCOLE".toLower());

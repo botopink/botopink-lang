@@ -46,12 +46,12 @@ test "infer error: type ---- arg violates constraint" {
 test "infer error: implement missing a required interface method" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Drawable = behavior {
-        \\    fn draw(self: Self);
-        \\    fn erase(self: Self);
+        \\    fn draw(self: Self) -> void;
+        \\    fn erase(self: Self) -> void;
         \\};
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
-        \\    fn draw(self: Self) {
+        \\    fn draw(self: Self) -> void {
         \\        print("draw");
         \\    }
         \\};
@@ -88,14 +88,14 @@ test "infer error: an inline implement clause whose method is only a declare fn"
 test "infer error: implement method not declared in the interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Drawable = behavior {
-        \\    fn draw(self: Self);
+        \\    fn draw(self: Self) -> void;
         \\};
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
-        \\    fn draw(self: Self) {
+        \\    fn draw(self: Self) -> void {
         \\        print("draw");
         \\    }
-        \\    fn explode(self: Self) {
+        \\    fn explode(self: Self) -> void {
         \\        print("boom");
         \\    }
         \\};
@@ -107,11 +107,11 @@ test "infer error: implement method not declared in the interface" {
 test "infer error: implement qualified prefix is not a declared interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Drawable = behavior {
-        \\    fn draw(self: Self);
+        \\    fn draw(self: Self) -> void;
         \\};
         \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
-        \\    fn Renderable.draw(self: Self) {
+        \\    fn Renderable.draw(self: Self) -> void {
         \\        print("draw");
         \\    }
         \\};
@@ -123,14 +123,14 @@ test "infer error: implement qualified prefix is not a declared interface" {
 test "infer error: duplicate method across interfaces without qualification" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val UsbCharger = behavior {
-        \\    fn connect(self: Self);
+        \\    fn connect(self: Self) -> void;
         \\};
         \\val SolarCharger = behavior {
-        \\    fn connect(self: Self);
+        \\    fn connect(self: Self) -> void;
         \\};
         \\val Camera = type(battery: i32);
         \\val CameraCharger = implement UsbCharger, SolarCharger for Camera {
-        \\    fn connect(self: Self) {
+        \\    fn connect(self: Self) -> void {
         \\        print("connect");
         \\    }
         \\};
@@ -263,7 +263,7 @@ test "infer error: extend without an interface ---- requires implement" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type Pato(id: i32)
         \\val PatoVoa = extend Pato {
-        \\    fn fly(self: Self) {
+        \\    fn fly(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
@@ -273,11 +273,11 @@ test "infer error: extend without an interface ---- requires implement" {
 test "infer error: redundant local activation ---- star is for imports" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
@@ -288,19 +288,19 @@ test "infer error: redundant local activation ---- star is for imports" {
 test "infer error: extension method ambiguous ---- two local impls" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\val Diver = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
         \\val PatoFundo = implement Diver for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
@@ -319,14 +319,14 @@ test "infer error: activation of non-extension symbol" {
 test "infer error: implement declares method not in interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Swimmer = behavior {
-        \\    fn swim(self: Self);
+        \\    fn swim(self: Self) -> i32;
         \\}
         \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
-        \\    fn swim(self: Self) {
+        \\    fn swim(self: Self) -> i32 {
         \\        return self.id;
         \\    }
-        \\    fn fly(self: Self) {
+        \\    fn fly(self: Self) -> i32 {
         \\        return self.id;
         \\    }
         \\}
@@ -407,7 +407,7 @@ test "infer error: a type error inside a method body" {
 test "infer error: a method the receiver type does not declare" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type D(id: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d = D(id: 1);
         \\    print(d.swim());
         \\}
@@ -421,7 +421,7 @@ test "infer error: an unannotated method's return type comes from its body" {
         \\type D(id: i32) {
         \\    fn get(self: Self) { return self.id; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d = D(id: 1);
         \\    val a: string = d.get();
         \\    print(a);
@@ -623,7 +623,7 @@ test "infer error: std package ---- member missing" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\import {collections} from "std";
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = collections.collapse(true);
         \\}
     );
@@ -635,7 +635,7 @@ test "infer error: no builtin result namespace ---- `result` is unbound (decisio
         \\    return n;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = result.collapse(parse(1));
         \\}
     );
@@ -1113,7 +1113,7 @@ test "infer: unknown type ---- a behavior names a type in annotation position" {
 test "infer error: src takes no arguments" {
     // `src-takes-no-arguments`, located at the `@`.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val loc = @src(1);
         \\}
     );
@@ -1123,7 +1123,7 @@ test "infer error: unknown builtin is refused" {
     // The silent `void` fallback for an unrecognised `@name(…)` is gone
     // (decision 67); the nearest known name is suggested when one is an edit away.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    @pritn("x");
         \\}
     );
@@ -1131,7 +1131,7 @@ test "infer error: unknown builtin is refused" {
 
 test "infer error: unknown builtin without a near name" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    @frobnicate(1, 2);
         \\}
     );
@@ -1142,7 +1142,7 @@ test "infer error: hand-written is builtin is refused" {
     // `is`, so `@is(…)` written by hand is an unknown builtin, located at the
     // `@` and naming `x is T`.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = @is(1);
         \\}
     );
@@ -1185,14 +1185,14 @@ fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]
 }
 
 test "infer error: assigning to a local `val` names `var`" {
-    const msg = try typeErrorMessage(std.testing.allocator, "fn main() { val x: i32 = 0; x = 1; @print(x); }");
+    const msg = try typeErrorMessage(std.testing.allocator, "fn main() -> void { val x: i32 = 0; x = 1; @print(x); }");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`x` is a `val` and cannot be assigned") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "var x") != null);
 }
 
 test "infer error: assigning to a module-level `val` names `var`" {
-    const msg = try typeErrorMessage(std.testing.allocator, "val hits: i32 = 0;\nfn bump() { hits += 1; }");
+    const msg = try typeErrorMessage(std.testing.allocator, "val hits: i32 = 0;\nfn bump() -> void { hits += 1; }");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`hits` is a `val` and cannot be assigned") != null);
 }
@@ -1205,9 +1205,9 @@ test "infer error: `#[compiler.beamMemory(.Ets)]` on a `val` is refused" {
 
 test "infer error: an integer literal out of its type's range cites decision 319, suffixed or not" {
     const cases = [_][]const u8{
-        "fn main() { val b = 300u8; @print(b); }",
-        "fn main() { val e: i32 = 3000000000; @print(e); }",
-        "fn main() { val k: i8 = -129; @print(k); }",
+        "fn main() -> void { val b = 300u8; @print(b); }",
+        "fn main() -> void { val e: i32 = 3000000000; @print(e); }",
+        "fn main() -> void { val k: i8 = -129; @print(k); }",
     };
     for (cases) |src| {
         const msg = try typeErrorMessage(std.testing.allocator, src);
@@ -1219,7 +1219,7 @@ test "infer error: an integer literal out of its type's range cites decision 319
 }
 
 test "infer: a `var` may be assigned, locally and at module level" {
-    try h.assertInfersOk(std.testing.allocator, "var hits: i32 = 0;\nfn bump() { hits += 1; var y = 0; y = hits; }");
+    try h.assertInfersOk(std.testing.allocator, "var hits: i32 = 0;\nfn bump() -> void { hits += 1; var y = 0; y = hits; }");
 }
 
 // ── front 17 step 3: `#[compiler.beamMemory(.<member>)]` is validated (decisions 41, 51) ─
@@ -1243,7 +1243,7 @@ test "infer error: the `beamMemory` hints teach `keyed: true`, never the retired
         // `keyed` on another member
         "import {collections.Dict} from \"std\";\n#[compiler.beamMemory(.ProcessDict(keyed: true))]\nvar d: Dict<string, i32> = Dict.empty();",
         // a `PersistentTerm` `Dict` written at run time
-        "import {collections.Dict} from \"std\";\n#[compiler.beamMemory(.PersistentTerm)]\nvar d: Dict<string, i32> = Dict.empty();\nfn f() { d = Dict.empty(); }",
+        "import {collections.Dict} from \"std\";\n#[compiler.beamMemory(.PersistentTerm)]\nvar d: Dict<string, i32> = Dict.empty();\nfn f() -> void { d = Dict.empty(); }",
     };
     for (cases) |src| {
         const msg = try typeErrorMessage(std.testing.allocator, src);
@@ -1321,7 +1321,7 @@ test "infer: `#[compiler.beamMemory(…)]` is accepted on erlang and beam" {
         var lx = Lexer.init(
             \\#[compiler.beamMemory(.Ets)]
             \\var hits: i32 = 0;
-            \\fn bump() { hits += 1; }
+            \\fn bump() -> void { hits += 1; }
         );
         const tokens = try lx.scanAll(alloc);
         var p = Parser.init(tokens);
@@ -1345,7 +1345,7 @@ const keyed_decl =
 
 test "infer: a keyed Ets var is read and written one row at a time" {
     try h.assertInfersOk(std.testing.allocator, keyed_decl ++
-        \\fn put(k: string, v: i32) { counts = counts.insert(k, v); }
+        \\fn put(k: string, v: i32) -> void { counts = counts.insert(k, v); }
         \\fn get(k: string) -> ?i32 { return counts.at(k); }
     );
     try h.assertInfersOk(std.testing.allocator,
@@ -1359,13 +1359,13 @@ test "infer: a keyed Ets var is read and written one row at a time" {
 // written read-modify-write stays the recompose refusal, and `bump` is for integers.
 test "infer: a keyed Ets var is incremented one row at a time with bump" {
     try h.assertInfersOk(std.testing.allocator, keyed_decl ++
-        \\fn add(k: string, n: i32) { counts = counts.bump(k, n); }
+        \\fn add(k: string, n: i32) -> void { counts = counts.bump(k, n); }
     );
 }
 
 test "infer error: a keyed row incremented as a written read-modify-write is the recompose refusal" {
     const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
-        \\fn f(k: string, n: i32) { counts = counts.insert(k, (counts.at(k) ?? 0) + n); }
+        \\fn f(k: string, n: i32) -> void { counts = counts.insert(k, (counts.at(k) ?? 0) + n); }
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
@@ -1373,7 +1373,7 @@ test "infer error: a keyed row incremented as a written read-modify-write is the
 
 test "infer error: bump on a keyed var reading itself in its amount is the recompose refusal" {
     const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
-        \\fn f(k: string) { counts = counts.bump(k, counts.size()); }
+        \\fn f(k: string) -> void { counts = counts.bump(k, counts.size()); }
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
@@ -1381,9 +1381,9 @@ test "infer error: bump on a keyed var reading itself in its amount is the recom
 
 test "infer error: a keyed var is written only as `name = name.insert(key, value)`" {
     const bodies = [_][]const u8{
-        \\fn f() { counts = Dict.empty(); }
+        \\fn f() -> void { counts = Dict.empty(); }
         ,
-        \\fn f() { counts = counts.delete("a"); }
+        \\fn f() -> void { counts = counts.delete("a"); }
     };
     for (bodies) |body| {
         const src = try std.mem.concat(std.testing.allocator, u8, &.{ keyed_decl, body });
@@ -1396,7 +1396,7 @@ test "infer error: a keyed var is written only as `name = name.insert(key, value
 
 test "infer error: a keyed row computed from the var's own rows is the recompose refusal" {
     const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
-        \\fn f(k: string) { counts = counts.insert(k, counts.size()); }
+        \\fn f(k: string) -> void { counts = counts.insert(k, counts.size()); }
     );
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
@@ -1458,7 +1458,7 @@ test "infer error: a keyed var is not `pub`" {
 test "val destructure: a one-variant type binds its payload typed" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Round = type { Circle(radius: i32) };
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = Round.Circle(radius: 2);
         \\    val Circle(r) = s;
         \\    val n: i32 = r;
@@ -1472,7 +1472,7 @@ test "val destructure: a one-variant type binds its payload typed" {
 test "val destructure: a record's constructor binds its fields typed" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Person = type(name: string, age: i32);
-        \\fn main() {
+        \\fn main() -> void {
         \\    val p = Person(name: "a", age: 3);
         \\    val Person(name, age) = p;
         \\    val s: string = name;
@@ -1490,7 +1490,7 @@ test "val destructure: a constructor nests when each covers its field (144 B-22 
         \\val Shape = type { Circle(r: i32) };
         \\val Pair = type { Pair(s: Shape, n: i32) };
         \\val Boxed = type(s: Shape, k: string);
-        \\fn main() {
+        \\fn main() -> void {
         \\    val p = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
         \\    val Pair(Circle(r), n) = p;
         \\    val a: i32 = r + n;
@@ -1509,7 +1509,7 @@ test "val destructure: a nested constructor that can fail is refused (144 B-22 s
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(r: i32), Square(side: i32) };
         \\val Pair = type { Pair(s: Shape, n: i32) };
-        \\fn main() {
+        \\fn main() -> void {
         \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
         \\    print(r + n);
         \\}
@@ -1528,7 +1528,7 @@ test "val destructure: a spread-only list binds the whole array (144 B-22 step 1
         \\    val all: i32[] = rest;
         \\    return all.length();
         \\}
-        \\fn main() { print(count([1, 2])); }
+        \\fn main() -> void { print(count([1, 2])); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1537,7 +1537,7 @@ test "val destructure: a spread-only list binds the whole array (144 B-22 step 1
 test "val destructure: the bound name carries the payload's type" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Round = type { Circle(radius: i32) };
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = Round.Circle(radius: 2);
         \\    val Circle(r) = s;
         \\    val t: string = r;
@@ -1554,7 +1554,7 @@ test "val destructure: the bound name carries the payload's type" {
 test "val destructure: a val-bound name cannot be assigned" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Round = type { Circle(radius: i32) };
-        \\fn main() {
+        \\fn main() -> void {
         \\    val Circle(r) = Round.Circle(radius: 2);
         \\    r = 3;
         \\    print(r);
@@ -1569,7 +1569,7 @@ test "val destructure: a val-bound name cannot be assigned" {
 test "val destructure: a pattern that can fail is refused, naming val assert" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s = Shape.Circle(radius: 2);
         \\    val Circle(r) = s;
         \\    print(r);
@@ -1585,7 +1585,7 @@ test "val destructure: a pattern that can fail is refused, naming val assert" {
 
 test "val destructure: a list pattern with elements is refused" {
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [1, 2];
         \\    val [a, b] = xs;
         \\    print(a + b);
@@ -1602,7 +1602,7 @@ test "val destructure: a list pattern with elements is refused" {
 test "chained call: calling what a call returned types by its return" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x: i32 = adder(3)(4); print(x); }
+        \\fn main() -> void { val x: i32 = adder(3)(4); print(x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1611,7 +1611,7 @@ test "chained call: calling what a call returned types by its return" {
 test "chained call: the result carries the returned fn's return type" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x: string = adder(3)(4); print(x); }
+        \\fn main() -> void { val x: string = adder(3)(4); print(x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1622,7 +1622,7 @@ test "chained call: the result carries the returned fn's return type" {
 test "chained call: an argument count the returned fn does not take reds" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
-        \\fn main() { val x = adder(3)(4, 5); print(x); }
+        \\fn main() -> void { val x = adder(3)(4, 5); print(x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1636,7 +1636,7 @@ test "leading-dot call: the expected type names the enum" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
         \\fn area(s: Shape) -> i32 { return 1; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val s: Shape = .Circle(radius: 1);
         \\    val xs: Shape[] = [.Square(side: 2)];
         \\    print(area(.Circle(radius: 3)));
@@ -1651,7 +1651,7 @@ test "leading-dot call: the expected type names the enum" {
 test "leading-dot call: the payload is checked against the variant" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
-        \\fn main() { val s: Shape = .Circle(radius: "x"); print(s); }
+        \\fn main() -> void { val s: Shape = .Circle(radius: "x"); print(s); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1662,7 +1662,7 @@ test "leading-dot call: the payload is checked against the variant" {
 test "leading-dot call: no expected type is a named refusal, not an empty name" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\val Shape = type { Circle(radius: i32), Square(side: i32) };
-        \\fn main() { val s = .Circle(radius: 1); print(s); }
+        \\fn main() -> void { val s = .Circle(radius: 1); print(s); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1684,7 +1684,7 @@ test "behavior-typed field and parameter accept an implementer, through extends"
         \\val Holder = type(h: Handler);
         \\fn use1(h: Handler) -> i32 { return h.run(); }
         \\fn nm(n: Named) -> string { return n.name(); }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = Holder(h: H(id: 1));
         \\    print(use1(H(id: 2)));
         \\    print(nm(H(id: 3)));
@@ -1700,7 +1700,7 @@ test "behavior-typed field rejects a record that does not implement it" {
         \\val Handler = behavior { fn run(self: Self) -> i32; };
         \\val Other = type(id: i32);
         \\val Holder = type(h: Handler);
-        \\fn main() { val x = Holder(h: Other(id: 1)); print(x); }
+        \\fn main() -> void { val x = Holder(h: Other(id: 1)); print(x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1714,14 +1714,14 @@ test "behavior-typed field rejects a record that does not implement it" {
 test "ambient behavior: Closeable and Display name a parameter type with no import" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Door(name: string) implement Closeable {
-        \\    fn close(self: Self) { print(self.name); }
+        \\    fn close(self: Self) -> void { print(self.name); }
         \\}
         \\type Money(cents: i32) implement Display {
         \\    fn display(self: Self) -> string { return "$"; }
         \\}
-        \\fn shut(c: Closeable) { c.close(); }
+        \\fn shut(c: Closeable) -> void { c.close(); }
         \\fn show(d: Display) -> string { return d.display(); }
-        \\fn main() { shut(Door(name: "a")); print(show(Money(cents: 1))); }
+        \\fn main() -> void { shut(Door(name: "a")); print(show(Money(cents: 1))); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1730,9 +1730,9 @@ test "ambient behavior: Closeable and Display name a parameter type with no impo
 test "ambient behavior: an inline implement of Closeable is checked against its declaration" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type Door(name: string) implement Closeable {
-        \\    fn shut(self: Self) { print(self.name); }
+        \\    fn shut(self: Self) -> void { print(self.name); }
         \\}
-        \\fn main() { Door(name: "a").shut(); }
+        \\fn main() -> void { Door(name: "a").shut(); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1742,11 +1742,11 @@ test "ambient behavior: an inline implement of Closeable is checked against its 
 
 test "ambient behavior: a program's own behavior of the name shadows the ambient one" {
     try h.assertInfersOk(std.testing.allocator,
-        \\behavior Closeable { fn shut(self: Self); }
+        \\behavior Closeable { fn shut(self: Self) -> void; }
         \\type Door(name: string) implement Closeable {
-        \\    fn shut(self: Self) { print(self.name); }
+        \\    fn shut(self: Self) -> void { print(self.name); }
         \\}
-        \\fn main() { Door(name: "a").shut(); }
+        \\fn main() -> void { Door(name: "a").shut(); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1757,7 +1757,7 @@ test "ambient behavior: a program's own behavior of the name shadows the ambient
 test "type position: a val bound to a type is a type" {
     try h.assertInfersOk(std.testing.allocator,
         \\val T = i32;
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x: T = 1;
         \\    val U = T;
         \\    val y: U = 2;
@@ -1770,7 +1770,7 @@ test "type position: a val bound to a type is a type" {
 
 test "type position: a val bound to a value is refused, located" {
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\fn main() { val n = 5; val x: n = 7; print(x); }
+        \\fn main() -> void { val n = 5; val x: n = 7; print(x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1791,12 +1791,12 @@ test "type position: a module-level value is refused too" {
 
 test "associated fn: `Array.range` answers an array, so a method on it resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn main() { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); print(xs); }
+        \\pub fn main() -> void { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); print(xs); }
         \\
         \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
-        \\pub fn main() { val b: bool = Array.range(0, 3); print(b); }
+        \\pub fn main() -> void { val b: bool = Array.range(0, 3); print(b); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1833,7 +1833,7 @@ fn warningMessages(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
 
 test "warning: `is` on a value whose type is known is always false (§4.3)" {
     const msg = try warningMessages(std.testing.allocator,
-        \\pub fn main() { val a: i32 = 1; print(a is string); }
+        \\pub fn main() -> void { val a: i32 = 1; print(a is string); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1844,7 +1844,7 @@ test "warning: `is` on a value whose type is known is always false (§4.3)" {
 test "warning: `is` warns on nothing it can answer — numbers by range, unknown, a union, the same type" {
     const msg = try warningMessages(std.testing.allocator,
         \\type P(x: i32)
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val a: i32 = 1;
         \\    val f: f64 = 2.0;
         \\    val u: unknown = 1;
@@ -1867,7 +1867,7 @@ test "warning: an unannotated `[]` names the annotation to write (§1.4)" {
     const msg = try warningMessages(std.testing.allocator,
         \\fn f() -> i32 { var out = []; out = [1]; return out.length; }
         \\fn g() -> i32 { val none = []; return 0; }
-        \\pub fn main() { val ok: i32[] = []; print(f() + g() + ok.length); }
+        \\pub fn main() -> void { val ok: i32[] = []; print(f() + g() + ok.length); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1941,7 +1941,7 @@ test "generics: `Self<U>` is the declaration over another argument; A1 binds a b
         \\type Point(x: i32) implement Mappable<i32> {
         \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b: Box<string> = Box(value: 1).map({ x -> "a" });
         \\    val p: Point = Point(x: 1).map({ x -> x + 1 });
         \\    print(b.value);
@@ -1955,7 +1955,7 @@ test "generics: `Self<U>` is the declaration over another argument; A1 binds a b
         \\type Point(x: i32) implement Mappable<i32> {
         \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
         \\}
-        \\fn main() { val p = Point(x: 1).map({ x -> "a" }); print(p.x); }
+        \\fn main() -> void { val p = Point(x: 1).map({ x -> "a" }); print(p.x); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1970,7 +1970,7 @@ test "variant table: a qualified constructor is the enum written, whatever else 
         \\type Shape { Circle(r: i32), Square(s: i32) }
         \\type Hole { Circle(r: i32), Slot(w: i32) }
         \\fn area(s: Shape) -> i32 { return 0; }
-        \\fn main() { print(area(Shape.Circle(r: 3))); }
+        \\fn main() -> void { print(area(Shape.Circle(r: 3))); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -1980,14 +1980,14 @@ test "variant table: a leading dot takes the expected enum; a bare name is refus
     try h.assertInfersOk(std.testing.allocator,
         \\type Warm { Red, Orange }
         \\type Cold { Blue, Red }
-        \\fn main() { val w: Warm = .Red; val c: Cold = .Red; print(0); }
+        \\fn main() -> void { val w: Warm = .Red; val c: Cold = .Red; print(0); }
         \\
         \\import {io.terminal.print} from "std";
     );
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type Warm { Red, Orange }
         \\type Cold { Blue, Red }
-        \\fn main() { val x = Red; print(0); }
+        \\fn main() -> void { val x = Red; print(0); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2002,7 +2002,7 @@ test "integer literal: widens to the i64 its position asks for, and a mismatch i
         \\fn shrink(x: i64) -> i64 { return x - 1000; }
         \\fn wide(n: i64) -> i64 { return n * 1000 + 3 * 86400000; }
         \\fn take(n: i64) -> i64 { return n; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val k: i64 = 1000;
         \\    print(shrink(k) + take(3 * 86400000) + wide(2) + (1000 - k));
         \\    print(k > 0);
@@ -2021,8 +2021,8 @@ test "integer literal: widens to the i64 its position asks for, and a mismatch i
 
 test "decision 44: `optional<T>` and `Option<T>` are refused naming `?T`" {
     for ([_][]const u8{
-        "fn main() { val v: optional<i32> = null; @print(v); }",
-        "fn main() { val v: Option<i32> = null; @print(v); }",
+        "fn main() -> void { val v: optional<i32> = null; @print(v); }",
+        "fn main() -> void { val v: Option<i32> = null; @print(v); }",
     }) |src| {
         const msg = try typeErrorMessage(std.testing.allocator, src);
         defer std.testing.allocator.free(msg);
@@ -2033,7 +2033,7 @@ test "decision 44: `optional<T>` and `Option<T>` are refused naming `?T`" {
 test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
     const msg = try typeErrorMessage(std.testing.allocator,
         \\type R(a: i32, b: string)
-        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0).b); }
+        \\fn main() -> void { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0).b); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2041,7 +2041,7 @@ test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "`b` is read off an optional `?R` — write `?.b`") != null);
     try h.assertInfersOk(std.testing.allocator,
         \\type R(a: i32, b: string)
-        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0)?.b); }
+        \\fn main() -> void { val rs: R[] = [R(a: 1, b: "x")]; print(rs.at(0)?.b); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2056,7 +2056,7 @@ test "decision 330: a field read after a `?.` link continues the chain, as a met
         \\type In(x: i32)
         \\type P(x: i32, name: string, inner: In) { fn me(self: Self) -> P { return self; } }
         \\fn p(b: bool) -> ?P { if (b) return P(x: 1, name: "n", inner: In(x: 2)); return null; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: ?i32 = p(true)?.me().x;
         \\    val c: ?i32 = p(true)?.inner.x;
         \\    val n: ?i32 = p(true)?.me().name.length();
@@ -2075,7 +2075,7 @@ test "decision 330: a field read after a `?.` link continues the chain, as a met
 test "a val's annotation pins a generic constructor's type parameters" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Box<T>(v: T)
-        \\fn main() { val b: Box<i64> = Box(v: 1); print(b.v); }
+        \\fn main() -> void { val b: Box<i64> = Box(v: 1); print(b.v); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2089,7 +2089,7 @@ test "decision 2: a fn that can fall off its end is refused; every exit form che
         \\fn b(c: i32) -> string { return case c { 0 { "z" } _ { "o" } }; }
         \\fn d() -> i32 { panic("not implemented"); }
         \\fn e(c: i32) -> i32 { return case c { 0 { 1 } _ { 2 } }; }
-        \\fn main() { print(a(true)); }
+        \\fn main() -> void { print(a(true)); }
         \\
         \\import {io.terminal.print, failure.panic} from "std";
     );
@@ -2107,7 +2107,7 @@ test "warning: a tuple variable whose name differs from the written label (decis
         \\    val pop = 12;
         \\    return #(city, pop);
         \\}
-        \\pub fn main() { print(load().name); }
+        \\pub fn main() -> void { print(load().name); }
         \\
         \\import {io.terminal.print} from "std";
     );
@@ -2255,19 +2255,19 @@ test "decision 346: Bytes crosses to and from text through fromUtf8 / toUtf8 alo
         \\    print(same);
         \\    return cut.toUtf8().unwrapOr("");
         \\}
-        \\pub fn main() { print(roundTrip("ab")); }
+        \\pub fn main() -> void { print(roundTrip("ab")); }
         \\
         \\import {io.terminal.print} from "std";
     );
     const cases = [_]struct { src: []const u8, want: []const u8 }{
-        .{ .src = "pub fn main() { val b: Bytes = \"a\"; @print(b.length()); }", .want = "expected Bytes, got string" },
-        .{ .src = "fn f(s: string) -> i32 { return s.length(); }\npub fn main() { @print(f(Bytes.fromUtf8(\"a\"))); }", .want = "expected string, got Bytes" },
-        .{ .src = "pub fn main() { @print(Bytes.fromUtf8(\"a\")); }", .want = "bytes-widened" },
-        .{ .src = "pub fn main() { val s = \"x\" + Bytes.fromUtf8(\"a\"); @print(s); }", .want = "`Bytes` is no text to join" },
-        .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`Bytes` is no text to join" },
-        .{ .src = "pub fn main() { val b = Bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`Bytes` takes no `<`" },
-        .{ .src = "fn f(v: string | Bytes) -> bool { return v is Bytes; }\npub fn main() { @print(f(\"a\")); }", .want = "bytes-type-test" },
-        .{ .src = "pub fn main() { val b = Bytes.fromText(\"a\"); @print(b.length()); }", .want = "`Bytes` has no associated function `fromText`" },
+        .{ .src = "pub fn main() -> void { val b: Bytes = \"a\"; @print(b.length()); }", .want = "expected Bytes, got string" },
+        .{ .src = "fn f(s: string) -> i32 { return s.length(); }\npub fn main() -> void { @print(f(Bytes.fromUtf8(\"a\"))); }", .want = "expected string, got Bytes" },
+        .{ .src = "pub fn main() -> void { @print(Bytes.fromUtf8(\"a\")); }", .want = "bytes-widened" },
+        .{ .src = "pub fn main() -> void { val s = \"x\" + Bytes.fromUtf8(\"a\"); @print(s); }", .want = "`Bytes` is no text to join" },
+        .{ .src = "pub fn main() -> void { val b = Bytes.fromUtf8(\"a\"); @print(\"${b}\"); }", .want = "`Bytes` is no text to join" },
+        .{ .src = "pub fn main() -> void { val b = Bytes.fromUtf8(\"a\"); @print(b < b); }", .want = "`Bytes` takes no `<`" },
+        .{ .src = "fn f(v: string | Bytes) -> bool { return v is Bytes; }\npub fn main() -> void { @print(f(\"a\")); }", .want = "bytes-type-test" },
+        .{ .src = "pub fn main() -> void { val b = Bytes.fromText(\"a\"); @print(b.length()); }", .want = "`Bytes` has no associated function `fromText`" },
     };
     for (cases) |c| {
         const msg = try typeErrorMessage(std.testing.allocator, c.src);

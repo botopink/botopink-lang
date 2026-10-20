@@ -16,7 +16,7 @@ fn describe(s: Shape) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(describe(Shape.Rect(width: 3, height: 4))); // 3
     print(describe(Shape.Circle(radius: 5))); // 5
 }

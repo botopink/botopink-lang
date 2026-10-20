@@ -8,14 +8,14 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn show(d: compiler.Diagnostic) {
+fn show(d: compiler.Diagnostic) -> void {
     print("code=" + d.code);
     print("message=" + d.message);
     print("at=" + d.file + ":" + d.line.toString() + ":" + d.column.toString());
     print("label=" + (d.label ?? "none"));
 }
 
-pub fn main() {
+pub fn main() -> void {
     // A type error: one refusal, its message naming no code, no label.
     try comptime compiler.load("src/cases/broken.bp") catch { r ->
         print(r.diagnostics.length);

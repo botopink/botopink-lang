@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn service(syntax decl: unknown) {
+fn service(syntax decl: unknown) -> void {
     @emit("val __wired = unresolvedRuntimeSymbol();");
 }
 

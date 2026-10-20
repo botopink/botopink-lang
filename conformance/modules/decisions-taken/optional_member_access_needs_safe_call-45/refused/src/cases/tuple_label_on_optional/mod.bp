@@ -7,7 +7,7 @@ fn rows() -> #(a: i32, b: string)[] {
     return [#(1, "x")];
 }
 
-pub fn main() {
+pub fn main() -> void {
     val rs = rows();
     print(rs.at(0).b);
 }

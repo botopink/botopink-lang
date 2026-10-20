@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.generic_body_specialized.runCase();
     cases.generic_call_result_shape.runCase();
     cases.generic_field_fn_value_nested.runCase();

@@ -15,7 +15,7 @@ import {cases.linked_val_name_collision.one.limit, cases.linked_val_name_collisi
 import {cases.linked_val_name_collision.two.limit as label, cases.linked_val_name_collision.two.viaTwo, cases.linked_val_name_collision.two.shout, cases.linked_val_name_collision.two.shadow, cases.linked_val_name_collision.two.hitTwo};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(limit);
     print(label);
     print(viaOne());

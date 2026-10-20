@@ -10,6 +10,6 @@ fn f(x: ?Node) -> bool {
     return x != null || x.v > 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(f(null));
 }

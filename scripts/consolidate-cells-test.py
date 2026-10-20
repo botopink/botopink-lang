@@ -26,7 +26,7 @@ def cell(modules, name, header="", snap="botopink-cell 1\nout hi\n"):
     (d / "src").mkdir(parents=True)
     (d / "snapshot" / "output").mkdir(parents=True)
     (d / "botopink.json").write_text('{"name": "%s"}' % name)
-    (d / "src" / "main.bp").write_text(header + "\nfn main() {}\n")
+    (d / "src" / "main.bp").write_text(header + "\nfn main() -> void {}\n")
     (d / "snapshot" / "output" / "main.snap").write_text(snap)
 
 

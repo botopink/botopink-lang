@@ -9,6 +9,6 @@ fn pick(c: bool) -> string {
     return (if (c) R(v: "a") else R(v: "b")).v;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(pick(true));
 }

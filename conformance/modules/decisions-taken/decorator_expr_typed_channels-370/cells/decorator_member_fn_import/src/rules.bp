@@ -8,7 +8,7 @@ pub fn rule<T>(
     syntax decl: T,
     syntax holds: fn(v: T) -> bool,
     syntax label: string,
-) {
+) -> void {
     compiler.addMember("check", fn(self: T) -> string {
         val ok = holds(self);
         return if (ok) "ok" else label;

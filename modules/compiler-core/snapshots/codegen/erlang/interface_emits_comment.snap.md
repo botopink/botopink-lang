@@ -2,7 +2,7 @@
 ```botopink
 val Drawable = behavior {
     val color: string;
-    fn draw(self: Self);
+    fn draw(self: Self) -> void;
 }
 ```
 

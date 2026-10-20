@@ -10,7 +10,7 @@ fn widths() -> i32[] {
     return out;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("widths", widths());
     print("done");
 }

@@ -33,7 +33,7 @@ fn name(m: Mode) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(name(t.mode));
     print(t.size);
     print(name(b.item));

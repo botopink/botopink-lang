@@ -35,7 +35,7 @@ fn radiusOf(s: Shape) -> i32 {
     return r;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(area(Shape.Circle(2)));
     print(area(Shape.Rect(4, 5)));
     print(area(unit()));

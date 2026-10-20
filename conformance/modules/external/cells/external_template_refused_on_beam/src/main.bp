@@ -11,6 +11,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("""length(atom_to_list(?MODULE)) > 0"""))]
 declare fn moduleNamed() -> bool;
 
-pub fn main() {
+pub fn main() -> void {
     print(moduleNamed());
 }

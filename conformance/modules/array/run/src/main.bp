@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.array_fill.runCase();
     cases.array_fill_large.runCase();
     cases.array_flat_forms.runCase();

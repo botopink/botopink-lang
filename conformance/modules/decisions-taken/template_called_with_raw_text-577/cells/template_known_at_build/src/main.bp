@@ -42,7 +42,7 @@ fn greet(who: string) -> string {
     return shout @`hello ${who}`; // computed when it runs
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(fixed); // HELLO WORLD
     print(greet("bob")); // HELLO BOB
 }

@@ -15,7 +15,7 @@ fn line(it: Iter<i32>) -> string {
     return acc;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var n = 0;
     val tens = iter loop {
         n = n + 1;

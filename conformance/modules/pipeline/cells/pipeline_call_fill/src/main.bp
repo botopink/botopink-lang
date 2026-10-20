@@ -12,7 +12,7 @@ fn greet(name: string, greeting: string = "hi", mark: string = "!") -> string {
     return greeting + " " + name + mark;
 }
 
-fn log(s: string, prefix: string = "> ") {
+fn log(s: string, prefix: string = "> ") -> void {
     print(prefix + s);
 }
 
@@ -20,7 +20,7 @@ fn full(name: string, greeting: string, mark: string) -> string {
     return greeting + " " + name + mark;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("w" |> full("yo", "."));
     print("w" |> greet);
     print("w" |> greet("yo"));

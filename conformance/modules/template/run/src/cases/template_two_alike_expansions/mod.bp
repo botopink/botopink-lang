@@ -8,7 +8,7 @@ pub fn code(syntax q: string) -> anyvalue {
     return compiler.build(compiler.text(q));
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val words = [["a", "b"], ["c"]];
     val boxes = [Box(w: 2, h: 3), Box(w: 5, h: 5)];
     val lengths = code @`words.map({ r -> r.length })`;

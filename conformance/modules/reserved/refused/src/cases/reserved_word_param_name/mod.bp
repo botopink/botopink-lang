@@ -9,6 +9,6 @@ fn openerAfter(s: string, from: i32) -> i32 {
     return s.length() + from;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(openerAfter("ab", 1));
 }

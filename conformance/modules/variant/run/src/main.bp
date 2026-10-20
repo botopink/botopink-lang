@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.variant_leading_dot_expected.runCase();
     cases.variant_leading_dot_two_enums_case.runCase();
     cases.variant_name_collision.runCase();

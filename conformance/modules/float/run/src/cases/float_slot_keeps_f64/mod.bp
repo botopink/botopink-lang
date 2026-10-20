@@ -19,7 +19,7 @@ type Shape {
     Dot,
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [1.1, 2.2];
     print(xs);
     print(xs[0]);

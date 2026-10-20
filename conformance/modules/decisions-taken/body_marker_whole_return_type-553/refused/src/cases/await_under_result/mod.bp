@@ -13,4 +13,4 @@ fn noAwait() -> Result<i32, string> {
     return x;
 }
 
-pub fn main() { print(try noAwait() catch 0); }
+pub fn main() -> void { print(try noAwait() catch 0); }

@@ -20,11 +20,11 @@ fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
 
-fn show(x: i32) {
+fn show(x: i32) -> void {
     print(x);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val xs = [1, 2, 3];
     print(xs.map(inc));
     print(xs.map(double));

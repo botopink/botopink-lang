@@ -15,11 +15,11 @@ fn check<T>(
     syntax decl: T,
     syntax message: string,
     syntax rule: fn(v: T) -> bool,
-) {
+) -> void {
     compiler.addMeta(Check(message: message, rule: rule));
 }
 
-fn validated<T>(syntax decl: T) {
+fn validated<T>(syntax decl: T) -> void {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         var out: Violation[] = [];
         for (comptime compiler.typeInfo(T).metaAll(Check)) { c ->
@@ -43,7 +43,7 @@ fn handleFree(c: Conta) -> bool {
 #[check("the handle is taken", handleFree)]
 pub type Conta(handle: string, password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(
         Conta(handle: "ana", password: "abc", confirm: "abc").validate().length,
     );

@@ -8,6 +8,6 @@ fn link(props: type(href: string, label: string)) -> string {
     return props.href;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(link(href: "/a"));
 }

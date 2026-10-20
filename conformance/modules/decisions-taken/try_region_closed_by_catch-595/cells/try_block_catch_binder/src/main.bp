@@ -25,7 +25,7 @@ fn describe(n: i32) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(12));
     print(describe(6));
     print(describe(-4));

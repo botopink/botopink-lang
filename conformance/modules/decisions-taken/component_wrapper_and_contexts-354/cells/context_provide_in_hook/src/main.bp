@@ -16,6 +16,6 @@ component fn themed() -> Component<i32> {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     themed();
 }

@@ -15,7 +15,7 @@ pub type ConsoleMail(prefix: string) implement MailSender {
     }
 }
 
-fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) {
+fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) -> void {
     compiler.setMeta(MissingBean(bean: compiler.name(decl)!));
 }
 
@@ -29,7 +29,7 @@ fn greeting() -> string {
     return "hello";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler
         .typeInfo(consoleMail)
         .meta(MissingBean)?.bean ?? "none");

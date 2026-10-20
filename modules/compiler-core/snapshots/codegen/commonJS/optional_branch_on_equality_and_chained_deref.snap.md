@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type R(kind: i32)
-fn main() {
+fn main() -> void {
     val r = R(kind: 11);
     val maybe: ?R = r;
     if (maybe == null) {

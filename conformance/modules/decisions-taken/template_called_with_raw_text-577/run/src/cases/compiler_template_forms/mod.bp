@@ -35,7 +35,7 @@ fn plus(syntax self: Num, syntax q: string) -> anyvalue {
     return code @`Num(n: ${self}.n + ${more})`;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(find).meta(Query)?.sql ?? "none");
     val a = Num(n: 1);
     val b = a.plus @`41`;

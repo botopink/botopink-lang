@@ -4,8 +4,9 @@ type Error(msg: string)
 fn fetch() -> Result<#(i32, i32), Error> {
     throw Error(msg: "boom");
 }
-fn f() {
+fn f() -> Result<void, Error> {
     val #(a, b) = try fetch() catch throw Error(msg: "failed");
+    return;
 }
 ```
 
@@ -20,10 +21,15 @@ fetch() ->
     {error, {test@main@@Error, <<"boom">>}}.
 
 f() ->
-    {A, B} = case fetch() of
-        {ok, TryV0} -> TryV0;
-        {error, _TryE0} ->
-            erlang:throw({test@main@@Error, <<"failed">>})
+    try
+        {A, B} = case fetch() of
+            {ok, TryV0} -> TryV0;
+            {error, _TryE0} ->
+                erlang:throw({'__bp_try', {error, {test@main@@Error, <<"failed">>}}})
+        end,
+        {ok, undefined}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
     end.
 
 '__bp_priv__fetch'() -> fetch().

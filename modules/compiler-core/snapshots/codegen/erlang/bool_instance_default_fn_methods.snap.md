@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     print(true.negate());
     print(false.nor(false));
     print(true.nand(true));

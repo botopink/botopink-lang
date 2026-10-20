@@ -21,7 +21,7 @@ fn halfDownBody(x: f64) -> f64 {
 
 val greeting = "hello from the browser host";
 
-pub fn main() {
+pub fn main() -> void {
     print(greeting);
     print(halfDown(2.5));
     val r = io.random.float();

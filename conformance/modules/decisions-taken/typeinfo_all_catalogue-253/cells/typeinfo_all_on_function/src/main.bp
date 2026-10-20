@@ -4,12 +4,12 @@
 
 import {io.terminal.print} from "std";
 
-fn route(syntax decl: unknown) {}
+fn route(syntax decl: unknown) -> void {}
 
 #[route]
 pub fn home() -> string { return "home"; }
 
-pub fn main() {
+pub fn main() -> void {
     val all = @typeInfo.all(with: route);
     print(all.length);
 }

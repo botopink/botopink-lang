@@ -474,7 +474,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     ctx.changed = true;
     const args = c.args;
     if (member.kind == .output) {
-        const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) { compiler.setMeta(…); }` (decision 575 (3)).");
+        const d = ctx.decl orelse return refusal(ctx, loc, diagnostics.compiler_output_outside_decorator, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` writes to the annotated declaration, and only a decorator has one", .{name}), "A decorator is a function whose first parameter is `syntax` — `fn mark(syntax decl: unknown) -> void { compiler.setMeta(…); }` (decision 575 (3)).");
         // Decision 788 — a top-level `comptime { … }` has no annotated
         // declaration (its handle is the anchor `parser/comptime_blocks.zig`
         // gives it): it registers `compiler.init` and writes to no

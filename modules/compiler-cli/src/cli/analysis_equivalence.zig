@@ -206,7 +206,7 @@ fn everyStdModule(arena: std.mem.Allocator) ![]const Module {
         std.mem.replaceScalar(u8, dotted, '/', '.');
         try src.print(arena, "import {{{s} as stdModule{d}}} from \"std\";\n", .{ dotted, i });
     }
-    try src.appendSlice(arena, "\npub fn main() {}\n");
+    try src.appendSlice(arena, "\npub fn main() -> void {}\n");
     const mods = try arena.alloc(Module, 1);
     mods[0] = .{ .path = "", .source = src.items, .srcPath = "src/main.bp" };
     return mods;
@@ -605,7 +605,7 @@ test "level B: a file a library's `@embed` reads under its `src` is in the libra
         .{ "banner/src/banner.bp", "pub fn line() -> string {\n    return @embed(\"src/line.txt\").text();\n}\n" },
         .{ "banner/src/line.txt", "first edition" },
         .{ "app/botopink.json", "{ \"name\": \"app\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"main.bp\", \"dependencies\": { \"banner\": { \"path\": \"../banner\" } } }" },
-        .{ "app/src/main.bp", "import {banner.line} from \"banner\";\nimport {io.terminal.print} from \"std\";\n\npub fn main() {\n    print(line());\n}\n" },
+        .{ "app/src/main.bp", "import {banner.line} from \"banner\";\nimport {io.terminal.print} from \"std\";\n\npub fn main() -> void {\n    print(line());\n}\n" },
     };
     for (files) |f| {
         const path = try std.fs.path.join(arena, &.{ dir, f[0] });

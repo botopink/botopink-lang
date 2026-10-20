@@ -29,7 +29,7 @@ test "js: val ---- string literal" {
 test "js: val ---- binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val sum = 1 + 2;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(sum);
         \\}
         \\
@@ -43,7 +43,7 @@ test "js: fn ---- private function with return" {
         \\    return x * 2;
         \\}
         \\val result = double(5);
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(result);
         \\}
         \\
@@ -60,7 +60,7 @@ test "js: fn ---- max via if comparison" {
         \\        return a;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(max(3, 7));
         \\}
         \\
@@ -74,7 +74,7 @@ test "js: fn ---- pub exported function" {
         \\    return a + b;
         \\}
         \\val result = add(3, 4);
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(result);
         \\}
         \\
@@ -89,7 +89,7 @@ test "js: fn ---- with local binding" {
         \\    return result;
         \\}
         \\val output = double(10);
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(output);
         \\}
         \\
@@ -151,7 +151,7 @@ test "js: operators ---- comparison" {
         \\fn isPositive(n: i32) -> bool {
         \\    return n > 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isPositive(5));
         \\    print(isPositive(-1));
         \\}
@@ -165,7 +165,7 @@ test "js: operators ---- equality maps to ==" {
         \\fn isZero(n: i32) -> bool {
         \\    return n == 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isZero(0));
         \\    print(isZero(42));
         \\}
@@ -179,7 +179,7 @@ test "js: operators ---- logical and" {
         \\fn both(a: bool, b: bool) -> bool {
         \\    return a && b;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(both(true, false));
         \\}
         \\
@@ -192,7 +192,7 @@ test "js: operators ---- logical or" {
         \\fn either(a: bool, b: bool) -> bool {
         \\    return a || b;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(either(false, true));
         \\}
         \\
@@ -205,7 +205,7 @@ test "js: operators ---- logical not" {
         \\fn negate(v: bool) -> bool {
         \\    return !v;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(negate(true));
         \\}
         \\
@@ -235,10 +235,10 @@ test "js: val ---- optional annotation with null" {
 
 test "js: call ---- trailing lambda block" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn run(f: fn(i32) -> string) {
+        \\fn run(f: fn(i32) -> string) -> void {
         \\    panic("not implemented");
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    run { x ->
         \\        return "done";
         \\    };
@@ -253,7 +253,7 @@ test "js: call ---- trailing lambda with multiple params" {
         \\fn calc(factor: i32, f: fn(i32, i32) -> i32) -> i32 {
         \\    panic("not implemented");
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = calc(2) { a, b ->
         \\        return 0;
         \\    };
@@ -273,7 +273,7 @@ test "js: val ---- pub val declaration" {
 test "js: comment ---- single line before fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\// This is a comment
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -281,7 +281,7 @@ test "js: comment ---- single line before fn" {
 
 test "js: comment ---- inside function body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    // Initialize value
         \\    val x = 1;
         \\    // Return null
@@ -320,7 +320,7 @@ test "js: module comment ---- at top of file" {
 
 test "js: assign ---- update var with plusEq" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    var count = 0;
         \\    count += 1;
         \\    print(count);
@@ -338,7 +338,7 @@ test "js: field assign ---- self.field update" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
         \\val Counter = type(
         \\    count: i32 = 0) {
-        \\    fn inc(self: Self) {
+        \\    fn inc(self: Self) -> void {
         \\        self.count += 1;
         \\    }
         \\};
@@ -376,7 +376,7 @@ test "js: block ---- a block's value is its tail (decision 525)" {
 
 test "js: string ---- interpolation lowers to concat" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val name = "world";
         \\    print("hi ${name}!");
         \\}
@@ -431,7 +431,7 @@ test "js: tuple ---- equality is positional, and labels take no part" {
     // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
     // program are not this front's to record.
     try h.assertJsRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = #(1, "a");
         \\    val b = #(1, "a");
         \\    val c = #(1, "b");
@@ -470,7 +470,7 @@ test "js: operators ---- plus on untyped operands and division of floats" {
         \\    };
         \\    return total / n;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val cat: fn(string, string) -> string = { x, y -> x + y };
         \\    print(cat("ab", "cd"));
         \\    print(average([2.0, 4.0, 9.0]));
@@ -487,7 +487,7 @@ test "js: operators ---- abs on an i32 receiver reaches Signed" {
         \\fn mag(n: i32) -> i32 {
         \\    return n.abs();
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(mag(-7));
         \\}
         \\

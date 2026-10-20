@@ -9,7 +9,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x: ?i32 = 5;
     val a = case x { .Some(v) { "present" } .None { "absent" } };
     print(a);

@@ -12,7 +12,7 @@ import {compiler, io.terminal.print} from "std";
 )]
 declare fn quoted(text: string) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(quoted("a q=\"x\" b q=\"y\"").toString());
     print(quoted("none").toString());
 }

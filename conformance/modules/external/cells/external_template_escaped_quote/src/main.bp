@@ -24,7 +24,7 @@ type Box(label: string) {
     declare fn framed(self: Self) -> string;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(say("hi"));
     print(enc("v"));
     print(say("a \"quoted\" word"));

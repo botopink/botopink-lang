@@ -16,7 +16,7 @@ fn read(n: i32) -> i32 {
     return 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(read(7));
     print(read(2));
 }

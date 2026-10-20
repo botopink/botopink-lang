@@ -197,7 +197,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             .src =
             \\import {io} from "std";
             \\
-            \\fn drawn(syntax decl: unknown) {
+            \\fn drawn(syntax decl: unknown) -> void {
             \\    val x = io.random.float();
             \\    @emit("pub fn label() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
             \\}
@@ -205,7 +205,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\#[drawn]
             \\type Point(x: i32, y: i32)
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    print(label());
             \\}
             \\
@@ -221,7 +221,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             .src =
             \\import {io} from "std";
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    val atBuild = comptime io.random.float();
             \\    print(atBuild);
             \\}
@@ -244,7 +244,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\    return n;
             \\}
             \\
-            \\fn sized(syntax decl: unknown) {
+            \\fn sized(syntax decl: unknown) -> void {
             \\    val n = checked(2);
             \\    @emit("pub fn label() -> string { return \"" + compiler.name(decl)! + " ${n}\"; }");
             \\}
@@ -252,7 +252,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\#[sized]
             \\type Point(x: i32, y: i32)
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    print(label());
             \\}
             \\
@@ -273,7 +273,7 @@ test "a raise inside a decorator or a comptime is located at the call that raise
             \\    return n;
             \\}
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    val atBuild = comptime checked(3);
             \\    print(atBuild);
             \\}
@@ -321,7 +321,7 @@ test "a raise inside a decorator is located in its own build when an earlier bui
     const decorated =
         \\import {io} from "std";
         \\
-        \\fn drawn(syntax decl: unknown) {
+        \\fn drawn(syntax decl: unknown) -> void {
         \\    val x = io.random.float();
         \\    @emit("pub fn moved() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
         \\}
@@ -329,7 +329,7 @@ test "a raise inside a decorator is located in its own build when an earlier bui
         \\#[drawn]
         \\type Point(x: i32, y: i32)
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(moved());
         \\}
         \\

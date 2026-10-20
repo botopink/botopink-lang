@@ -21,7 +21,7 @@ fn attempt(j: Job) -> Result<string, string> {
     return j.title + " " + n.toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     case check(3) {
         Ok(v) -> print("first " + v.toString());
         Error(e) -> print(e);

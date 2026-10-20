@@ -6,7 +6,7 @@
 import {markers.serverOnly};
 import {compiler} from "std";
 
-pub fn check(syntax decl: unknown) {
+pub fn check(syntax decl: unknown) -> void {
     var out: string[] = [];
     compiler
         .annotations(decl)

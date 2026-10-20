@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val list: i32[] = [];
     val assert [] = list catch throw "not empty";
+    return;
 }
 ```
 
@@ -16,6 +17,8 @@ fn f() {
     (local $__mem0 i32)
     (local $list i32)
     (local $__assert_0 i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     i32.const 4
     call $__alloc
     local.set $__mem0
@@ -33,12 +36,30 @@ fn f() {
     i32.eqz
     (if
       (then
+    i32.const 8
+    call $__alloc
+    local.set $_res0
+    local.get $_res0
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res0
     i32.const 256
-    drop
-    unreachable
+    i32.store offset=4 ;; payload
+    local.get $_res0
+    return
       )
     )
+    i32.const 8
+    call $__alloc
+    local.set $_res1
+    local.get $_res1
     i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res1
+    i32.const 0
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
   )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)

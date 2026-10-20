@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 behavior Printable {
-    fn print(self: Self);
+    fn print(self: Self) -> string;
 }
 type Person(name: string)
 val PersonPrintable = implement Printable for Person {
-    fn print(self: Self) {
+    fn print(self: Self) -> string {
         return self.name;
     }
 }

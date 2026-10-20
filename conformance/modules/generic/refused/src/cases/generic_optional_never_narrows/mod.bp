@@ -7,7 +7,7 @@ fn unwrap<T>(v: ?T) -> T {
     return v;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(unwrap(some(1)));
 }
 

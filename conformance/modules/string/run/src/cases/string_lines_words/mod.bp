@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val text = "one two\r\nthree\n\nfour\r";
     val ls = text.lines();
     print(ls);

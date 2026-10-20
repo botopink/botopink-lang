@@ -11,7 +11,7 @@ fn three() -> bigint {
     return 1n + 2n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val l = Ledger(total: 123456789012345678901234567890n * 10n, last: null);
     print(l);
     print(l.total + 1n);

@@ -57,7 +57,7 @@ export declare function tag(): string;
 import {models.user.label};
 import {services.user.tag};
 
-fn main() {
+fn main() -> void {
     print(label());
     print(tag());
 }

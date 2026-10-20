@@ -24,7 +24,7 @@ fn fonte() -> Pessoa {
     return Pessoa(nome: "Rui", email: "rui@a", telefone: "1", idade: 40);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val old = Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20);
     // A new record; the source unchanged.
     val ana = Pessoa(..old, nome: "Ana");

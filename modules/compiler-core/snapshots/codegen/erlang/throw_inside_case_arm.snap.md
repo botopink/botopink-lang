@@ -7,7 +7,7 @@ fn check(s: Status) -> Result<i32, string> {
         Fail -> throw "failed";
     };
 }
-fn main() {
+fn main() -> void {
     print(check(Status.Ok).isOk());
     print(check(Status.Fail).isOk());
 }

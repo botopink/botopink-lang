@@ -28,7 +28,7 @@ test "comptime module: host enum member lowers to an atom, method call to a host
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn service(syntax decl: unknown) {
+        \\fn service(syntax decl: unknown) -> void {
         \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("must annotate a type", at: decl); }
         \\}
         \\import {compiler, compiler.DeclKind} from "std";
@@ -54,7 +54,7 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn check(syntax decl: unknown) {
+        \\fn check(syntax decl: unknown) -> void {
         \\    var msg = "invalid name: ";
         \\    msg = msg + compiler.name(decl)!;
         \\    if (compiler.fields(decl).len > 5) { compiler.fail(msg, at: decl); }
@@ -75,7 +75,7 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn mock(syntax decl: unknown) {
+        \\fn mock(syntax decl: unknown) -> void {
         \\    var methods = "";
         \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "fn " + m.name;
@@ -97,7 +97,7 @@ test "comptime module: a counted loop folds the counter through lists:foldl" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn pick(syntax decl: unknown) {
+        \\fn pick(syntax decl: unknown) -> void {
         \\    var first = "";
         \\    var idx = 0;
         \\    for (compiler.fields(decl)) { f ->
@@ -120,7 +120,7 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn tags(syntax decl: unknown) {
+        \\fn tags(syntax decl: unknown) -> void {
         \\    var toks = [];
         \\    val emit = { t -> toks = toks.append([t]); };
         \\    emit("first");
@@ -142,7 +142,7 @@ test "comptime module: a condition loop threads the variables its body reassigns
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn count(syntax decl: unknown) {
+        \\fn count(syntax decl: unknown) -> void {
         \\    var i = 0;
         \\    var names = "";
         \\    while (i < 3) {
@@ -165,7 +165,7 @@ test "comptime module: `loop (…)` is refused before lowering (decision 105)" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const result = lower(arena_state.allocator(),
-        \\fn count(syntax decl: unknown) {
+        \\fn count(syntax decl: unknown) -> void {
         \\    var i = 0;
         \\    loop (i < 3) {
         \\        i = i + 1;
@@ -181,7 +181,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn component(syntax decl: unknown) {
+        \\fn component(syntax decl: unknown) -> void {
         \\    var args: Array<string> = [];
         \\    args.push("first");
         \\    compiler.fields(decl).forEach({ f ->
@@ -203,7 +203,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
 
     // A parameter is not rebound: the push keeps its plain lowering.
     const param = try lower(arena_state.allocator(),
-        \\fn tag(syntax decl: unknown, names: Array<string>) {
+        \\fn tag(syntax decl: unknown, names: Array<string>) -> void {
         \\    names.push(compiler.name(decl)!);
         \\    @emit(names.join(", "));
         \\}
@@ -290,7 +290,7 @@ test "comptime module: decorator body primitive methods dispatch through shims" 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn mock(syntax decl: unknown) {
+        \\fn mock(syntax decl: unknown) -> void {
         \\    val names = compiler.fields(decl).map({ f -> f.name });
         \\    if (compiler.name(decl)!.startsWith("_")) { compiler.fail("private: " + names.join(", "), at: decl); }
         \\}
@@ -306,7 +306,7 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn sizes(syntax decl: unknown) {
+        \\fn sizes(syntax decl: unknown) -> void {
         \\    val a = compiler.name(decl)!.length();
         \\    val b = compiler.fields(decl).length();
         \\    val c = compiler.fields(decl).size;
@@ -335,7 +335,7 @@ test "comptime module: a method nothing answers is a located error, not an undef
     defer arena_state.deinit();
     var unsupported: erlang.UnsupportedMethod = .{};
     const result = lower(arena_state.allocator(),
-        \\fn check(syntax decl: unknown) {
+        \\fn check(syntax decl: unknown) -> void {
         \\    val n = compiler.name(decl)!;
         \\    val x = n.frobnicate(1, 2);
         \\}
@@ -351,7 +351,7 @@ test "comptime module: a method nothing answers is a located error, not an undef
 
     // A host form of that name/arity answers it: the bare local call stays.
     const hosted = try lower(arena_state.allocator(),
-        \\fn check(syntax decl: unknown) {
+        \\fn check(syntax decl: unknown) -> void {
         \\    decl.frobnicate(1, 2);
         \\}
     , .{ .host_enums = &.{"DeclKind"}, .forms = &.{hostFn("frobnicate", 3)}, .unsupported_method = &unsupported });
@@ -362,7 +362,7 @@ test "comptime module: a listing shows the shim calls but not the shims" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
-        \\fn names(syntax decl: unknown) {
+        \\fn names(syntax decl: unknown) -> void {
         \\    @emit(compiler.fields(decl).map({ f -> f.name }).join(", "));
         \\}
         \\import {compiler} from "std";

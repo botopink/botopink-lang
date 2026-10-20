@@ -687,7 +687,7 @@ test "mod namespace: `mod` binds the namespace it reads, and the walk reaches a 
         .{ .path = "main", .source =
         \\pub mod config;
         \\mod mod1;
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val a = config.splitPath("x");
         \\    val b = mod1.mod2.splitPath("y");
         \\}
@@ -715,9 +715,9 @@ test "mod namespace: a decorator argument naming `ns.name` reads the namespace, 
         \\pub mod other;
         \\import {markers.each};
         \\type Invite(#[each(markers.email)] #[each("other.x")] guests: string)
-        \\pub fn main() {}
+        \\pub fn main() -> void {}
         },
-        .{ .path = "markers", .source = "pub fn each(comptime decl: @Decl, comptime m: @Expr<Decorator>) {}\npub fn email(comptime decl: @Decl) {}\n" },
+        .{ .path = "markers", .source = "pub fn each(comptime decl: @Decl, comptime m: @Expr<Decorator>) -> void {}\npub fn email(comptime decl: @Decl) -> void {}\n" },
         .{ .path = "other", .source = "pub fn x() -> i32 { return 1; }\n" },
     };
     const program = (try expandFor(arena, &mods, 0)).ok;
@@ -731,7 +731,7 @@ test "mod namespace: a private child is refused from outside its parent" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const mods = [_]Module{
-        .{ .path = "main", .source = "pub mod mod1;\npub fn main() { val b = mod1.mod2.f(); }\n" },
+        .{ .path = "main", .source = "pub mod mod1;\npub fn main() -> void { val b = mod1.mod2.f(); }\n" },
         .{ .path = "mod1", .source = "mod mod2;\n" },
         .{ .path = "mod1/mod2", .source = "pub fn f() -> i32 { return 1; }\n" },
     };
@@ -744,7 +744,7 @@ test "mod namespace: an import of the module `mod` binds is redundant" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const mods = [_]Module{
-        .{ .path = "main", .source = "pub mod config;\nimport {config};\npub fn main() {}\n" },
+        .{ .path = "main", .source = "pub mod config;\nimport {config};\npub fn main() -> void {}\n" },
         .{ .path = "config", .source = "pub fn f() -> i32 { return 1; }\n" },
     };
     const te = (try expandFor(arena, &mods, 0)).refused;

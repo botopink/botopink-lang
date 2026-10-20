@@ -13,7 +13,7 @@ fn total(xs: f64[]) -> f64 {
     return sum;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val ys = [1.0, 2.5];
     ys.forEach({ y -> print(y * 2.0) });
     val hs = [16d, 0.5, 3d];

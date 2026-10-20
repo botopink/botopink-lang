@@ -14,7 +14,7 @@ fn twice(n: i32) -> Result<i32, string> {
     v + 1
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(twice(3));
     print(twice(-1));
 }

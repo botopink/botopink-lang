@@ -13,14 +13,14 @@ import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 )]
 declare fn host(n: i32) -> Result<i32, HostError>;
 
-fn show(r: Result<i32, HostError>) {
+fn show(r: Result<i32, HostError>) -> void {
     case r {
         Ok(v) -> print("ok", v);
         Error(e) -> print("error", e.message, e.kind, e.name);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(host(1));
     show(host(2));
     show(host(3));

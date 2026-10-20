@@ -35,7 +35,7 @@ fn hi() -> string {
     return "hi";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b = Box(value: mk);
     val fb = b.value;
     print(fb(4));

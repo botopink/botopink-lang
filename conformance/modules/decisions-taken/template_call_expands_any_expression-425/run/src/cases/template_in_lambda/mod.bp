@@ -7,7 +7,7 @@ fn twice(syntax q: string) -> string {
     return compiler.build("\"" + compiler.text(q) + compiler.text(q) + "\"");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val f: fn() -> string = { -> twice @`cd` + "!" };
     print(f());
     print(["a", "b"].map({ s -> s + twice @`-` }).join(","));

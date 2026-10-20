@@ -12,6 +12,6 @@ fn label(n: i32, b: bool, s: string) -> string {
 
 pub val built = comptime label(2, true, "x\"y");
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(built);
 }

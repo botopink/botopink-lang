@@ -9,7 +9,7 @@ fn greet(lang: string) -> string {
     print(msg);
     return msg;
 }
-fn main() {
+fn main() -> void {
     greet("en");
     greet("pt");
     greet("fr");

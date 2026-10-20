@@ -2,7 +2,7 @@
 ```botopink
 val Counter = type(
     count: i32 = 0) {
-    fn inc(self: Self) {
+    fn inc(self: Self) -> void {
         self.count += 1;
     }
 };

@@ -25,7 +25,7 @@ fn zero() -> f64 {
     return 0.0;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val z = zero();
     val neg = z * -1.0;
 

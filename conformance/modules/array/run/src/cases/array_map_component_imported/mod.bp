@@ -7,6 +7,6 @@ pub mod cards;
 import {cases.array_map_component_imported.cards.Page};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("built");
 }

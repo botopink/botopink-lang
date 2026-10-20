@@ -17,6 +17,6 @@ component fn Liked() -> Component<Element> {
     return Element(count: shown);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Liked().count);
 }

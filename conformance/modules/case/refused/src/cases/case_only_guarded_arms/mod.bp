@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x = 0;
     val y = case x {
         i32 when (x > 0) { "positive" }

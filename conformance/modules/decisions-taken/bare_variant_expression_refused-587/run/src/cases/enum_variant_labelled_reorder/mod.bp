@@ -20,7 +20,7 @@ fn describe(s: Shape) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(describe(Shape.Circle(radius: 3, filled: true, name: "a")));
     print(describe(Shape.Circle(name: "a", filled: true, radius: 3)));
     print(describe(Shape.Circle(filled: true, radius: 3)));

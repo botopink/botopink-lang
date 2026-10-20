@@ -41,7 +41,7 @@ test "decision 311: a multiline literal, and the form inside a list" {
         \\#[mark, sql """
         \\    select * from users
         \\""", check("x")]
-        \\fn find() { }
+        \\fn find() -> void { }
     );
     const anns = program.decls[0].@"fn".annotations;
     try std.testing.expectEqual(@as(usize, 3), anns.len);
@@ -56,7 +56,7 @@ test "decision 311: the AST dump names the literal" {
     defer arena.deinit();
     const program = try parse(arena.allocator(),
         \\#[sql "a ${b}"]
-        \\fn f(b: string) { }
+        \\fn f(b: string) -> void { }
     );
     const json = try std.json.Stringify.valueAlloc(arena.allocator(), program.decls[0].@"fn".annotations[0], .{});
     try std.testing.expectEqualStrings("{\"name\":\"sql\",\"args\":[],\"template\":\"\\\"a ${b}\\\"\",\"is_builtin\":false}", json);
@@ -67,10 +67,10 @@ test "decision 311: a malformed hole is a parse error; a builtin annotation take
     defer arena.deinit();
     try std.testing.expectError(error.UnexpectedToken, parse(arena.allocator(),
         \\#[sql "a ${b +}"]
-        \\fn f(b: string) { }
+        \\fn f(b: string) -> void { }
     ));
     try std.testing.expectError(error.UnexpectedToken, parse(arena.allocator(),
         \\#[@External.Node "x"]
-        \\fn f() { }
+        \\fn f() -> void { }
     ));
 }

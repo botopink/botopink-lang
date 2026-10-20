@@ -17,4 +17,4 @@ fn total() -> i32 {
     return n;
 }
 
-pub fn main() { print(total()); }
+pub fn main() -> void { print(total()); }

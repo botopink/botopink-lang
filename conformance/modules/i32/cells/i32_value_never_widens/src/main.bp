@@ -8,7 +8,7 @@ fn half(v: f64) -> f64 {
     return v / 2.0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val n = 5;
     print(half(n));
 }

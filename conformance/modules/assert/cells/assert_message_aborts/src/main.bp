@@ -10,7 +10,7 @@ fn double(n: i32) -> i32 {
     return n * 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     assert double(2) == 4, "double(2) should be four";
     print("held");
     assert double(2) == 5, "double(2) should be five";

@@ -1,10 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type AppError(code: i32, msg: string)
-fn validate(x: i32) {
+fn validate(x: i32) -> Result<void, AppError> {
     if (x < 0) {
         throw AppError(code: 400, msg: "negative");
     };
+    return;
 }
 ```
 
@@ -13,7 +14,7 @@ fn validate(x: i32) {
 {module, test@main}.
 {exports, [{'__bp_priv__validate', 1}]}.
 {attributes, []}.
-{labels, 8}.
+{labels, 7}.
 
 {function, validate, 1, 3}.
   {label, 2}.
@@ -27,19 +28,24 @@ fn validate(x: i32) {
     {move, {literal, <<"negative">>}, {x, 0}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@AppError}, {integer, 400}, {x, 0}]}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
-    {jump, {f, 5}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
+    return.
   {label, 4}.
-  {label, 5}.
-    {move, {atom, ok}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__validate', 1, 7}.
-  {label, 6}.
+{function, '__bp_priv__validate', 1, 6}.
+  {label, 5}.
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__validate'}, 1}.
-  {label, 7}.
+  {label, 6}.
     {call_only, 1, {f, 3}}.
 ```
 

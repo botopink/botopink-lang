@@ -311,7 +311,7 @@ test "surface R7: a bodyless fn that declares its return type, arrow or not" {
         \\fn emit(source: string) -> void
         \\fn field<T, F>(obj: T, name: string) F
         \\fn quit(code: i32) -> noreturn
-        \\declare fn print(message: string);
+        \\declare fn print(message: string) -> void;
         \\fn main() -> i32 { return 1; }
     );
 }
@@ -324,7 +324,7 @@ test "surface R7: a bodyless fn with no return type at all" {
         \\1 | fn emit(source: string)
         \\  |                       ^ add `-> void`, or give the fn a body
         \\  |
-        \\  = note: `fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string);` are all declarations; `fn f(x: string)` alone says nothing about the result
+        \\  = note: `fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string) -> void;` are all declarations; `fn f(x: string)` alone says nothing about the result
         \\  = hint: Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.
         \\
         \\

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val xs = [10, 20, 30];
     val i = 1;
     print(xs[0]);

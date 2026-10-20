@@ -8,7 +8,7 @@ fn div(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val min = div(-2147483647, 1) - 1;
     print(div(min, 1));
     print(div(min, 2));

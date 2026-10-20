@@ -9,7 +9,7 @@ pub mod shapes;
 import {shapes.circle.name as circleName, shapes.helpers.seven};
 import {collections.Dict, collections.gt, collections.reverse, collections.toInt as rank, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(circleName());
     print(seven());
     val d: Dict<string, i32> = Dict.empty();

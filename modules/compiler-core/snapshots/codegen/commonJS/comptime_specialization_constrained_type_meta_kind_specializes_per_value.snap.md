@@ -4,7 +4,7 @@ fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
     return x;
 }
 
-fn main() {
+fn main() -> void {
     val a = coerce("s", 1);
     val b = coerce(7, 2);
     val c = coerce("s", 3);

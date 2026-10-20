@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn loud(syntax decl: fn() -> string) {
+fn loud(syntax decl: fn() -> string) -> void {
     compiler.wrapWith({ call -> call.run() + "!" });
 }
 
@@ -13,6 +13,6 @@ fn hello() -> string {
     return "hello";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(hello());
 }

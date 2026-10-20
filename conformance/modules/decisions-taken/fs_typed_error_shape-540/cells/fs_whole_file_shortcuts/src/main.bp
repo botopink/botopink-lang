@@ -13,7 +13,7 @@ fn hex(path: string) -> string {
         .unwrapOr(Bytes.fromUtf8("?")));
 }
 
-pub fn main() {
+pub fn main() -> void {
     fs.removeTree("shortcuts");
     print(fs.mkdirRecursive("shortcuts/a/b").isOk());
     print(fs.mkdirRecursive("shortcuts/a/b").isOk());

@@ -3533,7 +3533,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     }
 
     // Close the file. Closing twice is harmless; a failure to close is not reported.
-    pub fn close(self: Self) {
+    pub fn close(self: Self) -> void {
         val closed = rawClose(self.handle);
     }
 }

@@ -3,7 +3,7 @@
 import {start} from "starter";
 import {greet} from "core";
 
-pub fn main() {
+pub fn main() -> void {
     print(start() + greet());
 }
 

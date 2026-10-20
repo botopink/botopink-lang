@@ -22,7 +22,7 @@ fn modeName() -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("main starts");
     print(globals.payload);
     print(globals.count + globals.count);

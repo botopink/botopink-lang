@@ -1,9 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Person(name: string, age: i32)
-fn f() {
+fn f() -> Result<void, string> {
     val r = Person(name: "ann", age: 30);
     val assert Person(name, age) = r catch throw "is not person";
+    return;
 }
 ```
 
@@ -17,7 +18,8 @@ fn f() {
 f() ->
     R = {test@main@@Person, <<"ann">>, 30},
     BpAssert4_9 = R,
-    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> erlang:throw(<<"is not person">>) end.
+    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> {error, <<"is not person">>} end,
+    {ok, undefined}.
 
 '__bp_priv__f'() -> f().
 ```

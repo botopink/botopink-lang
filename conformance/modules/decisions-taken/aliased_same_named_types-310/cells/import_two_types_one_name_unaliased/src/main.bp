@@ -9,6 +9,6 @@ import {a.p.Policy};
 import {b.p.Policy};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(Policy(ms: 5).ms);
 }

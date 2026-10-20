@@ -9,7 +9,7 @@ pub behavior Named {
     fn label() -> string;
 }
 
-fn shouted(syntax decl: Named) {
+fn shouted(syntax decl: Named) -> void {
     compiler.addMember("shout", fn() -> string {
         return decl.label() + "!";
     });
@@ -22,6 +22,6 @@ pub type Users() implement Named {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Users.shout());
 }

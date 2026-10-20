@@ -17,7 +17,7 @@ fn views(route: Route<string, Post>) -> string {
     return route.params + ":" + route.data.views;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val r = Route(params: "x", data: Post(title: "A", views: 3));
     print(show(r));
     print(views(r));

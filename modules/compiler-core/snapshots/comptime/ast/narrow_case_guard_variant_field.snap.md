@@ -12,7 +12,7 @@ fn handle(r: Response) -> string {
         Error(code) -> "error " + code;
     };
 }
-fn main() {
+fn main() -> void {
     print(handle(Response.Data(200, "hi")));
     print(handle(Response.Error(500)));
 }

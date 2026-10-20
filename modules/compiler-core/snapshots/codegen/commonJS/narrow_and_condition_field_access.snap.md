@@ -7,7 +7,7 @@ fn describe(b: ?Box) -> string {
     };
     return "light or none";
 }
-fn main() {
+fn main() -> void {
     print(describe(Box(weight: 20)));
 }
 

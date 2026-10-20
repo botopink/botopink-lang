@@ -50,7 +50,7 @@ pub fn shapeOf(s: Shape) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(holeOf(Hole.Circle));
     print(shapeOf(Shape.Circle));
     val h = Hole.Circle;

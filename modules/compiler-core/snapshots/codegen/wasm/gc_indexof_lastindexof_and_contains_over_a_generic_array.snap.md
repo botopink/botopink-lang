@@ -3404,7 +3404,7 @@ import {testing.asserts} from "std";
     i32.ne
     return
   )
-  (func $main (export "main") (result i32)
+  (func $main (export "main")
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
@@ -3458,7 +3458,6 @@ import {testing.asserts} from "std";
     global.get $__s6
     call $holds__T_string
     call $__print_bool
-    i32.const 0
   )
   (func $includes__T_i32 (param $actual (ref null $arr_i32)) (param $element i32) (result (ref null $result))
     local.get $actual
@@ -3512,7 +3511,6 @@ import {testing.asserts} from "std";
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
-    drop
   )
   (func $__f64_eq (param $a f64) (param $b f64) (result i32)
     local.get $a

@@ -28,4 +28,4 @@ fn plain(n: i32) -> i32 {
     return n;
 }
 
-pub fn main() { print(plain(1)); }
+pub fn main() -> void { print(plain(1)); }

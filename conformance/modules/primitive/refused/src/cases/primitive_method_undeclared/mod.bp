@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-fn main() {
+fn main() -> void {
     val s = "abc";
     print(s.toUpperCase());
 }

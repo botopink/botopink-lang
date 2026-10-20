@@ -44,7 +44,7 @@ test "lsp cache: a member's cache lives under its workspace root, and a deleted 
     try write(io, test_scratch.path(io, "lsp-cache-ws/acme/modules/app/botopink.json"),
         \\{ "name": "app", "files": ["main.bp"] }
     );
-    try write(io, test_scratch.path(io, "lsp-cache-ws/acme/modules/app/src/main.bp"), "pub fn main() {}\n");
+    try write(io, test_scratch.path(io, "lsp-cache-ws/acme/modules/app/src/main.bp"), "pub fn main() -> void {}\n");
     try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-cache-ws/home"));
 
     var env = std.process.Environ.Map.init(gpa);
@@ -95,7 +95,7 @@ test "lsp cache: a package outside a workspace keeps its cache under itself" {
     try write(io, test_scratch.path(io, "lsp-cache-pkg/app/botopink.json"),
         \\{ "name": "app" }
     );
-    try write(io, test_scratch.path(io, "lsp-cache-pkg/app/src/main.bp"), "pub fn main() {}\n");
+    try write(io, test_scratch.path(io, "lsp-cache-pkg/app/src/main.bp"), "pub fn main() -> void {}\n");
 
     var server = server_mod.Server.init(gpa, io, null);
     defer server.deinit();

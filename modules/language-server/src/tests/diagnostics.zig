@@ -35,7 +35,7 @@ test "diagnostics: multiple declarations compile without errors" {
     var c = try h.compile(gpa,
         \\val x = 1;
         \\val s = "hello";
-        \\fn f(a: i32) { return a; }
+        \\fn f(a: i32) -> i32 { return a; }
     );
     defer c.deinit(gpa);
     try std.testing.expect(c.isOk());
@@ -105,7 +105,7 @@ test "diagnostics: enum declaration compiles without errors" {
 test "diagnostics: annotated function compiles without errors" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
     );
     defer c.deinit(gpa);
     try std.testing.expect(c.isOk());
@@ -178,7 +178,7 @@ test "diagnostics: a misused #[@external(…)] source surfaces a typeError diagn
 test "diagnostics: a checker warning surfaces with severity Warning" {
     const gpa = std.testing.allocator;
     const source =
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    var out = [];
         \\    print("x");
         \\}
@@ -204,7 +204,7 @@ test "diagnostics: from naming a module of this package is module-import-with-fr
     const source =
         \\import {area} from "geometry";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(area(2));
         \\}
         \\
@@ -228,7 +228,7 @@ test "diagnostics: from naming an undeclared package is an unresolved import sou
         \\import {start} from "starter";
         \\import {greet} from "core";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(start() + greet());
         \\}
         \\
@@ -248,7 +248,7 @@ test "diagnostics: from naming this package itself is module-import-with-from" {
     const source =
         \\import {area} from "shapes.geometry";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(area(2));
         \\}
         \\
@@ -276,7 +276,7 @@ test "diagnostics: the server names the package by its manifest for the 309 refu
     const source =
         \\import {area} from "shapes.geometry";
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(area(2));
         \\}
         \\

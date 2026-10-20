@@ -8,7 +8,7 @@ fn find(key: string) -> ?string {
     return if (key == "a") "found" else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(find("a")!);
     print(find("b")!);
     print("unreachable");

@@ -19,7 +19,7 @@ fn errorName(e: encoding.EncodingError) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val hi = Bytes.fromUtf8("hi");
     print(encoding.base64EncodeBytes(hi));
     print(encoding.hexEncodeBytes(hi));

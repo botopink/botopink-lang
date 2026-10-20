@@ -6,7 +6,7 @@ import {kit} from "lib";
 import {kit.pair, kit.resolve, kit.Box} from "lib";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val names: string[] = pair<string>("a", "b");
     print(names.length);
     val box: Box<i32> = resolve<i32>("n", 7);

@@ -7,14 +7,14 @@
 
 import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
-fn entity<T>(syntax decl: T, comptime table: string) {
+fn entity<T>(syntax decl: T, comptime table: string) -> void {
     compiler.setMeta(Entity(table: table));
 }
 
 fn index<T>(
     syntax decl: T,
     comptime ..fields: Type.Field<T>[],
-) {
+) -> void {
     compiler.setMeta(
         Index(
             columns: fields.map(
@@ -24,11 +24,11 @@ fn index<T>(
     );
 }
 
-fn unique<T>(syntax decl: T, comptime field: Type.Field<T>) {
+fn unique<T>(syntax decl: T, comptime field: Type.Field<T>) -> void {
     compiler.setMeta(Unique(column: field.name));
 }
 
-fn column<T>(syntax decl: T, comptime name: string) {
+fn column<T>(syntax decl: T, comptime name: string) -> void {
     if (compiler.kind(decl) != DeclKind.Field)
         compiler.fail("#[column] annotates a field", at: decl);
 }
@@ -42,7 +42,7 @@ pub type City(
     #[column("state_name")] state: string,
 )
 
-pub fn main() {
+pub fn main() -> void {
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
     val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
     print(columns.join(","));

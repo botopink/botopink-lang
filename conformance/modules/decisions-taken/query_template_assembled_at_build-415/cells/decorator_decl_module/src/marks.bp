@@ -4,6 +4,6 @@ import {compiler} from "std";
 
 pub type Origin(module: string)
 
-pub fn located(syntax decl: unknown) {
+pub fn located(syntax decl: unknown) -> void {
     compiler.setMeta(Origin(module: compiler.moduleOf(decl)));
 }

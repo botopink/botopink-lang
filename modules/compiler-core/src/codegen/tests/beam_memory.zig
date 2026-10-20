@@ -225,7 +225,7 @@ test "erlang: beam memory ---- a var in a module that imports nothing from std r
     try h.assertErlangRunLog(std.testing.allocator,
         \\var hits: i32 = 0;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    print(hits);

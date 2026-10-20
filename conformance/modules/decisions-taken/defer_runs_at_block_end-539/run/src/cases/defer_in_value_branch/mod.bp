@@ -29,7 +29,7 @@ fn arm(n: i32) -> i32 {
     return r;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(true).toString());
     print(pick(false).toString());
     print(arm(0).toString());

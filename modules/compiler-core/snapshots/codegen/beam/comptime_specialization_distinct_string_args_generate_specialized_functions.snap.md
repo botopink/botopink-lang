@@ -4,7 +4,7 @@ fn build(prefix comptime: string, name: string) -> string {
     return prefix + ": " + name;
 }
 
-fn main() {
+fn main() -> void {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("WARN", "Memória alta");
     val r3 = build("INFO", "Log replicado");

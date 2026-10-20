@@ -5,11 +5,11 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn report(message: string, at: SourceLocation) {
+fn report(message: string, at: SourceLocation) -> void {
     print(message, at.file, at.line, at.column, at.fnName);
 }
 
-pub fn main() {
+pub fn main() -> void {
     report("first", comptime compiler.src()); // first src/main.bp 13 30 main
     report("second", comptime compiler.src()); // second src/main.bp 14 31 main
 }

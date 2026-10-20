@@ -6,7 +6,7 @@ fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
     return #(rest, head);
 }
 
-fn main() {
+fn main() -> void {
     val result = firstAndRest([1, 2, 3]);
     val head = result._1;
     print(head ?? -1);

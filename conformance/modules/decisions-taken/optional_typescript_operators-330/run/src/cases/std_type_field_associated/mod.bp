@@ -10,6 +10,6 @@ fn nameOf(f: ?Type.Field<Recipe>) -> string {
     return f?.name ?? "none";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(nameOf(null));
 }

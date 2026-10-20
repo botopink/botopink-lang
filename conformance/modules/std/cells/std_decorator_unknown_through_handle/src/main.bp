@@ -9,6 +9,6 @@ pub behavior Repo {
     fn find(self: Self, id: i32) -> string;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(0);
 }

@@ -811,7 +811,7 @@ fn frameParent(f: Frame) -> unknown {
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type() implement Renderable
-fn cleanup() {
+fn cleanup() -> void {
     0;
 }
 component fn effect(f: fn()) -> Component<i32> {

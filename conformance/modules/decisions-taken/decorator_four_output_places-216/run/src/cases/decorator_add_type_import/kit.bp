@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-pub fn entity(syntax decl: unknown) {
+pub fn entity(syntax decl: unknown) -> void {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
     compiler.addType("Columns", compiler.buildType("("
@@ -12,7 +12,7 @@ pub fn entity(syntax decl: unknown) {
         + ")"));
 }
 
-pub fn double(syntax decl: unknown) {
+pub fn double(syntax decl: unknown) -> void {
     var methods: string[] = [];
     compiler
         .methods(decl)

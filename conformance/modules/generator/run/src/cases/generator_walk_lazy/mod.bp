@@ -12,7 +12,7 @@ iter fn counted() -> Iter<i32> {
     yield 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     counted().forEach({ x -> print(x); });
     print(counted().some({ x -> x == 1 }));
     print(counted().every({ x -> x == 2 }));

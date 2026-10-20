@@ -21,7 +21,7 @@ type Box<V>(value: V) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = Ctx(n: 1);
     val s: string = c.resolve("a");
     print(s);

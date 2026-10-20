@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.comptime_float_keeps_decimal_point.runCase();
     cases.numeric_literal_suffixes.runCase();
     cases.numeric_suffix_positions.runCase();

@@ -8,6 +8,6 @@ pub mod registry;
 import {registry.names};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(names());
 }

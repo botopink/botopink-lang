@@ -11,7 +11,7 @@ fn handle(n: i32) -> string {
         Err(e) -> "error: " + e;
     };
 }
-fn main() {
+fn main() -> void {
     print(handle(5));
 }
 

@@ -7,7 +7,7 @@
 
 import {querystring, url, io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
     val u = url.parse("https://example.com:8080/a?b=1#f");
     print(u.host);

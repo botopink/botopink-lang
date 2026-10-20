@@ -18,7 +18,7 @@ fn next(n: i32) -> i32 {
     return try half(n) + 1 catch 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(both(4, 6));
     print(both(3, 6));
     print(both(4, 7));

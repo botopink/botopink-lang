@@ -10,4 +10,4 @@ type Fish {
 
 pub val MaybeFish = Type.partial(Fish);
 
-pub fn main() {}
+pub fn main() -> void {}

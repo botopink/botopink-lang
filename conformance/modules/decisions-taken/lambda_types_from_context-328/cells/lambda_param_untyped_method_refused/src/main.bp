@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val describe = { n -> "n=" + n.toString() };
     print("never called");
 }

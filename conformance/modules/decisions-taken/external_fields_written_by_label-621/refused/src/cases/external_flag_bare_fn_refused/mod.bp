@@ -11,6 +11,6 @@ fn reverseBody(xs: i32[]) -> i32[] {
 #[compiler.external(.Erlang("lists:reverse($0)", reverseBody), .JavaScript("[...$0].reverse()"))]
 declare fn backwards(xs: i32[]) -> i32[];
 
-pub fn main() {
+pub fn main() -> void {
     print(backwards([1, 2, 3]));
 }

@@ -6,7 +6,7 @@ fn scale(comptime factor: i32, value: i32) -> i32 {
     return value * factor;
 }
 
-fn main() {
+fn main() -> void {
     val doubled = scale(2, base);
     val tripled = scale(3, base);
     val doubledAgain = scale(2, 100);

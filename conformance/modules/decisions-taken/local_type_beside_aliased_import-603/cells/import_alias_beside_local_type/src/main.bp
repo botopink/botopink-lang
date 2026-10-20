@@ -27,7 +27,7 @@ fn kind(x: unknown) -> string {
     return "other";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val own = Box(v: 1);
     val other = ShapeBox(w: 2);
     print(own);

@@ -25,7 +25,7 @@ fn hd(xs: i32[]) -> i32 {
     return -1;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val p = Point(x: 3, y: 4);
     print(p.y);
     print(element("k", "v"));

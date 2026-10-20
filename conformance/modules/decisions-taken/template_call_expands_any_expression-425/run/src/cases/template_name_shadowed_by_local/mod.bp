@@ -12,7 +12,7 @@ fn run(shout: fn(string) -> string) -> string {
     return shout @`x`;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(shout @`before`);
     print(run({ s -> "param " + s }));
     val shout: fn(string) -> string = { s -> "local " + s };

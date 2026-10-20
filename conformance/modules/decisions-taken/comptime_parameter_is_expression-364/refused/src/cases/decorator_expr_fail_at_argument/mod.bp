@@ -4,7 +4,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn sizeBetween(syntax decl: unknown, comptime min: i32, comptime max: i32) {
+fn sizeBetween(syntax decl: unknown, comptime min: i32, comptime max: i32) -> void {
     if (min > max) compiler.fail("the upper bound is below the lower one", at: max);
 }
 
@@ -12,6 +12,6 @@ type Form(
     #[sizeBetween(5, 1)] name: string,
 )
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

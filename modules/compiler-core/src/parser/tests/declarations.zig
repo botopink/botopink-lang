@@ -75,9 +75,9 @@ test "parser: abstract method with multiple params" {
 test "parser: interface with methods of varying param counts" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Canvas = behavior {
-        \\    fn clear(self: Self);
-        \\    fn drawLine(self: Self, x1: i32, y1: i32);
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
+        \\    fn clear(self: Self) -> void;
+        \\    fn drawLine(self: Self, x1: i32, y1: i32) -> void;
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string) -> void;
         \\}
     );
 }
@@ -86,8 +86,8 @@ test "parser: full Drawable interface (field + abstract + default method)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Drawable = behavior {
         \\    val color: string;
-        \\    fn draw(self: Self);
-        \\    default fn log(self: Self) {
+        \\    fn draw(self: Self) -> void;
+        \\    default fn log(self: Self) -> void {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
         \\}
@@ -151,7 +151,7 @@ test "parser: record with declare fn (abstract method declaration)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val X = type(
         \\    value: string) {
-        \\    declare fn foo(self: Self);
+        \\    declare fn foo(self: Self) -> void;
         \\}
     );
 }
@@ -169,7 +169,7 @@ test "parser: enum with declare fn (abstract method declaration)" {
 test "parser: implement with one interface and one unqualified method" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Myimplement = implement Drawable for Circle {
-        \\    fn draw(self: Self) {}
+        \\    fn draw(self: Self) -> void {}
         \\}
     );
 }
@@ -177,10 +177,10 @@ test "parser: implement with one interface and one unqualified method" {
 test "parser: implement with two interfaces and qualified methods" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
-        \\    fn UsbCharger.Conectar(self: Self) {
+        \\    fn UsbCharger.Conectar(self: Self) -> void {
         \\        Console.WriteLine("Conectado via USB. Bateria atual: " + self.batteryLevel);
         \\    }
-        \\    fn SolarCharger.Conectar(self: Self) {
+        \\    fn SolarCharger.Conectar(self: Self) -> void {
         \\        Console.WriteLine("Conectado via Painel Solar. Bateria atual: " + self.batteryLevel);
         \\    }
         \\}
@@ -190,9 +190,9 @@ test "parser: implement with two interfaces and qualified methods" {
 test "parser: interface ---- members comma-separated with trailing comma" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Canvas = behavior {
-        \\    fn clear(self: Self);
-        \\    fn drawLine(self: Self, x1: i32, y1: i32);
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
+        \\    fn clear(self: Self) -> void;
+        \\    fn drawLine(self: Self, x1: i32, y1: i32) -> void;
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string) -> void;
         \\}
     );
 }
@@ -212,7 +212,7 @@ test "parser: record with two fields and a non-pub toString method" {
 test "parser: implement single interface with method body" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CircleDrawing = implement Drawable for Circle {
-        \\    fn draw(self: Self) {
+        \\    fn draw(self: Self) -> void {
         \\        print("Drawing circle");
         \\    }
         \\}
@@ -224,10 +224,10 @@ test "parser: implement single interface with method body" {
 test "parser: implement two interfaces, qualified methods calling a builtin" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
-        \\    fn UsbCharger.Connect(self: Self) {
+        \\    fn UsbCharger.Connect(self: Self) -> void {
         \\        print("Connected via USB. Battery level: " + self.batteryLevel);
         \\    }
-        \\    fn SolarCharger.Connect(self: Self) {
+        \\    fn SolarCharger.Connect(self: Self) -> void {
         \\        print("Connected via Solar Panel. Battery level: " + self.batteryLevel);
         \\    }
         \\}
@@ -239,7 +239,7 @@ test "parser: implement two interfaces, qualified methods calling a builtin" {
 test "parser: implement shorthand named" {
     try h.assertParser(std.testing.allocator, @src(),
         \\PatoNada implement Nada for Pato {
-        \\    fn swim(self: Self) {}
+        \\    fn swim(self: Self) -> void {}
         \\}
     );
 }
@@ -247,7 +247,7 @@ test "parser: implement shorthand named" {
 test "parser: implement shorthand named pub" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub PatoNada implement Nada for Pato {
-        \\    fn swim(self: Self) {}
+        \\    fn swim(self: Self) -> void {}
         \\}
     );
 }
@@ -255,7 +255,7 @@ test "parser: implement shorthand named pub" {
 test "parser: extend shorthand named" {
     try h.assertParser(std.testing.allocator, @src(),
         \\PatoExtra extend Pato {
-        \\    fn quack(self: Self) {}
+        \\    fn quack(self: Self) -> void {}
         \\}
     );
 }
@@ -263,7 +263,7 @@ test "parser: extend shorthand named" {
 test "parser: extend explicit named" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val PatoExtra = extend Pato {
-        \\    fn quack(self: Self) {}
+        \\    fn quack(self: Self) -> void {}
         \\}
     );
 }
@@ -359,14 +359,14 @@ test "parser: interface extends ---- pub shorthand multiple" {
 test "parser: annotation ---- fn no args" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[inline]
-        \\fn greet() {}
+        \\fn greet() -> void {}
     );
 }
 
 test "parser: annotation ---- fn with dot-ident arg" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[target(.erlang)]
-        \\pub fn maxval() {}
+        \\pub fn maxval() -> void {}
     );
 }
 
@@ -374,13 +374,13 @@ test "parser: annotation ---- fn multiple annotations" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[target(.erlang)]
         \\#[inline]
-        \\fn compute() {}
+        \\fn compute() -> void {}
     );
 }
 
 test "parser: annotation ---- val form fn" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val maxval = #[target(.erlang)] fn() {}
+        \\val maxval = #[target(.erlang)] fn() -> void {}
     );
 }
 
@@ -423,7 +423,7 @@ test "parser: annotation block ---- external decl then next decl" {
         \\#[compiler.external(.Erlang("erlang:abs($0)"))]
         \\pub declare fn absoluteValue(n: i32) -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    absoluteValue(-5);
         \\}
         \\
@@ -434,7 +434,7 @@ test "parser: annotation block ---- external decl then next decl" {
 test "parser: val local binding with case expression" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val X = implement Foo for Bar {
-        \\    fn run(self: Self) {
+        \\    fn run(self: Self) -> void {
         \\        val result = case x {
         \\            _ -> "ok";
         \\        };
@@ -560,7 +560,7 @@ test "parser: test named with message assert" {
 test "parser: test rejects in fn body" {
     // `test` is a top-level declaration only.
     try h.expectParseFails(std.testing.allocator,
-        \\fn run() {
+        \\fn run() -> void {
         \\    test { assert true; }
         \\}
     );
@@ -972,7 +972,7 @@ test "parser: effect fn ---- @Iter-of-Result label after return type" {
 test "parser: decl ids ---- per-kind counters increment independently" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val A = type(x: i32)
-        \\val I = behavior { fn go(self: Self); }
+        \\val I = behavior { fn go(self: Self) -> void; }
         \\val B = type(y: i32)
         \\val E = type { One, Two }
     );
@@ -992,7 +992,7 @@ test "parser: comments ---- doc, module and normal comments attach to decls" {
         \\val Point = type(x: i32)
         \\
         \\/// documents the fn
-        \\fn go() {
+        \\fn go() -> void {
         \\    // inside the body
         \\    panic("not implemented");
         \\}
@@ -1133,7 +1133,7 @@ test "parser: a discard param is refused in a fn with a body" {
 test "parser: a discard param is refused in a default behavior method" {
     try h.expectErrorAt(
         \\behavior B {
-        \\    default fn f(self: Self, comptime _: string) {}
+        \\    default fn f(self: Self, comptime _: string) -> void {}
         \\}
     , .discardParamWithBody, 2, 39);
 }
@@ -1174,7 +1174,7 @@ test "parser: a tail with `;` is a statement; a void fn's tail stays as written 
     defer arena.deinit();
     const program = try parseTailProgram(arena.allocator(),
         \\fn semi(x: i32) -> i32 { x + 1; }
-        \\fn log(x: i32) { print(x) }
+        \\fn log(x: i32) -> void { print(x) }
         \\fn sign(n: i32) -> i32 { if (n < 0) return -1; n }
         \\fn both(c: bool) -> i32 { if (c) return 1 else return 2 }
         \\fn braced(c: bool) -> i32 { if (c) { return 1; } else { return 2; } }
@@ -1201,7 +1201,7 @@ test "parser: a method's, a function expression's and a lambda's tail (decision 
         \\type Rect(w: i32, h: i32) {
         \\    fn area(self: Self) -> i32 { self.w * self.h }
         \\}
-        \\fn main() { use2(fn(x: i32) -> i32 { x + 1 }, { x -> val y = x; y * y }); }
+        \\fn main() -> void { use2(fn(x: i32) -> i32 { x + 1 }, { x -> val y = x; y * y }); }
     );
     const methods = program.decls[0].type_.methods;
     try std.testing.expectEqual(ast.Tail.returned, methods[0].body.?[0].tail);

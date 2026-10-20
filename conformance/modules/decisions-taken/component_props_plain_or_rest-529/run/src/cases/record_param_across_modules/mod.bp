@@ -6,7 +6,7 @@ pub mod card;
 import {cases.record_param_across_modules.card.Card, cases.record_param_across_modules.card.CardProps};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Card(title: "a", suffix: "!"));
     val p = CardProps(title: "z");
     print(Card(..p, size: 4, suffix: "?"));

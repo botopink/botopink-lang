@@ -31,7 +31,7 @@ fn scoreOf(r: Result) -> i32 {
     return r.score();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = Age(years: 21);
     print(columnOf(a));
     print(scoreOf(a));

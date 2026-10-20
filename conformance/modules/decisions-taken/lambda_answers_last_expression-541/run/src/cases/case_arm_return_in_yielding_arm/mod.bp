@@ -18,7 +18,7 @@ iter fn items(n: i32) -> Iter<i32> {
     yield 9;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     for (items(0)) { v ->
         print(v);
     }

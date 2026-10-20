@@ -17,7 +17,7 @@ fn lookup(path: string) -> string {
     return found.params.at("id") ?? "";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(lookup("/users"));
     print(lookup("/nope"));
     if (find("/users")) {

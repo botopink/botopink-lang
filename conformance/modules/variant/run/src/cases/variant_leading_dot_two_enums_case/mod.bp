@@ -25,7 +25,7 @@ fn warmName(c: Warm) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c: Cool = .Red;
     print(coolName(c));
     val w: Warm = .Red;

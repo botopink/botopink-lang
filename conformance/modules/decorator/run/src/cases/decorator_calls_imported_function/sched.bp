@@ -8,7 +8,7 @@ fn describe(expr: string) -> string {
     return if (count(expr) == 5) "every minute" else "custom";
 }
 
-pub fn scheduled(syntax decl: unknown, comptime cron: string) {
+pub fn scheduled(syntax decl: unknown, comptime cron: string) -> void {
     @emit(
         "pub fn schedule() -> string { return \""
             + shout(compiler.name(decl)!)

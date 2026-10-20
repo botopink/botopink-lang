@@ -18,7 +18,7 @@ fn first(t: Two<string, i32>) -> string {
     return t.0;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val p: P = P(x: 2, y: 3);
     print(total(p));
     print(first(#("a", 1)));

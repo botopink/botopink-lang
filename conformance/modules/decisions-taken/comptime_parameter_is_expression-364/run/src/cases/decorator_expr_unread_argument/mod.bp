@@ -9,7 +9,7 @@ fn label(key: string) -> string {
     return key + "!";
 }
 
-fn audit(syntax decl: unknown, comptime message: string) {
+fn audit(syntax decl: unknown, comptime message: string) -> void {
     compiler.setMeta(Audit(audited: compiler.name(decl)!));
 }
 
@@ -18,7 +18,7 @@ fn signup() -> i32 {
     return 1;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(signup).meta(Audit)?.audited ?? "none");
     print(signup());
 }

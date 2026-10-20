@@ -7,7 +7,7 @@ fn build(factory: unknown) -> string {
     return "not a factory";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(build({ -> Clock(zone: "UTC") }));
     print(build(42));
 }

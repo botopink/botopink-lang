@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.backtick_name_binding.runCase();
     cases.backtick_name_field.runCase();
     cases.backtick_name_function.runCase();

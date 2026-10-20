@@ -37,7 +37,7 @@ fn show(x: Shape) -> i32 {
     return x.twice();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Sq(s: 3).twice());
     print(Sq(s: 3).label());
     print(Rect(w: 2, h: 5).twice());

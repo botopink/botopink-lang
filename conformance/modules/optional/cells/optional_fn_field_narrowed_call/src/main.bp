@@ -6,13 +6,13 @@ import {io.terminal.print} from "std";
 
 type Cfg(name: string, scoper: ?fn(string) -> string)
 
-fn apply(cfg: Cfg) {
+fn apply(cfg: Cfg) -> void {
     val f = cfg.scoper;
     if (f != null) print(f("x"));
     print(cfg.scoper?.("y"));
 }
 
-pub fn main() {
+pub fn main() -> void {
     apply(Cfg(name: "n", scoper: { s -> s + "!" }));
     apply(Cfg(name: "n", scoper: null));
 }

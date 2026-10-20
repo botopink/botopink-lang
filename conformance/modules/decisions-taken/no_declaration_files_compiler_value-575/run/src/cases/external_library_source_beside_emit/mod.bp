@@ -4,16 +4,16 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn bif(syntax decl: unknown, comptime module: string) {
+fn bif(syntax decl: unknown, comptime module: string) -> void {
     compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
 }
 
-fn greeting(syntax decl: unknown) {
+fn greeting(syntax decl: unknown) -> void {
     @emit("pub fn greeted() -> string { return \"hi\"; }");
 }
 
 #[greeting]
-fn anchor() {}
+fn anchor() -> void {}
 
 #[bif("lists")]
 #[compiler.external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
@@ -23,7 +23,7 @@ fn reverseBody(xs: i32[]) -> i32[] {
     return xs.reverse();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(greeted());
     print(backwards([1, 2, 3]));
 }

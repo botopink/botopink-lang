@@ -9,6 +9,6 @@ fn parse(raw: string) -> Result<i64, string> {
     return try raw.parseInt() catch throw "not a number";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(parse("4") catch 0l);
 }

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn main() {
+fn main() -> void {
     val assert 42 = answer catch 0;
     print("unreachable");
 }

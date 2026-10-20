@@ -22,7 +22,7 @@ fn p(present: bool) -> ?Point {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(p(true)?.me().x ?? -1);
     print(p(false)?.me().x ?? -1);
     print(p(true)?.inner.x ?? -1);

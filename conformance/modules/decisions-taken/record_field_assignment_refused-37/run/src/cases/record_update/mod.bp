@@ -15,7 +15,7 @@ type Outer(inner: Inner, n: i32)
 
 type Box<T>(value: T, tag: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val base = Cfg(a: 1, revalidate: 0, name: "x");
     val c = Cfg(..base, revalidate: 60);
     print(c.a);

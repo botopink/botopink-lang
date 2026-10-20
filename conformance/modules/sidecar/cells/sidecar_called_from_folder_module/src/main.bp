@@ -16,6 +16,6 @@ pub mod orm;
 import {orm.entity.describe};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(describe("user"));
 }

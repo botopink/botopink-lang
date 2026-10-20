@@ -16,7 +16,7 @@ pub type Shape {
     }
 }
 
-fn main() {
+fn main() -> void {
     val s: Shape = Shape.unit();
     print(s.area());
 }

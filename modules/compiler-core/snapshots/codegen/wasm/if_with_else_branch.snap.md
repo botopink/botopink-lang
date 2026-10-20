@@ -4,7 +4,7 @@ fn abs(n: i32) -> i32 {
     val result = if (n < 0) -n else n;
     return result;
 }
-fn main() {
+fn main() -> void {
     print(abs(-5));
     print(abs(3));
 }

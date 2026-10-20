@@ -9,6 +9,6 @@ pub fn length(syntax value: string[]) -> i32 {
     return compiler.text(value).length;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(length(["a", "b"]));
 }

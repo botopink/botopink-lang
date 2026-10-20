@@ -9,7 +9,7 @@ import {cases.default_named_later.m.tree};
 import {cases.default_named_later.m.tree as Tree};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(tree(2));
     print(Tree(0));
 }

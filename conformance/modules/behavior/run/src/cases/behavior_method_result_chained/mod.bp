@@ -23,13 +23,13 @@ type Dog(n: string) implement Named {
     }
 }
 
-fn show(x: Named) {
+fn show(x: Named) -> void {
     print(x.name().length());
     print(x.name().toUpper());
     print(x.size().toString());
     print(x.size() + 1);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(Dog(n: "rex"));
 }

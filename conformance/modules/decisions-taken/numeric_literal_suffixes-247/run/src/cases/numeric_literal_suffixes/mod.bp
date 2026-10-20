@@ -24,7 +24,7 @@ fn kind(n: u8) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val x: f64 = 1d;
     print(x);
     print(small(1.5f));

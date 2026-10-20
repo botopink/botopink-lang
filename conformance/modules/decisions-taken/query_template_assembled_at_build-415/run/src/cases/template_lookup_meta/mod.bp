@@ -12,11 +12,11 @@ type Table(name: string, rows: i32, cached: bool = false, size: Size = .Small, t
 
 type Index(column: string)
 
-fn table(syntax decl: unknown, comptime name: string, comptime rows: i32) {
+fn table(syntax decl: unknown, comptime name: string, comptime rows: i32) -> void {
     compiler.setMeta(Table(name: name, rows: rows, size: .Large, tags: ["a", "b"]));
 }
 
-fn index(syntax decl: unknown, comptime column: string) {
+fn index(syntax decl: unknown, comptime column: string) -> void {
     compiler.addMeta(Index(column: column));
 }
 
@@ -61,7 +61,7 @@ fn entity(syntax q: string) -> bool {
     return compiler.build(found);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(sql @`User`);
     print(entity @`User`);
     print(entity @`Plain`);

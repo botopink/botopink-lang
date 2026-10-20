@@ -275,7 +275,7 @@ test "pattern: non-empty list pattern" {
         \\        [] -> fallback;
         \\    };
         \\};
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(first_or_default([1, 2], 0));
         \\    print(first_or_default([], 0));
         \\}
@@ -343,7 +343,7 @@ test "variant inference: pattern matching on generic enum" {
 
 test "@print: single string argument infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("hello");
         \\}
         \\
@@ -353,7 +353,7 @@ test "@print: single string argument infers void" {
 
 test "@print: multiple arguments infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    print("x =", 42, true);
         \\}
         \\
@@ -363,7 +363,7 @@ test "@print: multiple arguments infers void" {
 
 test "@print: expression argument infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x = 10;
         \\    print(x + 5);
         \\}
@@ -374,14 +374,14 @@ test "@print: expression argument infers void" {
 
 test "@print: in if branch infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn check(x: i32) {
+        \\fn check(x: i32) -> void {
         \\    if (x > 0) {
         \\        print("positive");
         \\    } else {
         \\        print("non-positive");
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    check(1);
         \\    check(-1);
         \\}
@@ -392,7 +392,7 @@ test "@print: in if branch infers void" {
 
 test "@print: string interpolation argument" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn greet(name: string) {
+        \\fn greet(name: string) -> void {
         \\    print("Hello, " + name + "!");
         \\}
         \\

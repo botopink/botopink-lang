@@ -11,11 +11,11 @@ import {io.terminal.print} from "std";
 
 var hits: i32 = 0;
 
-pub fn bump() {
+pub fn bump() -> void {
     hits = hits + 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     bump();
     bump();
     print(hits);

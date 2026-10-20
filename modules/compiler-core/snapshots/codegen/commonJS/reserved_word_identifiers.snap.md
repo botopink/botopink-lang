@@ -5,7 +5,7 @@ pub fn delete(with: string, class: string) -> string {
     return static;
 }
 
-fn main() {
+fn main() -> void {
     print(delete("a", "b"));
 }
 

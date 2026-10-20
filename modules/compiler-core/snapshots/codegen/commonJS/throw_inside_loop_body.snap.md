@@ -6,7 +6,7 @@ fn validate(items: i32) -> Result<i32, string> {
     };
     return items;
 }
-fn main() {
+fn main() -> void {
     print(validate(2).isOk());
 }
 

@@ -10959,7 +10959,7 @@ fn runTagAnnotation(
 
     // `#[<written>]` above a function, so the parser reads it as it reads a
     // declaration's annotation; each location is then moved onto the text.
-    const src = try std.fmt.allocPrint(env.arena, "#[{s}]\nfn __bp_tagAnnotation() {{}}", .{written});
+    const src = try std.fmt.allocPrint(env.arena, "#[{s}]\nfn __bp_tagAnnotation() -> void {{}}", .{written});
     var lx = Lexer.init(src);
     const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
     var parser = Parser.init(tokens);
@@ -14455,10 +14455,7 @@ fn refuseValueTailInVoid(env: *Env, what: []const u8, body: []const ast.Stmt, ta
 }
 
 /// Whether a written return answers nothing: none, or `void`.
-fn answersNothing(rt: ?ast.TypeRef) bool {
-    const t = rt orelse return true;
-    return t == .named and std.mem.eql(u8, t.named, "void");
-}
+const answersNothing = ast.answersNothing;
 
 /// Decision 525 — the location of `stmt` when it is a `case` or a block `{ … }`
 /// written as a whole statement (its value discarded), else null.

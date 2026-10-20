@@ -7,7 +7,7 @@ fn maybeFail(should_fail: bool) -> Result<i32, string> {
         return 42;
     }
 }
-fn main() {
+fn main() -> void {
     val v = try maybeFail(true) catch -1;
     print(v);
 }

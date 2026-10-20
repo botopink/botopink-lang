@@ -4,7 +4,7 @@
 
 import {marquee} from "marquee";
 
-pub fn main() {
+pub fn main() -> void {
     marquee("home");
     marquee("news");
 }

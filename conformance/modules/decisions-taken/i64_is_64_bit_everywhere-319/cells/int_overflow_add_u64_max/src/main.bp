@@ -10,7 +10,7 @@ fn add(a: u64, b: u64) -> u64 {
     return a + b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val top = 18446744073709551615ul;
     print(top);
     print(top - 18446744073709551614ul);

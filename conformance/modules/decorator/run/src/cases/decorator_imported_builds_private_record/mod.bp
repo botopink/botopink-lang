@@ -10,6 +10,6 @@ import {io.terminal.print, compiler} from "std";
 #[entity("cities")]
 type City(name: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
 }

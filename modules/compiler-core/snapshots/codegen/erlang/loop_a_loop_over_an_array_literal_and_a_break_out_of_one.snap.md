@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     for ([1, 2, 3]) { x -> print(x); };
     var first = 0;
     for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };

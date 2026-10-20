@@ -7,6 +7,6 @@ fn first(..rest: string[], n: i32) -> i32 {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first(1));
 }

@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.prefixed_loop_break_value.runCase();
     cases.prefixed_loop_forms.runCase();
     cases.prefixed_loop_nearest_scope.runCase();

@@ -14,7 +14,7 @@ fn bucket(n: i32) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(bucket(5)); // digit
     print(bucket(-1)); // negative
     print(bucket(42)); // other

@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s = "a—bXc";
     print(s.indexOf("X"));
     print(s.at(3));

@@ -474,7 +474,7 @@ test "surface: an annotation block on a loop is refused — a loop takes `iter` 
 
 test "surface: the prefixed loop carries its kind and the three forms their keyword" {
     var parsed = try parse(
-        \\fn f(xs: i32[]) {
+        \\fn f(xs: i32[]) -> void {
         \\    val g = iter loop :gen { yield 1; break 2; };
         \\    val r = iter for (xs) { x -> yield x; };
         \\    val fg = stream loop { yield 1; };
@@ -525,7 +525,7 @@ test "surface: the prefixed loop carries its kind and the three forms their keyw
 
 test "surface: a while condition is delimited by its parentheses, so && and || are one condition" {
     var parsed = try parse(
-        \\fn f(a: bool, b: bool) {
+        \\fn f(a: bool, b: bool) -> void {
         \\    while (a && b || !a) { break; };
         \\}
     );
@@ -574,7 +574,7 @@ test "surface: new, delegate and const are ordinary identifiers" {
 
 test "surface: while (condition) and loop { … } parse with no parameter" {
     var parsed = try parse(
-        \\fn f() {
+        \\fn f() -> void {
         \\    var i = 0;
         \\    while (i < 3) { i = i + 1; };
         \\    loop { i = i + 1; break; };

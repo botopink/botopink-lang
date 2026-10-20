@@ -2549,7 +2549,7 @@ fn writeKitWorkspace(io: std.Io, comptime root: []const u8) !void {
     const files = [_][2][]const u8{
         .{ "ws/repository/kit/botopink.json", "{ \"name\": \"kit\", \"workspaces\": [\"modules/*\"] }" },
         .{ "ws/repository/kit/modules/kit-core/botopink.json", "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }" },
-        .{ "ws/repository/kit/modules/kit-core/src/core.bp", "pub fn core() {}" },
+        .{ "ws/repository/kit/modules/kit-core/src/core.bp", "pub fn core() -> void {}" },
         .{ "ws/repository/kit/modules/kit-link/botopink.json", "{ \"name\": \"kit-link\", \"files\": [\"link.bp\"], \"dependencies\": { \"kit-core\": { \"workspace\": true } } }" },
         .{ "ws/repository/kit/modules/kit-link/src/link.bp", "import {core} from \"kit-core\";" },
         .{ "ws/repository/kit/modules/kit-forms/botopink.json", "{ \"name\": \"kit-forms\", \"files\": [\"forms.bp\"], \"dependencies\": { \"kit-link\": { \"workspace\": true }, \"kit-core\": { \"workspace\": true } } }" },
@@ -2616,7 +2616,7 @@ test "loadDependencies: packages compile and init by level — the most levels o
     defer test_scratch.remove(io, "closure-level");
     try writeKitWorkspace(io, "closure-level");
     try writeFileP(io, test_scratch.path(io, "closure-level/ws/repository/solo/botopink.json"), "{ \"name\": \"solo\", \"files\": [\"solo.bp\"] }");
-    try writeFileP(io, test_scratch.path(io, "closure-level/ws/repository/solo/src/solo.bp"), "pub fn solo() {}");
+    try writeFileP(io, test_scratch.path(io, "closure-level/ws/repository/solo/src/solo.bp"), "pub fn solo() -> void {}");
 
     // `kit-forms` is listed first and depends on two levels of packages:
     // it goes last, after `solo`, which depends on nothing — depth first,
@@ -2639,7 +2639,7 @@ test "loadDependencies: one import name meaning two directories in one build is 
     defer test_scratch.remove(io, "closure-clash");
     try writeKitWorkspace(io, "closure-clash");
     try writeFileP(io, test_scratch.path(io, "closure-clash/other/kit-core/botopink.json"), "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }");
-    try writeFileP(io, test_scratch.path(io, "closure-clash/other/kit-core/src/core.bp"), "pub fn core() {}");
+    try writeFileP(io, test_scratch.path(io, "closure-clash/other/kit-core/src/core.bp"), "pub fn core() -> void {}");
 
     // The project's `kit-core` is another directory than the one `kit-forms`
     // means by that name.
@@ -2659,9 +2659,9 @@ test "loadDependencies: a dependency named like the project or a member of its w
     try writeKitWorkspace(io, "closure-name-twice");
     // A second `kit-core`, outside the workspace, and a package named `app`.
     try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/kit-core/botopink.json"), "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }");
-    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/kit-core/src/core.bp"), "pub fn core() {}");
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/kit-core/src/core.bp"), "pub fn core() -> void {}");
     try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/app/botopink.json"), "{ \"name\": \"app\", \"files\": [\"a.bp\"] }");
-    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/app/src/a.bp"), "pub fn a() {}");
+    try writeFileP(io, test_scratch.path(io, "closure-name-twice/other/app/src/a.bp"), "pub fn a() -> void {}");
 
     var captured: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer captured.deinit();
@@ -2720,9 +2720,9 @@ test "loadDependencies: a cycle between packages is refused" {
     const files = [_][2][]const u8{
         .{ "closure-cycle/ws/repository/ring/botopink.json", "{ \"name\": \"ring\", \"workspaces\": [\"modules/*\"] }" },
         .{ "closure-cycle/ws/repository/ring/modules/ring-a/botopink.json", "{ \"name\": \"ring-a\", \"files\": [\"a.bp\"], \"dependencies\": { \"ring-b\": { \"workspace\": true } } }" },
-        .{ "closure-cycle/ws/repository/ring/modules/ring-a/src/a.bp", "pub fn a() {}" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-a/src/a.bp", "pub fn a() -> void {}" },
         .{ "closure-cycle/ws/repository/ring/modules/ring-b/botopink.json", "{ \"name\": \"ring-b\", \"files\": [\"b.bp\"], \"dependencies\": { \"ring-a\": { \"workspace\": true } } }" },
-        .{ "closure-cycle/ws/repository/ring/modules/ring-b/src/b.bp", "pub fn b() {}" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-b/src/b.bp", "pub fn b() -> void {}" },
     };
     inline for (files) |f| try writeFileP(io, test_scratch.path(io, f[0]), f[1]);
     try std.testing.expectError(error.LibManifestInvalid, closureOf(arena, io, "closure-cycle",
@@ -2743,13 +2743,13 @@ test "loadOne: std resolves from the bundled root, rakun from the sibling root; 
         \\{ "name": "std", "src": "src/", "files": ["math.bp"] }
     );
     try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/botopink-lang/libs/std/src/math.bp"),
-        \\pub fn abs() {}
+        \\pub fn abs() -> void {}
     );
     try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/rakun/botopink.json"),
         \\{ "name": "rakun", "src": "src/", "files": ["rakun.bp"] }
     );
     try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/rakun/src/rakun.bp"),
-        \\pub fn run() {}
+        \\pub fn run() -> void {}
     );
 
     const roots = [_][]const u8{
@@ -2791,7 +2791,7 @@ test "loadOne: a workspace member resolves by its manifest name through the umbr
         \\{ "name": "rakun-web", "files": ["root.bp"] }
     );
     try writeFileP(io, test_scratch.path(io, "loadone-ws/ws/repository/rakun/modules/rakun-web/src/root.bp"),
-        \\pub fn serve() {}
+        \\pub fn serve() -> void {}
     );
     const roots = [_][]const u8{test_scratch.path(io, "loadone-ws/ws/repository")};
 
@@ -2821,7 +2821,7 @@ test "loadOne: a files entry that does not exist is LibFileNotFound, located in 
         \\  "files": ["rakun.bp", "gone.bp"] }
     );
     try writeFileP(io, test_scratch.path(io, "loadone-missing/ws/repository/rakun/src/rakun.bp"),
-        \\pub fn run() {}
+        \\pub fn run() -> void {}
     );
     const roots = [_][]const u8{test_scratch.path(io, "loadone-missing/ws/repository")};
 
@@ -2943,11 +2943,11 @@ fn writeTiersTree(arena: std.mem.Allocator, io: std.Io, comptime root: []const u
     const dep = "{ \"kit-x\": { \"git\": \"https://example.invalid/kit-x\" } }";
     const files = [_][2][]const u8{
         .{ "ws/repository/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
-        .{ "ws/repository/kit-x/src/x.bp", "pub fn walkup() {}" },
+        .{ "ws/repository/kit-x/src/x.bp", "pub fn walkup() -> void {}" },
         .{ "linked/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
-        .{ "linked/kit-x/src/x.bp", "pub fn linked() {}" },
+        .{ "linked/kit-x/src/x.bp", "pub fn linked() -> void {}" },
         .{ "env/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
-        .{ "env/kit-x/src/x.bp", "pub fn env() {}" },
+        .{ "env/kit-x/src/x.bp", "pub fn env() -> void {}" },
         .{ "ws/repository/app/botopink.json", "{ \"name\": \"app\", \"dependencies\": " ++ dep ++ " }" },
         .{ "ws/repository/bare/botopink.json", "{ \"name\": \"bare\", \"dependencies\": " ++ dep ++ " }" },
         .{ "ws/repository/lib/botopink.json", "{ \"name\": \"lib\", \"workspaces\": [\"modules/*\"] }" },
@@ -2998,16 +2998,16 @@ test "dependencyTiers: a .botopinkbuild/deps link wins over the walk-up; BOTOPIN
     const walk_up = try rootsFrom(std.testing.allocator, io, &.{}, app);
     defer freeRoots(std.testing.allocator, walk_up);
     // The walk-up carries `kit-x` (ws/repository), and so does the link.
-    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, app, &.{}, walk_up));
+    try std.testing.expectEqualStrings("pub fn linked() -> void {}", try kitXSource(arena, io, app, &.{}, walk_up));
     // Linked nowhere: the walk-up is the fallback.
     const bare = test_scratch.path(io, "deps-tiers/ws/repository/bare");
-    try std.testing.expectEqualStrings("pub fn walkup() {}", try kitXSource(arena, io, bare, &.{}, walk_up));
+    try std.testing.expectEqualStrings("pub fn walkup() -> void {}", try kitXSource(arena, io, bare, &.{}, walk_up));
     // An env root first, before the link.
     const env = [_][]const u8{test_scratch.path(io, "deps-tiers/env")};
-    try std.testing.expectEqualStrings("pub fn env() {}", try kitXSource(arena, io, app, &env, walk_up));
+    try std.testing.expectEqualStrings("pub fn env() -> void {}", try kitXSource(arena, io, app, &env, walk_up));
     // A workspace member reads its workspace root's links.
     const member = test_scratch.path(io, "deps-tiers/ws/repository/lib/modules/m");
-    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, member, &.{}, walk_up));
+    try std.testing.expectEqualStrings("pub fn linked() -> void {}", try kitXSource(arena, io, member, &.{}, walk_up));
 }
 
 test "dependencyTiers: a project whose dependencies are only .botopinkbuild/deps links resolves with no library root at all (decision 483)" {
@@ -3021,7 +3021,7 @@ test "dependencyTiers: a project whose dependencies are only .botopinkbuild/deps
 
     // No `repository/`, no env root: the link is all there is.
     const app = test_scratch.path(io, "deps-only/ws/repository/app");
-    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, app, &.{}, &.{}));
+    try std.testing.expectEqualStrings("pub fn linked() -> void {}", try kitXSource(arena, io, app, &.{}, &.{}));
     // And without the link the name is not found.
     const bare = test_scratch.path(io, "deps-only/ws/repository/bare");
     try std.testing.expectError(error.LibNotFound, kitXSource(arena, io, bare, &.{}, &.{}));

@@ -30,7 +30,7 @@ fn show(b: Bytes) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     val hello = Bytes.fromUtf8("héllo");
     print(hello.length());
     print(show(hello));

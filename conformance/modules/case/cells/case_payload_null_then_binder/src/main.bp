@@ -24,7 +24,7 @@ fn describe(s: Slot) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(describe(Slot.Filled(item: null)));
     print(describe(Slot.Filled(item: "a")));
     print(describe(Slot.Empty));

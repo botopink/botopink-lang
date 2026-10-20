@@ -8,6 +8,6 @@ The reference text this cell shows (from `conformance/docs.md`, § fn — functi
 > x;` stays valid. With `;` it is a statement, and a body with `-> R` then needs a `return` — `fn
 > semi(x: i32) -> i32 { x + 1; }` is refused at `-> i32` as above. A braced `if` / `case` / loop at the
 > end is a statement, never the tail. The tail is checked against `-> R` at the expression; in a body
-> answering nothing (no `-> R`, or `-> void`), a tail of another type is refused at it.
+> answering nothing (`-> void`), a tail of another type is refused at it.
 > `botopink format` neither adds nor removes the tail's missing `;`, and prints a body of one tail on
 > one line when it fits:

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val xs: Array<i32> = [1, 2];
     val empty = xs.isEmpty();
 }

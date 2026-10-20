@@ -5,7 +5,7 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Violation(field: string, message: string)
 
-fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) -> void {
     compiler.addMember("validate", fn(self) {
         rule(self);
     });
@@ -18,6 +18,6 @@ fn passwordsMatch(a: Signup) -> bool {
 #[check(passwordsMatch)]
 pub type Signup(password: string, confirm: string)
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

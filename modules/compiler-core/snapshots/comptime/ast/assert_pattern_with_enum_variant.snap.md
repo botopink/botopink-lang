@@ -3,7 +3,7 @@
 fn parse() -> Result<i32, string> {
     return 42;
 }
-fn main() {
+fn main() -> void {
     val result = parse();
     val assert Ok(value) = result;
     print(value);

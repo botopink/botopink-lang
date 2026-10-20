@@ -51,7 +51,7 @@ fn header(b: Block) -> string {
     return b.header;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime shape(Rule(selector: ".a", decl: "color:red")));
     print(comptime shape(Tok.Bold));
     print(comptime decl(Rule(selector: ".b", decl: "margin:0")));

@@ -42,7 +42,7 @@ fn wave(w: Waves) -> string {
     return w.greet @`hi`;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Greeter(who: "Ana").greet "hello");
     print(Waver(name: "Caio").greet "hello");
     print(wave(Waver(name: "Duda")));

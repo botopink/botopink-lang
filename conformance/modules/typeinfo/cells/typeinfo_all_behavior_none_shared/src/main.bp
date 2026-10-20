@@ -13,11 +13,11 @@ pub behavior Job {
     fn run(self: Self) -> string;
 }
 
-pub fn service(syntax decl: Bean) {
+pub fn service(syntax decl: Bean) -> void {
     compiler.setMeta(Role(role: "service"));
 }
 
-pub fn job(syntax decl: Job) {
+pub fn job(syntax decl: Job) -> void {
     compiler.setMeta(Role(role: "job"));
 }
 
@@ -35,7 +35,7 @@ pub type Cleanup(days: i32) implement Job {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, job]);
     print(all.length);
 }

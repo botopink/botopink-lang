@@ -20,7 +20,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val xs = [10, 20, 30];
     print(xs[0]);
     print(xs[9]);

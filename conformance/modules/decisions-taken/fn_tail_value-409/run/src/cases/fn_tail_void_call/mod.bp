@@ -4,15 +4,15 @@
 
 import {io.terminal.print} from "std";
 
-fn say(s: string) { print(s) }
+fn say(s: string) -> void { print(s) }
 
 fn shout(s: string) -> void { say(s + "!") }
 
 type Logger(prefix: string) {
-    fn log(self: Self, s: string) { print(self.prefix + s) }
+    fn log(self: Self, s: string) -> void { print(self.prefix + s) }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     say("hi");
     shout("hey");
     Logger(prefix: "> ").log("done");

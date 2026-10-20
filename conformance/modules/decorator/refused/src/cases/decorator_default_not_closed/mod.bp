@@ -6,7 +6,7 @@ import {compiler, io.terminal.print} from "std";
 
 val base = "x";
 
-fn dec(syntax decl: unknown, comptime name: string = base) {
+fn dec(syntax decl: unknown, comptime name: string = base) -> void {
     @emit("pub fn "
         + compiler.name(decl)!
         + "Tag() -> string { return \""
@@ -19,6 +19,6 @@ fn first() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(first());
 }

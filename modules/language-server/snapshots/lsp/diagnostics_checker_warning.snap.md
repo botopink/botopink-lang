@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub fn main() {
+pub fn main() -> void {
     var out = [];
     print("x");
 }

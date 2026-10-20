@@ -7,6 +7,6 @@ fn both(..a: i32[], ..b: i32[]) -> i32 {
     return 0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(both());
 }

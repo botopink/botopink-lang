@@ -3,7 +3,7 @@
 #[compiler.external(.Erlang("base64:encode($0)"), .JavaScript("""Buffer.from($0, 'utf8').toString('base64')"""))]
 pub declare fn b64encode(s: string) -> string;
 
-fn main() {
+fn main() -> void {
     print(b64encode("hi"));
 }
 

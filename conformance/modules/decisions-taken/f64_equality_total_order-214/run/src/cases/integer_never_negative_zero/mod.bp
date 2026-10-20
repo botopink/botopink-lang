@@ -23,7 +23,7 @@ fn same<T>(a: T, b: T) -> bool {
     return a == b;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val x = zi();
     val m = x * -1;
     val n = -x;

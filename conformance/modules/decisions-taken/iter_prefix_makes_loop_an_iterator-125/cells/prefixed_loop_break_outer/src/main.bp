@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var n = 0;
     for :outer ([1, 2, 3]) { x ->
         val g = iter loop {

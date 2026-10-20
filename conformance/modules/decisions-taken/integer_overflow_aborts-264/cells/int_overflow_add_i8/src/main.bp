@@ -7,7 +7,7 @@ fn add(a: i8, b: i8) -> i8 {
     return a + b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(add(100, 27));
     print(add(-100, -28));
     print(add(127, 1));

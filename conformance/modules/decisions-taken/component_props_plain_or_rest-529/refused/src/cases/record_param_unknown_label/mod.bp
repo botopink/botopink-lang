@@ -9,6 +9,6 @@ fn Card(..props: CardProps, suffix: string) -> string {
     return "${props.title}${suffix}";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Card(title: "a", suffix: "!", color: "red"));
 }

@@ -23,7 +23,7 @@
 import {Token, styleOf} from "tokenlib";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val unique: Token = .Text.Size.X3xl;
     val repeated: Token = .Text.Size.Lg;
     print(styleOf(unique));

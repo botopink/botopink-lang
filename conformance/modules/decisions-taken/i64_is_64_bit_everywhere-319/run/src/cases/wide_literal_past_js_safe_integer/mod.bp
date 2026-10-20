@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val w = 9007199254740993l;
     print(w);
 }

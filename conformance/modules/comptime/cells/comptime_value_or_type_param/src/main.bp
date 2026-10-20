@@ -7,7 +7,7 @@ fn orDefault<T>(comptime source: Box<T> | type<T>, fallback: T) -> T {
     return source.value;
 }
 
-fn main() {
+fn main() -> void {
     val n: i32 = orDefault(Box(value: 4), 0); // 4, from the value
     val s: string = orDefault(string, "none"); // "none", T bound to string
     print(n);

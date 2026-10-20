@@ -18,7 +18,7 @@ fn marked() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val q = Queue(label: "crowded", size: 2);
     print(describe(q));
     print(area(Shape.Circle(radius: 2)).toString());

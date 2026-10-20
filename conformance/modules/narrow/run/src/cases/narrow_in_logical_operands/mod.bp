@@ -33,7 +33,7 @@ fn sum(head: ?Node) -> i32 {
     return total;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val list = Node(v: 1, next: Node(v: 2, next: Node(v: 300, next: null)));
     print(positive(list));
     print(positive(null));

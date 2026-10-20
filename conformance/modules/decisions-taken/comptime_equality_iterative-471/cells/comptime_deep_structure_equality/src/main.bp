@@ -29,7 +29,7 @@ fn same(n: i32) -> bool {
     return build(n) == build(n);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val atBuild = comptime same(2000000);
     print(atBuild);
 }

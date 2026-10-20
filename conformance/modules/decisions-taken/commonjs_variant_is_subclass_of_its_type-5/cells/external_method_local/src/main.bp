@@ -48,7 +48,7 @@ pub type Level {
     pub declare fn scale(self: Self, n: i32) -> i32;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val m = Meter(base: 3);
     print(m.plus(4));
     print(m.twice());

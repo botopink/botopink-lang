@@ -5,6 +5,6 @@ val result = comptime {
     x * 2
 };
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(result); // 20
 }

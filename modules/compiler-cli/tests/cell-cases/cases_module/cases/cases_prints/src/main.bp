@@ -4,7 +4,7 @@ pub mod text;
 import {text.label};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(label(55));
     print("done");
 }

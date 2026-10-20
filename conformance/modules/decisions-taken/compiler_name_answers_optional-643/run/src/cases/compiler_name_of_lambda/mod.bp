@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn named(syntax decl: unknown, syntax rule: fn(x: i32) -> i32) {
+fn named(syntax decl: unknown, syntax rule: fn(x: i32) -> i32) -> void {
     val n = compiler.name(rule);
     val k = compiler.name(rule) ?? "anonymous";
     compiler.init({ -> print(n, k) });
@@ -16,6 +16,6 @@ pub fn home() -> i32 {
     return 1;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(home());
 }

@@ -10,7 +10,7 @@ import {log.levelName as ownLevelName};
 import {Level, levelName} from "log";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(ownLevelName(2));
     print(levelName(Level.Warn));
 }

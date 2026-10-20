@@ -15,7 +15,7 @@ iter fn k(xs: i32[]) -> Iter<i32> {
     return evens(xs);
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (k([1, 2])) { x ->
         print(x);
     }

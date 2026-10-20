@@ -7,7 +7,7 @@ type Point(
         return self.x + self.y;
     }
 }
-fn main() {
+fn main() -> void {
     print(Point(x: 1, y: 2).sum());
 }
 

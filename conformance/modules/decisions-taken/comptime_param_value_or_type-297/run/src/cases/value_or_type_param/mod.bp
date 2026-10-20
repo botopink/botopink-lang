@@ -20,7 +20,7 @@ fn orDefault<T>(comptime s: Box<T> | type<T>, fallback: T) -> T {
     return s.value;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(pick(Box(value: 1)));
     print(pick(string));
     print(pick(User));

@@ -3,7 +3,7 @@
 #[compiler.external(.JavaScript("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
 declare fn pid() -> i32;
 
-fn main() {
+fn main() -> void {
     print(pid() > 0);
 }
 

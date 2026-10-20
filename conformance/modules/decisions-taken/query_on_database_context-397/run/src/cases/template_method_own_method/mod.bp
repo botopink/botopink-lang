@@ -18,7 +18,7 @@ fn greet(syntax self: Visitor, syntax q: string) -> string {
     return code @`${said} + ${self}.who`;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Greeter(who: "Ana").greet "hello");
     print(Visitor(who: "Bia").greet "hello");
 }

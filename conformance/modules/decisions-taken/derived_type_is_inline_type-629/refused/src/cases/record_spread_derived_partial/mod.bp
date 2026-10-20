@@ -11,7 +11,7 @@ val Patch = Type.partial(Pessoa);
 
 val SoNome = Type.pick(Patch, .nome);
 
-pub fn main() {
+pub fn main() -> void {
     val n = SoNome(nome: "Ana");
     val p = Pessoa(..n, idade: 3);
     print(p.idade);

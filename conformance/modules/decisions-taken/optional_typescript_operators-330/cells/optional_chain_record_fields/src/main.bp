@@ -19,7 +19,7 @@ fn user(k: i32) -> ?User {
     return User(name: "cy", address: Address(street: Street(name: "Main"), zip: "002"));
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(user(3)?.address?.street?.name ?? "none");
     print(user(2)?.address?.street?.name ?? "none");
     print(user(1)?.address?.street?.name ?? "none");

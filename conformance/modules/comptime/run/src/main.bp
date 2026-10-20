@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.comptime_block_value.runCase();
     cases.comptime_enum_in_record.runCase();
     cases.comptime_interpolation_in_called_fn.runCase();

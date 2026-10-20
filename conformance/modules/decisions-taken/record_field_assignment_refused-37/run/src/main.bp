@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.index_expression.runCase();
     cases.record_update.runCase();
 }

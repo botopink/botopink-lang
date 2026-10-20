@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val made = Bytes.fromUtf8("a");
     val b: Bytes = "a";
     print(made == b);

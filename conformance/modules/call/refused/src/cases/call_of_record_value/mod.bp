@@ -10,7 +10,7 @@ type G(a: string)
 
 type H(f: fn(x: i32) -> i32)
 
-pub fn main() {
+pub fn main() -> void {
     val h = H(f: { x -> x + 1 });
     print(h.f(2));
     val g = G(a: "x");

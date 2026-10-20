@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.integer_division_truncates.runCase();
     cases.integer_literal_labelled_field.runCase();
 }

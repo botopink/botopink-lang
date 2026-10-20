@@ -4,7 +4,7 @@ val add: fn(i32, i32) -> i32 = { x, y ->
     x + y
 };
 val result = add(10, 20);
-fn main() {
+fn main() -> void {
     print(result);
 }
 

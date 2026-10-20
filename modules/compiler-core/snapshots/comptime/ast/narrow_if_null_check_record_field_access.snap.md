@@ -7,7 +7,7 @@ fn greet(maybeUser: ?User) -> string {
     };
     return "no user";
 }
-fn main() {
+fn main() -> void {
     print(greet(User(name: "alice")));
 }
 

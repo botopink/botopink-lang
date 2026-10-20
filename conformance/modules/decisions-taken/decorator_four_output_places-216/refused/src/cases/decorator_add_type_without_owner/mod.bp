@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn helper(syntax decl: unknown) {
+fn helper(syntax decl: unknown) -> void {
     compiler.addType("Extra", compiler.buildType("(id: i32)"));
 }
 
@@ -12,6 +12,6 @@ fn work() -> i32 {
     return 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(work());
 }

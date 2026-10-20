@@ -11,7 +11,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var i = 0;
     if (i == 0) {
         // a comment inside the braced block

@@ -20,7 +20,7 @@ pub type Menu(title: string) {
 // Renders the declaration's hooks into one meta string `main` prints: each node as
 // `fn(uses: […], calls: […])`, an edge with `callee: null` as `null`, an
 // asynchronous node (375) marked `~`.
-fn graph<T>(syntax decl: T) {
+fn graph<T>(syntax decl: T) -> void {
     var nodes: string[] = [];
     compiler
         .hooks(decl)

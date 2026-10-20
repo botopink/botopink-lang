@@ -22,7 +22,7 @@ type Bag<T>(
     }
 }
 
-fn main() {
+fn main() -> void {
     print(Bag(items: []).isEmpty());
     print(Bag(items: [1]).isEmpty());
     print(Bag(items: [1, 2]).twiceSize());

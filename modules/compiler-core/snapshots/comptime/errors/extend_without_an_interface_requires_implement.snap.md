@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 type Pato(id: i32)
 val PatoVoa = extend Pato {
-    fn fly(self: Self) {
+    fn fly(self: Self) -> i32 {
         return self.id;
     }
 }

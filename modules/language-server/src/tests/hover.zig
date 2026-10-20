@@ -91,7 +91,7 @@ test "hover: generic fn keeps its type parameter" {
 test "hover: annotated fn shows concrete parameter types" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn add(x: i32, y: i32) { return x; }
+        \\fn add(x: i32, y: i32) -> i32 { return x; }
     ;
 
     var c = try h.compile(gpa, source);

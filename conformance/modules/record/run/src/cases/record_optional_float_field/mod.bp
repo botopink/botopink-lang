@@ -12,7 +12,7 @@ fn mk(v: ?f64) -> F {
     return F(x: v, y: 0.25);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val f = F(x: null, y: 1.5);
     print(f.x);
     print(f);

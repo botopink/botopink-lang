@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = [1, 2, 3, 4, 5, 6, 7, 8];
     val b = a.append(a).append(a.append(a));
     val c = b.append(b).append(b.append(b));

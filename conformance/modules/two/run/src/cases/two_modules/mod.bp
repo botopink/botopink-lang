@@ -5,7 +5,7 @@ pub mod geometry;
 import {cases.two_modules.geometry.Point, cases.two_modules.geometry.origin};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Point(x: 1, y: 2).norm());
     print(origin().norm());
 }

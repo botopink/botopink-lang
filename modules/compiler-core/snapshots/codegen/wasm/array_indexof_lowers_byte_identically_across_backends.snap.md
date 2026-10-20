@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     print([1, 2, 3, 4].indexOf(3));
     print([1, 2, 3].indexOf(99));
 }

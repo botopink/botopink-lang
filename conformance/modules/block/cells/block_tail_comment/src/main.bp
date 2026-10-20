@@ -49,7 +49,7 @@ fn armBlock(n: i32) -> i32 {
     r
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(fnBody());
     print(lambdaBody());
     print(ifElse(true));

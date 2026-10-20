@@ -18,7 +18,7 @@ fn kind(v: unknown) -> string {
     return "other";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a = App(port: 1, basePath: "");
     val s: SiteApp = makeSite();
     print(a.describe());

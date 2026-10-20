@@ -10,7 +10,7 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(syntax decl: Module) {
+pub fn module(syntax decl: Module) -> void {
     compiler.init({ -> print(decl.make().start()) });
 }
 
@@ -36,6 +36,6 @@ pub type Db(url: string) implement Module {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
 }

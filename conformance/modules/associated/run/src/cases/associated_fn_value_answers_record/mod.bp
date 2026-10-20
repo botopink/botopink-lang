@@ -6,7 +6,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn maker(syntax decl: unknown) {
+fn maker(syntax decl: unknown) -> void {
     compiler.addMember(
         "pub fn make(name: string) -> "
             + compiler.name(decl)!
@@ -33,7 +33,7 @@ fn first(f: fn(string) -> Town) -> string {
     return f("q").name;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(apply("x", City.make).name);
     val m = City.make;
     print(m("y").name);

@@ -24,7 +24,7 @@ test "js: record implement ---- fields round-trip at runtime" {
         \\fn mk() -> E {
         \\    return E(tag: "x", n: 5);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(mk().n);
         \\}
         \\
@@ -61,8 +61,9 @@ test "js: record ---- method with throw" {
         \\    fn total(self: Self) -> f64 {
         \\        return self.subtotal + self.subtotal * self.taxRate;
         \\    }
-        \\    fn validate(self: Self) {
+        \\    fn validate(self: Self) -> Result<void, string> {
         \\        throw "invalid invoice";
+        \\        return;
         \\    }
         \\}
     );
@@ -150,7 +151,7 @@ test "js: tuple ---- a labeled element of function type is called like a method"
         \\    val set: fn(i32) -> i32 = { n -> return n * 2; };
         \\    return #(value, set);
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = mk();
         \\    print(c.set(9));
         \\}
@@ -211,7 +212,7 @@ test "js: record ---- a method named print is called on the record" {
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val d = Doc(title: "hi");
         \\    print(d.print());
         \\}
@@ -225,7 +226,7 @@ test "js: record ---- a method named print is called on the record" {
 // elements with `element/2`. Prints `2`, `x` and `7` on all four backends.
 test "js: tuple ---- chained positional access and a method on an element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val t = #(#(1, 2), "x");
         \\    print(t.0.1);
         \\    print(t.1);
@@ -247,7 +248,7 @@ test "js: tuple ---- a bare digit index and optional chaining over a found pair"
         \\    return pairs.find({ pair -> pair.0 == key })?.1;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val pairs = [#("a", 1), #("b", 2)];
         \\    print(lookup(pairs, "b"));
         \\    print(lookup(pairs, "z") == null);
@@ -281,7 +282,7 @@ test "js: call ---- Children coercion (list / single / text)" {
 
 test "js: interface literal ---- basic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val Type = "Type";
         \\    val Fn = "Fn";
         \\    val kinds = #(Type, Fn);
@@ -295,7 +296,7 @@ test "js: interface literal ---- basic" {
 
 test "js: interface literal ---- with fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val File = "main.bp";
         \\    val Fn = "main";
         \\    val names = #(File, Fn);
@@ -324,7 +325,7 @@ test "js: tuple ---- labels resolve to positions on every backend" {
         \\    return r.pop;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val row = load();
         \\    print(row.name);
         \\    print(row.pop + 1);
@@ -365,7 +366,7 @@ test "js: surface ---- type and behavior compile like record, enum and interface
         \\    };
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val sq = Square(side: 3);
         \\    print(sq.area());
         \\    print(weight(Size.Large(n: 5)) + weight(Size.Small));
@@ -397,7 +398,7 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
     // position), and it rewrites to the positional access erlang already
     // lowered: `element(1, T)`, no method and no dispatcher.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val xs = [10, 20, 30];
         \\  print(xs[0]);
         \\  print(xs[2]);
@@ -417,7 +418,7 @@ test "erlang: index ---- out of range answers null, not an error" {
     // 47's `null` (the print prelude's `'__bp_show'(undefined, _)` clause; it
     // printed the atom `undefined` before 00 · 02-erlang).
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() { val xs = [10, 20]; print(xs[5]); }
+        \\fn main() -> void { val xs = [10, 20]; print(xs[5]); }
         \\
         \\import {io.terminal.print} from "std";
     , "null\n", &.{});
@@ -429,7 +430,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
     // `undefined` on erlang. `Array.slice` is a `default fn` in `libs/std`, so
     // one `array_slice/3` carries both arms and the backend learns nothing.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  val xs = [10, 20, 30];
         \\  print(xs[0..2]);
         \\  print(xs[1..]);
@@ -457,7 +458,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
 // so it is the native read (`js/str_slots.zig`, decision 320).
 test "js: index ---- element, slice, open slice, string and tuple" {
     const src =
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [10, 20, 30];
         \\    print(xs[0]);
         \\    print(xs[0..2]);
@@ -514,7 +515,7 @@ test "js: destructure ---- a constructor in binding position is a plain destruct
     const src =
         \\type P(name: string, n: i32)
         \\type Tag { Label(text: string, weight: i32) }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val P(nm, k) = P(name: "x", n: 2);
         \\    print(nm);
         \\    print(k);
@@ -558,7 +559,7 @@ test "wasm: destructure ---- a nested constructor in binding position binds off 
         \\type Shape { Circle(r: i32) }
         \\type Pair { Pair(s: Shape, n: i32) }
         \\type Boxed(s: Shape, k: string)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val Pair(Circle(r), n) = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
         \\    print(r);
         \\    print(n);
@@ -590,7 +591,7 @@ test "js: call ---- the result of a call is called (curried)" {
     const src =
         \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
         \\fn greeter(p: string) -> fn(x: string) -> string { return { x -> p + x }; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(adder(3)(4));
         \\    print(greeter("a")("b"));
         \\    val g = greeter("c");
@@ -621,7 +622,7 @@ test "js: behavior literal ---- a method taking self is called on the literal" {
     // erlang half (`greet/2 undefined`) is 02's.
     const src =
         \\behavior Greeter { fn greet(self: Self, who: string) -> string; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val g = @Greeter(greet: { self, who -> "hi " + who });
         \\    print(g.greet("bo"));
         \\}
@@ -644,7 +645,7 @@ test "wasm: a string in a generic declaration's type-parameter field prints as t
         \\    Node(left: Tree<T>, right: Tree<T>),
         \\}
         \\type Box<T>(value: T, n: i32)
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Tree.Leaf(value: "a"));
         \\    print(Tree.Leaf(value: 7));
         \\    print(Box(value: "b", n: 2));
@@ -702,7 +703,7 @@ const print_result_src =
     \\    if (n < 0) throw n;
     \\    return Point(x: n, y: n + 1);
     \\}
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    print(check(81));
     \\    print(check(-1));
     \\    print(locate(2));

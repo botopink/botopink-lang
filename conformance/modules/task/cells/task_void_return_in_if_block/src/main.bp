@@ -35,6 +35,6 @@ async fn run() -> Async<void> {
     await deeper(false, true);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

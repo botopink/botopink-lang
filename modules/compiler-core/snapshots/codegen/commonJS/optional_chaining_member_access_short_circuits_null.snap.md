@@ -2,7 +2,7 @@
 ```botopink
 type User(name: string)
 
-fn main() {
+fn main() -> void {
     val u: ?User = User(name: "ana");
     print(u?.name);
 }

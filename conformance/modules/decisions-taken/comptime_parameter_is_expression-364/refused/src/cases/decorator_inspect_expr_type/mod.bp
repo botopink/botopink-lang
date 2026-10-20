@@ -7,7 +7,7 @@ pub behavior MailSender {
     fn send(self: Self, to: string) -> string;
 }
 
-fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) {
+fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) -> void {
     val bean = t;
     compiler.setMeta(MissingBean(bean: compiler.name(decl)!));
 }
@@ -17,7 +17,7 @@ fn consoleMail() -> string {
     return "console";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }
 

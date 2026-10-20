@@ -12,6 +12,6 @@ import {app.page.title};
 import {app.blog.page.title};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(title());
 }

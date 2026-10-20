@@ -3,7 +3,7 @@ pub mod shapes;
 import {shapes.circle.name as circleName, shapes.helpers.seven};
 import {collections.Dict, collections.gt, collections.reverse, collections.toInt as rank, io.terminal.print} from "std";
 
-fn main() {
+fn main() -> void {
     print(circleName()); // circle
     print(seven()); // 7
     val d: Dict<string, i32> = Dict.empty();

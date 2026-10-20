@@ -53,7 +53,7 @@ fn fallback(n: i32) -> i32 {
     return twice(try parse(n) catch 100);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(positions(1).unwrapOr(-1));
     print(positions(-1).unwrapOr(-1));
     print(fallback(3));

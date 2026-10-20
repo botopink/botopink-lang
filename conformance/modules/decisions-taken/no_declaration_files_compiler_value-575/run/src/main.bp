@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.compiler_decorator_three_kinds.runCase();
     cases.decorator_member_captures.runCase();
     cases.external_library_source_annotation.runCase();

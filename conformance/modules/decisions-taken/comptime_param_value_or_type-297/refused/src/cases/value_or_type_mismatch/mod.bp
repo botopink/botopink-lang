@@ -10,6 +10,6 @@ fn pick<T>(comptime s: Box<T> | type<T>) -> string {
     return if (s is type) "type" else "value";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(pick<i32>(Box(value: "x")));
 }

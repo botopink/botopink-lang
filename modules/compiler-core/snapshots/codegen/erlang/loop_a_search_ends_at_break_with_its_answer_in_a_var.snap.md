@@ -7,7 +7,7 @@ fn find(arr: i32[]) -> i32 {
     };
     return found;
 }
-fn main() {
+fn main() -> void {
     print(find([5, 8, 15, 20]));
 }
 

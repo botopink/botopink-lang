@@ -9,4 +9,4 @@ type Pet(name: string, owner: string)
 
 pub val DogPet = Type.merge(Dog, Pet);
 
-pub fn main() {}
+pub fn main() -> void {}

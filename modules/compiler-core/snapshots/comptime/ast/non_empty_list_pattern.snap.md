@@ -6,7 +6,7 @@ val first_or_default = fn(list: i32[], fallback: i32) -> i32 {
         [] -> fallback;
     };
 };
-fn main() {
+fn main() -> void {
     print(first_or_default([1, 2], 0));
     print(first_or_default([], 0));
 }

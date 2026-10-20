@@ -11,7 +11,7 @@ import {appTitle} from "site";
 import {title} from "site.app.blog.page";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(appTitle());
     print(title());
 }

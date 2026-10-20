@@ -3,13 +3,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn maker(syntax decl: unknown) {
+fn maker(syntax decl: unknown) -> void {
     compiler.addMember("pub fn code(self: Self) -> i32 { return \"nope\"; }");
 }
 
 #[maker]
 pub type City(name: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(City(name: "a").code());
 }

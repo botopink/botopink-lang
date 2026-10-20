@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val a = #(1, "a");
     val b = #(1, "a");
     print(a == b);

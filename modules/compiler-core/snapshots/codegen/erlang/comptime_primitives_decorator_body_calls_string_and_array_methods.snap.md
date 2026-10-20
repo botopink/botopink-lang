@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn describe(syntax decl: unknown) {
+pub fn describe(syntax decl: unknown) -> void {
     val names = compiler.fields(decl).map({ f -> f.name });
     val upper = names.map({ n -> n.toUpper() }).join("_");
     val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
@@ -12,7 +12,7 @@ pub fn describe(syntax decl: unknown) {
 #[describe]
 type User(name: string, secret: string, age: i32)
 
-fn main() {
+fn main() -> void {
     print(describeUser());
 }
 import {compiler} from "std";

@@ -4,13 +4,13 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn mark(syntax decl: unknown) {
+fn mark(syntax decl: unknown) -> void {
     compiler.fail("#[mark] ran on the val " + compiler.name(decl)!, at: decl);
 }
 
 #[mark]
 pub val one = 1;
 
-pub fn main() {
+pub fn main() -> void {
     print(one);
 }

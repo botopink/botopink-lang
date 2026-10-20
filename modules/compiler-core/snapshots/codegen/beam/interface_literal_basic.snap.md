@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val Type = "Type";
     val Fn = "Fn";
     val kinds = #(Type, Fn);

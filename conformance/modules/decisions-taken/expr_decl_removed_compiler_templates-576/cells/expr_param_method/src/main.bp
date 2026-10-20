@@ -9,6 +9,6 @@ fn shout(syntax message: string) -> string {
     return message.text();
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(shout @`x`);
 }

@@ -9,7 +9,7 @@ fn ratio(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val atBuild = comptime 7 / 0;
     print(atBuild, ratio(6, 3));
 }

@@ -18,7 +18,7 @@ const h = @import("helpers.zig");
 
 test "js: narrow ---- if null check with print" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val x: ?i32 = 42;
         \\    if (x) { n -> print(n); };
         \\}
@@ -38,7 +38,7 @@ test "js: narrow ---- case enum area with print" {
         \\        Square(side) -> side * side;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(area(Shape.Circle(2.0)));
         \\    print(area(Shape.Square(3.0)));
         \\}
@@ -55,7 +55,7 @@ test "js: narrow ---- case result ok err with print" {
         \\    if (ok) { return "data"; };
         \\    throw "fail";
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = fetch(true);
         \\    val msg1 = case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
         \\    print(msg1);
@@ -76,7 +76,7 @@ test "js: narrow ---- early return with print" {
         \\    if (x == null) { return "nobody"; };
         \\    return "hello " + x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(greet("world"));
         \\    print(greet(null));
         \\}
@@ -101,7 +101,7 @@ test "js: narrow ---- type guard basic codegen" {
         \\fn isPositive(n: i32) -> n is i32 {
         \\    return n > 0;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isPositive(5));
         \\    print(isPositive(-5));
         \\}
@@ -116,7 +116,7 @@ test "js: narrow ---- type guard if codegen" {
         \\    if (x) { s -> return true; };
         \\    return false;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(isString("hello"));
         \\}
         \\
@@ -144,7 +144,7 @@ test "js: narrow ---- `is` tests the value, and a named type by its prototype" {
     try h.assertJsRunLog(std.testing.allocator,
         \\type Person(name: string)
         \\type Shape { Circle(radius: i32), Dot }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val p = Person(name: "a");
         \\    print(p is Person);
         \\    print(p is Shape);
@@ -195,7 +195,7 @@ test "js: narrow ---- case option some none" {
         \\        Some(v) -> "value: " + v;
         \\    };
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(Opt.Some(value: 42)));
         \\    print(describe(Opt.None));
         \\}
@@ -220,7 +220,7 @@ test "js: narrow ---- and condition field access" {
         \\    };
         \\    return "light or none";
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(describe(Box(weight: 20)));
         \\}
         \\
@@ -237,7 +237,7 @@ test "js: narrow ---- optional chaining field access" {
         \\fn getValue(o: Outer) -> ?i32 {
         \\    return o.inner?.value;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val o = Outer(inner: Inner(value: 42));
         \\    print(getValue(o));
         \\}
@@ -255,7 +255,7 @@ test "js: narrow ---- else if chain with null checks" {
         \\    else if (x != 0) { return "nonzero: " + x; }
         \\    else { return "null"; }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(classify(42));
         \\    print(classify(0));
         \\}
@@ -284,7 +284,7 @@ test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none"
         \\    if (n > 0) { return n; };
         \\    return null;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(find(-1) ?? 7);
         \\    print(find(5) ?? 7);
         \\    print(find(0) ?? 7);
@@ -334,7 +334,7 @@ test "codegen: is ---- a named type is tested by the tag the value carries" {
         \\    };
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val u: unknown = Vec(name: "Ana", age: 30);
         \\    print(u is Vec);
         \\    print(u is Person);
@@ -360,7 +360,7 @@ test "js: is ---- an enum variant path is tested by the enum's class and its tag
     try h.assertJsRunLog(std.testing.allocator,
         \\pub type Token { Text(v: string), Num(n: i32), Eof }
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val x: Token = Token.Text(v: "hi");
         \\    print(x is Token.Text);
         \\    print(x is Token.Num);

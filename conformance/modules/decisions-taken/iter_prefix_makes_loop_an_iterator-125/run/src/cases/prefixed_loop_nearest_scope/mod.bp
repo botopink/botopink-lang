@@ -23,7 +23,7 @@ fn line(it: Iter<i32>) -> string {
     return acc;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val flat = iter loop {
         for ([1, 2]) { x ->
             for ([10, 20]) { y ->

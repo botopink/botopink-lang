@@ -72,7 +72,7 @@ fn apply(f: fn(a: string, b: string) -> bool, x: string, y: string) -> bool {
     return f(x, y);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val built = "a" + "b";
     val key = "x=ab".split("=").at(1) ?? "";
     print(same(built, "ab"));

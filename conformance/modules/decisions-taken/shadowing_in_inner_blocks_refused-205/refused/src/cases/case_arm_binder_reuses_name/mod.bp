@@ -16,6 +16,6 @@ fn area(s: Shape) -> i32 {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(area(Shape.Square(side: 3)));
 }

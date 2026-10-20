@@ -3,7 +3,7 @@
 fn isPositive(n: i32) -> bool {
     return n > 0;
 }
-fn main() {
+fn main() -> void {
     print(isPositive(5));
     print(isPositive(-1));
 }

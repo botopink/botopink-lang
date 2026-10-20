@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val hw = "hello world";
     print(hw.startsWith("hello"));
 }

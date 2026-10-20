@@ -11,7 +11,7 @@ fn process() -> i32 {
     print(prefix, data, suffix);
     return prefix + data + suffix;
 }
-fn main() {
+fn main() -> void {
     print(process());
 }
 

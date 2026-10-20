@@ -12,7 +12,7 @@ fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
     return items.map(f);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val n = make({ -> 41 }) + 1;
     print(n);
     val lengths = mapAll(["a", "bc"], { s -> s.length });

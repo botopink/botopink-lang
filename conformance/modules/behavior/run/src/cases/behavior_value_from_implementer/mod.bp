@@ -33,7 +33,7 @@ fn memory() -> Memory {
 
 val shared: Lookup = memory();
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val local: Lookup = memory();
     print(local.find("a"));
     print(shared.find("b"));

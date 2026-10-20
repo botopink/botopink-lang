@@ -7,6 +7,6 @@
 import {lifeOf, make} from "b";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(lifeOf(make(7)));
 }

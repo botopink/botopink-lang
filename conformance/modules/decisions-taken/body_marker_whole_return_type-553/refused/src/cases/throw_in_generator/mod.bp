@@ -9,4 +9,4 @@ iter fn counted(n: i32) -> Iter<i32> {
     throw "stop";
 }
 
-pub fn main() { print(1); }
+pub fn main() -> void { print(1); }

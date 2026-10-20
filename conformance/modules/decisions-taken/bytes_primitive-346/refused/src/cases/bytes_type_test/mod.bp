@@ -7,6 +7,6 @@ fn check(v: string | Bytes) -> bool {
     return v is Bytes;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(check("a"));
 }

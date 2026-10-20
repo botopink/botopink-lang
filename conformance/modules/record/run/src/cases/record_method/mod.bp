@@ -6,6 +6,6 @@ type Counter(n: i32) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Counter(n: 3).current()); // 3
 }

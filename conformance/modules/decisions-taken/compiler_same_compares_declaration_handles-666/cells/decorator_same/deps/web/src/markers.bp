@@ -3,6 +3,6 @@
 
 import {compiler} from "std";
 
-pub fn serverOnly(syntax decl: unknown) {
+pub fn serverOnly(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }

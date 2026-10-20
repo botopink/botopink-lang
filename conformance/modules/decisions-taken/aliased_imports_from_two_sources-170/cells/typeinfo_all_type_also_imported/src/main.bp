@@ -17,7 +17,7 @@ import {catalog.Widget, catalog.Gadget as G} from "kit";
 import {shop.parts.Part};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val made = @TypeInfo.all(with: service, member: "make");
     for (made) { e ->
         print(e.module + " " + e.name);

@@ -9,7 +9,7 @@ pub type OrderPlaced(id: string, total: i64)
 
 pub type OrderCancelled(id: string)
 
-fn on<E>(syntax decl: fn(e: E) -> unknown) {
+fn on<E>(syntax decl: fn(e: E) -> unknown) -> void {
     compiler.setMeta(EventHandler(event: compiler.name(decl)!));
 }
 
@@ -19,11 +19,11 @@ pub fn sendReceipt(e: OrderPlaced) -> string {
 }
 
 #[on]
-pub fn refund(e: OrderCancelled) {
+pub fn refund(e: OrderCancelled) -> void {
     print("refund " + e.id);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: on).map({ d -> d.name }).join(","));
     print(sendReceipt(OrderPlaced(id: "o1", total: 10)));
     refund(OrderCancelled(id: "o2"));

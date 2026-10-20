@@ -11,7 +11,7 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("Math.max($args)"), .Erlang("lists:max($0)"))]
 pub declare fn largest(..values: i32[]) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(largest(3, 9, 4));
     print(largest(7));
 }

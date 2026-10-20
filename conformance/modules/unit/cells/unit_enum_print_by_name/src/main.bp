@@ -20,7 +20,7 @@ fn fav() -> Color {
     return Color.Green;
 }
 
-fn show(c: Color) {
+fn show(c: Color) -> void {
     print(c);
 }
 
@@ -29,7 +29,7 @@ fn firstOrNone(b: bool) -> ?Color {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val g = Color.Blue;
     print(g);
     print(fav());

@@ -14,7 +14,7 @@ import {types.Type, io.terminal.print} from "std";
 
 val Named = Type.pick(Box, .name);
 
-pub fn main() {
+pub fn main() -> void {
     print(describeA());
     print(describeB());
     print(Named(name: "own").name);

@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     var ys = [1, 2];
     val snap = ys;
     val last = ys.pop();

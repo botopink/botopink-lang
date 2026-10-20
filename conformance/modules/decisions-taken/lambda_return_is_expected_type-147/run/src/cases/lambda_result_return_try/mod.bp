@@ -16,7 +16,7 @@ fn apply(
     return f(x);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val quarter: fn(x: i32) -> Result<i32, string> = { x ->
         val h = try half(x);
         return try half(h);

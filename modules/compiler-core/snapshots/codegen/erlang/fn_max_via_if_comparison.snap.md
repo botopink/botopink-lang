@@ -7,7 +7,7 @@ pub fn max(a: i32, b: i32) -> i32 {
         return a;
     }
 }
-fn main() {
+fn main() -> void {
     print(max(3, 7));
 }
 

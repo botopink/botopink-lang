@@ -7,4 +7,4 @@ type Box<T>(value: T) {
     pub fn get(self: Self) -> T { return self.value; }
 }
 
-pub fn main() { print(Box(value: 1).get()); }
+pub fn main() -> void { print(Box(value: 1).get()); }

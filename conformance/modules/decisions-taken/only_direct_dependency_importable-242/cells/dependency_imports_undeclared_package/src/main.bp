@@ -8,6 +8,6 @@
 import {start} from "starter";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(start());
 }

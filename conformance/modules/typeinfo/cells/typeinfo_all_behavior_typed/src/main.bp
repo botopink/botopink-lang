@@ -11,7 +11,7 @@ pub behavior Module {
     fn start(self: Self) -> string;
 }
 
-pub fn module(syntax decl: Module, comptime order: i32) {
+pub fn module(syntax decl: Module, comptime order: i32) -> void {
     compiler.setMeta(ModuleOrder(order: order));
 }
 
@@ -47,7 +47,7 @@ fn describe(ds: Declared<Module>[]) -> string {
     return parts.join(" ");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val all: Declared<Module>[] = @TypeInfo.all(with: module);
     print(all.length);
     print(describe(all));

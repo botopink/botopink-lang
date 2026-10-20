@@ -11,7 +11,7 @@ import {cases.decorator_calls_imported_function.sched.scheduled};
 import {cases.decorator_calls_imported_function.text.shout as yell};
 import {compiler, io.terminal.print} from "std";
 
-fn tag(syntax decl: unknown) {
+fn tag(syntax decl: unknown) -> void {
     @emit("pub fn tagged() -> string { return \""
         + yell(compiler.name(decl)!)
         + "\"; }");
@@ -27,7 +27,7 @@ fn tock() -> i32 {
     return 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(schedule());
     print(tagged());
     print(tick() + tock());

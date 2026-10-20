@@ -28,7 +28,7 @@ fn summary(text: string) -> string {
         + halved.toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime "7".parseInt().unwrapOr(0l));
     print(comptime "x".parseInt().unwrapOr(0l));
     val a = comptime summary("abcd");

@@ -10,7 +10,7 @@ fn count(xs: i32[]) -> i32 {
     return rest.length();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val [..rest] = [1, 2, 3];
     print(rest.length());
     print(rest);

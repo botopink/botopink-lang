@@ -9,7 +9,7 @@ fn next(n: i64) -> i64 {
     return n + 1l;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val below = 9007199254740991l;
     val d = Dict.empty().insert(below, "below").insert(next(below), "above");
     print(d.at(9007199254740991l));

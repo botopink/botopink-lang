@@ -11,7 +11,7 @@ fn outer(should_fail: bool) -> Result<i32, string> {
     val v = try inner(should_fail);
     return v + 1;
 }
-fn main() {
+fn main() -> void {
     val r = try outer(false) catch -1;
     print(r);
     val r2 = try outer(true) catch -1;

@@ -17,6 +17,6 @@ component fn Widget(xs: i32[]) -> Component<Element> {
     return Element(count: total);
 }
 
-pub fn main() {
+pub fn main() -> void {
     Widget([1, 2]);
 }

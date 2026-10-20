@@ -19,7 +19,7 @@ fn count() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     for (all()) { m ->
         print(m.name + " " + m.make());
     }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn main() {
+pub fn main() -> void {
     val xs = [3, 1, 3, 2, 1];
     print(xs.unique());
     print(["a", "b", "a"].unique());

@@ -19,6 +19,6 @@ type Sq(s: i32) implement Shape {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Sq(s: 2).area());
 }

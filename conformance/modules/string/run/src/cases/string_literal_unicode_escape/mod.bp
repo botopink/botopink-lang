@@ -8,7 +8,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print("\u{1F600}");
     print("ç");
     print("é", "\u{e9}");

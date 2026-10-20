@@ -7,6 +7,6 @@ pub mod models;
 import {models.entity};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(@TypeInfo.all(with: entity).length);
 }

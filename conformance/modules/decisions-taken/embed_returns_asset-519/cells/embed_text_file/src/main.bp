@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 
 val greeting = @embed("assets/greeting.txt");
 
-pub fn main() {
+pub fn main() -> void {
     print(greeting.path);
     print(greeting.size);
     print(greeting.bytes.length());

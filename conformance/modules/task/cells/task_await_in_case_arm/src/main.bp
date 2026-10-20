@@ -79,6 +79,6 @@ async fn run() -> Async<void> {
     print(r11);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

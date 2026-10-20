@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val greeting = "hello";
     val assert "hello" = greeting catch throw "not hello";
+    return;
 }
 ```
 
@@ -32,10 +33,17 @@ fn f() {
   {label, 5}.
     {move, {x, 1}, {x, 0}}.
     {move, {literal, <<"not hello">>}, {x, 0}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
+    return.
     {jump, {f, 4}}.
   {label, 4}.
-    {move, {atom, ok}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 1}.
     return.
 

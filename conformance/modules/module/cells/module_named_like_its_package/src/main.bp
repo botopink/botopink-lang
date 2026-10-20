@@ -6,7 +6,7 @@ import {p} from "p";
 import {other.other} from "p";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val n: i32 = "not a number";
     print(p.greet() + other().name);
 }

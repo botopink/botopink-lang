@@ -31,7 +31,7 @@ fn show(r: Result<i32, string>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(show(load(5)));
     print(show(load(15)));
     print(show(load(25)));

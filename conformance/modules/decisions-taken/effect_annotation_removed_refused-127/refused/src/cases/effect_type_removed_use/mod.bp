@@ -9,4 +9,4 @@ fn state(initial: i32) -> @Use<ElementBase, i32> {
     return initial;
 }
 
-pub fn main() { state(1); }
+pub fn main() -> void { state(1); }

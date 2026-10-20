@@ -12,7 +12,7 @@ import {io.terminal.print} from "std";
 
 type Entry(key: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val es = [Entry(key: "abc"), Entry(key: "de")];
     val ks = es.map({ e -> e.key });
     print(ks.at(0)?.length());

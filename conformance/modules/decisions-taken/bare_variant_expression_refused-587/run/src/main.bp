@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.decorator_arg_variant_constructor.runCase();
     cases.enum_variant_labelled_defaults.runCase();
     cases.enum_variant_labelled_implementation.runCase();

@@ -9,6 +9,6 @@ fn repeat(syntax q: string, times: i32) -> string {
     return compiler.text(q);
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(repeat @`x`);
 }

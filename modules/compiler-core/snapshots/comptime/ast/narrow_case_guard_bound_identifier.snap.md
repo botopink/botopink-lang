@@ -7,7 +7,7 @@ fn describe(n: i32) -> string {
         _ -> "zero";
     };
 }
-fn main() {
+fn main() -> void {
     print(describe(5));
 }
 

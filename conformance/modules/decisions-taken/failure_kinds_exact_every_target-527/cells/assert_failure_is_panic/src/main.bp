@@ -16,14 +16,14 @@ fn named(x: i32, s: string) -> i32 {
     return x;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(failure.attempt({ -> positive(3) }));
     show(failure.attempt({ -> positive(0) }));
     show(failure.attempt({ -> named(0, "z") }));

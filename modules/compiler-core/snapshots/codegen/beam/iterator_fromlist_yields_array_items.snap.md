@@ -14,7 +14,7 @@ fn toList<T>(iter: Iter<T>) -> Array<T> {
     return out;
 }
 
-fn main() {
+fn main() -> void {
     print(toList(fromList([1, 2, 3])).join(","));
 }
 

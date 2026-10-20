@@ -21,7 +21,7 @@ fn resolve(name: string, entry: unknown) -> Clock {
     panic("entry '" + name + "' is not a fn() -> Clock");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(resolve("clock", makeClock).zone);
     print(resolve("twice", twice).zone);
     print("unreachable");

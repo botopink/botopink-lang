@@ -13,7 +13,7 @@ fn check(t: Token) -> bool {
     return t is Token.Num;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val x: Token = Token.Text(v: "hi");
     val y: Token = Token.Eof;
     val z = Token.Num(n: 3);

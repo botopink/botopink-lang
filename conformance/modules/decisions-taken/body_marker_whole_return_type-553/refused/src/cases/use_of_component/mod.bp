@@ -13,6 +13,6 @@ fn errado() -> Element {
     return use Counter();
 }
 
-pub fn main() {
+pub fn main() -> void {
     errado();
 }

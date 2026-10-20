@@ -16,6 +16,6 @@ component fn Widget() -> Component<Element> {
     return Element(count: onClick());
 }
 
-pub fn main() {
+pub fn main() -> void {
     Widget();
 }

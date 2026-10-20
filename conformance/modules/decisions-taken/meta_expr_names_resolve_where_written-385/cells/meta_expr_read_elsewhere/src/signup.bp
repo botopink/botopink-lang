@@ -10,7 +10,7 @@ pub fn check<T>(
     syntax decl: T,
     syntax message: string,
     syntax rule: fn(v: T) -> bool,
-) {
+) -> void {
     compiler.addMeta(Check(message: message, rule: rule));
 }
 
@@ -18,7 +18,7 @@ pub behavior Noted {
     fn make() -> Self;
 }
 
-pub fn note(syntax decl: Noted, syntax text: string) {
+pub fn note(syntax decl: Noted, syntax text: string) -> void {
     compiler.addMeta(Note(text: text));
 }
 

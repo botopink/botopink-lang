@@ -12,7 +12,7 @@ fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
     return out;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val words = mapAll([1, 2], { x -> x.toString() });
     print(words);
     val flags = mapAll([1, 2], { x -> x > 1 });

@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn go(m: compiler.Module) {
+fn go(m: compiler.Module) -> void {
     try m.run() catch { f ->
         print("abort " + f.message)
     }
@@ -17,4 +17,4 @@ comptime {
     }
 }
 
-pub fn main() {}
+pub fn main() -> void {}

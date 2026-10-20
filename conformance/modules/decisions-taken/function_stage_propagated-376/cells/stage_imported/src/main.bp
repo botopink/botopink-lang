@@ -8,14 +8,14 @@ pub mod ui;
 import {pages.usaPad, pages.usaAgora, pages.usaLabel, pages.Staged};
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     show(comptime compiler.typeInfo(usaPad).meta(Staged));
     show(comptime compiler.typeInfo(usaAgora).meta(Staged));
     show(comptime compiler.typeInfo(usaLabel).meta(Staged));
     print(usaPad());
 }
 
-fn show(staged: ?Staged) {
+fn show(staged: ?Staged) -> void {
     if (staged) {
         s ->
         print(s.name + ": " + s.stages.join(" "));

@@ -7,6 +7,6 @@ fn tanBody(x: f64) -> f64 {
     return x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(tanOf(0.0));
 }

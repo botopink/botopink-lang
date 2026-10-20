@@ -50,7 +50,7 @@ async fn walk(url: string) -> Async<void> {
     print("end of " + url);
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(n) -> print("count " + n.toString());
         Error(e) -> print("count failed: " + e);
@@ -63,6 +63,6 @@ async fn run() -> Async<void> {
     await walk("p1");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     run();
 }

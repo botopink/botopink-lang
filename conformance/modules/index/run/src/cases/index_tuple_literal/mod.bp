@@ -1,6 +1,6 @@
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val t = #(1, "a");
     val n: i32 = t[0];
     val label: string = t[1];

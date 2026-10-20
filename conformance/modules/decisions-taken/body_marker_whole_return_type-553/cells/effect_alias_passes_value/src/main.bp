@@ -19,7 +19,7 @@ fn pass(r: Checked<i32>) -> Checked<i32> {
     return r;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(pass(check(4)).unwrapOr(0));
     print(pass(check(-4)).unwrapOr(0));
 }

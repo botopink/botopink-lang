@@ -41,7 +41,7 @@ fn shape(syntax q: string) -> anyvalue {
     return code @`fn(xs: i32[], pick: ?string, f: fn(i32) -> i32) -> #(n: i32, m: i32) { return #(f(xs.length), ${size}); }`;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(tagged @`box`);
     val name = "ana";
     val e = element @`${name}, ${name + "!"}`;

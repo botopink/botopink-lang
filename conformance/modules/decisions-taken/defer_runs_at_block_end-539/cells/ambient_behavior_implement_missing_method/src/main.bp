@@ -5,11 +5,11 @@
 import {io.terminal.print} from "std";
 
 type Door(name: string) implement Closeable {
-    fn shut(self: Self) {
+    fn shut(self: Self) -> void {
         print("shut " + self.name);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     Door(name: "front").shut();
 }

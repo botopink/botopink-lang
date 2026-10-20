@@ -12,7 +12,7 @@ fn div(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(rem(7, 2));
     print(div(7, 2));
     print(div(7, 0));

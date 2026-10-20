@@ -16,7 +16,7 @@ comptime {
     f("a");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
 }
 

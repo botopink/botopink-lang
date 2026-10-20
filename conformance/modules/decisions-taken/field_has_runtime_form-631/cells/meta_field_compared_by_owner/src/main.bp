@@ -6,14 +6,14 @@ import {types.Type, compiler, collections.Dict, io.terminal.print} from "std";
 
 type Sort<T>(by: Type.Field<T>, then: Type.Field<T>)
 
-fn sort<T>(syntax decl: T, comptime by: Type.Field<T>, comptime then: Type.Field<T>) {
+fn sort<T>(syntax decl: T, comptime by: Type.Field<T>, comptime then: Type.Field<T>) -> void {
     compiler.setMeta(Sort(by: by, then: then));
 }
 
 #[sort(.pages, .title)]
 type Book(title: string, pages: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val first = comptime compiler.typeInfo(Book).meta(Sort);
     val again = comptime compiler.typeInfo(Book).meta(Sort);
     val by = first!.by;

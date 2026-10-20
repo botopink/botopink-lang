@@ -7,7 +7,7 @@ fn residue(raw: string, allowed: string) -> string {
     return allowed.split("").fold(raw, { acc, c -> acc.split(c).join("") });
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("a-b".split("-").join(""));
     print(residue("a1b2", "ab"));
     print(residue("abab", "ab") == "");

@@ -1347,7 +1347,7 @@ pub const closure_plain = [_]Module{
     .{ .path = "main", .source =
     \\import {items.Queue, items.describe} from "shelf";
     \\
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    print(describe(Queue(label: "plain", size: 1)));
     \\}
     \\
@@ -1365,7 +1365,7 @@ pub const closure_crowded = [_]Module{
     \\import {items.rivalLabel} from "rival";
     \\import {local};
     \\
-    \\pub fn main() {
+    \\pub fn main() -> void {
     \\    print(describe(Queue(label: "crowded", size: 2)));
     \\    print(area(Shape.Square(side: 2)).toString());
     \\}

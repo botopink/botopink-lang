@@ -4,7 +4,7 @@
 import shelf from "shelf";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val built = shelf @`built`;
     print(built.text);
     print(built.size.toString());

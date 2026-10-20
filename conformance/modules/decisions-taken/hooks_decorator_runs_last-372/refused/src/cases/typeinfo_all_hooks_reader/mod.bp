@@ -8,7 +8,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
-fn graph(syntax decl: unknown) {
+fn graph(syntax decl: unknown) -> void {
     compiler.setMeta(Graph(count: compiler.hooks(decl).length));
 }
 
@@ -17,7 +17,7 @@ pub component fn Page() -> Component<Element> {
     return Element(text: "x");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val all = @TypeInfo.all(with: graph);
     all.forEach({ d -> print(d.name) });
 }

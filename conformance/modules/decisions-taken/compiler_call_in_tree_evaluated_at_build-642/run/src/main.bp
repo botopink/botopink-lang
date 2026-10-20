@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.member_names_its_parameter.runCase();
     cases.member_reads_compiler_name.runCase();
     cases.member_reads_compiler_text.runCase();

@@ -10,7 +10,7 @@ type Element(text: string) implement Renderable
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 
-pub fn main() {
+pub fn main() -> void {
     val read = context;
     print("unreached");
 }

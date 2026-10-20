@@ -4,9 +4,9 @@
 
 import {compiler, failure.panic, io.terminal.print} from "std";
 
-pub fn counted(syntax decl: unknown, comptime label: string) {
+pub fn counted(syntax decl: unknown, comptime label: string) -> void {
     compiler.addMember(
-        "pub fn report(self: Self) { if (self.size < 0) panic(\"negative "
+        "pub fn report(self: Self) -> void { if (self.size < 0) panic(\"negative "
             + label
             + "\"); print(\""
             + label

@@ -40,7 +40,7 @@ fn leftWidth(p: Pair) -> i32 {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(widthOf(Shape.Rect(4, 5)));
     print(widthOf(Shape.Circle(3)));
     print(widthOf(Shape.Dot));

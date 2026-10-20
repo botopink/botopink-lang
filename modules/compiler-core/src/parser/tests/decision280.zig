@@ -19,7 +19,7 @@ test "decision 280: a comptime parameter takes a default and is located" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const program = try parse(arena.allocator(),
-        \\fn mark(syntax decl: unknown, comptime n: i32 = 3, size: i32 = 4) { }
+        \\fn mark(syntax decl: unknown, comptime n: i32 = 3, size: i32 = 4) -> void { }
     );
     const params = program.decls[0].@"fn".params;
     try std.testing.expect(params[1].modifier == .@"comptime");

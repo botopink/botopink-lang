@@ -6,4 +6,4 @@ type Box<T>(value: T)
 
 fn get(b: Box) -> i32 { return 0; }
 
-pub fn main() { print(get(Box(value: 1))); }
+pub fn main() -> void { print(get(Box(value: 1))); }

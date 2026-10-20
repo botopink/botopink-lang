@@ -15,7 +15,7 @@ import {cases.method_on_unimported_type.log.logger};
 import {cases.method_on_unimported_type.draft.DraftMode};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(queryDict("x=1&y=2").at("y") ?? "none");
     print(queryDict("x=1").size());
     print(logger("a").isEnabled(1));

@@ -10,10 +10,10 @@ fn save(n: i32) -> Result<void, string> {
     return;
 }
 
-fn saveQuietly(n: i32) {
+fn saveQuietly(n: i32) -> void {
     try { try save(n) } catch {}
 }
 
-pub fn main() {
+pub fn main() -> void {
     saveQuietly(1);
 }

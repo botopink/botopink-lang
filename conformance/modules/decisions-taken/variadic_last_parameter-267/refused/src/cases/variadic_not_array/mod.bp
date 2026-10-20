@@ -8,6 +8,6 @@ fn one(..value: i32) -> i32 {
     return value;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(one(1));
 }

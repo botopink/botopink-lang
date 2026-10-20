@@ -9,6 +9,6 @@ fn f(c: bool) -> i32 {
     return 1 + if (c) { 2 } else { 3 };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(f(true));
 }

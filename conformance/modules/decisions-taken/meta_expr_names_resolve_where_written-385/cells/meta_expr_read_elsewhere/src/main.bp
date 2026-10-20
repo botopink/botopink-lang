@@ -20,7 +20,7 @@ fn hint() -> string {
     return "main's hint";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val s = Signup(password: "a", confirm: "b");
     val checks = comptime compiler.typeInfo(Signup).metaAll(Check);
     print(checks.length);

@@ -32,7 +32,7 @@ import tempfile
 
 HEADER = "botopink-cell 1"
 PLAIN_ENTRIES = {"botopink.json", "src", "snapshot", "docs.md"}
-MAIN_RE = re.compile(r"^pub fn main\(\) \{", re.M)
+MAIN_RE = re.compile(r"^pub fn main\(\) -> void \{", re.M)
 IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 ENTRY = "runCase"  # a case's entry; never `main` (it recurses on wasm) nor a name a case uses
 CHECK_TIMEOUT = 900
@@ -153,7 +153,7 @@ def lay_case(case, dest, kind):
             if rel == "main.bp":
                 rel = "mod.bp"
                 if kind == "run":
-                    text = MAIN_RE.sub("pub fn " + ENTRY + "() {", text, count=1)
+                    text = MAIN_RE.sub("pub fn " + ENTRY + "() -> void {", text, count=1)
             write(os.path.join(dest, rel), text)
     if os.path.isfile(os.path.join(case, "docs.md")):
         shutil.copy(os.path.join(case, "docs.md"), os.path.join(dest, "docs.md"))
@@ -205,13 +205,13 @@ def build(pkg_dir, pkg_name, kind, cases, base=None):
         write(os.path.join(pkg_dir, "src", "cases", "mod.bp"), "".join("pub mod %s;\n" % spell(n) for n in names))
         if kind == "run":
             calls = "".join("    cases.%s.%s();\n" % (spell(n), ENTRY) for n in names)
-            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {\n" + calls + "}\n")
+            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() -> void {\n" + calls + "}\n")
             lines = [HEADER]
             for c in cases:
                 lines += snaps(c)["main"].splitlines()[1:]
             write(os.path.join(pkg_dir, "snapshot", "output", "main.snap"), "\n".join(lines) + "\n")
         else:
-            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() {}\n")
+            write(os.path.join(pkg_dir, "src", "main.bp"), "mod cases;\n\npub fn main() -> void {}\n")
             for c in cases:
                 n = os.path.basename(c)
                 for mod, text in snaps(c).items():

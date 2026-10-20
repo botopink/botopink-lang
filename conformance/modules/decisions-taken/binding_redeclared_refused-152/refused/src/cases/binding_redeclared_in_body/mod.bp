@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     var n: i32 = 1;
     n = n + 1;
     var n: i32 = 10;

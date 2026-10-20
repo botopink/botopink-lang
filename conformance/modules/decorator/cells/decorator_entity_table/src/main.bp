@@ -1,6 +1,6 @@
 import {compiler, io.terminal.print} from "std";
 
-fn entity(syntax decl: unknown, comptime table: string) {
+fn entity(syntax decl: unknown, comptime table: string) -> void {
     var cols: string[] = [];
     compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
     compiler.setMeta(Entity(table: table));
@@ -19,7 +19,7 @@ fn header(c: City.Columns) -> string {
     return c.name + "|" + c.people;
 }
 
-fn main() {
+fn main() -> void {
     print(City.table()); // cities
     print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none"); // cities
     print(comptime compiler.typeInfo(City).name); // City

@@ -6,7 +6,7 @@
 
 import {io.fs, encoding, io.terminal.print} from "std";
 
-fn probe(hex: string) {
+fn probe(hex: string) -> void {
     val bytes = encoding.hexDecodeBytes(hex).unwrapOr(Bytes.fromUtf8(""));
     fs.writeBytes("sample.bin", bytes);
     val kept = fs.readBytes("sample.bin").unwrapOr(Bytes.fromUtf8(""));
@@ -38,7 +38,7 @@ fn probe(hex: string) {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     probe("");
     probe("68c3a9");
     probe("f0908080");

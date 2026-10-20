@@ -21,7 +21,7 @@ fn tagged(name: string) -> string {
     return bang(name) + " " + hash.contentHash(name);
 }
 
-fn labelled(syntax decl: unknown) {
+fn labelled(syntax decl: unknown) -> void {
     @emit(
         "pub fn label() -> string { return \""
             + tagged(compiler.name(decl)!)
@@ -34,7 +34,7 @@ fn labelled(syntax decl: unknown) {
 #[labelled]
 type Point(x: i32, y: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(label());
     print(bang("run") + " " + hash.contentHash("Point"));
 }

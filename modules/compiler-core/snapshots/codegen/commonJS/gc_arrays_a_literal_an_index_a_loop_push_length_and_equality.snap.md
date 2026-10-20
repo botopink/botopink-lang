@@ -12,7 +12,7 @@ fn longest(names: string[]) -> i32 {
     return best;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val xs = [3, 1, 2];
     print(xs);
     print(total(xs));

@@ -40,7 +40,7 @@ fn line(it: Iter<i32>) -> string {
     return acc;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = Counter(start: 4, step: 2);
     print(line(c.ticks()));
     print(line(c.countdown()));

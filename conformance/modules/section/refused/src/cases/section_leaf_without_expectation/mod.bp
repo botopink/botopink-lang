@@ -9,7 +9,7 @@ pub type Token {
     Text { Bold },
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = .Zeta;
     print(0);
 }

@@ -12,6 +12,6 @@ async fn total(xs: i32[]) -> i32 {
     return acc;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(total([1, 2]));
 }

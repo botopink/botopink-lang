@@ -8,6 +8,6 @@ pub mod geometry;
 import {geometry.area} from "import_own_package_with_from";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(area(3, 4));
 }

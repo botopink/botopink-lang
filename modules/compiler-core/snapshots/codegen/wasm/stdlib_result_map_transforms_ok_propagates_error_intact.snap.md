@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn parseAge(s: string) -> Result<i32, string> { panic("not implemented"); }
-fn main() {
+fn main() -> void {
     val r = parseAge("42").map({ n -> n + 1 });
 }
 

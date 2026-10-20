@@ -24,7 +24,7 @@ pub fn own() -> string {
 
 val seen = names();
 
-pub fn main() {
+pub fn main() -> void {
     print(before);
     print(seen);
     print(first() + " " + second() + " " + own());

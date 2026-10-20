@@ -6,9 +6,9 @@
 
 import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
 
-fn label(syntax decl: unknown, comptime text: string) {}
+fn label(syntax decl: unknown, comptime text: string) -> void {}
 
-fn schema(syntax decl: unknown) {
+fn schema(syntax decl: unknown) -> void {
     val isType = compiler.kind(decl) == DeclKind.Type;
     val fields = compiler
         .fields(decl)
@@ -44,7 +44,7 @@ val RecipePatch = Type.partial(Recipe);
 #[schema]
 val RecipeTitle = Type.pick(Recipe, .title);
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(RecipePatchSchema());
     print(RecipeTitleSchema());
     print(

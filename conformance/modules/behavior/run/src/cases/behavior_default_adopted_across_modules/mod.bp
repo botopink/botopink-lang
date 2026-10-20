@@ -36,7 +36,7 @@ fn doubled(s: Shape) -> i32 {
     return s.twice();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Sq(n: 3).twice());
     print(Sq(n: 3).shout());
     print(Big(n: 3).twice());

@@ -32,6 +32,6 @@ async fn run() -> Async<void> {
     print("done");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     run();
 }

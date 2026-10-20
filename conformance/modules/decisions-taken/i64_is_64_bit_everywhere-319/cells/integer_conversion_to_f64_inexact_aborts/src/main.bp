@@ -8,7 +8,7 @@ fn grow(a: i64, b: i64) -> i64 {
     return a + b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(grow(9007199254740991l, 3l).toF64() == 9007199254740994.0);
     print(grow(9007199254740991l, 2l).toF64());
     print("unreachable");

@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 type `my point`(`x pos`: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val p = `my point`(`x pos`: 1);
     print(p.`y pos`);
 }

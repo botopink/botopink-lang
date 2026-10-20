@@ -4,7 +4,7 @@
 
 import {compiler} from "std";
 
-pub fn theme(syntax decl: unknown) {
+pub fn theme(syntax decl: unknown) -> void {
     compiler.setMeta(Theme(named: compiler.name(decl)!));
 }
 

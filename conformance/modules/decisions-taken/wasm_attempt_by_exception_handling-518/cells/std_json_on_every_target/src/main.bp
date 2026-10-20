@@ -7,7 +7,7 @@
 
 import {json, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(json.quote("a\"b\\c\n\u{1}é🎉/"));
     print(json.unquote(" \"x\\u00e9\\ud83c\\udf89\\n\" ").unwrapOr("?"));
     print(json.unquote("nope").isError());

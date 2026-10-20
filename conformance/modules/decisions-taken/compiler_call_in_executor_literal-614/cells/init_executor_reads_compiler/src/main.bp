@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn registered(syntax decl: unknown) {
+fn registered(syntax decl: unknown) -> void {
     compiler.init({ -> print(compiler.name(decl)!) });
 }
 
@@ -14,4 +14,4 @@ pub fn home() -> string {
     return "home";
 }
 
-pub fn main() {}
+pub fn main() -> void {}

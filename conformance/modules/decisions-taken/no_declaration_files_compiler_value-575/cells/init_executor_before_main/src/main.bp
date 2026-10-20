@@ -9,21 +9,21 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn registered(syntax decl: unknown, comptime label: string) {
+fn registered(syntax decl: unknown, comptime label: string) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> print(label + " " + name) });
     compiler.init({ -> print("again " + name) });
 }
 
-fn hello() {
+fn hello() -> void {
     print("hello");
 }
 
-fn greet() {
+fn greet() -> void {
     print("greet");
 }
 
-fn announced(syntax decl: unknown, syntax run: fn()) {
+fn announced(syntax decl: unknown, syntax run: fn()) -> void {
     compiler.init(hello);
     compiler.init(run);
 }
@@ -40,7 +40,7 @@ pub type Shell(title: string)
 #[announced(greet)]
 pub val banner = "banner";
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
     print(home());
     print(Shell(title: "t").title);

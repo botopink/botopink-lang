@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Canvas = behavior {
-    fn clear(self: Self);
-    fn drawLine(self: Self, x1: i32, y1: i32);
-    fn drawRect(self: Self, x: i32, y: i32, color: string);
+    fn clear(self: Self) -> void;
+    fn drawLine(self: Self, x1: i32, y1: i32) -> void;
+    fn drawRect(self: Self, x: i32, y: i32, color: string) -> void;
 }
 ```
 

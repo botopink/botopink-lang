@@ -16,7 +16,7 @@ import {failure, failure.HostError, compiler, io.terminal.print} from "std";
 )]
 declare fn hostDouble(n: i32) -> Async<Result<i32, HostError>>;
 
-fn show(r: Result<i32, HostError>) {
+fn show(r: Result<i32, HostError>) -> void {
     case r {
         Ok(v) -> print("ok " + v.toString());
         Error(e) -> print("error", e.message, e.kind, e.name);
@@ -32,6 +32,6 @@ async fn run() -> Async<void> {
     print(sum);
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

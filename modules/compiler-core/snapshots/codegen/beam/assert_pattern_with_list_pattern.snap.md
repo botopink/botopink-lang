@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val items = [1, 2, 3];
     val assert [first, ..] = items catch throw "not a list";
+    return;
 }
 ```
 
@@ -46,7 +47,11 @@ fn f() {
     {jump, {f, 4}}.
   {label, 5}.
     {move, {literal, <<"not a list">>}, {x, 0}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 4}.
+    return.
     {jump, {f, 4}}.
   {label, 4}.
     {move, {x, 0}, {x, 1}}.
@@ -59,7 +64,10 @@ fn f() {
     {put_tuple2, {x, 0}, {list, [{atom, badmatch}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 7}.
-    {move, {atom, ok}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 4}.
     return.
 

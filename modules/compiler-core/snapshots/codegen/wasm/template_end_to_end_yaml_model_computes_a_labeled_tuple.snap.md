@@ -7,7 +7,7 @@ pub fn conf(syntax q: string) -> anyvalue {
     return #(port, debug);
 }
 val cfg = conf @`yaml`;
-fn main() {
+fn main() -> void {
     print(cfg.port + 1);
 }
 import {compiler} from "std";

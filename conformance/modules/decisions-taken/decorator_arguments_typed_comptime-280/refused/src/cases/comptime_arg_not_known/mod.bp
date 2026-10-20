@@ -9,7 +9,7 @@ fn twice(comptime n: i32) -> i32 {
     return n * 2;
 }
 
-pub fn main() {
+pub fn main() -> void {
     var k = 3;
     k = k + 1;
     print(twice(2));

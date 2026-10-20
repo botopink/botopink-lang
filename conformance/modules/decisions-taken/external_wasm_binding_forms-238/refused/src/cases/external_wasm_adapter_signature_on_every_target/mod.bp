@@ -9,6 +9,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"), .Wasm(wasi: .RandomF64))]
 pub declare fn draw(seed: i32) -> f64;
 
-pub fn main() {
+pub fn main() -> void {
     print(draw(1) >= 0.0);
 }

@@ -42,7 +42,7 @@ async fn run() -> Async<void> {
     print(!await ready());
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(sum(1, 2).unwrapOr(-1));
     print(sum(1, -2).unwrapOr(-1));
     print(plus(4).unwrapOr(-1));

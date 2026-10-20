@@ -3,7 +3,7 @@
 fn locate() -> SourceLocation {
     return comptime compiler.src();
 }
-fn main() {
+fn main() -> void {
     val loc = locate();
     print(loc.file, loc.line, loc.column, loc.fnName);
 }

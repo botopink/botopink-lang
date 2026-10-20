@@ -32,7 +32,7 @@ fn nested(n: i32) -> string {
     return "done";
 }
 
-fn announce(n: i32) {
+fn announce(n: i32) -> void {
     case n {
         0 {
             return;
@@ -44,7 +44,7 @@ fn announce(n: i32) {
     print(n);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(byCase(1));
     print(byCase(2));
     print(nested(20));

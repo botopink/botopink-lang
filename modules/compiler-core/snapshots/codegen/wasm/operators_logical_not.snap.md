@@ -3,7 +3,7 @@
 fn negate(v: bool) -> bool {
     return !v;
 }
-fn main() {
+fn main() -> void {
     print(negate(true));
 }
 

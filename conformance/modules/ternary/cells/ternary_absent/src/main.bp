@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val c = true;
     val x = c ? 1 : 2;
     print(x.toString());

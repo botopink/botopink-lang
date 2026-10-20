@@ -6,7 +6,7 @@
 import {boot, m} from "frame";
 import {compiler} from "std";
 
-pub fn other(syntax decl: unknown) {
+pub fn other(syntax decl: unknown) -> void {
     compiler.setMeta(Other(kind: "other"));
 }
 
@@ -25,7 +25,7 @@ pub fn three() -> i32 {
     return 3;
 }
 
-pub fn main() {
+pub fn main() -> void {
     boot();
     boot(@TypeInfo.all(with: other));
     boot([]);

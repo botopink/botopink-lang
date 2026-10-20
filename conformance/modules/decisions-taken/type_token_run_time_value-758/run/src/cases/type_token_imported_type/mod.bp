@@ -14,7 +14,7 @@ fn sessionOf(rows: unknown[]) -> ?Session {
     return findAs(Session, rows);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s: unknown = Session(id: 3, user: "ana");
     val c: unknown = Config(dynamic: true);
     val rows = [c, s, s];

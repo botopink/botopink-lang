@@ -33,7 +33,7 @@ fn radiusPlusCount(p: Pair) -> i32 {
     return r + n;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val p = Pair.Pair(s: Shape.Circle(r: 3), n: 4);
     val Pair(Circle(r), n) = p;
     print(r);

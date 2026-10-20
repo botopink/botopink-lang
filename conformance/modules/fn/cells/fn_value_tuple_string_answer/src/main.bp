@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val g: fn(s: string) -> i32 = { s -> s.length };
     val h: fn(n: i32) -> string = { n -> "n=" + n.toString() };
     val q = #(g, h);

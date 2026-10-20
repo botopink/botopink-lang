@@ -6,12 +6,12 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn show(m: compiler.Module) {
+fn show(m: compiler.Module) -> void {
     print("name=" + m.name);
     print("path=" + m.path);
 }
 
-pub fn main() {
+pub fn main() -> void {
     // A file that compiles: `Ok(m)`.
     val fine = comptime compiler.load("src/cases/fine/mod.bp");
     print(fine.isOk());

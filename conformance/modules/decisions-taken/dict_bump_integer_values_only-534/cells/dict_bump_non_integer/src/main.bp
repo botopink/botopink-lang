@@ -3,7 +3,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val totals: Dict<string, f64> = Dict.empty();
     val next = totals.bump("a", 1.5);
     print(next.at("a"));

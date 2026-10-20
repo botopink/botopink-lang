@@ -8,7 +8,7 @@ import {collections, io.terminal.print} from "std";
 
 type Order(rank: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val o = Order(rank: 1);
     print(o.rank);
     val s = collections.lt();

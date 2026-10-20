@@ -7,7 +7,7 @@ pub mod values;
 import {cases.optional_enum_method_sibling.values.find};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val b = find(1);
     print(b?.str() ?? "none");
     print(find(2)?.plus(2) ?? 0);

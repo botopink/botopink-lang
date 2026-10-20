@@ -8,7 +8,7 @@ fn choose(present: bool) -> ?R {
         return null;
     }
 }
-fn main() {
+fn main() -> void {
     print(choose(true)?.kind);
 }
 

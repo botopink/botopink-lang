@@ -9,7 +9,7 @@ import {label} from "lib";
 import {sizes.width};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(label(.Top));
     print(label(.Two("x")));
     print(width(.Large));

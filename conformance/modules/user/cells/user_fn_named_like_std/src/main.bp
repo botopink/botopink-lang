@@ -14,7 +14,7 @@ fn size(n: i32) -> i32 {
     return n + 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(run("a"));
     print(size(7));
     print(terminal.size());

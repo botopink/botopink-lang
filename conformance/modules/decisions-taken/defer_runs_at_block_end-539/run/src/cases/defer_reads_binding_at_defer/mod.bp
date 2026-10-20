@@ -7,13 +7,13 @@ import {io.terminal.print} from "std";
 
 val name = "global";
 
-fn work() {
+fn work() -> void {
     defer print("close " + name);
     val name = "local";
     print("work " + name);
 }
 
-fn viaBranch(c: bool) {
+fn viaBranch(c: bool) -> void {
     defer print("close " + name);
     if (c) {
         val name = "branch";
@@ -23,7 +23,7 @@ fn viaBranch(c: bool) {
     print("after");
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     work();
     viaBranch(true);
     viaBranch(false);

@@ -5,6 +5,6 @@ import {io.terminal.print} from "std";
 
 declare fn now() -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(now());
 }

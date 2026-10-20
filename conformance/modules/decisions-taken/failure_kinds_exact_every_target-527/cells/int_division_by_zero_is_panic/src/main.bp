@@ -14,14 +14,14 @@ fn rem(a: i32, b: i32) -> i32 {
     return a % b;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     show(failure.attempt({ -> div(7, 2) }));
     show(failure.attempt({ -> div(7, 0) }));
     show(failure.attempt({ -> rem(7, 0) }));

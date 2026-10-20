@@ -9,7 +9,7 @@ val cfg = conf @`server:
   host: "0.0.0.0"
 debug: true`;
 
-fn main() {
+fn main() -> void {
     print(cfg.server.port + 1); // ok: i32 — structure revealed at expansion
     print(cfg.debug); // ok: bool
 }

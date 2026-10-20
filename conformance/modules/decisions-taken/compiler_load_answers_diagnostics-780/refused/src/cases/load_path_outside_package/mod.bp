@@ -3,7 +3,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     try comptime compiler.load("src/../../elsewhere/main.bp") catch { r ->
         print(r.diagnostics.length);
     }

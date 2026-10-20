@@ -7,7 +7,7 @@
 import {loader.load, loader.own} from "loader";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(load("assets/note.txt").bytes.toUtf8().unwrapOr("?"));
     print(own().bytes.toUtf8().unwrapOr("?"));
     print(load("assets/note.txt").path);

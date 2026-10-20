@@ -23,10 +23,10 @@ pub type Pato(id: i32)
 ```botopink
 import {pond.Pato};
 val Swimmer = behavior {
-    fn swim(self: Self);
+    fn swim(self: Self) -> i32;
 }
 val PatoNada = implement Swimmer for Pato {
-    fn swim(self: Self) {
+    fn swim(self: Self) -> i32 {
         return self.id;
     }
 }
@@ -50,7 +50,7 @@ val splash = donald.swim();
               "type": "Self"
             }
           ],
-          "return_type": "void"
+          "return_type": "i32"
         }
       ]
     },

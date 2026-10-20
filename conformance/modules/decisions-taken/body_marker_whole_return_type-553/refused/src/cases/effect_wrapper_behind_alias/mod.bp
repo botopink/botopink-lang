@@ -16,4 +16,4 @@ fn byAlias(s: string) -> Parser<i32> {
     return 1;
 }
 
-pub fn main() { byAlias("a"); }
+pub fn main() -> void { byAlias("a"); }

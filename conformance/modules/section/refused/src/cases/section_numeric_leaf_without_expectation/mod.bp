@@ -9,6 +9,6 @@ type Tok {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val n = .50;
 }

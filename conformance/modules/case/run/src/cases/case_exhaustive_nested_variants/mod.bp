@@ -21,7 +21,7 @@ fn name(j: Job) -> string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(name(Job.Run(Speed.Fast)));
     print(name(Job.Run(Speed.Slow)));
     print(name(Job.Stop));

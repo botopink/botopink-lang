@@ -12,6 +12,6 @@ pub val themeContext = comptime createContext(Theme(mode: "default"));
 
 pub val Alias = themeContext;
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

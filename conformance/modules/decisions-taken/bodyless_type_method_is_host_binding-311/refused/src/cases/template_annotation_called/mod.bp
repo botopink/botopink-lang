@@ -11,7 +11,7 @@ fn sql(syntax q: string, syntax decl: unknown) -> string {
     return compiler.build("\"\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     val s = sql @`select 1`;
     print(s);
 }

@@ -44,7 +44,7 @@ fn plusOne(x: unknown) -> i32 {
     return got;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a: unknown = 3.0;
     print(describe(a));
     val b: unknown = 2.5;

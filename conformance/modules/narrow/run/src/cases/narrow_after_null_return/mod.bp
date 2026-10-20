@@ -8,6 +8,6 @@ fn firstKeyLength(entries: Entry[]) -> i32 {
     return first.key.length(); // `first` is an `Entry` here, not a `?Entry`
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(firstKeyLength([Entry(key: "abc")]));
 }

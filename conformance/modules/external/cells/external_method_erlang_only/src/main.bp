@@ -12,6 +12,6 @@ pub type Codes(list: i32[]) {
     pub declare fn text(self: Self) -> string;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Codes(list: [104, 105]).text());
 }

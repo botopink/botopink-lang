@@ -6,7 +6,7 @@ import {compiler, io.terminal.print} from "std";
 
 pub type Provides(name: string)
 
-fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) {
+fn provides<T>(syntax decl: fn() -> T, comptime t: type<T>) -> void {
     compiler.setMeta(Provides(name: compiler.name(decl)!));
 }
 
@@ -15,6 +15,6 @@ fn count() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(count());
 }

@@ -4,6 +4,6 @@
 
 import {context.RenderScope} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val s = RenderScope(frames: null);
 }

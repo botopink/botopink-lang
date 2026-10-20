@@ -26,7 +26,7 @@ fn halves(a: i32, b: i32) -> i32 {
     return total;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(quarter(8));
     print(quarter(6));
     print(halves(4, 6));

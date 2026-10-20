@@ -17,7 +17,7 @@ const h = @import("helpers.zig");
 test "js: comptime folding ---- integer addition folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val v1 = comptime 1 + 1;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(v1);
         \\}
         \\
@@ -28,7 +28,7 @@ test "js: comptime folding ---- integer addition folds to literal" {
 test "js: comptime folding ---- block with a tail value inlines result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val t = comptime { 2 + 22 };
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(t);
         \\}
         \\
@@ -39,7 +39,7 @@ test "js: comptime folding ---- block with a tail value inlines result" {
 test "js: comptime folding ---- float multiplication folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val pi2 = comptime { 3.14 * 2.0 };
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(pi2);
         \\}
         \\
@@ -50,7 +50,7 @@ test "js: comptime folding ---- float multiplication folds to literal" {
 test "js: comptime folding ---- multiplication binds tighter than addition" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val n = comptime { 2 + 3 * 4 };
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(n);
         \\}
         \\
@@ -65,7 +65,7 @@ test "js: comptime validation ---- runtime identifier inside comptime raises err
     try h.assertJsError(std.testing.allocator, @src(),
         \\val greeting = "hi";
         \\val msg = comptime { greeting };
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(msg);
         \\}
         \\
@@ -82,7 +82,7 @@ test "js: comptime val ---- runtime val with string literal" {
 test "js: comptime val ---- comptime val folds arithmetic to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime 10 + 20;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(result);
         \\}
         \\
@@ -96,7 +96,7 @@ test "js: comptime specialization ---- distinct string args generate specialized
         \\    return prefix + ": " + name;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("WARN", "Memória alta");
         \\    val r3 = build("INFO", "Log replicado");
@@ -115,7 +115,7 @@ test "js: comptime specialization ---- distinct integer args generate specialize
         \\    return x * factor;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val double = multiply(2, 21);
         \\    val triple = multiply(3, 21);
         \\    val doubleAgain = multiply(2, 10);
@@ -137,7 +137,7 @@ test "js: comptime specialization ---- same string arg reuses specialized functi
         \\    return prefix + ": " + name;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("INFO", "Log replicado");
         \\    print(r1);
@@ -156,7 +156,7 @@ test "js: comptime specialization ---- comptime val used as specialization argum
         \\    return value * factor;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val doubled = scale(2, base);
         \\    val tripled = scale(3, base);
         \\    val doubledAgain = scale(2, 100);
@@ -170,7 +170,7 @@ test "js: comptime specialization ---- constrained type meta-kind specializes pe
         \\    return x;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = coerce("s", 1);
         \\    val b = coerce(7, 2);
         \\    val c = coerce("s", 3);
@@ -184,7 +184,7 @@ test "js: comptime specialization ---- simple function body without loop" {
         \\    return input + 0;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = execute("calc", 10);
         \\    val r2 = execute("noop", 42);
         \\    val r3 = execute("calc", 5);
@@ -206,7 +206,7 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
         \\    return output;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = execute("calc", 10);
         \\    val r2 = execute("noop", 42);
         \\}
@@ -231,7 +231,7 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
         \\    return output;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = execute("calc", 10);
         \\    val r2 = execute("noop", 42);
         \\}
@@ -256,7 +256,7 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
         \\    return output;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = execute("calc", 10);
         \\    val r2 = execute("noop", 42);
         \\}
@@ -277,7 +277,7 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
         \\    return output;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r1 = execute("calc", 10);
         \\    val r2 = execute("noop", 42);
         \\}
@@ -292,7 +292,7 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
         \\    return n * 2;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = double(21);
         \\}
     );
@@ -308,7 +308,7 @@ test "js: comptime ---- block with a tail" {
         \\    val x = 10;
         \\    x * 2
         \\};
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(result);
         \\}
         \\
@@ -324,7 +324,7 @@ test "js: template end to end ---- bounded html expansion" {
         \\val page = html @`
         \\<p>world</p>
         \\`;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(page);
         \\}
         \\
@@ -337,7 +337,7 @@ test "js: template end to end ---- an anyvalue answer built from text" {
         \\pub fn port(syntax q: string) -> anyvalue {
         \\    return compiler.build("8080");
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val p = port @`x` + 1;
         \\    print(p);
         \\}
@@ -366,7 +366,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             \\  <p>world</p>
             \\  <Page1/>
             \\</div>`;
-            \\fn main() {
+            \\fn main() -> void {
             \\    print(page);
             \\}
             \\
@@ -399,7 +399,7 @@ test "js: template end to end ---- lookup() names a caller-scope declaration the
         \\    };
         \\}
         \\val s = refer @`greeting`;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(s);
         \\}
         \\import {compiler} from "std";
@@ -417,7 +417,7 @@ test "js: template end to end ---- yaml model computes a labeled tuple" {
         \\    return #(port, debug);
         \\}
         \\val cfg = conf @`yaml`;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(cfg.port + 1);
         \\}
         \\import {compiler} from "std";
@@ -452,7 +452,7 @@ test "js: comptime runtime ---- a block with a call and a loop is evaluated at b
         \\    return 2;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a = comptime two();
         \\    print(a);
         \\    val d = comptime {
@@ -478,7 +478,7 @@ test "js: comptime runtime ---- a record holding a function reference is lifted"
         \\    return 2;
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
         \\    print(op.name);
         \\    print(op.run());

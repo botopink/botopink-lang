@@ -50,7 +50,7 @@ test "symbols: single val binding" {
 test "symbols: single fn binding" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn f(a: i32) { return a; }
+        \\fn f(a: i32) -> i32 { return a; }
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);
@@ -115,7 +115,7 @@ test "symbols: multiple declarations in order" {
     const gpa = std.testing.allocator;
     const source =
         \\val x = 1;
-        \\fn f(a: i32) { return a; }
+        \\fn f(a: i32) -> i32 { return a; }
         \\val Color = type { Red };
     ;
 

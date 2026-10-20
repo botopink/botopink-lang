@@ -9,7 +9,7 @@ pub mod boxes;
 import {cases.generic_type_through_imported_function.boxes.box};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val names = box(["a", "b"]);
     val flag = box(true);
     val list: string[] = names.value;

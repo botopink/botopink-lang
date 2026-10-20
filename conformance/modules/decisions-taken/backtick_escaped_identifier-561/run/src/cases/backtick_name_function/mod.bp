@@ -24,7 +24,7 @@ fn apply(f: fn(i32) -> i32, n: i32) -> i32 {
     return f(n);
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(`add one`(41));
     print(`if`(true));
     print(`count-down`(3));

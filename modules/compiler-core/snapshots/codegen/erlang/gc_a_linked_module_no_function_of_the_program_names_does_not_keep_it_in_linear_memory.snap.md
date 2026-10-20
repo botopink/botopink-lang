@@ -1097,7 +1097,7 @@ array_slice(Self, Start, End) ->
 ```botopink
 import {collections} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print("x");
 }
 

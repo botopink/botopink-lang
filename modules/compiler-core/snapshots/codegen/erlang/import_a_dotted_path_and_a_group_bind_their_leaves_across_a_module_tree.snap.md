@@ -56,7 +56,7 @@ label() ->
 ```botopink
 import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
 
-fn main() {
+fn main() -> void {
     print(circleName());
     print(seven());
     print(label());

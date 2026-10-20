@@ -19,21 +19,21 @@ fn clockName(e: clock.ClockError) -> string {
     };
 }
 
-fn showHost<T>(label: string, r: Result<T, HostError>) {
+fn showHost<T>(label: string, r: Result<T, HostError>) -> void {
     case r {
         Ok(_) -> print(label + ": ok");
         Error(e) -> print(label + ": " + e.kind);
     }
 }
 
-fn showEncoding<T>(label: string, r: Result<T, encoding.EncodingError>) {
+fn showEncoding<T>(label: string, r: Result<T, encoding.EncodingError>) -> void {
     case r {
         Ok(_) -> print(label + ": ok");
         Error(e) -> print(label + ": " + encodingName(e));
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     showHost("json.parse of an object", json.parse("{\"a\":1}"));
     showHost("json.parse of bad text", json.parse("{bad"));
     showHost("json.stringify of bad text", json.stringify("[1,"));

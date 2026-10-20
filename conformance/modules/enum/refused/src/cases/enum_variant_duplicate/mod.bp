@@ -6,6 +6,6 @@ import {io.terminal.print} from "std";
 
 type Color { Red, Green, Red }
 
-pub fn main() {
+pub fn main() -> void {
     print(Color.Red);
 }

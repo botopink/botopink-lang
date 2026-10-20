@@ -5,6 +5,6 @@
 
 import {shout} from "greeter";
 
-pub fn main() {
+pub fn main() -> void {
     shout(7);
 }

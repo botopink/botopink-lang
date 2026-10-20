@@ -10,7 +10,7 @@ type Box(items: Array<i32>) {
     fn doubled(self: Self) -> Array<i32> { return self.items.map({ n -> n * 2 }); }
     fn label(self: Self) -> string { return "box"; }
 }
-fn main() {
+fn main() -> void {
     var seen = 0;
     [1, 2].forEach({ n -> seen = n });
     print(seen);

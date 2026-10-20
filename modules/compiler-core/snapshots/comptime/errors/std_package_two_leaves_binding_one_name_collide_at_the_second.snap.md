@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 import {url.parse, json.parse} from "std";
 
-fn main() {
+fn main() -> void {
     val u = parse("http://a");
 }
 

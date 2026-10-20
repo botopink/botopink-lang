@@ -13,7 +13,7 @@ fn recent(epochMillis: i64) -> bool {
     return epochMillis > 1577836800000l;
 }
 
-pub fn main() {
+pub fn main() -> void {
     fs.writeText("five.txt", "12345");
     case fs.stat("five.txt") {
         Ok(s) {

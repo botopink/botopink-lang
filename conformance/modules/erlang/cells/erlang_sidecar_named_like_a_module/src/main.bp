@@ -18,6 +18,6 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.Erlang("text:shout($0)"))]
 declare fn shout(s: string) -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(shout(greet("sidecar")));
 }

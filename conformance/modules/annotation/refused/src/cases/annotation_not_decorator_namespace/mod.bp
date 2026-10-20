@@ -11,6 +11,6 @@ pub fn run() -> i32 {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(run());
 }

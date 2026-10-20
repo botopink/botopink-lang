@@ -9,7 +9,7 @@ fn mul(a: i64, b: i64) -> i64 {
     return a * b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(mul(4194304, 2147483647));
     print(mul(4294967296, 4294967296));
     print("unreachable");

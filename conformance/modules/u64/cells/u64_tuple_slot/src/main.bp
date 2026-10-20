@@ -20,7 +20,7 @@ fn pair(n: u64) -> #(u64, bool) {
     return #(n, true);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val top: u64 = 18446744073709551615;
     val three: u64 = 3;
     val neg: i64 = -9007199254740991;

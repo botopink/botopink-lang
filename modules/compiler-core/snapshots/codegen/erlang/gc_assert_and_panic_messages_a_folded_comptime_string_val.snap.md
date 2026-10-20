@@ -7,7 +7,7 @@ fn check(n: i32) -> i32 {
     return n;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(GREETING);
     print(check(3));
     if (check(1) < 0) {

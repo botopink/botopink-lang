@@ -2,7 +2,7 @@
 
 var entries: string[] = [];
 
-pub fn add(e: string) {
+pub fn add(e: string) -> void {
     entries.push(e);
 }
 

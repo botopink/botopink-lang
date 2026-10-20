@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.derived_type_decorated.runCase();
     cases.derived_type_functions.runCase();
     cases.std_types_module.runCase();

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> void {
     val items = [1, 2, 3, 4];
     val assert [first, second, ..rest] = items catch [];
 }

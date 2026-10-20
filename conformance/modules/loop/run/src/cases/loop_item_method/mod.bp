@@ -16,7 +16,7 @@ import {io.terminal.print} from "std";
 
 type Entry(key: string, value: string)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val es = [Entry(key: "aa", value: "x"), Entry(key: "b", value: "yy")];
     for (es) { e ->
         print(e.key.length());

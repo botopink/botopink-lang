@@ -34,7 +34,7 @@ fn show(r: Result<i32, ConfigError>) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(show(sum("port", "offset")));
     print(show(sum("port", "host")));
     print(show(port("port")));

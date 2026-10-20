@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val ids = [10, 20, 30];
     val dobrados = ids.map({ id -> id * 2 });
     print(dobrados);

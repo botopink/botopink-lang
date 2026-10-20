@@ -9,7 +9,7 @@ fn halve(x: f64) -> f64 {
     return x / 2.0;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val half = halve;
     print(half(3.5));
 }

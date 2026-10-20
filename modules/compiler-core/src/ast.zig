@@ -1940,6 +1940,14 @@ pub fn syntaxExprIndex(params: []const Param) ?usize {
     return null;
 }
 
+/// Decision 622 — a function that answers nothing: `-> void` (every function
+/// writes its return type), or no return written where the checker has not
+/// refused it yet (`fn-return-missing`).
+pub fn answersNothing(rt: ?TypeRef) bool {
+    const t = rt orelse return true;
+    return t == .named and std.mem.eql(u8, t.named, "void");
+}
+
 /// Decision 719 — a top-level function expanded at its ordinary call: it
 /// takes a `syntax` expression parameter (`syntaxExprIndex`) and is no
 /// decorator — a decorator returns nothing and its first parameter is the
@@ -1947,7 +1955,7 @@ pub fn syntaxExprIndex(params: []const Param) ?usize {
 /// first parameter is no `syntax` one, is this form.
 pub fn isSyntaxExprFn(params: []const Param, returnType: ?TypeRef) bool {
     const i = syntaxExprIndex(params) orelse return false;
-    if (returnType != null) return true;
+    if (!answersNothing(returnType)) return true;
     return i > 0 and params[0].arrival != .syntax;
 }
 

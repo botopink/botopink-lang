@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val s = "Hello,World";
     print(s.toUpper());
     print(s.toLower());

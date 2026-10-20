@@ -15,7 +15,7 @@ fn later() -> string {
     return v;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(holder());
     print(later());
 }

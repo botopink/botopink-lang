@@ -48,7 +48,7 @@ async fn save(n: i32) -> Async<Result<void, string>> {
     return;
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print("ok", v);
         Error(e) -> print("error", e);
@@ -90,6 +90,6 @@ async fn run() -> Async<void> {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     run();
 }

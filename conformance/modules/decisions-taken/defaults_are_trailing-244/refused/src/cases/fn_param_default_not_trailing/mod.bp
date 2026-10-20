@@ -8,6 +8,6 @@ fn lead(a: i32 = 1, b: i32) -> i32 {
     return a + b;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(lead(b: 2));
 }

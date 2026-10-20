@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-pub fn m(syntax decl: unknown) {
+pub fn m(syntax decl: unknown) -> void {
     compiler.setMeta(Role(role: compiler.name(decl)!));
 }
 

@@ -6,7 +6,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print([1, 2, 3, 4, 5].chunked(2));
     print([1, 2, 3].chunked(5));
     print([1, 2, 3].chunked(0));

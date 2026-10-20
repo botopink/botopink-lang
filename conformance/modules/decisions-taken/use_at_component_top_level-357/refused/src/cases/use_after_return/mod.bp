@@ -12,4 +12,4 @@ component fn Widget() -> Component<Element> {
     val c = use state(0);
 }
 
-pub fn main() { print(Widget().count); }
+pub fn main() -> void { print(Widget().count); }

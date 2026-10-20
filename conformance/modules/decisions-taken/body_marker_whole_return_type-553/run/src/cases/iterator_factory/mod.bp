@@ -36,7 +36,7 @@ fn line(it: Iter<i32>) -> string {
     return acc;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(line(evens([1, 2, 3, 4, 5, 6])));
     print(line(evensOf([1, 2, 3, 4, 5, 6])));
     print(line(pick(true, [1, 2, 3, 4])));

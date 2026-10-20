@@ -12,7 +12,7 @@ pub type Violation(message: string)
 
 pub type Mark(text: string)
 
-fn check<T>(syntax decl: T, comptime label: string, syntax rule: fn(v: T) -> bool) {
+fn check<T>(syntax decl: T, comptime label: string, syntax rule: fn(v: T) -> bool) -> void {
     val shown = label + " (" + compiler.text(rule) + ")";
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         if (rule(self)) return [];
@@ -32,7 +32,7 @@ fn positive(a: Account) -> bool {
 #[check("negative balance", positive)]
 pub type Account(balance: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(comptime compiler.typeInfo(Account).meta(Mark)?.text ?? "none");
     print(Account(balance: 5).validate().length);
     Account(balance: -1).validate().forEach({ v -> print(v.message) });

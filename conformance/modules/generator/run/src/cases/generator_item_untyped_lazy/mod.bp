@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val words = iter loop {
         for (["a", "b"]) { s ->
             print("before " + s);

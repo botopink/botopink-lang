@@ -8,7 +8,7 @@ fn and(a: ?bool, b: ?bool) -> bool {
     };
     return false;
 }
-fn main() {
+fn main() -> void {
     print(and(true, true));
 }
 

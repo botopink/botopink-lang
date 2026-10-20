@@ -12,7 +12,7 @@ fn make(on: bool) -> Flags {
     return Flags(on: on, off: !on, n: 7);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val f = make(true);
     print(f.on);
     print(f.off);

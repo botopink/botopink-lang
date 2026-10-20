@@ -11,7 +11,7 @@ fn requireShort(name: string) -> string {
     return name;
 }
 
-fn short(syntax decl: unknown) {
+fn short(syntax decl: unknown) -> void {
     val n = requireShort(compiler.name(decl)!);
     @emit("pub fn tag() -> string { return \"" + n + "\"; }");
 }
@@ -19,6 +19,6 @@ fn short(syntax decl: unknown) {
 #[short]
 type Point(x: i32, y: i32)
 
-pub fn main() {
+pub fn main() -> void {
     print(tag());
 }

@@ -8,7 +8,7 @@ type Box<T>(value: T) {
     }
 }
 
-fn main() {
+fn main() -> void {
     val b = Box<i32>.make(7);
     val o = Slot<string>.Empty;
     print(b.value);

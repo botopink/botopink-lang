@@ -12,7 +12,7 @@ fn Card(..props: CardProps, suffix: string) -> string {
     return "${props.title}${suffix}";
 }
 
-pub fn main() {
+pub fn main() -> void {
     val note = NoteProps(title: "a");
     print(Card(..note, suffix: "!"));
 }

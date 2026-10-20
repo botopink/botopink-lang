@@ -7,6 +7,6 @@ import {io.terminal.print} from "std";
 
 pub type Edge(from: string, to: string)
 
-pub fn main() {
+pub fn main() -> void {
     print(Edge(from: "a", to: "b"));
 }

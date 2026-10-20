@@ -13,13 +13,13 @@ fn inner() -> i32 {
     return 1;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind + ": " + f.message);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(failure.attempt({ -> inner() }));
 }

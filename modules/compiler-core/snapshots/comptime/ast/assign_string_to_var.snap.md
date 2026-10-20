@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> void {
     var name = "old";
     name = "new";
 }

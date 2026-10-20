@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.index_answer_typed_optional.runCase();
     cases.index_at_optional.runCase();
     cases.index_dict.runCase();

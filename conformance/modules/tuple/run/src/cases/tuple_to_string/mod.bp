@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val pair = #(1, 2);
     print(pair.toString());
     val mixed = #("a", true, 2.5);

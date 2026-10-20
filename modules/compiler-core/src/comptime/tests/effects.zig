@@ -53,7 +53,7 @@ test "@Result: multiple catch with different types" {
         \\fn getAge() -> Result<i32, UserError> {
         \\    throw UserError(msg: "missing");
         \\}
-        \\fn loadUser() {
+        \\fn loadUser() -> void {
         \\    val name = try getName() catch "anon";
         \\    val age = try getAge() catch 0;
         \\}
@@ -109,7 +109,7 @@ test "throw check: multiple throw sites all match E" {
 test "throw check: throw inside nested fn does not check outer fn E" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn outer() -> Result<i32, string> {
-        \\    val cb: fn() -> Result<void, i32> = fn() {
+        \\    val cb: fn() -> Result<void, i32> = fn() -> Result<void, i32> {
         \\        throw 404;
         \\    };
         \\    throw "outer error";
@@ -142,7 +142,7 @@ test "infer: net-new ---- @Result as a record field" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn parse(n: i32) -> Result<i32, string> { return n; }
         \\type Cell(value: Result<i32, string>)
-        \\fn main() {
+        \\fn main() -> void {
         \\    val c = Cell(value: parse(2));
         \\    val v: i32 = c.value.unwrapOr(0);
         \\}

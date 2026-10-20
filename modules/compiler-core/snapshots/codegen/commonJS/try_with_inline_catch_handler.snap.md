@@ -8,7 +8,7 @@ fn safe() -> i32 {
     print(r);
     return r;
 }
-fn main() {
+fn main() -> void {
     print(safe());
 }
 

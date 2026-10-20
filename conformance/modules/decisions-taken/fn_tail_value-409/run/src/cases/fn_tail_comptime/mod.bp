@@ -15,7 +15,7 @@ val nine = comptime square(3);
 
 val tag = comptime label(2);
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(nine);
     print(tag);
     print(square(4));

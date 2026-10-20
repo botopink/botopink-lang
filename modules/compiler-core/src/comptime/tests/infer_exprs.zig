@@ -22,7 +22,7 @@ test "infer: integer and float literals" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val x = 42;
         \\val y = 3.14;
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(x, y);
         \\}
         \\
@@ -33,7 +33,7 @@ test "infer: integer and float literals" {
 test "infer: string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val greeting = "hello";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(greeting);
         \\}
         \\
@@ -46,7 +46,7 @@ test "infer: binary operators" {
         \\val sum = 1 + 2;
         \\val product = 3.0 * 2.0;
         \\val joined = "a" + "b";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(sum, product, joined);
         \\}
         \\
@@ -83,7 +83,7 @@ test "infer: case on integer with wildcard" {
         \\    0 -> "zero";
         \\    _ -> "nonzero";
         \\};
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(desc);
         \\}
         \\
@@ -97,7 +97,7 @@ test "infer: case with OR patterns" {
         \\    0 | 2 | 4 -> "even";
         \\    _ -> "odd";
         \\};
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(parity);
         \\}
         \\
@@ -287,7 +287,7 @@ test "infer: try-catch ---- handler provides fallback" {
 
 test "infer: assign ---- number literal to var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var x = 0;
         \\    x = 10;
         \\}
@@ -297,7 +297,7 @@ test "infer: assign ---- number literal to var" {
 
 test "infer: assign ---- string to var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var name = "old";
         \\    name = "new";
         \\}
@@ -307,7 +307,7 @@ test "infer: assign ---- string to var" {
 
 test "infer: assign ---- type mismatch error" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var x = 0;
         \\    x = "oops";
         \\}
@@ -316,7 +316,7 @@ test "infer: assign ---- type mismatch error" {
 
 test "infer: stdlib array method dispatch ---- xs.isEmpty() sugar" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs: Array<i32> = [1, 2];
         \\    val empty = xs.isEmpty();
         \\}
@@ -325,7 +325,7 @@ test "infer: stdlib array method dispatch ---- xs.isEmpty() sugar" {
 
 test "infer: stdlib array method dispatch ---- ys.contains() with arg" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val ys = [1, 2, 3];
         \\    val found = ys.contains(2);
         \\}

@@ -345,7 +345,7 @@ test "std calls: an imported print, a namespace's panic, an alias" {
     const arena = arena_state.allocator();
     const src =
         \\import {io.terminal.print, failure, failure.panic as fail} from "std";
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(1, 2);
         \\    failure.panic("a");
         \\    fail("b");
@@ -379,7 +379,7 @@ test "std calls: a local named print shadows the import, which still goes once e
         \\    val print: i32[] = [1];
         \\    return [print.length];
         \\}
-        \\fn main() { print(1); }
+        \\fn main() -> void { print(1); }
     ;
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(arena));
@@ -394,7 +394,7 @@ test "std calls: the declarations are read from io/terminal.bp and failure.bp" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const text = (try declarationsText(arena_state.allocator())).?;
-    try std.testing.expect(std.mem.indexOf(u8, text, "pub declare fn print(..values: unknown[]);") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "pub declare fn print(..values: unknown[]) -> void;") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "pub declare fn panic(message: string = \"panic\") -> noreturn;") != null);
     try std.testing.expect(std.mem.startsWith(u8, text, "#["));
     const decls = try declarations(arena_state.allocator());
@@ -410,8 +410,8 @@ test "std calls: a module's own print is no import" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const src =
-        \\fn print(x: i32) {}
-        \\fn main() { print(1); }
+        \\fn print(x: i32) -> void {}
+        \\fn main() -> void { print(1); }
     ;
     var lx = Lexer.init(src);
     var p = Parser.init(try lx.scanAll(arena));
@@ -427,7 +427,7 @@ test "decision 669 — code another module wrote reaches the `print` / `panic` i
     const Parser = @import("../parser.zig").Parser;
     var lx = Lexer.init(
         \\import {failure.panic as fail, io.terminal} from "std";
-        \\fn f() { fail("x"); terminal.print(1); panic("y"); }
+        \\fn f() -> void { fail("x"); terminal.print(1); panic("y"); }
     );
     var p = Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);

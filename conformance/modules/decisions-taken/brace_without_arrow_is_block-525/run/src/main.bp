@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.block_for_return_leaves_function.runCase();
     cases.block_partial_return.runCase();
     cases.block_reassigns_enclosing_var.runCase();

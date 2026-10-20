@@ -449,7 +449,7 @@ test "containsTestBlock detects named test" {
 }
 
 test "containsTestBlock detects anonymous test" {
-    try testing.expect(containsTestBlock("fn x() {}\ntest {\n  ok\n}"));
+    try testing.expect(containsTestBlock("fn x() -> void {}\ntest {\n  ok\n}"));
 }
 
 test "containsTestBlock detects indented test" {
@@ -457,7 +457,7 @@ test "containsTestBlock detects indented test" {
 }
 
 test "containsTestBlock ignores 'latest' and 'tests' identifiers" {
-    try testing.expect(!containsTestBlock("let latest = 1\nlet tests = 2\nfn testHelper() {}"));
+    try testing.expect(!containsTestBlock("let latest = 1\nlet tests = 2\nfn testHelper() -> void {}"));
 }
 
 test "containsTestBlock ignores the word test without a block" {

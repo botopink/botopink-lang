@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-fn main() {
+fn main() -> void {
     @frobnicate(1, 2);
 }
 

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn main() {
+fn main() -> void {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
     for (messages) { msg ->
         print(msg);

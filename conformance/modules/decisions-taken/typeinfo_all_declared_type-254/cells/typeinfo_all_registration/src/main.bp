@@ -17,7 +17,7 @@ import {io.terminal.print} from "std";
 #[component]
 pub type Local(id: i32)
 
-pub fn main() {
+pub fn main() -> void {
     val routes = @TypeInfo.all(with: route);
     for (routes) { r ->
         val path = r.meta(Route)?.path ?? "";

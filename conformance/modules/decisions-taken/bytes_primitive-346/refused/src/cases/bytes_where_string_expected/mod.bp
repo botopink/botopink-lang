@@ -7,7 +7,7 @@ fn shout(s: string) -> string {
     return s.toUpper();
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = Bytes.fromUtf8("a");
     print(shout(b));
 }

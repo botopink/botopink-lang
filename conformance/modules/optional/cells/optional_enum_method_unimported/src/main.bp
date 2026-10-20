@@ -6,7 +6,7 @@
 import {find} from "shapes";
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val b = find(1);
     print(b?.str() ?? "none");
     print(find(2)?.plus(2) ?? 0);

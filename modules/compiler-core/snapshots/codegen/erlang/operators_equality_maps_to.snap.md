@@ -3,7 +3,7 @@
 fn isZero(n: i32) -> bool {
     return n == 0;
 }
-fn main() {
+fn main() -> void {
     print(isZero(0));
     print(isZero(42));
 }

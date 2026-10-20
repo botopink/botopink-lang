@@ -5,7 +5,7 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn service(syntax decl: unknown) {
+fn service(syntax decl: unknown) -> void {
     compiler.init({ -> print(decl.make()) });
 }
 
@@ -16,6 +16,6 @@ pub type Users() {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("main");
 }

@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val greeting = "hello";
     val assert "hello" = greeting catch throw "not hello";
+    return;
 }
 ```
 
@@ -15,13 +16,16 @@ fn f() {
       "name": "f",
       "is_pub": false,
       "params": [],
-      "return_type": "void",
+      "return_type": "Result<void,string>",
       "body": [
         {
           "source": "val greeting = \"hello\";"
         },
         {
           "source": "val assert \"hello\" = greeting catch throw \"not hello\";"
+        },
+        {
+          "source": "return;"
         }
       ]
     }

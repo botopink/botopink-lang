@@ -15,7 +15,7 @@ test "js: external ---- call emits module symbol" {
         \\#[compiler.external(.Erlang("filename:basename($0)"), .JavaScript("""require("node:path").basename($0)"""))]
         \\pub declare fn basename(p: string) -> string;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(basename("/tmp/notes.txt"));
         \\}
         \\
@@ -30,7 +30,7 @@ test "js: external ---- global math" {
         \\#[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(floor(1.7));
         \\}
         \\
@@ -43,7 +43,7 @@ test "js: external ---- import binds symbol" {
         \\#[compiler.external(.Erlang("filename:extension($0)"), .JavaScript("""require("node:path").extname($0)"""))]
         \\pub declare fn extname(p: string) -> string;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(extname("docs/readme.md"));
         \\}
         \\
@@ -60,7 +60,7 @@ test "js: External.<Target> ---- one decl binds a module function per target" {
         \\#[compiler.external(.Erlang("filename:dirname($0)"), .JavaScript("""require("node:path").dirname($0)"""))]
         \\pub declare fn dirname(p: string) -> string;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(dirname("/tmp/notes.txt"));
         \\}
         \\
@@ -74,7 +74,7 @@ test "js: External.<Target> ---- one decl binds a global function per target" {
         \\#[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
         \\pub declare fn floor(n: f64) -> f64;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(floor(1.7));
         \\}
         \\
@@ -94,7 +94,7 @@ test "js: external ---- net-new: no target for the active backend errors" {
         \\#[compiler.external(.Erlang("string:length($0)"))]
         \\pub declare fn str_length(s: string) -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(str_length("hello"));
         \\}
         \\
@@ -140,7 +140,7 @@ test "erlang: external ---- a refused module frees the type units it rendered" {
         \\#[compiler.external(.JavaScript("""globalThis.nodeOnly($0)"""))]
         \\declare fn nodeOnly(n: i32) -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val acc = Account(id: 10);
         \\    print(nodeOnly(acc.load(5)));
         \\}
@@ -174,7 +174,7 @@ test "js: external ---- A2 chained host call renders verbatim" {
         \\#[compiler.external(.Erlang("base64:encode($0)"), .JavaScript("""Buffer.from($0, 'utf8').toString('base64')"""))]
         \\pub declare fn b64encode(s: string) -> string;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(b64encode("hi"));
         \\}
         \\
@@ -193,7 +193,7 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
         \\#[compiler.external(.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"), .JavaScript("JSON.stringify($0)"))]
         \\declare fn stringify(value: i32) -> string;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(stringify(42));
         \\}
         \\
@@ -214,7 +214,7 @@ test "js: external ---- A3 result-template-owned declare fn" {
         \\)]
         \\pub declare fn parseInt(s: string) -> Result<i32, string>;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = parseInt("42");
         \\    print(r.unwrapOr(-1));
         \\}
@@ -230,7 +230,7 @@ test "js: external ---- template declare fn emits no require" {
         \\#[compiler.external(.JavaScript("""Math.max($0, $1)"""))]
         \\declare fn biggest(a: i32, b: i32) -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(biggest(3, 9));
         \\}
         \\
@@ -251,7 +251,7 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
         \\#[compiler.external(.JavaScript("process.pid"))]
         \\declare fn pid() -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(pid() > 0);
         \\}
         \\
@@ -270,7 +270,7 @@ test "js: external ---- 1-arg host expression declare fn renders at the call sit
         \\#[compiler.external(.JavaScript("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
         \\declare fn pid() -> i32;
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(pid() > 0);
         \\}
         \\
@@ -313,7 +313,7 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
             .source =
             \\import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    print(hostKey(42));
             \\    print(hostLen(["a", "b"]));
             \\}
@@ -361,7 +361,7 @@ test "js: external ---- a host-backed method on a local type is a method of the 
         \\    pub declare fn scale(self: Self, n: i32) -> i32;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    val m = Meter(base: 3);
         \\    print(m.plus(4));
         \\    print(m.twice());
@@ -395,7 +395,7 @@ test "js: external ---- a host-backed method on an imported type is answered by 
             .source =
             \\import { hostlib.Meter };
             \\
-            \\pub fn main() {
+            \\pub fn main() -> void {
             \\    print(Meter(base: 40).plus(2));
             \\}
             \\
@@ -415,7 +415,7 @@ test "js: external ---- a host-backed method with no binding for the backend is 
         \\    pub declare fn raw(self: Self) -> i32;
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print(Probe(n: 1).raw());
         \\}
         \\
@@ -511,7 +511,7 @@ fn fnBindingProgram(comptime js: []const u8, comptime erl: []const u8, comptime 
         "fn greetBody(name: string) -> string {\n" ++
         "    return \"hi \" + name;\n" ++
         "}\n" ++
-        "fn main() {\n" ++
+        "fn main() -> void {\n" ++
         "    print(mix(1.5, 0.25) == 3.25);\n" ++
         "    print(greet(\"host\"));\n" ++
         "}\n" ++
@@ -552,7 +552,7 @@ test "host backends: external ---- a body: cell that names no private fn of the 
         \\#[compiler.external(.JavaScript(body: mixBodx), .Erlang(body: mixBodx))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
-        \\fn main() { print(mix(1.5)); }
+        \\fn main() -> void { print(mix(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
         , .needle = "unbound variable 'mixBodx'" },
@@ -561,7 +561,7 @@ test "host backends: external ---- a body: cell that names no private fn of the 
         \\declare fn mix(x: f64) -> f64;
         \\#[compiler.external(.JavaScript("Math.abs($0)"), .Erlang("erlang:abs($0)"))]
         \\declare fn mixBody(x: f64) -> f64;
-        \\fn main() { print(mix(1.5)); }
+        \\fn main() -> void { print(mix(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
         , .needle = "`mixBody` has no body of its own to run" },
@@ -569,7 +569,7 @@ test "host backends: external ---- a body: cell that names no private fn of the 
         \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\pub fn mixBody(x: f64) -> f64 { return x; }
-        \\fn main() { print(mix(1.5)); }
+        \\fn main() -> void { print(mix(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
         , .needle = "`mixBody` is `pub`" },
@@ -577,7 +577,7 @@ test "host backends: external ---- a body: cell that names no private fn of the 
         \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody))]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64, y: f64) -> f64 { return x + y; }
-        \\fn main() { print(mix(1.5)); }
+        \\fn main() -> void { print(mix(1.5)); }
         \\
         \\import {io.terminal.print, compiler} from "std";
         , .needle = "must take the same parameter types in the same order" },

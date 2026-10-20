@@ -7,7 +7,7 @@ type Shape {
     Rect(width: i32, height: i32),
 }
 
-pub fn main() {
+pub fn main() -> void {
     val s = Shape.Rect(width: 1, height: 2);
     val y = case s {
         .Rect(width: w) { w }

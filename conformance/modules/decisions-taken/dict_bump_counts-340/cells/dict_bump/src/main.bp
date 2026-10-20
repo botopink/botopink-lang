@@ -5,7 +5,7 @@
 
 import {collections.Dict, io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val empty: Dict<string, i32> = Dict.empty();
     val once = empty.bump("a", 2);
     val twice = once.bump("a", 3).bump("b", -4);

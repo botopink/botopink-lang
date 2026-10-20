@@ -1,8 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> Result<void, string> {
     val answer = 42;
     val assert 42 = answer catch throw "not 42";
+    return;
 }
 ```
 
@@ -11,10 +12,12 @@ fn f() {
 (module
   (rec
     (type $str (array (mut i8)))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $box_i32 (struct (field $v i32)))
   )
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $f (result i32)
+  (func $f (result (ref null $result))
     (local $answer i32)
     (local $__assert_0 i32)
     i32.const 42
@@ -27,12 +30,17 @@ fn f() {
     i32.eqz
     (if
       (then
+    i32.const 1
     global.get $__s0
-    drop
-    unreachable
+    struct.new $result
+    return
       )
     )
     i32.const 0
+    i32.const 0
+    struct.new $box_i32
+    struct.new $result
+    return
   )
   (data $__d0 "not 42")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

@@ -20,7 +20,7 @@ fn outermost(syntax q: string) -> string {
 
 val atModule = outer @`module`;
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(atModule);
     print(outer @`body`);
     print(outermost @`chain`);

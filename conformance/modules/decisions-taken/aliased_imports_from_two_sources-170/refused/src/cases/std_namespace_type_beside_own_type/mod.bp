@@ -10,6 +10,6 @@ fn make() -> collections.Dict<string, i32> {
     return collections.Dict.empty();
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Dict(n: 1).n);
 }

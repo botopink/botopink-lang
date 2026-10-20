@@ -31,7 +31,7 @@ fn describe<T>(r: Registry, t: type<T>) -> string {
     return if (r.has(t)) "yes" else "no";
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val order: unknown = Orders(total: 9);
     val circle: unknown = Shape.Circle(r: 1);
     val r = Registry(entries: [order, circle]);

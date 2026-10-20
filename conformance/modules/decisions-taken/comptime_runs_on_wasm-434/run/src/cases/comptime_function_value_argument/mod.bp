@@ -35,7 +35,7 @@ fn summary(text: string) -> string {
         + apply(double, 4).toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val a = comptime summary("abcd");
     print(a);
     print(a == summary("abcd"));

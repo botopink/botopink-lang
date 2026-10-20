@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val greeting = "hello";
-fn main() {
+fn main() -> void {
     print(greeting);
 }
 

@@ -9,7 +9,7 @@ import {marks.tagged};
 import {hints.usage};
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     print(usage());
     for (@TypeInfo.all(with: tagged)) { e ->
         print(e.module + " " + e.name);

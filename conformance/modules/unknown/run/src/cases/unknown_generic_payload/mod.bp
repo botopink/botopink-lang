@@ -60,7 +60,7 @@ fn orNone(m: Maybe<i32>) -> i32 | string {
     };
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val s: unknown = Maybe.Some(value: "abc");
     val n: unknown = Maybe.Some(value: 5);
     val x: unknown = 1;

@@ -5,19 +5,19 @@
 import {io.terminal.print} from "std";
 
 behavior Shuttable {
-    fn shut(self: Self);
+    fn shut(self: Self) -> void;
 }
 
 type Door(name: string) implement Shuttable {
-    fn shut(self: Self) {
+    fn shut(self: Self) -> void {
         print("shut " + self.name);
     }
 }
 
-fn doShut(c: Shuttable) {
+fn doShut(c: Shuttable) -> void {
     c.shut();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     doShut(Door(name: "front"));
 }

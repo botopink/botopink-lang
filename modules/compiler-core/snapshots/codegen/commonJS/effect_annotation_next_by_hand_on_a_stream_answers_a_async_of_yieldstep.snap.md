@@ -19,7 +19,7 @@ async fn run() -> Async<void> {
     print(stepText(await s.next()));
     print(stepText(await s.next()));
 }
-pub fn main() {
+pub fn main() -> void {
     run();
 }
 

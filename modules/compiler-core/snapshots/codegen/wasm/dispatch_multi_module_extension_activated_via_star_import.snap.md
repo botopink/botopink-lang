@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- pond.bp
 ```botopink
 val Swimmer = behavior {
-    fn swim(self: Self);
+    fn swim(self: Self) -> i32;
 }
 pub type Pato(id: i32)
 pub val PatoNada = implement Swimmer for Pato {
-    fn swim(self: Self) {
+    fn swim(self: Self) -> i32 {
         return self.id;
     }
 }
@@ -31,7 +31,7 @@ pub val PatoNada = implement Swimmer for Pato {
 ----- SOURCE CODE -- main.bp
 ```botopink
 import {pond.Pato, pond.PatoNada*};
-fn main() {
+fn main() -> void {
     val donald = Pato(2);
     print(donald.swim());
 }

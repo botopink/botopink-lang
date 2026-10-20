@@ -248,7 +248,7 @@ BP
     # runs each, and the red one names its candidate.
     for c in green red; do
         mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot/output"
-        printf 'import {io.terminal.print} from "std";\n\npub fn main() {\n    print("ok");\n}\n' >"$suite/modules/$c/src/main.bp"
+        printf 'import {io.terminal.print} from "std";\n\npub fn main() -> void {\n    print("ok");\n}\n' >"$suite/modules/$c/src/main.bp"
         printf '{ "name": "%s", "version": "0.0.1", "src": "src/" }\n' "$c" >"$suite/modules/$c/botopink.json"
     done
     printf 'botopink-cell 1\nout ok\n' >"$suite/modules/green/snapshot/output/main.snap"

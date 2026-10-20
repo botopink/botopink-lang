@@ -22,7 +22,7 @@ fn ident<T>(x: T) -> T {
     return x;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b = Box(value: 41);
     print(b.value + 1);
     print(b.get());

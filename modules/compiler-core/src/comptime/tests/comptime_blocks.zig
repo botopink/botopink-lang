@@ -42,7 +42,7 @@ test "decision 788: two top-level blocks print at build in the order written, th
         \\    f("a");
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("main");
         \\}
         \\
@@ -65,7 +65,7 @@ test "decision 788: a block writes to no declaration — `compiler.setMeta` is r
         \\    compiler.setMeta(1);
         \\}
         \\
-        \\pub fn main() {
+        \\pub fn main() -> void {
         \\    print("main");
         \\}
         \\
@@ -91,7 +91,7 @@ test "decision 788: a block is read onto a decorator over an anchor, and a priva
         \\    f("a");
         \\    g("b");
         \\}
-        \\pub fn main() {}
+        \\pub fn main() -> void {}
     );
     var p = Parser.init(try lx.scanAll(arena));
     const program = try p.parse(arena);

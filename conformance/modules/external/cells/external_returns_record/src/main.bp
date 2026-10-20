@@ -9,6 +9,6 @@ fn distance(p: Point) -> i32 {
     return p.x + p.y; // 16 on every backend that has a host
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(distance(hostPoint())); // 16
 }

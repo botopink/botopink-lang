@@ -19,7 +19,7 @@ fn radiusQualified(s: Shape) -> i32 {
     return r;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(radius(Shape.Circle(r: 3)));
     print(radius(Shape.Square(side: 2)));
     print(radiusQualified(Shape.Circle(r: 5)));

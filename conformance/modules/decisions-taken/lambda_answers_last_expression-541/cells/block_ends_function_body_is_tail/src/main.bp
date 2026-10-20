@@ -15,7 +15,7 @@ fn greeting(loud: bool) -> string {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(answer());
     print(greeting(true));
     print(greeting(false));

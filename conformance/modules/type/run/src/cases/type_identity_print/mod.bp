@@ -12,7 +12,7 @@ type Shape {
     Circle(radius: i32),
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Point(x: 1, y: 2));
     print(Shape.Dot);
     print(Shape.Circle(radius: 4));

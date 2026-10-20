@@ -22,7 +22,7 @@ fn later(n: i32) -> ?i64 {
     return null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val a: i64 = 4294967295;
     print(a);
     print(a / 2);

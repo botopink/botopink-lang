@@ -7,6 +7,6 @@ fn flag(present: bool) -> ?bool {
     return if (present) true else null;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(flag(true) ?? false && true);
 }

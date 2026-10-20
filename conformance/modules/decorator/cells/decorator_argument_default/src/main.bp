@@ -14,7 +14,7 @@ fn note(
     syntax decl: unknown,
     comptime text: string = "n",
     comptime size: f64 = 2.5,
-) {
+) -> void {
     @emit(
         "pub fn "
             + compiler.name(decl)!
@@ -46,7 +46,7 @@ fn fourth() -> i32 {
     return 4;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(firstMark());
     print(secondMark());
     print(thirdMark());

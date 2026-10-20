@@ -20,7 +20,7 @@ fn passes() -> Result<void, compiler.Refused> {
     return;
 }
 
-pub fn main() {
+pub fn main() -> void {
     // Handled in the region.
     try comptime compiler.load("src/cases/broken.bp") catch { r ->
         for (r.diagnostics) { d ->

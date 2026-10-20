@@ -7,6 +7,6 @@ import {bpp, io.terminal.print} from "std";
 #[bpp.html]
 pub val page = 1;
 
-pub fn main() {
+pub fn main() -> void {
     print(page);
 }

@@ -13,7 +13,7 @@ type Invite(
     #[each(lowercased)] #[all([email, lowercased])] hosts: Array<string>,
 )
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Invite.guestsEach());
     print(Invite.hostsEach());
     print(Invite.hostsAll());

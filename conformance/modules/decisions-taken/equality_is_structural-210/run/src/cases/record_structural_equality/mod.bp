@@ -33,7 +33,7 @@ fn same<T>(a: T, b: T) -> bool {
     return a == b;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val built = "Ana,x".split(",").at(0) ?? "";
 
     print(Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30));

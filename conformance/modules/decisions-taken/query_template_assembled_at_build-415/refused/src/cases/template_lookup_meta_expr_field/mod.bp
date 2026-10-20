@@ -7,7 +7,7 @@ import {compiler, io.terminal.print} from "std";
 
 type Check(message: string, rule: fn(n: i32) -> bool)
 
-fn check(syntax decl: unknown, comptime message: string, syntax rule: fn(n: i32) -> bool) {
+fn check(syntax decl: unknown, comptime message: string, syntax rule: fn(n: i32) -> bool) -> void {
     compiler.addMeta(Check(message: message, rule: rule));
 }
 
@@ -20,6 +20,6 @@ fn rules(syntax q: string) -> i32 {
     return compiler.build(found.length.toString());
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(rules @`Amount`);
 }

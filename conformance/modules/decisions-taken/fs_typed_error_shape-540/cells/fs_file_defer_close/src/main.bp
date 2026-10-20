@@ -23,18 +23,18 @@ fn failsAfterOpen(path: string) -> Result<string, fs.FsError> {
 // `Closeable` is std's, ambient as `Display` is: a type of the program writes
 // `implement Closeable`, and its `defer t.close()` runs when the block ends.
 type Tally(name: string) implement Closeable {
-    pub fn close(self: Self) {
+    pub fn close(self: Self) -> void {
         print("closed " + self.name);
     }
 }
 
-fn scoped() {
+fn scoped() -> void {
     val t = Tally(name: "tally");
     defer t.close();
     print("working");
 }
 
-pub fn main() {
+pub fn main() -> void {
     fs.removeTree("closing");
     fs.mkdirRecursive("closing");
     fs.writeText("closing/file.txt", "hello world");

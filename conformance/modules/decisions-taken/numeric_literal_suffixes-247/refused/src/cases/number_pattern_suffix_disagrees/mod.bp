@@ -10,6 +10,6 @@ fn kind(n: i32) -> string {
     };
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(kind(1));
 }

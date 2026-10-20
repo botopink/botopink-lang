@@ -18,14 +18,14 @@ fn find(key: string) -> ?i32 {
     return if (key == "a") 1 else null;
 }
 
-fn show(r: Result<i32, Failure>) {
+fn show(r: Result<i32, Failure>) -> void {
     case r {
         Ok(v) -> print("Ok " + v.toString());
         Error(f) -> print("Error " + f.kind);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(failure.attempt({ -> notReady() }));
     show(failure.attempt({ -> find("a")! }));
     show(failure.attempt({ -> find("b")! }));

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn main() {
+pub fn main() -> void {
     val xs = [3, 1, 2];
     print(xs.reverse());
     print(xs.slice(1));

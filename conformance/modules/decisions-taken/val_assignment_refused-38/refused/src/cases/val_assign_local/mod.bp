@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x: i32 = 0;
     x = 1;
     print(x);

@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 val decl = 99;
-pub fn component(syntax decl: unknown) {
+pub fn component(syntax decl: unknown) -> void {
     var args = "";
     items.forEach({ f ->
         use(decl, args, f);

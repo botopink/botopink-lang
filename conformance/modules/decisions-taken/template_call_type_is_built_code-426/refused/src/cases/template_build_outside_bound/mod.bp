@@ -8,6 +8,6 @@ fn count(syntax q: string) -> i32 {
     return compiler.build("\"" + compiler.text(q) + "\"");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(count @`seven`);
 }

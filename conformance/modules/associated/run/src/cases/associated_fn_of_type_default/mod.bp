@@ -10,7 +10,7 @@ type Bag(items: string[]) {
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(Bag.of("p").items.join(","));
     print(Bag.of(y: "b", x: "a").items.join(","));
     print(Bag.of("x", "y").items.join(","));

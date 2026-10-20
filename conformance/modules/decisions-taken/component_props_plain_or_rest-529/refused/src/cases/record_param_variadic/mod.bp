@@ -10,6 +10,6 @@ fn Card(..props: CardProps, ..rest: string[]) -> string {
     return props.title;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(Card(title: "a"));
 }

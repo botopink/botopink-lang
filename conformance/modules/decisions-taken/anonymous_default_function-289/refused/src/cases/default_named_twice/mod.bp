@@ -10,6 +10,6 @@ pub default fn render() -> string {
 
 pub default render;
 
-pub fn main() {
+pub fn main() -> void {
     print(render());
 }

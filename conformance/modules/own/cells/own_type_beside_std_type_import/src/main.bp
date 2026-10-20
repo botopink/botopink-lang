@@ -16,7 +16,7 @@ fn count(d: D<string, i32>) -> i32 {
     return d.size();
 }
 
-pub fn main() {
+pub fn main() -> void {
     val own = Dict(initialMs: 5);
     val table = D.empty().insert("k", 7);
     print(own.initialMs);

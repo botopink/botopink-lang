@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.fn_expr_typed_anywhere.runCase();
     cases.fn_expr_typed_in_record_field.runCase();
 }

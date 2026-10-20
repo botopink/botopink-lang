@@ -12,6 +12,6 @@ pub fn house() -> string {
     return "house";
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(looks @`page`);
 }

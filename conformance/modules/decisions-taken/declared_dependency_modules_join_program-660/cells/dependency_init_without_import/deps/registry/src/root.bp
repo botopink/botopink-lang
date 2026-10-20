@@ -5,7 +5,7 @@ import {compiler} from "std";
 
 var entries: string[] = [];
 
-pub fn register(entry: string) {
+pub fn register(entry: string) -> void {
     entries.push(entry);
 }
 
@@ -13,7 +13,7 @@ pub fn names() -> string[] {
     return entries;
 }
 
-pub fn registered(syntax decl: unknown) {
+pub fn registered(syntax decl: unknown) -> void {
     val name = compiler.name(decl)!;
     compiler.init({ -> register(name) });
 }

@@ -2,15 +2,15 @@
 
 import {compiler} from "std";
 
-pub fn email(syntax decl: unknown) {
+pub fn email(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }
 
-pub fn lowercased(syntax decl: unknown) {
+pub fn lowercased(syntax decl: unknown) -> void {
     val _n = compiler.name(decl)!;
 }
 
-pub fn each(syntax decl: unknown, comptime marker: Decorator) {
+pub fn each(syntax decl: unknown, comptime marker: Decorator) -> void {
     val which = if (marker.same(email))
         "email"
     else if (marker.same(lowercased))
@@ -22,7 +22,7 @@ pub fn each(syntax decl: unknown, comptime marker: Decorator) {
     });
 }
 
-pub fn all(syntax decl: unknown, comptime markers: Decorator[]) {
+pub fn all(syntax decl: unknown, comptime markers: Decorator[]) -> void {
     val n = markers.filter({ m -> m.same(email) || m.same(lowercased) }).length;
     compiler.addMember(compiler.name(decl)! + "All", fn() -> i32 {
         return n;

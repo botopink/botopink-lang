@@ -19,7 +19,7 @@ fn mark<T>(
     comptime limits: Limits,
     comptime key: Type.Field<T>,
     comptime tags: string[],
-) {
+) -> void {
     val shown = if (loud) label.toUpper() else label;
     val lvl = if (level == Level.High) "high" else "low";
     compiler.setMeta(
@@ -47,7 +47,7 @@ fn shout(syntax q: string) -> string {
     return loud;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val mark = comptime compiler.typeInfo(City).meta(Mark);
     if (mark) {
         m ->

@@ -36,7 +36,7 @@ fn tripleOrZero(n: i64) -> i64 {
     return try triple(n) catch 0l;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(half(3.0).unwrapOr(0.0));
     print(half(-3.0).unwrapOr(0.5));
     print(halfOr(5.0));

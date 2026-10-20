@@ -31,7 +31,7 @@ fn sum(xs: i32[]) -> Result<i32, string> {
     return total;
 }
 
-fn printAll(xs: i32[]) {
+fn printAll(xs: i32[]) -> void {
     for (parseAll(xs)) { r ->
         case r {
             Ok(v) -> print(v);
@@ -40,14 +40,14 @@ fn printAll(xs: i32[]) {
     }
 }
 
-fn show(r: Result<i32, string>) {
+fn show(r: Result<i32, string>) -> void {
     case r {
         Ok(v) -> print("sum " + v.toString());
         Error(e) -> print("sum failed: " + e);
     }
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     show(sum([1, 2, 3]));
     show(sum([1, -2, 3, -4]));
     printAll([1, -2, 3]);

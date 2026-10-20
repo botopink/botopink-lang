@@ -17,7 +17,7 @@ declare fn copyText(s: string) -> string;
 #[compiler.external(.JavaScript("$0.slice(undefined, 2)"))]
 declare fn headTwo(xs: i32[]) -> i32[];
 
-pub fn main() {
+pub fn main() -> void {
     val xs: i32[] = [1, 2, 3];
     print(copyAll(xs));
     print(copyText("abc"));

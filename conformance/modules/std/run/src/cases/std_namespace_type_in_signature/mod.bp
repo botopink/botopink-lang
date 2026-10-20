@@ -13,7 +13,7 @@ fn sizeOf(d: collections.Dict<string, i32>) -> i32 {
     return d.size();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val d: collections.Dict<string, i32> = make();
     print(sizeOf(d));
 }

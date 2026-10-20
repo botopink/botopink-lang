@@ -9,7 +9,7 @@ async fn load() -> Async<i32> {
     return 4;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val t = load();
     val doubled = t.map({ n -> n * 2 });
     print(doubled);

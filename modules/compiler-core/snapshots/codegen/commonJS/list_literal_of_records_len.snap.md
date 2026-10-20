@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type P(x: i32, y: i32)
-fn main() {
+fn main() -> void {
     val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
     print(pts.len);
 }

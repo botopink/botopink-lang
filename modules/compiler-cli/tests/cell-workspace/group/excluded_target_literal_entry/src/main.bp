@@ -10,7 +10,7 @@ import {compiler, io.terminal.print} from "std";
 #[compiler.external(.JavaScript("'host'"), .Erlang("<<\"host\">>"))]
 declare fn host() -> string;
 
-pub fn main() {
+pub fn main() -> void {
     print(word());
     print(host());
 }

@@ -7,7 +7,7 @@ import {io.terminal.print} from "std";
 type Token  { Color { Red { 100, 500 } } }
 type Border { Color { Blue { 100 } } }
 
-pub fn main() {
+pub fn main() -> void {
     val a = .Color.Green.100;
     print(0);
 }

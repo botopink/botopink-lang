@@ -11,7 +11,7 @@ type Route<P>(params: P)
 fn page<P>(
     syntax decl: fn(route: Route<P>) -> View,
     comptime seg: string,
-) {
+) -> void {
     compiler.setMeta(Page(seg: seg));
 }
 
@@ -20,7 +20,7 @@ fn blog(route: Route<string>) -> string {
     return route.params;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(blog(Route(params: "x")));
 }
 

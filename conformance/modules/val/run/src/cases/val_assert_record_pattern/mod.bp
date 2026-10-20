@@ -31,7 +31,7 @@ fn byLabel(p: Person | i32) -> string {
     return who + " is " + years.toString();
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(describe(Person(name: "ann", age: 3)));
     print(describe(7));
     print(byLabel(Person(name: "bo", age: 9)));

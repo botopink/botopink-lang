@@ -3,7 +3,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val name = "SP";
     val pop = 12;
     print(#(1, "a"));

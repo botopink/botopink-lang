@@ -2,7 +2,7 @@
 ```botopink
 val Point = type(x: i32, y: i32);
 val p = Point(x: 1, y: 2);
-fn main() {
+fn main() -> void {
     print(p);
 }
 

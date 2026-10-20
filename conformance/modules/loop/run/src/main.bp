@@ -1,6 +1,6 @@
 mod cases;
 
-pub fn main() {
+pub fn main() -> void {
     cases.loop_forms.runCase();
     cases.loop_generator_dobros.runCase();
     cases.loop_item_method.runCase();

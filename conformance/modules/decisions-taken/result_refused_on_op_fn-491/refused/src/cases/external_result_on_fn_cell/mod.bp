@@ -11,6 +11,6 @@ fn absBody(x: i32) -> i32 {
 #[compiler.external(.JavaScript(body: absBody, result: true), .Erlang("erlang:abs($0)"), .Wasm(body: absBody))]
 declare fn magnitude(x: i32) -> i32;
 
-pub fn main() {
+pub fn main() -> void {
     print(magnitude(-3));
 }

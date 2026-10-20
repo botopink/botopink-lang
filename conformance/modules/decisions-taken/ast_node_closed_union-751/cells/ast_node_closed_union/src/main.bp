@@ -18,7 +18,7 @@ fn nested(syntax q: string) -> anyvalue {
     return compiler.ast(Call(callee: Name("double"), args: [Text(text: compiler.text(q), size: 1)]));
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(nested @`x`);
     print(whole());
 }

@@ -16,6 +16,6 @@ component fn Widget(empty: bool) -> Component<Element> {
     return Element(count: n);
 }
 
-pub fn main() {
+pub fn main() -> void {
     Widget(false);
 }

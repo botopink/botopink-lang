@@ -14,6 +14,6 @@ import {compiler, io.terminal.print} from "std";
 )]
 declare fn floorOf(x: f64) -> f64;
 
-pub fn main() {
+pub fn main() -> void {
     print(floorOf(2.5));
 }

@@ -15,7 +15,7 @@ fn notReady() -> i32 {
     panic("not implemented");
 }
 
-pub fn main() {
+pub fn main() -> void {
     print("before");
     print(notReady());
 }

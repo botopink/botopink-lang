@@ -4,16 +4,16 @@
 
 import {compiler, io.terminal.print} from "std";
 
-fn on<E>(syntax decl: fn(e: E) -> unknown) {
+fn on<E>(syntax decl: fn(e: E) -> unknown) -> void {
     compiler.setMeta(EventHandler(event: compiler.name(decl)!));
 }
 
 #[on]
-fn wrong() {
+fn wrong() -> void {
     print("no event");
 }
 
-pub fn main() {
+pub fn main() -> void {
     wrong();
 }
 

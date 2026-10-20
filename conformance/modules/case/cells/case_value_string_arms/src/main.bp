@@ -16,7 +16,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x = 5;
 
     val braced = case x {

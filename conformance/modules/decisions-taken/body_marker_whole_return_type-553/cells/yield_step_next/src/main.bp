@@ -50,7 +50,7 @@ async fn run() -> Async<void> {
     print(stepText(await s.next()));
 }
 
-pub fn main() {
+pub fn main() -> void {
     val it = two();
     print(stepText(it.next()));
     print(stepText(it.next()));

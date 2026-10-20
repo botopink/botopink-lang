@@ -39,7 +39,7 @@ fn marks(holds: bool[]) -> string {
     return text;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(marks(values().map({ v -> v is i32 })));
     print(marks(values().map({ v -> v is i8 })));
     print(marks(values().map({ v -> v is u8 })));

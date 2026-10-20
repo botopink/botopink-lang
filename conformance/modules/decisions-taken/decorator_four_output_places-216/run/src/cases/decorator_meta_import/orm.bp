@@ -2,7 +2,7 @@
 
 import {compiler} from "std";
 
-pub fn entity(syntax decl: unknown, comptime table: string) {
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
     compiler.setMeta(Entity(table: table));
 }
 

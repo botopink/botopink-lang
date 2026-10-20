@@ -3,7 +3,7 @@
 fn both(a: bool, b: bool) -> bool {
     return a && b;
 }
-fn main() {
+fn main() -> void {
     print(both(true, false));
 }
 

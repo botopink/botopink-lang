@@ -2,7 +2,7 @@
 ```botopink
 //// This module provides utilities
 
-fn main() {
+fn main() -> void {
     null;
 }
 ```

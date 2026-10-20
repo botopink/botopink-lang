@@ -268,7 +268,7 @@ dispatcher trapped on `feat`; all four failed on the parent binary) —, `module
 on the parent binary) and two pins that held on the parent binary: `modules/decisions-taken/optional_typescript_operators-330/cells/optional_chain_record_fields`
 (`?.` along optional record fields, a member and a method after a link) and `modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_in_lambda`
 (`x!` in a lambda's body, its abort naming the expression inside the lambda).
-144 B-22 adds `modules/fn/run/src/cases/fn_empty_main` (`pub fn main() {}` builds and prints nothing) and
+144 B-22 adds `modules/fn/run/src/cases/fn_empty_main` (`pub fn main() -> void {}` builds and prints nothing) and
 `modules/fn/run/src/cases/fn_empty_body_call` (a `fn` written `{}` called between two prints), four targets (wasm took an
 empty body for a bodyless `declare fn` on the parent binary: no `main` emitted, `compilation failed
 UndefinedCall`, and the call refused).

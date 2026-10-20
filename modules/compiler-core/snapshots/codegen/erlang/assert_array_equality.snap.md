@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn f() {
+fn f() -> void {
     assert [] == [];
 }
 ```

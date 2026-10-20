@@ -4,7 +4,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val last: fn() -> Iter<i32> = { iter ->
         yield 1;
         break 2;

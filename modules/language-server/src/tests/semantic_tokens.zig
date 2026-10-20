@@ -181,7 +181,7 @@ test "semanticTokens: method call vs property access" {
 
 test "semanticTokens: unknown is a builtin type, an invented one is not" {
     const source =
-        \\fn f(a: i32, b: unknown, c: never) { }
+        \\fn f(a: i32, b: unknown, c: never) -> void { }
     ;
     try run(std.testing.allocator, "semantic_tokens_builtin_type_list", source);
 }

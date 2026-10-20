@@ -6,7 +6,7 @@ behavior Number {
     }
 }
 
-fn main() {
+fn main() -> void {
     val n: i32 = 50;
     print(n.clampTo(0, 10));
 }

@@ -22,7 +22,7 @@ fn shout(p: BPolicy) -> string {
 #[stamp]
 type Job(id: i32)
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val x: APolicy = pa.slow();
     val y: BPolicy = pb.named();
     print(pa.msOf(x));

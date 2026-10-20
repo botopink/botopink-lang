@@ -9,21 +9,21 @@ import {compiler, io.terminal.print} from "std";
     .Erlang("""io:format("~ts~n", [$0])"""),
     .Wasm(body: sayBody),
 )]
-declare fn say(line: string);
+declare fn say(line: string) -> void;
 
-fn sayBody(line: string) {
+fn sayBody(line: string) -> void {
     print(line);
 }
 
 type Box(n: i32)
 
-fn banner(comptime rows: i32) {
+fn banner(comptime rows: i32) -> void {
     for (0..rows) { row ->
         say("row " + row.toString());
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     var box = Box(n: 2);
     box = Box(n: box.n + 1);
     banner(box.n);

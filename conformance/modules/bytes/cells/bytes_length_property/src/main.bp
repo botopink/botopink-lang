@@ -14,7 +14,7 @@ fn rawBody() -> Bytes {
     return Bytes.fromUtf8("h").concat(Bytes.fromUtf8("é"));
 }
 
-pub fn main() {
+pub fn main() -> void {
     val b: Bytes = raw();
     print(b.length);
     print(Bytes.fromUtf8("héllo").length);

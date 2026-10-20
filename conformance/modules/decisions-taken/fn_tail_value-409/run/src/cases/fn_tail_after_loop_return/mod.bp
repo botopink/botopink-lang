@@ -30,7 +30,7 @@ fn countdown(n: i32) -> string {
     "reached " + i.toString()
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     print(firstNegative([3, -4, -5]));
     print(firstNegative([1, 2]));
     print(describe(0));

@@ -11,7 +11,7 @@ iter fn counted() -> Iter<i32> {
     yield 2;
 }
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val g = counted();
     print("made");
     print(g.toArray());

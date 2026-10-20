@@ -9,11 +9,11 @@ pub behavior Bean {
     fn make() -> Self;
 }
 
-pub fn service(syntax decl: Bean) {
+pub fn service(syntax decl: Bean) -> void {
     compiler.setMeta(BeanRole(role: "service"));
 }
 
-pub fn repository(syntax decl: Bean) {
+pub fn repository(syntax decl: Bean) -> void {
     compiler.setMeta(BeanRole(role: "repository"));
 }
 
@@ -31,7 +31,7 @@ pub type Orders(table: string) implement Bean {
     }
 }
 
-pub fn main() {
+pub fn main() -> void {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, repository]);
     for (all) { d ->
         print(d.name

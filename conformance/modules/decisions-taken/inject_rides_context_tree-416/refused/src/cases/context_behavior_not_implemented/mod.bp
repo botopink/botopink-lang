@@ -12,6 +12,6 @@ type PlainText(text: string)
 
 pub val repoContext = createContext(PlainText(text: "x"), Repository);
 
-pub fn main() {
+pub fn main() -> void {
     print("unreached");
 }

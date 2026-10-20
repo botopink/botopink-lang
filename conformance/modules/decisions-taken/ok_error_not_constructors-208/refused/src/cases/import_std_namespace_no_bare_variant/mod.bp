@@ -11,6 +11,6 @@ fn parse() -> Result<i32, string> {
     return 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(parse().isOk());
 }

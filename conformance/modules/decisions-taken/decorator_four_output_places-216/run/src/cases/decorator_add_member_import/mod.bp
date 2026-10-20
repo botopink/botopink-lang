@@ -8,7 +8,7 @@ import {cases.decorator_add_member_import.models.City};
 import {cases.decorator_add_member_import.models.City as Town};
 import {io.terminal.print} from "std";
 
-pub fn runCase() {
+pub fn runCase() -> void {
     val c = City.fromRow(["re", "ci", "fe"]);
     print(c.name);
     print(c.size);

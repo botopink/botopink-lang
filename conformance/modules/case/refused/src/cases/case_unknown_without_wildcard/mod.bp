@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 
-pub fn main() {
+pub fn main() -> void {
     val x: unknown = 1;
     val y = case x {
         i32 { n -> "number" }

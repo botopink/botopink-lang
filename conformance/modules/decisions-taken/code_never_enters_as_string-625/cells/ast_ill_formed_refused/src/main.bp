@@ -20,7 +20,7 @@ fn loose(syntax q: string) -> anyvalue {
     return compiler.ast(List([Arg(name: "tag", value: Lit(compiler.text(q)))]));
 }
 
-pub fn main() {
+pub fn main() -> void {
     print(loose @`div`);
     print(missing());
     print(typeNode());

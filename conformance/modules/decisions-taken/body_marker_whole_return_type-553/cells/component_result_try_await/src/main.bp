@@ -29,7 +29,7 @@ component fn tenantFor(id: string) -> Component<Result<string, string>> {
     return try await byRequest(id);
 }
 
-fn show(r: Result<string, string>) {
+fn show(r: Result<string, string>) -> void {
     case r {
         Ok(v) -> print(v);
         Error(e) -> print("error " + e);

@@ -11,7 +11,7 @@ fn double(n: i32) -> i32 {
     return n + 1;
 }
 
-pub fn main() {
+pub fn main() -> void {
     val base = 5;
     print(base.scale @`abc`);
     print(double(10).scale @`a`);

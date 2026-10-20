@@ -17,7 +17,7 @@ component fn label() -> Component<Element> {
     return Element(text: t.mode);
 }
 
-pub fn main() {
+pub fn main() -> void {
     val pre = comptime label();
     print(pre.text);
 }

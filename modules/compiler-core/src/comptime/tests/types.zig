@@ -50,7 +50,7 @@ test "types: array ---- prepend with multiple elements array" {
 
 test "types: assert ---- simple assertion" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert true;
         \\}
     );
@@ -58,7 +58,7 @@ test "types: assert ---- simple assertion" {
 
 test "types: assert ---- with arithmetic comparison" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert 1.0 + 2.0 == 3.0;
         \\}
     );
@@ -66,7 +66,7 @@ test "types: assert ---- with arithmetic comparison" {
 
 test "types: assert ---- with message" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert false, "error message";
         \\}
     );
@@ -74,7 +74,7 @@ test "types: assert ---- with message" {
 
 test "types: assert ---- array equality" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert [] == [];
         \\}
     );
@@ -83,9 +83,10 @@ test "types: assert ---- array equality" {
 test "types: assert pattern ---- with catch throw" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type Person(name: string, age: i32)
-        \\fn f() {
+        \\fn f() -> Result<void, string> {
         \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch throw "is not person";
+        \\    return;
         \\}
     );
 }
@@ -93,7 +94,7 @@ test "types: assert pattern ---- with catch throw" {
 test "types: assert pattern ---- with catch default value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type Person(name: string, age: i32)
-        \\fn f() {
+        \\fn f() -> void {
         \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch Person(name: "bob", age: 12);
         \\}
@@ -102,18 +103,20 @@ test "types: assert pattern ---- with catch default value" {
 
 test "types: assert pattern ---- with string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> Result<void, string> {
         \\    val greeting = "hello";
         \\    val assert "hello" = greeting catch throw "not hello";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with number literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> Result<void, string> {
         \\    val answer = 42;
         \\    val assert 42 = answer catch throw "not 42";
+        \\    return;
         \\}
     );
 }
@@ -123,7 +126,7 @@ test "types: assert pattern ---- with enum variant" {
         \\fn parse() -> Result<i32, string> {
         \\    return 42;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val result = parse();
         \\    val assert Ok(value) = result;
         \\    print(value);
@@ -135,25 +138,27 @@ test "types: assert pattern ---- with enum variant" {
 
 test "types: assert pattern ---- with empty list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> Result<void, string> {
         \\    val list: i32[] = [];
         \\    val assert [] = list catch throw "not empty";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with multiple element list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> Result<void, string> {
         \\    val numbers = [1, 2, 3];
         \\    val assert [1, 2, 3] = numbers catch throw "not matching";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with list and rest" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    val items = [1, 2, 3, 4];
         \\    val assert [first, second, ..rest] = items catch [];
         \\}
@@ -168,7 +173,7 @@ test "types: tuple literal infers element types" {
 
 test "types: tuple destructuring binds variables" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn extract() {
+        \\fn extract() -> void {
         \\    val #(first, second) = #(1, "hello");
         \\}
     );
@@ -190,7 +195,7 @@ test "types: pipeline ---- simple chain" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn double(x: i32) -> i32 { return x * 2; }
         \\fn inc(x: i32) -> i32 { return x + 1; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val result = 1 |> double |> inc;
         \\}
     );
@@ -201,7 +206,7 @@ test "types: pipeline ---- multiple parameters" {
         \\fn add(a: i32, b: i32) -> i32 { return a + b; }
         \\fn multiply(a: i32, b: i32) -> i32 { return a * b; }
         \\fn format(value: i32, prefix: string, suffix: string) -> string { return prefix + value + suffix; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val result = 5 |> add(3) |> multiply(2) |> format("Result: ", " !");
         \\}
     );
@@ -210,7 +215,7 @@ test "types: pipeline ---- multiple parameters" {
 test "types: comment ---- single line" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\// This is a comment
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -229,7 +234,7 @@ test "types: module comment ---- top of file" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\//// This module provides utilities
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -287,7 +292,7 @@ test "types: generator fn ---- a for inside it feeds its yields" {
 
 test "types: assign ---- plusEq on var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn increment() {
+        \\fn increment() -> void {
         \\    var count = 0;
         \\    count += 1;
         \\}
@@ -303,7 +308,7 @@ test "types: self ---- field access in method" {
         \\        return self.x + self.y;
         \\    }
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    print(Point(x: 1, y: 2).sum());
         \\}
         \\
