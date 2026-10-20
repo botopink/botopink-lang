@@ -1,0 +1,10 @@
+//// Decision 805 (6) — a value or function whose name starts with `__bp_` is
+//// the compiler's; a local `val` of it is refused at the name,
+//// `reserved-name`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val __bp_count = 1;
+    print(__bp_count);
+}

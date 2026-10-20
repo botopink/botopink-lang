@@ -637,6 +637,7 @@ fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envM
 pub const asset_decl_src = embedMod.decl_src;
 const embedMod = @import("comptime/embed.zig");
 const loadMod = @import("comptime/load.zig");
+const reservedNames = @import("comptime/reserved_names.zig");
 
 /// The records the compiler splices into the module that uses them
 /// (`withSourceLocationDecl`, `withDeclaredDecls`, `withAssetDecl`): each is a
@@ -1843,6 +1844,12 @@ fn analyzeSource(
         // library call must not write to stderr — a test runner reads it.
         error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
+    };
+    // Decision 805 (6) — a name the compiler keeps for itself, refused as
+    // written (the first pass; the re-analysis reads the same text spliced).
+    if (!skip_invoke and !mod.std_member and !loadMod.isLoadedPackage(mod.package)) if (try reservedNames.check(arena, source, parsed_source)) |te| {
+        env.deinit();
+        return .{ .typeError = te };
     };
     // Decision 551 — the queries a call leaving a catalogue default out is
     // given (`fillCatalogueDefaults`): this module then reads `@TypeInfo.all`.

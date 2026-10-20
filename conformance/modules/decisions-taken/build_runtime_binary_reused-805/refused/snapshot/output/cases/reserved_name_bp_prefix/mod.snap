@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: reserved-name: `__bp_count` is reserved for the compiler (a name starting with `__bp_` is the compiler's)
+at src/cases/reserved_name_bp_prefix/mod.bp:8:5

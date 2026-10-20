@@ -367,6 +367,9 @@ pub const callee_not_a_function: []const u8 = "callee-not-a-function";
 /// the first (decision 152, 01c-d). A binding in an inner block is a new
 /// scope and may shadow.
 pub const binding_redeclared: []const u8 = "binding-redeclared";
+/// Decision 805 (6) — a hand-written name holding `$`, starting `__bp_` (a
+/// value) or `Bp__` (a type): the compiler's own spellings.
+pub const reserved_name: []const u8 = "reserved-name";
 /// Decision 148 (lg-b) — a lambda that is neither a `forEach` body nor a
 /// local closure called at statement position writes a captured `var`.
 pub const captured_var_write: []const u8 = "captured-var-write";
@@ -968,6 +971,7 @@ pub const all_codes = [_][]const u8{
     type_alias_name_taken,
     callee_not_a_function,
     binding_redeclared,
+    reserved_name,
     block_not_function,
     block_void_value,
     block_break_value,

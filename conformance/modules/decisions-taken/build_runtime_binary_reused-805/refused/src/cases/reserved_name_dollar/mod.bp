@@ -1,0 +1,13 @@
+//// Decision 805 (6) — a hand-written name holding `$` is the specialiser's
+//// (`pad_$1`); written between backticks (561) it is refused at the name,
+//// `reserved-name`.
+
+import {io.terminal.print} from "std";
+
+fn `pad_$1`(s: string) -> string {
+    return s;
+}
+
+pub fn main() -> void {
+    print(`pad_$1`("a"));
+}
