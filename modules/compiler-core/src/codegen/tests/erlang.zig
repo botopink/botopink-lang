@@ -44,6 +44,41 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
     try h.assertErlangRunLog(alloc, src.items, "[1, 2]\nab\n", &.{"'__bp_prim_append'(Out, [X])"});
 }
 
+test "erlang: a prelude static's body ignores what inference recorded at the program's line and column" {
+    // The associated twin of the test above. `array.repeat`'s erlang cell is
+    // `body: arrayRepeatBody`, emitted into the consuming module as
+    // `array_repeat/2`; a program whose own `s.trim()` sat at the line and
+    // column of the body's inner `half.append(half)` made that call
+    // `append(Half, Half)` — undefined, `erlc` refused the module (validation's
+    // `decorators` met it with a `t.indexOf("<")`).
+    const alloc = std.testing.allocator;
+    const marker = "half.append(half).append([value])";
+    const at = std.mem.indexOf(u8, prelude.primitives, marker) orelse return error.PreludeMarkerMoved;
+    const line_start = if (std.mem.lastIndexOfScalar(u8, prelude.primitives[0..at], '\n')) |nl| nl + 1 else 0;
+    const line = std.mem.count(u8, prelude.primitives[0..at], "\n") + 1;
+    // The inner call's column is its `.`; `print(s.trim())`'s `.` is 7 past the pad.
+    const dot = at + "half".len - line_start;
+    try std.testing.expect(dot >= 7 and line > 4);
+
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    defer src.deinit(alloc);
+    try src.appendSlice(alloc,
+        \\pub fn main() -> void {
+        \\    val s = " ab ";
+        \\    print(array.repeat("a", 3).join(","));
+        \\
+    );
+    for (4..line) |_| try src.appendSlice(alloc, "    //\n");
+    try src.appendNTimes(alloc, ' ', dot - 7);
+    try src.appendSlice(alloc,
+        \\print(s.trim());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    try h.assertErlangRunLog(alloc, src.items, "a,a,a\nab\n", &.{"'__bp_prim_append'('__bp_prim_append'(Half, Half), [Value])"});
+}
+
 test "erlang: a default fn body lowers a local's method by the kind its declared types give it" {
     // Inference records no lowering inside an interface `default fn` body, so a
     // method on one of its locals was the bare local call — `unwrapOr(F, D)`,

@@ -12466,6 +12466,23 @@ const Emitter = struct {
             var mbuf: [256]u8 = undefined;
             const mangled = interfaceAssocAtom(&mbuf, i.name, m.name) catch continue;
             try out.append(b.arena, .blank);
+            // A prelude behavior's body (`array.repeat`'s `arrayRepeatBody`) is
+            // `primitives.bp`'s text, and inference's tables are keyed by a
+            // location with no file: what the consuming module recorded at the
+            // same line and column is not the body's (a `t.indexOf("<")` of
+            // validation's `decorators` at the inner `half.append(half)`'s place
+            // made it a bare `append(Half, Half)`, undefined). Lowered without
+            // them, as `instanceDefaultForm` lowers a prelude default.
+            const saved_lowerings = this.instance_lowerings;
+            const saved_rewrites = this.rewrites;
+            defer {
+                this.instance_lowerings = saved_lowerings;
+                this.rewrites = saved_rewrites;
+            }
+            if (slicesIntoPrelude(m.name)) {
+                this.instance_lowerings = .init(this.alloc);
+                this.rewrites = .init(this.alloc);
+            }
             try this.fnForms(b, out, .{
                 .isPub = false,
                 .name = mangled,
