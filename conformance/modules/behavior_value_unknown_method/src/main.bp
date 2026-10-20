@@ -1,0 +1,15 @@
+//// B-162 (decisions 523, 791) — a task has no methods: `Async<T>` declares
+//// no members, its value is read by `await`. A method call on an
+//// `Async<string>` is refused at the name, as on any behavior-typed value
+//// whose behavior does not declare it.
+
+import {io.terminal.print} from "std";
+
+async fn name() -> Async<string> {
+    return "n";
+}
+
+pub async fn main() -> Async<void> {
+    val a = name();
+    print(a.zzz());
+}

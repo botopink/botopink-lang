@@ -38,13 +38,13 @@ fn graph(syntax decl: unknown) {
 component fn B(depth: i32) -> Component<Element> {
     if (depth == 0) return Element(text: "b");
     val a = A(depth - 1);
-    return Element(text: a.text);
+    return Element(text: "a");
 }
 
 #[graph]
 pub component fn A(depth: i32) -> Component<Element> {
     val b = B(depth);
-    return Element(text: b.text);
+    return Element(text: "b");
 }
 
 // What `#[graph]` records: one rendered node per entry of `decl.hooks`.

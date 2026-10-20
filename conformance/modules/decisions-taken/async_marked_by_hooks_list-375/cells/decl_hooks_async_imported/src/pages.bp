@@ -25,13 +25,13 @@ fn graph(syntax decl: unknown) {
 pub component fn Page() -> Component<Element> {
     val who = use currentUser();
     val a = ui.Avatar();
-    return Element(text: who + " " + a.text);
+    return Element(text: who + " " + "a");
 }
 
 #[graph]
 pub component fn Wall() -> Component<Element> {
     val p = ui.Posts();
-    return Element(text: p.text);
+    return Element(text: "p");
 }
 
 // What `#[graph]` records: one rendered node per entry of `decl.hooks`.

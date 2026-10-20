@@ -34,7 +34,7 @@ component fn Card(title: string) -> Component<Element> {
 
 component fn Header() -> Component<Element> {
     val c = Card("title");
-    return Element(text: c.text);
+    return Element(text: "c");
 }
 
 component fn Comments() -> Component<Element> {
@@ -46,26 +46,26 @@ component fn Comments() -> Component<Element> {
 pub component fn Page() -> Component<Element> {
     val h = Header();
     val c = Comments();
-    return Element(text: h.text + " " + c.text);
+    return Element(text: "h" + " " + "c");
 }
 
 #[graph]
 pub component fn Ring(depth: i32) -> Component<Element> {
     if (depth == 0) return Element(text: "ring");
     val l = Link(depth - 1);
-    return Element(text: l.text);
+    return Element(text: "l");
 }
 
 component fn Link(depth: i32) -> Component<Element> {
     val text = await loadComments();
     val r = Ring(depth);
-    return Element(text: r.text + " " + text);
+    return Element(text: "r" + " " + text);
 }
 
 #[graph]
 pub component fn Feed(render: fn() -> Component<Element>) -> Component<Element> {
     val item = render();
-    return Element(text: item.text);
+    return Element(text: "item");
 }
 
 // What `#[graph]` records: one rendered node per entry of `decl.hooks`.

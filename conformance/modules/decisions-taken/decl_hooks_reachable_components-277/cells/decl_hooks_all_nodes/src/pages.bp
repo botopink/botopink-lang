@@ -50,13 +50,13 @@ component fn UserMenu() -> Component<Element> {
     val a = Avatar();
     val b = Badge();
     val c = Avatar();
-    return Element(text: a.text + b.text + c.text);
+    return Element(text: "a" + "b" + "c");
 }
 
 #[graph]
 pub component fn Page() -> Component<Element> {
     val m = UserMenu();
-    return Element(text: m.text);
+    return Element(text: "m");
 }
 
 // What `#[graph]` records: one rendered node per entry of `decl.hooks`.

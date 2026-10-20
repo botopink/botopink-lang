@@ -17373,7 +17373,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                             return error.TypeError;
                         },
                     }
-                }
+                } else try refuseBehaviorUnknownMember(env, recvType, ia.member, false, loc);
             }
             if (ia.optional) {
                 const outDeref = outType.deref();
@@ -20196,6 +20196,82 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
         .{ member, member },
     );
     env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+/// The behavior `name` names — a module's own, imported or ambient one
+/// (`Env.behaviorDecl`), else one of `primitives.bp`'s that a compiler rule
+/// reads (`Env.ruleReadBehaviorDecls`: `Async`, `Component`, `Iter`, …).
+fn memberBehaviorDecl(env: *const Env, name: []const u8) ?ast.BehaviorDecl {
+    if (env.behaviorDecl(name)) |d| return d;
+    if (env.typeDefs.contains(name)) return null;
+    return env.ruleReadBehaviorDecls.get(name);
+}
+
+/// Whether behavior `name`, or a behavior it extends, declares `member` — a
+/// field or a method, with or without a body.
+fn behaviorNamesMember(env: *const Env, name: []const u8, member: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = memberBehaviorDecl(env, name) orelse return false;
+    for (decl.fields) |f| if (std.mem.eql(u8, f.name, member)) return true;
+    for (decl.methods) |m| if (std.mem.eql(u8, m.name, member)) return true;
+    for (decl.extends) |parent| if (behaviorNamesMember(env, parent, member, depth + 1)) return true;
+    return false;
+}
+
+/// The members behavior `name` declares, its own and those it extends, in
+/// declaration order, written `` `a`, `b` `` — "" when it declares none.
+fn behaviorMemberList(env: *const Env, out: *std.ArrayListUnmanaged(u8), name: []const u8, depth: usize) InferError!void {
+    if (depth >= 16) return;
+    const decl = memberBehaviorDecl(env, name) orelse return;
+    for (decl.fields) |f| {
+        if (out.items.len > 0) try out.appendSlice(env.arena, ", ");
+        try out.print(env.arena, "`{s}`", .{f.name});
+    }
+    for (decl.methods) |m| {
+        if (out.items.len > 0) try out.appendSlice(env.arena, ", ");
+        try out.print(env.arena, "`{s}`", .{m.name});
+    }
+    for (decl.extends) |parent| try behaviorMemberList(env, out, parent, depth + 1);
+}
+
+/// Decision 596's iterator helpers, which `Iter` declares once B-128 lands.
+const iter_helpers_596 = [_][]const u8{ "take", "drop", "map", "filter", "flatMap", "forEach", "toArray", "reduce", "some", "every", "find" };
+
+/// B-162 — a field read or a method call on a value a behavior types
+/// (`Component<P>`, `Async<string>`, a module's own `behavior Shape`) names a
+/// member the behavior — or one it extends — declares, or an activated
+/// extension of it; anything else is the unknown member it is, refused at the
+/// name. It was typed as a fresh variable and reached the backends (`c.zzz`
+/// compiled, crashing at run time). A receiver typed by a `type` passes, and so
+/// does every other receiver.
+fn refuseBehaviorUnknownMember(env: *Env, recvTy: *T.Type, member: []const u8, is_call: bool, loc: ast.Loc) InferError!void {
+    const t = recvTy.deref();
+    if (t.* != .named) return;
+    const name = t.named.name;
+    if (env.lookupTypeDef(name) != null) return;
+    if (memberBehaviorDecl(env, name) == null) return;
+    if (behaviorNamesMember(env, name, member, 0)) return;
+    // Decision 596 — a sequence's helpers (`take`, `map`, `toArray`, …) are
+    // `Iter`'s, decided but not yet declared in `primitives.bp` (B-128); the
+    // backends answer them today.
+    if (std.mem.eql(u8, name, "Iter") or std.mem.eql(u8, name, "AsyncIter")) {
+        for (iter_helpers_596) |h| if (std.mem.eql(u8, h, member)) return;
+    }
+    var it = env.extensions.iterator();
+    while (it.next()) |e| {
+        const entry = e.value_ptr.*;
+        if (std.mem.eql(u8, entry.target, name) and namesContain(entry.methods, member)) return;
+    }
+    const shown = try snapshotMod.typeNameOf(env.arena, t);
+    var members: std.ArrayListUnmanaged(u8) = .empty;
+    try behaviorMemberList(env, &members, name, 0);
+    const what: []const u8 = if (is_call) "method" else "field";
+    const msg = if (members.items.len == 0)
+        try std.fmt.allocPrint(env.arena, "unknown {s} '{s}' on '{s}': the behavior `{s}` declares no members", .{ what, member, shown, name })
+    else
+        try std.fmt.allocPrint(env.arena, "unknown {s} '{s}' on '{s}': the behavior `{s}` declares {s}", .{ what, member, shown, name, members.items });
+    env.lastError = TypeError.custom(msg, "A value typed by a behavior answers only the members the behavior, and what it extends, declares; a component is resolved by `use c` in a component body or placed in the tree as a child, a task by `await` (decision 791).").withLoc(loc);
     return error.TypeError;
 }
 
@@ -24668,6 +24744,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // refused before the permissive fresh-var tail below, which is
                 // what let `a.len()` check.
                 try refuseUnknownUse(env, recvPtr.getType(), loc, "call a method on");
+                try refuseBehaviorUnknownMember(env, recvPtr.getType(), call.callee, true, loc);
                 // A nominal receiver this module has no declaration of (its
                 // type reached here through an imported fn's return, never
                 // imported itself): record the name, so a backend without

@@ -2847,6 +2847,14 @@ block, as a behavior of the program's own, unless the program declares or import
 value is `InstanceLowering.by_value`. Never emitted. An imported behavior stays unchecked in both forms
 — its members are not visible here.
 
+**A member of a behavior-typed value (B-162).** The rule-read behaviors' declarations are kept too, in
+`Env.ruleReadBehaviorDecls` (`registerBuiltinDecls`, cloned like the ambient ones), read only for their
+members. A field read or a method call on a value a behavior types — `Component<P>`, `Async<string>`, a
+behavior of the program's own — names a field or a method the behavior, or one it extends, declares, or an
+extension of it; anything else is refused at the name (`infer.zig` `refuseBehaviorUnknownMember`: `unknown
+field 'zzz' on 'Component<View>': the behavior `Component` declares `run``) — it used to be typed a fresh
+variable and reach the backends (`modules/behavior_value_unknown_field`, `modules/behavior_value_unknown_method`).
+
 ## A type-qualified call to a type's own method (decision 62)
 
 `Counter.zero()` — a call to an **associated** fn of a registered type, through the type — came back

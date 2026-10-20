@@ -1544,6 +1544,13 @@ pub const Env = struct {
     /// and an inline `implement` of one is checked against its declaration. A
     /// module's own `behavior` of the same name shadows it. Never emitted.
     ambientBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// The `pub behavior`s of `primitives.bp`'s compiler section a compiler
+    /// rule reads by name (`comptime.zig` `rule_read_behaviors`: `Async`,
+    /// `Component`, `Iter`, …), by name. Never a type a program names through
+    /// them; read only for the members each declares, so a field read or a
+    /// method call on a value they type answers a declared member or is
+    /// refused (B-162, `infer.zig` `refuseBehaviorUnknownMember`).
+    ruleReadBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
     /// The `Ok(…)` / `Error(…)` patterns matched against a `@Result` subject,
     /// keyed by the arm's `patternLoc` (a `val assert`'s own loc). The
     /// transform writes each as `Result.Ok` / `Result.Error`, so a backend
@@ -2161,6 +2168,7 @@ pub const Env = struct {
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .ambientBehaviorDecls = try tmpl.ambientBehaviorDecls.clone(arena),
+            .ruleReadBehaviorDecls = try tmpl.ruleReadBehaviorDecls.clone(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),

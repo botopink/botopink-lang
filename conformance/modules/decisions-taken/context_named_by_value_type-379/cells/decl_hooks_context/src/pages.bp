@@ -37,7 +37,7 @@ component fn Label() -> Component<Element> {
 pub component fn App() -> Component<Element> {
     use provide(createContext(Theme(mode: "dark")));
     val l = Label();
-    return Element(text: l.text);
+    return Element(text: "l");
 }
 
 // What `#[contexts]` records: each `use` of `decl.hooks` with its context.

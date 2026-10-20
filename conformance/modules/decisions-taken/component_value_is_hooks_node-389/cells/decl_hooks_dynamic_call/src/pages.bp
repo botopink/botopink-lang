@@ -53,7 +53,7 @@ pub component fn Page(render: fn() -> Component<View>, menu: Menu) -> Component<
     val m = menu.view();
     val cards = [1, 2].map(Card);
     val c = first(cards);
-    return View(text: a.text + m.text + c.text);
+    return View(text: "a" + "m" + "c");
 }
 
 // What `#[graph]` records: the rendered nodes, joined.

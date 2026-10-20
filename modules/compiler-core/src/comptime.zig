@@ -4075,7 +4075,10 @@ fn registerBuiltinDecls(env: *Env) anyerror!void {
             }),
             // Decision 539 (6) — the ambient behaviors a program names with no
             // import (`Env.ambientBehaviorDecls`).
-            .behavior => |b| if (isAmbientBehavior(b)) try env.ambientBehaviorDecls.put(env.arena, b.name, b),
+            .behavior => |b| if (isAmbientBehavior(b))
+                try env.ambientBehaviorDecls.put(env.arena, b.name, b)
+            else if (b.isPub)
+                try env.ruleReadBehaviorDecls.put(env.arena, b.name, b),
             .type_ => |t| for (t.methods) |m| {
                 if (!m.is_declare) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -4216,6 +4219,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         defer env2.deinit();
         try env2.registerBuiltins();
         env2.ambientBehaviorDecls = try env.ambientBehaviorDecls.clone(env.arena);
+        env2.ruleReadBehaviorDecls = try env.ruleReadBehaviorDecls.clone(env.arena);
         // `true`/`false` are bound by `freshEnv` for project envs — the scratch
         // env needs them too (inline `test` bodies in std modules use them).
         try env2.bind("true", try env2.namedType("bool"));
