@@ -20,6 +20,7 @@ test {
     _ = @import("../wat/host_binding.zig");
     _ = @import("../wat/wat_reader.zig");
     _ = @import("../wat/std_leaves.zig");
+    _ = @import("../wat/reach.zig");
 }
 
 // Front 164 s3 — `String.length` and `String.charCodeAt` are `.wat` leaves

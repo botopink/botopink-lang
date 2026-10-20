@@ -2255,9 +2255,10 @@ fn emitWatPass(
             return error.Replan;
         }
     }
-    if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip);
+    var program_range = [2]usize{ program_lo, program_hi };
+    if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip, &program_range);
 
-    if (em.mode == .gc) try em.finishGc(&items, program_lo, program_hi);
+    if (em.mode == .gc) try em.finishGc(&items, program_range[0], program_range[1]);
 
     // WasmGC (front 164 s2, decision 544) — a module declaring GC types needs
     // the host's GC (`wasmtime run -W gc=y`), whatever its bindings name.

@@ -100,7 +100,7 @@ fn callsAny(s: wat.Seq, gone: *const Names) bool {
 /// function that calls one that went. The caller guarantees none of them is
 /// reachable (`reached`), so the module still validates. `alloc` is the arena
 /// `items` was built in.
-pub fn dropCallers(alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(wat.Item), gone_in: Names) !void {
+pub fn dropCallers(alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(wat.Item), gone_in: Names, range: ?*[2]usize) !void {
     var gone = try gone_in.clone(alloc);
     var changed = true;
     while (changed) {
@@ -115,7 +115,14 @@ pub fn dropCallers(alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(wat.
     }
     var keep: usize = 0;
     var dead_stub = false;
-    for (items.items) |*it| {
+    // `range` is a span of `items` (the program's own); it follows the items
+    // that stay, so an index into it is still in bounds after the removal.
+    var new_range: [2]usize = .{ 0, 0 };
+    for (items.items, 0..) |*it, at| {
+        if (range) |r| {
+            if (at == r[0]) new_range[0] = keep;
+            if (at == r[1]) new_range[1] = keep;
+        }
         if (it.* == .func and gone.contains(it.func.name)) continue;
         // The task dispatcher keeps standing: the step of a task nothing
         // starts is gone, and its dispatch arm drops the task instead.
@@ -136,6 +143,11 @@ pub fn dropCallers(alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(wat.
         }
         items.items[keep] = it.*;
         keep += 1;
+    }
+    if (range) |r| {
+        if (r[1] >= items.items.len) new_range[1] = keep;
+        if (r[0] >= items.items.len) new_range[0] = keep;
+        r.* = new_range;
     }
     items.shrinkRetainingCapacity(keep);
     if (dead_stub) try items.append(alloc, .{ .func = .{
@@ -168,3 +180,22 @@ fn dropCalls(alloc: std.mem.Allocator, s: wat.Seq, gone: *const Names) !wat.Seq 
 }
 
 const dead_name = "__bp_dead";
+
+test "dropCallers: the range follows the items that stay" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const lines = try ar.dupe(wat.Line, &.{.{ .instr = .{ .call = "gone" } }});
+    var items: std.ArrayListUnmanaged(wat.Item) = .empty;
+    try items.append(ar, .{ .func = .{ .name = "before" } });
+    try items.append(ar, .{ .func = .{ .name = "gone" } });
+    try items.append(ar, .{ .func = .{ .name = "caller", .body = .{ .lines = lines } } });
+    try items.append(ar, .{ .func = .{ .name = "kept" } });
+    var skip: Names = .empty;
+    try skip.put(ar, "gone", {});
+    var range = [2]usize{ 1, 4 };
+    try dropCallers(ar, &items, skip, &range);
+    try std.testing.expectEqual(@as(usize, 2), items.items.len);
+    try std.testing.expectEqual(@as(usize, 1), range[0]);
+    try std.testing.expectEqual(@as(usize, 2), range[1]);
+}
