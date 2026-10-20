@@ -425,7 +425,7 @@ pub fn codegenEmit(
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
-                const emitted = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
                     // A construct this backend cannot lower reaches the
                     // driver the same way: located, naming the construct,
                     // failing only this module.
@@ -460,7 +460,7 @@ pub fn codegenEmit(
                     if (try testProgram(unit_arena.allocator(), ok.transformed, if (ct.srcPath.len > 0) ct.srcPath else try std.fmt.allocPrint(unit_arena.allocator(), "{s}.bp", .{ct.name}))) |tp| {
                         var unit_missing: ?moduleOutput.MissingExternal = null;
                         var unit_refused: ?Emitter.Refusal = null;
-                        const unit = emitWat(alloc, ct.name, ct.srcPath, tp, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
+                        const unit = emitWat(alloc, ct.name, ct.srcPath, tp, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
                             const diagnostic: moduleOutput.Diagnostic = if (unit_missing) |me|
                                 try me.diagnostic(alloc)
                             else if (unit_refused) |r|
@@ -1514,7 +1514,6 @@ fn emitWat(
     module_name: []const u8,
     src_path: []const u8,
     own_program_in: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked_in: []const Linked,
@@ -1524,13 +1523,13 @@ fn emitWat(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
-    if (emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
+    if (emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
         return gc;
     } else |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => if (gc_debug) std.debug.print("GCERR {s} :: {s}\n", .{ module_name, @errorName(err) }),
     }
-    if (emitWatIn(.linear, false, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused)) |lin| {
+    if (emitWatIn(.linear, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused)) |lin| {
         return lin;
     } else |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -1542,13 +1541,13 @@ fn emitWat(
             // stands when that refuses as well.
             const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
             if (linked_in.len == 0 and !own_dependency) return err;
-            if (emitWatIn(.gc, true, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
+            if (emitWatIn(.gc, true, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
                 clearSlots(alloc, missing, refused);
                 return gc;
             } else |e| if (e == error.OutOfMemory) return e;
             var retry_missing: ?moduleOutput.MissingExternal = null;
             var retry_refused: ?Emitter.Refusal = null;
-            if (emitWatIn(.linear, true, alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, &retry_missing, &retry_refused)) |lin| {
+            if (emitWatIn(.linear, true, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, &retry_missing, &retry_refused)) |lin| {
                 clearSlots(alloc, missing, refused);
                 return lin;
             } else |e| {
@@ -1580,7 +1579,6 @@ fn emitWatIn(
     module_name: []const u8,
     src_path: []const u8,
     own_program_in: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked_in: []const Linked,
@@ -1592,8 +1590,8 @@ fn emitWatIn(
 ) !Emitted {
     var plan: Plan = .{ .mode = mode, .reached_only = reached_only };
     defer plan.deinit(alloc);
-    return emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
-        error.Replan => emitWatPass(alloc, module_name, src_path, own_program_in, comptime_vals, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
+    return emitWatPass(alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan) catch |err| switch (err) {
+        error.Replan => emitWatPass(alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused, &plan),
         else => |e| e,
     };
 }
@@ -1605,7 +1603,6 @@ fn emitWatPass(
     /// failed assert's panic names (decision 527 (2)); empty when unknown.
     src_path: []const u8,
     own_program_in: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked_in: []const Linked,
@@ -1620,7 +1617,7 @@ fn emitWatPass(
     refused: ?*?Emitter.Refusal,
     plan: *Plan,
 ) !Emitted {
-    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, rewrites);
     defer em.deinit();
     em.mode = plan.mode;
     em.cross = cross;
@@ -1642,24 +1639,6 @@ fn emitWatPass(
     const own_program = try scopeCarry.carry(em.arena(), own_program_in);
     const linked = try em.arena().dupe(Linked, linked_in);
     for (linked) |*l| l.program = try scopeCarry.carry(em.arena(), l.program);
-
-    // `val x = comptime { … break v; }` was folded by the comptime pass into
-    // `comptime_vals["ct_<N>"]`, N counting this module's `val`s and `fn`s in
-    // order — the same numbering commonJS reads it by.
-    {
-        var binding_idx: usize = 0;
-        for (own_program.decls) |d| switch (d) {
-            .val => |v| {
-                if (v.value.* == .comptime_) {
-                    const id = try std.fmt.allocPrint(em.arena(), "ct_{d}", .{binding_idx});
-                    if (comptime_vals.get(id)) |text| try em.folded_globals.put(v.name, text);
-                }
-                binding_idx += 1;
-            },
-            .@"fn" => binding_idx += 1,
-            else => {},
-        };
-    }
 
     // The linked modules' declarations come first, minus their entry point,
     // their tests and any name this module defines itself. `owner[i]` is the
@@ -2452,7 +2431,6 @@ const Emitter = struct {
     /// Top-level forms produced so far, in order: the lowered functions, the
     /// module globals and the comments between them.
     items: std.ArrayListUnmanaged(Item) = .empty,
-    cv: std.StringHashMap([]const u8),
 
     cur_result: Repr = .i32,
     /// How the module is lowered (`wat/repr.zig`'s `Mode`): what a reference
@@ -2590,7 +2568,6 @@ const Emitter = struct {
     /// (and cleared) by `lowerLambdaValue`, which types the parameters from it.
     expected_fn: ?ast.TypeRef = null,
     /// Top-level `val` → the text the comptime pass folded its initialiser to.
-    folded_globals: std.StringHashMap([]const u8),
     /// Top-level `val` → record type name, when recovered (`val cfg = record
     /// { … }`), so `cfg.port` reads the right slot.
     global_rec_types: std.StringHashMap([]const u8),
@@ -3190,10 +3167,9 @@ const Emitter = struct {
         return self.refuse(loc, f, args);
     }
 
-    fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+    fn init(alloc: std.mem.Allocator, rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         const em: Emitter = .{
             .alloc = alloc,
-            .cv = cv,
             .locals = std.StringHashMap(Repr).init(alloc),
             .str_locals = std.StringHashMap(void).init(alloc),
             .bool_locals = std.StringHashMap(void).init(alloc),
@@ -3203,7 +3179,6 @@ const Emitter = struct {
             .result_shape_locals = std.StringHashMap(ResultShape).init(alloc),
             .result_subjects = std.StringHashMap(ResultShape).init(alloc),
             .global_rec_types = std.StringHashMap([]const u8).init(alloc),
-            .folded_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_ret_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .opt_locals = std.StringHashMap(OptInfo).init(alloc),
             .narrowed_opts = std.StringHashMap(OptInfo).init(alloc),
@@ -3280,7 +3255,6 @@ const Emitter = struct {
         self.result_shape_locals.deinit();
         self.result_subjects.deinit();
         self.global_rec_types.deinit();
-        self.folded_globals.deinit();
         self.fn_ret_typerefs.deinit();
         self.opt_locals.deinit();
         self.narrowed_opts.deinit();
@@ -3497,9 +3471,6 @@ const Emitter = struct {
                 if (v.typeAnnotation) |ta| {
                     if (isStringTypeRef(ta)) try self.str_globals.put(v.name, {});
                     if (isBoolTypeRef(ta)) try self.bool_globals.put(v.name, {});
-                } else if (self.folded_globals.get(v.name)) |text| {
-                    if (quotedString(text) != null) try self.str_globals.put(v.name, {});
-                    if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) try self.bool_globals.put(v.name, {});
                 } else {
                     // A template expansion or a concatenation is a string as
                     // much as a literal is.
@@ -3660,7 +3631,6 @@ const Emitter = struct {
         if (self.global_types.get(leaf)) |v| try self.global_types.put(alias, v);
         if (self.global_typerefs.get(leaf)) |v| try self.global_typerefs.put(alias, v);
         if (self.global_rec_types.get(leaf)) |v| try self.global_rec_types.put(alias, v);
-        if (self.folded_globals.get(leaf)) |v| try self.folded_globals.put(alias, v);
         if (self.str_globals.contains(leaf)) try self.str_globals.put(alias, {});
         if (self.bool_globals.contains(leaf)) try self.bool_globals.put(alias, {});
         if (self.arr_globals.contains(leaf)) try self.arr_globals.put(alias, {});
@@ -10989,35 +10959,6 @@ const Emitter = struct {
         // A `var` (front 17 step 2) is a mutable global on every path: the two
         // constant paths below declared an immutable one, which `global.set`
         // does not validate against.
-        if (!reset_at_run) if (self.folded_globals.get(v.name)) |text| {
-            if (isNumericLiteral(text)) {
-                try self.item(.{ .global = .{ .name = v.name, .ty = self.vtOf(t), .mutable = v.mutable, .init = try numeralText(self.arena(), text) } });
-                return;
-            }
-            if (quotedString(text)) |str| {
-                if (self.mode == .gc) {
-                    // The string is built at instantiation, with the other
-                    // globals `$__init_globals` fills in.
-                    const lit = try self.arena().create(ast.Expr);
-                    lit.* = .{ .literal = .{ .loc = v.value.getLoc(), .kind = .{ .stringLit = str } } };
-                    var folded = v;
-                    folded.value = lit;
-                    folded.typeAnnotation = null;
-                    try self.item(.{ .global = .{ .name = v.name, .ty = self.vtOf(Repr.string), .mutable = true, .init = "0" } });
-                    try self.deferred_globals.append(self.alloc, folded);
-                    try self.deferred_renames.append(self.alloc, self.global_renames);
-                    try self.deferred_pkg.append(self.alloc, self.loaded_pkg);
-                    return;
-                }
-                const seg = try self.internString(str);
-                try self.item(.{ .global = .{
-                    .name = v.name,
-                    .ty = .i32,
-                    .init = try std.fmt.allocPrint(self.arena(), "{d}", .{seg.offset}),
-                } });
-                return;
-            }
-        };
         if (!reset_at_run) switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
                 // The comptime folder rewrites a folded `val` into a `numberLit`
@@ -11189,11 +11130,6 @@ const Emitter = struct {
     /// rather than an `(global $PI i32 (i32.const 3.14))` parse error.
     fn globalValType(self: *Emitter, v: ast.ValDecl) Repr {
         if (v.typeAnnotation) |ta| return self.reprOf(ta);
-        // A folded float is an f64 — the value the comptime pass computed.
-        if (self.folded_globals.get(v.name)) |text| {
-            if (isNumericLiteral(text)) return numLitType(text);
-            if (self.mode == .gc and quotedString(text) != null) return Repr.string;
-        }
         if (self.mode == .gc and self.isStringExpr(v.value.*)) return Repr.string;
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {

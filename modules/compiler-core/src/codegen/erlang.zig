@@ -771,7 +771,7 @@ pub fn codegenEmit(
                 var scope_enums: std.ArrayListUnmanaged(EnumExport) = .empty;
                 defer scope_enums.deinit(alloc);
                 for (enum_exports.items) |ee| if (scope.holds(ee.module)) try scope_enums.append(alloc, ee);
-                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &scope.cross, scope_enums.items, import_inits.items, &missing, &ambiguous) catch |err| {
+                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &scope.cross, scope_enums.items, import_inits.items, &missing, &ambiguous) catch |err| {
                     const diag: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (ambiguous) |av|
@@ -1916,15 +1916,13 @@ pub fn emitComptimeModule(
     program: ast.Program,
     module: ComptimeModule,
 ) ![]u8 {
-    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
-    defer comptime_vals.deinit();
     var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
     defer rewrites.deinit();
     var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
     defer instance_lowerings.deinit();
     // A comptime module keeps its methods inline (`Emitter.type_units`), so
     // it never has units to hand back.
-    const emitted = try emitErlangModule(alloc, module_name, "", program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
+    const emitted = try emitErlangModule(alloc, module_name, "", program, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
     return emitted.code;
 }
 
@@ -1933,11 +1931,9 @@ pub fn emitComptimeModule(
 /// contributes. `collectPrimErlangDispatch` swallows a prelude parse failure,
 /// which would silently empty the table for every module; tests pin this.
 pub fn primErlangDispatchCount(alloc: std.mem.Allocator) !usize {
-    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
-    defer comptime_vals.deinit();
     var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
     defer rewrites.deinit();
-    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, rewrites);
     var no_decls = [_]ast.DeclKind{};
     try em.collectPrimErlangDispatch(.{ .decls = &no_decls });
     defer {
@@ -1973,7 +1969,6 @@ fn emitErlang(
     /// and an `assert`'s `<file>:<line>` names; empty → `<module>.bp`.
     src_file: []const u8,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
@@ -1989,7 +1984,7 @@ fn emitErlang(
     /// name two enums of the program declare, written where nothing says which.
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
-    return emitErlangModule(alloc, module_name, src_file, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
+    return emitErlangModule(alloc, module_name, src_file, program, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
 }
 
 /// What one source file emits on this backend: its own module and, under
@@ -2007,7 +2002,6 @@ fn emitErlangModule(
     module_name: []const u8,
     src_file: []const u8,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
@@ -2018,7 +2012,7 @@ fn emitErlangModule(
     missing: ?*?moduleOutput.MissingExternal,
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
-    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, rewrites);
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -3353,7 +3347,6 @@ const DeferWatch = struct {
 };
 
 const Emitter = struct {
-    cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
     /// Decision 539 — numbers a `defer`'s reference variable (`__BpDeferRef<n>`).
@@ -3855,9 +3848,8 @@ const Emitter = struct {
 
     const ImportedVal = struct { owner: []const u8, name: []const u8 };
 
-    fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+    fn init(alloc: std.mem.Allocator, rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
-            .cv = cv,
             .alloc = alloc,
             .rewrites = rewrites,
             .ext_names = std.StringHashMap(void).init(alloc),

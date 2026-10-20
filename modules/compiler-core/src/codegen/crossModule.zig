@@ -1940,7 +1940,6 @@ fn typesOnly(alloc: std.mem.Allocator, name: []const u8, decls: []ast.DeclKind) 
     return .{ .name = name, .src = "", .outcome = .{ .ok = .{
         .bindings = &.{},
         .comptime_script = null,
-        .comptime_vals = std.StringHashMap([]const u8).init(alloc),
         .transformed = .{ .decls = decls },
         .type_ids = std.StringHashMap(usize).init(alloc),
         .dispatch_rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc),

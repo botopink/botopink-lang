@@ -70,7 +70,6 @@ pub const TemplateEvalCtx = envMod.TemplateEvalCtx;
 
 pub const ComptimeEvalResult = struct {
     comptime_script: ?[]u8,
-    comptime_vals: std.StringHashMap([]const u8),
 };
 
 /// Per-module result after analysis and comptime evaluation.
@@ -148,7 +147,6 @@ pub const ComptimeOutput = struct {
     pub const OkData = struct {
         bindings: []const infer.TypedBinding,
         comptime_script: ?[]u8,
-        comptime_vals: std.StringHashMap([]const u8),
         /// Transformed program with specialized functions injected, calls rewritten,
         /// comptime args removed, and fully-specialized fns removed.
         transformed: ast.Program,
@@ -4417,14 +4415,19 @@ pub fn evaluateComptime(
     }
 
     if (entries.items.len == 0) {
-        return .{
-            .comptime_script = null,
-            .comptime_vals = std.StringHashMap([]const u8).init(allocator),
-        };
+        return .{ .comptime_script = null };
     }
 
-    const result = try evalMod.evaluate(allocator, entries.items);
-    return .{ .comptime_script = result.script, .comptime_vals = result.values };
+    var result = try evalMod.evaluate(allocator, entries.items);
+    // The listing is all that leaves the fold: a folded value reaches the
+    // backends as the literal the analysis spliced (`srcRewrites`, decision 798).
+    var it = result.values.iterator();
+    while (it.next()) |kv| {
+        allocator.free(kv.key_ptr.*);
+        allocator.free(kv.value_ptr.*);
+    }
+    result.values.deinit();
+    return .{ .comptime_script = result.script };
 }
 
 /// A lifted value as the formatter writes it (`Dict(pairs: [])`), for the
@@ -4445,7 +4448,7 @@ fn liftedText(allocator: std.mem.Allocator, value: *const ast.Expr) ![]const u8 
 // ── LSP entry point: type inference only ─────────────────────────────────────
 
 /// Lex, parse, and infer types for each module **without** evaluating the
-/// ordinary comptime entries (`comptime_script`/`comptime_vals` stay empty).
+/// ordinary comptime entries (`comptime_script` stays empty).
 /// Intended for tooling (LSP, linters).
 ///
 /// `eval_ctx` is opt-in: when null, template functions whose bodies need the
@@ -4457,8 +4460,7 @@ fn liftedText(allocator: std.mem.Allocator, value: *const ast.Expr) ![]const u8 
 /// documented latency cost; callers that must not touch the filesystem/runtime
 /// pass null.
 ///
-/// Returns a `ComptimeSession` whose outputs always have `.ok.comptime_script = null`
-/// and `.ok.comptime_vals` empty. Caller must call `session.deinit(allocator)`.
+/// Returns a `ComptimeSession` whose outputs always have `.ok.comptime_script = null`. Caller must call `session.deinit(allocator)`.
 /// B-139, decision 677 — std's `primitives` module is the prelude
 /// (`registerStdlib`): registered into every environment before any module,
 /// so std's own build, which holds every module under its `src/`, checks it
@@ -4600,7 +4602,6 @@ pub fn compileTypesOnly(
                     if (b.decl == .@"fn") try fn_decls.put(b.name, try syntax_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
                 }
 
-                const empty_vals = std.StringHashMap([]const u8).init(arena_alloc);
                 // Prepend synthetic imports for stdlib modules implicitly used via
                 // array method dispatch (e.g. `xs.isEmpty()` → needs `list` required).
                 const program_for_transform = blk: {
@@ -4635,7 +4636,6 @@ pub fn compileTypesOnly(
                         try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams),
                         fn_decls,
                         std.StringHashMap([]const ast.TypedExpr).init(arena_alloc),
-                        empty_vals,
                         &succ.env.method_lowerings,
                         &succ.env.templateExpansions,
                         &succ.env.srcRewrites,
@@ -4675,7 +4675,6 @@ pub fn compileTypesOnly(
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = null,
-                        .comptime_vals = empty_vals,
                         .transformed = transformed,
                         .type_ids = type_ids,
                         .dispatch_rewrites = dispatch_rewrites,
@@ -5078,7 +5077,7 @@ fn compileOnce(
                 };
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
@@ -5094,7 +5093,6 @@ fn compileOnce(
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = ct.comptime_script,
-                        .comptime_vals = ct.comptime_vals,
                         .transformed = transformed,
                         .type_ids = type_ids,
                         .dispatch_rewrites = dispatch_rewrites,

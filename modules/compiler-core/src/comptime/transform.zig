@@ -120,10 +120,6 @@ const Aggregator = struct {
     total_calls: std.StringHashMap(usize),
     /// fn_name → calls that were actually rewritten to specialized names.
     specialized_calls: std.StringHashMap(usize),
-    /// Comptime evaluation results: "ct_N" → "6.28"
-    comptime_vals: std.StringHashMap([]const u8),
-    /// val_name → ct_id mapping (e.g. "pi" → "ct_0")
-    val_ct_map: std.StringHashMap([]const u8),
     /// Constructor param lists for record / struct / enum-variant types,
     /// populated by `env.ctorParams` (see comptime/env.zig). `rewriteCall`
     /// reads them when the callee misses `fn_decls` so `Config(host: "x")`
@@ -134,7 +130,7 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -147,8 +143,6 @@ const Aggregator = struct {
             .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
             .specialized_calls = std.StringHashMap(usize).init(allocator),
-            .comptime_vals = comptime_vals,
-            .val_ct_map = std.StringHashMap([]const u8).init(allocator),
             .ctor_params = ctor_params,
             .default_injections = default_injections,
         };
@@ -162,12 +156,6 @@ const Aggregator = struct {
         this.spec_cache.dedup.deinit();
         this.total_calls.deinit();
         this.specialized_calls.deinit();
-        this.val_ct_map.deinit();
-    }
-
-    /// Register a val name with its ct_id for comptime value lookup.
-    fn registerCtVal(this: *Aggregator, val_name: []const u8, ct_id: []const u8) !void {
-        try this.val_ct_map.put(val_name, ct_id);
     }
 
     /// Track a call to a fn with comptime params.
@@ -198,7 +186,6 @@ pub fn transform(
     program: ast.Program,
     fn_decls: std.StringHashMap(ast.FnDecl),
     comptime_arrays: std.StringHashMap([]const ast.TypedExpr),
-    comptime_vals: std.StringHashMap([]const u8),
     method_lowerings: *const MethodLowerings,
     template_expansions: *const TemplateExpansions,
     src_rewrites: *const TemplateExpansions,
@@ -214,7 +201,7 @@ pub fn transform(
     local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     embed_call_args: *const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg),
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice, the
@@ -225,11 +212,10 @@ pub fn transform(
     defer empty_sa.deinit();
     var empty_onc = OptionalNullCases.init(allocator);
     defer empty_onc.deinit();
-    const empty_vals = std.StringHashMap([]const u8).init(allocator);
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     agg.result_patterns = result_patterns;
     src_agg.result_patterns = result_patterns;
@@ -247,9 +233,6 @@ pub fn transform(
         for (out_decls.items) |*d| d.deinit(allocator);
         out_decls.deinit(allocator);
     }
-
-    // Track binding index for comptime val lookup.
-    var binding_idx: usize = 0;
 
     for (program.decls) |decl| {
         try out_decls.append(allocator, decl);
@@ -270,20 +253,12 @@ pub fn transform(
             switch (val_decl.value.*) {
                 .comptime_ => |ct| switch (ct.kind) {
                     .comptimeExpr => |inner| {
-                        // Track this val for comptime value lookup.
-                        const ct_id = try std.fmt.allocPrint(allocator, "ct_{d}", .{binding_idx});
-                        agg.registerCtVal(val_decl.name, ct_id) catch return error.OutOfMemory;
                         scanExpr(&agg, fn_decls, comptime_arrays, inner.*) catch return error.OutOfMemory;
                     },
                     else => scanExpr(&agg, fn_decls, comptime_arrays, val_decl.value.*) catch return error.OutOfMemory,
                 },
                 else => scanExpr(&agg, fn_decls, comptime_arrays, val_decl.value.*) catch return error.OutOfMemory,
             }
-        }
-        // Update binding index for val/fn decls.
-        switch (decl) {
-            .val, .@"fn" => binding_idx += 1,
-            else => {},
         }
     }
 
@@ -354,12 +329,6 @@ pub fn transform(
                     spliced.* = rewrite.*;
                     val_decl.value = spliced;
                     rewriteExpr(&agg, fn_decls, comptime_arrays, val_decl.value) catch return error.OutOfMemory;
-                } else if (agg.val_ct_map.get(val_decl.name)) |ct_id| {
-                    if (agg.comptime_vals.get(ct_id)) |lit| {
-                        val_decl.value.deinit(allocator);
-                        allocator.destroy(val_decl.value);
-                        val_decl.value = try makeLiteralExpr(allocator, lit);
-                    }
                 }
             } else {
                 rewriteExpr(&agg, fn_decls, comptime_arrays, val_decl.value) catch return error.OutOfMemory;
@@ -1755,19 +1724,6 @@ fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Create a literal expression (number or string) from a comptime value string.
-fn makeLiteralExpr(allocator: std.mem.Allocator, val: []const u8) !*ast.Expr {
-    const expr = try allocator.create(ast.Expr);
-    // Check if this looks like a JSON string (starts and ends with quotes).
-    const is_json_string = val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"';
-    if (is_json_string) {
-        const inner = try allocator.dupe(u8, val[1 .. val.len - 1]);
-        expr.* = .{ .literal = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .stringLit = inner } } };
-    } else {
-        expr.* = .{ .literal = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .numberLit = try allocator.dupe(u8, val) } } };
-    }
-    return expr;
-}
-
 fn trySpecializeCall(
     agg: *Aggregator,
     fn_name: []const u8,

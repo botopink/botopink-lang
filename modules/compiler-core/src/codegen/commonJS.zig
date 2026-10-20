@@ -38,7 +38,7 @@ const CrossModule = crossModule.CrossModule;
 
 /// Emit JavaScript for each module in `outputs`.
 ///
-/// Frees `comptime_vals` and transfers ownership of `comptime_script`
+/// Transfers ownership of `comptime_script`
 /// into each `ModuleOutput.result`. Call `ComptimeSession.deinit` after this.
 pub fn codegenEmit(
     alloc: std.mem.Allocator,
@@ -136,7 +136,7 @@ pub fn codegenEmit(
                 var dep_inits: std.ArrayListUnmanaged([]const u8) = .empty;
                 defer dep_inits.deinit(alloc);
                 for (dep_mods.items) |o| if (erlangBackend.moduleHasInit(o.outcome.ok.transformed)) try dep_inits.append(alloc, o.name);
-                const emitted = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }, marks_host, dep_inits.items) catch |err| {
+                const emitted = emitJs(alloc, ok.transformed, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &scope.cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }, marks_host, dep_inits.items) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -181,7 +181,6 @@ pub fn codegenEmit(
 fn emitJs(
     alloc: std.mem.Allocator,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
@@ -198,7 +197,7 @@ fn emitJs(
     /// Decisions 660, 677 — the program modules an entry runs first.
     dep_inits: []const []const u8,
 ) !Emitted {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host, dep_inits);
+    return try emitProgramOptsX(alloc, program, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync, marks_host, dep_inits);
 }
 
 /// One module's commonJS: the production module and, under `botopink test`
@@ -245,8 +244,7 @@ fn emitTypeDef(
 /// Converts typed bindings directly to a JavaScript code model
 /// (`codegen/js/js_ast.zig`) that `codegen/js/js_emitter.zig` renders — no JSON
 /// intermediate, no Node.js pipeline, and no target text written here. Comptime
-/// expression values (pre-evaluated by running Node.js and capturing stdout)
-/// are injected via `comptime_vals`.
+/// expression values arrive as literals the analysis spliced into the tree.
 // ── public surface ────────────────────────────────────────────────────────────
 
 /// Returns true when the top-level typed expression is a comptime node.
@@ -354,18 +352,14 @@ pub fn jsIdent(name: []const u8) []const u8 {
 
 /// Emit all declarations as JavaScript source.
 ///
-/// `comptime_vals` maps IDs such as `"ct_0"` to pre-evaluated JS literal
-/// strings such as `"6.28"`.
-///
 /// The `program` is the transformed AST with specialized functions already
 /// injected as regular FnDecl nodes. The backend just lowers what it sees.
 pub fn emitProgram(
     alloc: std.mem.Allocator,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
 ) ![]u8 {
-    return emitProgramOpts(alloc, program, comptime_vals, rewrites, false, "main");
+    return emitProgramOpts(alloc, program, rewrites, false, "main");
 }
 
 // Standalone emit paths (`emitProgram`/`emitProgramOpts`) carry no type-directed
@@ -378,12 +372,11 @@ pub fn emitProgram(
 pub fn emitProgramOpts(
     alloc: std.mem.Allocator,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    const emitted = try emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{}, false, &.{});
+    const emitted = try emitProgramOptsX(alloc, program, rewrites, null, null, test_mode, module_name, "", null, null, .{}, false, &.{});
     if (emitted.test_unit) |u| {
         alloc.free(u.atom);
         alloc.free(u.code);
@@ -490,7 +483,6 @@ const test_runner_source =
 fn emitProgramOptsX(
     alloc: std.mem.Allocator,
     program: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
@@ -509,7 +501,7 @@ fn emitProgramOptsX(
 ) !Emitted {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
+    var em = Emitter.emitterInit(alloc, arena.allocator(), rewrites);
     defer em.deinit();
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
@@ -542,32 +534,10 @@ fn emitProgramOptsX(
     var comptime_only = std.StringHashMap(void).init(alloc);
     defer comptime_only.deinit();
 
-    // Map val_name → ct_id so we can emit resolved comptime values.
-    // The ct_{N} ID comes from the binding index in the original bindings list.
-    // Val and fn decls each consume one binding slot.
-    var val_ct_map = std.StringHashMap([]const u8).init(alloc);
-    defer {
-        var it = val_ct_map.iterator();
-        while (it.next()) |kv| alloc.free(kv.value_ptr.*);
-        val_ct_map.deinit();
-    }
-    {
-        var binding_idx: usize = 0;
-        for (program.decls) |decl| {
-            switch (decl) {
-                .val => |v| {
-                    if (isComptimeVal(v)) {
-                        try comptime_only.put(v.name, {});
-                        const ct_id = try std.fmt.allocPrint(alloc, "ct_{d}", .{binding_idx});
-                        try val_ct_map.put(v.name, ct_id);
-                    }
-                    binding_idx += 1;
-                },
-                .@"fn" => binding_idx += 1,
-                else => {},
-            }
-        }
-    }
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (isComptimeVal(v)) try comptime_only.put(v.name, {}),
+        else => {},
+    };
 
     // Detect `fn main/0` so we can emit the `_botopink_main` entry wrapper.
     var has_main_0 = false;
@@ -596,22 +566,9 @@ fn emitProgramOptsX(
     for (program.decls) |decl| {
         switch (decl) {
             .val => |v| {
-                if (comptime_only.contains(v.name)) {
-                    // Emit resolved comptime value if available.
-                    const ct_id = val_ct_map.get(v.name) orelse continue;
-                    const lit = comptime_vals.get(ct_id) orelse continue;
-                    try items.append(arena_alloc, .{
-                        .stmt = .{
-                            .decl = .{
-                                .pattern = .{ .ident = v.name },
-                                // A pre-evaluated JS literal, already in target syntax.
-                                .value = .{ .name = lit },
-                            },
-                        },
-                    });
-                    if (v.isPub) try items.append(arena_alloc, .{ .stmt = try em.valExport(v.name) });
-                    continue;
-                }
+                // A `comptime` the analysis spliced is a literal by now; one it
+                // left (tooling that runs no comptime runtime) is not emitted.
+                if (comptime_only.contains(v.name)) continue;
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
                 // A module-level `pub val` is readable from an importing module
                 // (decision 140; the module body is evaluated once, in order, at
@@ -1096,9 +1053,8 @@ fn classifyTry(e: ast.Expr) ?TryForm {
 pub fn emitFnJs(alloc: std.mem.Allocator, out: *std.Io.Writer, f: ast.FnDecl) !void {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    const cv = std.StringHashMap([]const u8).init(alloc);
     const rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
-    var em = Emitter.emitterInit(alloc, arena.allocator(), cv, rewrites);
+    var em = Emitter.emitterInit(alloc, arena.allocator(), rewrites);
     defer em.deinit();
     try jsEmitter.writeStmt(out, try em.buildFn(f), 0);
 }
@@ -1713,7 +1669,6 @@ const Emitter = struct {
     /// Arena the code model is built in — it outlives every build call and is
     /// freed once the module has been rendered.
     b: js.Builder,
-    cv: std.StringHashMap([]const u8),
     current_indent: usize = 0,
     try_seq: usize = 0,
     /// `_assert<N>` counter — a fresh temporary per `val assert` lowering.
@@ -2001,13 +1956,11 @@ const Emitter = struct {
     fn emitterInit(
         alloc: std.mem.Allocator,
         node_arena: std.mem.Allocator,
-        cv: std.StringHashMap([]const u8),
         rewrites: std.AutoHashMap(ast.Loc, []const u8),
     ) Emitter {
         var em = Emitter{
             .alloc = alloc,
             .b = .{ .arena = node_arena },
-            .cv = cv,
             .rewrites = rewrites,
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),

@@ -1820,7 +1820,7 @@ pub fn codegenEmit(
                 // project's.
                 const module_test_mode = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
                 const scope = try scopes.forModule(ct.name);
-                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing) catch |err| {
+                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
                     // `evalTemplate`'s refusal is the one field the emitter
                     // allocates for its caller (`alloc`, not its own arena).
@@ -1959,7 +1959,6 @@ fn emitBeamAsm(
     /// test's failure name; empty outside a CLI build.
     src_path: []const u8,
     program_in: ast.Program,
-    comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     cross: ?*const CrossModule,
@@ -1999,7 +1998,7 @@ fn emitBeamAsm(
     const module_atom = try crossModule.erlAtom(alloc, if (cross) |xc| xc.idOf(module_name) else .of(module_name));
     defer alloc.free(module_atom);
 
-    var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, module_atom, &body_buf.writer, rewrites);
     em.module_path = module_name;
     em.src_path = src_path;
     errdefer if (missing) |slot| {
@@ -2405,7 +2404,6 @@ const Emitter = struct {
     /// which is the rendered atom. `crossModule.typeAtom` is given a path.
     module_path: []const u8 = "",
     out: *std.Io.Writer,
-    cv: std.StringHashMap([]const u8),
 
     /// Policy 3 (`13-module-identity` half 2): every `type` declared in this
     /// file is a BEAM module of its own, `crossModule.typeAtom` — its methods
@@ -2762,12 +2760,11 @@ const Emitter = struct {
     /// call site reached. `name` is the quoted atom the call site calls.
     const PrimShim = struct { callee: []const u8, argc: usize, name: []const u8 };
 
-    fn init(alloc: std.mem.Allocator, module_name: []const u8, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+    fn init(alloc: std.mem.Allocator, module_name: []const u8, out: *std.Io.Writer, rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
             .alloc = alloc,
             .module_name = module_name,
             .out = out,
-            .cv = cv,
             .fn_labels = std.StringHashMap(FnLabels).init(alloc),
             .own_types = std.StringHashMap(void).init(alloc),
             .own_type_methods = std.StringHashMap(void).init(alloc),
@@ -6947,10 +6944,6 @@ const Emitter = struct {
                         if (try self.tryFileCall(n, 0, .non_tail, 0)) return;
                         const labels = try self.fnLabelsFor(n, 0);
                         try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = labels.entry }, 0);
-                        return;
-                    }
-                    if (self.cv.get(n)) |val| {
-                        try beamEmitter.writeMoveOp(self.out, .{ .term = Term.atomOf(val) }, Dst.xr(0));
                         return;
                     }
                     // A module-level `val` is emitted as a 0-arity function, so a
@@ -13393,7 +13386,7 @@ const Emitter = struct {
             const rn = ia.receiver.*.identifier.kind.ident;
             const isPascal = self.typeLike(rn);
             const isSynth = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
-            if ((isPascal or isSynth) and !self.reg_map.contains(rn) and self.cv.get(rn) == null) {
+            if ((isPascal or isSynth) and !self.reg_map.contains(rn)) {
                 const tag = self.qualifiedVariantTagOf(rn, ia.member) orelse ia.member;
                 try beamEmitter.writeMove(self.out, Term.atomOf(tag), dest);
                 return;
