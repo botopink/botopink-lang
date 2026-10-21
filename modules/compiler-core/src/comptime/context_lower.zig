@@ -748,14 +748,14 @@ const Lowering = struct {
         f.kind.marker = null;
     }
 
-    /// `fn(unknown, unknown) -> unknown` — what a component function answers
+    /// `fn(unknown, unknown) -> R` (`unknown` when `R` is not written) — what a component function answers
     /// once lowered: no effect, so no backend wraps it in a Async.
-    fn lambdaType(self: *Lowering) !ast.TypeRef {
+    fn lambdaTypeOf(self: *Lowering, r: ?ast.TypeRef) !ast.TypeRef {
         const params = try self.arena.alloc(ast.TypeRef, 2);
         params[0] = .{ .named = ast.unknown_type_name };
         params[1] = .{ .named = ast.unknown_type_name };
         const ret = try self.arena.create(ast.TypeRef);
-        ret.* = .{ .named = ast.unknown_type_name };
+        ret.* = r orelse .{ .named = ast.unknown_type_name };
         return .{ .function = .{ .params = params, .returnType = ret } };
     }
 };
@@ -939,7 +939,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
             // return Item(p); }`, 821 (2)).
             if (writesComponent(f.returnType) and f.marker == .component) {
                 f.body = try low.lowerComponentBody(f.body, writtenRenders(f.returnType), env.syncFns.contains(f.name), f.nameLoc);
-                f.returnType = try low.lambdaType();
+                f.returnType = try low.lambdaTypeOf(writtenRenders(f.returnType));
                 f.effect = null;
             } else f.body = try low.lowerPlainBody(f.body, f.nameLoc);
         },
@@ -1010,7 +1010,7 @@ fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
     const component = writesComponent(m.returnType);
     const renders = writtenRenders(m.returnType);
     if (component) {
-        m.returnType = try low.lambdaType();
+        m.returnType = try low.lambdaTypeOf(renders);
         if (m.marker == .component) m.marker = null;
     }
     const body = m.body orelse return;
