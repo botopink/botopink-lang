@@ -1292,6 +1292,8 @@ fn collectModuleRefs(
         .type_ => |t| if (t.isPub) try registerExport(sa, owner, &exps, t.name, idx),
         .typeAlias => |a| if (a.isPub) try registerExport(sa, owner, &exps, a.name, idx),
         .behavior => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
+        // A `pub` extension block is exported by its symbol (`import {m.Block*}`).
+        .implement => |im| if (im.isPub) try registerExport(sa, owner, &exps, im.name, idx),
         .use => |u| {
             // Every `from "…"` clause consumes one location, `std` included, so
             // the zip with `from_locs` stays aligned.

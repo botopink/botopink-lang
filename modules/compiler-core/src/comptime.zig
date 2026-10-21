@@ -1721,7 +1721,7 @@ fn analyzeMerged(
         },
         else => return err,
     };
-    const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry), env.importedImplements.items);
     const written: ?ast.Program = if (keep_resolved) try context_lower.deepCopy(ast.Program, arena, program) else null;
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
@@ -2019,7 +2019,7 @@ fn analyzeSource(
     };
     // 144 B-19 — a type adopts the instance defaults of a behavior it
     // implements from another module (`adopt_defaults.zig`).
-    const program = try adoptDefaults.expand(arena, with_block_calls, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const program = try adoptDefaults.expand(arena, with_block_calls, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry), env.importedImplements.items);
     // Decisions 341, 434 — a host function a decorator of this module reaches
     // has one of the comptime runtime's three sources; decided when the
     // package is compiled, never at a consumer's build.
@@ -3390,6 +3390,7 @@ fn resolveImports(
                             if (isStdPkgPath(e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |impl_decl| {
                                 try infer.registerImportedExtension(env, impl_decl);
+                                try env.importedImplements.append(env.arena, impl_decl);
                                 break;
                             }
                         }

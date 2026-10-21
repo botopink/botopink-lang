@@ -1619,6 +1619,10 @@ pub const Env = struct {
     /// written): the declared behavior's own first, then each behavior it
     /// `extends`, resolved in its declaring module.
     importedBehaviorMarks: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// The `implement` blocks imported and activated (`import {m.Block*}`), in
+    /// order: a block for a primitive gives this module's primitive the
+    /// contract's `default fn`s (`adopt_defaults.zig`, decision 799).
+    importedImplements: std.ArrayListUnmanaged(ast.ImplementDecl) = .empty,
     /// Decision 539 (6) — the ambient behaviors of `primitives.bp`'s compiler section a program
     /// names with no import (`Display`, `Closeable`), by name. Read last, after a
     /// module's own and its imported behaviors: a parameter typed by one

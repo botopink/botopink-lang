@@ -19,6 +19,10 @@
 //! Decision 799: a program's contract implemented for a primitive
 //! (`StringShout implement Shout for string {}`) is adopted the same way, into
 //! the std behavior that holds the primitive's members (`adoptForPrimitives`).
+//! A contract an extension block implements for a type of the module
+//! (`TagShout implement Shout for Tag {}`, the block local or imported and
+//! activated) gives the type the contract's `default fn`s as `pub` methods of
+//! its own, the `implement` clause untouched (`adoptForBlocks`, decisions 799, 684).
 const std = @import("std");
 const ast = @import("../ast.zig");
 
@@ -35,10 +39,12 @@ pub fn expand(
     arena: std.mem.Allocator,
     program: ast.Program,
     imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    imported_blocks: []const ast.ImplementDecl,
 ) Error!ast.Program {
     var copies: usize = 0;
-    const with_prims = try adoptForPrimitives(arena, program, imported, &copies);
-    return adoptForTypes(arena, with_prims, imported, &copies);
+    const with_prims = try adoptForPrimitives(arena, program, imported, imported_blocks, &copies);
+    const with_blocks = try adoptForBlocks(arena, with_prims, imported, imported_blocks, &copies);
+    return adoptForTypes(arena, with_blocks, imported, &copies);
 }
 
 fn adoptForTypes(
@@ -79,6 +85,90 @@ fn adoptForTypes(
     return p;
 }
 
+/// Decision 799 (1), 872 — a contract an extension block implements for a type
+/// of this module (`TagShout implement Shout for Tag {}`) gives the type the
+/// contract's instance `default fn`s, as methods of its own: each bodied
+/// `default fn` (a `self` receiver) of the contract, and of what it extends,
+/// that the type and the block do not write. The block is the module's own or
+/// one imported and activated. The type is not a value of the contract (684):
+/// only its methods are added, its `implement` clause is not. A generic
+/// contract is not adopted this way.
+fn adoptForBlocks(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    imported_blocks: []const ast.ImplementDecl,
+    copies_in: *usize,
+) Error!ast.Program {
+    var blocks: std.ArrayListUnmanaged(ast.ImplementDecl) = .empty;
+    for (program.decls) |d| if (d == .implement) try blocks.append(arena, d.implement);
+    try blocks.appendSlice(arena, imported_blocks);
+    if (blocks.items.len == 0) return program;
+    var decls: ?[]ast.DeclKind = null;
+    var copies = copies_in.*;
+    defer copies_in.* = copies;
+    for (program.decls, 0..) |d, di| {
+        if (d != .type_) continue;
+        const t = d.type_;
+        var added: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        for (blocks.items) |im| {
+            if (!std.mem.eql(u8, im.target, t.name)) continue;
+            for (im.methods) |m| try seen.put(arena, m.name, {});
+            for (im.interfaces) |ref| {
+                const name = switch (ref) {
+                    .named => |n| n,
+                    else => continue,
+                };
+                try collectForBlock(arena, program, imported, t, name, &added, &seen, &copies, 0);
+            }
+        }
+        if (added.items.len == 0) continue;
+        const out = decls orelse blk: {
+            const fresh = try arena.dupe(ast.DeclKind, program.decls);
+            decls = fresh;
+            break :blk fresh;
+        };
+        var nt = t;
+        nt.methods = try std.mem.concat(arena, ast.BehaviorMethod, &.{ t.methods, added.items });
+        out[di] = .{ .type_ = nt };
+    }
+    const new_decls = decls orelse return program;
+    var p = program;
+    p.decls = new_decls;
+    return p;
+}
+
+fn collectForBlock(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    t: ast.TypeDecl,
+    name: []const u8,
+    added: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+    seen: *std.StringHashMapUnmanaged(void),
+    copies: *usize,
+    depth: usize,
+) Error!void {
+    if (depth >= 16) return;
+    const b = ownBehavior(program, name) orelse imported.get(name) orelse return;
+    if (b.genericParams.len > 0) return;
+    for (b.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+        if (seen.contains(m.name) or declaresMethod(t, m.name)) continue;
+        try seen.put(arena, m.name, {});
+        const dl = first_line + copies.* * block;
+        copies.* += 1;
+        // A member the contract gives the type is the contract's, public where
+        // the contract is (859 (2)).
+        var copy = try shift(ast.BehaviorMethod, arena, m, dl);
+        copy.isPub = true;
+        try added.append(arena, copy);
+    }
+    for (b.extends) |parent| try collectForBlock(arena, program, imported, t, parent, added, seen, copies, depth + 1);
+}
+
 /// The type parameters the holder declares — `array<T>`'s `T`, the element.
 fn holderParams(holder: []const u8) []const []const u8 {
     if (std.mem.eql(u8, holder, "array")) return &.{"T"};
@@ -110,13 +200,16 @@ fn adoptForPrimitives(
     arena: std.mem.Allocator,
     program: ast.Program,
     imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    imported_blocks: []const ast.ImplementDecl,
     copies: *usize,
 ) Error!ast.Program {
     var holders: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(ast.BehaviorMethod)) = .empty;
     var at: std.StringHashMapUnmanaged(ast.Loc) = .empty;
-    for (program.decls) |d| {
-        if (d != .implement) continue;
-        const im = d.implement;
+    // The blocks of the module, then the ones imported and activated.
+    var blocks: std.ArrayListUnmanaged(ast.ImplementDecl) = .empty;
+    for (program.decls) |d| if (d == .implement) try blocks.append(arena, d.implement);
+    try blocks.appendSlice(arena, imported_blocks);
+    for (blocks.items) |im| {
         const holder = primitiveHolder(im.target) orelse continue;
         const gop = try holders.getOrPut(arena, holder);
         if (!gop.found_existing) {
