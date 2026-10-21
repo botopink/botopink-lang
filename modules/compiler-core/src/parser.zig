@@ -490,6 +490,11 @@ pub const Parser = struct {
     /// text it rendered (a decorator's member, a template's expansion) read
     /// its internal builtins as before.
     refuse_removed_builtins: bool = false,
+    /// Decision 873 (1) — a property in a type body (`pub val length: i32;`)
+    /// is a form of std's prelude alone. Set where a module other than the
+    /// prelude is parsed (`comptime.zig` `analyzeSource`): a `val` there is the
+    /// parse error a type body gives any other non-member.
+    refuse_type_properties: bool = false,
     /// Decision 316 — set while the type argument of `@Decl<…>` is parsed:
     /// `fn(..) -> R` (a function of any parameters) is a pattern written there
     /// alone (`anyParamsOutsideDecl` anywhere else).

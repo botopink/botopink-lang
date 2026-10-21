@@ -1731,14 +1731,17 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
                 needSeparator = false;
                 continue;
             }
-            if (ast.isPrimitiveTypeName(name) and this.check(.val)) {
+            // Decision 873 (1), 887 — accepted only while std's prelude is
+            // parsed (`refuse_type_properties` off), written `pub val`.
+            if (!this.refuse_type_properties and (this.check(.val) or (this.check(.@"pub") and this.peekAt(1).kind == .val))) {
+                const is_pub = this.match(.@"pub");
                 _ = try this.consume(.val);
                 const fieldName = (try this.consume(.identifier)).lexeme;
                 _ = try this.consume(.colon);
                 var typeRef = try this.parseTypeRef(alloc);
                 errdefer typeRef.deinit(alloc);
                 try expectMemberSemicolon(this);
-                try properties.append(alloc, .{ .name = fieldName, .typeRef = typeRef, .comments = memberComments });
+                try properties.append(alloc, .{ .name = fieldName, .typeRef = typeRef, .comments = memberComments, .isPub = is_pub });
                 sawMethod = true;
                 needSeparator = false;
                 continue;

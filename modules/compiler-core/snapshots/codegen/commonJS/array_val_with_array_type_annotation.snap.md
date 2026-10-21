@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val array: string[] = ["65454"];
+val items: string[] = ["65454"];
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const array = ["65454"];
+const items = ["65454"];
 
-Object.defineProperty(exports, "__bp_priv__", { value: { array } });
+Object.defineProperty(exports, "__bp_priv__", { value: { items } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

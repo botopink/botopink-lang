@@ -849,8 +849,11 @@ where the `()` belongs — except a primitive type (`ast.isPrimitiveTypeName`: t
 literals' types `i32` … `bigint`, then `bytes` and `array`; `TypeDecl.isPrimitive`,
 decisions 617 (1), 641): `pub type i32 implement Signed { … }`, `pub type string { … }`
 in std's prelude, no field list since the language gives its values — its body may
-declare a property the language gives them, `val length: i32;` on `array<T>`
-(`TypeDecl.properties`, printed back by the formatter); the checker
+declare a property the language gives them, `pub val length: i32;` on `array<T>`
+(`TypeDecl.properties`, `BehaviorField.isPub`, printed back by the formatter) — accepted
+only while std's prelude is parsed, never by the type's name: `analyzeSource` sets
+`Parser.refuse_type_properties` for every other module, where a `val` in a type body is the
+parse error any non-member is (decisions 873 (1), 887); the checker
 refuses one in a module at the name (`primitive-type-redeclared`, decision 639), and a
 `behavior` of such a name alike (decision 799 (3); `BehaviorDecl.nameLoc`, the name's place).
 An `implement` block's shorthand takes type parameters after its name and type arguments on

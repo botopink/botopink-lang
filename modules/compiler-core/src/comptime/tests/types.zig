@@ -26,7 +26,7 @@ test "types: array literal infers element type" {
 
 test "types: val with array type annotation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val array: string[] = ["65454"];
+        \\val items: string[] = ["65454"];
     );
 }
 

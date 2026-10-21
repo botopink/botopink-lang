@@ -746,7 +746,8 @@ fn refuseDeclsNamedLikePrimitives(env: *Env, program: ast.Program) InferError!vo
             .val => |v| .{ v.name, v.nameLoc, if (v.mutable) "a `var`" else "a `val`" },
             else => continue,
         };
-        const taken = for (scalar_type_names) |n| {
+        // Decision 873 (3) — every lowercase type, `array` included.
+        const taken = std.mem.eql(u8, name, "array") or for (scalar_type_names) |n| {
             if (std.mem.eql(u8, n, name)) break true;
         } else false;
         if (!taken) continue;
@@ -22012,7 +22013,7 @@ fn resolvePendingReceiverCalls(env: *Env) InferError!void {
                     }
                     if (try primMethodReturnTypeFromIface(env, recvTy, p.callee, p.args)) |ret| {
                         try unifyAt(env, p.ret, ret, p.loc);
-                    } else try refuseUndeclaredPrimMethod(env, recvTy, p.callee, p.loc);
+                    } else try refuseUndeclaredPrimMethod(env, recvTy, p.callee, p.loc, true);
                 } else if (env.hasInherentMethod(n.name, p.callee)) {
                     try recordInstanceCall(env, p.loc, n.name);
                 } else if (env.lookupTypeDef(n.name)) |td| if (!typeAnswersMember(env, td, p.callee)) {
@@ -22112,7 +22113,20 @@ fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
 /// method a near spelling points at: the one whose `@External.Node` host symbol
 /// is the name written, else one an edit away. Silent when the interface is not
 /// registered (an environment without the prelude has nothing to check against).
-fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, loc: ast.Loc) InferError!void {
+/// Decision 873 (2) — the receiver is a primitive type's own name, no binding
+/// shadowing it (`string.fromCodepoint(65)`): its statics answer there. A
+/// local or a parameter of the name (`val bytes = …`) is the value.
+fn receiverNamesPrimitiveType(env: *Env, recv: ?*ast.Expr) bool {
+    const r = recv orelse return false;
+    if (r.* != .identifier or r.identifier.kind != .ident) return false;
+    const name = r.identifier.kind.ident;
+    if (primitiveInterfaceName(name) == null) return false;
+    if (env.boundInBody(name)) return false;
+    if (env.lookup(name)) |t| if (!t.deref().isNamed(name)) return false;
+    return true;
+}
+
+fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, loc: ast.Loc, statics: bool) InferError!void {
     const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return;
     if (env.assocInterfaceDecls.get(ifaceName) == null) return;
     if (std.mem.eql(u8, callee, "len") or std.mem.eql(u8, callee, "size")) return;
@@ -22131,7 +22145,13 @@ fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, lo
         if (guard >= 16) break;
         const decl = env.assocInterfaceDecls.get(cname) orelse break;
         for (decl.methods) |m| {
-            if (std.mem.eql(u8, m.name, callee)) return;
+            // Decision 873 (2) — a static (no `self`) answers the type's name,
+            // never a value: `bytes.fromUtf8(s)` on a local `bytes` is a
+            // method call on the value.
+            if (std.mem.eql(u8, m.name, callee)) {
+                if (statics or (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"))) return;
+                continue;
+            }
             if (host_match == null) if (m.externalFor("node")) |ref| {
                 if (std.mem.eql(u8, ref.text, callee)) host_match = m.name;
             };
@@ -25756,7 +25776,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                 .trailing = typedTrailing,
                             } } } };
                         }
-                        try refuseUndeclaredPrimMethod(env, recvTy, call.callee, loc);
+                        try refuseUndeclaredPrimMethod(env, recvTy, call.callee, loc, receiverNamesPrimitiveType(env, call.receiver));
                     }
                 }
 

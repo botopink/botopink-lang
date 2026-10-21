@@ -1,0 +1,25 @@
+//// Decision 873 — A primitive type's body declares a property as `val length: i32;`, a form of `primitives.bp` alone; a local shadows a primitive type's statics in its body; a module-level `fn` / `val` named like any lowercase type — `array` included — is `primitive-type-name-taken`; a failed `toUtf8` names `bytes.toUtf8`.
+
+import {io.terminal.print} from "std";
+
+// Each parameter is named like a primitive type: in the body the name is the
+// parameter, and `.length` / `.length()` read the value.
+fn count(array: i32[]) -> i32 {
+    return array.length;
+}
+
+fn width(string: string) -> i32 {
+    return string.length();
+}
+
+fn size(bytes: bytes) -> i32 {
+    return bytes.length();
+}
+
+pub fn main() -> void {
+    print(count([1, 2, 3]));
+    print(width("abcd"));
+    print(size(bytes.fromUtf8("hi")));
+    val string = "xyz";
+    print(string.length());
+}

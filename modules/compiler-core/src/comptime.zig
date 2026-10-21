@@ -1904,6 +1904,7 @@ fn analyzeSource(
 
     var parser = Parser.init(tokens);
     parser.refuse_removed_builtins = true;
+    parser.refuse_type_properties = !isPreludeModule(mod);
     const parsed_source = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.

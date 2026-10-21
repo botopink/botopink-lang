@@ -948,6 +948,23 @@ nothing: `String.fromCodepoint(65)` is an unknown name.
 
 <!-- example: modules/decisions-taken/primitive_types_lowercase-641/cells/primitive_contract_dissolved -->
 
+A property the language gives a primitive's values is declared in its type's
+body as `pub val length: i32;` — a form of `primitives.bp` alone; a `val` in any
+other type body is a parse error, whatever the type's name (decisions 873 (1),
+887). A local or a parameter named like a primitive type shadows it in its body,
+statics included: with `val bytes = …` in scope, `bytes.fromUtf8(s)` is a method
+call on the value (873 (2)). A module-level `fn`, `val` or `var` named like a
+lowercase type — `array` included — is refused at its name,
+`primitive-type-name-taken` (873 (3)):
+
+<!-- example: modules/decisions-taken/primitive_type_body_and_names-873/cells/primitive_property_outside_prelude_refused -->
+
+<!-- example: modules/decisions-taken/primitive_type_body_and_names-873/cells/primitive_static_shadowed_by_local -->
+
+<!-- example: modules/decisions-taken/primitive_type_body_and_names-873/cells/primitive_static_on_local_is_method -->
+
+<!-- example: modules/decisions-taken/primitive_type_body_and_names-873/cells/primitive_type_name_taken_array -->
+
 The widths are types (decision 617 (1)): std's prelude declares `pub type i32
 implement Signed`, `i64` likewise, `u32` and `u64` `implement Integer`, `f32`
 and `f64` `implement Float`. A capitalised name there is a contract several
@@ -1007,7 +1024,7 @@ indices.
 erlang and beam, a `Uint8Array` on commonJS, a buffer in wasm memory. No literal
 is `bytes`, and nothing converts between `bytes` and `string` but two calls:
 `bytes.fromUtf8(s)` answers the UTF-8 bytes of `s`, and `b.toUtf8()` answers
-`Result<string, string>` — the text, or `Error("Bytes.toUtf8: not valid
+`Result<string, string>` — the text, or `Error("bytes.toUtf8: not valid
 UTF-8")` for bytes that are not well-formed UTF-8 (a sequence cut short, an
 overlong form, a surrogate, a code point past U+10FFFF; a byte order mark is kept).
 A string literal where `bytes` is expected, and `bytes` where a `string` is, are

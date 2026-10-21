@@ -84,7 +84,7 @@ pub declare fn unquote(literal: string) -> Result<string, HostError>;
 // A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
 // number's text, `true`/`false`/`null`, or another writer's output). No
 // escaping happens here.
-pub fn array(items: array<string>) -> string {
+pub fn arrayOf(items: array<string>) -> string {
     return ["[", items.join(","), "]"].join("");
 }
 
@@ -1170,9 +1170,9 @@ test "json.unquote refuses what is not one string literal" {
     assert unquote(" \"ok\" ").unwrapOr("?") == "ok";
 }
 
-test "json.array joins already-encoded items" {
-    assert array([quote("a"), "1", "true"]) == "[\"a\",1,true]";
-    assert array([]) == "[]";
+test "json.arrayOf joins already-encoded items" {
+    assert arrayOf([quote("a"), "1", "true"]) == "[\"a\",1,true]";
+    assert arrayOf([]) == "[]";
 }
 
 test "json.object keeps the order and quotes the keys" {

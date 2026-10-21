@@ -5845,7 +5845,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
   {label, 123}.
-    {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
+    {move, {literal, {error, <<"bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
     {deallocate, 4}.
     return.
 
@@ -12704,7 +12704,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
   {label, 379}.
-    {move, {literal, {error, <<"Bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
+    {move, {literal, {error, <<"bytes.toUtf8: not valid UTF-8">>}}, {x, 0}}.
     {deallocate, 4}.
     return.
 

@@ -33,7 +33,7 @@ main() ->
     C = <<(B)/binary, (<<"!">>)/binary>>,
     '__bp_print'([byte_size(C)]),
     '__bp_print'([(B =:= <<"hello">>)]),
-    R = (fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)(B),
+    R = (fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"bytes.toUtf8: not valid UTF-8">>} end end)(B),
     '__bp_print'([R]),
     Parts = (fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)(<<"a,b,c">>, <<",">>),
     '__bp_print'([Parts]),

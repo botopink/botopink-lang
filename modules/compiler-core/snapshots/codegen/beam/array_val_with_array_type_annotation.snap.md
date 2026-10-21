@@ -1,19 +1,19 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val array: string[] = ["65454"];
+val items: string[] = ["65454"];
 ```
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'__bp_priv__array', 0}]}.
+{exports, [{'__bp_priv__items', 0}]}.
 {attributes, []}.
 {labels, 6}.
 
-{function, array, 0, 3}.
+{function, items, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, array}, 0}.
+    {func_info, {atom, test@main}, {atom, items}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -26,10 +26,10 @@ val array: string[] = ["65454"];
     {deallocate, 1}.
     return.
 
-{function, '__bp_priv__array', 0, 5}.
+{function, '__bp_priv__items', 0, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_priv__array'}, 0}.
+    {func_info, {atom, test@main}, {atom, '__bp_priv__items'}, 0}.
   {label, 5}.
     {call_only, 0, {f, 3}}.
 ```

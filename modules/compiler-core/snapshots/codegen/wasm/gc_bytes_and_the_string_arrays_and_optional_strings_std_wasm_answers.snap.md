@@ -1040,7 +1040,7 @@ import {io.terminal.print} from "std";
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "!")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "Bytes.toUtf8: not valid UTF-8")
+  (data $__d2 "bytes.toUtf8: not valid UTF-8")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
   (data $__d3 "Error(")
   (global $__s3 (mut (ref null $str)) (ref.null $str))

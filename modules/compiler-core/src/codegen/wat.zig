@@ -7367,7 +7367,7 @@ const Emitter = struct {
         var bad: Capture = .{};
         self.open(&bad);
         try self.emit(one);
-        try self.emitStrLit("Bytes.toUtf8: not valid UTF-8");
+        try self.emitStrLit("bytes.toUtf8: not valid UTF-8");
         try self.emit(.{ .struct_new = rti });
         const bad_seq = self.seal(&bad, .{ .value = rr });
         try self.emit(.{ .@"if" = .{ .result = rr, .then = .{ .seq = ok_seq }, .@"else" = .{ .seq = bad_seq } } });
@@ -17364,7 +17364,7 @@ const Emitter = struct {
         try self.emit(one);
         try self.emitC(.{ .store = .{} }, "Error tag");
         try self.emit(.{ .local_get = out });
-        const msg = try self.internString("Bytes.toUtf8: not valid UTF-8");
+        const msg = try self.internString("bytes.toUtf8: not valid UTF-8");
         try self.emit(try self.constInt(msg.offset));
         try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
         const else_seq = self.seal(&else_c, .none);

@@ -101,7 +101,7 @@ test "js: array ---- string array literal" {
 
 test "js: array ---- val with array type annotation" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val array: string[] = ["65454"];
+        \\val items: string[] = ["65454"];
     );
 }
 

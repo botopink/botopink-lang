@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val array: string[] = ["65454"];
+val items: string[] = ["65454"];
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -9,7 +9,7 @@ val array: string[] = ["65454"];
   "declarations": [
     {
       "ast": "val",
-      "ident": "array",
+      "ident": "items",
       "return_type": "string[]"
     }
   ]

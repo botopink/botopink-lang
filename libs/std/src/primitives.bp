@@ -551,8 +551,8 @@ pub type bytes {
     // surrogate, a code point past U+10FFFF) is an `Error`. A byte order mark
     // is kept as U+FEFF.
     #[compiler.external(
-        .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"Bytes.toUtf8: not valid UTF-8">>} end end)($0)"""),
-        .JavaScript("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "Bytes.toUtf8: not valid UTF-8" })($0)"""),
+        .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"bytes.toUtf8: not valid UTF-8">>} end end)($0)"""),
+        .JavaScript("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "bytes.toUtf8: not valid UTF-8" })($0)"""),
     )]
     declare fn toUtf8(self: Self) -> Result<string, string>;
 
@@ -1058,10 +1058,10 @@ declare fn stringFloatRefused(text: string) -> Result<f64, string>;
 // ambient behaviors of the compiler section below that make `xs[0]` and `xs[0..2]` legal
 // (decision 63, amended). Written as a comment for the same reason as
 // `string`'s above. `length` is a property the language gives its values: a
-// primitive type's body declares it `val length: i32;`.
+// primitive type's body declares it `pub val length: i32;` (decisions 873, 887).
 pub type array<T> {
     // intrinsic length (builtin).
-    val length: i32;
+    pub val length: i32;
 
     // ── host-backed primitives ──
     // `Index<i32, T>.at` — the reader `xs[0]` rewrites to.

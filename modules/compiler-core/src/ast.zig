@@ -1894,9 +1894,12 @@ pub const BehaviorField = struct {
     /// prefix included), with "" for a blank source line. Owned slice; the
     /// strings slice into the source. Kept by the formatter.
     comments: []const []const u8 = &.{},
+    /// Decision 887 — a primitive's property written `pub val length: i32;`.
+    /// Not dumped.
+    isPub: bool = false,
 
     pub fn jsonStringify(this: BehaviorField, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
+        return stringifyOmitting(this, jws, &.{"isPub"}, &.{"comments"});
     }
 };
 

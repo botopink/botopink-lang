@@ -2900,7 +2900,7 @@ pub const Formatter = struct {
         }
         for (t.properties, t.assocTypes.len..) |f, i| {
             const c = try this.withMemberComments(f.comments, try this.concatAll(&.{
-                try this.text(try std.fmt.allocPrint(this.arena, "val {s}: ", .{f.name})),
+                try this.text(try std.fmt.allocPrint(this.arena, "{s}val {s}: ", .{ if (f.isPub) "pub " else "", f.name })),
                 try this.fmtTypeRef(f.typeRef),
                 try this.text(";"),
             }));

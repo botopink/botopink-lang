@@ -6,7 +6,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Primitives):
 > erlang and beam, a `Uint8Array` on commonJS, a buffer in wasm memory. No literal
 > is `bytes`, and nothing converts between `bytes` and `string` but two calls:
 > `bytes.fromUtf8(s)` answers the UTF-8 bytes of `s`, and `b.toUtf8()` answers
-> `Result<string, string>` — the text, or `Error("Bytes.toUtf8: not valid
+> `Result<string, string>` — the text, or `Error("bytes.toUtf8: not valid
 > UTF-8")` for bytes that are not well-formed UTF-8 (a sequence cut short, an
 > overlong form, a surrogate, a code point past U+10FFFF; a byte order mark is kept).
 > A string literal where `bytes` is expected, and `bytes` where a `string` is, are
