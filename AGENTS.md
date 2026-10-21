@@ -39,7 +39,8 @@ botopink-lang/                 ← language core (this project)
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
 │                                docs.md (the reference, the manifest schema included; every example a cell),
-│                                modules/<cell>/ checked by `botopink cell check`, test/ suites by
+│                                modules/<module>/{run,refused,cells/<case>}/ and
+│                                modules/decisions-taken/<slug>-<N>/ (decisions 765, 779), checked by `botopink cell check`, test/ suites by
 │                                `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
@@ -231,8 +232,8 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
   affected `AGENTS.md` in the same change.
 - **The reference is `conformance/docs.md`, and every example in it is a cell**
   (decisions 461, 462): a language feature, its syntax and its refusals are
-  written there, and an example is a line `<!-- example: modules/<cell> -->`
-  (or `test/<suite>`) naming the conformance cell that shows it — its `src/`
+  written there, and an example is a line `<!-- example: modules/<module>/cells/<case> -->`
+  (or `modules/<module>/run/src/cases/<case>`, `modules/decisions-taken/<slug>-<N>/cells/<case>`, `test/<suite>`) naming the conformance cell that shows it — its `src/`
   and its answer on every target, never an inline fence. Beside each cell, its
   `docs.md` quotes the reference text it shows. `zig build test-docs` checks
   that every example names a cell whose `docs.md` is not empty and that no
@@ -243,7 +244,9 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
   closes it — never as an example whose cell is not green.
 - **A behaviour change carries its cells** (decision 458): a step that adds,
   changes or refuses observable behaviour writes the cells that prove it under
-  `conformance/modules/<cell>/` (`botopink cell new`, then `botopink cell
+  `conformance/modules/decisions-taken/<slug>-<N>/cells/<case>/` for the decision it proves, else
+  `conformance/modules/<prefix>/cells/<case>/` (`botopink cell new <that path>`, which writes its `botopink.json`,
+  `src/main.bp` and `docs.md`; then `botopink cell
   check`; a person renames each candidate it writes, never a flag), red on the
   parent and green on the step. A cell's answer is never edited to match the
   compiler (`conformance/AGENTS.md`).
