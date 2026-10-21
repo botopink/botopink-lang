@@ -1,0 +1,38 @@
+//// Decision 821 — a component whose props are one record parameter
+//// (`..props: R`, 529) and is called with a record spread is stamped like any
+//// other call: `Card(..base, n: 1)` and `Card(..base, n: 2)` are two cells,
+//// each memo made once over two renders of one root.
+
+import {context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+type CardProps(title: string, n: i32)
+
+component fn Card(..props: CardProps) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + props.title + props.n.toString());
+        props.n
+    });
+    return View(text: props.title + made.toString());
+}
+
+component fn App(round: i32) -> Component<View> {
+    val base = CardProps(title: "c", n: 0);
+    val a = Card(..base, n: 1);
+    val b = Card(..base, n: 2);
+    val x = use a;
+    val y = use b;
+    return View(text: round.toString() + ": " + x.text + "," + y.text);
+}
+
+async fn render(root: Scope, round: i32) -> Async<string> {
+    return (await run(App(round), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, 1));
+    print(await render(root, 2));
+}
