@@ -7541,7 +7541,10 @@ const Emitter = struct {
             //
             // Activated: `recv.m(args)` carries a `rewrites` entry → call the
             // mangled `'<target>_m'(recv, args)` with the receiver prepended.
-            if (if (self.self_prim_kind == null) self.rewrites.get(loc) else null) |sym| {
+            // A prelude `default fn` body parsed from std keeps no rewrite (its locs may
+            // collide with the program's); a program contract's adopted copy has locs of
+            // its own and reads them (`self.label()` over a block's method).
+            if (if (self.self_prim_kind == null or !self.self_prim_from_prelude) self.rewrites.get(loc) else null) |sym| {
                 var nbuf: [256]u8 = undefined;
                 if (self.extMangledName(&nbuf, sym, cc.callee)) |mangled| {
                     try self.lowerExtCall(mangled, recv_expr, cc.args, mode);
