@@ -23255,6 +23255,12 @@ const Emitter = struct {
                     }
                     // `recv?.field` of a scalar field is a boxed optional
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
+                    // A field that is itself an optional array (`fields: ?Field[]`):
+                    // the link is that pointer, `0` absent — not a box around it.
+                    if (self.mode != .gc) if (self.fieldTypeRefIn(rty, ia.member)) |ftr| {
+                        const et = eagerTypeRef(ftr);
+                        if (et == .optional and arrayElemOfTypeRef(eagerTypeRef(et.optional.*)) != null) return self.optInfoOfTypeRef(et);
+                    };
                     const ft = self.fieldTypeIn(rty, ia.member);
                     if (ft == null or self.resolveRecordName(ft.?) != null) return .{ .boxed = false };
                     if (std.mem.eql(u8, ft.?, "string")) return .{ .boxed = false, .str = true };

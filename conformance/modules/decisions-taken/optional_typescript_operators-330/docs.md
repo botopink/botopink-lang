@@ -28,3 +28,4 @@
 [run/src/cases/optional_record_method_absent_receiver/mod.bp](run/src/cases/optional_record_method_absent_receiver/mod.bp)
 [refused/src/cases/result_namespace_removed/mod.bp](refused/src/cases/result_namespace_removed/mod.bp)
 [run/src/cases/std_type_field_associated/mod.bp](run/src/cases/std_type_field_associated/mod.bp)
+[cells/optional_chain_nested_array/src/main.bp](cells/optional_chain_nested_array/src/main.bp)

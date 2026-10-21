@@ -1,0 +1,26 @@
+//// Decision 330 — `?.` along a chain whose middle link is an optional array:
+//// `f?.fields?.[0]?.name` is absent at the first absent link (no `f`, no
+//// `fields`, no element) and the element's own field otherwise, on every target.
+
+import {io.terminal.print} from "std";
+
+type Field(name: string)
+
+type Form(fields: ?Field[])
+
+fn make(k: i32) -> ?Form {
+    if (k == 0) return null;
+    return Form(fields: [Field(name: "email")]);
+}
+
+pub fn main() -> void {
+    val f = make(1);
+    print(f?.fields?.[0]?.name ?? "none");
+    val first = f?.fields?.[0];
+    print(first?.name ?? "none");
+    val fields = f?.fields;
+    print(fields?.[0]?.name ?? "none");
+    print(make(0)?.fields?.[0]?.name ?? "none");
+    val empty: ?Form = Form(fields: null);
+    print(empty?.fields?.[0]?.name ?? "none");
+}
