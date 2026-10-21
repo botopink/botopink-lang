@@ -15995,7 +15995,7 @@ fn appendBehaviorMarksOf(env: *const Env, name: []const u8, out: *std.ArrayListU
     const own: ?ast.BehaviorDecl = for (env.moduleDecls) |d| {
         if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) break d.behavior;
     } else null;
-    const decl, const path = if (own) |b| .{ b, env.modulePath } else if (env.ambientBehaviorDecls.get(name)) |b| .{ b, ast.ambient_behavior_module } else return;
+    const decl, const path = if (own) |b| .{ b, env.modulePath } else if (env.ambientBehaviorDecls.get(name)) |b| .{ b, ast.ambient_behavior_module } else if (env.ruleReadBehaviorDecls.get(name)) |b| (if (std.mem.eql(u8, b.name, "Composable")) .{ b, ast.ambient_behavior_module } else return) else return;
     const id = try ast.behaviorIdentity(env.arena, path, decl.name);
     for (out.items) |seen| if (std.mem.eql(u8, seen, id)) return;
     try out.append(env.arena, id);
