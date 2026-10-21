@@ -5,7 +5,7 @@
 pub type Shape {
     // A point of the shape.
     pub type Point(x: i32, y: i32) {
-        fn sum(self: Self) -> i32 {
+        pub fn sum(self: Self) -> i32 {
             return self.x + self.y;
         }
     }
